@@ -117,11 +117,10 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -177,11 +176,10 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("sender is required")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -211,20 +209,9 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		// predicates can match and the caller sees the real reason.
 		pr, pw := io.Pipe()
 		defer pr.Close()
-		streamErr := make(chan error, 1)
 		go func() {
 			defer pw.Close()
 			// resp.Body is owned by doStreamRequest — do NOT close it here.
-
-			var scanErr error
-			// Ensure streamErr always receives a result, on every exit
-			// path, so the final receive below can never block.
-			defer func() {
-				select {
-				case streamErr <- scanErr:
-				default:
-				}
-			}()
 
 			scanner := bufio.NewScanner(body)
 			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -243,17 +230,29 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 					}
 				}
 				if _, err := pw.Write([]byte(line + "\n")); err != nil {
-					scanErr = err
+					// The reader stopped consuming, which means
+					// HandleStreamingResponse already saw the terminal event
+					// and returned. There is nothing left to report.
 					return
 				}
 			}
-			scanErr = scanner.Err()
+			// A body read error reaches the reader through the pipe, so the
+			// caller sees the actual cause instead of a generic "stream ended
+			// before [DONE]" from the shared handler.
+			pw.CloseWithError(scanner.Err())
 		}()
 
-		if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
-			return err
-		}
-		return <-streamErr
+		// The stream's outcome is decided here and nowhere else:
+		// HandleStreamingResponse returns once it sees [DONE] or a terminal
+		// finish_reason, and its error is the one worth reporting. This
+		// function must NOT then wait for the scanner goroutine to finish.
+		// MiniMax ends a stream by sending [DONE] and leaving the connection
+		// open, so scanner.Scan() never observes an EOF; a wait here blocked
+		// for the whole streamCallTimeout (20 minutes) even though the answer
+		// was already complete. Because this returns immediately,
+		// doStreamRequest's deferred resp.Body.Close() unblocks the scanner
+		// and the goroutine exits.
+		return HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
 }
 
@@ -268,11 +267,10 @@ func (m *MinimaxModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -347,11 +345,10 @@ func (m *MinimaxModel) AudioSpeech(ctx context.Context, modelName *string, audio
 		return nil, fmt.Errorf("text content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
@@ -437,19 +434,14 @@ func (m *MinimaxModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 		return fmt.Errorf("text content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	ttsSuffix := m.baseModel.URLSuffix.TTS
+	if ttsSuffix == "" {
+		ttsSuffix = "v1/t2a_v2"
+	}
+	url, err := m.baseModel.EndpointURL(apiConfig, ttsSuffix)
 	if err != nil {
 		return err
 	}
-	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	if baseURL == "" {
-		baseURL = strings.TrimSuffix(resolvedBaseURL, "/")
-	}
-	suffix := strings.TrimPrefix(m.baseModel.URLSuffix.TTS, "/")
-	if suffix == "" {
-		suffix = "v1/t2a_v2"
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	reqBody := map[string]interface{}{
 		"model": modelName,
@@ -538,5 +530,9 @@ func (m *MinimaxModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (m *MinimaxModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *MinimaxModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

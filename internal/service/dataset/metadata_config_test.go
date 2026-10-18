@@ -65,6 +65,7 @@ func insertDatasetMetadataConfigKB(t *testing.T, datasetID, tenantID string) {
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func insertDatasetMetadataConfigTeamMember(t *testing.T, userID, tenantID string) {
@@ -203,10 +204,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeForbidden {
+		t.Fatalf("expected forbidden code, got %d", code)
 	}
-	if err.Error() != "you don't own the dataset" {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

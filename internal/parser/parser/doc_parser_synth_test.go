@@ -91,6 +91,8 @@ func buildSyntheticDoc(t *testing.T, text string) []byte {
 	copy(dir[1*128:], dirEntry("WordDocument", 2, 2, uint64(len(wordDoc))))
 	copy(dir[2*128:], dirEntry("0Table", 2, 3, uint64(len(clx))))
 	copy(dir[3*128:], dirEntry("", 0, 0xFFFFFFFF, 0))
+	binary.LittleEndian.PutUint32(dir[0*128+0x4C:], 1) // root child: WordDocument
+	binary.LittleEndian.PutUint32(dir[1*128+0x44:], 2) // left sibling: 0Table
 
 	// ── Assemble ──────────────────────────────────────────────────────────
 	tableSector := make([]byte, sector)
@@ -160,7 +162,7 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 			t.Errorf("parsed text missing %q; got:\n%s", want, pr.Text)
 		}
 	}
-	if got, _ := pr.JSON[0]["text"].(string); got != pr.Text {
+	if got, _ := pr.JSON[0].ToMap()["text"].(string); got != pr.Text {
 		t.Errorf("JSON text = %q, want complete parser text %q", got, pr.Text)
 	}
 

@@ -2,7 +2,7 @@ import { NodeCollapsible } from '@/components/collapse';
 import { BaseNode } from '@/interfaces/database/agent';
 import { NodeProps } from '@xyflow/react';
 import { RagNode } from '.';
-import { VariableAssignerFormSchemaType } from '../../form/variable-assigner-form';
+import { VariableAssignerFormSchemaType } from '../../form/variable-assigner-form/schema';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { LabelCard } from './card';
 

@@ -59,6 +59,7 @@ const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
   [WebSearchProvider.Linkup]: 'linkup_api_key',
   [WebSearchProvider.Parallel]: 'parallel_api_key',
   [WebSearchProvider.Querit]: 'querit_api_key',
+  [WebSearchProvider.Search1API]: 'search1api_api_key',
   [WebSearchProvider.Serply]: 'serply_api_key',
   [WebSearchProvider.Tavily]: 'tavily_api_key',
   [WebSearchProvider.YouCom]: 'youcom_api_key',

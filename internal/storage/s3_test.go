@@ -1,8 +1,13 @@
 package storage
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"ragflow/internal/server/config"
 	"strings"
 	"testing"
 
@@ -31,6 +36,137 @@ func newS3TestStorage(region string, handler s3RoundTripper) *S3Storage {
 
 func s3Response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func TestS3StorageConnectAppliesAddressingStyle(t *testing.T) {
+	for _, test := range []struct {
+		name            string
+		addressingStyle string
+		wantPathStyle   bool
+	}{
+		{name: "path", addressingStyle: "path", wantPathStyle: true},
+		{name: "virtual", addressingStyle: "virtual"},
+		{name: "unset"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			storage, err := NewS3Storage(t.Context(), config.S3Config{
+				AccessKey:       "access",
+				SecretKey:       "secret",
+				Region:          "us-east-1",
+				AddressingStyle: test.addressingStyle,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := storage.client.Options().UsePathStyle; got != test.wantPathStyle {
+				t.Fatalf("UsePathStyle = %t, want %t", got, test.wantPathStyle)
+			}
+		})
+	}
+}
+
+func TestS3StorageConnectConfiguresPayloadSigning(t *testing.T) {
+	t.Setenv("AWS_REQUEST_CHECKSUM_CALCULATION", "when_supported")
+	payload := []byte("content")
+	for _, test := range []struct {
+		name                string
+		signatureVersion    string
+		wantPayloadHash     string
+		wantContentEncoding string
+		wantBody            string
+	}{
+		{name: "s3", signatureVersion: "s3", wantPayloadHash: "UNSIGNED-PAYLOAD", wantBody: string(payload)},
+		{name: "v4", signatureVersion: "v4", wantPayloadHash: "STREAMING-UNSIGNED-PAYLOAD-TRAILER", wantContentEncoding: "aws-chunked"},
+		{name: "s3v4", signatureVersion: "s3v4", wantPayloadHash: "STREAMING-UNSIGNED-PAYLOAD-TRAILER", wantContentEncoding: "aws-chunked"},
+		{name: "unset", wantPayloadHash: "STREAMING-UNSIGNED-PAYLOAD-TRAILER", wantContentEncoding: "aws-chunked"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var gotPutPayloadHash string
+			var gotPutContentEncoding string
+			var gotPutBody string
+			var gotHeadPayloadHash string
+			var gotDeletePayloadHash string
+			var gotDeleteContentEncoding string
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if req.URL.Query().Has("delete") {
+					gotDeletePayloadHash = req.Header.Get("x-amz-content-sha256")
+					gotDeleteContentEncoding = req.Header.Get("Content-Encoding")
+					_, _ = w.Write([]byte("<DeleteResult/>"))
+					return
+				}
+				switch req.Method {
+				case http.MethodPut:
+					gotPutPayloadHash = req.Header.Get("x-amz-content-sha256")
+					gotPutContentEncoding = req.Header.Get("Content-Encoding")
+					body, err := io.ReadAll(req.Body)
+					if err != nil {
+						t.Error(err)
+					}
+					gotPutBody = string(body)
+				case http.MethodHead:
+					gotHeadPayloadHash = req.Header.Get("x-amz-content-sha256")
+				}
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			storage, err := NewS3Storage(t.Context(), config.S3Config{
+				AccessKey:        "access",
+				SecretKey:        "secret",
+				Region:           "us-east-1",
+				EndpointURL:      server.URL,
+				SignatureVersion: test.signatureVersion,
+				AddressingStyle:  "path",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			storage.client = s3.New(storage.client.Options(), func(options *s3.Options) {
+				options.HTTPClient = server.Client()
+			})
+			_, err = storage.client.PutObject(t.Context(), &s3.PutObjectInput{
+				Bucket: aws.String("bucket"),
+				Key:    aws.String("object"),
+				Body:   bytes.NewReader(payload),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = storage.client.HeadBucket(t.Context(), &s3.HeadBucketInput{Bucket: aws.String("bucket")}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = storage.client.DeleteObjects(t.Context(), &s3.DeleteObjectsInput{
+				Bucket: aws.String("bucket"),
+				Delete: &types.Delete{Objects: []types.ObjectIdentifier{{Key: aws.String("object")}}},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if gotPutPayloadHash != test.wantPayloadHash {
+				t.Fatalf("PutObject x-amz-content-sha256 = %q, want %q", gotPutPayloadHash, test.wantPayloadHash)
+			}
+			if gotPutContentEncoding != test.wantContentEncoding {
+				t.Fatalf("PutObject Content-Encoding = %q, want %q", gotPutContentEncoding, test.wantContentEncoding)
+			}
+			if test.wantBody != "" && gotPutBody != test.wantBody {
+				t.Fatalf("PutObject body = %q, want %q", gotPutBody, test.wantBody)
+			}
+			wantHeadPayloadHash := fmt.Sprintf("%x", sha256.Sum256(nil))
+			if test.signatureVersion == "s3" {
+				wantHeadPayloadHash = "UNSIGNED-PAYLOAD"
+			}
+			if gotHeadPayloadHash != wantHeadPayloadHash {
+				t.Fatalf("HeadBucket x-amz-content-sha256 = %q, want %q", gotHeadPayloadHash, wantHeadPayloadHash)
+			}
+			if test.signatureVersion == "s3" {
+				if gotDeletePayloadHash != "UNSIGNED-PAYLOAD" {
+					t.Fatalf("DeleteObjects x-amz-content-sha256 = %q, want UNSIGNED-PAYLOAD", gotDeletePayloadHash)
+				}
+				if gotDeleteContentEncoding != "" {
+					t.Fatalf("DeleteObjects Content-Encoding = %q, want empty", gotDeleteContentEncoding)
+				}
+			}
+		})
+	}
 }
 
 func TestS3StoragePutCreatesBucketInResolvedRegion(t *testing.T) {

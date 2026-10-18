@@ -3,6 +3,9 @@ package parser
 import (
 	"fmt"
 	"strings"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 func pdfFileMeta(filename string, pageCount int) map[string]any {
@@ -16,6 +19,23 @@ func pdfFileMeta(filename string, pageCount int) map[string]any {
 	}
 }
 
+// markdownItemText renders a single parse item to markdown. A table uses the
+// structured TableData contract directly (rendered via RenderTableHTML); every
+// other item uses its text. Producers emit `table` for tables and never the
+// legacy HTML `text`, so a table-typed item without structured data is skipped
+// rather than falling back to a raw HTML string — the contract is "tables are
+// structured, not markup".
+func markdownItemText(item map[string]any) string {
+	if dt, _ := item["doc_type_kwd"].(string); dt == "table" {
+		if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+			return tableutil.RenderTableHTML(td)
+		}
+		return ""
+	}
+	text, _ := item["text"].(string)
+	return text
+}
+
 func pdfItemsToResult(filename string, items []map[string]any, outputFormat string, pageCount int) ParseResult {
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
@@ -26,12 +46,12 @@ func pdfItemsToResult(filename string, items []map[string]any, outputFormat stri
 		return ParseResult{
 			OutputFormat: "json",
 			File:         pdfFileMeta(filename, pageCount),
-			JSON:         items,
+			JSON:         MapsToItems(items),
 		}
 	case "markdown":
 		var b strings.Builder
 		for _, item := range items {
-			text, _ := item["text"].(string)
+			text := markdownItemText(item)
 			layout, _ := item["layout"].(string)
 			if strings.TrimSpace(text) == "" {
 				continue

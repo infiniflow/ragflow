@@ -234,13 +234,11 @@ func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	modelsURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s?api-version=%s",
-		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
+	url := fmt.Sprintf("%s?api-version=%s", modelsURL, azureAPIVersion)
 
 	body, err := a.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -304,5 +302,9 @@ func (a *AzureOpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (a *AzureOpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AzureOpenAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

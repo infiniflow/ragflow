@@ -21,11 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"sort"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -376,23 +378,35 @@ func (s *Service) GetSystemFingerprint(ctx context.Context) (map[string]interfac
 	return result, nil
 }
 
-func (s *Service) SetSystemLicense(ctx context.Context, license string) error {
-	return errors.New("'set system license' is not supported")
+func (s *Service) SetSystemLicense(ctx context.Context, licenseStr string) (map[string]interface{}, error) {
+	return nil, errors.New("'set system license' is not supported")
 }
 
-func (s *Service) ShowSystemLicense(ctx context.Context, check bool) (map[string]interface{}, error) {
+func (s *Service) ShowSystemLicense(ctx context.Context) (map[string]interface{}, error) {
 	var result map[string]interface{}
-	if check {
-		result = map[string]interface{}{
-			"command": "check_system_license",
-			"error":   "'check system license' is not supported",
-		}
+	result = map[string]interface{}{
+		"command": "show_system_license",
+		"error":   "'show system license' is not supported",
+	}
 
-	} else {
-		result = map[string]interface{}{
-			"command": "show_system_license",
-			"error":   "'show system license' is not supported",
-		}
+	return result, nil
+}
+
+func (s *Service) VerifyLicense(ctx context.Context, licenseStr string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	result = map[string]interface{}{
+		"command": "verify_license",
+		"error":   "'verify license' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) CheckSystemLicense(ctx context.Context) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	result = map[string]interface{}{
+		"command": "check_system_license",
+		"error":   "'check system license' is not supported",
 	}
 
 	return result, nil
@@ -585,14 +599,28 @@ func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[str
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
+	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: user.ID}, permission.ScopeQuery{
+		Kind: permission.ResourceKindDataset, Operation: permission.OperationRead,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		return nil, fmt.Errorf("failed to resolve user dataset permissions: %w", err)
 	}
 
-	datasets, err := s.kbDAO.GetAllByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user datasets: %w", err)
+	var datasets []*entity.Knowledgebase
+	if scope.Mode == permission.ScopeIDs {
+		datasets, err = s.kbDAO.GetByIDs(ctx, dao.DB, scope.ResourceIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user datasets: %w", err)
+		}
+		sort.SliceStable(datasets, func(i, j int) bool {
+			if datasets[i].CreateTime == nil {
+				return datasets[j].CreateTime != nil
+			}
+			if datasets[j].CreateTime == nil {
+				return false
+			}
+			return *datasets[i].CreateTime < *datasets[j].CreateTime
+		})
 	}
 
 	result := make([]map[string]interface{}, 0, len(datasets))

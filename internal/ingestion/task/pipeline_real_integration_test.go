@@ -85,7 +85,7 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            templateDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanUpCtx := context.Background()
@@ -210,7 +210,7 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            templateDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error

@@ -310,6 +310,29 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	}
 }
 
+func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{
+		"user_id":"other-user",
+		"title":"Agent",
+		"dsl":{}
+	}`))
+
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.CreateAgent(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("CreateAgent status = %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var created entity.UserCanvas
+	if err := db.Where("title = ?", "Agent").First(&created).Error; err != nil {
+		t.Fatalf("load created agent: %v", err)
+	}
+	if created.UserID != "user-1" {
+		t.Fatalf("created agent owner = %q, want authenticated user user-1", created.UserID)
+	}
+}
+
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
@@ -441,7 +464,7 @@ type fullFakeAgentService struct {
 func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
-func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+func (f *fullFakeAgentService) CreateAgent(context.Context, string, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
 	return nil, common.CodeArgumentError, nil
 }
 func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entity.UserCanvas, error) {
@@ -762,6 +785,7 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
 		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"hi back","reference":[]}`},
+		{Type: "error", MessageID: "msg-1", SessionID: "sess-1", Data: `{"message":"rerank model is unavailable","kind":"user"}`},
 		{Type: "done", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
@@ -775,8 +799,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		!strings.Contains(body, `"message_id":"msg-1"`) ||
 		!strings.Contains(body, `"task_id":"sess-1"`) ||
 		!strings.Contains(body, `"session_id":"sess-1"`) ||
-		!strings.Contains(body, `"content":"hi back"`) {
+		!strings.Contains(body, `"content":"hi back"`) ||
+		!strings.Contains(body, `"content":"rerank model is unavailable"`) {
 		t.Errorf("body should contain flat agent event with content, got %q", body)
+	}
+	if strings.Contains(body, `"code":500`) {
+		t.Errorf("runner error should be rendered as conversation content, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -898,7 +926,7 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
-func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
+func TestAgentChatCompletions_NonStreamingReturnsRunnerErrorAsMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -915,14 +943,19 @@ func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
 	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
 
 	var response struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
+		Code int `json:"code"`
+		Data struct {
+			Event string `json:"event"`
+			Data  struct {
+				Content string `json:"content"`
+			} `json:"data"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Code != int(common.CodeServerError) || response.Message != "Can't find variable: 'Agent:Deleted@content'" {
-		t.Fatalf("response = %+v, want runner error", response)
+	if response.Code != int(common.CodeSuccess) || response.Data.Event != "message" || response.Data.Data.Content != "Can't find variable: 'Agent:Deleted@content'" {
+		t.Fatalf("response = %+v, want runner error as conversation message", response)
 	}
 }
 

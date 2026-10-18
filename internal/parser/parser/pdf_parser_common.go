@@ -32,6 +32,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/utility"
 )
 
@@ -70,7 +71,8 @@ type PDFParser struct {
 	ParseMethod        string
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
-	// the filetype setup map and forwarded to the deepdoc ParserConfig.
+	// the filetype setup map. DeepDOC reads it through its ParserConfig, and
+	// plain_text skips the pages outside it.
 	Pages [][]int
 	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
 	// caller observes per-page parse progress (done/total). Only the deepdoc
@@ -80,12 +82,15 @@ type PDFParser struct {
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
+	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
 	PaddleOCRBaseURL                  string
 	PaddleOCRAPIKey                   string
 	PaddleOCRAlgorithm                string
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
+	DoclingDoOCR                      *bool
+	DoclingPDFBackend                 string
 	OpenDataLoaderAPIServer           string
 	OpenDataLoaderAPIKey              string
 	OpenDataLoaderTimeout             int
@@ -118,7 +123,7 @@ func NewPDFParser() *PDFParser {
 		LibType:                        "pdf_oxide",
 		ParseMethod:                    "deepdoc",
 		OutputFormat:                   "json",
-		MinerUBackend:                  "pipeline",
+		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
 		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
@@ -167,6 +172,9 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_backend"].(string); ok && v != "" {
 		p.MinerUBackend = v
 	}
+	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
+		p.MinerUServerURL = v
+	}
 	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
 		p.MinerUPollTimeout = time.Duration(v) * time.Second
 	}
@@ -190,6 +198,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["docling_api_key"].(string); ok {
 		p.DoclingAPIKey = v
+	}
+	if v, ok := setup["docling_do_ocr"].(bool); ok {
+		p.DoclingDoOCR = &v
+	}
+	if v, ok := setup["docling_pdf_backend"].(string); ok && v != "" {
+		p.DoclingPDFBackend = v
 	}
 	if v, ok := setup["opendataloader_apiserver"].(string); ok && v != "" {
 		p.OpenDataLoaderAPIServer = v
@@ -350,7 +364,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 		if len(data) == 0 {
 			return emptyPDFResult(filename)
 		}
-		items, pageCount, err := deepdocpdf.PlainText(data)
+		items, pageCount, err := deepdocpdf.PlainText(data, p.Pages)
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: plain_text: %w", err)}
 		}
@@ -366,7 +380,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	case "somark":
 		return parsePDFWithSoMark(filename, data, p)
 	case "tcadp":
-		return parsePDFWithTCADP(filename, data, p)
+		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
 	cfg := deepdoctype.DefaultParserConfig()
 	cfg.Pages = p.Pages
@@ -397,7 +411,7 @@ func emptyPDFResult(filename string) ParseResult {
 			"page_count": 0,
 			"outline":    []map[string]any{},
 		},
-		JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+		JSON: []DocItem{NewTextJSONItem("")},
 	}
 }
 
@@ -481,6 +495,7 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 			}
 		}
 		normalizePDFDocType(items[i])
+		projectPDFTable(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
 			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
@@ -492,7 +507,7 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 			"page_count": len(processed.PageHeight),
 			"outline":    outlinesToFileMeta(processed.Outlines),
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -918,6 +933,42 @@ func normalizePDFDocType(item map[string]any) {
 	}
 }
 
+// projectPDFTable upgrades a legacy pdf table item — one whose doc_type_kwd is
+// "table" and whose text is <table> markup — to the structured TableData
+// contract, so the downstream chunker reads Rows directly instead of
+// re-parsing HTML. ParseTableHTML + RenderTableHTML round-trips the legacy
+// htmlTableRE extraction exactly (entity/html unescaping is left to the
+// consumer), so dropping the original HTML string loses no information: the
+// markdown and search paths render it on demand from `table`. The pdf page
+// number (when present) is projected onto TableData.Page.
+//
+// The redundant HTML `text` is deleted once `table` is projected: keeping both
+// would duplicate every table's cell text in the parse result (the storage
+// cost that motivated moving to the structured contract). Non-table items, and
+// table items whose text is not <table> markup, are left untouched so their
+// `text` is preserved as a last-resort carrier.
+func projectPDFTable(item map[string]any) {
+	if item == nil {
+		return
+	}
+	if dt, _ := item["doc_type_kwd"].(string); dt != "table" {
+		return
+	}
+	text, _ := item["text"].(string)
+	if !isTableHTML(text) {
+		return
+	}
+	td, err := tableutil.ParseTableHTML(text)
+	if err != nil || td == nil {
+		return
+	}
+	if page := numberValue(item["page_number"]); page > 0 {
+		td.Page = int(page)
+	}
+	item["table"] = td
+	delete(item, "text")
+}
+
 // ExtractPDFPositions is the single source of truth for "does this parsed item
 // carry a usable PDF crop region". It returns the non-empty positions matrix
 // (under the canonical _pdf_positions key or the legacy positions key),
@@ -983,8 +1034,10 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", opts.outputFormat)}
 	}
 	for i := range res.JSON {
-		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
+		m := res.JSON[i].ToMap()
+		if img, _ := m["image"].(string); img != "" {
+			m["image"] = pdflayout.InlinePNGDataURL(img)
+			res.JSON[i] = DocItemFromMap(m)
 		}
 	}
 	return res

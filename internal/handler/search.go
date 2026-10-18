@@ -31,7 +31,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     *service.ModelProviderService
+	modelFactory  *service.ModelFactory
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -46,8 +46,8 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
-	h.streamLLM = streamLLM
+func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFactory, askService *service.AskService) {
+	h.modelFactory = modelFactory
 	h.askService = askService
 }
 
@@ -133,6 +133,9 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -217,9 +220,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's a permission error
-		if err.Error() == "has no permission for this operation" {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, false, "Has no permission for this operation.")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Not found error
@@ -276,9 +277,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Delete failed error
@@ -333,10 +332,11 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		switch errMsg {
-		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
@@ -392,8 +392,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	ctx := c.Request.Context()
 	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		if code == common.CodeServerError {
@@ -426,12 +425,12 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		writer.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		writer.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		writer.Write(c, sseError("model factory not configured"))
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {

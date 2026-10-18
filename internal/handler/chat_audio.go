@@ -30,7 +30,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
@@ -69,21 +68,21 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "TTS service not available")
 		return
 	}
 
-	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeTTS)
+	ttsModel, err := h.modelFactory.NewDefaultTTSModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	driver := target.Driver
-	modelName := target.ModelName
-	apiConfig := target.APIConfig
-	ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
 
+	modelName, providerName := "", ""
+	if info := ttsModel.Info(); info != nil {
+		modelName, providerName = info.Name, info.ProviderName
+	}
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
 		c.Header("Cache-Control", "no-cache")
@@ -176,11 +175,11 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	if !headerWritten {
 		if firstSynthErr != nil {
 			common.ErrorWithCode(c, common.CodeServerError,
-				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, driver.Name()))
+				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName))
 			return
 		}
 		common.ErrorWithCode(c, common.CodeServerError,
-			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, driver.Name()))
+			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
 	}
 }
 
@@ -218,7 +217,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "ASR service not available")
 		return
 	}
@@ -269,15 +268,11 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	asrModel, err := h.modelFactory.NewDefaultASRModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	driver := target.Driver
-	modelName := target.ModelName
-	apiConfig := target.APIConfig
-	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 ## Project Overview
 
-RAGFlow frontend is a React/TypeScript application built with UmiJS:
+RAGFlow frontend is a React/TypeScript application built with Vite:
 
 - **Components**: shadcn/ui
 - **Styling**: Tailwind CSS
@@ -24,6 +24,16 @@ npm run test       # Jest tests
 ```
 
 ## Development Conventions
+
+### Pre-commit Format Validation (Mandatory)
+
+Frontend code changes **must pass the lefthook format checks before every commit**. Do not rely on CI (`web-oxfmt` / `web-oxlint` jobs) to catch formatting after pushing.
+
+- Before staging or committing changed `.ts`/`.tsx`/`.js`/etc. files, run the formatter and linter locally:
+  - `npx oxfmt <changed files>` (or `npm run format`) to auto-fix formatting
+  - `npx oxlint` (or `npm run lint`) for lint issues
+- Verify with `npx oxfmt --check <changed files>` before `git commit`.
+- Let the lefthook pre-commit hook run to completion and fix everything it reports; never bypass hooks with `--no-verify`.
 
 ### Test File Placement
 
@@ -134,6 +144,7 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
   - Components: `EditableTextarea`, `RAGFlowFormItem`
   - Constants: `InitialMockData`, `DefaultPlaceholder`
 - Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
+- **Place domain constant lists in the page's `constant/` directory** (e.g. `pages/agent/constant/pipeline.tsx`) when they belong to an existing family of constants there (like `ChunkerOperators`, `SingleOperators`), instead of declaring them locally next to their consumer. Keeping related lists in one file makes their overlaps and differences visible and gives new entries a single obvious home.
 - **Name things semantically, not generically.** A name should say what the value holds or what the callback does, so call sites read naturally. Don't leak a generic underlying-primitive API into your own component's public props — rename at the wrapper boundary (e.g., a tabs wrapper exposes `activeTab` / `onTabChange`, mapped internally to Radix's `value` / `onValueChange`), and align with what callers already name the state. Same for variables and functions: `hiddenNodeIds` over `nodeIdSet`, `pickByBackend` over `resolveVariant`.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 

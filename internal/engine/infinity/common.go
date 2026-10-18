@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -376,9 +378,32 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 	Type    string
 	Default interface{}
 }) string {
+	return buildFilterFromConditionRaw(types.CompilationFilter(condition), tableColumns)
+}
+
+func buildFilterFromConditionRaw(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
 	var conditions []string
 
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			var children []string
+			for _, child := range types.FilterClauses(v) {
+				if expr := buildFilterFromConditionRaw(child, tableColumns); expr != "" {
+					children = append(children, "("+expr+")")
+				}
+			}
+			operator := " AND "
+			if k == "or" {
+				operator = " OR "
+			}
+			if len(children) > 0 {
+				conditions = append(conditions, joinBalanced(children, operator))
+			}
+			continue
+		}
 		if v == nil {
 			continue
 		}
@@ -388,14 +413,24 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 
 		// Handle must_not conditions -> NOT (...)
 		if k == "must_not" {
-			if mustNotMap, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range mustNotMap {
-					if kk == "exists" {
-						if existsField, ok := vv.(string); ok {
-							conditions = append(conditions, fmt.Sprintf("NOT (%s)", existsCondition(existsField, tableColumns)))
-						}
-					}
+			if m, ok := v.(map[string]interface{}); ok {
+				if expr := buildFilterFromConditionRaw(m, tableColumns); expr != "" {
+					conditions = append(conditions, "NOT ("+expr+")")
 				}
+			}
+			continue
+		}
+
+		if k == "exists" {
+			if field, ok := v.(string); ok {
+				conditions = append(conditions, existsCondition(field, tableColumns))
+			}
+			continue
+		}
+
+		if k == "knowledge_graph_kwd" {
+			if graphTypeCondition := buildGraphTypeFilterCondition(v); graphTypeCondition != "" {
+				conditions = append(conditions, graphTypeCondition)
 			}
 			continue
 		}
@@ -538,4 +573,55 @@ func buildChunkTableName(baseName, datasetID string) string {
 // buildMetadataTableName returns the metadata table name for a tenant
 func buildMetadataTableName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
+}
+
+// analyzerLanguages are the dataset languages that need their own RAG
+// analyzer. Infinity's analyzer folds their diacritics to ASCII and skips
+// stemming, so a dataset in one of them has to be indexed and queried through
+// "rag-<language>" instead of the default "rag-coarse"/"rag-fine" pair.
+//
+// They are the only two languages whose analyzer differs from the default:
+// every other name either selects a Snowball stemmer (english, dutch, german,
+// ... -- SNOWBALL_LANGUAGE_MAP in Infinity's rag_analyzer) or is a no-op
+// (Chinese, Japanese, Korean, ... use dictionary segmentation, not stemming).
+// Naming a stemmer here would switch it for every newly created dataset in
+// that language, which is a behaviour change of its own.
+var analyzerLanguages = map[string]struct{}{
+	"czech":  {},
+	"slovak": {},
+}
+
+// ragAnalyzer is the analyzer family whose behaviour the dataset language
+// changes. Fields indexed with "whitespace-#" or "rankfeatures" carry
+// keywords, not prose.
+const ragAnalyzer = "rag"
+
+// analyzerForLanguage returns the analyzer to index a dataset in language
+// with. Infinity analyzes a query with the analyzer of the fulltext index it
+// matches against, so the language has to be baked into the index when it is
+// created -- there is no per-query analyzer to pass. Chunk tables are
+// per-dataset, which is what makes a per-dataset analyzer possible.
+//
+// Languages outside analyzerLanguages, and analyzers outside the rag family,
+// are returned unchanged.
+func analyzerForLanguage(analyzer, language string) string {
+	key := strings.ToLower(strings.TrimSpace(language))
+	if _, ok := analyzerLanguages[key]; !ok {
+		return analyzer
+	}
+	if base, _, _ := strings.Cut(analyzer, "-"); base != ragAnalyzer {
+		return analyzer
+	}
+	return analyzer + "-" + key
+}
+
+// indexNamePartRe matches everything that cannot appear in an index name.
+var indexNamePartRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+// fulltextIndexName is the name of the fulltext index on fieldName for the
+// configured analyzer. Queries and filters name the index explicitly (see
+// convertMatchingField), so the name is the same in every language; the
+// dataset language only changes the analyzer behind it.
+func fulltextIndexName(fieldName, analyzer string) string {
+	return fmt.Sprintf("ft_%s_%s", indexNamePartRe.ReplaceAllString(fieldName, "_"), indexNamePartRe.ReplaceAllString(analyzer, "_"))
 }

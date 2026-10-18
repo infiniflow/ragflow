@@ -17,10 +17,96 @@
 package utility
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"ragflow/internal/common"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestPinnedHTTPClientRedirects(t *testing.T) {
+	var forbiddenRequests atomic.Int32
+	forbidden := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forbiddenRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer forbidden.Close()
+
+	public := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/external":
+			http.Redirect(w, r, forbidden.URL, http.StatusFound)
+		case "/same-host":
+			http.Redirect(w, r, "/ok", http.StatusFound)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer public.Close()
+
+	const hostname = "public.example"
+	client := PinnedHTTPClient(hostname, "127.0.0.1", time.Second)
+	baseURL := fmt.Sprintf("http://%s:%s", hostname, strings.TrimPrefix(public.URL, "http://127.0.0.1:"))
+
+	resp, err := client.Get(baseURL + "/external")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("redirect to unvalidated host unexpectedly succeeded")
+	}
+	if forbiddenRequests.Load() != 0 {
+		t.Fatalf("forbidden target received %d requests, want 0", forbiddenRequests.Load())
+	}
+
+	resp, err = client.Get(baseURL + "/same-host")
+	if err != nil {
+		t.Fatalf("same-host redirect: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("same-host redirect status=%d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestPinnedHTTPClientUnicodeHostname(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	const hostname = "bücher.example"
+	client := PinnedHTTPClient(hostname, "127.0.0.1", time.Second)
+	target := strings.Replace(server.URL, "127.0.0.1", hostname, 1)
+	resp, err := client.Get(target)
+	if err != nil {
+		t.Fatalf("pinned Unicode hostname: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestPinnedHTTPClientIPv6Literal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	const hostname = "2001:4860:4860::8888"
+	client := PinnedHTTPClient(hostname, "127.0.0.1", time.Second)
+	target := fmt.Sprintf("http://[%s]:%s", hostname, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	resp, err := client.Get(target)
+	if err != nil {
+		t.Fatalf("pinned IPv6 literal: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
 
 func TestAssertURLSafe(t *testing.T) {
 	orig := common.LookupHost

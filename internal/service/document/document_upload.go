@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -51,17 +52,6 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 
 	safeParent := utility.SanitizeFilename(parentPath)
 
-	// Don't silently disable dedupe protection: a transient lookup failure means
-	// the existing-name set is unknown, so fail rather than risk duplicates.
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
-	if err != nil {
-		return nil, []string{err.Error()}
-	}
-	taken := map[string]bool{}
-	for _, n := range names {
-		taken[n] = true
-	}
-
 	var results []map[string]interface{}
 	var errMsgs []string
 
@@ -73,7 +63,13 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		filename := uniqueUploadName(fh.Filename, taken)
+		filename, err := common.UniqueFileName(fh.Filename, 255, func(candidate string) (bool, error) {
+			return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
+		})
+		if err != nil {
+			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
+			continue
+		}
 
 		filetype := utility.FilenameType(filename)
 		if filetype == utility.FileTypeOTHER {
@@ -93,8 +89,8 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
-		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), parserID, parserConfig, "local", int64(len(blob)), blob)
+		selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
@@ -115,8 +111,6 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
 			continue
 		}
-		// Only reserve the name once write fully succeeds.
-		taken[filename] = true
 		results = append(results, docToRawMap(doc))
 	}
 
@@ -125,16 +119,12 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
 func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
-	// A transient lookup failure means the existing-name set is unknown; fail
-	// rather than write blind and risk a duplicate.
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
+	// Fall back to a numbered name when the requested one is already taken.
+	name, err := common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
-	}
-	for _, n := range names {
-		if n == name {
-			return nil, common.CodeDataError, fmt.Errorf("duplicated document name in the same dataset")
-		}
 	}
 
 	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
@@ -144,7 +134,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 
 	// Virtual documents have no file type to route on, so they keep the
 	// dataset parser (mirrors Python's _upload_empty_document).
-	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserID, kb.ParserConfig, "local", 0, nil)
+	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", service.CurrentSelection(kb.ParserID, kb.PipelineID), kb.ParserConfig, "local", 0, nil)
 	if err = s.InsertDocument(doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -183,7 +173,7 @@ func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, pa
 	}
 	loc := ""
 	folder := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -214,7 +204,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	if doc.Location != nil {
 		loc = *doc.Location
 	}
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   kbFolderID,
@@ -231,7 +221,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	}
 	docID := doc.ID
 	if err := s.file2DocumentDAO.Create(ctx, dao.DB, &entity.File2Document{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}); err != nil {
@@ -252,15 +242,6 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	taken := map[string]bool{}
-	for _, n := range names {
-		taken[n] = true
-	}
-
 	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, maxUploadDocSize)
 	if err != nil {
 		return nil, common.CodeDataError, err
@@ -271,7 +252,12 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	}
 	filename := normalizeWebDocumentName(name, contentType, blob)
 	filename, _, blob = utility.NormalizeUploadInfoContent(filename, contentType, blob)
-	filename = uniqueUploadName(filename, taken)
+	filename, err = common.UniqueFileName(filename, 255, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
+	})
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 
 	filetype := utility.FilenameType(filename)
 	if filetype == utility.FileTypeOTHER {
@@ -286,8 +272,8 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
-	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), parserID, parserConfig, "web", int64(len(blob)), blob)
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
+	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "web", int64(len(blob)), blob)
 	if err = s.InsertDocument(doc); err != nil {
 		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {
@@ -323,25 +309,23 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 }
 
 // newDatasetDocument builds a Document row for an upload, deriving suffix and
-// content hash. parserID/parserConfig are resolved by the caller (see
+// content hash. selection/parserConfig are resolved by the caller (see
 // resolveDocumentParser); blob may be nil for the empty/virtual document.
-func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype, parserID string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
-	docID := utility.GenerateToken()
+func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, selection *service.ParserSelection, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
+	docID := common.GenerateToken()
 	parserConfig = cloneParserConfigForDocument(parserConfig)
 	status := "1"
 	suffix := ""
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
 	}
-	if kb.PipelineID != nil {
-		parserID = "" // canvas pipeline mode — parser_id not applicable
-	}
+	parserID, pipelineID := parserSelectionColumns(selection)
 	loc := location
 	doc := &entity.Document{
 		ID:           docID,
 		KbID:         kb.ID,
 		ParserID:     parserID,
-		PipelineID:   kb.PipelineID,
+		PipelineID:   pipelineID,
 		ParserConfig: parserConfig,
 		CreatedBy:    tenantID,
 		Type:         filetype,
@@ -397,24 +381,6 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 		m["content_hash"] = *doc.ContentHash
 	}
 	return m
-}
-
-// uniqueUploadName appends a numeric suffix until the name is free, mirroring
-// Python duplicate_name.
-func uniqueUploadName(name string, taken map[string]bool) string {
-	if !taken[name] {
-		return name
-	}
-	base, ext := name, ""
-	if i := strings.LastIndex(name, "."); i >= 0 {
-		base, ext = name[:i], name[i:]
-	}
-	for i := 1; ; i++ {
-		candidate := fmt.Sprintf("%s(%d)%s", base, i, ext)
-		if !taken[candidate] {
-			return candidate
-		}
-	}
 }
 
 func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {

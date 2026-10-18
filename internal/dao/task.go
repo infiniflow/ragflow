@@ -49,7 +49,7 @@ func (dao *TaskDAO) CreateMany(ctx context.Context, db *gorm.DB, tasks []*entity
 // GetByID gets task by ID
 func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Task, error) {
 	var task entity.Task
-	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Take(&task, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +91,6 @@ func (dao *TaskDAO) DeleteByDocIDs(ctx context.Context, db *gorm.DB, docIDs []st
 		return 0, nil
 	}
 	result := db.WithContext(ctx).Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.Task{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteByTenantID deletes all tasks by tenant ID (hard delete via document join)
-func (dao *TaskDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
 

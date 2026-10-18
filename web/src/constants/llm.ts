@@ -110,6 +110,8 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
+  DemonRoute = 'Demon Route',
   YAPI = 'Y-API',
 }
 
@@ -204,6 +206,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
   [LLMFactory.YAPI]: 'y-api',
 };
 
@@ -233,6 +236,7 @@ export const APIMapUrl = {
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -254,7 +258,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',

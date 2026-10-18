@@ -26,11 +26,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/aws/smithy-go/encoding/httpbinding"
 	"go.uber.org/zap"
 )
 
@@ -82,15 +84,16 @@ func (s *S3Storage) connect(ctx context.Context) error {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Create S3 client with custom endpoint if provided
-	clientOpts := []func(*s3.Options){}
-	if s.config.EndpointURL != "" {
-		clientOpts = append(clientOpts, func(o *s3.Options) {
+	s.client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if s.config.EndpointURL != "" {
 			o.BaseEndpoint = aws.String(s.config.EndpointURL)
-		})
-	}
-
-	s.client = s3.NewFromConfig(cfg, clientOpts...)
+		}
+		o.UsePathStyle = s.config.AddressingStyle == "path"
+		if s.config.SignatureVersion == "s3" {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
+		}
+	})
 	return nil
 }
 
@@ -491,7 +494,7 @@ func (s *S3Storage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, de
 	srcBucket, srcPath = s.resolveBucketAndPath(srcBucket, srcPath)
 	destBucket, destPath = s.resolveBucketAndPath(destBucket, destPath)
 
-	copySource := fmt.Sprintf("%s/%s", srcBucket, srcPath)
+	copySource := httpbinding.EscapePath(fmt.Sprintf("%s/%s", srcBucket, srcPath), false)
 
 	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(destBucket),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -213,6 +215,9 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`},
 		{name: "knn candidates below top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":8,"knn_num_candidates":7}`},
 		{name: "invalid threshold", body: `{"question":"hello","dataset_ids":["ds-1"],"similarity_threshold":1.1}`},
+		{name: "invalid compilation scope", body: `{"question":"hello","dataset_ids":["ds-1"],"knowledge_compilation_scope":"doc"}`},
+		{name: "compilation scope is an array", body: `{"question":"hello","dataset_ids":["ds-1"],"knowledge_compilation_scope":["dataset"]}`},
+		{name: "compilation scope is non-string", body: `{"question":"hello","dataset_ids":["ds-1"],"knowledge_compilation_scope":1}`},
 	}
 
 	for _, tt := range tests {
@@ -253,6 +258,74 @@ func TestValidateSearchParamsKNNBounds(t *testing.T) {
 	}
 }
 
+func TestDatasetsHandlerKnowledgeCompilationScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, single := range []bool{false, true} {
+		for _, tt := range []struct {
+			scope   string
+			invalid bool
+		}{
+			{scope: `"dataset"`},
+			{scope: `"document"`},
+			{scope: `"all"`},
+			{scope: `""`},
+			{scope: `null`},
+			{scope: ""},
+			{scope: `"invalid"`, invalid: true},
+			{scope: `["dataset"]`, invalid: true},
+			{scope: `[]`, invalid: true},
+			{scope: `1`, invalid: true},
+			{scope: `{}`, invalid: true},
+		} {
+			t.Run(fmt.Sprintf("single=%v/scope=%s", single, tt.scope), func(t *testing.T) {
+				fakeSingle := &fakeSearchDatasetService{resp: &service.SearchDatasetsResponse{}}
+				fakeMulti := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{}}
+				h := &DatasetsHandler{searchDatasetService: fakeSingle, searchDatasetsService: fakeMulti}
+				rec := httptest.NewRecorder()
+				body := `{"question":"hello","dataset_ids":["ds-1"],"include_knowledge_compilation":true`
+				if tt.scope != "" {
+					body += `,"knowledge_compilation_scope":` + tt.scope
+				}
+				body += `}`
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = req
+				c.Set("user", &entity.User{ID: "user-1"})
+				if single {
+					c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+					h.SearchDataset(c)
+				} else {
+					h.SearchDatasets(c)
+				}
+				response := decodeSearchResponse(t, rec)
+				if tt.invalid {
+					if response["code"] != float64(common.CodeArgumentError) || fakeSingle.req != nil || fakeMulti.req != nil {
+						t.Fatalf("invalid scope reached service or returned wrong response: %v", response)
+					}
+					return
+				}
+				if response["code"] != float64(common.CodeSuccess) {
+					t.Fatalf("response=%v", response)
+				}
+				got := fakeMulti.req
+				if single {
+					got = fakeSingle.req.ToSearchDatasetsRequest("ds-1")
+				}
+				var want string
+				if tt.scope != "" {
+					if err := json.Unmarshal([]byte(tt.scope), &want); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if got == nil || got.KnowledgeCompilationScope != want || got.IncludeCompiledChunks == nil || !*got.IncludeCompiledChunks {
+					t.Fatalf("request=%#v want scope=%q and compilation enabled", got, want)
+				}
+			})
+		}
+	}
+}
+
 func TestDatasetsHandlerSearchDatasetsPropagatesServiceError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeSearchDatasetsService{err: errors.New("boom")}
@@ -273,6 +346,26 @@ func TestDatasetsHandlerSearchDatasetsPropagatesServiceError(t *testing.T) {
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeDataError) || body["message"] != "boom" {
 		t.Fatalf("response=%v want code=%d message=boom", body, common.CodeDataError)
+	}
+}
+
+func TestDatasetsHandlerSearchDatasetsNormalizesPermissionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{err: permission.ErrPermissionDenied}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.SearchDatasets(c)
+
+	body := decodeSearchResponse(t, rec)
+	if body["code"] != float64(common.CodeForbidden) || body["message"] != "Permission denied" {
+		t.Fatalf("response=%v want forbidden permission error", body)
 	}
 }
 

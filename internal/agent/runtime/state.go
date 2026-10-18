@@ -114,6 +114,30 @@ func (s *CanvasState) EnsureSysDate() {
 	s.Sys["date"] = time.Now().Format("2006-01-02 15:04:05")
 }
 
+// SeedIdentity writes the trusted caller identity into Sys. Both the normal
+// run bootstrap (service layer) and the single-component debug endpoint
+// (handler layer) call it so components depending on sys.user_id /
+// sys.tenant_id — in particular the retrieval authorization check — see the
+// same identity contract. Empty values are skipped so a missing caller
+// tenant does not materialize an empty-string key. The caller owns the
+// source of the values; request-supplied fields must never reach here.
+func (s *CanvasState) SeedIdentity(userID, tenantID string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	if userID != "" {
+		s.Sys["user_id"] = userID
+	}
+	if tenantID != "" {
+		s.Sys["tenant_id"] = tenantID
+	}
+}
+
 // init registers CanvasState with eino's internal type registry so
 // that eino's StatePre/Post handler chain (which uses its own
 // InternalSerializer, NOT stdlib encoding/json) recognises the
@@ -926,7 +950,7 @@ func getVarLocked(s *CanvasState, ref string) (any, error) {
 		}
 		return dotTraverse(outputs, tail), nil
 	default:
-		return nil, fmt.Errorf("canvas: invalid variable reference %q", ref)
+		return nil, fmt.Errorf("agent: invalid variable reference %q", ref)
 	}
 }
 

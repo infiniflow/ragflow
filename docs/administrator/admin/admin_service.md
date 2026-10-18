@@ -61,7 +61,7 @@ If no superuser exists, this option currently creates `admin@ragflow.io` with th
 
 To change the Admin listening port, set `admin.http_port` in the server configuration.
 
-For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. When changing the Admin port, also update the CLI connection address and the health-check URLs below.
+For processes on another host, set `admin.host` and `admin.http_port` in their server configuration to the reachable Admin address and port. When changing the Admin port, also update the CLI connection address and the health check URLs below.
 
 ## Start with Docker Compose
 
@@ -92,7 +92,7 @@ curl -f http://127.0.0.1:9381/healthz
 The API server, ingestor, and syncer periodically send heartbeat reports to Admin. Admin keeps their latest reports in its runtime service registry; it does not register itself there. After those processes start, launch the Go CLI and log in as an administrator. If you changed the Admin port or are connecting from another host, add `--host <host:port>` to the CLI command:
 
 ```bash
-./bin/ragflow-cli --admin
+ragflow-cli --admin
 ```
 
 ```text

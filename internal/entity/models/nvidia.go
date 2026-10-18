@@ -85,7 +85,7 @@ func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, su
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
+	return joinURL(resolvedBaseURL, suffix), nil
 }
 
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -753,5 +753,9 @@ func (n *NvidiaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (n *NvidiaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *NvidiaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
