@@ -1490,6 +1490,24 @@ func TestAgent_DedupeToolDefinitions(t *testing.T) {
 	if !names["search_archa_data"] || !names["search_archa_data_2"] {
 		t.Fatalf("expected base name and renamed duplicate, got %v", names)
 	}
+
+	// Two retrieval instances with the same dataset but different top_n are
+	// distinct configurations and must both be kept.
+	p.ToolParams["search_my_dateset"]["kb_ids"] = []any{"kb-a"}
+	p.ToolParams["search_my_dateset"]["top_n"] = float64(25)
+	tools, err = buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("different top_n: len(tools) = %d, want 2", len(tools))
+	}
+
+	// Renamed tools must remain usable by Eino's ToolsNode; wrapping them
+	// in a type that only implements BaseTool breaks invocation.
+	if _, err := compose.NewToolNode(t.Context(), &compose.ToolsNodeConfig{Tools: tools}); err != nil {
+		t.Fatalf("NewToolNode with renamed tools: %v", err)
+	}
 }
 
 // TestAgent_SubAgentNameCollisionRenamed verifies that two sub-agents whose

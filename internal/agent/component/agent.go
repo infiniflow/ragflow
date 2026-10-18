@@ -822,7 +822,7 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		toolNames[name] = struct{}{}
 		toolInfoByName[name] = infoJSON
 		if name != info.Name {
-			deduped = append(deduped, &renamedTool{BaseTool: tool, name: name})
+			deduped = append(deduped, wrapRenamedTool(tool, name))
 		} else {
 			deduped = append(deduped, tool)
 		}
@@ -882,15 +882,72 @@ func indexedToolBaseName(name string) (string, bool) {
 	return name[:i], true
 }
 
-// renamedTool wraps a BaseTool so a duplicate-name instance can be exposed
-// to the model under a unique name while reusing the same invocation logic.
+// wrapRenamedTool returns a tool whose Info advertises the assigned unique
+// name while preserving all underlying Eino execution interfaces
+// (Invokable, Streamable, EnhancedInvokable, EnhancedStreamable).
+func wrapRenamedTool(tool einotool.BaseTool, name string) einotool.BaseTool {
+	if t, ok := tool.(einotool.EnhancedStreamableTool); ok {
+		return &renamedEnhancedStreamableTool{EnhancedStreamableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.EnhancedInvokableTool); ok {
+		return &renamedEnhancedInvokableTool{EnhancedInvokableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.StreamableTool); ok {
+		return &renamedStreamableTool{StreamableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.InvokableTool); ok {
+		return &renamedInvokableTool{InvokableTool: t, name: name}
+	}
+	return &renamedTool{BaseTool: tool, name: name}
+}
+
+type renamedInvokableTool struct {
+	einotool.InvokableTool
+	name string
+}
+
+func (t *renamedInvokableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.InvokableTool, t.name)
+}
+
+type renamedStreamableTool struct {
+	einotool.StreamableTool
+	name string
+}
+
+func (t *renamedStreamableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.StreamableTool, t.name)
+}
+
+type renamedEnhancedInvokableTool struct {
+	einotool.EnhancedInvokableTool
+	name string
+}
+
+func (t *renamedEnhancedInvokableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.EnhancedInvokableTool, t.name)
+}
+
+type renamedEnhancedStreamableTool struct {
+	einotool.EnhancedStreamableTool
+	name string
+}
+
+func (t *renamedEnhancedStreamableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.EnhancedStreamableTool, t.name)
+}
+
 type renamedTool struct {
 	einotool.BaseTool
 	name string
 }
 
 func (t *renamedTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
-	info, err := t.BaseTool.Info(ctx)
+	return renamedToolInfo(ctx, t.BaseTool, t.name)
+}
+
+func renamedToolInfo(ctx context.Context, tool einotool.BaseTool, name string) (*schema.ToolInfo, error) {
+	info, err := tool.Info(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -898,7 +955,7 @@ func (t *renamedTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
 		return nil, nil
 	}
 	renamed := *info
-	renamed.Name = t.name
+	renamed.Name = name
 	return &renamed, nil
 }
 
