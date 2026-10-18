@@ -82,6 +82,10 @@ func maybeDispatchPDFVision(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	layoutLower := strings.ToLower(strings.TrimSpace(layout))
 
+	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
+		return result, true, err
+	}
+
 	monkeySelector := layout
 	if strings.TrimSpace(monkeySelector) == "" {
 		monkeySelector = method
