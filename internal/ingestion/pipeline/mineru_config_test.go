@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/ingestion/component"
 )
 
+// TestBuildParserConfigPreservesMinerUExtractionSwitches verifies that cleaning,
+// serialization and Parser construction retain independent PDF choices.
 func TestBuildParserConfigPreservesMinerUExtractionSwitches(t *testing.T) {
 	for _, nested := range []bool{false, true} {
 		for _, formula := range []any{nil, true, false} {

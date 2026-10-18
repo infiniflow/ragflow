@@ -15,6 +15,7 @@ import { DynamicPageRange } from './dynamic-page-range';
 import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
+/** Renders PDF parsing controls shared by canvas and dataset configuration. */
 export function PdfFormFields({ prefix }: CommonProps) {
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
   const parseMethod = useWatch({

@@ -204,6 +204,7 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
+/** Saves normalized parser setups without replacing explicit MinerU choices. */
 export function transformParserParams(params: ParserFormSchemaType) {
   // Save global vision options from the normalized form alongside the
   // per-family setups, including nodes whose form has not been opened.

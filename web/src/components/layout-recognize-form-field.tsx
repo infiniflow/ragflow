@@ -43,6 +43,7 @@ export const enum ParseDocumentType {
   MonkeyOCRv2 = 'MonkeyOCRv2',
 }
 
+/** Selects a parser model and scopes provider-specific options to its form path. */
 export function LayoutRecognizeFormField({
   name = 'parser_config.layout_recognize',
   horizontal = true,

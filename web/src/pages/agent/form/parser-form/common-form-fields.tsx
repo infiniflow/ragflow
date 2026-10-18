@@ -62,6 +62,7 @@ export function OutputFormatFormField({
   );
 }
 
+/** Uses owner-tenant models, enabling MinerU options only for PDF callers. */
 export function ParserMethodFormField({
   prefix,
   optionsWithoutLLM,

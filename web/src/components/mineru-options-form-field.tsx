@@ -44,6 +44,7 @@ const LanguageOptions = buildOptions([
   'Hindi',
 ]);
 
+/** Edits MinerU PDF options under the parent-selected setup, retaining false. */
 export function MinerUOptionsFormField({ namePrefix }: { namePrefix: string }) {
   const { t } = useTranslation();
   const buildName = (field: string) =>

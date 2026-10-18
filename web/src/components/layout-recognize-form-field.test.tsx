@@ -44,6 +44,7 @@ jest.mock('./paddleocr-options-form-field', () => ({
   PaddleOCROptionsFormField: () => null,
 }));
 
+/** Hosts real options in either the PDF setup or default parser form path. */
 function Fixture({
   method,
   showOptions = true,
