@@ -133,6 +133,24 @@ func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	if len(r.defaults.DatasetIDs) > 0 {
 		extra["dataset_ids"] = r.defaults.DatasetIDs
 	}
+	if r.defaults.TopN > 0 {
+		extra["top_n"] = r.defaults.TopN
+	}
+	if r.defaults.RerankCandidatesCount > 0 {
+		extra["rerank_candidates_count"] = r.defaults.RerankCandidatesCount
+	}
+	if r.defaults.TopK > 0 {
+		extra["top_k"] = r.defaults.TopK
+	}
+	if r.defaults.KeywordsSimilarityWeight != nil {
+		extra["keywords_similarity_weight"] = *r.defaults.KeywordsSimilarityWeight
+	}
+	if r.defaults.SimilarityThreshold != nil {
+		extra["similarity_threshold"] = *r.defaults.SimilarityThreshold
+	}
+	if r.defaults.RerankID != "" {
+		extra["rerank_id"] = r.defaults.RerankID
+	}
 	return &schema.ToolInfo{
 		Name:  r.name,
 		Desc:  r.desc,
