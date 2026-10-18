@@ -1444,6 +1444,8 @@ func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
 		if p.Temperature == nil || *p.Temperature != 0.2 || p.TopP == nil || *p.TopP != 0.75 {
 			t.Fatal("enabled or unflagged temperature/top_p lost")
 		}
+	}
+}
 
 func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
 	p := AgentParam{
