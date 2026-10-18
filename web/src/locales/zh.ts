@@ -977,6 +977,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       newChat: '新建聊天',
       send: '发送',
       sendPlaceholder: '给助理发送消息...',
+      scrollToBottom: '滚动到底部',
       chatConfiguration: '聊天配置',
       chatConfigurationDescription: '为知识库配置知识问答聊天！ 💕',
       assistantName: '助理姓名',

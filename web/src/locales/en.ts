@@ -1079,6 +1079,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       newChat: 'New chat',
       send: 'Send',
       sendPlaceholder: 'Message the assistant...',
+      scrollToBottom: 'Scroll to bottom',
       chatConfiguration: 'Chat configuration',
       chatConfigurationDescription:
         ' Set up a chat assistant for your selected datasets (datasets) here! 💕',

@@ -32,7 +32,7 @@ import { buildMessageUuidWithRole } from '@/utils/chat';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
-import { ListCheck, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ListCheck, Plus, Trash2 } from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -106,8 +106,13 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { patchChat } = usePatchChat();
 
-  const { derivedMessages, handlePressEnter, sendLoading } =
-    useSendSingleMessage({
+  const {
+    derivedMessages,
+    handlePressEnter,
+    sendLoading,
+    scrollToBottom,
+    isAtBottom,
+  } = useSendSingleMessage({
       controller,
       value,
       setValue,
@@ -158,6 +163,10 @@ const ChatCard = forwardRef(function ChatCard(
   const handleRemoveChatBox = useCallback(() => {
     removeChatBox(id);
   }, [id, removeChatBox]);
+
+  const handleScrollToBottom = useCallback(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
 
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
@@ -256,7 +265,7 @@ const ChatCard = forwardRef(function ChatCard(
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 min-h-0">
-        <div ref={messageContainerRef} className="h-full overflow-auto">
+        <div ref={messageContainerRef} className="relative h-full overflow-auto">
           <div className="w-full">
             {derivedMessages?.map((message, i) => {
               return (
@@ -283,6 +292,17 @@ const ChatCard = forwardRef(function ChatCard(
             })}
           </div>
           <div ref={scrollRef} />
+          {!isAtBottom && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="absolute bottom-4 right-4 z-10 gap-1 shadow-md"
+              onClick={handleScrollToBottom}
+            >
+              <ArrowDown className="h-4 w-4" />
+              {t('chat.scrollToBottom')}
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

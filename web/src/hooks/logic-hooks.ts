@@ -446,7 +446,7 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
 // are rounded. `scrollToBottom` therefore lands a sub-pixel *below* the position
 // a native clamp had produced, which reads as a decreasing `scrollTop`. Require a
 // real gesture's worth of movement so that jitter is not mistaken for one.
-const UserScrollUpThreshold = 2;
+const UserScrollUpThreshold = 40;
 
 export const useScrollToBottom = (
   messages?: unknown,
@@ -586,7 +586,7 @@ export const useSelectDerivedMessages = () => {
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  const { scrollRef, scrollToBottom } = useScrollToBottom(
+  const { scrollRef, scrollToBottom, isAtBottom } = useScrollToBottom(
     derivedMessages,
     messageContainerRef,
   );
@@ -781,6 +781,7 @@ export const useSelectDerivedMessages = () => {
     removeMessagesAfterCurrentMessage,
     removeAllMessages,
     scrollToBottom,
+    isAtBottom,
     removeAllMessagesExceptFirst,
     addPrologue,
   };
