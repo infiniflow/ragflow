@@ -76,9 +76,9 @@ func TestRetryPredicatesMatchEmbeddedErrorMarkers(t *testing.T) {
 
 func TestRetryExecutorRetriesEmbeddedNetworkError(t *testing.T) {
 	policy := &types.RetryPolicy{
-		MaxAttempts:     2,
-		BackoffFactor:   1,
-		RetryOn:         RetryPredicates.NetworkErrors,
+		MaxAttempts:   2,
+		BackoffFactor: 1,
+		RetryOn:       RetryPredicates.NetworkErrors,
 	}
 	executor := NewRetryExecutor(policy)
 	attempts := 0
