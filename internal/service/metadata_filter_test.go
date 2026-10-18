@@ -43,6 +43,8 @@ func TestRenderMetaFilterTemplate(t *testing.T) {
 	}
 	if strings.Contains(prompt, "- Operator constraints:") {
 		t.Error("rendered prompt contains operator constraints when none were provided")
+	}
+}
 
 func TestApplyMetaDataFilterWithDiagnosticsGenerationErrors(t *testing.T) {
 	for _, method := range []string{"auto", "semi_auto"} {
