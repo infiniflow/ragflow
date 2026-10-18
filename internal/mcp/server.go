@@ -83,7 +83,9 @@ func newServer(ctx context.Context, connector Connector) *sdk.Server {
 					return nil, err
 				}
 				// Descriptions are built for this request, never stored on a shared server.
+				// They include this caller's datasets and chats, so the result is not shareable.
 				result := &sdk.ListToolsResult{Tools: make([]*sdk.Tool, len(tools))}
+				result.CacheScope = "private"
 				for i, tool := range tools {
 					copy := *tool
 					if i == 2 {

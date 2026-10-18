@@ -1,3 +1,16 @@
+ARG TARGETARCH
+
+# Multi-arch runner base images. The amd64 build reuses the published
+# infiniflow/github_action_runner:latest; the arm64 build uses
+# myfbee/github-runner:arm64 (built from the github-runner-dockerfile for
+# linux/arm64). Selecting via TARGETARCH lets a single Dockerfile build natively
+# on either platform (or as one multi-arch image with
+# --platform linux/amd64,linux/arm64). BuildKit only resolves the alias stage
+# that matches the target platform, so a single-arch build never requires both
+# runner images to be present.
+FROM infiniflow/github_action_runner:latest      AS runner-amd64
+FROM infiniflow/github_action_runner:latest-arm64 AS runner-arm64
+
 # base stage
 FROM ubuntu:24.04 AS base
 USER root
@@ -136,7 +149,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 # ── web-builder stage ──
 
-FROM infiniflow/github_action_runner:latest AS web-builder
+FROM runner-${TARGETARCH} AS web-builder
 USER root
 
 WORKDIR /ragflow
@@ -164,7 +177,7 @@ RUN --mount=type=bind,source=.git,target=/ragflow/.git \
 
 
 # ── go-builder stage ──
-FROM infiniflow/github_action_runner:latest AS go-builder
+FROM runner-${TARGETARCH} AS go-builder
 USER root
 SHELL ["/bin/bash", "-c"]
 WORKDIR /ragflow
@@ -179,46 +192,51 @@ WORKDIR /ragflow
 # runner shares the host Docker daemon, so the mount persists across jobs/replicas).
 ENV GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild
 
+# GOPROXY is overridable via --build-arg. CI passes a proxy that is reliable
+# from GitHub runners (e.g. proxy.golang.org); the default keeps goproxy.cn
+# first for developers behind the GFW. Both `go mod download` below and the
+# `go build` inside build.sh inherit this ENV.
+ARG GOPROXY
+ENV GOPROXY="${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}"
+
 # Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
 # copy only the manifests, download the full module graph into a persistent
 # BuildKit cache mount, then bring in source. GOMODCACHE/GOCACHE are pinned to the
 # mounted paths so `go mod download` and `build.sh --go` share the same cache and
 # dependencies are never re-fetched when only source changes.
 COPY go.mod go.sum ./
+# Retry the module download: Go module proxies occasionally drop the HTTP/2
+# connection (GOAWAY) mid-transfer, which is transient and recovers on retry.
+# Exit nonzero if all attempts fail, so the build fails fast instead of
+# continuing with an incomplete module cache (which would surface later in
+# build.sh as a confusing missing-dependency error).
 RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
-    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-    go mod download
+    ok=0; \
+    for i in 1 2 3 4 5; do \
+      if go mod download; then ok=1; break; fi; \
+      echo "go mod download attempt $i failed, retrying in 5s" >&2; \
+      [ "$i" -lt 5 ] && sleep 5; \
+    done; \
+    if [ "$ok" -ne 1 ]; then echo "go mod download failed after 5 attempts" >&2; exit 1; fi
 
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
 COPY Dockerfile ./
 
-# ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
-# static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).
-# The github_action_runner base image pre-bakes them at /opt/ragflow-native-libs,
-# so we copy them into the expected user-cache path before building. These .a files
-# are consumed at link time only; they do NOT enter the final image (only the
-# compiled /ragflow/bin is COPY --from=go-builder). Without this, ORT linking is
-# silently skipped and the binary fails at startup with
-# "no in-process DeepDoc backend serving" (dlopen(NULL)/dlsym can't find OrtGetApiBase).
-# ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
+# ONNX Runtime static archives: build.sh's _seed_from_system copies the ORT
+# static libs from the runner's pre-baked /opt/ragflow-native-libs/onnxruntime
+# (arch-correct per TARGETARCH) into the user-cache path ONNXRUNTIME_STATIC_PREFIX
+# before linking. These .a files are consumed at link time only and do NOT enter
+# the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# The Dockerfile no longer pre-copies them here: pre-creating the user-cache dir
+# would make _seed_from_system treat it as "already cached" and skip the copy on
+# the non-matching architecture (e.g. the arm64 runner has no x64 dir), so we
+# rely on build.sh to seed ORT for both amd64 and arm64. ARG ORT_VERSION stays
+# because build.sh's check_ort_version_consistency greps it to cross-check the
+# pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0
-RUN set -eux; \
-    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime/static_lib"; \
-    _src="/opt/ragflow-native-libs/onnxruntime/static_lib"; \
-    _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-"${ORT_VERSION}"-* 2>/dev/null | head -1)"; \
-    if [ -z "${_v}" ]; then \
-      _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-* 2>/dev/null | head -1)"; \
-    fi; \
-    if [ -n "${_v}" ]; then \
-      cp -r "${_v}" "${HOME}/ragflow-native-libs/onnxruntime/static_lib/"; \
-    else \
-      echo "Warning: no pre-baked onnxruntime static_lib in runner image; build.sh will attempt download" >&2; \
-    fi; \
-    find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
 
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp

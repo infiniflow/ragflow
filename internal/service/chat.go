@@ -29,6 +29,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 )
 
 var DefaultRerankModels = map[string]struct{}{
@@ -1022,10 +1023,10 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 
 	embeddingModelIDs := make([]string, 0, len(kbs))
 	seenEmbedIDs := make(map[string]struct{})
-	embdNameCache := make(map[string]string)
+	embdNames := transaction.NewEmbeddingBaseNameResolver(s.kbDAO.EmbeddingBaseName)
 	for _, kb := range kbs {
 		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
-		seenEmbedIDs[s.kbDAO.EmbeddingBaseName(ctx, dao.DB, kb, embdNameCache)] = struct{}{}
+		seenEmbedIDs[embdNames.Resolve(ctx, dao.DB, kb)] = struct{}{}
 	}
 	if len(seenEmbedIDs) > 1 {
 		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)

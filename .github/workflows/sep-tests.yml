@@ -687,8 +687,9 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Infinity
+      - name: Run search API tests against Infinity
         run: |
+          set -euo pipefail
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
@@ -704,7 +705,20 @@ jobs:
             sudo docker logs ${RAGFLOW_CONTAINER}
             exit 1
           fi
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
+          source .venv/bin/activate
+          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee infinity_search_api_test.log
+
+      - name: Run Go API tests against Infinity
+        # Search fixtures above configure the default models used by the Go suite.
+        # Go API tests have no priority filtering; run the full suite every time.
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee infinity_go_api_test.log
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -1251,8 +1265,9 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Elasticsearch
+      - name: Run search API tests against Elasticsearch
         run: |
+          set -euo pipefail
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
@@ -1268,7 +1283,20 @@ jobs:
             sudo docker logs ${RAGFLOW_CONTAINER}
             exit 1
           fi
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
+          source .venv/bin/activate
+          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee es_search_api_test.log
+
+      - name: Run Go API tests against Elasticsearch
+        # Search fixtures above configure the default models used by the Go suite.
+        # Go API tests have no priority filtering; run the full suite every time.
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee es_go_api_test.log
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
@@ -1325,7 +1353,7 @@ jobs:
   ragflow_native_backend:
     name: ragflow_native_backend
     # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
-    # server build + Python RESTFUL correctness runs). The DeepDoc native
+    # server build + Go API and Python search correctness runs). The DeepDoc native
     # backend is doc-engine-independent, so running it ONCE here — instead of
     # duplicated (and memory-competing) inside each go job — removes the
     # redundant second -race pass and the concurrent -race OOM risk. Running it

@@ -25,9 +25,13 @@
 //   - CONCURRENCY: auto extraction tasks (keywords, questions, summary, metadata)
 //     run concurrently across chunks via a bounded worker pool (extractorPool).
 //
-//   - TIMEOUT / ELAPSED: the call is wrapped in
-//     runtime.WithTimeout(600s) and runtime.TrackElapsed so the
-//     upstream pipeline gets _created_time / _elapsed_time stamps.
+//   - TIMEOUT / ELAPSED: each LLM call carries its own budget
+//     (extractorChatTimeout) instead of one node-level deadline, so the
+//     total work scales with the chunk count — a 3000-chunk document
+//     legitimately needs longer than a 3-chunk one. A call that exceeds
+//     its budget skips its chunk instead of failing the document; task
+//     cancellation still aborts via ctx. Outputs are stamped with
+//     _created_time / _elapsed_time by runtime.TrackElapsed upstream.
 package component
 
 import (
@@ -62,11 +66,25 @@ import (
 
 const componentNameExtractor = "Extractor"
 
-// extractorTimeout bounds one LLM chat call. Matches the python
-// `@timeout(60)` default at rag/flow/base.py:60. The pipeline
-// orchestrator (Phase 3) overrides this if a stage-level ceiling
-// is configured.
-const extractorTimeout = 600 * time.Second
+// defaultExtractorChatTimeout bounds one LLM chat call. It is a hung-call
+// ceiling, not a pacing target: a fast model answers in seconds and never
+// approaches it, so per-model speed variance needs no tuning — only a hung
+// provider burns the full budget. Larger than the tag path's 60s because a
+// thinking model legitimately needs longer on open-ended prompts, and the
+// driver-level 20m stays as the absolute backstop.
+const defaultExtractorChatTimeout = 180 * time.Second
+
+// extractorChatTimeout resolves the per-call LLM budget from
+// EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
+// defaultExtractorChatTimeout on unset/invalid values.
+func extractorChatTimeout() time.Duration {
+	if v := os.Getenv("EXTRACTOR_CHAT_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+			return time.Duration(n) * time.Second
+		}
+	}
+	return defaultExtractorChatTimeout
+}
 
 // extractorRetryMax and extractorRetryDelay are package-level vars
 // so tests can override them (extractorRetryDelay → time.Millisecond)
@@ -680,24 +698,30 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
 	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
 
-	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
-		// Phase 1: Keywords extraction (if enabled), running across chunks via extractorPool.
-		if err := c.runAutoKeywordsPool(timeoutCtx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
-			return err
-		}
+	// No node-level wall-clock budget (see the package doc): each LLM call
+	// carries its own budget, and an expired call skips its chunk instead
+	// of failing the document. Task cancellation still aborts via ctx.
+	if err := c.runAutoKeywordsPool(ctx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
+		return nil, fmt.Errorf("extractor: %w", err)
+	}
 
-		// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
-		if tagsOn {
-			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in, phaseWindows.Take(tagsOn))
-			if tagErr != nil {
-				return tagErr
-			}
-			in.chunks = tagged
+	// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
+	if tagsOn {
+		tagged, tagErr := c.runAutoTags(ctx, db, in, phaseWindows.Take(tagsOn))
+		if tagErr != nil {
+			return nil, fmt.Errorf("extractor: %w", tagErr)
 		}
+		in.chunks = tagged
+	}
 
-		// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
-		return c.runRemainingExtractions(timeoutCtx, db, in, phaseWindows.Take(remainingOn))
-	}); err != nil {
+	// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
+	if err := c.runRemainingExtractions(ctx, db, in, phaseWindows.Take(remainingOn)); err != nil {
+		return nil, fmt.Errorf("extractor: %w", err)
+	}
+	// The tag phase swallows per-chunk failures, so a task stopped mid-run
+	// could otherwise report success. This mirrors the old node-level
+	// WithTimeout post-check: never report success on a dead context.
+	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	common.Debug("extractor stage",
@@ -900,12 +924,60 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	return nil
 }
 
+// resolveChunkCallError maps one chunk job's error to the pool outcome:
+//   - parent ctx done (task stop): propagate so cancellation stays fast.
+//   - call budget expiry with a live parent: skip the chunk, keep the
+//     document. errors.Is covers both our per-call budget and a
+//     driver-level deadline. completedAny reports whether an earlier op
+//     already succeeded for this chunk: a later timeout then keeps the
+//     partial result instead of counting toward the all-timed-out failure.
+//   - anything else: hard failure (existing fail-fast semantics).
+func resolveChunkCallError(ctx context.Context, idx int, phase string, err error, completedAny bool, skipped *atomic.Int64) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		if completedAny {
+			common.Warn("extractor: chunk extraction partially timed out; keeping completed fields",
+				zap.String("component", componentNameExtractor),
+				zap.String("phase", phase),
+				zap.Int("chunk_index", idx),
+			)
+			return nil
+		}
+		skipped.Add(1)
+		common.Warn("extractor: chunk extraction timed out; skipping chunk",
+			zap.String("component", componentNameExtractor),
+			zap.String("phase", phase),
+			zap.Int("chunk_index", idx),
+		)
+		return nil
+	}
+	return err
+}
+
+// checkAllChunksSkipped fails the phase when every submitted chunk timed
+// out with zero completed extractions: all-hung means the model is down,
+// and silently producing a document with no extractions would hide the
+// outage. Chunks that timed out after a partial extraction succeed with
+// the per-chunk warnings above and do not count here.
+func checkAllChunksSkipped(phase string, total int, skipped int64) error {
+	if total > 0 && skipped == int64(total) {
+		return fmt.Errorf("extractor: %s: all %d chunks exceeded the per-call LLM timeout; the model is likely hung or unreachable", phase, total)
+	}
+	return nil
+}
+
 // runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
 // using extractorPool before the tagging stage.
 func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
 	if !c.Param.Keywords.Enabled || len(in.chunks) == 0 {
 		return nil
 	}
+	var skipped atomic.Int64
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
@@ -914,10 +986,12 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 			continue
 		}
 		fn := func() error {
-			if err := c.runAutoKeywords(ctx, db, in, ck, text); err != nil {
-				return fmt.Errorf("chunk %d keywords: %w", i, err)
+			err := c.runAutoKeywords(ctx, db, in, ck, text)
+			completed := err == nil
+			if err != nil {
+				err = fmt.Errorf("chunk %d keywords: %w", i, err)
 			}
-			return nil
+			return resolveChunkCallError(ctx, i, "keywords", err, completed, &skipped)
 		}
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
@@ -925,7 +999,10 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 		}
 		futs = append(futs, f)
 	}
-	return awaitFutures(ctx, futs, w)
+	if err := awaitFutures(ctx, futs, w); err != nil {
+		return err
+	}
+	return checkAllChunksSkipped("keywords", len(futs), skipped.Load())
 }
 
 // runRemainingExtractions dispatches auto questions / summary / metadata
@@ -934,6 +1011,7 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 	if !c.Param.Questions.Enabled && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
 		return nil
 	}
+	var skipped atomic.Int64
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
@@ -941,34 +1019,45 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text)
+		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text, &skipped)
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
 			return err
 		}
 		futs = append(futs, f)
 	}
-	return awaitFutures(ctx, futs, w)
+	if err := awaitFutures(ctx, futs, w); err != nil {
+		return err
+	}
+	return checkAllChunksSkipped("remaining", len(futs), skipped.Load())
 }
 
-func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
+func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string, skipped *atomic.Int64) extractorJob {
 	return func() error {
+		var err error
+		var completed bool
 		if c.Param.Questions.Enabled {
-			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d questions: %w", idx, err)
+			if qErr := c.runAutoQuestions(ctx, db, in, ck, chunkText); qErr != nil {
+				err = fmt.Errorf("chunk %d questions: %w", idx, qErr)
+			} else {
+				completed = true
 			}
 		}
-		if c.Param.Summary.Enabled {
-			if err := c.runAutoSummary(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d summary: %w", idx, err)
+		if err == nil && c.Param.Summary.Enabled {
+			if sErr := c.runAutoSummary(ctx, db, in, ck, chunkText); sErr != nil {
+				err = fmt.Errorf("chunk %d summary: %w", idx, sErr)
+			} else {
+				completed = true
 			}
 		}
-		if c.Param.Metadata.Enabled {
-			if err := c.runEnableMetadata(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d metadata: %w", idx, err)
+		if err == nil && c.Param.Metadata.Enabled {
+			if mErr := c.runEnableMetadata(ctx, db, in, ck, chunkText); mErr != nil {
+				err = fmt.Errorf("chunk %d metadata: %w", idx, mErr)
+			} else {
+				completed = true
 			}
 		}
-		return nil
+		return resolveChunkCallError(ctx, idx, "remaining", err, completed, skipped)
 	}
 }
 
@@ -1223,8 +1312,15 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 		req.Temperature = &temp
 	}
 	var resp *extractorChatResponse
-	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
-		r, e := inv.Chat(ctx, req)
+	// One hung-call ceiling per LLM request (see extractorChatTimeout).
+	// RetryWithBackoff treats a budget expiry as terminal (no retry), so a
+	// hung call burns at most one attempt. The pool jobs map the expiry to
+	// a per-chunk skip; anything else keeps fail-fast semantics.
+	budget := extractorChatTimeout()
+	callCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if err := common.RetryWithBackoff(callCtx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(callCtx, req)
 		resp = r
 		return e
 	}, isRetryableLLMError); err != nil {

@@ -73,6 +73,8 @@ type ModelDriver interface {
 	ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error)
 
 	ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error)
+
+	Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error)
 }
 
 type ChatResponse struct {
@@ -153,6 +155,50 @@ type TaskSegment struct {
 
 type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
+}
+
+type Question interface {
+	isQuestion()
+}
+
+type Noul struct {
+	Instructions any
+	Criteria     *NoulCriteria
+}
+
+func (Noul) isQuestion() {}
+
+type NoulCriteria struct {
+	True  any `json:"true,omitzero"`
+	False any `json:"false,omitzero"`
+}
+
+type Choice struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Choice) isQuestion() {}
+
+type Score struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Score) isQuestion() {}
+
+type Box struct {
+	Instructions any
+}
+
+func (Box) isQuestion() {}
+
+type DecideRequest struct {
+	State     any                 `json:"state"`
+	Questions map[string]Question `json:"question"`
+}
+
+type DecideResponse struct {
 }
 
 type ModelListItem struct {
@@ -258,6 +304,10 @@ type TTSConfig struct {
 
 type OCRConfig struct {
 	Algorithm string
+	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
+	// parser setup's "pages" shape. Empty means the whole document. Drivers
+	// whose backend cannot select pages ignore it.
+	Pages [][]int
 }
 
 type ParseFileConfig struct {

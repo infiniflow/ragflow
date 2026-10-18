@@ -29,7 +29,6 @@ package chunker
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -72,17 +71,14 @@ func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	return c.invoke(ctx, inputs)
 }
 
+// invoke collapses the decoded upstream payload into a single chunk.
 func (c *OneChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {

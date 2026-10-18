@@ -57,7 +57,7 @@ If the logs report a migration failure, stop the deployment and preserve the log
 
 #### Parser-config conversion failures
 
-The `v1.0.0-rc2.dev1` step converts saved Python v0.27.2 ingestion settings for Parser, Chunker, Tokenizer, and Extractor together before the existing dataset `raptor` and `graphrag` cleanup records the shared version. Invalid JSON, metadata schemas that Go cannot represent, and unsupported PDF engine or OCR model-reference choices stop `--migrate` and block application startup. The error identifies the table, row ID, and rejected setting.
+The `v1.0.0-rc2` step converts saved Python v0.27.2 ingestion settings for Parser, Chunker, Tokenizer, and Extractor together before the existing dataset `raptor` and `graphrag` cleanup records the shared version. Invalid JSON, metadata schemas that Go cannot represent, and unsupported PDF engine or OCR model-reference choices stop `--migrate` and block application startup. The error identifies the table, row ID, and rejected setting.
 
 Keep all writers stopped. Back up the affected row's original `parser_config`, then correct the reported value in that row. For an unsupported engine or OCR model reference, explicitly choose and configure an engine that Go can run; deleting the setting would select the template's default engine instead. Start the target deployment again to rerun `--migrate`, and review its logs before resuming writes.
 

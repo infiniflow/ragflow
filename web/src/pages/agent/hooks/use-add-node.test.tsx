@@ -139,6 +139,43 @@ describe('useAddNode', () => {
     });
   });
 
+  it('adds a tool node only once when the same stale callback fires twice', () => {
+    // Mirrors the React StrictMode double-invoked mount effect in
+    // ToolPopover: both invocations share one render's closure, so the
+    // second call must consult fresh store state to see the edge the
+    // first call just committed. Otherwise two tool nodes stack at the
+    // same position below the agent.
+    const agentNode = {
+      id: 'Agent:0',
+      type: 'agentNode',
+      position: { x: 100, y: 100 },
+      data: {
+        label: Operator.Agent,
+        name: 'agent_0',
+        form: { tools: [{ component_name: Operator.Retrieval }] },
+      },
+    };
+    useGraphStore.setState({ nodes: [agentNode], edges: [] });
+
+    const { result } = renderHook(() => useAddNode());
+
+    const addTool = result.current.addCanvasNode(Operator.Tool, {
+      nodeId: 'Agent:0',
+      position: Position.Bottom,
+    });
+
+    act(() => {
+      addTool();
+      addTool();
+    });
+
+    const { nodes, edges } = useGraphStore.getState();
+    expect(nodes.filter((x) => x.data.label === Operator.Tool)).toHaveLength(1);
+    expect(
+      edges.filter((x) => x.sourceHandle === NodeHandleId.Tool),
+    ).toHaveLength(1);
+  });
+
   it('adds an iteration node again after the previous one was deleted', () => {
     useGraphStore.setState({ nodes: [createSwitchNode()], edges: [] });
 

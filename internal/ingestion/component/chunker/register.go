@@ -96,10 +96,12 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	//
 	// A chunk id may already be stamped (e.g. by the streamed crop-upload
 	// path, which keys MinIO by the canonical id). Reuse it so the id is
-	// computed exactly once; both routes normalize the text through
-	// canonicalChunkText, so the crop-time key and this id are identical
-	// and cannot diverge. For chunks that bypassed crop, fall back to
-	// deriving it here from the already-finalized text.
+	// computed exactly once; both routes derive the identity through the
+	// shared helpers, so the crop-time key and this id are identical and
+	// cannot diverge. For chunks that bypassed crop, fall back to deriving
+	// it here from the already-finalized text — a captionless image folds
+	// its payload identity in (mediaChunkIdentity), so distinct images in
+	// one document never share an id.
 	for _, ck := range chunks {
 		if id, ok := ck["id"]; ok && id != "" {
 			continue
@@ -107,6 +109,11 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		text, err := requireChunkText(ck)
 		if err != nil {
 			return nil, err
+		}
+		if text == "" {
+			image, _ := ck["image"].(string)
+			imgID, _ := ck["img_id"].(string)
+			text = mediaChunkIdentity(image, imgID)
 		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
@@ -132,7 +139,6 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 // by all chunker variants.
 var ChunkerInputs = map[string]string{
 	"text":          "Plain-text input. The chunker slices this into downstream chunks.",
-	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
 	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
 	"file_type":     "Canonical parser routing extension used by GeneralChunker.",

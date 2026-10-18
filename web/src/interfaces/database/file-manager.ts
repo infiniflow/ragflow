@@ -36,4 +36,7 @@ export type IFetchFileListResult = {
   files: IFile[];
   parent_folder: IFolder;
   total: number;
+  // Set by the file-list hook when the requested folder no longer exists so
+  // the page can redirect to the root folder instead of rendering an error.
+  folderNotFound?: boolean;
 };
