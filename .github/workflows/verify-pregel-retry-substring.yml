@@ -27,3 +27,8 @@ jobs:
           CGO_ENABLED: "0"
           GOPRIVATE: github.com/infiniflow/onnxruntime_go
         run: go test -count=1 -v ./internal/harness/graph/pregel -run '^TestRetry(PredicatesMatchEmbeddedErrorMarkers|ExecutorRetriesEmbeddedNetworkError)$'
+      - name: Run complete Pregel unit suite
+        env:
+          CGO_ENABLED: "0"
+          GOPRIVATE: github.com/infiniflow/onnxruntime_go
+        run: go test -count=1 ./internal/harness/graph/pregel
