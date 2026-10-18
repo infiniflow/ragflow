@@ -210,3 +210,7 @@ func (x *XunFeiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 func (x *XunFeiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
+
+func (x *XunFeiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}

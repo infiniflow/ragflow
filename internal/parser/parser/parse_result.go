@@ -112,7 +112,7 @@ func NewTextJSONItem(text string) DocItem {
 // rows, cell text already normalized the same way the legacy chunker
 // normalized HTML <td>/<th> text) instead of the legacy HTML markup string,
 // so the chunker reads rows directly without re-parsing any markup.
-func NewTableDataJSONItem(td *entity.TableData, sheet string, positions [][]float64) DocItem {
+func NewTableDataJSONItem(td *entity.TableData, sheet string, positions Positions) DocItem {
 	return TableItem{
 		Table:     td,
 		Sheet:     sheet,

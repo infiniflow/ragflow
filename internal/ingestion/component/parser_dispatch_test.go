@@ -1267,6 +1267,9 @@ func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *models.APIC
 func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (u *mineruTestDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
+	return nil, nil
+}
 
 func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	withSSRFBypass(t)

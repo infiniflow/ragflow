@@ -117,6 +117,14 @@ func diagnosticURL(raw string) string {
 		return "[invalid URL]"
 	}
 	u.User = nil
+	pathParts := strings.Split(u.Path, "/")
+	for i := range pathParts {
+		if i > 0 && (pathParts[i-1] == "tokens" || pathParts[i-1] == "keys") && pathParts[i] != "" {
+			pathParts[i] = "[REDACTED]"
+		}
+	}
+	u.Path = strings.Join(pathParts, "/")
+	u.RawPath = ""
 	q := u.Query()
 	for key := range q {
 		if sensitiveKey(key) {
@@ -182,5 +190,8 @@ func TestRESTHelperRedaction(t *testing.T) {
 	}
 	if strings.Contains(diagnosticBody([]byte("token=secret")), "secret") {
 		t.Fatal("raw body leaked")
+	}
+	if strings.Contains(diagnosticURL("https://host/api/v1/system/tokens/path-secret"), "path-secret") {
+		t.Fatal("path token leaked")
 	}
 }

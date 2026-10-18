@@ -644,3 +644,7 @@ func paddleOCRAlgorithm(ocrConfig *OCRConfig, apiConfig *APIConfig) string {
 	}
 	return "PaddleOCR-VL"
 }
+
+func (p *PaddleOCRModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
+}

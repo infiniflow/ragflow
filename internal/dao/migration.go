@@ -499,10 +499,10 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 // system_settings under mysql_migration.database.version, the marker shared with
 // the other versioned steps, so work already performed by a previous run is
 // skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2.dev1 step deletes. raptor and graphrag moved out of the dataset
+// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 

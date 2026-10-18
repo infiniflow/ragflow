@@ -52,7 +52,7 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 		{
 			name: "table with sheet and positions",
 			items: []parser.DocItem{
-				parser.TableItem{Table: &entity.TableData{}, Sheet: "s", Positions: [][]float64{{1, 2}}, Extra: map[string]any{"sheet_index": 0}},
+				parser.TableItem{Table: &entity.TableData{}, Sheet: "s", Positions: parser.SpreadsheetPositions([][]float64{{1, 2, 2, 1, 3}}), Extra: map[string]any{"sheet_index": 0}},
 			},
 		},
 		{
@@ -210,7 +210,7 @@ func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, found, err := ChunkDocsFromDocItem(parser.DocItemsFromMaps(tc.maps))
+			got, found, err := ChunkDocsFromDocItem(parser.MapsToItems(tc.maps))
 			if err != nil {
 				t.Fatalf("ChunkDocsFromDocItem err: %v", err)
 			}

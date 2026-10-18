@@ -31,7 +31,6 @@ package chunker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -76,17 +75,14 @@ func (c *TableChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	return c.invoke(ctx, inputs)
 }
 
+// invoke expands the decoded upstream tables into one chunk per data row.
 func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {
