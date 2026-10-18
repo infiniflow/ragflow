@@ -30,8 +30,19 @@ export const enum DocumentApiAction {
 
 export const DocumentKeys = {
   all: () => [DocumentApiAction.FetchDocumentList] as const,
-  list: (searchString: string, pagination: unknown, filter: unknown) =>
-    [...DocumentKeys.all(), searchString, pagination, filter] as const,
+  list: (
+    searchString: string,
+    pagination: unknown,
+    filter: unknown,
+    datasetId: string,
+  ) =>
+    [
+      ...DocumentKeys.all(),
+      searchString,
+      pagination,
+      filter,
+      datasetId,
+    ] as const,
   allFilters: () => [DocumentApiAction.FetchDocumentFilter] as const,
   filter: (searchString: string, knowledgeId?: string) =>
     [...DocumentKeys.allFilters(), searchString, knowledgeId] as const,
