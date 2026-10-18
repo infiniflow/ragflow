@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+// parsePDFWithOpenDataLoader normalizes the selected server's JSON or Markdown
+// output. Explicit tenant configuration never borrows a global endpoint or key.
 func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)

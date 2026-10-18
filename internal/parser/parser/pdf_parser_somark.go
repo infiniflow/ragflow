@@ -13,6 +13,8 @@ import (
 	"strings"
 )
 
+// parsePDFWithSoMark submits a PDF and converts the task result into parser
+// output. Explicit tenant configuration never borrows a global endpoint or key.
 func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
@@ -43,6 +45,8 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
 }
 
+// soMarkSubmit uploads a PDF with the supplied credentials and parser options,
+// applying environment defaults only when no tenant instance was selected.
 func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -221,6 +225,8 @@ func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]a
 	}
 }
 
+// envOrDefault prefers configured values, then the environment for named
+// engines only, then the built-in fallback.
 func (p *PDFParser) envOrDefault(envKey, configured, fallback string) string {
 	if configured != "" {
 		return configured
@@ -233,6 +239,8 @@ func (p *PDFParser) envOrDefault(envKey, configured, fallback string) string {
 	return fallback
 }
 
+// envOrBool preserves tenant instance values, including explicit false, while
+// named engines retain their environment override.
 func (p *PDFParser) envOrBool(envKey string, configured bool) bool {
 	if p.UseTenantModelConfig {
 		return configured
