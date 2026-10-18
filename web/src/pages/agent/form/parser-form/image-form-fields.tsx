@@ -1,9 +1,14 @@
+import { MissingModelLabel } from '@/components/llm-select/llm-label';
+import { buildModelTree } from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { TreeSelect } from '@/components/tree-select';
 import message from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
-import { useCallback } from 'react';
+import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import { CommonProps } from './interface';
 import { ParserFormSchemaType } from './schema';
 import { buildFieldNameWithPrefix } from './utils';
@@ -37,28 +42,85 @@ function ImageOcrSwitch({ checked, onCheckedChange }: ImageOcrSwitchProps) {
   return <Switch checked={checked} onCheckedChange={handleCheckedChange} />;
 }
 
-// The image setup carries a single switch: run local OCR or not. The vision
-// model and its description prompt belong to the global enhancement block (see
-// VisionEnhancementFormFields); response language is not a setting anywhere and
-// follows the knowledge base, which also drives tokenization.
-export function ImageFormFields({ prefix }: CommonProps) {
+function ImageOCRModelField({ prefix }: CommonProps) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
+  const { data, isFetched, isError } = useFetchAllAddedModels(
+    'ocr',
+    ownerTenantId,
+  );
+  const models = useMemo(
+    () =>
+      buildModelTree(
+        data.filter(
+          (model) =>
+            model.model_id &&
+            ['paddleocr', 'paddleocr.local'].includes(
+              model.provider_name.toLowerCase(),
+            ),
+        ),
+        ['ocr'],
+      ),
+    [data],
+  );
+  const renderMissingModel = useCallback(
+    (value: string) => (
+      <MissingModelLabel value={value} ownerTenantId={ownerTenantId} />
+    ),
+    [ownerTenantId],
+  );
 
   return (
     <RAGFlowFormItem
-      name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
-      label={t('flow.imageOcr')}
-      tooltip={t('flow.imageOcrTip')}
-      horizontal={true}
-      labelClassName="w-full"
-      valueClassName="w-8"
+      name={buildFieldNameWithPrefix('ocr_model_id', prefix)}
+      label={t('flow.imageOcrModel')}
+      tooltip={t('flow.imageOcrModelTip')}
     >
       {(field) => (
-        <ImageOcrSwitch
-          checked={!!field.value}
-          onCheckedChange={field.onChange}
+        <TreeSelect
+          ref={field.ref}
+          data={models}
+          value={field.value}
+          onChange={field.onChange}
+          placeholder={t('flow.imageOcrLocal')}
+          loading={!isFetched || isError}
+          renderMissingValue={renderMissingModel}
+          allowClear
+          showSearch
+          defaultExpandAll
+          testId="image-ocr-model"
         />
       )}
     </RAGFlowFormItem>
+  );
+}
+
+// OCR engine selection never grants permission for VLM descriptions: that model
+// and prompt still belong exclusively to the global enhancement block.
+export function ImageFormFields({ prefix }: CommonProps) {
+  const { t } = useTranslation();
+  const ocrEnabled = useWatch({
+    name: buildFieldNameWithPrefix('ocr_enabled', prefix),
+  });
+
+  return (
+    <>
+      <RAGFlowFormItem
+        name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
+        label={t('flow.imageOcr')}
+        tooltip={t('flow.imageOcrTip')}
+        horizontal={true}
+        labelClassName="w-full"
+        valueClassName="w-8"
+      >
+        {(field) => (
+          <ImageOcrSwitch
+            checked={!!field.value}
+            onCheckedChange={field.onChange}
+          />
+        )}
+      </RAGFlowFormItem>
+      {ocrEnabled && <ImageOCRModelField prefix={prefix} />}
+    </>
   );
 }

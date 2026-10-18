@@ -271,6 +271,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             ocr_enabled: cur.ocr_enabled,
+            ocr_model_id: cur.ocr_model_id,
           };
           break;
         case FileType.Email:

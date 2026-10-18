@@ -123,12 +123,17 @@ func maybeDispatchImage(
 			return parser.ParseResult{}, true, err
 		}
 	} else {
-		img, err := decodeDispatchImage(binary, useOCR)
+		ocrModelID := strings.TrimSpace(getStringOr(setup, "ocr_model_id", ""))
+		img, err := decodeDispatchImage(binary, useOCR && ocrModelID == "")
 		if err != nil {
 			return parser.ParseResult{}, true, err
 		}
 		if useOCR {
-			text, ocrErr = extractImageText(ctx, img)
+			if ocrModelID == "" {
+				text, ocrErr = extractImageText(ctx, img)
+			} else {
+				text, ocrErr = extractSelectedImageOCR(ctx, db, getStringOr(inputs, "tenant_id", ""), ocrModelID, binary)
+			}
 		}
 	}
 	release()
@@ -206,7 +211,7 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
-	// VLM consumes the original bytes; only local OCR needs a decoded raster.
+	// VLM and PaddleOCR consume the original bytes; only DeepDoc needs a raster.
 	if !decodeRaster {
 		return nil, nil
 	}
