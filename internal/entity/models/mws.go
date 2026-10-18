@@ -316,3 +316,7 @@ func (m *MWSModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) er
 	_, err := m.ListModels(ctx, apiConfig)
 	return err
 }
+
+func (m *MWSModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}

@@ -17,6 +17,8 @@
 package service
 
 import (
+	"encoding/json"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -106,6 +108,48 @@ func TestApplyMetaFilter_NotIn(t *testing.T) {
 	result := ApplyMetaFilter(metas, filters, "and")
 	if len(result) != 2 {
 		t.Errorf("expected 2 docs (B,C), got %d: %v", len(result), result)
+	}
+}
+
+func TestApplyMetaFilterSetValues(t *testing.T) {
+	metas := common.MetaData{
+		"category": {"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}, "A,B": {"doc4"}},
+	}
+	tests := []struct {
+		name  string
+		op    string
+		value any
+		want  []string
+	}{
+		{"json_in", "in", []any{"A", "B"}, []string{"doc1", "doc2"}},
+		{"json_not_in", "not in", []any{"A", "B"}, []string{"doc3", "doc4"}},
+		{"literal_comma", "in", []any{"A,B"}, []string{"doc4"}},
+		{"invalid_not_in", "not in", float64(123), nil},
+		{"null_not_in", "not in", []any{"A", nil}, nil},
+		{"object_not_in", "not in", []any{"A", map[string]any{"value": "B"}}, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filters := []MetaFilterCondition{{Key: "category", Value: tt.value, Op: tt.op}}
+			if got := asSortedIDs(ApplyMetaFilter(metas, filters, "and")); !slices.Equal(got, tt.want) {
+				t.Errorf("ApplyMetaFilter() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestApplyMetaDataFilterManualNotInArray(t *testing.T) {
+	metas := common.MetaData{
+		"category": {"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}},
+	}
+	var filter map[string]any
+	if err := json.Unmarshal([]byte(`{"method":"manual","manual":[{"key":"category","op":"not in","value":["A"]}]}`), &filter); err != nil {
+		t.Fatal(err)
+	}
+	// No dataset IDs means the request uses the in-memory filter.
+	got, empty := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, []string{"doc1", "doc3"}, nil)
+	if !slices.Equal(got, []string{"doc3"}) || empty {
+		t.Errorf("ApplyMetaDataFilter() = (%v, %v), want ([doc3], false)", got, empty)
 	}
 }
 

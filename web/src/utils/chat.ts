@@ -27,6 +27,7 @@ import {
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 } from './citation-utils';
 
 export const isConversationIdExist = (conversationId: string) => {
@@ -256,7 +257,13 @@ export function setChatVariableEnabledFieldValuePage() {
 
 const oldReg = /(#{2}[0-9\u0660-\u0669\u06F0-\u06F9]+\${2})/g;
 export const currentReg = citationMarkerReg;
-export { buildCitationDisplayMap, normalizeCitationDigits, parseCitationIndex };
+export {
+  buildCitationDisplayMap,
+  normalizeCitationDigits,
+  parseCitationIndex,
+  resolveCitationChunk,
+};
+export type { CitationKey } from './citation-utils';
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

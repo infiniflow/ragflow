@@ -46,8 +46,19 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 		}
 		for _, tc := range []struct {
 			name    string
+			params  map[string]any
 			factory func(map[string]any) (runtime.Component, error)
-		}{{"QA", NewQAChunker}, {"Token", NewTokenChunker}, {"One", NewOneChunker}} {
+		}{
+			{"QA", nil, NewQAChunker},
+			{"Token", nil, NewTokenChunker},
+			{"One", nil, NewOneChunker},
+			// The title-family chunkers share extractLineRecords; a
+			// spreadsheet item must keep its sheet identity there too, or its
+			// selections would be decoded as PDF boxes.
+			{"Group", map[string]any{"levels": [][]string{{`^# `}}}, NewGroupTitleChunker},
+			{"Hierarchy", map[string]any{"hierarchy": 1, "levels": [][]string{{`^# `}}}, NewHierarchyTitleChunker},
+			{"Manual", map[string]any{"levels": [][]string{{`^# `}}}, NewManualChunker},
+		} {
 			t.Run(source.name+"/"+tc.name, func(t *testing.T) {
 				batches := [][]map[string]any{parser.ItemsToMaps(source.result.JSON)}
 				// One preserves positions only for a single source item.
@@ -58,7 +69,7 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 					}
 				}
 				for _, items := range batches {
-					comp, err := tc.factory(nil)
+					comp, err := tc.factory(tc.params)
 					if err != nil {
 						t.Fatal(err)
 					}

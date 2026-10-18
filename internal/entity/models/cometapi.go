@@ -546,3 +546,7 @@ func (c *CometAPIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]
 func (c *CometAPIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
+
+func (c *CometAPIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}

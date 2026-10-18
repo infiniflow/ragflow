@@ -744,7 +744,7 @@ func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete chunks for kb %s: %v", kb.ID, err))
 	}
-	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"doc_id": docIDs}, kb.TenantID); err != nil {
+	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"kb_id": kb.ID}, kb.TenantID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete metadata for kb %s: %v", kb.ID, err))
 	}
 }

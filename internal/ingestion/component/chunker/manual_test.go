@@ -322,7 +322,7 @@ func TestHasPdfPositions(t *testing.T) {
 // with 1-based page numbers, accompanied by layout / page_number /
 // doc_type_kwd. Using [][]any — not [][]float64 — matters: that is the concrete
 // in-memory type the parser produces, and recordsFromStructured must consume it
-// after the chunksFromInputs JSON round-trip.
+// after the decodeChunkerFromUpstream JSON round-trip.
 func parserShapedItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
 		"text":           text,

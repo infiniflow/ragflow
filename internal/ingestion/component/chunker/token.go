@@ -86,7 +86,6 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
-	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -190,11 +189,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	upstream, err := decodeChunkerFromUpstream(decInputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	delimPattern := compileDelimPattern(c.param.Delimiters)
@@ -273,20 +268,8 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
-	// A structured table (e.g. the office/xlsx producer) carries no Text of its
-	// own. Derive its HTML <table> rendering on Text so every chunker that
-	// consumes it (token/group/hierarchy/one/page/qa) stores and displays a real
-	// table, and the chunk id (a hash of Text) matches the stored content.
-	for i := range out.JSONResult {
-		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
-			out.JSONResult[i].Text = tableutil.RenderTableHTML(out.JSONResult[i].TableData)
-		}
-	}
-	for i := range out.Chunks {
-		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
-			out.Chunks[i].Text = tableutil.RenderTableHTML(out.Chunks[i].TableData)
-		}
-	}
+	materializeTableText(out.JSONResult)
+	materializeTableText(out.Chunks)
 	return out, nil
 }
 
@@ -1855,43 +1838,6 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keep
 // order) instead of re-implementing a divergent copy.
 func compileChildrenPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
-}
-
-// stringFromInputs returns the string value at the first matching key
-// in `keys`, or ("", false) when none is set.
-func stringFromInputs(inputs map[string]any, keys ...string) (string, bool) {
-	for _, k := range keys {
-		if v, ok := inputs[k].(string); ok {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-// chunksFromInputs returns the chunk list from inputs as a uniform
-// []map[string]any, or nil when absent. Both []map[string]any (the
-// JSON-decoded form) and []any (the slice-of-mixed form) are handled.
-//
-// Two upstream keys are accepted, in priority order:
-//
-//   - "chunks" — canonical post-chunker shape (chunker → chunker
-//     re-entry, test fixtures, downstream stages).
-//   - "json"   — the parser-structured-output key (Parser
-//     component emits under "json"; we accept it
-//     so a token-chunker can run directly after
-//     a parser without an intermediate reshape).
-func chunksFromInputs(inputs map[string]any) []schema.ChunkDoc {
-	for _, key := range []string{"chunks", "json"} {
-		v, ok := inputs[key]
-		if !ok {
-			continue
-		}
-		chunks, found, err := schema.ChunkDocsFromAny(v)
-		if err == nil && found {
-			return chunks
-		}
-	}
-	return nil
 }
 
 func intValue(v *int) int {

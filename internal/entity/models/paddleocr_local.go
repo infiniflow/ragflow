@@ -269,3 +269,7 @@ func (p *PaddleOCRLocalModel) ListTasks(ctx context.Context, apiConfig *APIConfi
 func (p *PaddleOCRLocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
 }
+
+func (p *PaddleOCRLocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
+}

@@ -29,7 +29,7 @@ func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
 		HeaderRows: 1,
 		Caption:    "Sheet1",
 	}
-	item := NewTableDataJSONItem(td, "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+	item := NewTableDataJSONItem(td, "Sheet1", SpreadsheetPositions([][]float64{{1, 2, 2, 1, 1}}))
 	m := item.ToMap()
 
 	if got, want := m[DocTypeKey], DocTypeTable; got != want {
