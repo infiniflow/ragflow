@@ -62,6 +62,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -79,9 +80,10 @@ type titleChunkerParam struct {
 	schema.TitleChunkerParam
 }
 
-func (p *titleChunkerParam) Update(conf map[string]any) {
+// Update applies title/manual heading settings and independent media windows.
+func (p *titleChunkerParam) Update(conf map[string]any) error {
 	if conf == nil {
-		return
+		return nil
 	}
 	if v, ok := conf["method"].(string); ok {
 		p.TitleChunkerParam.Method = v
@@ -104,6 +106,25 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 	if v, ok := schema.NumericFromAny(conf["chunk_token_cap"]); ok {
 		p.TitleChunkerParam.ChunkTokenCap = int(v)
 	}
+	for _, field := range []struct {
+		name   string
+		target *int
+	}{
+		{"table_context_size", &p.TableContextSize},
+		{"image_context_size", &p.ImageContextSize},
+	} {
+		raw, exists := conf[field.name]
+		if !exists {
+			continue
+		}
+		value, ok := schema.NumericFromAny(raw)
+		if !ok || math.IsNaN(value) || math.IsInf(value, 0) || value < 0 ||
+			math.Trunc(value) != value || value >= float64(^uint(0)>>1) {
+			return fmt.Errorf("%s must be a non-negative integer", field.name)
+		}
+		*field.target = int(value)
+	}
+	return nil
 }
 
 // parseLevels accepts a [[string]] representation — the natural
@@ -646,6 +667,8 @@ type lineRecord struct {
 	sheet        string
 	sheetIndex   *int
 	parentMeta   map[string]any
+	contextAbove string
+	contextBelow string
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }
@@ -742,7 +765,9 @@ type TitleChunkerComponent struct {
 func NewTitleChunker(params map[string]any) (runtime.Component, error) {
 	p := defaultsTitle()
 	p.Method = "group" // default to group
-	p.Update(params)
+	if err := p.Update(params); err != nil {
+		return nil, fmt.Errorf("TitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("TitleChunker: %w", err)
 	}

@@ -1116,7 +1116,7 @@ func TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates(t *testing.T
 var operatorFormParamKeys = map[string][]string{
 	"TitleChunker": {
 		"method", "levels", "hierarchy", "include_heading_content",
-		"root_chunk_as_heading", "chunk_token_cap",
+		"root_chunk_as_heading", "chunk_token_cap", "table_context_size", "image_context_size",
 		// Per-method persistence keys: each method's rules, hierarchy value
 		// and token cap are stored under their own key so the dataset config
 		// keeps them independent of the active method (the runtime reads only
@@ -1126,6 +1126,7 @@ var operatorFormParamKeys = map[string][]string{
 	},
 	"ManualChunker": {
 		"method", "levels", "hierarchy", "root_chunk_as_heading",
+		"table_context_size", "image_context_size",
 		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
 	},
 	"TokenChunker": {

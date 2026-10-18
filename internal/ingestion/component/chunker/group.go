@@ -141,6 +141,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
 // on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
 func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -325,6 +326,13 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		if !g[0].isText() && (g[0].contextAbove != "" || g[0].contextBelow != "") {
+			media := materializeMediaContext(schema.ChunkDoc{
+				Text: chunkText, ContextAbove: g[0].contextAbove, ContextBelow: g[0].contextBelow,
+			})
+			chunk["text"] = media.Text
+			chunk["tk_nums"] = intValue(media.TKNums)
+		}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -373,6 +381,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if _, contextual := chunks[i]["tk_nums"]; contextual {
+				chunks[i]["tk_nums"] = tokenizeStr(toString(chunks[i]["text"]))
+			}
 			if prefixes != nil {
 				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
 			}
@@ -600,7 +611,9 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
 	}

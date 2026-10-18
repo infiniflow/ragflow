@@ -154,6 +154,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -321,7 +322,9 @@ func NewHierarchyTitleChunker(params map[string]any) (runtime.Component, error) 
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
 	}

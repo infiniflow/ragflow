@@ -422,6 +422,7 @@ export function transformGeneralChunkerParams(
   return result;
 }
 
+// Resolve active heading settings and preserve independent media-context budgets.
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -466,6 +467,8 @@ export function transformTitleChunkerParams(
     hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    table_context_size: Number(params.table_context_size ?? 0),
+    image_context_size: Number(params.image_context_size ?? 0),
     ...(chunkTokenCap === undefined || chunkTokenCap === null
       ? {}
       : { chunk_token_cap: Number(chunkTokenCap) }),
