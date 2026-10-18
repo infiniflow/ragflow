@@ -65,7 +65,11 @@ export function OutputFormatFormField({
 export function ParserMethodFormField({
   prefix,
   optionsWithoutLLM,
-}: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
+  showMineruOptions = false,
+}: CommonProps & {
+  optionsWithoutLLM?: { value: string; label: string }[];
+  showMineruOptions?: boolean;
+}) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
   return (
@@ -75,6 +79,7 @@ export function ParserMethodFormField({
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
       ownerTenantId={ownerTenantId}
+      showMineruOptions={showMineruOptions}
     ></LayoutRecognizeFormField>
   );
 }

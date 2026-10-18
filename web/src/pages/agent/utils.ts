@@ -230,6 +230,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            mineru_parse_method: cur.mineru_parse_method,
+            mineru_lang: cur.mineru_lang,
+            mineru_formula_enable: cur.mineru_formula_enable,
+            mineru_table_enable: cur.mineru_table_enable,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,

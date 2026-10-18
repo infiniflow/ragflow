@@ -8,6 +8,10 @@ export const SetupSchema = z
     // preprocess: z.array(z.string()).optional(),
     output_format: z.string().optional(),
     parse_method: z.string().optional(),
+    mineru_parse_method: z.string().optional(),
+    mineru_lang: z.string().optional(),
+    mineru_formula_enable: z.boolean().optional(),
+    mineru_table_enable: z.boolean().optional(),
     // Image OCR runs independently of the global vision-enhancement switch.
     // The dropdown used to encode this choice in parse_method; ocr_enabled is
     // the new boolean contract. Legacy setups may still carry a parse_method
