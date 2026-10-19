@@ -40,7 +40,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,7 +62,7 @@ const navigateStructureToolName = "navigate_structure"
 
 const navigateStructureToolDescription = `Drill into ONE document's COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
 Call it with just a query: it routes the query over the datasets' compiled navigation trees itself and returns the compiled CLAIM evidence of the best-matching documents, so no prior navigate_tree call is needed. To drill ONE document the model already chose, pass the doc_id from a <tree_navigation> result instead; that path returns the document's internal structure (entities and how they relate).
-Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline. Outline lines are either claim lines "- [claim] <statement> | Evidence: \"<verbatim quote>\" [chunks: c1] ref=3" (the document's compiled atomic propositions recalled for your query, each carrying its own evidence and the handle to cite it by) or structure lines "- name (type): description [chunks: c1,c2]". When claims hit they replace the structure descent outright. A <claims_sufficient/> child means enough distinct claims matched that you may answer from them without deep-reading chunks. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
+Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline. Outline lines are either claim lines "- [claim] <statement> | Evidence: \"<verbatim quote>\" [chunks: c1] ref=3" (the document's compiled atomic propositions recalled for your query, each carrying its own evidence and the handle to cite it by) or structure lines "- name (type): description [chunks: c1,c2]". When claims hit they replace the structure descent outright. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
 An empty result (<structure_navigation count="0" error="...">) means this document has NO compiled structure or claims of the requested kind - the error attribute says which: "route first with navigate_tree" (no doc_id), or "no compiled structure for this kind" (absent in THAT document - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
 
 // navigateStructureArgs is the JSON the model sends into InvokableRun.
@@ -94,13 +94,6 @@ var (
 	shapeKwds = []string{"graph", "entity", "relation"}
 )
 
-// Empty-reason constants, mirroring the harness navigation contract.
-const (
-	navStructReasonBadArgs     = "bad_args"
-	navStructReasonNoStructure = "no_structure"
-	navStructReasonNoDoc       = "no_doc"
-)
-
 // Drill-down bounds (mirroring the harness _STRUCT_* limits).
 const (
 	structMaxDepth     = 3   // max TOC levels drilled
@@ -129,8 +122,6 @@ const (
 	// insufficient, and one extra re-search turn costs a full prompt — far more
 	// than the extra characters.
 	navClaimEvidenceChars = 1200
-	// navClaimFirstMinHits is the fewest hits that justify skipping the drill.
-	navClaimFirstMinHits = 1
 	// navClaimSufficientHits is the count at which the model may cite the claims
 	// without deep-reading chunks. It is a count of RELEVANT hits: both legs
 	// apply a relevance floor (below), because a leg with no floor returns a full
@@ -164,28 +155,12 @@ const (
 	// routed documents instead of one chosen by the model.
 	navQueryRouteDocs = 3
 	// navClaimPrefetchTopN bounds the claims the PIPELINE recalls before the
-	// loop. The block is the whole prompt of the sufficient-claims answer, and
-	// it is also what decides that verdict, so the cap is both a cost bound and
-	// an accuracy bound: a recall trimmed below the sufficiency count can never
-	// terminate early. The default is 3 routed documents x navClaimTopN, the
-	// shape measured on the 20-question run. Override per run with
-	// AGENTIC_CLAIM_PREFETCH_MAX instead of editing this constant.
+	// loop. It is both a cost bound and an accuracy bound: the block is the whole
+	// prompt of the sufficient-claims answer and also what decides that verdict,
+	// so a cap below navClaimSufficientHits x navClaimMinDocs could never
+	// terminate early.
 	navClaimPrefetchTopN = 3 * navClaimTopN
 )
-
-// navClaimPrefetchLimit resolves the pre-loop recall cap, honouring the per-run
-// override AGENTIC_CLAIM_PREFETCH_MAX (a positive integer number of claims).
-func navClaimPrefetchLimit() int {
-	v := strings.TrimSpace(os.Getenv("AGENTIC_CLAIM_PREFETCH_MAX"))
-	if v == "" {
-		return navClaimPrefetchTopN
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n <= 0 {
-		return navClaimPrefetchTopN
-	}
-	return n
-}
 
 // navStructureRoute resolves candidate doc_ids for a query when the caller
 // supplied no doc_id. It is the same navigation-tree router navigate_tree uses,
@@ -237,26 +212,12 @@ type structureNode struct {
 	nodeType       string
 	desc           string
 	sourceChunkIDs []string
-	vec            []float64
 }
 
 // chunkWithText pairs a chunk id with its text for structure snippet ranking.
 type chunkWithText struct {
 	id   string
 	text string
-}
-
-// structureDrillout is the per-document result of the TOC drill-down.
-type structureDrillout struct {
-	outline    string
-	nodes      int
-	chunkPtrs  int
-	topScore   float64
-	chunkPaths map[string]string
-	selector   string
-	// claims are the recalled claim hits rendered into this outline. The <doc>
-	// element publishes <claims_sufficient/> off this count.
-	claims []claimHit
 }
 
 // claimHit is one recalled claim row: an atomic proposition plus its verbatim
@@ -270,7 +231,6 @@ type claimHit struct {
 	description string
 	quote       string
 	score       float64
-	rank        int
 }
 
 // claimReader is the OPTIONAL claim-recall capability of a structureReader. A
@@ -285,23 +245,20 @@ type claimReader interface {
 	ReadClaims(ctx context.Context, tenantID, kbID string, docIDs, kinds []string, text string, qvec []float64, limit int) ([]claimHit, error)
 }
 
-// claimQueryEncoder embeds the drill query for the claim dense leg. nil (the
-// default) leaves the leg out and recall runs on the lexical leg alone, so a
-// deployment without a query embedder still recalls claims.
-var claimQueryEncoder func(ctx context.Context, tenantID, text string) []float64
-
-// SetClaimQueryEncoder installs the query-side embedder used by the claim dense
-// leg. Pass nil to fall back to lexical-only recall.
-func SetClaimQueryEncoder(fn func(ctx context.Context, tenantID, text string) []float64) {
-	claimQueryEncoder = fn
-}
-
-// claimQueryVector encodes the drill query, swallowing a panicking or failing
-// encoder: a misconfigured embedding service degrades recall to the lexical
-// leg, it never takes the tool call down.
+// claimQueryVector encodes the drill query for the claim dense leg, using the
+// embedder the nav service already resolved for this tenant — the same model
+// that wrote the claim rows' q_<dim>_vec columns.
+//
+// It reads that embedder through the nav service rather than through an injected
+// function: this package already depends on nav for routing, and the service is
+// where tenant-model resolution lives, so a second wiring point in the server
+// bootstrap would only duplicate it. A missing service, an unresolvable model or
+// a panicking encoder all yield nil, which leaves the leg out and recall running
+// on the lexical leg alone — a misconfigured embedder must never take a tool
+// call down.
 func claimQueryVector(ctx context.Context, tenantID, text string) (vec []float64) {
-	fn := claimQueryEncoder
-	if fn == nil || tenantID == "" || strings.TrimSpace(text) == "" {
+	svc := nav.GetNavService()
+	if svc == nil || tenantID == "" || strings.TrimSpace(text) == "" {
 		return nil
 	}
 	defer func() {
@@ -309,20 +266,18 @@ func claimQueryVector(ctx context.Context, tenantID, text string) (vec []float64
 			vec = nil
 		}
 	}()
-	if v := fn(ctx, tenantID, text); len(v) > 0 {
+	if v := svc.EncodeQueryVector(ctx, tenantID, text); len(v) > 0 {
 		return v
 	}
 	return nil
 }
 
-// StructureRow is one compiled-structure row: the doc-store fields the structure
+// structureRow is one compiled-structure row: the doc-store fields the structure
 // reader reads.
-type StructureRow struct {
-	CompileKwd        string
+type structureRow struct {
 	TemplateKind      string
 	KnowledgeGraphKwd string
 	Content           string
-	Vec               []float64
 }
 
 // structureReader reads a document's compiled structure rows. The production
@@ -330,13 +285,13 @@ type StructureRow struct {
 // is installed (or the engine is available) navigate_structure reports
 // EMPTY/no_structure, falling through to the text tools.
 type structureReader interface {
-	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error)
+	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]structureRow, error)
 }
 
 var structReaderInst structureReader
 
-// SetStructureReader installs the (production or test) structure reader.
-func SetStructureReader(r structureReader) {
+// setStructureReader installs the (production or test) structure reader.
+func setStructureReader(r structureReader) {
 	structReaderInst = r
 }
 
@@ -352,7 +307,7 @@ func getStructureReader() structureReader {
 // scoped to ONE document (the tool already knows which document to drill).
 type engineStructureReader struct{}
 
-func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error) {
+func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]structureRow, error) {
 	de := engine.Get()
 	if de == nil {
 		return nil, nil
@@ -360,7 +315,7 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 	req := &enginetypes.SearchRequest{
 		IndexNames:         []string{indexNameFor(tenantID, "")},
 		KbIDs:              []string{kbID},
-		SelectFields:       []string{"content_with_weight", "compile_kwd", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"},
+		SelectFields:       []string{"content_with_weight", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"},
 		Filter:             map[string]interface{}{"doc_id": []string{docID}, "knowledge_graph_kwd": shapeKwds},
 		Limit:              3000,
 		IncludeUnavailable: true,
@@ -369,14 +324,13 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]StructureRow, 0, len(res.Chunks))
+	rows := make([]structureRow, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
 		kg, _ := row["type_kwd"].(string)
 		if kg == "" {
 			kg, _ = row["knowledge_graph_kwd"].(string)
 		}
-		sr := StructureRow{
-			CompileKwd:        fmt.Sprint(row["compile_kwd"]),
+		sr := structureRow{
 			TemplateKind:      fmt.Sprint(row["compilation_template_kind_kwd"]),
 			KnowledgeGraphKwd: kg,
 			Content:           fmt.Sprint(row["content_with_weight"]),
@@ -406,7 +360,12 @@ func (engineStructureReader) ReadClaims(ctx context.Context, tenantID, kbID stri
 	if de == nil || strings.TrimSpace(text) == "" {
 		return nil, nil
 	}
-	if limit <= 0 || limit > navClaimTopN {
+	// The caller owns the cap: the per-document tool path asks for navClaimTopN,
+	// while the pre-loop recall asks for the corpus-wide budget
+	// (navClaimPrefetchTopN). Clamping every caller to the per-document count
+	// silently cut that budget to one page, which is too few claims to satisfy
+	// the sufficiency gate's document-diversity rule.
+	if limit <= 0 {
 		limit = navClaimTopN
 	}
 	pool := limit
@@ -587,8 +546,7 @@ func firstEvidenceQuote(v any) string {
 
 // rrfFuse merges retrieval legs by RECIPROCAL RANK (k=60 by default). Ranks
 // only, so no similarity threshold has to be calibrated across legs with
-// incomparable score scales; a hit keeps its best raw score for diagnostics and
-// gains a 1-based rank.
+// incomparable score scales; a hit keeps its best raw score for diagnostics.
 func rrfFuse(k, limit int, legs ...[]claimHit) []claimHit {
 	if k <= 0 {
 		k = navClaimRRFK
@@ -631,10 +589,8 @@ func rrfFuse(k, limit int, legs ...[]claimHit) []claimHit {
 		order = order[:limit]
 	}
 	out := make([]claimHit, 0, len(order))
-	for i, key := range order {
-		h := byName[key].hit
-		h.rank = i + 1
-		out = append(out, h)
+	for _, key := range order {
+		out = append(out, byName[key].hit)
 	}
 	return out
 }
@@ -694,7 +650,7 @@ func stringFromAny(v any) string {
 func claimOutlineLine(ctx context.Context, c claimHit) string {
 	line := "- [claim] " + c.name
 	if q := strings.TrimSpace(c.quote); q != "" {
-		line += ` | Evidence: "` + Snippet(q, navClaimEvidenceChars) + `"`
+		line += ` | Evidence: "` + snippetRunes(q, navClaimEvidenceChars) + `"`
 	}
 	if c.chunkID != "" {
 		line += " [chunks: " + c.chunkID + "]"
@@ -705,21 +661,14 @@ func claimOutlineLine(ctx context.Context, c claimHit) string {
 	return line
 }
 
-// claimDrillout is the claim-first selection: the claims ARE the outline, so
+// claimOutline is the claim-first selection: the claims ARE the outline, so
 // nothing is drilled and no chunk snippet is loaded.
-func claimDrillout(ctx context.Context, claims []claimHit) structureDrillout {
+func claimOutline(ctx context.Context, claims []claimHit) string {
 	lines := make([]string, 0, len(claims))
 	for _, c := range claims {
 		lines = append(lines, claimOutlineLine(ctx, c))
 	}
-	return structureDrillout{
-		outline:    strings.Join(lines, "\n"),
-		nodes:      0,
-		chunkPtrs:  len(claims),
-		chunkPaths: map[string]string{},
-		selector:   "claim",
-		claims:     claims,
-	}
+	return strings.Join(lines, "\n")
 }
 
 // indexNameFor resolves the document/structure search index: the tenant's
@@ -743,22 +692,11 @@ func normalizeKindKey(kind string) string {
 	return strings.ToLower(kind)
 }
 
-func normalizeKind(row map[string]interface{}) string {
-	return normalizeKindKey(compilationKind(row))
-}
-
-func compilationKind(row map[string]interface{}) string {
-	if v, ok := row["compilation_template_kind_kwd"].(string); ok && v != "" {
-		return v
-	}
-	return fmt.Sprint(row["knowledge_graph_kwd"])
-}
-
 // rowKind derives the normalized structure kind from a compiled-structure row,
 // using its knowledge_graph_kwd (the row SHAPE: graph / entity / relation) or,
 // failing that, its compilation template kind. This is what keeps a "graph"
 // blob from being filtered out as the wrong kind.
-func rowKind(row StructureRow) string {
+func rowKind(row structureRow) string {
 	kind := row.KnowledgeGraphKwd
 	if kind == "" {
 		kind = row.TemplateKind
@@ -766,9 +704,9 @@ func rowKind(row StructureRow) string {
 	return normalizeKindKey(kind)
 }
 
-// ParseCompiledStructure merges the two row shapes (graph blob / per-entity /
+// parseCompiledStructure merges the two row shapes (graph blob / per-entity /
 // per-relation) into entities / relations, mirroring _query in navigation.py.
-func ParseCompiledStructure(rows []StructureRow, kinds []string) ([]map[string]any, []map[string]any) {
+func parseCompiledStructure(rows []structureRow, kinds []string) ([]map[string]any, []map[string]any) {
 	want := map[string]bool{}
 	for _, k := range kinds {
 		if k != "" {
@@ -788,34 +726,20 @@ func ParseCompiledStructure(rows []StructureRow, kinds []string) ([]map[string]a
 		if !ok {
 			continue
 		}
-		attachVec := func(list []map[string]any) {
-			if len(row.Vec) == 0 {
-				return
-			}
-			for _, m := range list {
-				m["_vec"] = row.Vec
-			}
-		}
 		switch row.KnowledgeGraphKwd {
 		case "graph":
-			es := objectList(graph["entities"])
-			rs := objectList(graph["relations"])
-			attachVec(es)
-			attachVec(rs)
-			entities = append(entities, es...)
-			relations = append(relations, rs...)
+			entities = append(entities, objectList(graph["entities"])...)
+			relations = append(relations, objectList(graph["relations"])...)
 		case "entity":
-			attachVec([]map[string]any{graph})
 			entities = append(entities, graph)
 		case "relation":
-			attachVec([]map[string]any{graph})
 			relations = append(relations, graph)
 		}
 	}
 	return entities, relations
 }
 
-// structureGraphFromRaw maps what ParseCompiledStructure returns onto the typed
+// structureGraphFromRaw maps what parseCompiledStructure returns onto the typed
 // nodes/relations the drill-down consumes (entity -> node conversion included so
 // the drill-down only ever sees structureNode).
 func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureNode, []structureRel) {
@@ -828,9 +752,6 @@ func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureNo
 		typ, _ := e["type"].(string)
 		desc, _ := e["description"].(string)
 		n := structureNode{name: name, nodeType: typ, desc: desc}
-		if v, ok := e["_vec"].([]float64); ok {
-			n.vec = v
-		}
 		if ids, ok := e["source_chunk_ids"].([]interface{}); ok {
 			for _, id := range ids {
 				if s, ok := id.(string); ok && s != "" {
@@ -897,55 +818,6 @@ func nodeRelevance(terms []string, name, desc string) int {
 	return n
 }
 
-// nodeScore mirrors _node_score: cosine when a query vector and the node
-// embedding both exist, else keyword relevance. This port leaves nodes
-// vector-less, so it always uses keyword relevance.
-func nodeScore(qvec []float64, terms []string, n structureNode) float64 {
-	if len(qvec) > 0 && len(n.vec) > 0 {
-		return cosine(qvec, n.vec)
-	}
-	return float64(nodeRelevance(terms, n.name, n.desc))
-}
-
-func cosine(a, b []float64) float64 {
-	if len(a) == 0 || len(b) == 0 || len(a) != len(b) {
-		return 0
-	}
-	var dot, na, nb float64
-	for i := range a {
-		dot += a[i] * b[i]
-		na += a[i] * a[i]
-		nb += b[i] * b[i]
-	}
-	if na == 0 || nb == 0 {
-		return 0
-	}
-	return dot / (sqrt(na) * sqrt(nb))
-}
-
-func sqrt(x float64) float64 {
-	if x < 0 {
-		return 0
-	}
-	r := x
-	for i := 0; i < 16; i++ {
-		if r == 0 {
-			break
-		}
-		r = 0.5 * (r + x/r)
-	}
-	return r
-}
-
-func sliceContains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
 // buildTocTree mirrors _build_toc_tree: a name->node map, the parent->children
 // map, the child->parent map (single parent, last-wins) and the root names.
 func buildTocTree(nodes []structureNode, rels []structureRel) (map[string]structureNode, map[string][]string, map[string]string, []string) {
@@ -1006,14 +878,12 @@ func chunkPtrs(ids []string) string {
 	}
 	var seen []string
 	for _, c := range ids {
-		if c == "" {
+		if c == "" || slices.Contains(seen, c) {
 			continue
 		}
-		if !sliceContains(seen, c) {
-			seen = append(seen, c)
-			if len(seen) >= 8 {
-				break
-			}
+		seen = append(seen, c)
+		if len(seen) >= 8 {
+			break
 		}
 	}
 	return strings.Join(seen, ",")
@@ -1028,10 +898,7 @@ func collectChunkIDs(nodes []structureNode, capN int) []string {
 	var out []string
 	for _, n := range nodes {
 		for _, c := range n.sourceChunkIDs {
-			if c == "" {
-				continue
-			}
-			if sliceContains(out, c) {
+			if c == "" || slices.Contains(out, c) {
 				continue
 			}
 			out = append(out, c)
@@ -1054,34 +921,17 @@ func sortedKeptNames(names map[string]bool) []string {
 	return out
 }
 
-// drillWithAncestors pulls the ancestors of names into the kept set so a path
-// renders as root -> ... -> node.
-func drillWithAncestors(names map[string]bool, parents map[string]string) map[string]bool {
-	for name := range names {
-		cur := parents[name]
-		guard := 0
-		for cur != "" && !names[cur] && guard < structMaxDepth {
-			names[cur] = true
-			cur = parents[cur]
-			guard++
-		}
-	}
-	return names
-}
-
-// drillKeptNodes mirrors _drill_kept_nodes: vector-beam BFS descent from the TOC
-// roots, keeping top-K children per level by keyword relevance (this port has no
-// node vectors, so it always uses the keyword path), returning the kept nodes,
-// the single-parent map, the kept-name set and the overall best score.
-func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels []structureRel) ([]structureNode, map[string]string, map[string]bool, float64) {
+// drillKeptNodes descends from the TOC roots, keeping top-K children per level by
+// keyword relevance, and returns the kept nodes, the single-parent map and the
+// kept-name set.
+func drillKeptNodes(terms []string, nodes []structureNode, rels []structureRel) ([]structureNode, map[string]string, map[string]bool) {
 	byName, children, parents, roots := buildTocTree(nodes, rels)
 	if len(roots) == 0 {
-		return nil, nil, nil, 0.0
+		return nil, nil, nil
 	}
 	frontier := roots
 	keptNames := map[string]bool{}
 	depth := 0
-	bestOverall := 0.0
 	for len(frontier) > 0 && depth <= structMaxDepth {
 		type scored struct {
 			score float64
@@ -1090,20 +940,13 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		var scoredList []scored
 		for _, n := range frontier {
 			if e, ok := byName[n]; ok {
-				scoredList = append(scoredList, scored{nodeScore(qvec, terms, e), n})
+				scoredList = append(scoredList, scored{float64(nodeRelevance(terms, e.name, e.desc)), n})
 			}
 		}
 		if len(scoredList) == 0 {
 			break
 		}
 		sort.SliceStable(scoredList, func(i, j int) bool { return scoredList[i].score > scoredList[j].score })
-		best := scoredList[0].score
-		if best > bestOverall {
-			bestOverall = best
-		}
-		if len(qvec) == 0 && best < float64(structRelevanceMin) {
-			break
-		}
 		var top []scored
 		for _, s := range scoredList {
 			if s.score >= float64(structRelevanceMin) {
@@ -1118,14 +961,13 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		}
 		var next []string
 		for _, s := range top {
-			if !keptNames[s.name] {
-				keptNames[s.name] = true
-			}
+			keptNames[s.name] = true
 			next = append(next, children[s.name]...)
 		}
 		frontier = next
 		depth++
 	}
+	// Ancestors of a kept node are pulled in so a path renders root -> node.
 	for name := range keptNames {
 		cur := parents[name]
 		guard := 0
@@ -1141,21 +983,7 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 			kept = append(kept, e)
 		}
 	}
-	return kept, parents, keptNames, bestOverall
-}
-
-// outlineStats mirrors _outline_stats: the entity / chunk-pointer counts for the
-// flat fallback outline (no drill happened => top_score 0).
-func outlineStats(nodes []structureNode) (nodeCount, ptrCount int) {
-	count := len(nodes)
-	if count > structMaxNodes {
-		count = structMaxNodes
-	}
-	ptrs := 0
-	for _, n := range nodes[:count] {
-		ptrs += len(collectChunkIDs([]structureNode{n}, 32))
-	}
-	return count, ptrs
+	return kept, parents, keptNames
 }
 
 // navTypeOr returns a node type, defaulting to "other" (a missing key reads as
@@ -1171,7 +999,7 @@ func navTypeOr(t string) string {
 func navOutlineLine(indent, name, nodeType, desc string, chunks []string) string {
 	line := indent + "- " + name + " (" + navTypeOr(nodeType) + ")"
 	if desc != "" {
-		line += ": " + Snippet(desc, structDescSnippet)
+		line += ": " + snippetRunes(desc, structDescSnippet)
 	}
 	if c := chunkPtrs(chunks); c != "" {
 		line += " [chunks: " + c + "]"
@@ -1203,26 +1031,18 @@ func renderOutline(nodes []structureNode, rels []structureRel) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderTocDrilldown mirrors _render_toc_drilldown's flat + beam paths: when no
-// terms/vector it falls back to the flat outline; otherwise it vector-beam
-// descends toward the query by keyword relevance. loader, when non-nil, fetches
-// chunk texts so short snippets can be appended; a nil loader skips the snippet
-// pass.
-func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText) structureDrillout {
-	flat := func() structureDrillout {
-		out := renderOutline(nodes, rels)
-		n, p := outlineStats(nodes)
-		return structureDrillout{outline: out, nodes: n, chunkPtrs: p, topScore: 0.0, chunkPaths: map[string]string{}, selector: "flat"}
-	}
+// renderTocDrilldown drills a document's compiled structure toward the query: no
+// usable query terms fall back to the flat outline, otherwise the tree is
+// descended by keyword relevance. loader, when non-nil, fetches chunk texts so
+// short snippets can be appended.
+func renderTocDrilldown(query string, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText) string {
 	terms := queryTerms(query)
-	if len(terms) == 0 && len(qvec) == 0 {
-		return flat()
+	if len(terms) == 0 {
+		return renderOutline(nodes, rels)
 	}
-	kept, parents, keptNames, best := drillKeptNodes(qvec, terms, nodes, rels)
+	kept, parents, keptNames := drillKeptNodes(terms, nodes, rels)
 	if len(kept) == 0 {
-		out := flat()
-		out.selector = "beam"
-		return out
+		return renderOutline(nodes, rels)
 	}
 	// depth_of: node -> number of kept ancestors (rendering indentation).
 	depthOf := map[string]int{}
@@ -1234,33 +1054,6 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 			cur = parents[cur]
 		}
 		depthOf[n] = d
-	}
-	chunkPaths := map[string]string{}
-	for _, e := range kept {
-		name := strings.TrimSpace(e.name)
-		if name == "" {
-			continue
-		}
-		var segs []string
-		segs = append(segs, name)
-		cur := parents[name]
-		guard := 0
-		for cur != "" && guard < structMaxDepth {
-			segs = append(segs, cur)
-			cur = parents[cur]
-			guard++
-		}
-		for i, j := 0, len(segs)-1; i < j; i, j = i+1, j-1 {
-			segs[i], segs[j] = segs[j], segs[i]
-		}
-		path := strings.Join(segs, " -> ")
-		for _, cid := range e.sourceChunkIDs {
-			if cid != "" {
-				if _, seen := chunkPaths[cid]; !seen {
-					chunkPaths[cid] = path
-				}
-			}
-		}
 	}
 	var lines []string
 	count := len(kept)
@@ -1275,7 +1068,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		indent := strings.Repeat("  ", depthOf[name])
 		lines = append(lines, navOutlineLine(indent, name, e.nodeType, e.desc, e.sourceChunkIDs))
 	}
-	if len(kept) > 0 && loader != nil {
+	if loader != nil {
 		wanted := collectChunkIDs(kept, 32)
 		if len(wanted) > 0 {
 			chunks := loader(wanted)
@@ -1288,76 +1081,50 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 				if text == "" {
 					continue
 				}
-				lines = append(lines, "- [chunk "+c.id+"]: "+Snippet(text, 300))
+				lines = append(lines, "- [chunk "+c.id+"]: "+snippetRunes(text, 300))
 			}
 		}
 	}
-	return structureDrillout{
-		outline:    strings.Join(lines, "\n"),
-		nodes:      len(kept),
-		chunkPtrs:  len(kept),
-		topScore:   best,
-		chunkPaths: chunkPaths,
-		selector:   "beam",
-	}
+	return strings.Join(lines, "\n")
 }
 
 // structureDocSegment renders one <doc> element (doc_id / entities / relations
-// plus the <structure> outline and the claim-sufficiency marker).
-func structureDocSegment(docID, query, kind string, rank int, nodes []structureNode, rels []structureRel, drill structureDrillout) string {
-	esc := func(s string) string { return xmlEscape(s) }
+// plus the <structure> outline).
+func structureDocSegment(docID string, rank, entities, relations int, outline string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `  <doc rank="%d" doc_id="%s" entities="%d" relations="%d">`, rank, esc(docID), len(nodes), len(rels))
-	if drill.outline != "" {
-		b.WriteString("\n    <structure>" + esc(drill.outline) + "</structure>")
-	}
-	if len(drill.claims) >= navClaimSufficientHits {
-		b.WriteString("\n    <claims_sufficient/>")
+	fmt.Fprintf(&b, `  <doc rank="%d" doc_id="%s" entities="%d" relations="%d">`, rank, xmlEscape(docID), entities, relations)
+	if outline != "" {
+		b.WriteString("\n    <structure>" + xmlEscape(outline) + "</structure>")
 	}
 	b.WriteString("\n  </doc>")
 	return b.String()
-}
-
-// emptyReasonLabel maps an empty-reason constant to the XML error label.
-func emptyReasonLabel(reason string) string {
-	switch reason {
-	case navStructReasonBadArgs:
-		return "query is required"
-	case navStructReasonNoDoc:
-		return "no document located"
-	default:
-		return "no structure"
-	}
 }
 
 // navigateStructures renders the compiled structures of the given documents into
 // a single <structure_navigation> with one <doc> per readable structure. A
 // document without a compiled structure of the requested kind is skipped; an
 // empty result (no doc carried a structure) reports no_structure.
-func navigateStructures(ctx context.Context, tenantID string, query string, docIDs, datasetIDs []string, kind string, reader structureReader) (string, string) {
+func navigateStructures(ctx context.Context, tenantID string, query string, docIDs, datasetIDs []string, kind string, reader structureReader) string {
 	if len(docIDs) == 0 {
-		return navStructEmpty(navStructReasonNoDoc, "route first with navigate_tree"), navStructReasonNoDoc
+		return navStructEmpty("route first with navigate_tree")
 	}
 	kinds := structureKindsFor(kind)
 	var segs []string
-	var docIDsSeen []string
 	for _, did := range docIDs {
-		drill, nodes, rels, empty := readStructureDocCore(ctx, tenantID, query, did, kind, kinds, datasetIDs, reader)
-		if empty != "" {
+		outline, entities, relations, ok := readStructureDocCore(ctx, tenantID, query, did, kinds, datasetIDs, reader)
+		if !ok {
 			continue
 		}
-		segs = append(segs, structureDocSegment(did, query, kind, len(segs)+1, nodes, rels, drill))
-		docIDsSeen = append(docIDsSeen, did)
+		segs = append(segs, structureDocSegment(did, len(segs)+1, entities, relations, outline))
 	}
 	if len(segs) == 0 {
-		return navStructEmpty(navStructReasonNoStructure, "no compiled structure for this kind"), navStructReasonNoStructure
+		return navStructEmpty("no compiled structure for this kind")
 	}
-	esc := func(s string) string { return xmlEscape(s) }
 	parts := append([]string{
-		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), esc(query), esc(kind)),
+		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), xmlEscape(query), xmlEscape(kind)),
 	}, segs...)
 	parts = append(parts, "</structure_navigation>")
-	return strings.Join(parts, "\n"), ""
+	return strings.Join(parts, "\n")
 }
 
 // navigateClaimsForQuery is the query-only path: it claims over the ROUTED
@@ -1374,17 +1141,28 @@ func navigateClaimsForQuery(ctx context.Context, tenantID, query string, docIDs,
 		if len(claims) == 0 {
 			continue
 		}
-		segs = append(segs, structureDocSegment(docs[i], query, kind, len(segs)+1, nil, nil, claimDrillout(ctx, claims)))
+		segs = append(segs, structureDocSegment(docs[i], len(segs)+1, 0, 0, claimOutline(ctx, claims)))
 	}
 	if len(segs) == 0 {
 		return "", 0
 	}
-	esc := func(s string) string { return xmlEscape(s) }
 	parts := append([]string{
-		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), esc(query), esc(kind)),
+		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), xmlEscape(query), xmlEscape(kind)),
 	}, segs...)
 	parts = append(parts, "</structure_navigation>")
 	return strings.Join(parts, "\n"), len(segs)
+}
+
+// claimKindList flattens the requested compile kinds into the sorted filter the
+// claim reader takes. Claim rows are selected by compile_kwd, so every claim read
+// needs it — the per-document tool path and the corpus-wide pre-loop recall alike.
+func claimKindList(kinds map[string]bool) []string {
+	out := make([]string, 0, len(kinds))
+	for k := range kinds {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // recallClaimsForQuery runs the claim leg over the given documents and returns
@@ -1392,15 +1170,10 @@ func navigateClaimsForQuery(ctx context.Context, tenantID, query string, docIDs,
 // (0 = uncapped); the trim is round-robin, so a tight budget still touches every
 // document instead of being spent on the first one.
 //
-// It is the retrieval half of both consumers: the query-only tool path renders
-// it as XML, and the pre-loop claim recall reads it directly.
+// It is the retrieval half of the per-document tool path; the pre-loop recall
+// reads corpus-wide instead (see recallClaimsAcrossDatasets).
 func recallClaimsForQuery(ctx context.Context, tenantID, query string, docIDs, datasetIDs []string, kind string, limit int, reader structureReader) ([]string, [][]claimHit) {
-	kinds := structureKindsFor(kind)
-	kindList := make([]string, 0, len(kinds))
-	for k := range kinds {
-		kindList = append(kindList, k)
-	}
-	sort.Strings(kindList)
+	kindList := claimKindList(structureKindsFor(kind))
 
 	var perDoc [][]claimHit
 	var docs []string
@@ -1450,34 +1223,24 @@ func trimClaimsRoundRobin(perDoc [][]claimHit, limit int) [][]claimHit {
 }
 
 // readStructureDocCore reads ONE document's compiled structure of the requested
-// kind and drills it toward the query. It returns the per-document drill data,
-// the nodes/rels, and an empty-reason ("" means read succeeded).
+// kind and drills it toward the query. It returns the rendered outline, the
+// entity/relation counts, and whether the document carried a structure at all.
 //
 // Claim recall runs FIRST and, when it hits, replaces the drill entirely: the
 // claims carry their own evidence, so descending the tree could only re-derive
 // what they already state.
-func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind string, kinds map[string]bool, datasetIDs []string, reader structureReader) (structureDrillout, []structureNode, []structureRel, string) {
-	none := structureDrillout{chunkPaths: map[string]string{}}
-	switch {
-	case query == "":
-		return none, nil, nil, navStructReasonBadArgs
-	case docID == "":
-		return none, nil, nil, navStructReasonNoDoc
+func readStructureDocCore(ctx context.Context, tenantID, query, docID string, kinds map[string]bool, datasetIDs []string, reader structureReader) (string, int, int, bool) {
+	if query == "" || docID == "" {
+		return "", 0, 0, false
 	}
-	kindList := make([]string, 0, len(kinds))
-	for k := range kinds {
-		kindList = append(kindList, k)
-	}
-	sort.Strings(kindList)
-
-	claims := recallClaimsForDoc(ctx, tenantID, query, docID, kindList, datasetIDs, reader)
-	if len(claims) >= navClaimFirstMinHits {
-		return claimDrillout(ctx, claims), nil, nil, ""
+	kindList := claimKindList(kinds)
+	if claims := recallClaimsForDoc(ctx, tenantID, query, docID, kindList, datasetIDs, reader); len(claims) > 0 {
+		return claimOutline(ctx, claims), 0, 0, true
 	}
 
 	var nodes []structureNode
 	var rels []structureRel
-	anyStruct := false
+	read := false
 	for _, kbID := range datasetIDs {
 		rows, err := reader.ReadStructure(ctx, tenantID, kbID, docID)
 		if err != nil {
@@ -1488,40 +1251,17 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 		if len(rows) == 0 {
 			continue
 		}
-		anyStruct = true
-		entities, relations := ParseCompiledStructure(rows, kindList)
+		read = true
+		entities, relations := parseCompiledStructure(rows, kindList)
 		es, rs := structureGraphFromRaw(entities, relations)
 		nodes = append(nodes, es...)
 		rels = append(rels, rs...)
 	}
-	if !anyStruct || len(nodes) == 0 {
-		if len(claims) > 0 {
-			// A claim-only document (a batch can produce evidence rows without
-			// tree nodes) still renders its claim-first outline; counting only
-			// entities would throw that output away and the caller would strike
-			// the tool as "no compiled structure".
-			return claimDrillout(ctx, claims), nil, nil, ""
-		}
-		return none, nil, nil, navStructReasonNoStructure
+	if !read || len(nodes) == 0 {
+		return "", 0, 0, false
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, tenantID, ids) }
-	drill := renderTocDrilldown(query, nil, nodes, rels, loader)
-	if len(claims) > 0 {
-		// Reachable only when the claim-first floor is raised above 1: the drill
-		// renders first, the claims annotate it.
-		lines := make([]string, 0, len(claims))
-		for _, c := range claims {
-			lines = append(lines, claimOutlineLine(ctx, c))
-		}
-		extra := strings.Join(lines, "\n")
-		if drill.outline == "" {
-			drill.outline = extra
-		} else {
-			drill.outline += "\n" + extra
-		}
-		drill.claims = claims
-	}
-	return drill, nodes, rels, ""
+	return renderTocDrilldown(query, nodes, rels, loader), len(nodes), len(rels), true
 }
 
 // recallClaimsForDoc runs the claim leg across the document's datasets, keeping
@@ -1612,14 +1352,14 @@ func structureKindsFor(kind string) map[string]bool {
 }
 
 func decodeJSONObject(s string) (map[string]any, bool) {
-	v := ExtractJSON(s)
+	v := firstJSONValue(s)
 	m, ok := v.(map[string]any)
 	return m, ok
 }
 
-// ExtractJSON finds the first JSON object in s (tolerating surrounding prose or
+// firstJSONValue finds the first JSON object in s (tolerating surrounding prose or
 // code fences) and returns it decoded.
-func ExtractJSON(s string) any {
+func firstJSONValue(s string) any {
 	start := strings.Index(s, "{")
 	if start < 0 {
 		return nil
@@ -1675,8 +1415,8 @@ func objectList(v any) []map[string]any {
 	return out
 }
 
-// Snippet truncates s to at most n runes, appending an ellipsis when cut.
-func Snippet(s string, n int) string {
+// snippetRunes truncates s to at most n runes, appending an ellipsis when cut.
+func snippetRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
@@ -1686,7 +1426,7 @@ func Snippet(s string, n int) string {
 
 // navStructEmpty returns the empty <structure_navigation count="0"> XML carrying
 // an optional error="..." attribute, mirroring the harness navigation contract.
-func navStructEmpty(reason, label string) string {
+func navStructEmpty(label string) string {
 	attr := ""
 	if label != "" {
 		attr = ` error="` + xmlEscape(label) + `"`
@@ -1776,9 +1516,8 @@ func (g *NavigateStructureTool) InvokableRun(ctx context.Context, argumentsInJSO
 // exploration runs. Nothing is appended to the system instruction: a block there
 // is re-billed on every model call of the turn, which is the cost this replaces.
 type claimPrefetch struct {
-	question string
-	docs     []string
-	claims   []claimHit
+	docs   []string
+	claims []claimHit
 	// evidence is the rendered claim block, carrying the [ID:n] handles its
 	// source chunks were stamped with. It is rendered ONLY for a sufficient
 	// recall, because rendering is what publishes handles: a discarded recall
@@ -1802,12 +1541,9 @@ func recallCompiledClaims(ctx context.Context, tenantID string, datasetIDs []str
 		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
 			zap.Strings("datasets", datasetIDs),
 			zap.String("reason", "no claim rows in the bound datasets"))
-		return claimPrefetch{question: question}
+		return claimPrefetch{}
 	}
 	reader := getStructureReader()
-	if reader == nil {
-		return claimPrefetch{question: question}
-	}
 	// NO document routing: the claim leg is a flat, corpus-wide read, which is
 	// the whole reason it can run before the loop. Routing first (the nav-tree
 	// KNN) reintroduced the document choice this path exists to avoid, and it
@@ -1818,26 +1554,29 @@ func recallCompiledClaims(ctx context.Context, tenantID string, datasetIDs []str
 	// The turn's document scope, when set, is still honoured — as a filter on the
 	// claim rows themselves.
 	docScope, _ := resolveDocumentScope(ctx, nil)
-	claims := recallClaimsAcrossDatasets(ctx, tenantID, datasetIDs, docScope, question, navClaimPrefetchLimit(), reader)
-
-	pf := claimPrefetch{question: question, claims: claims}
-	docs := map[string]struct{}{}
-	for _, c := range claims {
-		if c.docID != "" {
-			docs[c.docID] = struct{}{}
-		}
+	// A non-nil EMPTY scope means the turn allows no documents. The reader drops
+	// its doc_id filter when the scope is empty, so passing one through would read
+	// as "unrestricted" and recall the whole dataset — the opposite of the turn's
+	// scope. Stop before the read instead.
+	if docScope != nil && len(docScope) == 0 {
+		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
+			zap.Strings("datasets", datasetIDs),
+			zap.String("reason", "no documents in the turn's scope"))
+		return claimPrefetch{}
 	}
-	pf.sufficient = claimsAnswerQuestion(claims, len(docs))
+	claims := recallClaimsAcrossDatasets(ctx, tenantID, datasetIDs, docScope, question, navClaimPrefetchTopN, reader)
+
+	pf := claimPrefetch{claims: claims, docs: claimDocsInOrder(claims)}
+	pf.sufficient = claimsAnswerQuestion(claims, len(pf.docs))
 	if !pf.sufficient {
 		common.InfoCtx(ctx, "agentic_rag: claim recall insufficient",
 			zap.String("query", question),
 			zap.Int("claims", len(claims)),
-			zap.Int("docs", len(docs)),
+			zap.Int("docs", len(pf.docs)),
 			zap.Int("required_claims", navClaimSufficientHits),
 			zap.Int("required_docs", navClaimMinDocs))
 		return pf
 	}
-	pf.docs = claimDocsInOrder(claims)
 	pf.evidence = claimEvidenceBlock(ctx, claims)
 	common.InfoCtx(ctx, "agentic_rag: claim recall sufficient",
 		zap.String("query", question),
@@ -1856,12 +1595,7 @@ func recallClaimsAcrossDatasets(ctx context.Context, tenantID string, datasetIDs
 	if !ok {
 		return nil
 	}
-	kinds := structureKindsFor("")
-	kindList := make([]string, 0, len(kinds))
-	for k := range kinds {
-		kindList = append(kindList, k)
-	}
-	sort.Strings(kindList)
+	kindList := claimKindList(structureKindsFor(""))
 	qvec := claimQueryVector(ctx, tenantID, query)
 
 	// Group the hits by source document, in ranked order, then take them
@@ -1988,20 +1722,17 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 		// compiled structure): skip the backend and return the same verdict the
 		// caller falls back from.
 		common.DebugCtx(ctx, "navigate_structure: marked unavailable; skipping backend (no structure)")
-		return navStructEmpty(navStructReasonNoStructure, "no structure"), nil
+		return navStructEmpty("no structure"), nil
 	}
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
 	if err != nil {
 		return "", fmt.Errorf("navigate_structure: %w", err)
 	}
 	if len(datasetIDs) == 0 {
-		return navStructEmpty(navStructReasonNoStructure, "no bound datasets"), nil
+		return navStructEmpty("no bound datasets"), nil
 	}
 
 	reader := getStructureReader()
-	if reader == nil {
-		return navStructEmpty(navStructReasonNoStructure, "no structure reader installed"), nil
-	}
 
 	text := strings.TrimSpace(query + " " + strings.TrimSpace(args.Keywords))
 
@@ -2014,9 +1745,12 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	// document the model actually chose.
 	routedByQuery := false
 	if len(docIDs) == 0 {
-		docIDs = routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, navQueryRouteDocs)
+		// The router ranks the whole bound corpus, so a turn restricted to a set
+		// of documents must intersect here - the same rule the pre-loop recall
+		// applies to its claim rows.
+		docIDs = intersectDocumentScope(ctx, routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, navQueryRouteDocs))
 		if len(docIDs) == 0 {
-			return navStructEmpty(navStructReasonNoDoc, "route first with navigate_tree"), nil
+			return navStructEmpty("route first with navigate_tree"), nil
 		}
 		routedByQuery = true
 	}
@@ -2036,13 +1770,12 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 			zap.Int("docs_with_claims", docs),
 			zap.Int("out_bytes", len(out)))
 		if docs == 0 {
-			return navStructEmpty(navStructReasonNoDoc, "no claim hits in the routed documents; fall back to search_chunks or list_chunks"), nil
+			return navStructEmpty("no claim hits in the routed documents; fall back to search_chunks or list_chunks"), nil
 		}
 		return out, nil
 	}
 
-	out, reason := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
-	_ = reason
+	out := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
 	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
 	// log, so a graph tool that rendered a structure without leaving a line here
 	// cannot be told from one that was never called.

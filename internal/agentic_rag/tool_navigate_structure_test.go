@@ -27,18 +27,18 @@ import (
 
 // fakeStructureReader returns canned compiled-structure rows per document.
 type fakeStructureReader struct {
-	byDoc map[string][]StructureRow
+	byDoc map[string][]structureRow
 }
 
-func (f fakeStructureReader) ReadStructure(_ context.Context, _ string, _ string, docID string) ([]StructureRow, error) {
+func (f fakeStructureReader) ReadStructure(_ context.Context, _ string, _ string, docID string) ([]structureRow, error) {
 	return f.byDoc[docID], nil
 }
 
 func installFakeStructureReader(t *testing.T, r structureReader) {
 	t.Helper()
 	prev := getStructureReader()
-	SetStructureReader(r)
-	t.Cleanup(func() { SetStructureReader(prev) })
+	setStructureReader(r)
+	t.Cleanup(func() { setStructureReader(prev) })
 }
 
 // fakeClaimStructureReader is a structureReader that also carries a claim leg:
@@ -73,13 +73,44 @@ func (f fakeClaimStructureReader) ReadClaims(_ context.Context, _ string, _ stri
 			hits = append(hits, h)
 		}
 	}
+	// Spread a cap across the requested documents rather than truncating in
+	// document order: the ranked reader interleaves documents, so truncating by
+	// document would model a reader this codebase does not have.
 	if limit > 0 && len(hits) > limit {
-		hits = hits[:limit]
+		var byDoc [][]claimHit
+		for _, docID := range requested {
+			var group []claimHit
+			for _, h := range hits {
+				if h.docID == docID {
+					group = append(group, h)
+				}
+			}
+			if len(group) > 0 {
+				byDoc = append(byDoc, group)
+			}
+		}
+		var spread []claimHit
+		for round := 0; len(spread) < limit; round++ {
+			progressed := false
+			for _, group := range byDoc {
+				if round < len(group) {
+					spread = append(spread, group[round])
+					progressed = true
+					if len(spread) == limit {
+						break
+					}
+				}
+			}
+			if !progressed {
+				break
+			}
+		}
+		hits = spread
 	}
 	return hits, nil
 }
 
-func claimRowJSON(name, desc, quote, chunkID string) StructureRow {
+func claimRowJSON(name, desc, quote, chunkID string) structureRow {
 	content, _ := json.Marshal(map[string]any{
 		"type":             "claim",
 		"name":             name,
@@ -87,7 +118,7 @@ func claimRowJSON(name, desc, quote, chunkID string) StructureRow {
 		"source_chunk_ids": []string{chunkID},
 		"evidence":         []map[string]any{{"quote": quote, "chunk_id": chunkID}},
 	})
-	return StructureRow{Content: string(content)}
+	return structureRow{Content: string(content)}
 }
 
 // TestNavigateStructureToolIsRegisteredAndBuildableByTemplate pins the wiring:
@@ -114,7 +145,7 @@ func TestNavigateStructureToolIsRegisteredAndBuildableByTemplate(t *testing.T) {
 }
 
 // graphRow is a canned compiled-structure "graph" blob for the drill tests.
-func graphRow() StructureRow {
+func graphRow() structureRow {
 	content, _ := json.Marshal(map[string]any{
 		"entities": []map[string]any{
 			{"name": "Alpha", "type": "section", "description": "first topic", "source_chunk_ids": []string{"c1", "c2"}},
@@ -124,13 +155,13 @@ func graphRow() StructureRow {
 			{"from": "Alpha", "to": "Beta", "type": "contains"},
 		},
 	})
-	return StructureRow{KnowledgeGraphKwd: "graph", Content: string(content)}
+	return structureRow{KnowledgeGraphKwd: "graph", Content: string(content)}
 }
 
 // TestNavigateStructureToolDrillsStructure pins the payload: a routed document's
 // compiled structure renders as a query-focused outline with chunk pointers.
 func TestNavigateStructureToolDrillsStructure(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{
 		"d1": {graphRow()},
 	}})
 
@@ -157,7 +188,7 @@ func TestNavigateStructureToolDrillsStructure(t *testing.T) {
 // TestNavigateStructureToolFlatFallback renders the whole outline when the query
 // carries no usable terms (the documented no-keyword fallback).
 func TestNavigateStructureToolFlatFallback(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{
 		"d1": {graphRow()},
 	}})
 
@@ -174,7 +205,7 @@ func TestNavigateStructureToolFlatFallback(t *testing.T) {
 // TestNavigateStructureToolNoDocIsAHintNotAnError: a call without a doc_id is a
 // usage-level dead end the model reads and routes first with navigate_tree.
 func TestNavigateStructureToolNoDocIsAHintNotAnError(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{}})
 
 	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"q"}`)
@@ -192,7 +223,7 @@ func TestNavigateStructureToolNoDocIsAHintNotAnError(t *testing.T) {
 // TestNavigateStructureToolNoStructureIsAHintNotAnError: a document without a
 // compiled structure of the requested kind is a dead end, not an abort.
 func TestNavigateStructureToolNoStructureIsAHintNotAnError(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{
 		"d1": nil, // no structure rows
 	}})
 
@@ -211,7 +242,7 @@ func TestNavigateStructureToolNoStructureIsAHintNotAnError(t *testing.T) {
 
 // TestNavigateStructureToolRequiresQuery pins the argument contract.
 func TestNavigateStructureToolRequiresQuery(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{}})
 	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"   "}`)
 	if err != nil {
@@ -225,7 +256,7 @@ func TestNavigateStructureToolRequiresQuery(t *testing.T) {
 // TestNavigateStructureToolRespectsDatasetScope: an out-of-scope dataset_id is
 // rejected before any read.
 func TestNavigateStructureToolRespectsDatasetScope(t *testing.T) {
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{}})
 	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
 	out, err := tool.InvokableRun(context.Background(), `{"query":"q","doc_id":"d1","dataset_ids":["rogue"]}`)
 	if err != nil {
@@ -250,20 +281,20 @@ func TestQueryTermsTokenizes(t *testing.T) {
 }
 
 func TestExtractJSONObjectToleratesProse(t *testing.T) {
-	v := ExtractJSON("here is the blob: {\"a\": 1, \"b\": [2,3]} trailing text")
+	v := firstJSONValue("here is the blob: {\"a\": 1, \"b\": [2,3]} trailing text")
 	m, ok := v.(map[string]any)
 	if !ok || m["a"] != float64(1) {
-		t.Errorf("ExtractJSON = %#v ok=%v", v, ok)
+		t.Errorf("firstJSONValue = %#v ok=%v", v, ok)
 	}
-	if ExtractJSON("no json here") != nil {
-		t.Errorf("ExtractJSON must return nil when no object is present")
+	if firstJSONValue("no json here") != nil {
+		t.Errorf("firstJSONValue must return nil when no object is present")
 	}
 }
 
 // TestExtractJSONHandlesEscapedQuotes: a description carrying an escaped quote
 // (and braces) must not corrupt the brace depth and silently drop the row.
 func TestExtractJSONHandlesEscapedQuotes(t *testing.T) {
-	v := ExtractJSON(`{"a": "say \"hi\" {ok}", "b": 1}`)
+	v := firstJSONValue(`{"a": "say \"hi\" {ok}", "b": 1}`)
 	m, ok := v.(map[string]any)
 	if !ok {
 		t.Fatalf("escaped quotes must still parse, got %#v", v)
@@ -275,7 +306,7 @@ func TestExtractJSONHandlesEscapedQuotes(t *testing.T) {
 
 func TestParseCompiledStructureMergesGraphBlob(t *testing.T) {
 	row := graphRow()
-	entities, relations := ParseCompiledStructure([]StructureRow{row}, nil)
+	entities, relations := parseCompiledStructure([]structureRow{row}, nil)
 	if len(entities) != 2 || len(relations) != 1 {
 		t.Fatalf("parsed entities=%d relations=%d, want 2/1", len(entities), len(relations))
 	}
@@ -289,17 +320,17 @@ func TestParseCompiledStructureMergesGraphBlob(t *testing.T) {
 // rowKind normalizes that row shape to "timeline" (and a plain string compare
 // would drop every row before parsing).
 func TestParseCompiledStructureNormalizesRequestedKind(t *testing.T) {
-	entities, relations := ParseCompiledStructure([]StructureRow{graphRow()}, []string{"graph"})
+	entities, relations := parseCompiledStructure([]structureRow{graphRow()}, []string{"graph"})
 	if len(entities) != 2 || len(relations) != 1 {
 		t.Fatalf("kind=graph must not filter out the graph row: entities=%d relations=%d", len(entities), len(relations))
 	}
-	if entities, relations := ParseCompiledStructure([]StructureRow{graphRow()}, []string{"mind_map"}); len(entities) != 0 || len(relations) != 0 {
+	if entities, relations := parseCompiledStructure([]structureRow{graphRow()}, []string{"mind_map"}); len(entities) != 0 || len(relations) != 0 {
 		t.Fatalf("an unrelated kind must still filter the row out: %d/%d", len(entities), len(relations))
 	}
 }
 
 func TestStructureGraphFromRawBuildsNodesAndRels(t *testing.T) {
-	entities, relations := ParseCompiledStructure([]StructureRow{graphRow()}, nil)
+	entities, relations := parseCompiledStructure([]structureRow{graphRow()}, nil)
 	nodes, rels := structureGraphFromRaw(entities, relations)
 	if len(nodes) != 2 || len(rels) != 1 {
 		t.Fatalf("nodes=%d rels=%d, want 2/1", len(nodes), len(rels))
@@ -313,7 +344,7 @@ func TestStructureGraphFromRawBuildsNodesAndRels(t *testing.T) {
 }
 
 func TestBuildTocTreeAndOutline(t *testing.T) {
-	entities, relations := ParseCompiledStructure([]StructureRow{graphRow()}, nil)
+	entities, relations := parseCompiledStructure([]structureRow{graphRow()}, nil)
 	nodes, rels := structureGraphFromRaw(entities, relations)
 	byName, children, parents, roots := buildTocTree(nodes, rels)
 	if len(roots) != 1 || roots[0] != "Alpha" {
@@ -342,7 +373,7 @@ func TestBuildTocTreeAndOutline(t *testing.T) {
 // exist for the same document.
 func TestNavigateStructureClaimLegReplacesDrill(t *testing.T) {
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{
 			"d1": {graphRow()},
 		}},
 		claims: map[string][]claimHit{
@@ -376,21 +407,21 @@ func TestNavigateStructureClaimLegReplacesDrill(t *testing.T) {
 	if strings.Contains(out, "Alpha (section)") {
 		t.Errorf("a claim hit must replace the drill, so no structure node may render, got:\n%s", out)
 	}
-	if strings.Contains(out, "<claims_sufficient/>") {
-		t.Errorf("one claim is below the sufficiency floor, got:\n%s", out)
-	}
 }
 
-// TestNavigateStructureClaimsSufficientAtFloor: the sufficiency signal is a
-// COUNT, so it must appear once the hit count reaches the floor.
-func TestNavigateStructureClaimsSufficientAtFloor(t *testing.T) {
+// TestNavigateStructureRendersEveryClaim: the tool renders the claims it recalled,
+// with no self-declared sufficiency verdict - whether a claim set is enough to
+// answer from is decided by the pipeline's pre-loop recall, not by a marker the
+// model has to interpret (and which could never agree with that gate's
+// document-diversity rule).
+func TestNavigateStructureRendersEveryClaim(t *testing.T) {
 	hits := []claimHit{
 		{chunkID: "c1", name: "claim one", quote: "q1"},
 		{chunkID: "c2", name: "claim two", quote: "q2"},
 		{chunkID: "c3", name: "claim three", quote: "q3"},
 	}
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims:              map[string][]claimHit{"d1": hits},
 	})
 
@@ -398,9 +429,6 @@ func TestNavigateStructureClaimsSufficientAtFloor(t *testing.T) {
 		InvokableRun(context.Background(), `{"query":"claims","doc_id":"d1"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
-	}
-	if !strings.Contains(out, "<claims_sufficient/>") {
-		t.Errorf("%d claims must publish <claims_sufficient/>, got:\n%s", len(hits), out)
 	}
 	if got := strings.Count(out, "- [claim] "); got != len(hits) {
 		t.Errorf("rendered %d claim lines, want %d:\n%s", got, len(hits), out)
@@ -412,7 +440,7 @@ func TestNavigateStructureClaimsSufficientAtFloor(t *testing.T) {
 // would report "no compiled structure" and throw the evidence away.
 func TestNavigateStructureClaimOnlyDocumentIsNotNoStructure(t *testing.T) {
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{"d1": {
 			{chunkID: "c1", name: "only claim", quote: "only quote"},
 		}},
@@ -431,44 +459,44 @@ func TestNavigateStructureClaimOnlyDocumentIsNotNoStructure(t *testing.T) {
 	}
 }
 
-// TestNavigateStructureClaimLegReceivesQueryVector: the tool must hand the
-// encoder's vector to the claim leg (the dense half of hybrid recall), and must
-// pass nothing when no encoder is installed.
+// TestNavigateStructureClaimLegReceivesQueryVector: the tool must hand the nav
+// service's query vector to the claim leg (the dense half of hybrid recall), and
+// must pass nothing when no service is installed.
 func TestNavigateStructureClaimLegReceivesQueryVector(t *testing.T) {
 	var got []float64
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims:              map[string][]claimHit{"d1": {{chunkID: "c1", name: "n", quote: "q"}}},
 		gotQVec:             &got,
 	})
-	prev := claimQueryEncoder
-	t.Cleanup(func() { SetClaimQueryEncoder(prev) })
-	SetClaimQueryEncoder(func(context.Context, string, string) []float64 { return []float64{0.25, 0.5} })
+	installFakeNavService(t, fakeNavService{
+		encode: func(context.Context, string, string) []float64 { return []float64{0.25, 0.5} },
+	})
 
 	if _, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
 		InvokableRun(context.Background(), `{"query":"q","doc_id":"d1"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if len(got) != 2 || got[0] != 0.25 {
-		t.Errorf("claim leg received qvec %v, want the encoder's vector", got)
+		t.Errorf("claim leg received qvec %v, want the service's vector", got)
 	}
 
-	SetClaimQueryEncoder(nil)
+	installFakeNavService(t, nil)
 	if _, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
 		InvokableRun(context.Background(), `{"query":"q","doc_id":"d1"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if len(got) != 0 {
-		t.Errorf("without an encoder the claim leg must run lexical-only, got qvec %v", got)
+		t.Errorf("without a nav service the claim leg must run lexical-only, got qvec %v", got)
 	}
 }
 
 // TestClaimQueryVectorSwallowsPanic: a misconfigured embedder degrades recall to
 // the lexical leg; it must never take the tool call down.
 func TestClaimQueryVectorSwallowsPanic(t *testing.T) {
-	prev := claimQueryEncoder
-	t.Cleanup(func() { SetClaimQueryEncoder(prev) })
-	SetClaimQueryEncoder(func(context.Context, string, string) []float64 { panic("boom") })
+	installFakeNavService(t, fakeNavService{
+		encode: func(context.Context, string, string) []float64 { panic("boom") },
+	})
 	if vec := claimQueryVector(context.Background(), "tenant-1", "q"); vec != nil {
 		t.Errorf("a panicking encoder must yield no vector, got %v", vec)
 	}
@@ -523,8 +551,8 @@ func TestRRFFuseMergesLegsByRank(t *testing.T) {
 	if fused[0].score != 3 {
 		t.Errorf("a fused hit keeps its best raw score, got %v", fused[0].score)
 	}
-	if fused[0].rank != 1 || fused[2].rank != 3 {
-		t.Errorf("ranks must be 1-based, got %+v", fused)
+	if len(fused) != 3 || fused[1].name != "only text" || fused[2].name != "only dense" {
+		t.Errorf("single-leg hits must follow the double-leg hit, got %+v", fused)
 	}
 	if capped := rrfFuse(navClaimRRFK, 2, dense, text); len(capped) != 2 {
 		t.Errorf("limit must cap the fused list, got %d", len(capped))
@@ -535,7 +563,7 @@ func TestRRFFuseMergesLegsByRank(t *testing.T) {
 // from the same passage, so dedupe must be by claim, not by chunk id.
 func TestClaimRecallKeepsDistinctClaimsFromOneChunk(t *testing.T) {
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{"d1": {
 			{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
 			{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
@@ -601,7 +629,7 @@ func installFakeStructureRoute(t *testing.T, docs [][2]string) {
 func TestNavigateStructureQueryOnlyRoutesAndClaims(t *testing.T) {
 	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{"d1": {{
 			chunkID: "c1",
 			name:    "Acme was founded in 1994",
@@ -633,7 +661,7 @@ func TestNavigateStructureQueryOnlyRoutesAndClaims(t *testing.T) {
 func TestNavigateStructureQueryOnlyNoClaimsIsAHint(t *testing.T) {
 	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims:              map[string][]claimHit{},
 	})
 
@@ -651,7 +679,7 @@ func TestNavigateStructureQueryOnlyNoClaimsIsAHint(t *testing.T) {
 // at all, the tool still tells the model to route with navigate_tree.
 func TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint(t *testing.T) {
 	installFakeStructureRoute(t, nil)
-	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]StructureRow{}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{}})
 
 	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
 		InvokableRun(context.Background(), `{"query":"nothing"}`)
@@ -669,7 +697,7 @@ func TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint(t *testing.T) {
 func TestRecallCompiledClaimsSufficient(t *testing.T) {
 	stubClaimProbe(t, true)
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{
 			"d1": {
 				{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
@@ -707,7 +735,7 @@ func TestRecallCompiledClaimsSufficient(t *testing.T) {
 func TestRecallCompiledClaimsSingleDocumentIsNotSufficient(t *testing.T) {
 	stubClaimProbe(t, true)
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{"d1": {
 			{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
 			{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
@@ -724,6 +752,28 @@ func TestRecallCompiledClaimsSingleDocumentIsNotSufficient(t *testing.T) {
 	}
 }
 
+// TestRecallCompiledClaimsEmptyDocumentScopeSkipsRecall: a non-nil EMPTY scope
+// means the turn allows no documents. The reader treats an empty docIDs slice as
+// "the whole dataset", so the recall must stop before the read instead of
+// widening the turn's scope to everything.
+func TestRecallCompiledClaimsEmptyDocumentScopeSkipsRecall(t *testing.T) {
+	stubClaimProbe(t, true)
+	installFakeStructureReader(t, fakeClaimStructureReader{
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
+		claims: map[string][]claimHit{
+			"d1": {{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"}},
+			"d2": {{chunkID: "c2", name: "Acme employs 900 people", quote: "a workforce of 900"}},
+		},
+	})
+	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
+	ctx := withDocumentScope(context.Background(), []string{})
+	pf := recallCompiledClaims(ctx, "tenant-1", []string{"kb1"}, msgs)
+	if len(pf.claims) != 0 || pf.sufficient || pf.evidence != "" {
+		t.Fatalf("an empty document scope must skip the recall, got %d claims (sufficient=%v, evidence=%q)",
+			len(pf.claims), pf.sufficient, pf.evidence)
+	}
+}
+
 // TestRecallCompiledClaimsInsufficientIsDropped: a recall below the sufficiency
 // count must not reach the model - neither as evidence nor as published handles
 // for passages it never saw.
@@ -731,7 +781,7 @@ func TestRecallCompiledClaimsInsufficientIsDropped(t *testing.T) {
 	stubClaimProbe(t, true)
 	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{"d1": {{
 			chunkID: "c1",
 			name:    "Acme was founded in 1994",
@@ -758,7 +808,7 @@ func TestRecallCompiledClaimsSkipsEmptyHits(t *testing.T) {
 	stubClaimProbe(t, true)
 	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims:              map[string][]claimHit{},
 	})
 	msgs := []*schema.Message{{Role: schema.User, Content: "nothing here"}}
@@ -790,25 +840,25 @@ func claimsPerDoc(docID string, n int) []claimHit {
 }
 
 // TestRecallCapsClaims: the recall block is the whole prompt of the answer call,
-// so it honours the per-run cap - and the cap is spread across documents, not
-// spent on the first one.
+// so it honours its cap - and the cap is spread across documents, not spent on
+// the first one.
 func TestRecallCapsClaims(t *testing.T) {
 	stubClaimProbe(t, true)
-	t.Setenv("AGENTIC_CLAIM_PREFETCH_MAX", "12")
+	docs := []string{"d1", "d2", "d3", "d4"}
+	claims := map[string][]claimHit{}
+	for _, d := range docs {
+		claims[d] = claimsPerDoc(d, 8)
+	}
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
-		claims: map[string][]claimHit{
-			"d1": claimsPerDoc("d1", 5),
-			"d2": claimsPerDoc("d2", 5),
-			"d3": claimsPerDoc("d3", 5),
-		},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
+		claims:              claims,
 	})
 	msgs := []*schema.Message{{Role: schema.User, Content: "acme"}}
 	pf := recallCompiledClaims(context.Background(), "tenant-1", []string{"kb1"}, msgs)
-	if got := strings.Count(pf.evidence, "- [claim] "); got != 12 {
-		t.Errorf("recall rendered %d claims, want the cap 12:\n%s", got, pf.evidence)
+	if got := strings.Count(pf.evidence, "- [claim] "); got != navClaimPrefetchTopN {
+		t.Errorf("recall rendered %d claims, want the cap %d:\n%s", got, navClaimPrefetchTopN, pf.evidence)
 	}
-	for _, docID := range []string{"d1", "d2", "d3"} {
+	for _, docID := range docs {
 		if !strings.Contains(pf.evidence, `doc_id="`+docID+`"`) {
 			t.Errorf("the cap must be spread across documents, %s missing:\n%s", docID, pf.evidence)
 		}
@@ -859,7 +909,7 @@ func TestParseClaimAnswer(t *testing.T) {
 func TestQueryOnlyToolCallIsUncapped(t *testing.T) {
 	installFakeStructureRoute(t, [][2]string{{"d1", "A"}, {"d2", "B"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		claims: map[string][]claimHit{
 			"d1": claimsPerDoc("d1", 5),
 			"d2": claimsPerDoc("d2", 5),
@@ -881,7 +931,7 @@ func TestRecallSkippedWithoutClaimRows(t *testing.T) {
 	stubClaimProbe(t, false)
 	installFakeStructureRoute(t, [][2]string{{"d1", "A"}})
 	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]StructureRow{}},
+		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
 		// Claims exist in the fake store on purpose: the gate must win, otherwise
 		// this test would pass for the wrong reason.
 		claims: map[string][]claimHit{"d1": {{
