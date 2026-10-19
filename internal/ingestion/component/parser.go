@@ -94,7 +94,9 @@ import (
 	"ragflow/internal/utility"
 )
 
-const ComponentNameParser = "Parser"
+// ComponentNameParser is the canonical Parser component name; the value lives
+// in the schema package so the pipeline layer can reference the same identity.
+const ComponentNameParser = schema.ComponentNameParser
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
