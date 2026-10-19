@@ -247,40 +247,9 @@ type ingestionConfigMigrationRow struct {
 }
 
 func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
-	version, err := GetDatabaseMigrationVersion(ctx, db)
-	if err != nil {
-		return err
-	}
-	if shouldSkipMigration(version, ingestionParserConfigTargetVersion) {
-		return nil
-	}
-	found := false
-	for _, target := range []struct {
-		table string
-		model any
-	}{
-		{"knowledgebase", &entity.Knowledgebase{}}, {"document", &entity.Document{}},
-	} {
-		if !db.WithContext(ctx).Migrator().HasTable(target.model) {
-			continue
-		}
-		found = true
-		count, err := migrateIngestionConfigRows(ctx, db, target.model, target.table)
-		if err != nil {
-			return fmt.Errorf("migrate %s parser configs: %w", target.table, err)
-		}
-		common.Info("Migrated Python parser configs", zap.String("table", target.table),
-			zap.String("version", ingestionParserConfigTargetVersion), zap.Int("rows", count))
-	}
-	if !found {
-		return nil
-	}
-	// Cleanup shares this version: run it only after both conversions succeed.
-	if err := migrateKnowledgebaseParserConfig(ctx, db); err != nil {
-		return err
-	}
-	return setDatabaseMigrationVersion(ctx, db, ingestionParserConfigTargetVersion)
+	return migrateRC2Data(ctx, db)
 }
+
 
 func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
 	count := 0
