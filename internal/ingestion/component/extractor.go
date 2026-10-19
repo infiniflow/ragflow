@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"sort"
@@ -66,20 +67,16 @@ import (
 
 const componentNameExtractor = "Extractor"
 
-// defaultExtractorChatTimeout bounds one LLM chat call. It is a hung-call
-// ceiling, not a pacing target: a fast model answers in seconds and never
-// approaches it, so per-model speed variance needs no tuning — only a hung
-// provider burns the full budget. Larger than the tag path's 60s because a
-// thinking model legitimately needs longer on open-ended prompts, and the
-// driver-level 20m stays as the absolute backstop.
+// defaultExtractorChatTimeout bounds one Extractor LLM call, including
+// retries and backoff. Tag extraction has its own timeout.
 const defaultExtractorChatTimeout = 180 * time.Second
 
 // extractorChatTimeout resolves the per-call LLM budget from
 // EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
 // defaultExtractorChatTimeout on unset/invalid values.
 func extractorChatTimeout() time.Duration {
-	if v := os.Getenv("EXTRACTOR_CHAT_TIMEOUT"); v != "" {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+	if v := os.Getenv(common.EnvExtractorChatTimeout); v != "" {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 && n <= math.MaxInt64/int64(time.Second) {
 			return time.Duration(n) * time.Second
 		}
 	}
