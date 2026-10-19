@@ -268,7 +268,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "plain text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -383,7 +383,7 @@ class Parser(ProcessBase):
                 bboxes = reorder_multi_column_bboxes(pdf_parser, bboxes)
 
         # Plain text only keeps extracted text lines.
-        elif parse_method.lower() == "plain_text":
+        elif parse_method.lower() in {"plain_text", "plain text"}:
             pdf_parser = PlainParser()
             lines, _ = pdf_parser(blob)
             bboxes = [{"text": t, "layout_type": "text"} for t, _ in lines]

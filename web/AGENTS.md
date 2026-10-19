@@ -25,6 +25,16 @@ npm run test       # Jest tests
 
 ## Development Conventions
 
+### Pre-commit Format Validation (Mandatory)
+
+Frontend code changes **must pass the lefthook format checks before every commit**. Do not rely on CI (`web-oxfmt` / `web-oxlint` jobs) to catch formatting after pushing.
+
+- Before staging or committing changed `.ts`/`.tsx`/`.js`/etc. files, run the formatter and linter locally:
+  - `npx oxfmt <changed files>` (or `npm run format`) to auto-fix formatting
+  - `npx oxlint` (or `npm run lint`) for lint issues
+- Verify with `npx oxfmt --check <changed files>` before `git commit`.
+- Let the lefthook pre-commit hook run to completion and fix everything it reports; never bypass hooks with `--no-verify`.
+
 ### Test File Placement
 
 When tests are grouped in a dedicated directory, that directory is always named `__tests__/` — never `tests/`. Example: `src/pages/agent/utils/__tests__/extractor-transform.test.ts` for `src/pages/agent/utils/extractor-transform.ts`. Co-located `foo.test.ts(x)` files next to the source file are also fine. When you find an existing test under a `tests/` directory, move it into `__tests__/` (keep git history via `git mv`) rather than adding new tests there.

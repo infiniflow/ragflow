@@ -398,9 +398,11 @@ export const useRenameSearch = () => {
       if (res && !search?.id) {
         navigateToSearch(res?.search_id)();
       }
-      callBack?.();
       setLoading(false);
-      handleHideModal();
+      if (res) {
+        callBack?.();
+        handleHideModal();
+      }
     },
     [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
   );

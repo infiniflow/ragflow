@@ -16,10 +16,12 @@ import json
 import logging
 import random
 from copy import deepcopy
+from functools import partial
 
 import xxhash
 
 from agent.component.llm import LLMParam, LLM
+from agent.component.base import ComponentBase
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.prompts.generator import run_toc_from_text
 
@@ -30,12 +32,31 @@ class ExtractorParam(ProcessParamBase, LLMParam):
         self.field_name = ""
 
     def check(self):
+        if self.is_passthrough():
+            return
         super().check()
         self.check_empty(self.field_name, "Result Destination")
+
+    def is_passthrough(self):
+        if self.field_name:
+            return False
+        for feature, key, disabled in [("keywords", "top_n", 0), ("questions", "top_n", 0), ("tags", "top_n", 0), ("summary", "enabled", False), ("metadata", "enabled", False)]:
+            config = getattr(self, feature, None)
+            if not isinstance(config, dict) or type(config.get(key)) is not type(disabled) or config[key] != disabled:
+                return False
+        return True
 
 
 class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
+
+    def __init__(self, canvas, id, param):
+        if param.is_passthrough():
+            # Inactive modular extraction needs neither a prompt nor an LLM.
+            ComponentBase.__init__(self, canvas, id, param)
+            self.callback = partial(getattr(canvas, "callback", lambda *args, **kwargs: None), id)
+        else:
+            super().__init__(canvas, id, param)
 
     async def _build_TOC(self, docs):
         self.callback(0.2, message="Start to generate table of content ...")
@@ -76,8 +97,6 @@ class Extractor(ProcessBase, LLM):
 
     async def _invoke(self, **kwargs):
         self.set_output("output_format", "chunks")
-        self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
-        inputs = self.get_input_elements()
         output_format = kwargs.get("output_format")
         if output_format == "chunks":
             chunks = deepcopy(kwargs.get("chunks") or [])
@@ -88,6 +107,11 @@ class Extractor(ProcessBase, LLM):
             chunks = [{"text": payload}] if payload else []
         else:
             chunks = []
+        if self._param.is_passthrough():
+            self.set_output("chunks", chunks)
+            return
+        self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
+        inputs = self.get_input_elements()
         chunks_key = ""
         args = {}
         for k, v in inputs.items():
