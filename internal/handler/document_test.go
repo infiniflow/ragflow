@@ -25,6 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -154,6 +155,7 @@ type fakeDocumentService struct {
 	uploadLocalKB          *entity.Knowledgebase
 	uploadLocalPath        string
 	uploadOverride         map[string]interface{}
+	uploadWebData          map[string]interface{}
 	ingestCode             common.ErrorCode
 	ingestErr              error
 	ingestUserID           string
@@ -346,6 +348,9 @@ func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *enti
 	return f.uploadLocalData, f.uploadLocalErrs
 }
 func (f *fakeDocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+	if f.uploadWebData != nil {
+		return f.uploadWebData, common.CodeSuccess, nil
+	}
 	return nil, common.CodeServerError, fmt.Errorf("not implemented")
 }
 func (f *fakeDocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
@@ -2362,5 +2367,204 @@ func TestMapDocumentListItemIncludesPipelineVersionID(t *testing.T) {
 	}
 	if item["pipeline_id"] != pipelineID {
 		t.Fatalf("pipeline_id mapping regressed: %v", item["pipeline_id"])
+	}
+}
+
+type fakeFileUploadService struct {
+	infos []map[string]interface{}
+	code  common.ErrorCode
+	err   error
+}
+
+func (f *fakeFileUploadService) UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	return f.infos, f.code, f.err
+}
+
+func (f *fakeFileUploadService) UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	return nil, common.CodeSuccess, nil
+}
+
+func getTempFilePath(f multipart.File) string {
+	if n, ok := f.(interface{ Name() string }); ok {
+		return n.Name()
+	}
+	v := reflect.ValueOf(f)
+	if v.Kind() == reflect.Struct {
+		closerField := v.FieldByName("Closer")
+		if closerField.IsValid() && !closerField.IsNil() {
+			if n, ok := closerField.Interface().(interface{ Name() string }); ok {
+				return n.Name()
+			}
+		}
+	}
+	return ""
+}
+
+// TestUploadDocumentsHandler_LocalCleansUpMultipartTempFiles verifies that
+// temporary files spooled to disk during local document upload are removed.
+func TestUploadDocumentsHandler_LocalCleansUpMultipartTempFiles(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		uploadLocalData: []map[string]interface{}{
+			{"id": "doc-1", "kb_id": "ds-1", "parser_id": "naive", "chunk_num": int64(0), "token_num": int64(0), "name": "a.txt"},
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
+		"parent_path": "",
+	}, "a.txt", []byte("file content that will be spooled to disk"))
+
+	// Force multipart to disk by parsing with 1 byte memory limit
+	if err := c.Request.ParseMultipartForm(1); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+
+	fh := c.Request.MultipartForm.File["file"][0]
+	f, err := fh.Open()
+	if err != nil {
+		t.Fatalf("open file header: %v", err)
+	}
+	tempPath := getTempFilePath(f)
+	f.Close()
+	if tempPath == "" {
+		t.Fatal("opened multipart file does not expose temporary path")
+	}
+
+	if _, err := os.Stat(tempPath); err != nil {
+		t.Fatalf("expected temp file to exist before handler: %v", err)
+	}
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		t.Fatalf("expected temp file to be removed after handler, stat err: %v", err)
+	}
+}
+
+// TestUploadInfoHandler_CleansUpMultipartTempFiles verifies that temporary files
+// spooled to disk during document info uploads are removed.
+func TestUploadInfoHandler_CleansUpMultipartTempFiles(t *testing.T) {
+	fakeUpload := &fakeFileUploadService{
+		infos: []map[string]interface{}{{"id": "upload-1"}},
+		code:  common.CodeSuccess,
+	}
+	h := &DocumentHandler{
+		fileService: fakeUpload,
+	}
+
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", "info.txt")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write([]byte("info upload content for disk spooling")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/documents/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+
+	// Pre-parse with 1-byte limit to force temporary file on disk
+	if err := c.Request.ParseMultipartForm(1); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+
+	fh := c.Request.MultipartForm.File["file"][0]
+	f, err := fh.Open()
+	if err != nil {
+		t.Fatalf("open file header: %v", err)
+	}
+	tempPath := getTempFilePath(f)
+	f.Close()
+	if tempPath == "" {
+		t.Fatal("opened multipart file does not expose temporary path")
+	}
+
+	if _, err := os.Stat(tempPath); err != nil {
+		t.Fatalf("expected temp file to exist before handler: %v", err)
+	}
+
+	h.UploadInfo(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		t.Fatalf("expected temp file to be removed after handler, stat err: %v", err)
+	}
+}
+
+// TestUploadDocumentsHandler_WebCleansUpMultipartTempFiles verifies that
+// temporary files spooled to disk during web document uploads are removed.
+func TestUploadDocumentsHandler_WebCleansUpMultipartTempFiles(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{
+		uploadWebData: map[string]interface{}{
+			"id": "doc-web-1", "kb_id": "ds-1", "parser_id": "naive", "name": "web_doc",
+		},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=web", map[string]string{
+		"name": "web_doc",
+		"url":  "https://example.com/test",
+	}, "spool.bin", []byte("large file content attached to web upload to test disk spooling cleanup"))
+
+	// Force multipart to disk by parsing with 1 byte memory limit
+	if err := c.Request.ParseMultipartForm(1); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+
+	fh := c.Request.MultipartForm.File["file"][0]
+	f, err := fh.Open()
+	if err != nil {
+		t.Fatalf("open file header: %v", err)
+	}
+	tempPath := getTempFilePath(f)
+	f.Close()
+	if tempPath == "" {
+		t.Fatal("opened multipart file does not expose temporary path")
+	}
+
+	if _, err := os.Stat(tempPath); err != nil {
+		t.Fatalf("expected temp file to exist before handler: %v", err)
+	}
+
+	h.UploadDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if _, err := os.Stat(tempPath); !os.IsNotExist(err) {
+		t.Fatalf("expected temp file to be removed after handler, stat err: %v", err)
 	}
 }
