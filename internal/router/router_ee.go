@@ -38,3 +38,5 @@ func RegisterEENoAuthRouter(apiNoAuth *gin.RouterGroup, r *Router) {
 	apiNoAuth.POST("/auth/register/otp", r.userHandler.SendOTP)
 	apiNoAuth.POST("/auth/register/otp/verify", r.userHandler.VerifyOTP)
 }
+
+func RegisterEEProtectedRouter(_ *gin.RouterGroup, _ *Router) {}
