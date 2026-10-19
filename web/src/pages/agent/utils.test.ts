@@ -1,5 +1,6 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { FileType } from '@/constants/file';
+import { transformApiConfigToForm } from '@/utils/pipeline-operator';
 import { Operator } from './constant';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -13,6 +14,34 @@ import {
 } from './utils';
 
 describe('transformParserParams vision settings', () => {
+  it.each(['model-b', ''])(
+    'saves the explicit image OCR selection %j',
+    (modelId) => {
+      const result: Record<string, any> = transformParserParams({
+        enable_vision_enhancement: false,
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            ocr_model_id: modelId,
+          },
+        ],
+      } as any);
+      expect(result.image).toMatchObject({
+        ocr_enabled: true,
+        ocr_model_id: modelId,
+      });
+      expect(result.vlm.llm_id).toBe('');
+      const reloaded = transformApiConfigToForm(
+        Operator.Parser,
+        JSON.parse(JSON.stringify(result)),
+      );
+      const savedAgain: Record<string, any> = transformParserParams(
+        reloaded as any,
+      );
+      expect(savedAgain.image).toEqual(result.image);
+    },
+  );
   it('saves the normalized global settings when the node form was not opened', () => {
     const result = transformParserParams({
       setups: [
@@ -46,7 +75,7 @@ describe('transformParserParams vision settings', () => {
     });
   });
 
-  it('writes the image family as a switch and nothing else', () => {
+  it('writes the image OCR switch without retired vision fields', () => {
     // The saved shape is the contract the Go parser reads, so pin it: the
     // switch out, and the retired per-family keys never written back.
     const result = transformParserParams({

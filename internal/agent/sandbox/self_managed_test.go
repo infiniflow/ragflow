@@ -17,6 +17,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -701,5 +702,100 @@ func TestNewSelfManagedProviderFromConfig_SettingsBeatEnv(t *testing.T) {
 	})
 	if p.baseImages["python"] != "reg.example.com/settingspy:3" {
 		t.Errorf("python baseImage = %q, want settings value to beat env", p.baseImages["python"])
+	}
+}
+
+// selfManagedErrorServer answers /run with the given status and body size,
+// padding the body with a recognisable filler byte.
+func selfManagedErrorServer(t *testing.T, status, bodyBytes int, filler byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		if bodyBytes == 0 {
+			return
+		}
+		chunk := bytes.Repeat([]byte{filler}, 32*1024)
+		for written := 0; written < bodyBytes; {
+			n := min(len(chunk), bodyBytes-written)
+			if _, err := w.Write(chunk[:n]); err != nil {
+				return
+			}
+			written += n
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func selfManagedRunFailing(t *testing.T, srv *httptest.Server) error {
+	t.Helper()
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true // bypass probe, as the other self_managed tests do
+	_, err := p.ExecuteCode(t.Context(), &SandboxInstance{
+		InstanceID: "x", Provider: ProviderSelfManaged,
+	}, "print(1)", "python", 10, nil)
+	if err == nil {
+		t.Fatal("ExecuteCode succeeded, want an error from the non-200 response")
+	}
+	return err
+}
+
+// TestSelfManaged_ErrorBodyIsBounded is the regression test for the failure
+// path draining the executor_manager's body without a limit. That endpoint is
+// operator-configured and reached over the network, so a compromised or
+// misbehaving one could otherwise make this process buffer — and then log —
+// an arbitrarily large body. Before the fix a 32 MiB body produced a 32 MiB
+// error string.
+func TestSelfManaged_ErrorBodyIsBounded(t *testing.T) {
+	const flood = 32 << 20
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, flood, 'E')
+	err := selfManagedRunFailing(t, srv)
+
+	// Budget for the quoted body plus the error prefix and the truncation
+	// marker; anything larger means the drain is still unbounded.
+	const overhead = 256
+	if got := len(err.Error()); got > selfManagedMaxErrorBody+overhead {
+		t.Errorf("error carries %d bytes for a %d-byte body, want at most %d: the drain is unbounded",
+			got, flood, selfManagedMaxErrorBody+overhead)
+	}
+	if !strings.Contains(err.Error(), "truncated") {
+		t.Error("error does not report that the body was truncated, so a cut body reads as complete")
+	}
+	if !strings.Contains(err.Error(), "returned 500") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_SmallErrorBodyIsPreserved keeps the bound from mangling the
+// ordinary case: a body at or under the cap is quoted verbatim with no
+// truncation marker.
+func TestSelfManaged_SmallErrorBodyIsPreserved(t *testing.T) {
+	const bodyBytes = 4096
+	srv := selfManagedErrorServer(t, http.StatusBadGateway, bodyBytes, 'S')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation marker for a %d-byte body", err, bodyBytes)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("S", bodyBytes)) {
+		t.Errorf("error = %v, want the whole body quoted", err)
+	}
+	if !strings.Contains(err.Error(), "returned 502") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated pins the boundary: a
+// body exactly at the cap is complete, so the "> cap" test must not fire on
+// the extra byte the drain reads to detect overflow.
+func TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated(t *testing.T) {
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, selfManagedMaxErrorBody, 'B')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation for a body exactly at the cap", err)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("B", selfManagedMaxErrorBody)) {
+		t.Error("error does not carry the whole body at exactly the cap")
 	}
 }

@@ -255,6 +255,10 @@ const (
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
 
+	// EnvExtractorChatTimeout sets the Extractor LLM call timeout in seconds,
+	// including retries and backoff. It does not apply to tag extraction.
+	EnvExtractorChatTimeout = "EXTRACTOR_CHAT_TIMEOUT"
+
 	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
 	// model snapshot (see common.DeepDocModelFiles); mirrors
 	// the RAGFlow default model dir (internal/rag/res/deepdoc).

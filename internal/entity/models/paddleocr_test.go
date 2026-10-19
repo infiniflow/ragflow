@@ -10,6 +10,32 @@ import (
 	"testing"
 )
 
+// TestPaddleOCRUploadFilename checks content-derived image extensions and the
+// unchanged PDF default, including both TIFF byte orders.
+func TestPaddleOCRUploadFilename(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{"pdf", []byte("%PDF-1.7"), "document.pdf"},
+		{"png", []byte("\x89PNG\r\n\x1a\n"), "document.png"},
+		{"jpeg", []byte("\xff\xd8\xff"), "document.jpg"},
+		{"gif", []byte("GIF89a"), "document.gif"},
+		{"webp", []byte("RIFF\x00\x00\x00\x00WEBPVP8 "), "document.webp"},
+		{"bmp", []byte("BM\x00\x00"), "document.bmp"},
+		{"little endian tiff", []byte("II*\x00"), "document.tiff"},
+		{"big endian tiff", []byte("MM\x00*"), "document.tiff"},
+		{"unrecognized", []byte("unknown"), "document.pdf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := paddleOCRUploadFilename(tc.data); got != tc.want {
+				t.Fatalf("filename=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestPaddleOCRLocalListModels verifies that the local PaddleOCR driver lists
 // the default models shipped in conf/models/paddleocr_local.json, so that the
 // "add model by selection" flow can pick them up.

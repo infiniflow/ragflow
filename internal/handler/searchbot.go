@@ -428,16 +428,18 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	}
 
 	userSvc := service.NewUserService()
-	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
+	identity, code, err := userSvc.ResolveBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
+	setAuthIdentity(c, identity)
+	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
 		return
 	}
-	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, identity.User.ID, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
