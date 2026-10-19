@@ -43,7 +43,7 @@ type Syncer struct {
 	cancel      context.CancelFunc
 	workerGroup sync.WaitGroup
 	stopOnce    sync.Once
-	ShutdownCh  chan struct{}
+	stopDone    chan struct{}
 }
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
@@ -99,7 +99,7 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 		scheduler:  scheduler,
 		worker:     NewTaskWorker(queue, taskDAO, taskService, coordinator, locker).WithScheduler(scheduler),
 		executor:   executor,
-		ShutdownCh: make(chan struct{}),
+		stopDone:   make(chan struct{}),
 	}
 }
 
@@ -137,19 +137,31 @@ func (s *Syncer) StartContext(ctx context.Context) error {
 	return nil
 }
 
-// Stop cancels the scheduler and waits for workers to exit.
-func (s *Syncer) Stop() {
+// Stop cancels the scheduler and waits for workers to exit or until ctx expires.
+func (s *Syncer) Stop(ctx context.Context) {
 	if s == nil {
 		return
 	}
 	s.stopOnce.Do(func() {
+		if s.stopDone == nil {
+			s.stopDone = make(chan struct{})
+		}
 		if s.cancel != nil {
 			s.cancel()
 		}
-		s.workerGroup.Wait()
-		s.executor.Close()
-		close(s.ShutdownCh)
+		go func() {
+			s.workerGroup.Wait()
+			if s.executor != nil {
+				s.executor.Close()
+			}
+			close(s.stopDone)
+		}()
 	})
+	select {
+	case <-s.stopDone:
+	case <-ctx.Done():
+		common.Warn("Syncer Stop timed out waiting for workers to exit")
+	}
 }
 
 // logSyncTaskDuration get job run time
