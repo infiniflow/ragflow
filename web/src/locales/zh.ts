@@ -1814,6 +1814,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       editModel: '编辑模型',
       instanceName: '实例名称',
       instanceNameMessage: '请输入实例名称！',
+      instanceNameInvalidCharacters:
+        '实例名称只能包含英文字母、数字、下划线和连字符。',
       instanceNameTip: '用于在同一厂商下唯一标识该实例的名称。',
       instanceNamePlaceholder: '请输入实例名称',
       instanceNameExists: '实例名称已存在',
