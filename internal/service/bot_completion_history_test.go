@@ -26,6 +26,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -954,5 +956,55 @@ func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
 	}
 	if got := turns[1]["content"]; got != "<think>推理中</think>结论" {
 		t.Errorf("persisted assistant content = %v, want <think>推理中</think>结论", got)
+	}
+}
+
+func TestStreamChatbotTurn_ContextCancellationUnblocksFullChannel(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	seedStreamTurnSession(t, "sess-cancel-leak", "q_leak", "msg-leak")
+	svc := NewBotService(nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	results := make(chan AsyncChatResult, 30)
+	for i := 0; i < 30; i++ {
+		results <- AsyncChatResult{Answer: fmt.Sprintf("chunk-%d", i)}
+	}
+	close(results)
+
+	sess := &entity.API4Conversation{ID: "sess-cancel-leak", DialogID: "dlg-s1", UserID: "tenant-1"}
+
+	// Cancel context to simulate client disconnect while channel buffer is full
+	cancel()
+
+	frames := svc.streamChatbotTurn(ctx, sess, "q_leak", "msg-leak", results)
+
+	// Do NOT drain concurrently. streamChatbotTurn should detect ctx.Done()
+	// and close frames promptly.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-frames:
+			if !ok {
+				goto verified
+			}
+		case <-timeout:
+			t.Fatal("streamChatbotTurn leaked: did not terminate when context was cancelled")
+		}
+	}
+
+verified:
+	// The user question is preserved in history; failure/cancellation leaves it intact.
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-cancel-leak", "dlg-s1")
+	if err != nil {
+		t.Fatalf("re-read session: %v", err)
+	}
+	if row != nil {
+		turns := parseChatbotTurns(row.Message)
+		if len(turns) != 1 || turns[0]["id"] != "msg-leak" {
+			t.Fatalf("expected user turn to be preserved in history, got: %+v", turns)
+		}
 	}
 }

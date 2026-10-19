@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -313,24 +314,32 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("model factory not configured"))
 		return
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
+	hadError := false
 	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			h.sseWriter.Write(c, sseMarker(delta.Value))
+			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
-			h.sseWriter.Write(c, sseError(delta.Value))
+			hadError = true
+			ok = h.sseWriter.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
-		return false
-	})
+	if !hadError && ctx.Err() == nil {
+		h.sseWriter.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
+	}
 
 }
 
@@ -522,17 +531,22 @@ func sseMarker(marker string) string {
 }
 
 type SSEWriter interface {
-	Write(c *gin.Context, data string)
+	Write(c *gin.Context, data string) bool
 }
 
 // ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.
 type ginSSEWriter struct{}
 
-func (w *ginSSEWriter) Write(c *gin.Context, data string) {
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprint(w, data)
+func (w *ginSSEWriter) Write(c *gin.Context, data string) bool {
+	if c.Request.Context().Err() != nil {
+		return false
+	}
+	var writeErr error
+	clientGone := c.Stream(func(w io.Writer) bool {
+		_, writeErr = fmt.Fprint(w, data)
 		return false
 	})
+	return !clientGone && writeErr == nil && c.Request.Context().Err() == nil
 }
 
 // toRetrievalServiceRequest maps the handler DTO to the service DTO.
