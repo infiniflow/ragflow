@@ -213,6 +213,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
 	}
+	dataModels = append(dataModels, permissionDataModelsEE()...)
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -250,7 +251,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
 		if err = migratePermissions(ctx, DB); err != nil {
-			return err
+			return fmt.Errorf("failed to migrate permissions: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
 	} else {

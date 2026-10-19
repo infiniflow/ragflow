@@ -117,6 +117,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 
 	tenantModelProvider := &entity.TenantModelProvider{
 		ID:           providerID,
+		UserID:       userID,
 		ProviderName: providerName,
 		TenantID:     tenantID,
 	}
@@ -1393,11 +1394,11 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 	// Mirror Python's ensure_*_from_env calls.
 	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner) == nil {
-		_ = m.ensureMineruFromEnv(ctx, tenantID)
-		_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
-		_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
-		_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
-		_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
+		_ = m.ensureMineruFromEnv(ctx, userID, tenantID)
+		_ = m.ensureMonkeyOCRv2FromEnv(ctx, userID, tenantID)
+		_ = m.ensureMonkeyOCRFromEnv(ctx, userID, tenantID)
+		_ = m.ensurePaddleOCREnabledFromEnv(ctx, userID, tenantID)
+		_ = m.ensureOpenDataLoaderFromEnv(ctx, userID, tenantID)
 	}
 
 	var modelTypeFilterBin entity.ModelType
@@ -1653,31 +1654,31 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userI
 
 // ensureMineruFromEnv mirrors Python's ensure_mineru_from_env.
 // It ensures a MinerU OCR provider instance exists when env vars are configured.
-func (m *ModelProviderService) ensureMineruFromEnv(ctx context.Context, tenantID string) error {
+func (m *ModelProviderService) ensureMineruFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(mineruEnvKeys, mineruDefaultConfig)
-	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MinerU", "mineru-from-env", config)
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "MinerU", "mineru-from-env", config)
 }
 
 // ensurePaddleOCREnabledFromEnv mirrors Python's ensure_paddleocr_from_env.
-func (m *ModelProviderService) ensurePaddleOCREnabledFromEnv(ctx context.Context, tenantID string) error {
+func (m *ModelProviderService) ensurePaddleOCREnabledFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig)
-	return m.ensureOCRProviderFromEnv(ctx, tenantID, "PaddleOCR", "paddleocr-from-env", config)
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "PaddleOCR", "paddleocr-from-env", config)
 }
 
 // ensureOpenDataLoaderFromEnv mirrors Python's ensure_opendataloader_from_env.
-func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, tenantID string) error {
+func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(openDataLoaderEnvKeys, openDataLoaderDefaultConfig)
-	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
 // ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
-func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
+func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
-	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
 }
 
 // ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
-func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
+func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
 	if config == nil {
 		return nil
@@ -1686,7 +1687,7 @@ func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenan
 	if strings.TrimSpace(apiserver) == "" {
 		return nil
 	}
-	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
 }
 
 // Environment-key/default tables mirror the Python OCR provider settings.
@@ -1771,7 +1772,7 @@ func collectEnvConfig(envKeys []string, defaultConfig map[string]interface{}) ma
 
 // ensureOCRProviderFromEnv mirrors Python's _ensure_ocr_provider_from_env.
 // It finds or creates a provider, instance, and model for the given OCR provider.
-func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, tenantID, providerName, modelName string, config map[string]interface{}) error {
+func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, userID, tenantID, providerName, modelName string, config map[string]interface{}) error {
 	if config == nil {
 		return nil
 	}
@@ -1785,6 +1786,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 		providerID := common.GenerateToken()
 		provider = &entity.TenantModelProvider{
 			ID:           providerID,
+			UserID:       userID,
 			TenantID:     tenantID,
 			ProviderName: providerName,
 		}

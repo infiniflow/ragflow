@@ -54,15 +54,58 @@ func TestMigratePermissions(t *testing.T) {
 	if err := db.Exec(`INSERT INTO user_canvas (id, user_id) VALUES ('canvas-1', 'tenant-1')`).Error; err != nil {
 		t.Fatalf("create existing canvas: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE tenant_model_provider (
+		id varchar(32) PRIMARY KEY, tenant_id varchar(32) NOT NULL, provider_name varchar(128) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy model provider table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO tenant_model_provider (id, tenant_id, provider_name)
+		VALUES ('provider-1', 'tenant-1', 'openai')`).Error; err != nil {
+		t.Fatalf("create legacy model provider: %v", err)
+	}
 	if err := db.AutoMigrate(&entity.SystemSettings{}); err != nil {
 		t.Fatalf("create system settings: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.UserTenant{},
+		&entity.APIToken{},
+		&entity.UserCanvas{},
+		&entity.TenantModelProvider{},
+	); err != nil {
+		t.Fatalf("auto-migrate shared permission migration entities: %v", err)
+	}
+	if err := db.AutoMigrate(permissionDataModelsEE()...); err != nil {
+		t.Fatalf("auto-migrate enterprise permission entities: %v", err)
 	}
 	ctx := context.Background()
 	if err := setDatabaseMigrationVersion(ctx, db, tenantModelMaxTokensTargetVersion); err != nil {
 		t.Fatalf("set previous migration version: %v", err)
 	}
 	if err := migratePermissions(ctx, db); err != nil {
-		t.Fatalf("make invited_by nullable: %v", err)
+		t.Fatalf("migrate permissions: %v", err)
+	}
+	columns, err := db.Migrator().ColumnTypes(&entity.UserTenant{})
+	if err != nil {
+		t.Fatalf("inspect user_tenant columns: %v", err)
+	}
+	for _, column := range columns {
+		if column.Name() == "invited_by" {
+			if nullable, known := column.Nullable(); !known || !nullable {
+				t.Fatalf("user_tenant.invited_by nullable = %v, known = %v", nullable, known)
+			}
+		}
+	}
+	for _, model := range permissionDataModelsEE() {
+		if !db.Migrator().HasTable(model) {
+			t.Fatalf("permission migration did not create %T", model)
+		}
+	}
+	var provider entity.TenantModelProvider
+	if err := db.Take(&provider, "id = ?", "provider-1").Error; err != nil {
+		t.Fatalf("read migrated model provider: %v", err)
+	}
+	if provider.UserID != "tenant-1" {
+		t.Fatalf("model provider user_id = %q, want tenant-1", provider.UserID)
 	}
 	var token entity.APIToken
 	if err := db.Take(&token, "tenant_id = ? AND token = ?", "tenant-1", "token-1").Error; err != nil {
@@ -84,7 +127,7 @@ func TestMigratePermissions(t *testing.T) {
 	if err := db.Exec("INSERT INTO api_token (tenant_id, user_id, token) VALUES (?, ?, ?)", "tenant-2", "user-2", "token-1").Error; err != nil {
 		t.Fatalf("same token in another tenant was rejected: %v", err)
 	}
-	columns, err := db.Migrator().ColumnTypes(&entity.APIToken{})
+	columns, err = db.Migrator().ColumnTypes(&entity.APIToken{})
 	if err != nil {
 		t.Fatalf("inspect API token columns: %v", err)
 	}
@@ -105,7 +148,16 @@ func TestMigratePermissions(t *testing.T) {
 	if err := db.Exec("UPDATE user_tenant SET invited_by = NULL WHERE id = ?", "membership-1").Error; err != nil {
 		t.Fatalf("clear invited_by: %v", err)
 	}
+	if err := db.Exec("UPDATE tenant_model_provider SET user_id = ? WHERE id = ?", "owner-user", "provider-1").Error; err != nil {
+		t.Fatalf("set model provider owner: %v", err)
+	}
 	if err := migratePermissions(ctx, db); err != nil {
-		t.Fatalf("repeat nullability check: %v", err)
+		t.Fatalf("repeat permission migration: %v", err)
+	}
+	if err := db.Take(&provider, "id = ?", "provider-1").Error; err != nil {
+		t.Fatalf("read model provider after repeated migration: %v", err)
+	}
+	if provider.UserID != "owner-user" {
+		t.Fatalf("repeated migration overwrote model provider user_id = %q, want owner-user", provider.UserID)
 	}
 }
