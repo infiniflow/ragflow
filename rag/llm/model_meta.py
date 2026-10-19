@@ -1425,3 +1425,10 @@ class AIMLAPI(Base):
                 entry["model_types"].append(LLMType.VISION.value)
 
         return list(merged.values())
+
+
+class RadeonCloud(OpenAIAPICompatible):
+    _FACTORY_NAME = "Radeon Cloud"
+
+    def __init__(self, api_key, base_url=None):
+        super().__init__(api_key, base_url or "https://developer.amd.com.cn/radeon/api/v1")

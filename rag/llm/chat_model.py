@@ -2107,6 +2107,13 @@ class AIMLAPIChat(Base):
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
 
 
+class RadeonCloudChat(Base):
+    _FACTORY_NAME = "Radeon Cloud"
+
+    def __init__(self, key, model_name, base_url="https://developer.amd.com.cn/radeon/api/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://developer.amd.com.cn/radeon/api/v1", **kwargs)
+
+
 class GreenPTChat(Base):
     """GreenPT OpenAI-compatible chat adapter."""
 
