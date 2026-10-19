@@ -83,12 +83,13 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		for key, value := range server.Variables {
 			variables[key] = fmt.Sprint(value)
 		}
+		allowPrivateHosts := servercfg.MCPAllowPrivateHosts()
 		for _, name := range slices.Sorted(maps.Keys(selection.Tools)) {
 			descriptor := selection.Tools[name]
 			descriptor.Name = name
 			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, mcpclient.CallOptions{
 				URL: server.URL, ServerType: server.ServerType, Headers: headers, Variables: variables, Timeout: timeout,
-				AllowPrivateHosts: servercfg.MCPAllowPrivateHosts(),
+				AllowPrivateHosts: allowPrivateHosts,
 			})
 			adapter.SetVisibleName(fmt.Sprintf("%s_%d", name, toolIndex))
 			toolIndex++

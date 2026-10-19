@@ -16,9 +16,10 @@
 
 // Package tool — MCP (Model Context Protocol) wrapper.
 //
-// Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
+// Wraps a single MCP-server-discovered tool (mcpclient.Tool) as
 // an eino BaseTool so it can be invoked from inside the Agent's
-// ReAct loop. Discovery and invocation use the utility MCP client.
+// ReAct loop. Discovery and invocation use the MCP client
+// (ragflow/internal/mcp/client).
 package tool
 
 import (

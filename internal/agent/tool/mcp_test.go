@@ -430,7 +430,7 @@ func TestMCPToolAdapter_InvokableRunIsError(t *testing.T) {
 // mcpLoopbackOverride swaps the SSRF guard's resolver for the
 // duration of the test so httptest's 127.0.0.1 server is
 // accepted. The pattern mirrors the one used by
-// utility/mcp_client_test.go's allowLoopbackForTests helper.
+// internal/mcp/client/mcp_client_test.go's allowLoopbackForTests helper.
 func mcpLoopbackOverride(t *testing.T) func() {
 	t.Helper()
 	orig := common.LookupHost
