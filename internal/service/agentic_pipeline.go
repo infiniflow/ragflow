@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 // agenticRunTimeout is the wall-clock budget of one agentic turn. The ReAct
@@ -96,6 +97,14 @@ func (s *ChatPipelineService) agenticRag(
 		// those handles against the same numbering.
 		registry := agentic_rag.NewEvidenceRegistry()
 		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
+		// Per-turn token accounting. Every LLM call inside the run records its
+		// usage into this sink (models.EinoChatModel does it for both the
+		// non-streaming and streaming paths), which is the only place the cost of
+		// an agentic turn exists: chat completions carries no usage field, so a
+		// caller cannot recover it from the answer.
+		runCtx = tokenizer.WithRunUsage(runCtx)
+		runCtx = tokenizer.WithRunAttrs(runCtx, &tokenizer.RunAttrs{UserID: userID})
+		turnStarted := time.Now()
 		// The retrieval tools authorize their datasets as the CALLER of the run,
 		// not as the chat's tenant: NLPRetrievalAdapter.Search reads that identity
 		// from the run's runtime state (state.Sys["user_id"]) and treats a missing
@@ -228,16 +237,31 @@ func (s *ChatPipelineService) agenticRag(
 		if thinking {
 			emitResult(AsyncChatResult{Final: false, EndToThink: true})
 		}
+		usageFields := agenticUsageFields(runCtx, tokenizer.GetRunUsage(runCtx))
 		if runErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: run", runErr)
+			// A failed turn still spent tokens; log them under their own event so
+			// the cost of timeouts and tool failures is visible instead of
+			// disappearing with the error.
+			common.InfoCtx(ctx, "agentic turn failed", append([]zap.Field{
+				zap.String("mode", mode),
+				zap.Bool("stream", stream),
+				zap.Int64("elapsed_ms", time.Since(turnStarted).Milliseconds()),
+				zap.Any("tool_calls", toolCounts),
+				zap.Any("tool_errors", toolErrors),
+				zap.String("error", runErr.Error()),
+			}, usageFields...)...)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", runErr.Error()), Final: true})
 			return
 		}
-		common.InfoCtx(ctx, "agentic turn done",
+		common.InfoCtx(ctx, "agentic turn done", append([]zap.Field{
 			zap.String("mode", mode),
+			zap.Bool("stream", stream),
+			zap.Int64("elapsed_ms", time.Since(turnStarted).Milliseconds()),
 			zap.Any("tool_calls", toolCounts),
 			zap.Any("tool_errors", toolErrors),
-			zap.Int("final_bytes", len(final)))
+			zap.Int("final_bytes", len(final)),
+		}, usageFields...)...)
 
 		// Citations off means neither the [ID:N] markers nor the reference
 		// payload, matching what the regular pipeline ships when quote is
@@ -263,6 +287,73 @@ func (s *ChatPipelineService) agenticRag(
 	}()
 
 	return out, nil
+}
+
+// agenticUsageFields renders a turn's LLM cost as structured log fields.
+//
+// The chat-completions response carries no usage, and conversation storage has
+// no token column, so this log line is the only per-question cost record: it is
+// what a benchmark run aggregates and what a support investigation greps. The
+// per-call breakdown goes to the debug log to keep the INFO line one line per
+// turn.
+//
+// usage_missing_calls counts calls whose provider reported no usable split.
+// They are counted rather than silently folded into the totals, so "cheap"
+// turns that actually lost usage are distinguishable from genuinely cheap ones.
+func agenticUsageFields(ctx context.Context, usage *tokenizer.RunUsage) []zap.Field {
+	if usage == nil {
+		return []zap.Field{zap.Bool("usage_tracked", false)}
+	}
+	promptTokens, completionTokens, totalTokens, calls := usage.Snapshot()
+	records := usage.CallSnapshot()
+	missing := 0
+	byModel := map[string]int{}
+	byPhase := map[string]int{}
+	topModel, topTokens := "", 0
+	for _, call := range records {
+		if call.TotalTokens <= 0 {
+			missing++
+		}
+		if call.Model != "" {
+			byModel[call.Model] += call.TotalTokens
+			if byModel[call.Model] > topTokens {
+				topModel, topTokens = call.Model, byModel[call.Model]
+			}
+		}
+		phase := call.Phase
+		if phase == "" {
+			phase = "unspecified"
+		}
+		byPhase[phase] += call.TotalTokens
+		common.DebugCtx(ctx, "agentic_rag: llm call",
+			zap.Int("seq", call.Seq),
+			zap.Float64("at_seconds", call.AtSeconds),
+			zap.String("model", call.Model),
+			zap.String("phase", call.Phase),
+			zap.Int("prompt_tokens", call.PromptTokens),
+			zap.Int("completion_tokens", call.CompletionTokens),
+			zap.Int("total_tokens", call.TotalTokens))
+	}
+
+	fields := []zap.Field{
+		zap.Int("prompt_tokens", promptTokens),
+		zap.Int("completion_tokens", completionTokens),
+		zap.Int("total_tokens", totalTokens),
+		zap.Int("llm_calls", calls),
+		zap.Int("usage_missing_calls", missing),
+		zap.Any("tokens_by_phase", byPhase),
+		zap.String("top_model", topModel),
+	}
+	if calls > 0 {
+		fields = append(fields, zap.Int("tokens_per_call", totalTokens/calls))
+	}
+	if len(byModel) > 1 {
+		fields = append(fields, zap.Any("tokens_by_model", byModel))
+	}
+	if missing > 0 {
+		fields = append(fields, zap.Bool("usage_incomplete", true))
+	}
+	return fields
 }
 
 // agenticModelChain resolves only the model explicitly selected by the dialog

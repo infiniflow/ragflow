@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 // Input carries everything Run needs to spin up a one-shot ReAct conversation
@@ -467,7 +468,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 		seed = seed[:len(seed)-1]
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
-	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
+	// Everything the ReAct loop calls the model for is the exploration phase:
+	// the loop is where a turn's token budget is actually spent, so it must be
+	// attributable on its own and not merge into the final synthesis.
+	exploreCtx := tokenizer.WithUsagePhase(ctx, "explore")
+	iter := sess.explorer.runner(exploreCtx, explorerAgent, in.Stream).Run(exploreCtx, runMessages)
 	// Runner assigns IDs to input messages before persisting them. Exclude
 	// these from recovery so a failed turn cannot reuse a historical answer.
 	inputMessageIDs := make(map[string]bool, len(runMessages))
@@ -510,6 +515,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 		// by the bounded budget attached here.
 		synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 		defer synthCancel()
+		synthCtx = tokenizer.WithUsagePhase(synthCtx, "synth")
 		synthModel := in.Model
 		if in.SynthModel != nil {
 			synthModel = in.SynthModel
