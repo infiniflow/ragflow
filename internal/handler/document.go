@@ -974,6 +974,11 @@ func invalidRunStatuses(statuses []string) []string {
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	common.StartOperationLog(c, "upload_dataset_documents")
 	defer common.FinishOperationLog(c)
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
 
 	ctx := c.Request.Context()
 	userID := permission.UserIDFromContext(ctx)
@@ -1007,6 +1012,12 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	userID := permission.UserIDFromContext(c.Request.Context())
 	if userID == "" {
 		common.RespondError(c, common.CodeUnauthorized, permission.ErrUnauthenticated.Error())
@@ -1734,6 +1745,11 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	common.StartOperationLog(c, "upload_dataset_document_files")
 	defer common.FinishOperationLog(c)
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
