@@ -57,8 +57,7 @@ func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func (p *PPIOModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -203,12 +202,10 @@ func (p *PPIOModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, p.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -297,11 +294,10 @@ func (p *PPIOModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), p.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -413,5 +409,9 @@ func (p *PPIOModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 }
 
 func (p *PPIOModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
+}
+
+func (p *PPIOModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

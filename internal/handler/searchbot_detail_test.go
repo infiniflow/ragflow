@@ -69,6 +69,7 @@ func TestSearchbotDetailSuccess(t *testing.T) {
 	accessToken := "access-token"
 	tenantAvatar := "tenant-avatar"
 	beta := "beta-token"
+	userID := "tenant-1"
 	searchAvatar := "search-avatar"
 
 	if err := dao.DB.Create(&entity.User{
@@ -98,6 +99,7 @@ func TestSearchbotDetailSuccess(t *testing.T) {
 
 	if err := dao.DB.Create(&entity.APIToken{
 		TenantID: "tenant-1",
+		UserID:   &userID,
 		Token:    "token-1",
 		Beta:     &beta,
 	}).Error; err != nil {
@@ -191,6 +193,7 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 
 	status := "1"
 	beta := "beta-token"
+	userID := "user-2"
 	accessToken := "access-token"
 
 	for _, u := range []entity.User{
@@ -233,6 +236,7 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 
 	if err := dao.DB.Create(&entity.APIToken{
 		TenantID: "user-2",
+		UserID:   &userID,
 		Token:    "token-1",
 		Beta:     &beta,
 	}).Error; err != nil {
@@ -260,8 +264,8 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
-	if resp["code"] != float64(common.CodeOperatingError) {
-		t.Fatalf("code = %v, want %v", resp["code"], common.CodeOperatingError)
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("code = %v, want %v", resp["code"], common.CodeNotFound)
 	}
 }
 
@@ -271,6 +275,7 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	status := "1"
 	accessToken := "access-token"
 	beta := "beta-token"
+	userID := "tenant-1"
 	if err := dao.DB.Create(&entity.User{
 		ID:              "tenant-1",
 		Email:           "tenant@example.com",
@@ -283,15 +288,35 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "ut-1",
+		UserID:   userID,
+		TenantID: "tenant-1",
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create user_tenant: %v", err)
+	}
 	if err := dao.DB.Create(&entity.APIToken{
 		TenantID: "tenant-1",
+		UserID:   &userID,
 		Token:    "token-1",
 		Beta:     &beta,
 	}).Error; err != nil {
 		t.Fatalf("failed to create api token: %v", err)
 	}
-	if err := dao.DB.Exec("DROP TABLE user_tenant").Error; err != nil {
-		t.Fatalf("failed to drop user_tenant table: %v", err)
+	if err := dao.DB.Create(&entity.Search{
+		ID:           "search-1",
+		TenantID:     "tenant-1",
+		Name:         "Search App",
+		CreatedBy:    "tenant-1",
+		SearchConfig: entity.JSONMap{},
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create search: %v", err)
+	}
+	if err := dao.DB.Exec("DROP TABLE search").Error; err != nil {
+		t.Fatalf("failed to drop search table: %v", err)
 	}
 
 	r := newSearchbotDetailRouter()

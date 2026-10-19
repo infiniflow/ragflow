@@ -68,10 +68,10 @@ func (s *engineWikiContributionStore) Get(ctx context.Context, tenantID, dataset
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "compile_kwd", "content_with_weight"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
 		Filter: map[string]any{
 			"id":            []string{key},
-			"compile_kwd":   wikiContributionCompileKWD,
+			"type_kwd":      wikiContributionCompileKWD,
 			"available_int": 0,
 		},
 	})
@@ -100,13 +100,14 @@ func (s *engineWikiContributionStore) Put(ctx context.Context, tenantID, dataset
 		"id":                  wikiContributionStateID(datasetID, contribution.DocumentID),
 		"doc_id":              "wiki_contribution:" + contribution.DocumentID,
 		"kb_id":               datasetID,
-		"compile_kwd":         wikiContributionCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiContributionCompileKWD,
 		"scope_kwd":           "doc",
 		"source_doc_ids":      []string{contribution.DocumentID},
 		"content_with_weight": string(payload),
 		"available_int":       0,
 	}
-	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
+	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID, "")
 	return err
 }
 
@@ -121,7 +122,7 @@ func (s *engineWikiContributionStore) Delete(ctx context.Context, tenantID, data
 func (s *engineWikiContributionStore) ClearDataset(ctx context.Context, tenantID, datasetID string) error {
 	_, err := s.engine.DeleteChunks(ctx, map[string]any{
 		"kb_id":         datasetID,
-		"compile_kwd":   wikiContributionCompileKWD,
+		"type_kwd":      wikiContributionCompileKWD,
 		"available_int": 0,
 	}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
 	return err

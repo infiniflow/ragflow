@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // LongCatModel implements ModelDriver for LongCat (Meituan).
@@ -87,12 +86,10 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 	delete(reqBody, "stop")
@@ -119,12 +116,10 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	delete(reqBody, "stop")
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
@@ -158,12 +153,10 @@ func (l *LongCatModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := l.baseModel.GetBaseURL(apiConfig)
+	url, err := l.baseModel.EndpointURL(apiConfig, l.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -257,5 +250,9 @@ func (l *LongCatModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (l *LongCatModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", l.Name())
+}
+
+func (l *LongCatModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", l.Name())
 }

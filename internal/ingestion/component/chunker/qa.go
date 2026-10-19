@@ -42,6 +42,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -87,17 +88,14 @@ func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	return c.invoke(ctx, inputs)
 }
 
+// invoke extracts question-answer pairs from the decoded upstream payload.
 func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："
@@ -146,6 +144,8 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			DocType:       "text",
 			ContentLtks:   contentLTKS,
 			ContentSmLtks: contentSMLTKS,
+			Sheet:         pair.Sheet,
+			SheetIndex:    pair.SheetIndex,
 		}
 		//
 		// index), image id + coordinates carried from the source item.
@@ -186,6 +186,8 @@ type qaPair struct {
 	Image        string
 	PDFPositions json.RawMessage
 	Positions    json.RawMessage
+	Sheet        string
+	SheetIndex   *int
 }
 
 // rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
@@ -403,8 +405,11 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
 		var tmp []qaPair
+		td := tableDataOf(item)
 		txt, _ := itemText(item)
-		if txt == "" {
+		// A structured table with no markup text still carries rows; only a
+		// truly empty item (no text and no TableData) is skipped.
+		if txt == "" && td == nil {
 			continue
 		}
 		// Route on what the row walker can read, not on the type label.
@@ -423,11 +428,11 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// fall through to the text extractor, so documents from before this
 		// wire must be re-parsed rather than re-chunked.
 		var rows [][]string
-		if isTableHTML(txt) {
-			rows = tableRows(txt)
+		if td != nil {
+			rows = td.CellTexts()
 		}
 		if len(rows) > 0 {
-			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
+			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
 		} else {
 			tmp = extractQAText(txt)
 		}
@@ -436,6 +441,8 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// pair its own tuple (R1: a row chunk must not carry the whole
 		// table's matrix in positions[0]).
 		for _, p := range tmp {
+			p.Sheet = item.Sheet
+			p.SheetIndex = item.SheetIndex
 			p.Image = item.Image
 			p.PDFPositions = item.PDFPositions
 			if len(p.Positions) == 0 {
@@ -454,7 +461,11 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
+	td, err := tableutil.ParseTableHTML(htmlStr)
+	if err != nil || td == nil {
+		return nil
+	}
+	return qaPairsFromRows(td.CellTexts(), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

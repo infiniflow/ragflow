@@ -26,6 +26,7 @@ import {
   VariableRegex,
 } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
+import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
 
 /**
@@ -92,6 +93,13 @@ const OrphanExemptOperators: string[] = [
   Operator.IterationStart,
   Operator.LoopStart,
   Operator.ExitLoop,
+];
+
+// Tools whose API key is required by the service, on the canvas and inside an
+// agent's tool list alike — an empty key always fails at run time.
+const ApiKeyRequiredOperators: string[] = [
+  Operator.SofyaSearch,
+  Operator.Search1APISearch,
 ];
 
 function collectStrings(value: unknown): string[] {
@@ -292,10 +300,32 @@ function collectNodeReferenceIssues(
   return issues;
 }
 
+// An absent binding counts as empty. Switching the source to memories writes
+// no `memory_ids` key until a memory is picked, so requiring an actual array
+// here would let an unbound node through.
+const isEmptyIdList = (ids: unknown) => !Array.isArray(ids) || ids.length === 0;
+
+/**
+ * Params persisted before `retrieval_from` existed carry only one of the two
+ * bindings, so infer the source from whichever is populated. A node with
+ * neither falls back to Dataset, matching the form's default selection.
+ */
+function resolveRetrievalFrom(params: Record<string, any>): RetrievalFrom {
+  const source = params.retrieval_from;
+  if (source === RetrievalFrom.Memory || source === RetrievalFrom.Dataset) {
+    return source;
+  }
+  return !isEmptyIdList(params.memory_ids) &&
+    isEmptyIdList(params.dataset_ids ?? params.kb_ids)
+    ? RetrievalFrom.Memory
+    : RetrievalFrom.Dataset;
+}
+
 /**
  * Shared by Retrieval nodes and Agent-embedded Retrieval tools. Emptiness is
- * asserted directly instead of re-parsing the form schema so legacy DSLs keyed
- * on `kb_ids` are never flagged (ported from find-invalid-retrieval.ts).
+ * asserted directly instead of re-parsing the form schema so a binding still
+ * counts when it is keyed on the legacy `kb_ids`
+ * (ported from find-invalid-retrieval.ts).
  */
 function collectRetrievalBindingIssues(
   params: Record<string, any> | undefined,
@@ -307,23 +337,17 @@ function collectRetrievalBindingIssues(
   }
   const { memoryIds, staleDatasetIds } = inputs;
   const issues: CanvasIssue[] = [];
+  const datasetIds = params.dataset_ids ?? params.kb_ids;
+  const isMemory = resolveRetrievalFrom(params) === RetrievalFrom.Memory;
 
-  if (
-    params.retrieval_from === RetrievalFrom.Dataset &&
-    Array.isArray(params.dataset_ids) &&
-    params.dataset_ids.length === 0
-  ) {
+  if (!isMemory && isEmptyIdList(datasetIds)) {
     issues.push({
       ...target,
       type: CanvasIssueType.MissingRequired,
       messageKey: 'flow.retrievalDatasetMissing',
     });
   }
-  if (
-    params.retrieval_from === RetrievalFrom.Memory &&
-    Array.isArray(params.memory_ids) &&
-    params.memory_ids.length === 0
-  ) {
+  if (isMemory && isEmptyIdList(params.memory_ids)) {
     issues.push({
       ...target,
       type: CanvasIssueType.MissingRequired,
@@ -332,9 +356,9 @@ function collectRetrievalBindingIssues(
   }
   if (
     staleDatasetIds &&
-    params.retrieval_from !== RetrievalFrom.Memory &&
-    Array.isArray(params.dataset_ids) &&
-    params.dataset_ids.some((id: string) => staleDatasetIds.has(id))
+    !isMemory &&
+    Array.isArray(datasetIds) &&
+    datasetIds.some((id: string) => staleDatasetIds.has(id))
   ) {
     issues.push({
       ...target,
@@ -344,7 +368,7 @@ function collectRetrievalBindingIssues(
   }
   if (
     memoryIds &&
-    params.retrieval_from === RetrievalFrom.Memory &&
+    isMemory &&
     Array.isArray(params.memory_ids) &&
     params.memory_ids.some((id: string) => !memoryIds.has(id))
   ) {
@@ -487,6 +511,14 @@ export function collectCanvasIssues({
       });
     }
 
+    if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      });
+    }
+
     if (label === Operator.Retrieval) {
       issues.push(
         ...collectRetrievalBindingIssues(form, target, {
@@ -509,7 +541,11 @@ export function collectCanvasIssues({
       if (Array.isArray(form?.tools)) {
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
-          if (tool?.component_name !== Operator.Retrieval) {
+          const isRetrieval = tool?.component_name === Operator.Retrieval;
+          const needsApiKey = ApiKeyRequiredOperators.includes(
+            tool?.component_name,
+          );
+          if (!isRetrieval && !needsApiKey) {
             continue;
           }
           // Point at the concrete tool under the concrete agent — the Tool
@@ -524,12 +560,21 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
-          issues.push(
-            ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
-              memoryIds,
-              staleDatasetIds,
-            }),
-          );
+          if (isRetrieval) {
+            issues.push(
+              ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
+                memoryIds,
+                staleDatasetIds,
+              }),
+            );
+          }
+          if (needsApiKey && !tool?.params?.api_key) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.apiKeyMissing',
+            });
+          }
         }
       }
     }
@@ -544,6 +589,39 @@ export function collectCanvasIssues({
           type: CanvasIssueType.MissingRequired,
           messageKey: 'flow.extractorModelMissing',
         });
+      }
+      // An extraction group switched on with nothing to extract (top_n < 1)
+      // — or tags without a tag file — can be saved but would fail the Go
+      // canvas build / silently skip at run time, so flag it here.
+      if (form?.keywords?.enabled && !(Number(form?.keywords?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorKeywordsTopNMissing',
+        });
+      }
+      if (form?.questions?.enabled && !(Number(form?.questions?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorQuestionsTopNMissing',
+        });
+      }
+      if (form?.tags?.enabled) {
+        if (!(Number(form?.tags?.top_n) > 0)) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagsTopNMissing',
+          });
+        }
+        if (!form?.tags?.tag_file_id) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagFileMissing',
+          });
+        }
       }
     }
 
@@ -573,6 +651,21 @@ export function collectCanvasIssues({
       label === Operator.Parser &&
       editedNodeFormIds.includes(node.id) &&
       !ParserFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+      });
+    }
+
+    // The backend hard-fails a run on an empty variable/operator and reports
+    // per-item errors for an empty parameter, so an incomplete row must be
+    // caught before Run/Publish. Same edited-node gate as the Parser check.
+    if (
+      label === Operator.VariableAssigner &&
+      editedNodeFormIds.includes(node.id) &&
+      !VariableAssignerFormSchema.safeParse(form).success
     ) {
       issues.push({
         ...target,

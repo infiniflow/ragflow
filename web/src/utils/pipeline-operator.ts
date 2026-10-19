@@ -19,7 +19,7 @@ import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
   initialCompilationValues,
-  initialGoExtractorValues,
+  initialExtractorValues,
   initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
@@ -121,9 +121,17 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-// Base normalization: flatten the DSL prompts array into the form's single
-// field. The Go transform below builds on top of this.
-function transformExtractorConfigToFormPython(
+/**
+ * Converts Extractor config from API/DSL format to form format: flattens the
+ * DSL prompts array into the form's single field and normalizes the nested
+ * per-feature groups the extractor schema reads (schema.ExtractorParam).
+ * Legacy flat keys (auto_keywords, keywords_sys_prompt, enable_summary, ...)
+ * are accepted as read fallbacks and never re-emitted.
+ *
+ * DSL:  { prompts: [{ content: "text", role: "user" }] }
+ * Form: { prompts: "text" }
+ */
+export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};
@@ -132,17 +140,6 @@ function transformExtractorConfigToFormPython(
   if (Array.isArray(config.prompts) && config.prompts.length > 0) {
     result.prompts = config.prompts[0]?.content ?? '';
   }
-
-  return result;
-}
-
-// Go form: additionally normalize the nested per-feature groups the Go
-// extractor schema reads (schema.ExtractorParam).
-function transformExtractorConfigToFormGo(
-  config: Record<string, any> | undefined,
-): Record<string, any> {
-  const result = transformExtractorConfigToFormPython(config);
-  if (!config) return result;
 
   const isSummaryEnabled =
     config.summary?.enabled !== undefined
@@ -164,27 +161,44 @@ function transformExtractorConfigToFormGo(
       ? Boolean(metadataGroup.enabled)
       : config.enable_metadata === 1 || config.enable_metadata === true;
 
+  // The enabled switch is authoritative when the group carries it; legacy
+  // configs without it derive enabled from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const keywordsTopN =
+    config.keywords?.top_n ??
+    config.auto_keywords ??
+    initialExtractorValues.keywords.top_n;
+  const questionsTopN =
+    config.questions?.top_n ??
+    config.auto_questions ??
+    initialExtractorValues.questions.top_n;
+  const tagsTopN =
+    config.tags?.top_n ?? config.auto_tags ?? initialExtractorValues.tags.top_n;
+
   result.keywords = {
-    top_n:
-      config.keywords?.top_n ??
-      config.auto_keywords ??
-      initialGoExtractorValues.keywords.top_n,
+    enabled:
+      config.keywords?.enabled !== undefined
+        ? Boolean(config.keywords.enabled)
+        : keywordsTopN > 0,
+    top_n: keywordsTopN,
     system_prompt:
       config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
   };
   result.questions = {
-    top_n:
-      config.questions?.top_n ??
-      config.auto_questions ??
-      initialGoExtractorValues.questions.top_n,
+    enabled:
+      config.questions?.enabled !== undefined
+        ? Boolean(config.questions.enabled)
+        : questionsTopN > 0,
+    top_n: questionsTopN,
     system_prompt:
       config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
   };
   result.tags = {
-    top_n:
-      config.tags?.top_n ??
-      config.auto_tags ??
-      initialGoExtractorValues.tags.top_n,
+    enabled:
+      config.tags?.enabled !== undefined
+        ? Boolean(config.tags.enabled)
+        : tagsTopN > 0,
+    top_n: tagsTopN,
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
   result.summary = {
@@ -201,23 +215,12 @@ function transformExtractorConfigToFormGo(
       metadataGroup?.built_in_metadata ?? config.built_in_metadata ?? [],
   };
   // Drop the historical keys so they don't linger in form state and get
-  // re-emitted into the DSL on save — the Go extractor only reads the group.
+  // re-emitted into the DSL on save — the extractor only reads the group.
   delete result.metadata_config;
   delete result.enable_metadata;
   delete result.built_in_metadata;
 
   return result;
-}
-
-/**
- * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
- */
-export function transformExtractorConfigToForm(
-  config: Record<string, any> | undefined,
-): Record<string, any> {
-  return transformExtractorConfigToFormGo(config);
 }
 
 /**
@@ -283,8 +286,8 @@ function transformGeneralChunkerConfigToForm(
 
 /**
  * Converts TitleChunker config from API/DSL format to form format.
- * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
- * Form: { method, hierarchyHierarchy, hierarchyGroup, include_heading_content, root_chunk_as_heading, hierarchyRules, groupRules }
+ * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], chunk_token_cap, include_heading_content, root_chunk_as_heading }
+ * Form: { method, hierarchyHierarchy, hierarchyGroup, hierarchyChunkTokenCap, groupChunkTokenCap, include_heading_content, root_chunk_as_heading, hierarchyRules, groupRules }
  */
 function transformTitleChunkerConfigToForm(
   config: Record<string, any> | undefined,
@@ -316,10 +319,22 @@ function transformTitleChunkerConfigToForm(
     result.groupRules = transformLevelsToRules(config.levels);
   }
 
+  // Split the backend-facing shared `chunk_token_cap` into the per-method
+  // fields the form edits (mirroring the rules/hierarchy split above).
+  if (config.chunk_token_cap !== undefined) {
+    if (result.hierarchyChunkTokenCap === undefined) {
+      result.hierarchyChunkTokenCap = config.chunk_token_cap;
+    }
+    if (result.groupChunkTokenCap === undefined) {
+      result.groupChunkTokenCap = config.chunk_token_cap;
+    }
+  }
+
   // Clean up DSL-only fields
   delete result.hierarchy;
   delete result.levels;
   delete result.rules;
+  delete result.chunk_token_cap;
 
   return result;
 }
@@ -436,7 +451,12 @@ export function transformFormConfigToApi(
       // the backend ManualChunker component (manual.go pins method=group,
       // ignores the token cap).
       return transformTitleChunkerParams(
-        omit(config, ['include_heading_content', 'chunk_token_cap']) as any,
+        omit(config, [
+          'include_heading_content',
+          'chunk_token_cap',
+          'hierarchyChunkTokenCap',
+          'groupChunkTokenCap',
+        ]) as any,
       );
     default:
       return config;

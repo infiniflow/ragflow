@@ -1,6 +1,6 @@
 [project]
 name = "ragflow"
-version = "1.0.0-rc1"
+version = "1.0.0-rc2"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
@@ -11,7 +11,7 @@ dependencies = [
     "elasticsearch-dsl==8.12.0",
     "json-repair==0.60.1",
     "mysql-connector-python>=9.0.0,<10.0.0",
-    "werkzeug>=3.1.7,<4",
+    "werkzeug>=3.1.9,<4",
     "regex>=2025.11.3",
     "reportlab>=4.4.1",
     "scholarly==1.7.11",

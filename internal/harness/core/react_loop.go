@@ -106,6 +106,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			tn = NewToolsNode[M](tnCfg)
 		}
 
+		completed := false
 		for state.RemainingIterations > 0 {
 			state.RemainingIterations--
 
@@ -149,6 +150,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 
 			toolCalls := extractToolCalls(resp)
 			if len(toolCalls) == 0 || tn == nil {
+				completed = true
 				break
 			}
 
@@ -163,11 +165,12 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 			action = act
 			if action != nil && action.Exit {
+				completed = true
 				break
 			}
 		}
 
-		if state.RemainingIterations <= 0 {
+		if !completed && state.RemainingIterations <= 0 {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("exceeded max iterations (%d)", a.config.MaxIterations)})
 		}
 		if a.config.OutputKey != "" && len(state.Messages) > 0 {

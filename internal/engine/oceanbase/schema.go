@@ -74,6 +74,7 @@ var chunkColumns = []columnDefinition{
 	{"page_num_int", "ARRAY(INTEGER) NULL"},
 	{"top_int", "ARRAY(INTEGER) NULL"},
 	{"knowledge_graph_kwd", "VARCHAR(256) NULL"},
+	{"type_kwd", "VARCHAR(256) NULL"},
 	{"source_id", "ARRAY(VARCHAR(256)) NULL"},
 	{"entity_kwd", "VARCHAR(256) NULL"},
 	{"entity_type_kwd", "VARCHAR(256) NULL"},
@@ -148,7 +149,7 @@ var skillColumns = []columnDefinition{
 }
 
 var chunkIndexColumns = []string{
-	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "entity_type_kwd", "removed_kwd",
+	"kb_id", "doc_id", "available_int", "knowledge_graph_kwd", "type_kwd", "entity_type_kwd", "removed_kwd",
 }
 
 var memoryIndexColumns = []string{"message_id", "memory_id", "status_int"}
@@ -158,7 +159,7 @@ var tokenizedFullTextFields = []string{"title_tks", "title_sm_tks", "important_t
 
 // CreateChunkStore creates or upgrades the legacy shared tenant table. The
 // dataset ID is a row-level discriminator for chunk and memory tables.
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}
@@ -325,7 +326,14 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
 	distributed := kvrocks.NewDistributedLock(lockName, "", timeout, timeout)
-	if distributed != nil && !distributed.Acquire(ctx) {
+	acquired := false
+	if distributed != nil {
+		acquired, err = distributed.Acquire(ctx)
+		if err != nil {
+			return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
+		}
+	}
+	if distributed != nil && !acquired {
 		deadline := time.NewTimer(timeout)
 		defer deadline.Stop()
 		ticker := time.NewTicker(time.Second)
@@ -345,7 +353,11 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 				if exists {
 					return nil
 				}
-				if distributed.Acquire(ctx) {
+				acquired, err = distributed.Acquire(ctx)
+				if err != nil {
+					return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
+				}
+				if acquired {
 					break waitForLock
 				}
 			}

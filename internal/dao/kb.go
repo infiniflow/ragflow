@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"path"
 	"ragflow/internal/common"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 
 	"strconv"
@@ -42,6 +43,45 @@ func GetTenantIDByKBID(ctx context.Context, db *gorm.DB, kbID string) (string, e
 	return kb.TenantID, nil
 }
 
+// TenantKBIDs groups knowledge bases stored in the same tenant index/table.
+type TenantKBIDs struct {
+	TenantID string
+	KBIDs    []string
+}
+
+// GroupKBIDsByTenant resolves every requested knowledge base and preserves
+// first-seen tenant order. Missing datasets must not yield a partial scope.
+func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]TenantKBIDs, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbIDs = common.Deduplicate(kbIDs)
+	kbs, err := NewKnowledgebaseDAO().GetByIDs(ctx, db, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+	tenants := make(map[string]string, len(kbs))
+	for _, kb := range kbs {
+		tenants[kb.ID] = kb.TenantID
+	}
+	groups := make([]TenantKBIDs, 0)
+	positions := make(map[string]int)
+	for _, kbID := range kbIDs {
+		tenantID, ok := tenants[kbID]
+		if !ok || tenantID == "" {
+			return nil, fmt.Errorf("dataset %s has no tenant: %w", kbID, gorm.ErrRecordNotFound)
+		}
+		pos, ok := positions[tenantID]
+		if !ok {
+			pos = len(groups)
+			positions[tenantID] = pos
+			groups = append(groups, TenantKBIDs{TenantID: tenantID})
+		}
+		groups[pos].KBIDs = append(groups[pos].KBIDs, kbID)
+	}
+	return groups, nil
+}
+
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
 
@@ -60,48 +100,30 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
 }
 
-// EmbeddingBaseName resolves a knowledge base's embedding model reference to
-// the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
-// can be selected and searched together. tenant_embd_id — or embd_id itself
-// when it stores a raw tenant_model id — is resolved through tenant_model;
-// legacy composite "model@instance@provider" values are reduced with
-// common.BaseModelName. An id that no longer resolves falls back to the
-// composite base name when embd_id holds one, otherwise to the id itself so
-// only exact matches group together.
-func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
-	raw := strings.TrimSpace(kb.EmbdID)
-	id := ""
-	if kb.TenantEmbdID != nil {
-		id = strings.TrimSpace(*kb.TenantEmbdID)
-	}
-	if id == "" && raw != "" && !strings.Contains(raw, "@") {
-		id = raw
-	}
+// EmbeddingBaseName resolves the tenant_model reference of one knowledge base
+// to the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
+// can be selected and searched together. Which column carries the reference is
+// a business rule answered by transaction.EmbeddingModelRef; what remains here
+// is the read itself, once per call, so callers resolving a batch of datasets
+// memoize through transaction.EmbeddingBaseNameResolver. An id that no longer
+// resolves falls back to the composite base name when embd_id holds one,
+// otherwise to the id itself so only exact matches group together.
+func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) string {
+	id, raw := transaction.EmbeddingModelRef(kb)
 	if id == "" {
 		return common.BaseModelName(raw)
 	}
-	if cache != nil {
-		if cached, ok := cache[id]; ok {
-			return cached
-		}
-	}
-	base := ""
 	if db != nil {
 		if model, err := NewTenantModelDAO().GetByID(ctx, db, id); err == nil && model != nil {
-			base = strings.TrimSpace(model.ModelName)
+			if base := strings.TrimSpace(model.ModelName); base != "" {
+				return base
+			}
 		}
 	}
-	if base == "" {
-		if raw != "" && raw != id {
-			base = common.BaseModelName(raw)
-		} else {
-			base = id
-		}
+	if raw != "" && raw != id {
+		return common.BaseModelName(raw)
 	}
-	if cache != nil {
-		cache[id] = base
-	}
-	return base
+	return id
 }
 
 // Create creates a new knowledge base record
@@ -117,11 +139,6 @@ func (dao *KnowledgebaseDAO) Update(ctx context.Context, db *gorm.DB, kb *entity
 // UpdateByID updates a knowledge base by ID with the given fields
 func (dao *KnowledgebaseDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
-}
-
-// Delete soft deletes a knowledge base by setting status to invalid
-func (dao *KnowledgebaseDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Update("status", string(entity.StatusInvalid)).Error
 }
 
 // GetByID retrieves a knowledge base by ID
@@ -159,6 +176,16 @@ func (dao *KnowledgebaseDAO) GetByName(ctx context.Context, db *gorm.DB, name, t
 		return nil, err
 	}
 	return &kb, nil
+}
+
+// NameExists reports whether a valid knowledge base with the given name
+// already exists for the tenant, comparing names case-insensitively.
+func (dao *KnowledgebaseDAO) NameExists(ctx context.Context, db *gorm.DB, tenantID, name string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).
+		Count(&count).Error
+	return count > 0, err
 }
 
 // GetByCreatedBy retrieves knowledge bases created by a specific user
@@ -216,13 +243,27 @@ func (dao *KnowledgebaseDAO) Count(ctx context.Context, db *gorm.DB, filters map
 	return count, err
 }
 
-// GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
-// This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, id, name string, ids []string) ([]*entity.KnowledgebaseListItem, int64, error) {
+// ListByResourceIDs retrieves knowledge bases within a permission-filtered ID scope.
+func (dao *KnowledgebaseDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs, ownerIDs []string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
+	if len(resourceIDs) == 0 {
+		return []*entity.KnowledgebaseListItem{}, 0, nil
+	}
+	query := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("knowledgebase.id IN ?", resourceIDs)
+	return dao.ListByQuery(ctx, query, ownerIDs, pageNumber, itemsPerPage, terms, keywords, parserID, name)
+}
+
+// ListByQuery lists knowledge bases using an already-scoped base query. The
+// caller can apply a permission.QueryScope before calling this method, keeping
+// authorization filtering in the same SQL query as count and pagination.
+func (dao *KnowledgebaseDAO) ListByQuery(ctx context.Context, query *gorm.DB, ownerIDs []string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
+	if query == nil {
+		return nil, 0, errors.New("dataset list query is nil")
+	}
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
-	query := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+	query = query.WithContext(ctx).
 		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
 			knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 			knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
@@ -232,15 +273,10 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 			knowledgebase.tenant_embd_id,
 			user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
-		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
-			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
+		Where("knowledgebase.status = ?", string(entity.StatusValid))
 
-	if id != "" {
-		query = query.Where("knowledgebase.id = ?", id)
-	}
-
-	if len(ids) > 0 {
-		query = query.Where("knowledgebase.id IN ?", ids)
+	if len(ownerIDs) > 0 {
+		query = query.Where("knowledgebase.tenant_id IN ?", ownerIDs)
 	}
 
 	if name != "" {
@@ -280,32 +316,21 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 	return kbs, total, nil
 }
 
-// GetOwnerFilter returns owner counts for datasets visible to a user.
-func (dao *KnowledgebaseDAO) GetOwnerFilter(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string) ([]*entity.DatasetOwnerFilter, error) {
+// GetOwnerFilterByResourceIDs groups permission-filtered datasets by owner tenant.
+func (dao *KnowledgebaseDAO) GetOwnerFilterByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs []string) ([]*entity.DatasetOwnerFilter, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
+	if len(resourceIDs) == 0 {
+		return owners, nil
+	}
 
 	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
 		Select("knowledgebase.tenant_id as id, user.nickname as label, COUNT(knowledgebase.id) as count").
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
-		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",
-			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid)).
+		Where("knowledgebase.id IN ? AND knowledgebase.status = ?", resourceIDs, string(entity.StatusValid)).
 		Group("knowledgebase.tenant_id, user.nickname").
 		Scan(&owners).Error
 
 	return owners, err
-}
-
-// GetAllByTenantIDs retrieves all permitted knowledge bases by tenant IDs
-// This matches the Python get_all_kb_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetAllByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string) ([]*entity.Knowledgebase, error) {
-	var kbs []*entity.Knowledgebase
-
-	err := db.WithContext(ctx).Where(
-		"((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
-		tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid),
-	).Order("create_time ASC").Find(&kbs).Error
-
-	return kbs, err
 }
 
 // GetDetail retrieves detailed knowledge base information with joined pipeline data
@@ -335,71 +360,7 @@ func (dao *KnowledgebaseDAO) GetDetail(ctx context.Context, db *gorm.DB, kbID st
 	return &detail, nil
 }
 
-// Accessible checks if a knowledge base is accessible by a user.
-// This matches the Python accessible method:
-// 1. KB must exist and be VALID
-// 2. If user is the owner tenant, return true
-// 3. Non-owners require the explicit "team" permission
-// 4. Team members must have a valid user_tenant relationship
-func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datasetID, userID string) bool {
-	var kb entity.Knowledgebase
-	err := db.WithContext(ctx).Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).First(&kb).Error
-	if err != nil {
-		return false
-	}
-
-	// User is the owner tenant itself
-	if kb.TenantID == userID {
-		return true
-	}
-
-	// Fail closed for unknown, missing, or private permissions.
-	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return false
-	}
-
-	var count int64
-	err = db.WithContext(ctx).Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, string(entity.StatusValid)).
-		Count(&count).Error
-
-	if err != nil {
-		return false
-	}
-	return count > 0
-}
-
-// GetAccessibleIDs returns the subset of ids that are visible to the user:
-// team-permission KBs owned by any joined tenant, plus the user's own KBs.
-// This matches the Python get_accessible_ids method.
-func (dao *KnowledgebaseDAO) GetAccessibleIDs(ctx context.Context, db *gorm.DB, joinedTenantIDs []string, userID string, ids []string) ([]string, error) {
-	accessibleIDs := make([]string, 0, len(ids))
-	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("id IN ? AND ((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
-			ids, joinedTenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid)).
-		Pluck("id", &accessibleIDs).Error
-	if err != nil {
-		return nil, err
-	}
-	return accessibleIDs, nil
-}
-
-// Accessible4Deletion checks if a knowledge base can be deleted by a user
-// This matches the Python accessible4deletion method
-func (dao *KnowledgebaseDAO) Accessible4Deletion(ctx context.Context, db *gorm.DB, kbID, userID string) bool {
-	var count int64
-	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("id = ? AND created_by = ? AND status = ?", kbID, userID, string(entity.StatusValid)).
-		Count(&count).Error
-
-	if err != nil {
-		return false
-	}
-	return count > 0
-}
-
-// DuplicateName generates a unique name by appending parentheses if name already exists
-// This matches the Python duplicate_name function behavior
+// DuplicateName generates a unique name by appending parentheses if name already exists.
 func (dao *KnowledgebaseDAO) DuplicateName(ctx context.Context, db *gorm.DB, name, tenantID string) string {
 	const maxRetries = 1000
 
@@ -501,76 +462,17 @@ func (dao *KnowledgebaseDAO) GetFieldMap(ctx context.Context, db *gorm.DB, ids [
 	return conf, nil
 }
 
-// GetKBByIDAndUserID retrieves a knowledge base by ID and user ID with tenant join
-// This matches the Python get_kb_by_id method
-func (dao *KnowledgebaseDAO) GetKBByIDAndUserID(ctx context.Context, db *gorm.DB, kbID, userID string) ([]*entity.Knowledgebase, error) {
+// GetByNameInUserTenants returns dataset candidates whose tenant the user belongs to.
+// Callers must authorize each candidate before using it.
+func (dao *KnowledgebaseDAO) GetByNameInUserTenants(ctx context.Context, db *gorm.DB, kbName, userID string) ([]*entity.Knowledgebase, error) {
 	var kbs []*entity.Knowledgebase
 	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
 		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
-		Where("knowledgebase.id = ? AND user_tenant.user_id = ?", kbID, userID).
-		Limit(1).
+		Where("knowledgebase.name = ? AND user_tenant.user_id = ? AND knowledgebase.status = ? AND user_tenant.status = ?",
+			kbName, userID, string(entity.StatusValid), string(entity.StatusValid)).
+		Order("knowledgebase.create_time ASC").
 		Find(&kbs).Error
 	return kbs, err
-}
-
-// GetKBByNameAndUserID retrieves a knowledge base by name and user ID with tenant join
-// This matches the Python get_kb_by_name method
-func (dao *KnowledgebaseDAO) GetKBByNameAndUserID(ctx context.Context, db *gorm.DB, kbName, userID string) ([]*entity.Knowledgebase, error) {
-	var kbs []*entity.Knowledgebase
-	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Joins("JOIN user_tenant ON user_tenant.tenant_id = knowledgebase.tenant_id").
-		Where("knowledgebase.name = ? AND user_tenant.user_id = ?", kbName, userID).
-		Limit(1).
-		Find(&kbs).Error
-	return kbs, err
-}
-
-// GetList retrieves knowledge bases with filtering by ID and name
-// This matches the Python get_list method
-func (dao *KnowledgebaseDAO) GetList(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, terms []OrderTerm, id, name string) ([]*entity.Knowledgebase, int64, error) {
-	var kbs []*entity.Knowledgebase
-	var total int64
-
-	query := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
-		Where("((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
-			tenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid))
-
-	if id != "" {
-		query = query.Where("id = ?", id)
-	}
-	if name != "" {
-		query = query.Where("name = ?", name)
-	}
-
-	// Route the requested terms through knowledgebaseOrderClause so a user-supplied query
-	// param can never reach Order() verbatim: the helper validates against
-	// knowledgebaseOrderableColumns (a closed allowlist) and falls back to
-	// "create_time" on a miss.
-	// codeql[go/sql-injection] False positive: knowledgebaseOrderClause
-	query = query.Order(knowledgebaseOrderClause(terms))
-
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	if pageNumber > 0 && itemsPerPage > 0 {
-		offset := (pageNumber - 1) * itemsPerPage
-		if err := query.Offset(offset).Limit(itemsPerPage).Find(&kbs).Error; err != nil {
-			return nil, 0, err
-		}
-	} else {
-		if err := query.Find(&kbs).Error; err != nil {
-			return nil, 0, err
-		}
-	}
-
-	return kbs, total, nil
-}
-
-// DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
-func (dao *KnowledgebaseDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Knowledgebase{})
-	return result.RowsAffected, result.Error
 }
 
 // GetKBIDsByTenantIDSimple GetKBIDsByTenantID gets all knowledge base IDs by tenant ID

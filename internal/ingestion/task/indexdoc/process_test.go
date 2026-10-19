@@ -1,9 +1,53 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 )
+
+func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
+	want := map[string]any{
+		"year": float64(2025), "verified": false, "scalar": map[string]any{"x": 1},
+		"labels": []string{"a", "b", "c"}, "object": map[string]any{"x": 1},
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro"}},
+	}
+	chunks := []map[string]any{
+		{"text": "first", "metadata": map[string]any{
+			"year": float64(2024), "verified": true, "scalar": map[string]any{"x": 1},
+			"labels": []any{"a", "b"}, "object": map[string]any{"x": 1},
+			"tags":    []any{"contract", float64(123)},
+			"outline": []any{map[string]any{"title": "Intro"}},
+		}},
+		{"text": "second", "metadata": map[string]any{
+			"year": float64(2025), "verified": false, "scalar": float64(42),
+			"labels": []any{"b", "c"}, "object": map[string]any{"x": 2},
+			"tags": false, "outline": float64(42),
+		}},
+		{"text": "third", "metadata": map[string]any{
+			"scalar": nil, "labels": "c",
+			"outline": []any{map[string]any{"title": "Replacement"}},
+		}},
+	}
+	got, err := ProcessChunksForPipeline(chunks, "doc-1", "report.pdf", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata = %#v, want %#v", got, want)
+	}
+	for i, chunk := range chunks {
+		if _, exists := chunk["metadata"]; exists {
+			t.Fatalf("consumed metadata must be removed from chunk %d", i)
+		}
+	}
+}
 
 // =============================================================================
 // RenameTextToContentWithWeight - Python processChunks logic
@@ -147,6 +191,34 @@ func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 	}
 	if chunks[0]["id"] != "existing-id" {
 		t.Errorf("existing id should be preserved, got %q", chunks[0]["id"])
+	}
+}
+
+// TestProcessChunksForPipeline_TableHTMLIDMatchesContent pins the table-HTML
+// redesign's core invariant: a table chunk arrives from the chunker with its
+// row rendered as HTML on "text" and an id already stamped (by the chunker's
+// decorator) from that HTML text. The persist boundary must keep the id
+// byte-consistent with the stored content_with_weight — both hash the same
+// HTML — so re-indexing stays stable and the displayed table never diverges
+// from the chunk id. (The old design stamped the id from the clean text while
+// storing HTML, which broke this.)
+func TestProcessChunksForPipeline_TableHTMLIDMatchesContent(t *testing.T) {
+	html := "<table>\n<tr><th>Name</th></tr>\n<tr><td>Alice</td></tr>\n</table>\n"
+	chunks := []map[string]any{{
+		"doc_type": "table",
+		"text":     html,
+		"id":       common.ChunkID("doc-1", html),
+	}}
+	if _, err := ProcessChunksForPipeline(chunks, "doc-1", "report.pdf", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	ck := chunks[0]
+	content, ok := ck["content_with_weight"].(string)
+	if !ok || content != html {
+		t.Fatalf("content_with_weight = %q, want the HTML text unchanged", content)
+	}
+	if want := common.ChunkID("doc-1", content); ck["id"] != want {
+		t.Fatalf("id = %v, want ChunkID(docID, content_with_weight) = %v", ck["id"], want)
 	}
 }
 
@@ -525,6 +597,87 @@ func TestProcessChunkPositions_SpreadsheetKeepsRowIndex(t *testing.T) {
 	}
 	if _, exists := chunk["positions"]; exists {
 		t.Error("raw positions must be removed")
+	}
+}
+
+// TestProcessChunkPositions_ParserSpreadsheetWire guards the PARSER wire shape:
+// a spreadsheet DocItem must project positions as [][]float64 (not [][]any), and
+// processChunkPositions must accept that shape. This feeds the parser wire
+// directly (the direct-json path in NormalizeChunks that no built-in template
+// exercises); the production path that flows through the chunker is covered by
+// TestProcessChunkPositions_ChunkerRoundTrip below.
+func TestProcessChunkPositions_ParserSpreadsheetWire(t *testing.T) {
+	td := &entity.TableData{}
+	item := parser.NewTableDataJSONItem(td, "S", parser.SpreadsheetPositions([][]float64{{1, 1, 1, 1, 3}})).ToMap()
+	raw, ok := item["positions"].([][]float64)
+	if !ok {
+		t.Fatalf("parser spreadsheet wire = %T, want [][]float64", item["positions"])
+	}
+	chunk := map[string]any{
+		"positions": raw,
+		"top_int":   []int{41},
+	}
+	processChunkPositions(chunk, true)
+
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 1 || matrix[0][4] != 3 {
+		t.Fatalf("position_int = %v, want the sheet tuple [1 1 1 1 3]", chunk["position_int"])
+	}
+	if _, exists := chunk["positions"]; exists {
+		t.Error("raw positions must be removed")
+	}
+}
+
+// TestProcessChunkPositions_ChunkerRoundTrip exercises the PRODUCTION path the
+// ingestion pipeline actually uses: parser DocItems cross the chunker boundary
+// as ChunkDoc (positions stored as json.RawMessage), and ChunkDoc.ToMap
+// re-renders them through decodeStructuredValue, which unmarshals into
+// [][]float64 for any all-numeric array. So by the time processChunkPositions
+// runs, spreadsheet positions are [][]float64 and reach position_int — and the
+// parser's [][]any (PDF) is likewise normalized to [][]float64 here. This is why
+// the parser's per-kind container type is irrelevant to indexing: the chunker
+// erases it. Regression guard for the positions restructuring's real seam.
+func TestProcessChunkPositions_ChunkerRoundTrip(t *testing.T) {
+	// Spreadsheet: RowColumnBox -> [][]float64 on the parser wire.
+	ssItem := parser.NewTableDataJSONItem(&entity.TableData{}, "S",
+		parser.SpreadsheetPositions([][]float64{{1, 1, 1, 1, 3}}))
+	docs, found, err := schema.ChunkDocsFromDocItem([]parser.DocItem{ssItem})
+	if err != nil || !found || len(docs) != 1 {
+		t.Fatalf("ChunkDocsFromDocItem(spreadsheet): found=%v err=%v", found, err)
+	}
+	m := docs[0].ToMap()
+	raw, ok := m["positions"].([][]float64)
+	if !ok {
+		t.Fatalf("chunker-rendered positions = %T, want [][]float64 (decodeStructuredValue)", m["positions"])
+	}
+	chunk := map[string]any{"positions": raw, "top_int": []int{41}, "sheet_index": 1}
+	processChunkPositions(chunk, true)
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 1 || matrix[0][4] != 3 {
+		t.Fatalf("position_int = %v, want [[1 1 1 1 3]]", chunk["position_int"])
+	}
+	if _, exists := chunk["positions"]; exists {
+		t.Error("raw positions must be removed")
+	}
+
+	// PDF: AbsoluteBox -> [][]any on the parser wire, but decodeStructuredValue
+	// normalizes it to [][]float64 at the chunker boundary too, so the parser
+	// container type never reaches the indexer.
+	pdfItem := parser.ImageItem{
+		Text:   "fig",
+		Image:  "",
+		CKType: "image",
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 1, Left: 100, Right: 50, Top: 200, Bottom: 150},
+		},
+	}
+	pdfDocs, _, err := schema.ChunkDocsFromDocItem([]parser.DocItem{pdfItem})
+	if err != nil || len(pdfDocs) != 1 {
+		t.Fatalf("ChunkDocsFromDocItem(pdf): err=%v", err)
+	}
+	pm := pdfDocs[0].ToMap()
+	if _, ok := pm["positions"].([][]float64); !ok {
+		t.Fatalf("PDF positions after chunker = %T, want [][]float64 (normalized by decodeStructuredValue)", pm["positions"])
 	}
 }
 

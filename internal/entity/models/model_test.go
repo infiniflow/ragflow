@@ -61,6 +61,103 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
+// A provider that supports rerank must declare its rerank url_suffix. Without it
+// the request is posted to the base URL (".../") instead of "/rerank", which the
+// server answers with a generic 500 — the failure reported in #16033.
+func TestOpenAIAPICompatibleDeclaresRerankSuffix(t *testing.T) {
+	var cfg struct {
+		URLSuffix URLSuffix `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(readProviderConfig(t, "openai-api-compatible.json"), &cfg); err != nil {
+		t.Fatalf("parse openai-api-compatible.json: %v", err)
+	}
+	if strings.TrimSpace(cfg.URLSuffix.Rerank) == "" {
+		t.Fatal("openai-api-compatible.json declares no rerank url_suffix")
+	}
+}
+
+// providerConfDir locates conf/models relative to the test's CWD.
+func providerConfDir(t *testing.T) string {
+	t.Helper()
+
+	for _, candidate := range []string{
+		filepath.Join("..", "..", "..", "conf", "models"),
+		filepath.Join("conf", "models"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	t.Fatal("could not locate conf/models")
+	return ""
+}
+
+// A provider keeps the API version either in its base URL (OpenAI-compatible
+// shape: base ".../v1" + suffix "chat/completions") or in url_suffix (MiniMax
+// shape: base "https://api.minimaxi.com" + suffix "v1/text/chatcompletion_v2").
+// url_hint is the example endpoint shown in the base URL field, so a hint that
+// carries the version the suffix already supplies makes every request 404 on a
+// doubled "/v1/v1/..." as soon as the user pastes it. GPUStack shipped exactly
+// that hint before joinURL deduplicated the segment.
+func TestProviderConfURLHintsFollowVersionConvention(t *testing.T) {
+	dir := providerConfDir(t)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+
+	checked := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+
+		var cfg struct {
+			Name      string         `json:"name"`
+			URLHint   string         `json:"url_hint"`
+			URLSuffix map[string]any `json:"url_suffix"`
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), err)
+		}
+		if cfg.URLHint == "" {
+			continue
+		}
+
+		trimmed := strings.TrimRight(strings.TrimSpace(cfg.URLHint), "/")
+		idx := strings.LastIndex(trimmed, "/")
+		if idx < 0 {
+			continue
+		}
+		hintVersion := apiVersionSegment(trimmed[idx+1:])
+		if hintVersion == "" {
+			continue
+		}
+
+		checked++
+		for key, value := range cfg.URLSuffix {
+			suffix, ok := value.(string)
+			if !ok {
+				continue
+			}
+			if apiVersionSegment(firstPathSegment(suffix)) == hintVersion {
+				t.Errorf("%s: url_hint %q ends with %q but url_suffix.%s also starts with it; "+
+					"the version must live in one place only",
+					entry.Name(), cfg.URLHint, hintVersion, key)
+			}
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no provider url_hint was checked; conf/models layout changed")
+	}
+}
+
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to
@@ -162,7 +259,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocrv2.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -181,6 +278,20 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if minerU.URLSuffix.DocumentParse != "file_parse" {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
+	}
+
+	monkeyOCR := pm.FindProvider("MonkeyOCR")
+	if monkeyOCR == nil {
+		t.Fatal("MonkeyOCR provider not found")
+	}
+	if _, ok := monkeyOCR.ModelDriver.(*MonkeyOCRModel); !ok {
+		t.Fatalf("MonkeyOCR ModelDriver=%T, want *models.MonkeyOCRModel", monkeyOCR.ModelDriver)
+	}
+	if monkeyOCR.ModelDriver.Name() != "monkeyocr" {
+		t.Fatalf("MonkeyOCR Name()=%q, want monkeyocr", monkeyOCR.ModelDriver.Name())
+	}
+	if monkeyOCR.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("MonkeyOCR doc_parse suffix=%q", monkeyOCR.URLSuffix.DocumentParse)
 	}
 
 	monkeyOCRv2 := pm.FindProvider("MonkeyOCRv2")
@@ -203,6 +314,23 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
 		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestModelFactoryCreatesMonkeyOCRDriver(t *testing.T) {
+	driver, err := NewModelFactory().CreateModelDriver("MonkeyOCR", map[string]string{"default": "http://localhost:7861"}, URLSuffix{DocumentParse: "file_parse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver.Name() != "monkeyocr" {
+		t.Fatalf("driver.Name()=%q", driver.Name())
+	}
+	cloned := driver.NewInstance(map[string]string{"default": "http://cloned"})
+	if cloned.Name() != "monkeyocr" {
+		t.Fatalf("NewInstance().Name()=%q", cloned.Name())
+	}
+	if _, ok := driver.(*MonkeyOCRModel); !ok {
+		t.Fatalf("driver=%T, want *MonkeyOCRModel", driver)
 	}
 }
 
@@ -433,7 +561,7 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	}
 }
 
-func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
+func TestSiliconFlowProviderConfigLoadsCNAndIntlModelUnion(t *testing.T) {
 	dir, restore := setupProviderTestDir(t, "siliconflow.json")
 	defer restore()
 
@@ -450,6 +578,9 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.URL["default"] != "https://api.siliconflow.cn/v1" {
 		t.Errorf("default URL=%q", provider.URL["default"])
 	}
+	if provider.URL["intl"] != "https://api.siliconflow.com/v1" {
+		t.Errorf("intl URL=%q", provider.URL["intl"])
+	}
 	if provider.URLSuffix.Chat != "chat/completions" {
 		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
 	}
@@ -459,8 +590,118 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.ModelDriver.Name() != "SILICONFLOW" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 13 {
-		t.Fatalf("SILICONFLOW model count=%d, want 13", len(provider.Models))
+	if len(provider.Models) != 111 {
+		t.Fatalf("SILICONFLOW model count=%d, want 111", len(provider.Models))
+	}
+
+	for _, modelName := range []string{
+		"tencent/Hy4-preview",
+		"XingChenAGI/XingChenASR-V3.2",
+		"Qwen/Qwen3-Reranker-8B",
+		"IndexTeam/IndexTTS-2",
+	} {
+		if _, err := pm.GetModelByName("SILICONFLOW", modelName); err != nil {
+			t.Errorf("GetModelByName %q: %v", modelName, err)
+		}
+	}
+
+	asrModel, err := pm.GetModelByName("SILICONFLOW", "XingChenAGI/XingChenASR-V3.2")
+	if err != nil {
+		t.Fatalf("GetModelByName XingChenASR: %v", err)
+	}
+	if !asrModel.ModelTypeMap["asr"] {
+		t.Errorf("XingChenASR model types=%v, want asr", asrModel.ModelTypes)
+	}
+
+	rerankModel, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3-Reranker-8B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3-Reranker: %v", err)
+	}
+	if !rerankModel.ModelTypeMap["rerank"] {
+		t.Errorf("Qwen3-Reranker model types=%v, want rerank", rerankModel.ModelTypes)
+	}
+
+	ttsModel, err := pm.GetModelByName("SILICONFLOW", "IndexTeam/IndexTTS-2")
+	if err != nil {
+		t.Fatalf("GetModelByName IndexTTS: %v", err)
+	}
+	if !ttsModel.ModelTypeMap["tts"] {
+		t.Errorf("IndexTTS model types=%v, want tts", ttsModel.ModelTypes)
+	}
+
+	visionModel, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3.6-27B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3.6: %v", err)
+	}
+	if !visionModel.ModelTypeMap["chat"] || !visionModel.ModelTypeMap["vision"] {
+		t.Errorf("Qwen3.6 model types=%v, want chat+vision", visionModel.ModelTypes)
+	}
+
+	glm53, err := pm.GetModelByName("SILICONFLOW", "zai-org/GLM-5.3")
+	if err != nil {
+		t.Fatalf("GetModelByName GLM-5.3: %v", err)
+	}
+	if glm53.ContextLength == nil || *glm53.ContextLength != 1048576 || glm53.MaxOutput == nil || *glm53.MaxOutput != 128000 {
+		t.Errorf("GLM-5.3 context_length=%v max_output=%v, want 1048576 and 128000", glm53.ContextLength, glm53.MaxOutput)
+	}
+	if glm53.Tools == nil || !glm53.Tools.Support || glm53.Thinking == nil || !glm53.Thinking.DefaultValue || !glm53.Thinking.ClearThinking {
+		t.Errorf("GLM-5.3 tools=%+v thinking=%+v, want tools and default/clear thinking support", glm53.Tools, glm53.Thinking)
+	}
+
+	qwen38, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3.8-27B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3.8-27B: %v", err)
+	}
+	if qwen38.ContextLength == nil || *qwen38.ContextLength != 262144 {
+		t.Errorf("Qwen3.8-27B context_length=%v, want 262144", qwen38.ContextLength)
+	}
+	if !qwen38.ModelTypeMap["chat"] || !qwen38.ModelTypeMap["vision"] {
+		t.Errorf("Qwen3.8-27B model types=%v, want chat+vision", qwen38.ModelTypes)
+	}
+
+	for _, limits := range []struct {
+		name        string
+		contextSize int
+		maxOutput   int
+	}{
+		{"moonshotai/Kimi-K2.5", 262144, 262144},
+		{"moonshotai/Kimi-K2.6", 262144, 262144},
+		{"Qwen/Qwen3-14B", 131072, 131072},
+		{"Qwen/Qwen3-30B-A3B-Instruct-2507", 262144, 262144},
+		{"Qwen/Qwen3-32B", 131072, 131072},
+		{"Qwen/Qwen3-VL-30B-A3B-Instruct", 262144, 262144},
+		{"Qwen/Qwen3-VL-30B-A3B-Thinking", 262144, 262144},
+		{"Qwen/Qwen3.5-35B-A3B", 262144, 262144},
+		{"Qwen/Qwen3.6-27B", 262144, 262144},
+		{"zai-org/GLM-5.2", 1048576, 262144},
+		{"zai-org/GLM-5V-Turbo", 204800, 131072},
+	} {
+		model, err := pm.GetModelByName("SILICONFLOW", limits.name)
+		if err != nil {
+			t.Errorf("GetModelByName %q: %v", limits.name, err)
+			continue
+		}
+		if model.ContextLength == nil || *model.ContextLength != limits.contextSize || model.MaxOutput == nil || *model.MaxOutput != limits.maxOutput {
+			t.Errorf("%s context_length=%v max_output=%v, want %d and %d", limits.name, model.ContextLength, model.MaxOutput, limits.contextSize, limits.maxOutput)
+		}
+	}
+
+	qwen25, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen2.5-7B-Instruct")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen2.5-7B: %v", err)
+	}
+	if qwen25.ContextLength == nil || *qwen25.ContextLength != 32768 || qwen25.MaxOutput == nil || *qwen25.MaxOutput != 4096 {
+		t.Errorf("Qwen2.5-7B context_length=%v max_output=%v, want 32768 and 4096", qwen25.ContextLength, qwen25.MaxOutput)
+	}
+
+	if _, err := pm.GetModelByName("SILICONFLOW", "black-forest-labs/FLUX.2-pro"); err == nil {
+		t.Error("FLUX.2-pro should not be listed because it has no supported RAGFlow model type")
+	}
+
+	for _, model := range provider.Models {
+		if model.ModelTypeMap["chat"] && model.ContextLength == nil {
+			t.Errorf("chat model %q has no context_length", model.Name)
+		}
 	}
 
 	deepSeekV4Pro, err := pm.GetModelByName("SILICONFLOW", "Pro/deepseek-ai/DeepSeek-V4-Pro")
@@ -709,6 +950,59 @@ func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
 		t.Fatalf("%s declares no tokenizer for any model; the check would pass vacuously", target)
 	}
 	t.Logf("catalog tokenizer tags: %v", tags)
+}
+
+func TestChatModelWithDefaults(t *testing.T) {
+	thinkingDefault := true
+	model := &ChatModel{info: &ModelInfo{
+		ModelClass: "chat",
+		Thinking:   &ModelThinking{DefaultValue: thinkingDefault},
+	}}
+	config := model.withDefaults(nil)
+	if config.ModelClass == nil || *config.ModelClass != "chat" {
+		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
+	}
+	if config.Thinking == nil || !*config.Thinking {
+		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	}
+
+	modelClass := "custom"
+	thinking := false
+	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
+	if config.ModelClass != &modelClass || config.Thinking != &thinking {
+		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+}
+
+func TestChatModelValidateMaxOutput(t *testing.T) {
+	maxOutput := 128
+	maxTokens := func(n int) *int { return &n }
+	model := &ChatModel{info: &ModelInfo{MaxOutput: maxOutput}}
+
+	tests := []struct {
+		name    string
+		config  *ChatConfig
+		wantErr bool
+	}{
+		{name: "below limit", config: &ChatConfig{MaxTokens: maxTokens(127)}},
+		{name: "at limit", config: &ChatConfig{MaxTokens: maxTokens(128)}},
+		{name: "above limit", config: &ChatConfig{MaxTokens: maxTokens(129)}, wantErr: true},
+		{name: "unset max tokens", config: &ChatConfig{}},
+		{name: "nil config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := model.validateMaxOutput(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateMaxOutput() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	unknownLimitModel := &ChatModel{info: &ModelInfo{}}
+	if err := unknownLimitModel.validateMaxOutput(&ChatConfig{MaxTokens: maxTokens(1000)}); err != nil {
+		t.Fatalf("unknown model output limit should not reject config: %v", err)
+	}
 }
 
 // sortedKeys returns the keys of a set, sorted, for a deterministic message.

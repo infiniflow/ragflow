@@ -311,10 +311,10 @@ func TestTakeContextSentencesCoversBudgetOnSentenceBoundaries(t *testing.T) {
 	const text = "alpha beta. gamma delta. epsilon zeta."
 	budget := tokenizeStr("gamma delta. epsilon zeta.")
 
-	if got, want := takeContextSentences(text, budget, true), "gamma delta. epsilon zeta."; got != want {
+	if got, want := takeContextSentences(text, budget, true, contextSentencePattern), "gamma delta. epsilon zeta."; got != want {
 		t.Errorf("tail context = %q, want %q", got, want)
 	}
-	if got, want := takeContextSentences(text, budget, false), "alpha beta. gamma delta. "; got != want {
+	if got, want := takeContextSentences(text, budget, false, contextSentencePattern), "alpha beta. gamma delta. "; got != want {
 		t.Errorf("prefix context = %q, want %q", got, want)
 	}
 	// One sentence less falls short of the budget, so the walk stopped at the
@@ -330,10 +330,10 @@ func TestTakeContextSentencesCoversBudgetOnSentenceBoundaries(t *testing.T) {
 // — comes back whole.
 func TestTakeContextSentencesKeepsBoundarylessText(t *testing.T) {
 	s := strings.Repeat("中", 60)
-	if got := takeContextSentences(s, 20, true); got != s {
+	if got := takeContextSentences(s, 20, true, contextSentencePattern); got != s {
 		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
-	if got := takeContextSentences(s, 20, false); got != s {
+	if got := takeContextSentences(s, 20, false, contextSentencePattern); got != s {
 		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
 }

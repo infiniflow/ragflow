@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -110,6 +111,50 @@ func insertRunningSyncTask(t *testing.T, db *gorm.DB, taskID string, errorCount,
 		ErrorClass:  errorClass,
 	}).Error; err != nil {
 		t.Fatalf("insert task: %v", err)
+	}
+}
+
+func TestRescheduleClaimedPreservesNewerClaim(t *testing.T) {
+	db := setupSyncTaskTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector{}); err != nil {
+		t.Fatalf("migrate connector: %v", err)
+	}
+	dao := NewSyncTaskDAO(db)
+	staleStartedAt := time.Now().Truncate(time.Millisecond)
+	currentStartedAt := staleStartedAt.Add(time.Second)
+	if err := db.Create(&entity.SyncLogs{
+		ID:          "task-1",
+		ConnectorID: "conn-1",
+		KbID:        "kb-1",
+		TaskType:    TaskTypeSync,
+		Status:      SyncStatusRunning,
+		TimeStarted: &currentStartedAt,
+	}).Error; err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	restored, err := dao.RescheduleClaimed(t.Context(), "task-1", &staleStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule stale claim: %v", err)
+	}
+	if restored {
+		t.Fatal("stale claim restored a newer claim")
+	}
+
+	var task entity.SyncLogs
+	if err = db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != SyncStatusRunning {
+		t.Fatalf("status = %s, want running", task.Status)
+	}
+
+	restored, err = dao.RescheduleClaimed(t.Context(), "task-1", &currentStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule current claim: %v", err)
+	}
+	if !restored {
+		t.Fatal("current claim was not restored")
 	}
 }
 

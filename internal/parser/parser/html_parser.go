@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"ragflow/internal/parser/tableutil"
 )
 
 type HTMLParser struct {
@@ -97,7 +98,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 			"name":     filename,
 			"encoding": encName,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: state.warnings(),
 	}
 }
@@ -125,21 +126,37 @@ func (s *htmlWalkState) warnings() []string {
 // order. Inline formatting is collapsed into its parent text; script, style,
 // and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	// Text and inline elements directly under <body> are one run of text, as
+	// a browser lays them out, so they are collected into one item. Emitted
+	// one item per text node and per inline element, "Hello <b>world</b>!"
+	// came out as the three items "Hello", "world" and "!".
+	var run *leafWriter
+	flushRun := func() {
+		if run != nil {
+			flushLeafText(run, out, "text", true)
+			run = nil
+		}
+	}
+	defer flushRun()
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.TextNode {
-			if emitsLooseHTMLText(root) {
-				appendHTMLTextItem(out, child.Data, "text", true)
-			}
+		// Invisible nodes neither show up nor end the run around them.
+		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
+			(child.Data == "script" || child.Data == "style" || child.Data == "noscript")) {
 			continue
 		}
+		if emitsLooseHTMLText(root) && (child.Type == html.TextNode || isHTMLInlineElement(child)) {
+			if run == nil {
+				run = &leafWriter{b: &bytes.Buffer{}}
+			}
+			walkHTMLLeaf(child, run, out, "text", true, state)
+			continue
+		}
+		flushRun()
 		if child.Type != html.ElementNode {
 			continue
 		}
 		tag := child.Data
 		switch tag {
-		case "script", "style", "noscript":
-			// Skip executable / stylistic blocks entirely.
-			continue
 		case "head":
 			// Skip document metadata so it does not pollute body text.
 			continue
@@ -185,6 +202,22 @@ func renderTableHTML(n *html.Node) string {
 
 func emitsLooseHTMLText(root *html.Node) bool {
 	return root.Type == html.ElementNode && root.Data == "body"
+}
+
+// isHTMLInlineElement reports whether n is a phrasing element, one a browser
+// lays out inside the surrounding line of text rather than as a block.
+func isHTMLInlineElement(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+	switch n.Data {
+	case "a", "abbr", "b", "bdi", "bdo", "big", "br", "cite", "code", "data",
+		"del", "dfn", "em", "font", "i", "img", "ins", "kbd", "label", "mark",
+		"q", "s", "samp", "small", "span", "strike", "strong", "sub", "sup",
+		"time", "tt", "u", "var", "wbr":
+		return true
+	}
+	return false
 }
 
 func appendHTMLTextItem(out *[]map[string]any, text, ckType string, trim bool) {
@@ -405,10 +438,17 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	if strings.TrimSpace(markup) == "" {
 		return
 	}
+	// Emit the structured TableData contract so the chunker reads rows
+	// directly instead of re-parsing markup. ParseTableHTML mirrors the
+	// legacy chunker extraction, so the recovered rows/caption are identical
+	// to what the old HTML path produced. html.Parse (used by ParseTableHTML)
+	// is infallible, so the parse always yields a non-nil TableData and no
+	// legacy HTML `text` is kept.
+	td, _ := tableutil.ParseTableHTML(markup)
 	table := map[string]any{
-		"text":         markup,
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
+		"table":        td,
 	}
 	tableID := ""
 	if len(images) > 0 {

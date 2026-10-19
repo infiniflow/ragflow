@@ -4,14 +4,58 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/server"
 	"ragflow/internal/service"
 )
+
+func TestMain(m *testing.M) {
+	if err := server.InitLocalVariables(); err != nil {
+		panic(err)
+	}
+	server.SetServerName("test")
+	os.Exit(m.Run())
+}
+
+func TestRouterSetupRemovesActionRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	tests := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/tenant/list"},
+		{http.MethodPost, "/api/v1/document/list"},
+		{http.MethodPost, "/api/v1/document/metadata/summary"},
+		{http.MethodPost, "/api/v1/document/delete_meta"},
+		{http.MethodPost, "/api/v1/document/set_meta"},
+		{http.MethodPost, "/api/v1/chunk/list"},
+		{http.MethodPost, "/api/v1/chunk/update"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			engine.ServeHTTP(resp, httptest.NewRequest(tt.method, tt.path, nil))
+			if resp.Code != http.StatusNotFound {
+				t.Fatalf("status=%d body=%s; want 404", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
 
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	gin.SetMode(gin.TestMode)

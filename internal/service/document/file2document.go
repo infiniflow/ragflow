@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strings"
 
 	"go.uber.org/zap"
@@ -28,6 +27,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/utility"
 )
 
@@ -40,8 +42,6 @@ var (
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkNoAuthorization mirrors Python "no authorization".
-	ErrLinkNoAuthorization = errors.New("no authorization")
 	// ErrLinkInternal is a generic, safe-to-expose internal failure.
 	ErrLinkInternal = errors.New("Internal server error.")
 )
@@ -107,6 +107,17 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	}
 
 	// ── 3. Expand folders to leaf files, then deduplicate ─────────────────────
+	checker := permission.NewDatabaseChecker(dao.DB)
+	checkFileRead := func(file *entity.File) error {
+		kind := permission.ResourceKindFile
+		if file.Type == "folder" {
+			kind = permission.ResourceKindFolder
+		}
+		return checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: kind,
+			ID:   file.ID,
+		}, permission.OperationRead)
+	}
 	// Mixed folder + direct file inputs (or overlapping folders) can yield the
 	// same leaf file more than once; dedupe so each file is converted exactly
 	// once.
@@ -114,6 +125,10 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	for _, id := range req.FileIDs {
 		file := filesSet[id]
 		if file.Type == "folder" {
+			if err := checkFileRead(file); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return permissionErr
+			}
 			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
@@ -132,15 +147,17 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 		if err != nil || file == nil {
 			return ErrLinkFileNotFound
 		}
-		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
-			return ErrLinkNoAuthorization
+		if err := checkFileRead(file); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
 		}
 	}
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
-			return ErrLinkNoAuthorization
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kb.ID, permission.OperationUpdate); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
 		}
 	}
 
@@ -224,12 +241,14 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				continue
 			}
 
-			parserID, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           utility.GenerateUUID(),
+				ID:           common.GenerateUUID(),
 				KbID:         kb.ID,
 				ParserID:     parserID,
+				PipelineID:   pipelineID,
 				ParserConfig: parserConfig,
 				CreatedBy:    userID,
 				Type:         file.Type,
@@ -239,10 +258,6 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 			if file.Location != nil {
 				doc.Location = file.Location
-			}
-			if kb.PipelineID != nil {
-				doc.PipelineID = kb.PipelineID
-				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
 			}
 
 			// InsertDocument creates the row and increments KB doc_num in one
@@ -254,7 +269,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 
 			mapping := &entity.File2Document{
-				ID:         utility.GenerateUUID(),
+				ID:         common.GenerateUUID(),
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}

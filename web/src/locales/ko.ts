@@ -377,6 +377,8 @@ export default {
       dataFlowRequired: '데이터 흐름을 선택해 주세요',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        '업로드를 계속하면 시스템이 이 파일들을 지원되는 기본 제공 구문 분석 구성으로 자동 전환합니다.',
       metadata: {
         fields: '필드',
         selectFiles: '{{count}}개 파일 선택됨',
@@ -605,6 +607,7 @@ export default {
       reRankModelWaring: 'Re-rank 모델은 처리 시간이 매우 오래 걸립니다.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Seed는 의사 난수 알고리즘의 시작점으로, 여러 실행에서 동일한 출력을 재현할 수 있도록 합니다.',
       datasetDescription: '데이터셋을 설명하세요',
@@ -1578,18 +1581,18 @@ export default {
       chatModelTip: '새로 생성된 각 데이터셋의 기본 LLM입니다.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         '새로 생성된 각 데이터셋의 기본 ASR 모델입니다. 이 모델을 사용하여 음성을 텍스트로 변환하세요.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
+      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       workspace: '워크스페이스',
       upgrade: '업그레이드',
       addLlmTitle: 'LLM 추가',
@@ -1991,7 +1994,7 @@ export default {
       dataManipulation: '데이터 조작',
       flow: '플로우',
       dialog: '대화',
-      cite: '인용',
+      cite: '인용 표시',
       citeTip: 'citeTip',
       name: '이름',
       nameMessage: '이름을 입력해 주세요',

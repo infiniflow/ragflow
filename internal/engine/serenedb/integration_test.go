@@ -107,7 +107,7 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 	_ = e.DropChunkStore(ctx, base, kb)
 	defer func() { _ = e.DropChunkStore(ctx, base, kb) }()
 
-	if err := e.CreateChunkStore(ctx, base, kb, 4, ""); err != nil {
+	if err := e.CreateChunkStore(ctx, base, kb, 4, "", ""); err != nil {
 		t.Fatalf("CreateChunkStore: %v", err)
 	}
 	if ok, _ := e.ChunkStoreExists(ctx, base, kb); !ok {
@@ -119,7 +119,7 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		{"id": "b", "doc_id": "d1", "kb_id": kb, "content_ltks": "gamma delta", "content_with_weight": "gamma delta", "q_4_vec": []float64{0, 1, 0, 0}, "important_kwd": []interface{}{"gamma"}},
 		{"id": "c", "doc_id": "d2", "kb_id": kb, "content_ltks": "alpha gamma", "content_with_weight": "alpha gamma", "q_4_vec": []float64{0.9, 0.1, 0, 0}, "important_kwd": []interface{}{"alpha", "gamma"}},
 	}
-	if _, err := e.InsertChunks(ctx, chunks, base, kb); err != nil {
+	if _, err := e.InsertChunks(ctx, chunks, base, kb, ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
@@ -158,6 +158,25 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		}
 	})
 
+	// The builder tests assert the SQL TEXT; they say nothing about whether Search
+	// actually applies the post-filter it moved the threshold into. Without a
+	// threshold on the request, deleting the filterByScore call leaves every test
+	// green. This one asks for a cutoff only 'a' can clear.
+	t.Run("vector_threshold", func(t *testing.T) {
+		res := waitForFulltext(t, e, req([]interface{}{
+			&types.MatchDenseExpr{
+				VectorColumnName: "q_4_vec",
+				EmbeddingData:    []float64{1, 0, 0, 0},
+				TopN:             10,
+				ExtraOptions:     map[string]interface{}{"similarity": 0.999},
+			},
+		}, nil))
+		ids := chunkIDs(res)
+		if len(ids) != 1 || ids[0] != "a" {
+			t.Fatalf("similarity 0.999 should leave only 'a', got %v", ids)
+		}
+	})
+
 	t.Run("fusion", func(t *testing.T) {
 		res := waitForFulltext(t, e, req([]interface{}{
 			&types.MatchTextExpr{MatchingText: "alpha", TopN: 10},
@@ -167,6 +186,36 @@ func TestIntegrationChunkLifecycle(t *testing.T) {
 		ids := chunkIDs(res)
 		if len(ids) == 0 || ids[0] != "a" {
 			t.Fatalf("fusion(alpha, [1,0,0,0]) should rank 'a' first, got %v", ids)
+		}
+	})
+
+	// Same gap on the hybrid path, and it is the one that actually regressed: the
+	// FULL OUTER JOIN can return a vector-only candidate with no term match, so a
+	// sub-threshold row reaches the fusion unless the vec branch filters its own
+	// limited candidates.
+	//
+	// The term is "beta", which ONLY 'a' carries - not "alpha", which 'c' also has.
+	// With "alpha" the lex branch returns 'c' legitimately and the assertion below
+	// fails against correct behaviour; that is a property of the fixture, not of
+	// the threshold. 'c' is [0.9,0.1,0,0], similarity 0.9939 against the query, so
+	// 0.999 excludes it from the vec branch and nothing else can bring it in.
+	t.Run("fusion_threshold", func(t *testing.T) {
+		res := waitForFulltext(t, e, req([]interface{}{
+			&types.MatchTextExpr{MatchingText: "beta", TopN: 10},
+			&types.MatchDenseExpr{
+				VectorColumnName: "q_4_vec",
+				EmbeddingData:    []float64{1, 0, 0, 0},
+				TopN:             10,
+				ExtraOptions:     map[string]interface{}{"similarity": 0.999},
+			},
+			&types.FusionExpr{Method: "weighted_sum", FusionParams: map[string]interface{}{"weights": "0.3,0.7"}},
+		}, nil))
+		// Exactly one, not "nothing unexpected": a range over an empty result makes
+		// no assertion at all, so the weaker form passes when the hybrid search
+		// returns nothing - including when a regression drops the qualifying row.
+		ids := chunkIDs(res)
+		if len(ids) != 1 || ids[0] != "a" {
+			t.Fatalf("fusion at similarity 0.999 should leave only 'a', got %v", ids)
 		}
 	})
 
