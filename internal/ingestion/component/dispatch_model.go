@@ -38,6 +38,14 @@ type tenantModelExtra struct {
 	MaxTokens *int `json:"max_tokens"`
 }
 
+type resolvedModelConfig struct {
+	driver        modelModule.ModelDriver
+	model         *entity.TenantModel
+	instance      *entity.TenantModelInstance
+	apiConfig     *modelModule.APIConfig
+	contextLength int
+}
+
 var resolveTenantModelByType = defaultResolveTenantModelByType
 
 // resolveModelConfig resolves a specific model reference (tenant-model ID or
@@ -84,9 +92,9 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
-		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
-			return driver, modelName, apiConfig, maxTokens, nil
+			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 		}
 	}
 	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
@@ -134,7 +142,11 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 			if model.Status != "active" || !entity.ModelType(model.ModelType).Has(entity.ModelTypeOCR) {
 				continue
 			}
-			return resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, model.ID)
+			resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, model.ID)
+			if err != nil {
+				return nil, "", nil, 0, err
+			}
+			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 		}
 	}
 	return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
@@ -189,40 +201,52 @@ func stringValue(value *string) string {
 }
 
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	modelDAO := dao.NewTenantModelDAO()
-	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
-		return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
-	} else if !errorsIsRecordNotFound(err) {
-		return nil, "", nil, 0, err
+	if !strings.Contains(modelRef, "@") {
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
 	}
 	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
 }
 
-func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelID string) (*resolvedModelConfig, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	providerDAO := dao.NewTenantModelProviderDAO()
 
-	modelObj, err := modelDAO.GetByID(ctx, db, modelID)
+	// Scope the lookup itself so missing and foreign models are indistinguishable
+	// before exposing status, type, instance configuration, or driver details.
+	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
+		Select("id").Where("tenant_id = ?", tenantID)
+	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
+	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
-		return nil, "", nil, 0, err
-	}
-	if modelObj.Status != "active" {
-		return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelID)
-	}
-	if !entity.ModelType(modelObj.ModelType).Has(modelType) {
-		return nil, "", nil, 0, fmt.Errorf("model %q cannot be used as %s model", modelID, modelType.String())
-	}
-	instance, err := instanceDAO.GetByID(ctx, db, modelObj.InstanceID)
-	if err != nil {
-		return nil, "", nil, 0, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("model not found or inaccessible")
+		}
+		return nil, err
 	}
 	provider, err := providerDAO.GetByID(ctx, db, modelObj.ProviderID)
 	if err != nil {
-		return nil, "", nil, 0, err
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("model not found or inaccessible")
+		}
+		return nil, err
 	}
 	if provider.TenantID != tenantID {
-		return nil, "", nil, 0, fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
+		return nil, errors.New("model not found or inaccessible")
+	}
+	if modelObj.Status != "active" {
+		return nil, fmt.Errorf("model %q is disabled", modelID)
+	}
+	if !entity.ModelType(modelObj.ModelType).Has(modelType) {
+		return nil, fmt.Errorf("model %q cannot be used as %s model", modelID, modelType.String())
+	}
+	instance, err := instanceDAO.GetByID(ctx, db, modelObj.InstanceID)
+	if err != nil {
+		return nil, err
 	}
 
 	apiKey := instance.APIKey
@@ -234,11 +258,11 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	catalogName := modelModule.CatalogProviderName(provider.ProviderName)
 	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if providerInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", provider.ProviderName)
+		return nil, fmt.Errorf("provider %q driver not found", provider.ProviderName)
 	}
 	driver, err := newModelDriverForBaseURLLocal(providerInfo.ModelDriver, provider.ProviderName, region, baseURL)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, err
 	}
 	contextLength := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(catalogName, modelObj.ModelName); mi != nil {
@@ -251,14 +275,17 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
 		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
-			return nil, "", nil, 0, err
+			return nil, err
 		}
 		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
 			contextLength = *tenantExtra.MaxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return driver, modelObj.ModelName, apiConfig, contextLength, nil
+	return &resolvedModelConfig{
+		driver: driver, model: modelObj, instance: instance,
+		apiConfig: apiConfig, contextLength: contextLength,
+	}, nil
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {

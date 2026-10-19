@@ -5,7 +5,12 @@ import { TreeSelect } from '@/components/tree-select';
 import message from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
-import { useCallback, useMemo } from 'react';
+import {
+  ComponentPropsWithoutRef,
+  forwardRef,
+  useCallback,
+  useMemo,
+} from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
@@ -17,6 +22,30 @@ type ImageOcrSwitchProps = {
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
 };
+
+const DeepDocModelId = '__image_ocr_deepdoc__';
+
+// Keep the UI-only option out of the form and serialized parser configuration.
+const ImageOCRModelSelect = forwardRef<
+  HTMLButtonElement,
+  ComponentPropsWithoutRef<typeof TreeSelect>
+>(function ImageOCRModelSelect({ value, onChange, allowClear, ...props }, ref) {
+  const handleModelChange = useCallback(
+    (modelId: string) => {
+      onChange?.(modelId === DeepDocModelId ? '' : modelId);
+    },
+    [onChange],
+  );
+  return (
+    <TreeSelect
+      {...props}
+      ref={ref}
+      value={value || DeepDocModelId}
+      onChange={handleModelChange}
+      allowClear={allowClear && !!value}
+    />
+  );
+});
 
 // OCR can only be turned off while the global vision enhancement is on: with
 // neither, the image carries no text and the backend rejects the canvas.
@@ -70,21 +99,33 @@ function ImageOCRModelField({ prefix }: CommonProps) {
     ),
     [ownerTenantId],
   );
+  const options = useMemo(
+    () => [{ id: DeepDocModelId, title: t('flow.imageOcrLocal') }, ...models],
+    [models, t],
+  );
+  const description = isError ? (
+    <span role="alert" className="text-state-error">
+      {t('flow.imageOcrModelsError')}
+    </span>
+  ) : isFetched && models.length === 0 ? (
+    <span role="status">{t('flow.imageOcrNoModels')}</span>
+  ) : undefined;
 
   return (
     <RAGFlowFormItem
       name={buildFieldNameWithPrefix('ocr_model_id', prefix)}
       label={t('flow.imageOcrModel')}
       tooltip={t('flow.imageOcrModelTip')}
+      description={description}
     >
       {(field) => (
-        <TreeSelect
+        <ImageOCRModelSelect
           ref={field.ref}
-          data={models}
+          data={options}
           value={field.value}
           onChange={field.onChange}
           placeholder={t('flow.imageOcrLocal')}
-          loading={!isFetched || isError}
+          loading={!isFetched}
           renderMissingValue={renderMissingModel}
           allowClear
           showSearch

@@ -283,8 +283,8 @@ func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantI
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
 	}
-	driver, _, _, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-	return err == nil && strings.EqualFold(driver.Name(), "monkeyocrv2")
+	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
 }
 
 func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binary []byte, timeout time.Duration) ([]byte, error) {
@@ -582,8 +582,11 @@ var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
 func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID != "" && !strings.Contains(modelID, "@") {
-		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return driver, modelName, apiConfig, err
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
 	}
 	if modelID != "" {
 		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
@@ -612,8 +615,11 @@ var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
 
 func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	if strings.TrimSpace(modelID) != "" && !strings.Contains(modelID, "@") {
-		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return driver, modelName, apiConfig, err
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
 	}
 	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "PaddleOCR")
 	return driver, modelName, apiConfig, err

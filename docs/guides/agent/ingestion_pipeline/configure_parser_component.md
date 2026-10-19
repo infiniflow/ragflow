@@ -28,10 +28,13 @@ For PDF files, select one of the following:
 
 For image files:
 
-- **OCR** is on by default. With **OCR model** empty, the Parser uses local
-  DeepDoc OCR. Select an added **PaddleOCR** or **PaddleOCR.local** model to use
-  that tenant model's instance instead; clear the selection to return to local
-  OCR.
+- **OCR** is on by default. **OCR model** starts with **DeepDoc** for local
+  OCR. Select an added **PaddleOCR** or **PaddleOCR.local** model to use
+  that tenant model's instance instead; select **DeepDoc** again to return to
+  local OCR.
+- If the model list cannot be loaded, the field displays an error and preserves
+  the saved selection. A successful empty list is shown separately; **DeepDoc**
+  remains available in either case.
 - Turning **OCR** off skips both local and selected-model OCR without clearing
   the saved selection. **Enable vision enhancement** independently controls VLM
   descriptions: selecting an OCR model never enables vision enhancement.
@@ -47,9 +50,10 @@ For Go Parser configuration, the image family stores `ocr_enabled` and optional
 `ocr_model_id` (an enrolled tenant model ID, not a provider name). An omitted or
 empty `ocr_model_id` keeps local OCR. The selected model must be an active OCR
 model on an active PaddleOCR instance belonging to the pipeline's tenant.
-Self-hosted instances need a configured base URL; the cloud driver also supports
-its catalog endpoint. Server-wide endpoint environment variables do not replace
-an explicitly selected instance.
+Self-hosted instances need a configured base URL. A cloud instance without one
+uses the public catalog endpoint and logs a warning with tenant, model and
+instance IDs, not credentials. Server-wide endpoint environment variables do not
+replace an explicitly selected instance.
 
 For email files:
 

@@ -2776,9 +2776,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       imageOcrTip:
         'Extract text from uploaded images with local OCR or the selected PaddleOCR model. Vision enhancement adds descriptions independently of this switch.',
       imageOcrModel: 'OCR model',
-      imageOcrLocal: 'Local OCR (default)',
+      imageOcrLocal: 'DeepDoc',
       imageOcrModelTip:
-        'Choose an added PaddleOCR or PaddleOCR.local model. Clear the selection to use local DeepDoc OCR. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+        'Choose DeepDoc for local OCR, or an added PaddleOCR or PaddleOCR.local model. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrModelsError:
+        'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
+      imageOcrNoModels:
+        'No PaddleOCR models added. Use DeepDoc for local OCR, or add a PaddleOCR model in model settings.',
       imageTextSourceRequired:
         'Images need a text source: keep OCR or vision enhancement on.',
       visionEnhancementPromptTip:

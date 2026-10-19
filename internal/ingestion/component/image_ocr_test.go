@@ -296,7 +296,7 @@ func TestImageOCRInvalidSelectionNeverFallsBack(t *testing.T) {
 		want                            string
 	}{
 		{name: "missing tenant", ref: "model-b", want: "tenant"},
-		{name: "foreign tenant", tenant: "tenant-2", ref: "model-b", want: "access"},
+		{name: "foreign tenant", tenant: "tenant-2", ref: "model-b", want: "not found"},
 		{name: "missing model", tenant: "tenant-1", ref: "missing", want: "not found"},
 		{name: "disabled model", tenant: "tenant-1", ref: "model-b", table: "tenant_model", field: "status", value: "inactive", want: "disabled"},
 		{name: "wrong type", tenant: "tenant-1", ref: "model-b", table: "tenant_model", field: "model_type", value: int(entity.ModelTypeChat), want: "ocr"},

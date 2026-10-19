@@ -19,8 +19,10 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -33,24 +35,18 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 	if strings.TrimSpace(tenantID) == "" || db == nil {
 		return "", fmt.Errorf("selected image OCR requires a tenant and database")
 	}
-	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
+	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	if err != nil {
 		return "", fmt.Errorf("selected image OCR model: %w", err)
 	}
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
-	if err != nil {
-		return "", fmt.Errorf("selected image OCR instance: %w", err)
-	}
+	model, instance := resolved.model, resolved.instance
 	if instance.ProviderID != model.ProviderID {
 		return "", fmt.Errorf("selected image OCR instance does not belong to the model provider")
 	}
 	if instance.Status != "active" {
 		return "", fmt.Errorf("selected image OCR instance is disabled")
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-	if err != nil {
-		return "", fmt.Errorf("selected image OCR model: %w", err)
-	}
+	driver, modelName, apiConfig := resolved.driver, model.ModelName, resolved.apiConfig
 	if !isPaddleOCRDriver(driver) {
 		return "", fmt.Errorf("selected image OCR requires a PaddleOCR model")
 	}
@@ -61,7 +57,15 @@ func extractSelectedImageOCR(ctx context.Context, db *gorm.DB, tenantID, modelID
 	}
 	if baseURL == "" && driver.Name() == "paddleocr" {
 		if provider := dao.GetModelProviderManager().FindProvider("PaddleOCR"); provider != nil {
-			baseURL = provider.URL["default"]
+			baseURL = strings.TrimSpace(provider.URL["default"])
+			if baseURL != "" {
+				// An explicitly selected cloud model may still use its catalog
+				// endpoint. Make that choice observable without logging secrets.
+				common.WarnCtx(ctx, "selected image OCR falls back to cloud provider default endpoint",
+					zap.String("tenant_id", tenantID),
+					zap.String("model_id", model.ID),
+					zap.String("instance_id", instance.ID))
+			}
 		}
 	}
 	if baseURL == "" {
