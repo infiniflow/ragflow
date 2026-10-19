@@ -289,6 +289,8 @@ func TestSitemapConnectorOpenPrune(t *testing.T) {
 	}
 }
 
+// TestSitemapConnectorPruneRejectsFetchFailures ensures listing and PDF discovery
+// errors return no prune session and preserve the underlying fetch failure.
 func TestSitemapConnectorPruneRejectsFetchFailures(t *testing.T) {
 	for name, failedURL := range map[string]string{
 		"root sitemap":   "https://example.com/sitemap.xml",
@@ -314,6 +316,8 @@ func TestSitemapConnectorPruneRejectsFetchFailures(t *testing.T) {
 	}
 }
 
+// TestSitemapConnectorPruneRejectsInvalidNestedSitemap ensures an invalid child
+// URL cannot silently shrink the snapshot used to authorize deletion.
 func TestSitemapConnectorPruneRejectsInvalidNestedSitemap(t *testing.T) {
 	fixture := sitemapFixture{
 		"https://example.com/sitemap.xml": {"application/xml", `<sitemapindex><sitemap><loc>ftp://example.com/child.xml</loc></sitemap></sitemapindex>`},
@@ -324,6 +328,8 @@ func TestSitemapConnectorPruneRejectsInvalidNestedSitemap(t *testing.T) {
 	}
 }
 
+// TestSitemapConnectorPruneAllowsEmptySnapshot keeps complete empty listings valid
+// so confirmed source removals can still be pruned.
 func TestSitemapConnectorPruneAllowsEmptySnapshot(t *testing.T) {
 	fixture := sitemapFixture{
 		"https://example.com/sitemap.xml": {"application/xml", `<sitemapindex><sitemap><loc>https://example.com/child.xml</loc></sitemap></sitemapindex>`},
@@ -340,6 +346,8 @@ func TestSitemapConnectorPruneAllowsEmptySnapshot(t *testing.T) {
 	}
 }
 
+// TestSitemapConnectorPruneRejectsDepthLimit distinguishes an omitted subtree from
+// a harmless cycle, while preserving best-effort listing for sync.
 func TestSitemapConnectorPruneRejectsDepthLimit(t *testing.T) {
 	fixture := sitemapFixture{}
 	for depth := 0; depth <= maxSitemapDepth; depth++ {
@@ -518,7 +526,8 @@ func TestSitemapSemanticIdentifier(t *testing.T) {
 
 // TestSitemapConnectorListEntriesBoundsFetches verifies that nested sitemap
 // indexes referencing themselves or an ancestor are fetched once, and that the
-// walk stops at maxSitemapFetches.
+// walk stops at maxSitemapFetches. A capped best-effort listing must not become
+// a successful prune snapshot.
 func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 	fetches := map[string]int{}
 	fixture := defaultSitemapFixture()

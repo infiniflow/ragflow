@@ -180,6 +180,9 @@ func (c *SitemapConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 
 // OpenPrune opens one complete sitemap prune snapshot session.
 //
+// Fetch and traversal failures return no session, so callers cannot delete
+// documents based on a partial retained set.
+//
 // When PDF link discovery is enabled the HTML pages are fetched so that the
 // discovered PDFs are part of the retained set; otherwise they would be pruned
 // as stale right after being indexed.
@@ -231,8 +234,10 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 // itself or an ancestor is skipped) and the walk stops after maxSitemapFetches
 // sitemap documents, so one connector configuration cannot trigger unbounded
 // egress.
-// When requireComplete is true, omitted subtrees fail the snapshot instead of
-// being treated as evidence that their documents were deleted.
+//
+// With requireComplete, omitted subtrees fail the snapshot so a partial listing
+// cannot authorize pruning. Otherwise nested fetch/validation failures and
+// traversal limits are best effort, allowing sync to process healthy subtrees.
 func (c *SitemapConnector) listEntries(ctx context.Context, requireComplete bool) ([]sitemapEntry, error) {
 	var (
 		entries []sitemapEntry
