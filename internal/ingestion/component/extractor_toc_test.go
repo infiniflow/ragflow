@@ -232,6 +232,40 @@ func TestExtractorTOC_DisabledMakesNoCalls(t *testing.T) {
 	}
 }
 
+func TestExtractorTOC_MissingDocIDMakesNoCalls(t *testing.T) {
+	stub := withStubChatInvoker(t)
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:    "gpt-4o-mini",
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
+		TOC:      schema.TOCExtractConfig{Enabled: true},
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"chunks": tocTestChunks("doc1", "Chapter 1")})
+	if err == nil || !strings.Contains(err.Error(), "doc_id is required") {
+		t.Fatalf("err = %v, want doc_id is required", err)
+	}
+	if stub.Calls() != 0 {
+		t.Fatalf("chat calls = %d, want 0", stub.Calls())
+	}
+}
+
+func TestExtractorTOC_ContextTooSmallFails(t *testing.T) {
+	useWhitespaceTokenizer(t)
+	stub := withStubChatInvoker(t)
+	SetExtractorContextLengthOverride(func(context.Context, string) int { return 10 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID: "gpt-4o-mini",
+		TOC:   schema.TOCExtractConfig{Enabled: true},
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"chunks": tocTestChunks("doc1", "Chapter 1"), "doc_id": "doc1"})
+	if err == nil || !strings.Contains(err.Error(), "model context of 10 tokens leaves no room") {
+		t.Fatalf("err = %v, want a context error", err)
+	}
+	if stub.Calls() != 0 {
+		t.Fatalf("chat calls = %d, want 0", stub.Calls())
+	}
+}
+
 func TestMergeTOCLevels_BadInput(t *testing.T) {
 	chunks := tocTestChunks("doc1", "a", "b")
 	levels := []any{

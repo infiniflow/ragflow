@@ -120,6 +120,9 @@ func (c *ExtractorComponent) runTOCFromText(ctx context.Context, db *gorm.DB, in
 	budget := tocBatchTokenCap
 	if ctxLen := extractorContextLength(ctx, db, in.llmID); ctxLen > 0 {
 		budget = min(int(float64(ctxLen)*tocInputUtilization)-tokenizer.NumTokensFromString(userTemplate+systemPrompt), tocBatchTokenCap)
+		if budget <= 0 {
+			return nil, fmt.Errorf("model context of %d tokens leaves no room for chunk text", ctxLen)
+		}
 	}
 	batches, err := tocBatchPrompts(texts, budget)
 	if err != nil {

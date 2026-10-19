@@ -710,6 +710,16 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	tocOn := c.Param.TOC.Enabled
 	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn, tocOn)
 
+	// The TOC chunk id derives from doc_id, and the retrieval path finds the
+	// TOC by doc_id, so a missing doc_id fails before any model call.
+	var docID string
+	if tocOn {
+		docID = globals.GlobalOrInput(ctx, inputs, "doc_id", "")
+		if docID == "" {
+			return nil, fmt.Errorf("extractor: toc: doc_id is required")
+		}
+	}
+
 	// No node-level wall-clock budget (see the package doc): each LLM call
 	// carries its own budget, and an expired call skips its chunk instead
 	// of failing the document. Task cancellation still aborts via ctx.
@@ -733,7 +743,6 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	// Phase 4: one TOC for the whole document, appended as an extra chunk.
 	if tocOn {
-		docID := globals.GlobalOrInput(ctx, inputs, "doc_id", "")
 		tocChunk, err := c.buildTOCChunk(ctx, db, in, docID, phaseWindows.Take(tocOn))
 		if err != nil {
 			return nil, fmt.Errorf("extractor: toc: %w", err)

@@ -44,7 +44,7 @@ HEADING DETECTION (cues, not hard rules)
 - Exclude long narrative sentences, continuous prose, or bullet-style lists → output as "-1".
 
 OUTPUT FORMAT
-- Return ONLY a valid JSON array of {"title","content"} objects.
+- Return ONLY a valid JSON array of {"title","chunk_id"} objects.
 - No reasoning or commentary.
 
 EXAMPLES
