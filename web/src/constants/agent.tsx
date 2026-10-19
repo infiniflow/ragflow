@@ -85,6 +85,7 @@ export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
+  ScoredSwitch = 'ScoredSwitch',
   Message = 'Message',
   RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',

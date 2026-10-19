@@ -171,6 +171,8 @@ func TestIsBranchableControl(t *testing.T) {
 		{"switch upper", "SWITCH", true},
 		{"categorize exact", "Categorize", true},
 		{"categorize lower", "categorize", true},
+		{"scored switch exact", "ScoredSwitch", true},
+		{"scored switch lower", "scoredswitch", true},
 		{"llm not branchable", "LLM", false},
 		{"empty not branchable", "", false},
 		{"message not branchable", "Message", false},

@@ -55,13 +55,13 @@ import (
 // branchableControlNames is the case-insensitive set of component
 // names that produce a runtime `_next` field and therefore qualify
 // for MultiBranch wiring. Switch emits _next as a single cpn_id
-// string; Categorize emits it as a list (see the package comment
-// above for the current status). The set is small on purpose: adding
-// a new entry requires the component body to emit outputs["_next"]
-// in a shape wireMultiBranches can consume.
+// string; Categorize and ScoredSwitch emit it as a list. The set is
+// small on purpose: adding a new entry requires the component body
+// to emit outputs["_next"] in a shape wireMultiBranches can consume.
 var branchableControlNames = map[string]bool{
-	"switch":     true,
-	"categorize": true,
+	"switch":       true,
+	"categorize":   true,
+	"scoredswitch": true,
 }
 
 // isBranchableControl reports whether the component name is one of

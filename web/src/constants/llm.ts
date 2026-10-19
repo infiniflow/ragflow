@@ -213,6 +213,7 @@ export const IconMap = {
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
   embedding: 'embd_id',
+  scoring: 'scoring_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
   rerank: 'rerank_id',
@@ -222,6 +223,7 @@ export const ModelTypeToField: Record<string, string> = {
 export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
   embd_id: 'embedding',
+  scoring_id: 'scoring',
   img2txt_id: 'vision',
   asr_id: 'asr',
   rerank_id: 'rerank',

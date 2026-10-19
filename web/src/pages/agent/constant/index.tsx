@@ -14,6 +14,10 @@ import {
   SwitchOperatorOptions,
   initialLlmBaseValues,
 } from '@/constants/agent';
+import {
+  ScoredSwitchDefaultMarginThreshold,
+  ScoredSwitchDefaultMinTopScore,
+} from '../scored-switch';
 export {
   AgentDialogueMode,
   AgentStructuredOutputField,
@@ -62,6 +66,7 @@ export const CommonOperatorList = Object.values(Operator).filter(
 export const AgentOperatorList = [
   Operator.Retrieval,
   Operator.Categorize,
+  Operator.ScoredSwitch,
   Operator.Message,
   Operator.RewriteQuestion,
   Operator.Switch,
@@ -120,6 +125,36 @@ export const initialRewriteQuestionValues = {
 
 export const initialRelevantValues = {
   ...initialLlmBaseValues,
+};
+
+export const initialScoredSwitchValues = {
+  query: AgentGlobals.SysQuery,
+  image: '',
+  instructions: '',
+  request_format: 'content_parts',
+  escalate_enabled: true,
+  margin_threshold: ScoredSwitchDefaultMarginThreshold,
+  min_top_score: ScoredSwitchDefaultMinTopScore,
+  items: [] as Array<{ name: string; description: string; uuid: string }>,
+  tasks: [] as Array<{
+    id: string;
+    type: 'noul' | 'score' | 'box';
+    instructions: string;
+    true_text?: string;
+    false_text?: string;
+    levels?: string[];
+  }>,
+  outputs: {
+    chosen_id: { type: 'string' },
+    chosen_label: { type: 'string' },
+    scores: { type: 'object' },
+    margin: { type: 'number' },
+    escalated: { type: 'boolean' },
+    selected_handle: { type: 'string' },
+    confidence: { type: 'number' },
+    raw: { type: 'string' },
+    answers: { type: 'object' },
+  },
 };
 
 export const initialCategorizeValues = {
@@ -845,6 +880,7 @@ export const CategorizeAnchorPointPositions = [
 export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin],
+  [Operator.ScoredSwitch]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
   [Operator.Message]: [
     Operator.Begin,
@@ -915,6 +951,7 @@ export const RestrictedUpstreamMap = {
 export const NodeMap = {
   [Operator.Begin]: 'beginNode',
   [Operator.Categorize]: 'categorizeNode',
+  [Operator.ScoredSwitch]: 'scoredSwitchNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
   [Operator.RewriteQuestion]: 'rewriteNode',
