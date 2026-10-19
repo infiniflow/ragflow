@@ -227,6 +227,8 @@ func cleanupResource(t *testing.T, c *ServerTestConfig, family, id string) {
 			restCode(t, restCall(t, c, http.MethodGet, "/agents/"+id, nil, nil), 200, 103)
 		case "chats":
 			restCode(t, restCall(t, c, http.MethodGet, "/chats/"+id, nil, nil), 200, 404)
+		case "searches":
+			restCode(t, restCall(t, c, http.MethodGet, "/searches/"+id, nil, nil), 200, 404)
 		case "datasets":
 			result := restCall(t, c, http.MethodGet, "/datasets", nil, apiObject{"id": id})
 			if result.Status == http.StatusOK && result.JSON["code"] == float64(404) {

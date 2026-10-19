@@ -499,15 +499,15 @@ func convertIngestionParser(config map[string]any, target builtinIngestionTarget
 	}
 	for _, key := range []string{"mineru_formula_enable", "mineru_table_enable"} {
 		if raw, exists := config[key]; exists && raw != nil {
+			if !target.hasFamily("pdf") {
+				row.retire(key, "the targeted pipeline has no PDF file family")
+				continue
+			}
 			value, ok := raw.(bool)
 			if !ok {
 				return fmt.Errorf("%s must be a boolean, got %T", key, raw)
 			}
-			if target.hasFamily("pdf") {
-				writes.setSetup(target.parserNode, "pdf", key, value)
-			} else {
-				row.retire(key, "the targeted pipeline has no PDF file family")
-			}
+			writes.setSetup(target.parserNode, "pdf", key, value)
 		}
 	}
 	if err := convertIngestionParserPages(config, target, writes, row); err != nil {

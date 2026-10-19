@@ -67,20 +67,21 @@ beforeEach(() => {
 });
 
 // The regression case for the auto-parse bug: an unsupported file type (here
-// an image) is reseeded by the backend with its dedicated pipeline, and the
-// uploaded response carries the converted parser_config. The pre-upload gap
+// a presentation) is reseeded by the backend with its dedicated pipeline, and
+// the uploaded response carries the converted parser_config. The pre-upload gap
 // prediction must not exclude the document from auto-parse anymore —
 // runnability follows the document's actual config.
 it('auto-parses a document the backend switched to a dedicated parser', async () => {
   mockUploadGaps = [
-    { reason: 'unsupportedType', name: 'photo.jpg', fileType: 'Image' },
+    { reason: 'unsupportedType', name: 'deck.pptx', fileType: 'PowerPoint' },
   ];
   mockUpload.mockResolvedValue(
     uploadOkResponse([
       makeDoc({
-        id: 'doc-img',
+        id: 'doc-deck',
+        name: 'deck.pptx',
         parser_config: {
-          'Parser:parse': { setups: [{ fileFormat: 'Image' }] },
+          'Parser:parse': { setups: [{ fileFormat: 'slides' }] },
         },
       }),
     ]),
@@ -89,7 +90,7 @@ it('auto-parses a document the backend switched to a dedicated parser', async ()
   const { result } = renderHook(() => useHandleUploadDocument());
   await act(async () => {
     await result.current.onDocumentUploadOk({
-      fileList: [new File(['x'], 'photo.jpg')],
+      fileList: [new File(['x'], 'deck.pptx')],
       parseOnCreation: true,
     });
   });
@@ -97,7 +98,7 @@ it('auto-parses a document the backend switched to a dedicated parser', async ()
   expect(mockWarning).toHaveBeenCalledTimes(1);
   await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(1));
   expect(mockRun).toHaveBeenCalledWith({
-    documentIds: ['doc-img'],
+    documentIds: ['doc-deck'],
     run: 1,
   });
 });

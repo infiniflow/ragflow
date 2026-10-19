@@ -57,6 +57,10 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{name: "MinerU controls retain paper PDF defaults", parser: "paper", input: `{"mineru_table_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_table_enable":false,"enable_multi_column":true}}}`},
 		{name: "MinerU controls need a PDF family", parser: "table", input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{}`},
 		{name: "picture does not gain a PDF family", parser: "picture", input: `{"mineru_formula_enable":false,"mineru_table_enable":false}`, want: `{}`},
+		{name: "table retires malformed formula control", parser: "table", input: `{"mineru_formula_enable":"false"}`, want: `{}`},
+		{name: "picture retires malformed table control", parser: "picture", input: `{"mineru_table_enable":0}`, want: `{}`},
+		{name: "audio retires structured controls", parser: "audio", input: `{"mineru_formula_enable":[],"mineru_table_enable":{}}`, want: `{}`},
+		{name: "email retires malformed controls", parser: "email", input: `{"mineru_formula_enable":1,"mineru_table_enable":"true"}`, want: `{}`},
 		{name: "custom canvas MinerU controls are untouched", pipeline: ptrString("canvas-1"), input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{"mineru_formula_enable":false,"mineru_table_enable":true}`},
 		{name: "unknown parser MinerU controls are untouched", parser: "knowledge_graph", input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{"mineru_formula_enable":false,"mineru_table_enable":true}`},
 		{name: "picture has no engine path", parser: "picture", input: `{"layout_recognize":"PaddleOCR"}`, want: `{}`},
@@ -144,6 +148,8 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 	}
 }
 
+// TestMigrateParserChunkerTokenizerConfigRejectsMalformedValues keeps invalid
+// values for supported PDF settings from modifying the source configuration.
 func TestMigrateParserChunkerTokenizerConfigRejectsMalformedValues(t *testing.T) {
 	for _, raw := range []string{
 		`{"layout_recognize":"MagicOCR"}`,
@@ -217,6 +223,8 @@ func TestMigrateParserChunkerTokenizerConfigLogsRetiredFields(t *testing.T) {
 	}
 }
 
+// TestMigrateIngestionParserConfigsBatches checks persisted settings across the
+// 256-row batch boundary in both dataset and document tables.
 func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	db := openIngestionMigrationDB(t)
 	for i := 0; i < 257; i++ {
@@ -272,6 +280,8 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 	}
 }
 
+// TestMigrateIngestionParserConfigsRejectsInvalidRows keeps failed batches and
+// their version unchanged when a supported setting cannot be converted.
 func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
 	for _, raw := range []string{
 		`{"pages":[[9,2]]}`,
@@ -300,6 +310,66 @@ func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
 				t.Fatal("failed migration advanced version")
 			}
 		})
+	}
+}
+
+// TestMigrateIngestionParserConfigsRetiresMalformedMinerUControlsWithoutPDF
+// exercises real batch commit and row-specific retirement warnings. Values that
+// have no PDF consumer must not prevent an otherwise valid database upgrade.
+func TestMigrateIngestionParserConfigsRetiresMalformedMinerUControlsWithoutPDF(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	previous := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = previous })
+	db := openIngestionMigrationDB(t)
+	const raw = `{"mineru_formula_enable":"false","mineru_table_enable":{},"unowned_setting":"retained"}`
+	var parsers []string
+	for parser, target := range ingestionTargets {
+		if target.hasFamily("pdf") {
+			continue
+		}
+		parsers = append(parsers, parser)
+		for _, table := range []string{"knowledgebase", "document"} {
+			insertIngestionConfig(t, db, table, parser, parser, raw)
+		}
+	}
+	if len(parsers) == 0 {
+		t.Fatal("fixture has no non-PDF parser targets")
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("unused malformed controls blocked migration: %v", err)
+	}
+	for _, table := range []string{"knowledgebase", "document"} {
+		var rows []ingestionConfigMigrationRow
+		if err := db.Table(table).Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != len(parsers) {
+			t.Fatalf("%s rows=%d; want %d", table, len(rows), len(parsers))
+		}
+		for _, row := range rows {
+			config := decodeIngestionConfig(t, *row.ParserConfig)
+			if !reflect.DeepEqual(config, map[string]any{"unowned_setting": "retained"}) {
+				t.Errorf("%s.%s: unused controls or unwanted setup remain: %v", table, row.ID, config)
+			}
+			for _, field := range []string{"mineru_formula_enable", "mineru_table_enable"} {
+				entries := logs.FilterField(zap.String("field", field)).
+					FilterField(zap.String("table", table)).
+					FilterField(zap.String("row_id", row.ID)).All()
+				if len(entries) != 1 {
+					t.Errorf("%s.%s: expected one retirement warning for %s, got %d", table, row.ID, field, len(entries))
+				}
+			}
+		}
+	}
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("migration version=%q; want %q", got, ingestionParserConfigTargetVersion)
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("second migration failed: %v", err)
+	}
+	if got, want := logs.Len(), len(parsers)*2*2; got != want {
+		t.Fatalf("retirement logs=%d; want %d without repeat warnings", got, want)
 	}
 }
 

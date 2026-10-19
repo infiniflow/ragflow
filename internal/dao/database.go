@@ -213,6 +213,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
 	}
+	dataModels = append(dataModels, permissionDataModelsEE()...)
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -226,6 +227,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		if err = migrateUserTenantDuplicates(ctx, DB); err != nil {
+			return fmt.Errorf("failed to deduplicate user_tenant memberships: %w", err)
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
@@ -233,7 +237,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-		common.Info("Database schema migrated successfully")
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -250,6 +253,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
+		if err = migratePermissions(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate permissions: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err

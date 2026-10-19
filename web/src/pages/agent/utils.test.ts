@@ -1,9 +1,12 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { FileType } from '@/constants/file';
 import { normalizeParserConfig } from '@/hooks/parser-config-utils';
-import { transformSavedParserConfigToForm } from '@/utils/pipeline-operator';
-import { FormSchema } from './form/parser-form/schema';
+import {
+  transformApiConfigToForm,
+  transformSavedParserConfigToForm,
+} from '@/utils/pipeline-operator';
 import { Operator } from './constant';
+import { FormSchema } from './form/parser-form/schema';
 import {
   generateNodeNamesWithIncreasingIndex,
   isEmptyMessageContent,
@@ -47,6 +50,66 @@ describe('transformParserParams MinerU settings', () => {
     expect(transformSavedParserConfigToForm(stored)).toMatchObject(form);
   });
 
+  it.each([
+    { modelId: 'model-b', ocrEnabled: true },
+    { modelId: '', ocrEnabled: true },
+    { modelId: 'model-b', ocrEnabled: false },
+    { modelId: '', ocrEnabled: false },
+  ])(
+    'round-trips MinerU PDF controls alongside image OCR $modelId with OCR enabled=$ocrEnabled',
+    ({ modelId, ocrEnabled }) => {
+      const config = {
+        'Parser:primary': {
+          enable_vision_enhancement: !ocrEnabled,
+          vlm: {
+            llm_id: 'vision-model-id',
+            system_prompt: 'Describe visible details.',
+          },
+          pdf: {
+            parse_method: 'mineru-model-id',
+            mineru_formula_enable: false,
+            mineru_table_enable: true,
+            mineru_parse_method: 'ocr',
+            mineru_lang: 'Japanese',
+          },
+          image: {
+            ocr_enabled: ocrEnabled,
+            ocr_model_id: modelId,
+          },
+        },
+      };
+      // Exercise the saved-config boundary and schema, not live OCR execution.
+      const form = transformSavedParserConfigToForm(config)!;
+      const saved = {
+        'Parser:primary': transformParserParams(
+          FormSchema.parse(form['Parser:primary']),
+        ),
+      };
+      const stored = JSON.parse(JSON.stringify(normalizeParserConfig(saved)));
+      expect(stored).toMatchObject(config);
+      expect(stored['Parser:primary'].pdf).not.toHaveProperty('ocr_enabled');
+      expect(stored['Parser:primary'].pdf).not.toHaveProperty('ocr_model_id');
+      for (const key of [
+        'mineru_formula_enable',
+        'mineru_table_enable',
+        'mineru_parse_method',
+        'mineru_lang',
+      ]) {
+        expect(stored['Parser:primary'].image).not.toHaveProperty(key);
+      }
+
+      const reloaded = transformSavedParserConfigToForm(stored)!;
+      const savedAgain = {
+        'Parser:primary': transformParserParams(
+          FormSchema.parse(reloaded['Parser:primary']),
+        ),
+      };
+      expect(
+        JSON.parse(JSON.stringify(normalizeParserConfig(savedAgain))),
+      ).toEqual(stored);
+    },
+  );
+
   it.each([undefined, true, false])(
     'preserves independent formula/table choices and engine settings: %s',
     (formulaEnabled) => {
@@ -89,6 +152,34 @@ describe('transformParserParams MinerU settings', () => {
 });
 
 describe('transformParserParams vision settings', () => {
+  it.each(['model-b', ''])(
+    'saves the explicit image OCR selection %j',
+    (modelId) => {
+      const result: Record<string, any> = transformParserParams({
+        enable_vision_enhancement: false,
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            ocr_model_id: modelId,
+          },
+        ],
+      } as any);
+      expect(result.image).toMatchObject({
+        ocr_enabled: true,
+        ocr_model_id: modelId,
+      });
+      expect(result.vlm.llm_id).toBe('');
+      const reloaded = transformApiConfigToForm(
+        Operator.Parser,
+        JSON.parse(JSON.stringify(result)),
+      );
+      const savedAgain: Record<string, any> = transformParserParams(
+        reloaded as any,
+      );
+      expect(savedAgain.image).toEqual(result.image);
+    },
+  );
   it('saves the normalized global settings when the node form was not opened', () => {
     const result = transformParserParams({
       setups: [
@@ -122,7 +213,7 @@ describe('transformParserParams vision settings', () => {
     });
   });
 
-  it('writes the image family as a switch and nothing else', () => {
+  it('writes the image OCR switch without retired vision fields', () => {
     // The saved shape is the contract the Go parser reads, so pin it: the
     // switch out, and the retired per-family keys never written back.
     const result = transformParserParams({

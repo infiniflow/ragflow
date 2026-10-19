@@ -49,7 +49,6 @@ jobs:
       contents: read
     runs-on: [ "self-hosted", "ragflow-test" ]
     outputs:
-      http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
       has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
@@ -146,18 +145,6 @@ jobs:
             lefthook run web-checks --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
-      - name: Set test level
-        id: test_level
-        run: |
-          set -euo pipefail
-          if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
-            export HTTP_API_TEST_LEVEL=p3
-          else
-            export HTTP_API_TEST_LEVEL=p2
-          fi
-          echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
-          echo "http_api_test_level=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_OUTPUT}
-
       - name: Detect changed file types
         id: detect_changes
         run: |
@@ -225,7 +212,6 @@ jobs:
     env:
       DOC_ENGINE: infinity
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
-      HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
@@ -687,30 +673,12 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run search API tests against Infinity
-        run: |
-          set -euo pipefail
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
-          fi
-          source .venv/bin/activate
-          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee infinity_search_api_test.log
-
       - name: Run Go API tests against Infinity
-        # Search fixtures above configure the default models used by the Go suite.
-        # Go API tests have no priority filtering; run the full suite every time.
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -718,7 +686,7 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee infinity_go_api_test.log
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -790,7 +758,6 @@ jobs:
     env:
       DOC_ENGINE: elasticsearch
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
-      HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
@@ -1265,30 +1232,12 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run search API tests against Elasticsearch
-        run: |
-          set -euo pipefail
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
-          fi
-          source .venv/bin/activate
-          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee es_search_api_test.log
-
       - name: Run Go API tests against Elasticsearch
-        # Search fixtures above configure the default models used by the Go suite.
-        # Go API tests have no priority filtering; run the full suite every time.
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1296,7 +1245,7 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee es_go_api_test.log
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}

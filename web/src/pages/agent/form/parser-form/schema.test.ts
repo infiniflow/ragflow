@@ -47,6 +47,31 @@ describe('parser FormSchema', () => {
     },
   );
 
+  it('keeps the explicit image OCR model through schema save/readback', () => {
+    const values = {
+      setups: [
+        {
+          fileFormat: FileType.Image,
+          ocr_enabled: true,
+          ocr_model_id: 'model-b',
+        },
+      ],
+    };
+    expect(
+      FormSchema.parse(JSON.parse(JSON.stringify(FormSchema.parse(values)))),
+    ).toEqual(values);
+  });
+
+  it('rejects non-string image OCR model IDs', () => {
+    expect(
+      FormSchema.safeParse({
+        setups: [
+          { fileFormat: FileType.Image, ocr_enabled: true, ocr_model_id: 123 },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts video and audio setups without a model', () => {
     const result = FormSchema.safeParse({
       setups: [

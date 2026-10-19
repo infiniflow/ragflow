@@ -206,14 +206,4 @@ func insertIngestionMessagesHandlerKB(t *testing.T, db *gorm.DB, id, userID stri
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
 	}
-	activeStatus := string(entity.StatusValid)
-	if err := db.Create(&entity.UserTenant{
-		ID:       id + "-owner-membership",
-		UserID:   userID,
-		TenantID: userID,
-		Role:     "owner",
-		Status:   &activeStatus,
-	}).Error; err != nil {
-		t.Fatalf("insert tenant owner: %v", err)
-	}
 }
