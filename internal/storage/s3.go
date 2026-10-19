@@ -226,11 +226,21 @@ func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...str
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
 	for i := 0; i < 2; i++ {
+		// Honor cancellation up front so an already-canceled context returns
+		// promptly instead of running the reconnect/backoff loop.
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
+			// The request may have failed because ctx was canceled mid-flight;
+			// surface that instead of sleeping and retrying with a dead context.
+			if cerr := ctx.Err(); cerr != nil {
+				return nil, cerr
+			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			s.reconnect(ctx)
 			time.Sleep(time.Second)
@@ -244,6 +254,9 @@ func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...str
 			return err
 		}()
 		if readErr != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return nil, cerr
+			}
 			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(readErr))
 			s.reconnect(ctx)
 			time.Sleep(time.Second)

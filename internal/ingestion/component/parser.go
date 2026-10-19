@@ -299,58 +299,55 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
-	return map[string]schema.ParserSetup{
+	// Normalize up front so any caller (including tests that build a
+	// ParserComponent directly from these defaults) gets the single JSON
+	// output protocol. NewParserComponent re-normalizes idempotently; the
+	// per-family literals were removed because normalizeParserOutputFormats
+	// owns this key unconditionally.
+	s := map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"pdf"},
-			"output_format":         "json",
 		},
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
 			"html4excel":            false,
-			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
 			"suffix":               []string{"doc"},
-			"output_format":        "json",
 		},
 		"docx": {
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"docx"},
-			"output_format":         "json",
 		},
 		"markdown": {
 			"flatten_media_to_text": false,
 			"suffix":                []string{"md", "markdown", "mdx"},
 			"remove_toc":            false,
-			"output_format":         "json",
 		},
 		"text&code": {
 			"suffix": []string{
 				"txt", "py", "js", "java", "c", "cpp", "h", "php",
 				"go", "ts", "sh", "cs", "kt", "sql",
 			},
-			"output_format": "json",
 		},
 		"html": {
 			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"output_format":        "json",
 		},
 		"slides": {
-			"parse_method":  "deepdoc",
-			"suffix":        []string{"pptx", "ppt"},
-			"output_format": "json",
+			"parse_method": "deepdoc",
+			"suffix":       []string{"pptx", "ppt"},
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is
@@ -362,7 +359,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"llm_id":        "",
 			"system_prompt": "",
 			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
-			"output_format": "json",
 		},
 		"email": {
 			"suffix": []string{"eml", "msg"},
@@ -370,7 +366,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -378,22 +373,20 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
 		},
 		"video": {
-			"suffix":        []string{"mp4", "avi", "mkv"},
-			"output_format": "json",
-			"prompt":        "",
+			"suffix": []string{"mp4", "avi", "mkv"},
+			"prompt": "",
 		},
 		"epub": {
-			"suffix":        []string{"epub"},
-			"output_format": "json",
+			"suffix": []string{"epub"},
 		},
 		"json": {
-			"suffix":        []string{"json", "jsonl", "ldjson"},
-			"output_format": "json",
+			"suffix": []string{"json", "jsonl", "ldjson"},
 		},
 	}
+	normalizeParserOutputFormats(s)
+	return s
 }
 
 // Inputs returns the static parameter metadata. The component
