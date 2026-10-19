@@ -119,6 +119,7 @@ func (s *databaseSource) tenantIDsForSubject(ctx context.Context, subject Subjec
 	return uniqueStringValues(append(tenantIDs, subject.UserID)), nil
 }
 
+// modelProviderResource builds permission metadata for a model provider.
 func modelProviderResource(provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModelProvider, ID: provider.ID},
@@ -132,6 +133,7 @@ func modelProviderResource(provider *entity.TenantModelProvider) Resource {
 	}
 }
 
+// modelInstanceResource builds permission metadata for a model instance.
 func modelInstanceResource(instance *entity.TenantModelInstance, provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModelInstance, ID: instance.ID},
@@ -145,6 +147,7 @@ func modelInstanceResource(instance *entity.TenantModelInstance, provider *entit
 	}
 }
 
+// tenantModelResource builds permission metadata for a tenant model.
 func tenantModelResource(model *entity.TenantModel, provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModel, ID: model.ID},

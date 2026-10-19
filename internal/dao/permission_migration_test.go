@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 )
 
+// TestMigratePermissions verifies legacy permission fields are migrated once.
 func TestMigratePermissions(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

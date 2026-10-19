@@ -16,6 +16,7 @@
 
 package dao
 
+// permissionDataModelsEE returns the entities included in the enterprise schema.
 func permissionDataModelsEE() []interface{} {
 	return nil
 }

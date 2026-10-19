@@ -22,6 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// migratePermissionDataEE migrates enterprise permission data after schema setup.
 func migratePermissionDataEE(context.Context, *gorm.DB) error {
 	return nil
 }

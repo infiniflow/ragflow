@@ -27,6 +27,7 @@ import (
 
 const permissionMigrationTargetVersion = "v1.0.0-rc3.dev1"
 
+// migratePermissions applies the permission schema migration and records its version.
 func migratePermissions(ctx context.Context, db *gorm.DB) error {
 	if err := migratePermissionDataEE(ctx, db); err != nil {
 		return fmt.Errorf("migrate enterprise permission data: %w", err)
@@ -56,6 +57,7 @@ func migratePermissions(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migrateTenantModelProviderUserID backfills missing model provider owner IDs.
 func migrateTenantModelProviderUserID(ctx context.Context, db *gorm.DB) error {
 	scoped := db.WithContext(ctx)
 	migrator := scoped.Migrator()
@@ -73,6 +75,7 @@ func migrateTenantModelProviderUserID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migrateUserCanvasTenantID backfills tenant IDs for existing canvases.
 func migrateUserCanvasTenantID(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if !migrator.HasTable(&entity.UserCanvas{}) {
@@ -87,6 +90,7 @@ func migrateUserCanvasTenantID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migrateAPITokenUserID backfills user IDs for existing API tokens.
 func migrateAPITokenUserID(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if !migrator.HasTable(&entity.APIToken{}) {
@@ -101,6 +105,7 @@ func migrateAPITokenUserID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// migrateInvitedByNullable allows tenant membership requests without an inviter.
 func migrateInvitedByNullable(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	columns, err := migrator.ColumnTypes(&entity.UserTenant{})
