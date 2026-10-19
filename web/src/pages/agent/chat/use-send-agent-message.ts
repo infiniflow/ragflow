@@ -384,7 +384,9 @@ export const useSendAgentMessage = ({
 
       try {
         memoryErrorShownRef.current = undefined;
-        const res = await send(params);
+        const completion = await send(params);
+        if (!completion.isCurrent()) return;
+        const res = completion.result;
 
         clearUploadResponseList();
 
@@ -432,13 +434,14 @@ export const useSendAgentMessage = ({
       });
       setRequestedSessionId(sessionId ?? null);
       memoryErrorShownRef.current = undefined;
-      await send({
+      const completion = await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
         stream: true,
         session_id: sessionId,
         ...(releaseMode ? { release: releaseMode } : {}),
       });
+      if (!completion.isCurrent()) return;
       refetch?.();
     },
     [

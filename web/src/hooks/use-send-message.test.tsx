@@ -153,7 +153,11 @@ describe('useSendMessageBySSE request isolation', () => {
       frame('message-2', 'Second suffix.'),
       lastFrame,
     ]);
-    expect(response).toEqual({ response: second.response, data: lastFrame });
+    expect(response!.result).toEqual({
+      response: second.response,
+      data: lastFrame,
+    });
+    expect(response!.isCurrent()).toBe(true);
     expect(result.current.done).toBe(true);
 
     await act(async () => {
@@ -191,7 +195,8 @@ describe('useSendMessageBySSE request isolation', () => {
       first.close();
     });
     await act(async () => {
-      await firstRequest;
+      const completion = await firstRequest;
+      expect(completion.isCurrent()).toBe(false);
       await jest.advanceTimersByTimeAsync(1000);
     });
     expect(result.current.done).toBe(false);
@@ -199,6 +204,128 @@ describe('useSendMessageBySSE request isolation', () => {
       frame('message-2', 'New prefix.'),
     ]);
 
+    await flushStream(() => second.close());
+    await act(async () => {
+      await secondRequest;
+    });
+  });
+
+  it('rechecks ownership when an already-resolved promise resumes after another send', async () => {
+    const first = createStream();
+    const second = createStream();
+    mockFetch
+      .mockResolvedValueOnce(first.response)
+      .mockResolvedValueOnce(second.response);
+    const { result } = renderHook(() => useSendMessageBySSE('/agent'));
+    let firstRequest!: ReturnType<typeof result.current.send>;
+    await flushStream(() => {
+      firstRequest = result.current.send({ query: 'first' });
+      first.close();
+    });
+    const firstCompletion = await firstRequest;
+    expect(firstCompletion.isCurrent()).toBe(true);
+
+    let continuation!: Promise<void>;
+    let secondRequest!: ReturnType<typeof result.current.send>;
+    let ownedAtContinuation: boolean | undefined;
+    await flushStream(() => {
+      // The first promise has settled, but its caller has not resumed yet.
+      continuation = firstRequest.then((completion) => {
+        ownedAtContinuation = completion.isCurrent();
+      });
+      secondRequest = result.current.send({ query: 'second' });
+      second.emit(frame('message-2', 'New answer.'));
+    });
+    await continuation;
+    expect(ownedAtContinuation).toBe(false);
+    expect(result.current.done).toBe(false);
+
+    await flushStream(() => second.close());
+    await act(async () => {
+      expect((await secondRequest).isCurrent()).toBe(true);
+    });
+  });
+
+  it('keeps manual cancellation of the current request owned by its caller', async () => {
+    const stream = createStream();
+    mockFetch.mockResolvedValueOnce(stream.response);
+    const { result } = renderHook(() => useSendMessageBySSE('/agent'));
+    let request!: ReturnType<typeof result.current.send>;
+    await flushStream(() => {
+      request = result.current.send({ query: 'first' });
+      stream.emit(frame('message-1', 'Partial answer.'));
+    });
+    await flushStream(() => {
+      result.current.stopOutputMessage();
+      stream.close();
+    });
+    const completion = await request;
+    expect(completion.isCurrent()).toBe(true);
+    expect(completion.result?.response).toBe(stream.response);
+    expect(result.current.done).toBe(true);
+  });
+
+  it('keeps a current network failure distinguishable from a superseded completion', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    mockFetch.mockRejectedValueOnce(new Error('Connection failed'));
+    const { result } = renderHook(() => useSendMessageBySSE('/agent'));
+    let completion!: Awaited<ReturnType<typeof result.current.send>>;
+    await act(async () => {
+      completion = await result.current.send({ query: 'first' });
+    });
+    expect(completion.result).toBeUndefined();
+    expect(completion.isCurrent()).toBe(true);
+    expect(result.current.done).toBe(true);
+  });
+
+  it('preserves the current HTTP error response inside its owned completion', async () => {
+    const response = {
+      ok: false,
+      status: 503,
+      statusText: 'Service unavailable',
+      clone: () => ({ json: async () => ({ message: 'Current HTTP error' }) }),
+    };
+    mockFetch.mockResolvedValueOnce(response);
+    const { result } = renderHook(() => useSendMessageBySSE('/agent'));
+    let completion!: Awaited<ReturnType<typeof result.current.send>>;
+    await act(async () => {
+      completion = await result.current.send({ query: 'first' });
+    });
+    expect(completion.result).toEqual({
+      response,
+      data: {
+        code: 503,
+        data: null,
+        message: 'Current HTTP error',
+        status: 503,
+      },
+    });
+    expect(completion.isCurrent()).toBe(true);
+    expect(result.current.done).toBe(true);
+  });
+
+  it('marks a superseded fetch failure as stale without finishing the new request', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let rejectFirst!: (error: Error) => void;
+    const firstFetch = new Promise((_, reject) => {
+      rejectFirst = reject;
+    });
+    const second = createStream();
+    mockFetch
+      .mockReturnValueOnce(firstFetch)
+      .mockResolvedValueOnce(second.response);
+    const { result } = renderHook(() => useSendMessageBySSE('/agent'));
+    let firstRequest!: ReturnType<typeof result.current.send>;
+    let secondRequest!: ReturnType<typeof result.current.send>;
+    await flushStream(() => {
+      firstRequest = result.current.send({ query: 'first' });
+      secondRequest = result.current.send({ query: 'second' });
+      rejectFirst(new DOMException('Aborted', 'AbortError'));
+    });
+    const completion = await firstRequest;
+    expect(completion.result).toBeUndefined();
+    expect(completion.isCurrent()).toBe(false);
+    expect(result.current.done).toBe(false);
     await flushStream(() => second.close());
     await act(async () => {
       await secondRequest;
@@ -269,7 +396,7 @@ describe('useSendMessageBySSE request isolation', () => {
     unmount();
     expect(mockFetch.mock.calls[0][1].signal.aborted).toBe(true);
     stream.close();
-    await request;
+    expect((await request).isCurrent()).toBe(false);
     expect(jest.getTimerCount()).toBe(0);
   });
 });

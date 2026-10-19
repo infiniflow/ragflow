@@ -109,6 +109,8 @@ export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
 
+type SendMessageResponse = { response: Response; data: ResponseType };
+
 const parseAgentEventData = (data: any) => {
   if (typeof data !== 'string') return data;
 
@@ -168,8 +170,17 @@ export const useSendMessageBySSE = (url: string) => {
     async (
       body: any,
       controller?: AbortController,
-    ): Promise<{ response: Response; data: ResponseType } | undefined> => {
+    ): Promise<{
+      result: SendMessageResponse | undefined;
+      isCurrent: () => boolean;
+    }> => {
       const requestId = ++requestIdRef.current;
+      // Callers must check ownership after await, even if this promise settled
+      // before the next request started.
+      const complete = (result?: SendMessageResponse) => ({
+        result,
+        isCurrent: () => requestIdRef.current === requestId,
+      });
       sseRef.current?.abort();
       const requestController = controller ?? new AbortController();
       sseRef.current = requestController;
@@ -210,7 +221,7 @@ export const useSendMessageBySSE = (url: string) => {
           } catch {
             // Non-JSON error body; fall back to the HTTP status text.
           }
-          return {
+          return complete({
             response,
             data: {
               code: response.status,
@@ -218,7 +229,7 @@ export const useSendMessageBySSE = (url: string) => {
               message: errorMessage,
               status: response.status,
             },
-          };
+          });
         }
 
         const reader = response?.body
@@ -295,7 +306,7 @@ export const useSendMessageBySSE = (url: string) => {
         }
 
         const responseData = await responseDataPromise;
-        return {
+        return complete({
           response,
           data:
             responseData ??
@@ -306,10 +317,10 @@ export const useSendMessageBySSE = (url: string) => {
               message: 'success',
               status: response.status,
             } as ResponseType),
-        };
+        });
       } catch (e) {
         console.warn(e);
-        return undefined;
+        return complete();
       } finally {
         if (requestIdRef.current === requestId) {
           setDone(true);
