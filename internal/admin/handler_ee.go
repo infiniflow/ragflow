@@ -1815,6 +1815,12 @@ func (h *Handler) DownloadSensitiveWords(c *gin.Context) {
 
 // UploadSensitiveWords handle upload sensitive words
 func (h *Handler) UploadSensitiveWords(c *gin.Context) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
@@ -1927,6 +1933,12 @@ func (h *Handler) AddWhiteList(c *gin.Context) {
 
 // BatchAddWhiteList handle batch add white list
 func (h *Handler) BatchAddWhiteList(c *gin.Context) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
