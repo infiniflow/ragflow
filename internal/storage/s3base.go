@@ -249,7 +249,7 @@ func (b *s3Base) GetPresignedURL(ctx context.Context, bucket, fnm string, expire
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
+		return "", fmt.Errorf("failed to generate presigned URL after 10 retries: %w", err)
 	}
 
 	return url, nil

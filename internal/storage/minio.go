@@ -249,7 +249,7 @@ func (m *MinioStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, 
 		return nil
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get presigned URL after 10 retries")
+		return "", fmt.Errorf("failed to get presigned URL after 10 retries: %w", err)
 	}
 
 	return url, nil
