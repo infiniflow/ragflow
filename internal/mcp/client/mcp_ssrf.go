@@ -22,6 +22,30 @@ import (
 	"strings"
 )
 
+// effectivePort returns the explicit port, or the scheme's default port when
+// omitted, so http://h and http://h:80 are treated as the same origin.
+func effectivePort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+	return ""
+}
+
+// sameOrigin reports whether two URLs share scheme, port, and host. Hostname is
+// compared case-insensitively by url.URL; scheme and port are normalized so the
+// default-port form (http://h) and the explicit form (http://h:80) match.
+func sameOrigin(a, b *url.URL) bool {
+	return strings.EqualFold(a.Scheme, b.Scheme) &&
+		effectivePort(a) == effectivePort(b) &&
+		a.Hostname() == b.Hostname()
+}
+
 // AssertMCPURLSafe validates an MCP server URL. It delegates to
 // common.AssertURLSafe by default. When allowPrivateHosts is true (a
 // deployment-level operator decision, sourced from
@@ -57,9 +81,9 @@ func AssertMCPURLSafe(rawURL string, allowPrivateHosts bool) (hostname, resolved
 
 // AssertMCPURLSafeSameOrigin validates a server-advertised URL (e.g., the POST
 // URL from an SSE endpoint event). Public URLs are accepted. Private URLs are
-// accepted only when allowPrivateHosts is true AND the advertised host matches
-// originURL's host, so the server cannot bounce POSTs to an unrelated internal
-// target.
+// accepted only when allowPrivateHosts is true AND the advertised URL shares the
+// same origin (scheme, port, and host) as originURL, so the server cannot bounce
+// POSTs to another service on the same host but a different port or scheme.
 func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool) (hostname, resolvedIP string, err error) {
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
 	if err == nil {
@@ -76,7 +100,7 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool
 	if perr != nil {
 		return "", "", err
 	}
-	if parsed.Hostname() != origin.Hostname() {
+	if !sameOrigin(parsed, origin) {
 		return "", "", err
 	}
 	return AssertMCPURLSafe(rawURL, allowPrivateHosts)

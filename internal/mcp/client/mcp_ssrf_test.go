@@ -124,3 +124,26 @@ func TestAssertMCPURLSafePrivateHostWithEmptyLookupRejected(t *testing.T) {
 		t.Fatal("expected empty DNS resolution to be rejected")
 	}
 }
+
+// Same host, different port must be rejected: an SSE server must not be able to
+// bounce an admitted POST to another service listening on the same host but a
+// different port.
+func TestAssertMCPURLSafeSameOriginRejectsDifferentPort(t *testing.T) {
+	stubLookupHost(t, []string{"172.18.0.5"})
+	if _, _, err := AssertMCPURLSafeSameOrigin(
+		"http://navigo-mcp:9000/mcp/messages",
+		"http://navigo-mcp:8080/mcp/sse", true); err == nil {
+		t.Fatal("expected same-host-different-port advertised URL to be rejected")
+	}
+}
+
+// Same host and port, different scheme must be rejected: http vs https is a
+// different origin and must not be accepted as same-origin.
+func TestAssertMCPURLSafeSameOriginRejectsDifferentScheme(t *testing.T) {
+	stubLookupHost(t, []string{"172.18.0.5"})
+	if _, _, err := AssertMCPURLSafeSameOrigin(
+		"https://navigo-mcp:8765/mcp/messages",
+		"http://navigo-mcp:8765/mcp/sse", true); err == nil {
+		t.Fatal("expected same-host-different-scheme advertised URL to be rejected")
+	}
+}
