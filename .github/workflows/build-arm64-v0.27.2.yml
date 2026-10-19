@@ -1,0 +1,212 @@
+name: Build RAGFlow v0.27.2 ARM64 offline package
+
+on:
+  push:
+    branches:
+      - codex/arm64-ghcr-v0.27.2
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ragflow-arm64-v0.27.2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Native ARM64 build and offline package
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Lowercase GitHub owner
+        id: owner
+        run: |
+          set -euo pipefail
+          echo "name=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Download RAGFlow dependency artifacts
+        run: |
+          set -euo pipefail
+          uv run --python 3.13 python ragflow_deps/download_deps.py
+
+      - name: Build local ragflow_deps image
+        run: |
+          set -euo pipefail
+          docker build -f ragflow_deps/Dockerfile -t infiniflow/ragflow_deps:latest ragflow_deps
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push RAGFlow ARM64 image
+        env:
+          GHCR_OWNER: ${{ steps.owner.outputs.name }}
+        run: |
+          set -euo pipefail
+          docker build \
+            --build-arg NEED_MIRROR=0 \
+            -t "ghcr.io/${GHCR_OWNER}/ragflow:v0.27.2-arm64" \
+            -t "ghcr.io/${GHCR_OWNER}/ragflow:arm64" \
+            .
+          docker push "ghcr.io/${GHCR_OWNER}/ragflow:v0.27.2-arm64"
+          docker push "ghcr.io/${GHCR_OWNER}/ragflow:arm64"
+
+      - name: Pull default-profile dependency images
+        run: |
+          set -euo pipefail
+          docker pull elasticsearch:8.11.3
+          docker pull mysql:8.0.40
+          docker pull pgsty/silo:RELEASE.2026-08-06T00-00-00Z
+          docker pull valkey/valkey:8
+
+      - name: Save ARM64 images into one tar
+        env:
+          GHCR_OWNER: ${{ steps.owner.outputs.name }}
+        run: |
+          set -euo pipefail
+          docker save \
+            -o ragflow-v0.27.2-arm64-images.tar \
+            "ghcr.io/${GHCR_OWNER}/ragflow:v0.27.2-arm64" \
+            elasticsearch:8.11.3 \
+            mysql:8.0.40 \
+            pgsty/silo:RELEASE.2026-08-06T00-00-00Z \
+            valkey/valkey:8
+
+      - name: Archive v0.27.2 source
+        run: |
+          set -euo pipefail
+          git archive --format=tar.gz --prefix=ragflow-v0.27.2/ v0.27.2 -o ragflow-v0.27.2-source.tar.gz
+
+      - name: Download Docker Compose ARM64 binary
+        run: |
+          set -euo pipefail
+          curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
+            "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64" \
+            -o docker-compose-linux-aarch64
+          chmod +x docker-compose-linux-aarch64
+          ./docker-compose-linux-aarch64 version
+
+      - name: Build offline package layout
+        env:
+          GHCR_OWNER: ${{ steps.owner.outputs.name }}
+        run: |
+          set -euo pipefail
+          package_dir="ragflow-v0.27.2-arm64"
+          mkdir -p "${package_dir}"
+
+          cp ragflow-v0.27.2-arm64-images.tar "${package_dir}/"
+          cp ragflow-v0.27.2-source.tar.gz "${package_dir}/"
+          cp docker-compose-linux-aarch64 "${package_dir}/"
+          cp .github/workflows/build-arm64-v0.27.2.yml "${package_dir}/build-arm64-v0.27.2.yml"
+
+          cat > "${package_dir}/setup.sh" <<'SETUP_EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "==> Loading ARM64 Docker images"
+          docker load -i ragflow-v0.27.2-arm64-images.tar
+
+          echo "==> Installing Docker Compose plugin (if needed)"
+          if ! docker compose version >/dev/null 2>&1; then
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            cp docker-compose-linux-aarch64 /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          fi
+
+          echo "==> Extracting RAGFlow v0.27.2 source"
+          mkdir -p /opt/ragflow
+          tar -xzf ragflow-v0.27.2-source.tar.gz -C /opt/ragflow --strip-components=1
+
+          echo "==> Preparing deployment configuration"
+          cd /opt/ragflow/docker
+          sed -i 's|^RAGFLOW_IMAGE=.*|RAGFLOW_IMAGE=ghcr.io/xueAIdezjt/ragflow:v0.27.2-arm64|' .env
+          export COMPOSE_PULL_POLICY=never
+
+          echo "==> Starting RAGFlow"
+          docker compose up -d
+          SETUP_EOF
+          chmod +x "${package_dir}/setup.sh"
+
+          cat > "${package_dir}/README.md" <<'README_EOF'
+          # RAGFlow v0.27.2 ARM64 离线部署包
+
+          本包面向 **麒麟 V10 aarch64** 离线服务器，包含：
+
+          - `ragflow-v0.27.2-arm64-images.tar`：ARM64 Docker 镜像
+            - `ghcr.io/xueAIdezjt/ragflow:v0.27.2-arm64`
+            - `elasticsearch:8.11.3`
+            - `mysql:8.0.40`
+            - `pgsty/silo:RELEASE.2026-08-06T00-00-00Z`
+            - `valkey/valkey:8`
+          - `ragflow-v0.27.2-source.tar.gz`：RAGFlow v0.27.2 完整源码
+          - `docker-compose-linux-aarch64`：Docker Compose 插件
+          - `build-arm64-v0.27.2.yml`：GitHub Actions ARM64 构建工作流
+          - `setup.sh`：一键部署脚本
+
+          ## 前置条件`n`n- 服务器已安装并启动 Docker Engine。`n- 如果没有 Compose 插件，`setup.sh` 会自动安装包内的 `docker-compose-linux-aarch64`。`n`n## 部署
+
+          1. 将整个包上传到麒麟服务器，例如 `/opt/`。
+          2. 解压：
+             ```bash
+             tar -xzf ragflow-v0.27.2-arm64-offline.tar.gz
+             cd ragflow-v0.27.2-arm64
+             ```
+          3. 执行：
+             ```bash
+             chmod +x setup.sh
+             ./setup.sh
+             ```
+          4. 浏览器访问 `http://<服务器IP>`。
+
+          默认账号：`admin`  
+          默认密码：`infini_rag_flow`
+
+          ## 常用运维命令
+
+          ```bash
+          cd /opt/ragflow/docker
+          docker compose ps
+          docker compose logs -f ragflow
+          docker compose restart
+          docker compose down
+          ```
+
+          ## 安全提醒
+
+          生产环境请修改 `docker/.env` 中的默认密码（MySQL、MinIO、Redis、Elasticsearch）。
+          README_EOF
+
+      - name: Create final gzip package
+        run: |
+          set -euo pipefail
+          tar -czf ragflow-v0.27.2-arm64-offline.tar.gz ragflow-v0.27.2-arm64
+          sha256sum ragflow-v0.27.2-arm64-offline.tar.gz > ragflow-v0.27.2-arm64-offline.tar.gz.sha256
+          ls -lh ragflow-v0.27.2-arm64-offline.tar.gz
+
+      - name: Upload offline package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragflow-v0.27.2-arm64-offline
+          path: ragflow-v0.27.2-arm64-offline.tar.gz
+          retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
+
