@@ -522,6 +522,15 @@ func htmlToText(value string) string {
 	return strings.TrimSpace(value)
 }
 
+// rfc822ZoneOffsets maps the zone names RFC 822 defines to their offsets.
+var rfc822ZoneOffsets = map[string]string{
+	"UT": "+0000", "GMT": "+0000",
+	"EST": "-0500", "EDT": "-0400",
+	"CST": "-0600", "CDT": "-0500",
+	"MST": "-0700", "MDT": "-0600",
+	"PST": "-0800", "PDT": "-0700",
+}
+
 // parseFeedTime parses common RSS and Atom time formats.
 func parseFeedTime(value string) time.Time {
 	value = strings.TrimSpace(value)
@@ -542,12 +551,53 @@ func parseFeedTime(value string) time.Time {
 			return parsed.UTC()
 		}
 	}
-	// RSS dates are RFC 822 dates, which allow a one-digit day and leave out
-	// the day of the week and the seconds.
+	// RSS dates are RFC 822 dates, which allow a one-digit day, leave out
+	// the day of the week and the seconds, and may end with a comment.
+	// mail.ParseDate reads a zone name such as PST through the server's
+	// time zone, so drop any comment and give it the offset.
+	value = stripRFC822Comments(value)
+	if i := strings.LastIndexByte(value, ' '); i >= 0 {
+		if offset, ok := rfc822ZoneOffsets[value[i+1:]]; ok {
+			value = value[:i+1] + offset
+		}
+	}
 	if parsed, err := mail.ParseDate(value); err == nil {
 		return parsed.UTC()
 	}
 	return time.Time{}
+}
+
+// stripRFC822Comments drops the parenthesized comments, which may nest, from
+// an RFC 822 date. A backslash inside a comment quotes the next byte, as in
+// net/mail. Unbalanced parentheses leave the value as it is.
+func stripRFC822Comments(value string) string {
+	var out strings.Builder
+	depth := 0
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\\':
+			if depth > 0 && i+1 < len(value) {
+				i++
+			} else if depth == 0 {
+				out.WriteByte(value[i])
+			}
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return value
+			}
+			depth--
+		default:
+			if depth == 0 {
+				out.WriteByte(value[i])
+			}
+		}
+	}
+	if depth != 0 {
+		return value
+	}
+	return strings.TrimSpace(out.String())
 }
 
 // firstNonEmpty returns the first non-empty trimmed string.

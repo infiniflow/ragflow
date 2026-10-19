@@ -211,7 +211,8 @@ func mustTime(t *testing.T, value string) time.Time {
 
 // TestRSSConnectorIncrementalSyncDateSpellings verifies that RSS pubDate values
 // written with a one-digit day, no seconds, no day of the week, a two-digit
-// year or a UT/GMT zone name place an item in the incremental sync window, and
+// year, an RFC 822 zone name or a trailing comment place an item in the
+// incremental sync window at the same UTC time on a server in any zone, and
 // that the date layouts read before keep their meaning.
 func TestRSSConnectorIncrementalSyncDateSpellings(t *testing.T) {
 	for _, tc := range []struct{ pubDate, want string }{
@@ -222,6 +223,23 @@ func TestRSSConnectorIncrementalSyncDateSpellings(t *testing.T) {
 		{"Sat, 03 Jan 26 10:00:00 GMT", "2026-01-03T10:00:00Z"},
 		{"Sat, 3 Jan 2026 10:00:00 UT", "2026-01-03T10:00:00Z"},
 		{"3 Jan 2026 10:00 -0700", "2026-01-03T17:00:00Z"},
+		// RFC 822 zone names are fixed offsets, whatever the server's zone is.
+		{"Sat, 03 Jan 2026 10:00 PST", "2026-01-03T18:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 EST", "2026-01-03T15:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 EDT", "2026-01-03T14:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 CST", "2026-01-03T16:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 CDT", "2026-01-03T15:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 MST", "2026-01-03T17:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 MDT", "2026-01-03T16:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 PST", "2026-01-03T18:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 PDT", "2026-01-03T17:00:00Z"},
+		// A comment after the zone, which may nest, hides neither the zone
+		// name nor a numeric offset.
+		{"Sat, 03 Jan 2026 10:00 PST (Pacific Standard Time)", "2026-01-03T18:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 PST (Pacific)", "2026-01-03T18:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 PST (Pacific (winter))", "2026-01-03T18:00:00Z"},
+		{"Sat, 03 Jan 2026 10:00 +0800 (CST)", "2026-01-03T02:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 PST (Pacific \\) winter)", "2026-01-03T18:00:00Z"},
 		// Layouts that were already read.
 		{"Sat, 03 Jan 2026 10:00:00 +0000", "2026-01-03T10:00:00Z"},
 		{"Sat, 03 Jan 2026 10:00:00 -0700", "2026-01-03T17:00:00Z"},
