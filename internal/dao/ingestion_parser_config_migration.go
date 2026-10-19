@@ -184,6 +184,8 @@ var (
 		"layout_recognize",
 		"mineru_parse_method",
 		"mineru_lang",
+		"mineru_formula_enable",
+		"mineru_table_enable",
 		"pages",
 		"table_result_type",
 		"markdown_image_response_type",
@@ -220,9 +222,6 @@ var ingestionRetiredFlatKeys = []string{
 	// Video parsing is rejected at dispatch
 	// (internal/ingestion/component/media_dispatch.go:maybeDispatchVideo).
 	"video_prompt",
-	// These MinerU toggles have no Go reader; method and language are migrated.
-	"mineru_formula_enable",
-	"mineru_table_enable",
 }
 
 // ingestionOwnedFlatKeys is every flat key this step consumes or retires. A row
@@ -490,6 +489,19 @@ func convertIngestionParser(config map[string]any, target builtinIngestionTarget
 			value, ok := raw.(string)
 			if !ok {
 				return fmt.Errorf("%s must be a string, got %T", key, raw)
+			}
+			if target.hasFamily("pdf") {
+				writes.setSetup(target.parserNode, "pdf", key, value)
+			} else {
+				row.retire(key, "the targeted pipeline has no PDF file family")
+			}
+		}
+	}
+	for _, key := range []string{"mineru_formula_enable", "mineru_table_enable"} {
+		if raw, exists := config[key]; exists && raw != nil {
+			value, ok := raw.(bool)
+			if !ok {
+				return fmt.Errorf("%s must be a boolean, got %T", key, raw)
 			}
 			if target.hasFamily("pdf") {
 				writes.setSetup(target.parserNode, "pdf", key, value)

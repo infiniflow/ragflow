@@ -20,6 +20,8 @@ var MigrateIngestionParserConfigsForTest = migrateIngestionParserConfigs
 var MigrateParserChunkerTokenizerConfigForTest = migrateParserChunkerTokenizerConfig
 var MigrateExtractorConfigForTest = migrateExtractorConfig
 
+// TestMigrateParserChunkerTokenizerConfig pins component ownership, explicit
+// values, existing scoped precedence and idempotence for each supported shape.
 func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 	cases := []struct {
 		name, parser, input, want string
@@ -43,6 +45,20 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{name: "PDF selector does not mask spreadsheet engine", input: `{"layout_recognize":"TCADP Parser","Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"},"spreadsheet":{"parse_method":"tcadp"}}}`},
 		{name: "MinerU options reach the PDF setup", input: `{"layout_recognize":"MinerU","mineru_parse_method":"ocr","mineru_lang":"English"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_parse_method":"ocr","mineru_lang":"English"}}}`},
 		{name: "existing MinerU options win", input: `{"mineru_lang":"English","Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_lang":"Chinese"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_lang":"Chinese"}}}`},
+		{name: "disabled MinerU controls reach the PDF setup", input: `{"layout_recognize":"MinerU","mineru_formula_enable":false,"mineru_table_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_formula_enable":false,"mineru_table_enable":false}}}`},
+		{name: "enabled MinerU controls reach the PDF setup", input: `{"mineru_formula_enable":true,"mineru_table_enable":true}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":true,"mineru_table_enable":true}}}`},
+		{name: "MinerU controls remain independent", input: `{"mineru_formula_enable":true,"mineru_table_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":true,"mineru_table_enable":false}}}`},
+		{name: "only formula is disabled", input: `{"mineru_formula_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":false}}}`},
+		{name: "only table is enabled", input: `{"mineru_table_enable":true}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_table_enable":true}}}`},
+		{name: "null MinerU controls stay omitted", input: `{"mineru_formula_enable":null,"mineru_table_enable":null}`, want: `{}`},
+		{name: "an existing disabled formula wins", input: `{"mineru_formula_enable":true,"mineru_table_enable":false,"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":false}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":false,"mineru_table_enable":false}}}`},
+		{name: "an existing enabled table wins", input: `{"mineru_formula_enable":false,"mineru_table_enable":false,"Parser:HipSignsRhyme":{"pdf":{"mineru_table_enable":true}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":false,"mineru_table_enable":true}}}`},
+		{name: "MinerU controls retain book PDF defaults", parser: "book", input: `{"mineru_formula_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_formula_enable":false,"remove_toc":true}}}`},
+		{name: "MinerU controls retain paper PDF defaults", parser: "paper", input: `{"mineru_table_enable":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"mineru_table_enable":false,"enable_multi_column":true}}}`},
+		{name: "MinerU controls need a PDF family", parser: "table", input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{}`},
+		{name: "picture does not gain a PDF family", parser: "picture", input: `{"mineru_formula_enable":false,"mineru_table_enable":false}`, want: `{}`},
+		{name: "custom canvas MinerU controls are untouched", pipeline: ptrString("canvas-1"), input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{"mineru_formula_enable":false,"mineru_table_enable":true}`},
+		{name: "unknown parser MinerU controls are untouched", parser: "knowledge_graph", input: `{"mineru_formula_enable":false,"mineru_table_enable":true}`, want: `{"mineru_formula_enable":false,"mineru_table_enable":true}`},
 		{name: "picture has no engine path", parser: "picture", input: `{"layout_recognize":"PaddleOCR"}`, want: `{}`},
 		{name: "audio has no engine path", parser: "audio", input: `{"layout_recognize":true}`, want: `{}`},
 		{name: "pages are normalized", input: `{"pages":[[3,5],[1,2],[6,7]]}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"pages":[[1,7]]}}}`},
@@ -98,7 +114,7 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false}}}`,
 			want:   `{"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false,"parse_method":"deepdoc"}}}`,
 		},
-		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x","mineru_formula_enable":true}`, want: `{}`},
+		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x"}`, want: `{}`},
 		{name: "no owned keys", input: `{"chunk_method":"naive","topn_tags":5}`, want: `{"chunk_method":"naive","topn_tags":5}`},
 		{name: "empty config", input: `{}`, want: `{}`},
 		{name: "canvas rows are skipped", pipeline: ptrString("canvas-1"), input: `{"layout_recognize":true,"chunk_token_num":128}`, want: `{"layout_recognize":true,"chunk_token_num":128}`},
@@ -143,6 +159,16 @@ func TestMigrateParserChunkerTokenizerConfigRejectsMalformedValues(t *testing.T)
 		`{"parent_child":"yes"}`,
 		`{"parent_child":{"use_parent_child":"true"}}`,
 		`{"enable_children":"true"}`,
+		`{"mineru_formula_enable":"false"}`,
+		`{"mineru_formula_enable":0}`,
+		`{"mineru_formula_enable":1.5}`,
+		`{"mineru_formula_enable":[]}`,
+		`{"mineru_formula_enable":{}}`,
+		`{"mineru_table_enable":"true"}`,
+		`{"mineru_table_enable":1}`,
+		`{"mineru_table_enable":0.5}`,
+		`{"mineru_table_enable":[]}`,
+		`{"mineru_table_enable":{}}`,
 		`{"children_delimiter":5}`,
 		`{"table_column_mode":5}`,
 		`{"table_column_roles":"a"}`,
@@ -164,20 +190,30 @@ func TestMigrateParserChunkerTokenizerConfigRejectsMalformedValues(t *testing.T)
 	}
 }
 
+// TestMigrateParserChunkerTokenizerConfigLogsRetiredFields distinguishes actual
+// retired settings from MinerU controls that a PDF setup can now consume.
 func TestMigrateParserChunkerTokenizerConfigLogsRetiredFields(t *testing.T) {
-	core, logs := observer.New(zap.WarnLevel)
-	previous := common.Logger
-	common.Logger = zap.New(core)
-	t.Cleanup(func() { common.Logger = previous })
-	config := decodeIngestionConfig(t, `{"html4excel":true,"task_page_size":12,"mineru_formula_enable":false}`)
-	if _, err := migrateParserChunkerTokenizerConfig(config, "general", nil, "document", "doc-1"); err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range []string{"html4excel", "task_page_size", "mineru_formula_enable"} {
-		entries := logs.FilterField(zap.String("field", field)).All()
-		if len(entries) != 1 || entries[0].ContextMap()["table"] != "document" || entries[0].ContextMap()["row_id"] != "doc-1" {
-			t.Errorf("missing row-specific warning for %s: %v", field, entries)
-		}
+	for _, parser := range []string{"general", "table"} {
+		t.Run(parser, func(t *testing.T) {
+			core, logs := observer.New(zap.WarnLevel)
+			previous := common.Logger
+			common.Logger = zap.New(core)
+			t.Cleanup(func() { common.Logger = previous })
+			config := decodeIngestionConfig(t, `{"html4excel":true,"task_page_size":12,"mineru_formula_enable":false,"mineru_table_enable":true}`)
+			if _, err := migrateParserChunkerTokenizerConfig(config, parser, nil, "document", "doc-1"); err != nil {
+				t.Fatal(err)
+			}
+			for _, field := range []string{"html4excel", "task_page_size", "mineru_formula_enable", "mineru_table_enable"} {
+				entries := logs.FilterField(zap.String("field", field)).All()
+				if parser == "general" && strings.HasPrefix(field, "mineru_") {
+					if len(entries) != 0 {
+						t.Errorf("migrated %s was reported as retired: %v", field, entries)
+					}
+				} else if len(entries) != 1 || entries[0].ContextMap()["table"] != "document" || entries[0].ContextMap()["row_id"] != "doc-1" {
+					t.Errorf("missing row-specific warning for %s: %v", field, entries)
+				}
+			}
+		})
 	}
 }
 
@@ -214,6 +250,14 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 			if pdf["parse_method"] != "plain_text" {
 				t.Fatalf("%s.%s: pdf=%v", table, row.ID, pdf)
 			}
+			for _, key := range []string{"mineru_formula_enable", "mineru_table_enable"} {
+				if value, exists := pdf[key]; !exists || value != false {
+					t.Fatalf("%s.%s: migrated %s=%v, present=%v", table, row.ID, key, value, exists)
+				}
+				if _, remains := config[key]; remains {
+					t.Fatalf("%s.%s: flat %s survived", table, row.ID, key)
+				}
+			}
 			chunker, _ := config["GeneralChunker:SixApplesFall"].(map[string]any)
 			if chunker["chunk_token_size"] != float64(256) {
 				t.Fatalf("%s.%s: chunker=%v", table, row.ID, chunker)
@@ -231,6 +275,8 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
 	for _, raw := range []string{
 		`{"pages":[[9,2]]}`,
+		`{"mineru_formula_enable":"false"}`,
+		`{"mineru_table_enable":0}`,
 		`not-json`,
 		`{"auto_keywords":"8","auto_questions":2}`,
 		`{"enable_metadata":true,"metadata":[{"name":"author"}]}`,
@@ -305,7 +351,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 
 // python027IngestionConfig is a dataset parser_config as Python v0.27.2 stored
 // it: every value differs from the Go default so a lost field is visible.
-const python027IngestionConfig = `{"auto_keywords":8,"layout_recognize":"plain text","chunk_token_num":256,"delimiter":"\n","overlapped_percent":0.29,"filename_embd_weight":0.2,"pages":[[1,3]],"table_context_size":10,"image_context_size":20,"html4excel":false}`
+const python027IngestionConfig = `{"auto_keywords":8,"layout_recognize":"plain text","chunk_token_num":256,"delimiter":"\n","overlapped_percent":0.29,"filename_embd_weight":0.2,"pages":[[1,3]],"table_context_size":10,"image_context_size":20,"html4excel":false,"mineru_formula_enable":false,"mineru_table_enable":false}`
 
 func openIngestionMigrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
