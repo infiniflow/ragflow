@@ -464,7 +464,7 @@ func requestSSE(ctx context.Context, endpoint string, headers map[string]string,
 	if postHost, postIP, vErr := AssertMCPURLSafeSameOrigin(postURL, endpoint, allowPrivateHosts); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
-		if u.Hostname() != originalHost(endpoint) {
+		if !strings.EqualFold(u.Hostname(), originalHost(endpoint)) {
 			postClient = utility.PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
 		}
 	}

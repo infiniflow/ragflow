@@ -37,13 +37,15 @@ func effectivePort(u *url.URL) string {
 	return ""
 }
 
-// sameOrigin reports whether two URLs share scheme, port, and host. Hostname is
-// compared case-insensitively by url.URL; scheme and port are normalized so the
-// default-port form (http://h) and the explicit form (http://h:80) match.
+// sameOrigin reports whether two URLs share scheme, port, and host. DNS
+// hostnames are case-insensitive, so the hostname is compared with
+// strings.EqualFold; scheme is already lowercased by url.Parse and compared
+// case-insensitively for safety; port is normalized so the default-port form
+// (http://h) and the explicit form (http://h:80) match.
 func sameOrigin(a, b *url.URL) bool {
 	return strings.EqualFold(a.Scheme, b.Scheme) &&
 		effectivePort(a) == effectivePort(b) &&
-		a.Hostname() == b.Hostname()
+		strings.EqualFold(a.Hostname(), b.Hostname())
 }
 
 // AssertMCPURLSafe validates an MCP server URL. It delegates to

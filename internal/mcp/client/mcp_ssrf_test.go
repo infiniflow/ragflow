@@ -147,3 +147,14 @@ func TestAssertMCPURLSafeSameOriginRejectsDifferentScheme(t *testing.T) {
 		t.Fatal("expected same-host-different-scheme advertised URL to be rejected")
 	}
 }
+
+// DNS hostnames are case-insensitive, so a server-advertised URL on the same
+// host spelled with a different case must still be accepted as same-origin.
+func TestAssertMCPURLSafeSameOriginAcceptsMixedCaseHost(t *testing.T) {
+	stubLookupHost(t, []string{"172.18.0.5"})
+	if _, _, err := AssertMCPURLSafeSameOrigin(
+		"http://Example.COM:8765/mcp/messages",
+		"http://example.com:8765/mcp/sse", true); err != nil {
+		t.Fatalf("expected mixed-case same-host advertised URL to be accepted, got %v", err)
+	}
+}
