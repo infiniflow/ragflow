@@ -5,11 +5,7 @@ import {
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
-import {
-  FlattenMediaToTextFormField,
-  RemoveHeaderFooterFormField,
-  RmdirFormField,
-} from './common-form-fields';
+import { FlattenMediaToTextFormField } from './common-form-fields';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -22,7 +18,6 @@ export function TextMarkdownFormFields({ prefix }: CommonProps) {
 
   return (
     <>
-      <RmdirFormField prefix={prefix} />
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <ModelTreeSelectFormField
@@ -33,15 +28,6 @@ export function TextMarkdownFormFields({ prefix }: CommonProps) {
           ownerTenantId={ownerTenantId}
         />
       )}
-    </>
-  );
-}
-
-export function HtmlFormFields({ prefix }: CommonProps) {
-  return (
-    <>
-      <RmdirFormField prefix={prefix} />
-      <RemoveHeaderFooterFormField prefix={prefix} />
     </>
   );
 }
