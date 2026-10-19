@@ -1430,6 +1430,15 @@ jobs:
           fetch-tags: true
           allow-unsafe-pr-checkout: true
 
+      - name: Install runner PCRE2 development library
+        # The C++ archive is built in a separate container, but Go links on
+        # this runner. Do not depend on a per-engine server build installing
+        # the link library on whichever runner happened to execute it.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libpcre2-dev
+
       - name: Build C++ static library
         # Produces librag_tokenizer_c_api.a (with re2 symbols renamed into the
         # ragtokre2_ namespace). Only the .a is needed for the integration test
