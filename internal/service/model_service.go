@@ -1078,6 +1078,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
+			case "scoring":
+				err = driver.CheckConnection(ctx, apiConfig)
 			case "doc_parse":
 				err = driver.CheckConnection(ctx, apiConfig)
 			default:
@@ -1555,6 +1557,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 			"instance_id":   modelRecord.InstanceID,
 			"instance_name": instInfo.InstanceName,
 			"rank":          rank,
+			"features":      featuresFromModelExtra(modelRecord.Extra),
 		})
 	}
 
@@ -2258,6 +2261,11 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if v, ok := modelExtra["thinking"]; ok && isTruthy(v) {
 			features = append(features, "thinking")
 		}
+		for _, key := range []string{"supports_image", "supports_box", "supports_noul", "supports_score"} {
+			if v, ok := modelExtra[key]; ok && isTruthy(v) {
+				features = append(features, key)
+			}
+		}
 
 		modelList = append(modelList, map[string]interface{}{
 			"name":       model.ModelName,
@@ -2276,6 +2284,20 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	})
 
 	return modelList, nil
+}
+
+func featuresFromModelExtra(raw string) []string {
+	extra := map[string]interface{}{}
+	if raw != "" {
+		_ = json.Unmarshal([]byte(raw), &extra)
+	}
+	features := make([]string, 0)
+	for _, key := range []string{"supports_image", "supports_box", "supports_noul", "supports_score"} {
+		if v, ok := extra[key]; ok && isTruthy(v) {
+			features = append(features, key)
+		}
+	}
+	return features
 }
 
 func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, instanceName, modelName, userID, modelID string, updateDict map[string]interface{}) (common.ErrorCode, error) {

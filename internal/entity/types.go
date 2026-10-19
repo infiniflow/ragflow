@@ -20,7 +20,7 @@ import "strings"
 
 // ModelType represents the type of model as a bitmask, matching Python's
 // ModelTypeBinary enum (common/constants.py).
-// Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr.
+// Bit flags (LSB->MSB): 1=chat, 2=embedding, 4=asr, 8=vision, 16=rerank, 32=tts, 64=ocr, 128=scoring.
 // A model can belong to multiple types simultaneously.
 type ModelType int
 
@@ -39,6 +39,8 @@ const (
 	ModelTypeTTS
 	// ModelTypeOCR optical character recognition model (1 << 6)
 	ModelTypeOCR
+	// ModelTypeScoring scores a fixed set of options (1 << 7)
+	ModelTypeScoring
 )
 
 // Has returns true if the bitmask contains the given model type.
@@ -75,6 +77,9 @@ func (mt ModelType) String() string {
 	if mt.Has(ModelTypeOCR) {
 		parts = append(parts, "ocr")
 	}
+	if mt.Has(ModelTypeScoring) {
+		parts = append(parts, "scoring")
+	}
 	return strings.Join(parts, ",")
 }
 
@@ -105,6 +110,9 @@ func (mt ModelType) HumanReadable() []string {
 	if mt.Has(ModelTypeOCR) {
 		parts = append(parts, "ocr")
 	}
+	if mt.Has(ModelTypeScoring) {
+		parts = append(parts, "scoring")
+	}
 	return parts
 }
 
@@ -125,6 +133,8 @@ func ModelTypeFromString(s string) ModelType {
 		return ModelTypeTTS
 	case "ocr":
 		return ModelTypeOCR
+	case "scoring":
+		return ModelTypeScoring
 	default:
 		return 0
 	}

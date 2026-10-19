@@ -44,6 +44,10 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 }
 
 func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
+	return resolveTypedModelRef(ctx, db, entity.ModelTypeChat, modelID, driver, apiKey, baseURL)
+}
+
+func resolveTypedModelRef(ctx context.Context, db *gorm.DB, modelType entity.ModelType, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
 	originalModelID := modelID
 	if driver == "" && modelID != "" {
 		if m, prov, ok := agentProviderLastSegmentSplit(modelID); ok {
@@ -52,7 +56,7 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 		}
 	}
 	if driver == "" && modelID != "" {
-		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, db, modelID, apiKey, baseURL)
+		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantModelByID(ctx, db, modelType, modelID, apiKey, baseURL)
 		if err != nil {
 			return "", "", "", "", err
 		}
@@ -185,7 +189,7 @@ func findSoleActiveProviderInstance(ctx context.Context, db *gorm.DB, providerID
 	return active[0]
 }
 
-func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
+func resolveTenantModelByID(ctx context.Context, db *gorm.DB, modelType entity.ModelType, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
 	if !isBareTenantModelID(modelRef) {
 		return "", "", apiKey, baseURL, false, nil
 	}
@@ -198,7 +202,7 @@ func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiK
 		return "", "", apiKey, baseURL, false, nil
 	}
 
-	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantChatModelByTenantModelID(ctx, db, tid, modelRef, apiKey, baseURL)
+	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantModelByTenantModelID(ctx, db, modelType, tid, modelRef, apiKey, baseURL)
 	if err != nil {
 		return "", "", apiKey, baseURL, false, err
 	}
@@ -206,17 +210,17 @@ func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiK
 		return modelName, provider, modelKey, modelBaseURL, true, nil
 	}
 
-	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantChatModelByInstanceID(ctx, db, tid, modelRef, apiKey, baseURL)
+	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantModelByInstanceID(ctx, db, modelType, tid, modelRef, apiKey, baseURL)
 	if err != nil {
 		return "", "", apiKey, baseURL, false, err
 	}
 	if ok {
 		return modelName, provider, instanceKey, instanceBaseURL, true, nil
 	}
-	return "", "", apiKey, baseURL, false, fmt.Errorf("tenant chat model id %q not found", modelRef)
+	return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s model id %q not found", modelType.String(), modelRef)
 }
 
-func resolveTenantChatModelByTenantModelID(ctx context.Context, db *gorm.DB, tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+func resolveTenantModelByTenantModelID(ctx context.Context, db *gorm.DB, modelType entity.ModelType, tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
 	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -227,8 +231,8 @@ func resolveTenantChatModelByTenantModelID(ctx context.Context, db *gorm.DB, tid
 	if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
 		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s is disabled", modelID)
 	}
-	if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
-		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s cannot be used as chat model", modelID)
+	if !entity.ModelType(model.ModelType).Has(modelType) {
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model id %s cannot be used as %s model", modelID, modelType.String())
 	}
 
 	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
@@ -247,7 +251,7 @@ func resolveTenantChatModelByTenantModelID(ctx context.Context, db *gorm.DB, tid
 	return model.ModelName, provider.ProviderName, apiKey, baseURL, true, nil
 }
 
-func resolveTenantChatModelByInstanceID(ctx context.Context, db *gorm.DB, tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+func resolveTenantModelByInstanceID(ctx context.Context, db *gorm.DB, modelType entity.ModelType, tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
 	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, instanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -275,16 +279,16 @@ func resolveTenantChatModelByInstanceID(ctx context.Context, db *gorm.DB, tid, i
 		if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
 			continue
 		}
-		if !entity.ModelType(model.ModelType).Has(entity.ModelTypeChat) {
+		if !entity.ModelType(model.ModelType).Has(modelType) {
 			continue
 		}
 		candidates = append(candidates, model)
 	}
 	if len(candidates) == 0 {
-		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has no active chat model", instanceID)
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has no active %s model", instanceID, modelType.String())
 	}
 	if len(candidates) > 1 {
-		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has %d active chat models; use tenant_model.id or model@instance@provider", instanceID, len(candidates))
+		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant model instance id %s has %d active %s models; use tenant_model.id or model@instance@provider", instanceID, len(candidates), modelType.String())
 	}
 	apiKey, baseURL = fillInstanceCredentials(instance, apiKey, baseURL)
 	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, true, nil

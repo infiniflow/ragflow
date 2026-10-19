@@ -59,6 +59,7 @@ var modelTypeStringToBit = map[string]int{
 	"rerank":      16,
 	"tts":         32,
 	"ocr":         64,
+	"scoring":     128,
 }
 
 // ensureTenantModelTables creates the tenant model tables the base step backfills

@@ -2179,6 +2179,9 @@ Example: Virtual Hosted Style`,
       embeddingModel: 'Embedding',
       embeddingModelTip:
         'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+      scoringModel: 'Scoring',
+      scoringModelTip:
+        'The default model for Scored Switch. Only models added with the scoring type appear here.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
@@ -2410,6 +2413,7 @@ Example: Virtual Hosted Style`,
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        scoring: 'Scoring',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
@@ -2431,6 +2435,18 @@ Example: Virtual Hosted Style`,
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
       modelFeatureToolCall: 'Tool calling',
+      modelFeatureImageSupport: 'Image support',
+      modelFeatureImageSupportTip:
+        'Scored Switch accepts images only when this is on.',
+      modelFeatureBoxSupport: 'Find in image',
+      modelFeatureBoxSupportTip:
+        'Scored Switch can ask where something is in an image only when this is on.',
+      modelFeatureYesNo: 'Yes/no questions',
+      modelFeatureYesNoTip:
+        'Scored Switch can ask a yes/no question and read its probability only when this is on.',
+      modelFeatureLevels: 'Ordered levels',
+      modelFeatureLevelsTip:
+        'Scored Switch can rate the case on ordered levels only when this is on.',
       modelFeatureFunctionCall: 'Function call',
       modelNameRequired: 'Model name is required',
       modelNameDuplicate: 'Model name already exists',
@@ -2892,6 +2908,64 @@ Best for: Documents with flowing, contextually connected content — such as boo
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      scoredSwitchDescription:
+        'A model-backed switch. The selected scoring model scores every option. The highest score wins. Optional escalation hands the case to a downstream LLM node when scores are too close or too low.',
+      scoredSwitchModel: 'Scoring model',
+      scoredSwitchModelTip:
+        'Only models added with the scoring type are listed. A chat model cannot be selected.',
+      scoredSwitchEscalateToLlm: 'Escalate to LLM',
+      scoredSwitchEscalateToLlmTip:
+        'When this is on, a thin margin, a low top score, or an exact tie uses the escalate handle. Connect that handle to an LLM node. When this is off, the highest score always wins, ties keep the earliest option, and the escalate handle is hidden.',
+      scoredSwitchMarginThreshold: 'Score gap',
+      scoredSwitchMarginThresholdTip:
+        'Escalate when the top score minus the second score is smaller than this. 0.15 means a gap under 0.15 is too close. The default is 0.15. An exact tie always escalates while escalation is on.',
+      scoredSwitchMinTopScore: 'Minimum winning score',
+      scoredSwitchMinTopScoreTip:
+        'Escalate when the top score is below this. 0 turns this check off. The default is 0.',
+      scoredSwitchRequestFormat: 'How images are sent',
+      scoredSwitchRequestFormatTip:
+        'Inside the message sends each image with the case text. As separate files sends each image on its own, which some scoring models require.',
+      scoredSwitchContentParts: 'Inside the message',
+      scoredSwitchAssets: 'As separate files',
+      scoredSwitchOutputChosenId:
+        'Id of the winning option. Empty when the case is escalated.',
+      scoredSwitchOutputChosenLabel:
+        'Label of the winning option. Empty when the case is escalated.',
+      scoredSwitchOutputScores:
+        'Object whose keys are the option labels and whose values are probabilities between 0 and 1. Example: {"Approve": 0.82, "Reject": 0.18}',
+      scoredSwitchOutputMargin: 'Top score minus the second score.',
+      scoredSwitchOutputEscalated:
+        'True when the case was sent out through the escalate handle.',
+      scoredSwitchOutputSelectedHandle: 'Id of the output handle that ran.',
+      scoredSwitchOutputConfidence:
+        'Model confidence, when the model returns one.',
+      scoredSwitchOutputRaw: 'Truncated model response.',
+      scoredSwitchYesNo: 'Yes/no question',
+      scoredSwitchYesNoTip:
+        'The model returns the probability that the answer is yes, from 0 to 1. This does not add a branch.',
+      scoredSwitchLevels: 'Ordered levels',
+      scoredSwitchLevelsTip:
+        'The model returns a position on your levels, which can fall between two levels. This does not add a branch.',
+      scoredSwitchBox: 'Find in image',
+      scoredSwitchBoxTip:
+        'Returns the four edges of one target, each a fraction from 0 to 1. This does not add a branch.',
+      scoredSwitchAddQuestion: 'Add question',
+      scoredSwitchQuestionInstructions: 'Question',
+      scoredSwitchLevelName: 'Level name',
+      scoredSwitchAddLevel: 'Add level',
+      scoredSwitchTrueMeans: 'Yes means',
+      scoredSwitchFalseMeans: 'No means',
+      scoredSwitchOutputAnswers:
+        'Answers for every extra question. The choice branches are still driven only by the route choice. A box is {top, bottom, left, right}, each from 0 to 1. A yes/no answer is a probability from 0 to 1. An ordered level answer is a position on the levels.',
+      scoredSwitchImage: 'Image',
+      scoredSwitchImageTip:
+        'Optional image variable. PNG, JPEG, or WebP bytes are sent with the case. Leave this empty to send text only.',
+      scoredSwitchInstructions: 'Instructions',
+      scoredSwitchInstructionsTip:
+        'Question sent with the options. Leave this empty to use the default choice question.',
+      scoredSwitchAddOption: 'Add option',
+      scoredSwitchEscalate: 'Escalate',
+      scoredSwitchOptionMinimum: 'Add at least two options',
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
@@ -2908,6 +2982,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generate: 'Generate',
       answer: 'Interact',
       categorize: 'Categorize',
+      scoredSwitch: 'Scored Switch',
       rewriteQuestion: 'Rewrite',
       rewrite: 'Rewrite',
       begin: 'Begin',

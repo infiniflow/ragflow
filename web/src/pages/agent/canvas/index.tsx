@@ -78,6 +78,7 @@ import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
+import { ScoredSwitchNode } from './node/scored-switch-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
@@ -91,6 +92,7 @@ export const nodeTypes: NodeTypes = {
   placeholderNode: PlaceholderNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
+  scoredSwitchNode: ScoredSwitchNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,

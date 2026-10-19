@@ -37,7 +37,9 @@ import { IProviderModelItem } from '@/interfaces/request/llm';
 import { modelNameKey } from '@/utils/llm-util';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import { SCORING_CAPABILITY_KEYS } from './use-custom-model-fields';
 
 export interface AddCustomModelDialogFields {
   /** Field name (maps to IProviderModelItem key) */
@@ -186,44 +188,9 @@ export const AddCustomModelDialog = ({
           schema: field.required
             ? z.array(z.string()).min(1, t('modelTypeRequired'))
             : z.array(z.string()).optional(),
-          render: (fieldProps) => {
-            const currentValues = (fieldProps.value as string[]) ?? [];
-            return (
-              <div className="rounded-md border border-border-button overflow-hidden">
-                {field.options?.map((opt, index) => {
-                  const isChecked = currentValues.includes(opt.value);
-                  const switchId = `${field.name}-${opt.value}`;
-                  return (
-                    <div
-                      key={opt.value}
-                      className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
-                        index % 2 === 1 ? 'bg-bg-card' : ''
-                      }`}
-                    >
-                      <Label
-                        htmlFor={switchId}
-                        className="text-sm font-normal cursor-pointer"
-                      >
-                        {opt.label}
-                      </Label>
-                      <Switch
-                        id={switchId}
-                        checked={isChecked}
-                        disabled={field.disabled}
-                        onCheckedChange={(checked) => {
-                          if (field.disabled) return;
-                          const next = checked
-                            ? [...currentValues, opt.value]
-                            : currentValues.filter((v) => v !== opt.value);
-                          fieldProps.onChange(next);
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          },
+          render: (fieldProps) => (
+            <FeatureSwitchGroup field={field} fieldProps={fieldProps} />
+          ),
         };
       }
 
@@ -282,7 +249,16 @@ export const AddCustomModelDialog = ({
       // rather than as array entries in `features`, so each provider's
       // payload stays self-describing. When no whitelist is supplied,
       // all features stay in `features` (backward compatible).
-      const providerSet = new Set(providerFeatureKeys ?? []);
+      const modelTypes = Array.isArray(values.model_types)
+        ? (values.model_types as string[])
+        : [];
+      const scoringSelected = modelTypes.includes('scoring');
+      const scoringKeys = new Set<string>(SCORING_CAPABILITY_KEYS);
+      const providerSet = new Set(
+        (providerFeatureKeys ?? []).filter(
+          (key) => scoringSelected || !scoringKeys.has(key),
+        ),
+      );
       const standardFeatures = featuresArray.filter(
         (f) => typeof f === 'string' && !providerSet.has(f),
       );
@@ -373,3 +349,64 @@ export const AddCustomModelDialog = ({
     </Dialog>
   );
 };
+
+function FeatureSwitchGroup({
+  field,
+  fieldProps,
+}: {
+  field: AddCustomModelDialogFields;
+  fieldProps: { value: unknown; onChange: (value: string[]) => void };
+}) {
+  const { t } = useTranslate('setting');
+  const modelTypes = useWatch({ name: 'model_types' }) as string[] | undefined;
+  const scoringSelected =
+    Array.isArray(modelTypes) && modelTypes.includes('scoring');
+  const scoringKeys = new Set<string>(SCORING_CAPABILITY_KEYS);
+  const options = (field.options ?? []).filter(
+    (opt) => scoringSelected || !scoringKeys.has(opt.value),
+  );
+  const currentValues = (fieldProps.value as string[]) ?? [];
+  const tips: Record<string, string> = {
+    supports_image: t('modelFeatureImageSupportTip'),
+    supports_box: t('modelFeatureBoxSupportTip'),
+    supports_noul: t('modelFeatureYesNoTip'),
+    supports_score: t('modelFeatureLevelsTip'),
+  };
+
+  return (
+    <div className="rounded-md border border-border-button overflow-hidden">
+      {options.map((opt, index) => {
+        const isChecked = currentValues.includes(opt.value);
+        const switchId = `${field.name}-${opt.value}`;
+        return (
+          <div
+            key={opt.value}
+            className={`flex items-center justify-between gap-3 px-3 py-2.5 ${
+              index % 2 === 1 ? 'bg-bg-card' : ''
+            }`}
+          >
+            <Label
+              htmlFor={switchId}
+              className="text-sm font-normal cursor-pointer"
+              title={tips[opt.value]}
+            >
+              {opt.label}
+            </Label>
+            <Switch
+              id={switchId}
+              checked={isChecked}
+              disabled={field.disabled}
+              onCheckedChange={(checked) => {
+                if (field.disabled) return;
+                const next = checked
+                  ? [...currentValues, opt.value]
+                  : currentValues.filter((value) => value !== opt.value);
+                fieldProps.onChange(next);
+              }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}

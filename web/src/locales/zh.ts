@@ -1803,6 +1803,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       embeddingModel: 'Embedding',
       embeddingModelTip:
         '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
+      scoringModel: '评分',
+      scoringModelTip:
+        'Scored Switch 的默认模型。只有以评分类型添加的模型会出现在这里。',
       img2txtModel: 'VLM',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
@@ -2014,8 +2017,20 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        scoring: '评分',
       },
       modelFeatures: '模型特性',
+      modelFeatureToolCall: '工具调用',
+      modelFeatureImageSupport: '图像支持',
+      modelFeatureImageSupportTip: '只有打开时，Scored Switch 才接受图像。',
+      modelFeatureBoxSupport: '在图像中定位',
+      modelFeatureBoxSupportTip:
+        '只有打开时，Scored Switch 才能询问某物在图像中的位置。',
+      modelFeatureYesNo: '是否问题',
+      modelFeatureYesNoTip:
+        '只有打开时，Scored Switch 才能提出是否问题并读取概率。',
+      modelFeatureLevels: '有序等级',
+      modelFeatureLevelsTip: '只有打开时，Scored Switch 才能按有序等级给案例打分。',
       modelNameRequired: '请输入模型名称',
       modelNameDuplicate: '模型名称已存在',
       modelTypeRequired: '请至少选择一个模型类型',
@@ -2486,6 +2501,56 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
+      scoredSwitchDescription:
+        '由评分模型打分的分支。所选模型为每个选项打分，最高分胜出。分数过于接近或过低时，可以把问题交给下游的 LLM 节点。',
+      scoredSwitchModel: '评分模型',
+      scoredSwitchModelTip: '只列出以评分类型添加的模型。聊天模型不能被选中。',
+      scoredSwitchEscalateToLlm: '移交给 LLM',
+      scoredSwitchEscalateToLlmTip:
+        '开启后，分差过小、最高分过低或完全并列时走移交出口。把该出口连到一个 LLM 节点。关闭后始终选择最高分，并列时保留列表中更早的选项，并隐藏移交出口。',
+      scoredSwitchMarginThreshold: '分差',
+      scoredSwitchMarginThresholdTip:
+        '最高分减去第二名小于该值时移交。0.15 表示分差小于 0.15 就算太接近。默认 0.15。移交开启时，完全并列总会移交。',
+      scoredSwitchMinTopScore: '最低获胜分',
+      scoredSwitchMinTopScoreTip:
+        '最高分低于该值时移交。0 表示关闭这条检查。默认是 0。',
+      scoredSwitchRequestFormat: '图片如何发送',
+      scoredSwitchRequestFormatTip:
+        '放在消息里会把每张图片和案例文本一起发送。作为单独文件会把每张图片单独发送，部分评分模型要求这种形式。',
+      scoredSwitchContentParts: '放在消息里',
+      scoredSwitchAssets: '作为单独文件',
+      scoredSwitchOutputChosenId: '获胜选项的 id。移交时为空。',
+      scoredSwitchOutputChosenLabel: '获胜选项的名称。移交时为空。',
+      scoredSwitchOutputScores:
+        '键是选项名称、值是 0 到 1 之间概率的对象。例如 {"Approve": 0.82, "Reject": 0.18}',
+      scoredSwitchOutputMargin: '最高分减去第二名。',
+      scoredSwitchOutputEscalated: '为真时，案例从移交出口送出。',
+      scoredSwitchOutputSelectedHandle: '实际运行的出口 id。',
+      scoredSwitchOutputConfidence: '模型返回的置信度；没有则不出现。',
+      scoredSwitchOutputRaw: '截断后的模型响应。',
+      scoredSwitchYesNo: '是否问题',
+      scoredSwitchYesNoTip: '模型返回“是”的概率，0 到 1。没有单独的出口。',
+      scoredSwitchLevels: '有序等级',
+      scoredSwitchLevelsTip: '模型返回等级上的位置，可以落在两级之间。没有单独的出口。',
+      scoredSwitchBox: '在图像中定位',
+      scoredSwitchBoxTip:
+        '返回目标框的四条边，都是 0 到 1 的比例。没有单独的出口。',
+      scoredSwitchAddQuestion: '添加问题',
+      scoredSwitchQuestionInstructions: '问题',
+      scoredSwitchLevelName: '等级名称',
+      scoredSwitchAddLevel: '添加等级',
+      scoredSwitchTrueMeans: '“是”表示',
+      scoredSwitchFalseMeans: '“否”表示',
+      scoredSwitchOutputAnswers:
+        '每个附加问题的答案。choice 分支仍由名为 route 的选择问题决定。box 为 {top,bottom,left,right}，都是 0 到 1。noul 为 0 到 1 的“是”概率。score 为等级位置。',
+      scoredSwitchImage: '图片',
+      scoredSwitchImageTip:
+        '可选的图片变量。PNG、JPEG 或 WebP 会和案例一起发送。留空则只发送文本。',
+      scoredSwitchInstructions: '说明',
+      scoredSwitchInstructionsTip: '和选项一起发送的问题。留空则使用默认的选择题。',
+      scoredSwitchAddOption: '添加选项',
+      scoredSwitchEscalate: '移交',
+      scoredSwitchOptionMinimum: '至少添加两个选项',
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
@@ -2502,6 +2567,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       generate: '生成回答',
       answer: '对话',
       categorize: '问题分类',
+      scoredSwitch: '评分切换',
       relevant: '是否相关',
       rewriteQuestion: '问题优化',
       begin: '开始',
