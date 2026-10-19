@@ -137,8 +137,16 @@ jobs:
 
           echo "==> Preparing deployment configuration"
           cd /opt/ragflow/docker
-          sed -i 's|^RAGFLOW_IMAGE=.*|RAGFLOW_IMAGE=ghcr.io/xueAIdezjt/ragflow:v0.27.2-arm64|' .env
+          sed -i 's|^RAGFLOW_IMAGE=.*|RAGFLOW_IMAGE=ghcr.io/xuaidezjt/ragflow:v0.27.2-arm64|' .env
+          grep -q '^HF_HUB_OFFLINE=' .env || echo 'HF_HUB_OFFLINE=1' >> .env
+          grep -q '^TRANSFORMERS_OFFLINE=' .env || echo 'TRANSFORMERS_OFFLINE=1' >> .env
           export COMPOSE_PULL_POLICY=never
+
+          echo "==> Tuning kernel parameters for Elasticsearch"
+          if [ "$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)" -lt 262144 ]; then
+            sysctl -w vm.max_map_count=262144
+            grep -q '^vm.max_map_count' /etc/sysctl.conf 2>/dev/null || echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+          fi
 
           echo "==> Starting RAGFlow"
           docker compose up -d
@@ -151,7 +159,7 @@ jobs:
           本包面向 **麒麟 V10 aarch64** 离线服务器，包含：
 
           - `ragflow-v0.27.2-arm64-images.tar`：ARM64 Docker 镜像
-            - `ghcr.io/xueAIdezjt/ragflow:v0.27.2-arm64`
+            - `ghcr.io/xuaidezjt/ragflow:v0.27.2-arm64`
             - `elasticsearch:8.11.3`
             - `mysql:8.0.40`
             - `pgsty/silo:RELEASE.2026-08-06T00-00-00Z`
@@ -161,7 +169,14 @@ jobs:
           - `build-arm64-v0.27.2.yml`：GitHub Actions ARM64 构建工作流
           - `setup.sh`：一键部署脚本
 
-          ## 前置条件`n`n- 服务器已安装并启动 Docker Engine。`n- 如果没有 Compose 插件，`setup.sh` 会自动安装包内的 `docker-compose-linux-aarch64`。`n`n## 部署
+          ## 前置条件
+
+          - 服务器已安装并启动 Docker Engine（用 root 执行 setup.sh，需写 /usr/local/lib 和 sysctl）。
+          - 如果没有 Compose 插件，`setup.sh` 会自动安装包内的 `docker-compose-linux-aarch64`。
+          - 建议内存 ≥ 16 GB、磁盘 ≥ 50 GB。
+          - 已通过 `HF_HUB_OFFLINE=1` 禁止容器联网下载 HuggingFace 模型；deepdoc 解析模型已内置镜像，embedding 模型部署后在 Web UI 中按需配置（可对接内网 OpenAI 兼容 API 或 TEI）。
+
+          ## 部署
 
           1. 将整个包上传到麒麟服务器，例如 `/opt/`。
           2. 解压：
