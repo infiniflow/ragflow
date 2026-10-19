@@ -34,7 +34,9 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-// imageOCRModelLookupCounts observes actual GORM reads after fixture setup.
+// imageOCRModelLookupCounts observes GORM query executions after fixture setup,
+// excluding DryRun subquery construction. The returned counts are read after
+// the synchronous resolver call, not concurrently with queries.
 func imageOCRModelLookupCounts(t *testing.T, db *gorm.DB) map[string]int {
 	t.Helper()
 	counts := make(map[string]int)
@@ -52,6 +54,8 @@ func imageOCRModelLookupCounts(t *testing.T, db *gorm.DB) map[string]int {
 	return counts
 }
 
+// imageOCRInstanceBaseURL returns instance B's fixture endpoint, allowing tests
+// to clear Extra and redirect cloud defaults without contacting a public service.
 func imageOCRInstanceBaseURL(t *testing.T, db *gorm.DB) string {
 	t.Helper()
 	var instance entity.TenantModelInstance
@@ -69,6 +73,7 @@ func imageOCRInstanceBaseURL(t *testing.T, db *gorm.DB) string {
 
 // setImageOCRCloudDefault keeps fallback requests on a local fixture and
 // restores the shared catalog before the fixture is closed.
+// Callers must not run in parallel because the catalog is process-wide.
 func setImageOCRCloudDefault(t *testing.T, baseURL string) {
 	t.Helper()
 	provider := dao.GetModelProviderManager().FindProvider("PaddleOCR")
@@ -86,6 +91,9 @@ func setImageOCRCloudDefault(t *testing.T, baseURL string) {
 	})
 }
 
+// observeImageOCRWarnings captures Warn-and-higher logs after initializing the
+// shared log level needed by error paths. Cleanup restores the previous logger,
+// sugar logger, and any saved level; callers must not run in parallel.
 func observeImageOCRWarnings(t *testing.T) *observer.ObservedLogs {
 	t.Helper()
 	previousLogger, previousSugar := common.Logger, common.Sugar
@@ -112,6 +120,10 @@ func observeImageOCRWarnings(t *testing.T) *observer.ObservedLogs {
 	return logs
 }
 
+// TestImageOCRSelectedModelLookupOnce checks that cloud and local image OCR
+// each issue one top-level GORM query for the selected model, instance and
+// provider. The model query's provider subquery is not counted separately;
+// neither is the cloud driver's HTTP polling.
 func TestImageOCRSelectedModelLookupOnce(t *testing.T) {
 	for _, provider := range []string{"PaddleOCR.local", "PaddleOCR"} {
 		t.Run(provider, func(t *testing.T) {
@@ -130,8 +142,10 @@ func TestImageOCRSelectedModelLookupOnce(t *testing.T) {
 	}
 }
 
-// Check the actual user-visible Parser callback, including every pre-tenant
-// failure that previously distinguished an existing foreign model from a miss.
+// TestImageOCRInaccessibleSelectionProgressDoesNotRevealModelState compares
+// actual Parser progress warnings for missing and foreign selections. Foreign
+// record states must not alter that message, reveal the owner, or send an OCR
+// request; rejection must still preserve the image attachment.
 func TestImageOCRInaccessibleSelectionProgressDoesNotRevealModelState(t *testing.T) {
 	for _, tc := range []struct {
 		name, table, id, field string
@@ -198,6 +212,10 @@ func TestImageOCRInaccessibleSelectionProgressDoesNotRevealModelState(t *testing
 	}
 }
 
+// TestImageOCRCloudDefaultEndpointWarning checks that choosing a catalog
+// endpoint emits one ID-only warning even if submission fails. The catalog
+// points to a local server, while the real driver supplies the selected key,
+// model, and image bytes.
 func TestImageOCRCloudDefaultEndpointWarning(t *testing.T) {
 	for _, fail := range []bool{false, true} {
 		t.Run(fmt.Sprintf("remote_failure=%v", fail), func(t *testing.T) {
@@ -254,6 +272,9 @@ func TestImageOCRCloudDefaultEndpointWarning(t *testing.T) {
 	}
 }
 
+// TestImageOCRExplicitEndpointDoesNotWarn checks Extra-over-APIKey-JSON endpoint
+// precedence for both drivers. Explicit endpoints must neither contact the
+// catalog fallback server nor emit its warning.
 func TestImageOCRExplicitEndpointDoesNotWarn(t *testing.T) {
 	for _, provider := range []string{"PaddleOCR.local", "PaddleOCR"} {
 		for _, source := range []string{"extra", "api_key_json", "extra_over_api_key_json"} {
@@ -296,6 +317,9 @@ func TestImageOCRExplicitEndpointDoesNotWarn(t *testing.T) {
 	}
 }
 
+// TestImageOCRMissingEndpointDoesNotUseGlobalEndpoint rejects incomplete
+// selected instances for both drivers when the cloud catalog URL is also empty.
+// Process-global endpoints must not fill the gap or produce a fallback warning.
 func TestImageOCRMissingEndpointDoesNotUseGlobalEndpoint(t *testing.T) {
 	for _, provider := range []string{"PaddleOCR.local", "PaddleOCR"} {
 		t.Run(provider, func(t *testing.T) {

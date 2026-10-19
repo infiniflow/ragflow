@@ -111,8 +111,9 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 	}
 }
 
-// Both the shared model-reference entry point and the image selector must
-// reject missing and foreign IDs without revealing the foreign record state.
+// TestResolveModelConfigInaccessibleIDs checks that missing and foreign model
+// IDs have the same public error and trigger no instance reads before access
+// is established, regardless of the foreign model's state.
 func TestResolveModelConfigInaccessibleIDs(t *testing.T) {
 	for _, tc := range []struct {
 		name, table, id, field string
@@ -156,8 +157,8 @@ func TestResolveModelConfigInaccessibleIDs(t *testing.T) {
 	}
 }
 
-// The return-shape change must preserve the shared resolver's behavior for
-// authorized models, including max_tokens and rejection of disabled/type errors.
+// TestResolveModelConfigAuthorizedModelValidation preserves selected instance
+// credentials, max_tokens overrides, and status/type errors for owned models.
 func TestResolveModelConfigAuthorizedModelValidation(t *testing.T) {
 	for _, tc := range []struct {
 		name, field string
@@ -204,6 +205,9 @@ func TestResolveModelConfigAuthorizedModelValidation(t *testing.T) {
 	}
 }
 
+// TestResolveModelConfigLookupFailureIsNotMissing injects a database failure
+// and checks that it remains distinguishable from a missing model, without a
+// composite fallback masking the failure.
 func TestResolveModelConfigLookupFailureIsNotMissing(t *testing.T) {
 	db, _ := imageOCRFixture(t, "PaddleOCR.local", false)
 	lookupErr := errors.New("fixture database unavailable")
@@ -220,6 +224,9 @@ func TestResolveModelConfigLookupFailureIsNotMissing(t *testing.T) {
 	}
 }
 
+// TestResolveModelConfigByIDScopedQuerySQL captures the real dispatcher's DryRun
+// SQL to verify tenant scoping and separate tenant/model bind parameters.
+// Quote-bearing IDs must remain values, not become SQL conditions.
 func TestResolveModelConfigByIDScopedQuerySQL(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
@@ -267,7 +274,9 @@ func TestResolveModelConfigByIDScopedQuerySQL(t *testing.T) {
 	}
 }
 
-// Fixed-implementation regression only, not an old-implementation dynamic repro.
+// TestResolveModelConfigChainedDBStatementIsolationFixedOnly checks statement
+// isolation, caller-scope retention, and reuse for provider/instance lookups.
+// It is a fixed-implementation regression, not an old-implementation dynamic repro.
 // Do not run against the shared-Statement subquery version: SQL generation may
 // recurse into the same Statement before an assertion can report the failure.
 func TestResolveModelConfigChainedDBStatementIsolationFixedOnly(t *testing.T) {

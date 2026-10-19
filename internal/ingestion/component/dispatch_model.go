@@ -63,6 +63,10 @@ func configuredAudioModelID(setup schema.ParserSetup) string {
 	return getStringOr(setup, "llm_id", "")
 }
 
+// defaultResolveTenantModelByType resolves the tenant's configured default for
+// modelType, requiring a nonempty default model reference first. It then tries
+// the enrolled tenant-model ID and falls back to the configured reference if
+// that ID is absent or cannot be resolved.
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	tenantDAO := dao.NewTenantDAO()
 	tenant, err := tenantDAO.GetByID(ctx, db, tenantID)
@@ -107,6 +111,10 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 // model_type includes the OCR bit, resolved through resolveModelConfigByID.
 var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
 
+// defaultResolveTenantOCRModelByProvider searches the tenant's named provider,
+// trying its aliases only if the provider lookup fails. The first active OCR
+// model is resolved by ID; its resolution error is returned rather than trying
+// another model.
 func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	providerDAO := dao.NewTenantModelProviderDAO()
 	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
@@ -200,6 +208,9 @@ func stringValue(value *string) string {
 	return *value
 }
 
+// defaultResolveModelConfig treats a reference without "@" as an exact tenant
+// model ID and a reference containing "@" as a provider-instance composite.
+// Failed ID lookups never fall through to composite or catalog resolution.
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if !strings.Contains(modelRef, "@") {
 		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
@@ -211,6 +222,11 @@ func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string
 	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
 }
 
+// resolveModelConfigByID resolves an enrolled model within tenantID before
+// checking status or type or reading instance credentials. Missing and foreign
+// models share one public error; other database failures remain errors.
+// Query sessions preserve caller scopes without mutating the caller's Statement.
+// Instance/provider consistency and instance status are caller responsibilities.
 func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelID string) (*resolvedModelConfig, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()

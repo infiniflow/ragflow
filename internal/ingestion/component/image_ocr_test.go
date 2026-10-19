@@ -59,7 +59,8 @@ func (r *imageOCRRequests) append(request imageOCRRequest) {
 	r.items = append(r.items, request)
 }
 
-// list returns a stable snapshot of requests received by the fixture.
+// list copies the recorded request slice under lock. Content byte slices remain
+// shared with the stored requests and must be treated as read-only.
 func (r *imageOCRRequests) list() []imageOCRRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -68,6 +69,9 @@ func (r *imageOCRRequests) list() []imageOCRRequest {
 
 // imageOCRFixture replaces only the OCR HTTP service. Tenant model resolution,
 // instance configuration, image dispatch and driver calls use production code.
+// It seeds instance B alongside decoy instance A, whose requests fail the test.
+// Its process-wide SSRF bypass is restored at cleanup, so callers must not run
+// in parallel and SSRF-specific tests must explicitly re-enable the guard.
 func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *imageOCRRequests) {
 	t.Helper()
 	withSSRFBypass(t)
