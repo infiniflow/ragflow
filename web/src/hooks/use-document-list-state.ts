@@ -17,6 +17,7 @@ const DocumentListStateSchema = z.object({
 type DocumentListState = z.infer<typeof DocumentListStateSchema>;
 const EmptyState: DocumentListState = { searchString: '', filterValue: {} };
 
+/** Invalid or inaccessible session storage must not prevent opening a dataset. */
 function readState(key: string): DocumentListState {
   try {
     return DocumentListStateSchema.parse(
@@ -27,6 +28,7 @@ function readState(key: string): DocumentListState {
   }
 }
 
+/** Restore user/dataset preferences synchronously so the first query uses them. */
 export function useDocumentListState(datasetId: string) {
   const user = storage.getUserInfoObject()?.email ?? '';
   const key = `RAGFlowDocumentList:${user}:${datasetId}`;

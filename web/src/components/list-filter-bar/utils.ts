@@ -29,6 +29,7 @@ export function hasActiveFilter(value?: FilterValue): boolean {
   );
 }
 
+/** Group IDs are not selectable, so only leaf IDs can validate selections. */
 const getFilterIds = (filter: FilterType | FilterCollection): string[] => {
   if (Array.isArray(filter.list)) {
     return filter.list.flatMap(getFilterIds);
@@ -36,6 +37,10 @@ const getFilterIds = (filter: FilterType | FilterCollection): string[] => {
   return 'id' in filter ? [filter.id] : [];
 };
 
+/**
+ * Preserve unchanged references so catalog polling does not reset popover drafts.
+ * @param filtersLoaded Only a successful catalog can make an empty result authoritative.
+ */
 export function pruneFilterValue(
   filterValue: FilterValue,
   filters: FilterCollection[],

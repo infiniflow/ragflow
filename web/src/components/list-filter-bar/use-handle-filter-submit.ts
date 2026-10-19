@@ -18,6 +18,8 @@ import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { useCallback, useState } from 'react';
 import { FilterChange, FilterCollection, FilterValue } from './interface';
 import { pruneFilterValue } from './utils';
+
+/** Keep applied filters separate from popover drafts; submitting restarts pagination. */
 export function useHandleFilterSubmit() {
   const [filterValue, setFilterValue] = useState<FilterValue>({});
   const { setPagination } = useGetPaginationWithRouter();

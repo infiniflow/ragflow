@@ -186,6 +186,7 @@ export const useUploadDocument = () => {
   return { uploadDocument: upload, loading, data };
 };
 
+/** Use restored preferences for the first query; debounce edits within a dataset visit. */
 export const useFetchDocumentList = (loop = true) => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -378,7 +379,7 @@ export const useFetchDocumentsByIds = (
   return { documents: data.docs, loading };
 };
 
-// get document filter
+/** Distinguish loading/errors from successful empty catalogs before pruning saved filters. */
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
   filterLoaded: boolean;

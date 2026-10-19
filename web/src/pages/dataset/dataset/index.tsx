@@ -34,6 +34,7 @@ import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
 import { useHandleUploadDocument } from './use-upload-document';
 
+/** Wait for catalog success before pruning restored choices, so loading cannot discard them. */
 export default function Dataset() {
   const { t } = useTranslation();
   const {

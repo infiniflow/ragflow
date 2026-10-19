@@ -9,6 +9,7 @@ import { useMemo } from 'react';
 
 export const EMPTY_METADATA_FIELD = 'empty_metadata';
 
+/** Expose catalog readiness alongside options so empty results remain distinguishable from loading. */
 export function useSelectDatasetFilters() {
   const { t } = useTranslate('knowledgeDetails');
   const { filter, filterLoaded, onOpenChange } = useGetDocumentFilter();
