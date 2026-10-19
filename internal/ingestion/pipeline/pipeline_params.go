@@ -124,7 +124,7 @@ func extractJSONTags(v any) map[string]struct{} {
 func isExtractorComponent(cpnID, componentName string) bool {
 	lowerName := strings.ToLower(componentName)
 	lowerID := strings.ToLower(cpnID)
-	return lowerName == "extractor" ||
+	return lowerName == strings.ToLower(schema.ComponentNameExtractor) ||
 		strings.HasPrefix(lowerID, "extractor:") ||
 		strings.HasPrefix(lowerID, "extractor_")
 }
@@ -148,7 +148,7 @@ func IsParserComponentID(cpnID string) bool {
 // isParserComponent returns true if the component name or component ID
 // indicates a Parser component.
 func isParserComponent(cpnID, componentName string) bool {
-	return strings.EqualFold(componentName, "parser") || IsParserComponentID(cpnID)
+	return strings.EqualFold(componentName, schema.ComponentNameParser) || IsParserComponentID(cpnID)
 }
 
 // NormalizeParserConfigSetups lifts legacy nested Parser "setups" entries in
