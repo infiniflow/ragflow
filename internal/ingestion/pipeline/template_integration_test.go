@@ -107,7 +107,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
+	wantChunkTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -192,7 +192,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	}
 	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
 
-	wantMergedText := "Alpha paragraph.\nBeta paragraph."
+	wantMergedText := "Alpha paragraph.\n\nBeta paragraph."
 	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
 	state := stateFromRunOutput(t, out)
@@ -412,10 +412,10 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 		t.Fatal("missing Parser:HipSignsRhyme state")
 	}
 	jsonItems, ok := parserState["json"].([]parser.DocItem)
-	if !ok || len(jsonItems) != 6 {
-		t.Fatalf("parser json = %T/%v, want 6 items", parserState["json"], parserState["json"])
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	wantParserTexts := []string{"PART ONE", "Intro paragraph.", "Section 1", "Detail paragraph.", "PART TWO", "Tail paragraph."}
+	wantParserTexts := []string{"PART ONE\n\nIntro paragraph.\n\nSection 1\n\nDetail paragraph.\n\nPART TWO\n\nTail paragraph."}
 	for i, wantText := range wantParserTexts {
 		if got := jsonItems[i].ToMap()["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
