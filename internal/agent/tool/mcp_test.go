@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	mcpclient "ragflow/internal/utility"
+	mcpclient "ragflow/internal/mcp/client"
 )
 
 // TestMCPToolAdapter_InfoReturnsMCPDescriptor: the eino ToolInfo

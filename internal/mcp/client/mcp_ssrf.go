@@ -14,19 +14,19 @@
 //  limitations under the License.
 //
 
-package utility
+package mcpclient
 
 import (
 	"net/url"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
 	"strings"
 )
 
 // AssertMCPURLSafe validates an MCP server URL. It delegates to
-// common.AssertURLSafe by default. When the deployment sets
-// RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS=true (a deployment-level operator decision),
-// the public-routability requirement is relaxed so self-hosted MCP servers on
+// common.AssertURLSafe by default. When allowPrivateHosts is true (a
+// deployment-level operator decision, sourced from
+// RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS at the call site), the
+// public-routability requirement is relaxed so self-hosted MCP servers on
 // private/docker networks work — scheme validation, DNS resolution, and
 // connection pinning to the resolved IP still apply.
 //
@@ -34,10 +34,9 @@ import (
 // direct tool calls). For URLs advertised by an SSE endpoint event, use
 // AssertMCPURLSafeSameOrigin so a malicious server cannot redirect POSTs to an
 // unrelated internal host.
-func AssertMCPURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
-	globalConfig := server.GetConfig()
+func AssertMCPURLSafe(rawURL string, allowPrivateHosts bool) (hostname, resolvedIP string, err error) {
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
-	if err == nil || !globalConfig.GetMCPAllowPrivateHosts() {
+	if err == nil || !allowPrivateHosts {
 		return hostname, resolvedIP, err
 	}
 	strictErr := err
@@ -58,16 +57,15 @@ func AssertMCPURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
 
 // AssertMCPURLSafeSameOrigin validates a server-advertised URL (e.g., the POST
 // URL from an SSE endpoint event). Public URLs are accepted. Private URLs are
-// accepted only when RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS is enabled AND the
-// advertised host matches originURL's host, so the server cannot bounce POSTs
-// to an unrelated internal target.
-func AssertMCPURLSafeSameOrigin(rawURL, originURL string) (hostname, resolvedIP string, err error) {
+// accepted only when allowPrivateHosts is true AND the advertised host matches
+// originURL's host, so the server cannot bounce POSTs to an unrelated internal
+// target.
+func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool) (hostname, resolvedIP string, err error) {
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
 	if err == nil {
 		return hostname, resolvedIP, nil
 	}
-	globalConfig := server.GetConfig()
-	if !globalConfig.GetMCPAllowPrivateHosts() {
+	if !allowPrivateHosts {
 		return "", "", err
 	}
 	origin, perr := url.Parse(strings.TrimSpace(originURL))
@@ -81,5 +79,5 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string) (hostname, resolvedIP 
 	if parsed.Hostname() != origin.Hostname() {
 		return "", "", err
 	}
-	return AssertMCPURLSafe(rawURL)
+	return AssertMCPURLSafe(rawURL, allowPrivateHosts)
 }
