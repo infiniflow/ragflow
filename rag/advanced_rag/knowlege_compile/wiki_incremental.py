@@ -199,18 +199,38 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
 
 def _wiki_retryable_llm_error(error: Exception) -> bool:
     """Retry explicit transient LLM failures, excluding permanent 429 errors."""
-    text = str(error).lower()
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        body = body.get("error", body)
+    codes = [getattr(error, "code", None)]
+    if isinstance(body, dict):
+        codes.extend((body.get("code"), body.get("type")))
+    text = " ".join(str(value).lower() for value in (*codes, error) if value is not None)
+    # chat_model's ERROR_QUOTA also covers temporary capacity/request limits.
+    # Reject explicit permanent details, not that label or bare quota/credit words.
     if any(
         marker in text
         for marker in (
-            "error_quota",
             "insufficient_quota",
-            "billing",
-            "credit",
-            "balance",
-            "quota",
+            "insufficient quota",
+            "insufficient_credit",
+            "insufficient credit",
+            "insufficient_balance",
+            "insufficient balance",
+            "credit balance is too low",
+            "billing_hard_limit",
+            "billing hard limit",
+            "billing_limit",
+            "billing limit",
             "欠费",
-            "额度",
+            "余额不足",
+            "额度不足",
+            "invalid_api_key",
+            "authentication_error",
+            "permission_denied",
+            "invalid_request_error",
+            "context_length_exceeded",
+            "model_not_found",
             "error_authentication",
             "error_invalid_request",
             "error_content_filter",
@@ -219,14 +239,21 @@ def _wiki_retryable_llm_error(error: Exception) -> bool:
     ):
         return False
     status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    if status is None:
+        # Adapters may flatten HTTP errors to strings. Require a status label:
+        # ordinary request/quota counts such as 400 or 429 are not HTTP evidence.
+        match = re.search(r"\b(?:http(?:/\d(?:\.\d)?)?(?:\s+status(?:\s+code)?)?|status(?:[_ ]code)?|error code)[\"']?\s*[:=]?\s*[\"']?([1-5]\d{2})\b", text)
+        if match:
+            status = int(match.group(1))
     if status is not None:
         return status in (408, 429, 500, 502, 503, 504, 529)
     if isinstance(error, (TimeoutError, ConnectionError)):
         return True
-    if re.search(r"\b(?:400|401|403|404|422)\b", text):
-        return False
-    return any(marker in text for marker in ("error_rate_limit", "error_timeout", "error_connection", "error_server", "rate limit", "too many requests", "timed out")) or bool(
-        re.search(r"\b(?:408|429|500|502|503|504|529)\b", text)
+    return any(
+        marker in text
+        for marker in ("error_rate_limit", "rate_limit_exceeded", "rate_limit_error", "error_timeout", "error_connection", "error_server", "rate limit", "too many requests", "timed out")
     )
 
 

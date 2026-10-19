@@ -93,8 +93,17 @@ retrying without a cooldown.
 
 Explicit rate limits, timeouts, connection failures, and retryable server
 errors can recover. Authentication, invalid requests, content filtering,
-quota/billing failures (including permanent 429 responses), and unknown errors
-are not retried. When an exception retains a `Retry-After` header, recovery
+explicit permanent quota/billing failures (such as `insufficient_quota` or an
+insufficient balance), and unknown errors are not retried. Permanent details
+take precedence even over HTTP 429 and `Retry-After`. Bare quota wording and
+the client's broad `ERROR_QUOTA` label do not establish a permanent failure:
+recovery still requires explicit transient evidence, such as HTTP 429 or a
+provider rate-limit code. Structured provider codes and HTTP statuses are used
+when preserved; string status matching requires an HTTP/status/error-code label
+so ordinary request counts are not interpreted as status codes. Ambiguous quota
+errors are not retried.
+
+When an exception retains a `Retry-After` header, recovery
 waits at least that long; a delay exceeding the configured maximum fails
 without retrying early. Providers that return error strings lose HTTP headers,
 so those calls use the configured backoff instead.
