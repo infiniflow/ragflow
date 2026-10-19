@@ -518,11 +518,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
-	if len(texts) == 0 {
-		// Nothing to embed — but cache hits may still need to be written through.
-		if store == nil {
-			return chunks, 0, nil
-		}
+	if len(texts) == 0 && cacheHits == 0 {
+		// Nothing to embed and nothing to serve from cache: return before the
+		// title encode, exactly like Python's `if not texts: return` — an
+		// all-skipped batch must not burn a title embedding. (When the cache
+		// serves every chunk the flow continues so those vectors attach.)
+		return chunks, 0, nil
 	}
 
 	trimmedName := strings.TrimSpace(name)

@@ -17,8 +17,11 @@
 package component
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // TestCleanEmbedText pins the table-structure strip that mirrors Python's
@@ -82,5 +85,70 @@ func TestCleanEmbedTextStripsEveryMatch(t *testing.T) {
 	}
 	if got != "a  b  c" {
 		t.Fatalf("cleanEmbedText(%q) = %q, want %q", in, got, "a  b  c")
+	}
+}
+
+// TestEmbedChunksAllSkippedWithCacheStoreSkipsTitleEncode: when every chunk's
+// cleaned text is empty and no cache entry can serve them, nothing may be
+// embedded — not even the title. Python returns before the title encode when
+// the batch is empty (tokenizer.py:92-93); a configured cache store does not
+// change that, it only matters when it actually serves a vector.
+func TestEmbedChunksAllSkippedWithCacheStoreSkipsTitleEncode(t *testing.T) {
+	comp, stub := withStubEmbedder(t, 4)
+	comp.param.Fields = []string{"text"}
+	chunks := []schema.ChunkDoc{
+		chunkWithID("c1", "<table><tr><td></td></tr></table>"),
+		chunkWithID("c2", "   "),
+	}
+
+	out, consumed, err := comp.embedChunks(context.Background(), "tenant", "kb", "doc.pdf", chunks, newMemCacheStore())
+	if err != nil {
+		t.Fatalf("embedChunks: %v", err)
+	}
+	if got := stub.calls.Load(); got != 0 {
+		t.Fatalf("embedder calls = %d, want 0 (an all-skipped batch embeds nothing, title included)", got)
+	}
+	if consumed != 0 {
+		t.Fatalf("embedding_token_consumption = %d, want 0", consumed)
+	}
+	for i, ck := range out {
+		if hasEmbeddingVector(ck) {
+			t.Errorf("chunk[%d] unexpectedly carries a vector", i)
+		}
+	}
+}
+
+// TestEmbedChunksCacheHitOnlyBatchStillAttachesVectors guards the other side
+// of the same condition: when the cache serves every chunk, the flow must
+// continue (attach the cached vectors) even though the batch itself is empty.
+func TestEmbedChunksCacheHitOnlyBatchStillAttachesVectors(t *testing.T) {
+	comp, stub := withStubEmbedder(t, 4)
+	comp.param.Fields = []string{"text"}
+	store := newMemCacheStore()
+
+	warm := []schema.ChunkDoc{chunkWithID("c1", "alpha beta")}
+	if _, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "doc.pdf", warm, store); err != nil {
+		t.Fatalf("warm-up embedChunks: %v", err)
+	}
+	callsAfterWarm := stub.calls.Load()
+	if callsAfterWarm == 0 {
+		t.Fatal("warm-up embedded nothing; the cache cannot be warm")
+	}
+
+	out, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "doc.pdf", warm, store)
+	if err != nil {
+		t.Fatalf("cached embedChunks: %v", err)
+	}
+	// The title vector is not cached, so a fully cached pass re-encodes the
+	// title (the weighted merge needs it) but must not re-embed content.
+	if got, want := stub.calls.Load(), callsAfterWarm+1; got != want {
+		t.Fatalf("embedder calls = %d after the cached pass, want %d (title only)", got, want)
+	}
+	last := stub.callInputs[len(stub.callInputs)-1]
+	if len(last) != 1 || last[0] != "doc.pdf" {
+		t.Fatalf("cached pass re-embedded content: last call inputs = %v, want the title only", last)
+	}
+	if !hasEmbeddingVector(out[0]) {
+		t.Error("the cache-served chunk must still carry its vector")
 	}
 }
