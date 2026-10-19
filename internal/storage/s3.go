@@ -179,72 +179,46 @@ func (s *S3Storage) Health(ctx context.Context) bool {
 func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
-	for i := 0; i < 2; i++ {
+	return retryObjectOp(ctx, 2, func() { s.reconnect(ctx) }, func() error {
 		// Ensure bucket exists
 		if !s.BucketExists(ctx, bucket) {
-			err := s.createBucket(ctx, bucket)
-			if err != nil {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return ctxErr
-				}
+			if err := s.createBucket(ctx, bucket); err != nil {
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket), zap.Error(err))
-				s.reconnect(ctx)
-				if err = sleepOrAbort(ctx, time.Second); err != nil {
-					return err
-				}
-				continue
+				return err
 			}
 			common.Info("Created bucket", zap.String("bucket", bucket))
 		}
 
 		reader := bytes.NewReader(binary)
-		_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		if _, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 			Body:   reader,
-		})
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
+		}); err != nil {
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return err
-			}
-			continue
+			return err
 		}
 
 		return nil
-	}
-
-	return fmt.Errorf("failed to put object after retries")
+	})
 }
 
 // Get retrieves an object from S3
 func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
 
-	for i := 0; i < 2; i++ {
-		// Honor cancellation up front so an already-canceled context returns
-		// promptly instead of running the reconnect/backoff loop.
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
+	// retryObjectOp honors cancellation up front (already-canceled ctx returns
+	// promptly) and after each op error (mid-flight cancel surfaces instead of
+	// sleeping the backoff window) — the contract pinned by s3_cancel_test.go.
+	var data []byte
+	err := retryObjectOp(ctx, 2, func() { s.reconnect(ctx) }, func() error {
 		result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
-			// The request may have failed because ctx was canceled mid-flight;
-			// surface that instead of sleeping and retrying with a dead context.
-			if cerr := ctx.Err(); cerr != nil {
-				return nil, cerr
-			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect(ctx)
-			time.Sleep(time.Second)
-			continue
+			return err
 		}
 		buf := new(bytes.Buffer)
 
@@ -254,19 +228,18 @@ func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...str
 			return err
 		}()
 		if readErr != nil {
-			if cerr := ctx.Err(); cerr != nil {
-				return nil, cerr
-			}
 			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(readErr))
-			s.reconnect(ctx)
-			time.Sleep(time.Second)
-			continue
+			return readErr
 		}
+		data = buf.Bytes()
 
-		return buf.Bytes(), nil
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("failed to get object after retries")
+	return data, nil
 }
 
 // Remove removes an object from S3
@@ -344,22 +317,25 @@ func (s *S3Storage) GetPresignedURL(ctx context.Context, bucket, fnm string, exp
 
 	presignClient := s3.NewPresignClient(s.client)
 
-	for i := 0; i < 10; i++ {
+	var url string
+	err := retryObjectOp(ctx, 10, func() { s.reconnect(ctx) }, func() error {
 		req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 		}, s3.WithPresignExpires(expires))
 		if err != nil {
 			common.Error("Failed to generate presigned URL", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			s.reconnect(ctx)
-			time.Sleep(time.Second)
-			continue
+			return err
 		}
+		url = req.URL
 
-		return req.URL, nil
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
 	}
 
-	return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
+	return url, nil
 }
 
 // BucketExists checks if a bucket exists
@@ -524,20 +500,11 @@ func (s *S3Storage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, de
 
 // Move moves an object from source to destination
 func (s *S3Storage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	if s.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
-		if err := s.Remove(ctx, srcBucket, srcPath); err != nil {
-			common.Error("Failed to remove source object after copy", err, zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			err = s.Remove(rollbackCtx, destBucket, destPath)
-			if err != nil {
-				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
-			}
-			return false
-		}
-		return true
-	}
-	return false
+	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+		func() bool { return s.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
+		func(rctx context.Context) error { return s.Remove(rctx, srcBucket, srcPath) },
+		func(rctx context.Context) error { return s.Remove(rctx, destBucket, destPath) },
+	)
 }
 
 func (s *S3Storage) Close() error { return nil }

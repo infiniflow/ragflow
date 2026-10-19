@@ -149,75 +149,46 @@ func (o *OSSStorage) Health(ctx context.Context) bool {
 // Put uploads an object to OSS
 func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-	var lastErr error
 
-	for i := 0; i < 2; i++ {
+	return retryObjectOp(ctx, 2, func() { o.reconnect(ctx) }, func() error {
 		// Ensure bucket exists
 		if !o.BucketExists(ctx, bucket) {
-			_, err := o.client.CreateBucket(ctx, &s3.CreateBucketInput{
+			if _, err := o.client.CreateBucket(ctx, &s3.CreateBucketInput{
 				Bucket: aws.String(bucket),
-			})
-			if err != nil {
-				lastErr = err
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return ctxErr
-				}
+			}); err != nil {
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket))
-				o.reconnect(ctx)
-				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-					return sleepErr
-				}
-				continue
+				return err
 			}
 			common.Info("Created bucket", zap.String("bucket", bucket))
 		}
 
 		reader := bytes.NewReader(binary)
-		_, err := o.client.PutObject(ctx, &s3.PutObjectInput{
+		if _, err := o.client.PutObject(ctx, &s3.PutObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 			Body:   reader,
-		})
-		if err != nil {
-			lastErr = err
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
+		}); err != nil {
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return sleepErr
-			}
-			continue
+			return err
 		}
 
 		return nil
-	}
-
-	return lastErr
+	})
 }
 
 // Get retrieves an object from OSS
 func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-	var lastErr error
 
-	for i := 0; i < 2; i++ {
+	var data []byte
+	err := retryObjectOp(ctx, 2, func() { o.reconnect(ctx) }, func() error {
 		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
-			lastErr = err
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return nil, sleepErr
-			}
-			continue
+			return err
 		}
 		buf := new(bytes.Buffer)
 
@@ -227,22 +198,18 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			return err
 		}()
 		if readErr != nil {
-			lastErr = readErr
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
 			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return nil, sleepErr
-			}
-			continue
+			return readErr
 		}
+		data = buf.Bytes()
 
-		return buf.Bytes(), nil
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, lastErr
+	return data, nil
 }
 
 // Remove removes an object from OSS
@@ -319,27 +286,25 @@ func (o *OSSStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, ex
 
 	presignClient := s3.NewPresignClient(o.client)
 
-	for i := 0; i < 10; i++ {
+	var url string
+	err := retryObjectOp(ctx, 10, func() { o.reconnect(ctx) }, func() error {
 		req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
 			Bucket: aws.String(bucket),
 			Key:    aws.String(fnm),
 		}, s3.WithPresignExpires(expires))
 		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", ctxErr
-			}
 			common.Error("Failed to generate presigned URL", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return "", err
-			}
-			continue
+			return err
 		}
+		url = req.URL
 
-		return req.URL, nil
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
 	}
 
-	return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
+	return url, nil
 }
 
 // BucketExists checks if a bucket exists
@@ -461,20 +426,11 @@ func (o *OSSStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, d
 
 // Move moves an object from source to destination
 func (o *OSSStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	if o.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
-		if err := o.Remove(ctx, srcBucket, srcPath); err != nil {
-			common.Error("Failed to remove source object after copy", err, zap.String("bucket", srcBucket), zap.String("key", srcPath))
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			err = o.Remove(rollbackCtx, destBucket, destPath)
-			if err != nil {
-				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
-			}
-			return false
-		}
-		return true
-	}
-	return false
+	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+		func() bool { return o.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
+		func(rctx context.Context) error { return o.Remove(rctx, srcBucket, srcPath) },
+		func(rctx context.Context) error { return o.Remove(rctx, destBucket, destPath) },
+	)
 }
 
 func (o *OSSStorage) Close() error { return nil }
