@@ -111,6 +111,44 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
+// TestEmailParser_EmlTextFieldOrder pins the order of the text output: the
+// headers first, in the order of the JSON header item, then the body. The
+// fields used to come out in Go's map order, a different one on every parse.
+func TestEmailParser_EmlTextFieldOrder(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: a@example.com",
+		"To: b@example.com",
+		"Cc: c@example.com",
+		"Subject: Quarterly numbers",
+		"Date: Mon, 1 Sep 2026 10:00:00 +0000",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Revenue grew.",
+	}, "\r\n")
+	want := strings.Join([]string{
+		"from:a@example.com",
+		"to:b@example.com",
+		"cc:c@example.com",
+		"date:Mon, 1 Sep 2026 10:00:00 +0000",
+		"subject:Quarterly numbers",
+		"text:Revenue grew.",
+		"text_html:",
+		"",
+	}, "\n")
+
+	for i := 0; i < 20; i++ {
+		p := NewEmailParser()
+		p.ConfigureFromSetup(map[string]any{"output_format": "text"})
+		result := p.ParseWithResult(t.Context(), "order.eml", []byte(raw))
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if result.Text != want {
+			t.Fatalf("parse %d: text output\n got: %q\nwant: %q", i, result.Text, want)
+		}
+	}
+}
+
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
