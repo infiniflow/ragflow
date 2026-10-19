@@ -277,6 +277,11 @@ func (c *ParserComponent) Check() error {
 				return errors.New("parser: image ocr_enabled must be a boolean")
 			}
 		}
+		if raw, exists := img["ocr_model_id"]; exists {
+			if _, isString := raw.(string); !isString {
+				return errors.New("parser: image ocr_model_id must be a string")
+			}
+		}
 		// An image needs at least one text source: local OCR or the global
 		// vision enhancement. With neither, the item carries no text and the
 		// Tokenizer drops it, so reject the configuration at build time

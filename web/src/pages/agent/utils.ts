@@ -204,6 +204,7 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
+/** Serializes parser form fields without losing the selected image OCR model. */
 export function transformParserParams(params: ParserFormSchemaType) {
   // Save global vision options from the normalized form alongside the
   // per-family setups, including nodes whose form has not been opened.
@@ -271,6 +272,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             ocr_enabled: cur.ocr_enabled,
+            ocr_model_id: cur.ocr_model_id,
           };
           break;
         case FileType.Email:

@@ -13,6 +13,7 @@ export const SetupSchema = z
     // the new boolean contract. Legacy setups may still carry a parse_method
     // only; normalizeParserFormValues migrates them on load.
     ocr_enabled: z.boolean().optional(),
+    ocr_model_id: z.string().optional(),
     lang: z.string().optional(),
     fields: z.array(z.string()).optional(),
     // Per-setup vlm is only used by Audio (its ASR model); the vision model
