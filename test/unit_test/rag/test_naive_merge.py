@@ -165,9 +165,10 @@ def test_overlap_prefix_is_never_dropped_at_overflow():
     # overlap-prefix budget check is the only thing under test here.
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    # The overlap prefix is always present at every boundary: each chunk (after
-    # the first) starts with the tail of the previous chunk.
-    for prev, cur in itertools.pairwise(chunks):
+    # Size overlap from the previous original chunk, excluding its own prefix.
+    originals = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, strategy=MergeStrategy.UNDER_CAP))
+    assert len(chunks) == len(originals)
+    for prev, cur in zip(originals, chunks[1:]):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     # And because the prefix is never dropped, some chunks exceed the budget.
@@ -296,10 +297,23 @@ def test_strict_cap_overlap_never_dropped_at_overflow_boundary():
     sentences = [" ".join(["w"] * 10) for _ in range(20)]
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    for prev, cur in itertools.pairwise(chunks):
+    originals = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, strategy=MergeStrategy.UNDER_CAP))
+    assert len(chunks) == len(originals)
+    for prev, cur in zip(originals, chunks[1:]):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     assert any(_tok(c) > 20 for c in chunks)
+
+
+@pytest.mark.parametrize(
+    "originals,percent,expected",
+    [
+        (["ABCDEFGHI。", "KLMNOPQRS。", "UVWXYZ123。"], 20, ["ABCDEFGHI。", "I。KLMNOPQRS。", "S。UVWXYZ123。"]),
+        (["A" * 100, "xy", "END"], 30, ["A" * 100, "A" * 30 + "xy", "yEND"]),
+    ],
+)
+def test_overlap_uses_previous_original_chunk(originals, percent, expected):
+    assert nlp._apply_overlap_unconditional(originals, percent) == expected
 
 
 @pytest.mark.p2
