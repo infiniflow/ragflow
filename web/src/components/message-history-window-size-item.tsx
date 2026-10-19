@@ -44,7 +44,7 @@ export function MessageHistoryWindowSizeFormField({
             {t('flow.messageHistoryWindowSize')}
           </FormLabel>
           <FormControl>
-            <NumberInput {...field} min={min} className="w-full"></NumberInput>
+            <NumberInput {...field} min={min} className="w-full" integer></NumberInput>
           </FormControl>
           <FormMessage />
         </FormItem>
