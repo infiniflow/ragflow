@@ -211,7 +211,7 @@ func mustTime(t *testing.T, value string) time.Time {
 
 // TestRSSConnectorIncrementalSyncDateSpellings verifies that RSS pubDate values
 // written with a one-digit day, no seconds, no day of the week, a two-digit
-// year, an RFC 822 zone name or a trailing comment place an item in the
+// year, an RFC 822 zone name, a comment or a tab place an item in the
 // incremental sync window at the same UTC time on a server in any zone, and
 // that the date layouts read before keep their meaning.
 func TestRSSConnectorIncrementalSyncDateSpellings(t *testing.T) {
@@ -240,6 +240,10 @@ func TestRSSConnectorIncrementalSyncDateSpellings(t *testing.T) {
 		{"Sat, 3 Jan 2026 10:00:00 PST (Pacific (winter))", "2026-01-03T18:00:00Z"},
 		{"Sat, 03 Jan 2026 10:00 +0800 (CST)", "2026-01-03T02:00:00Z"},
 		{"Sat, 3 Jan 2026 10:00:00 PST (Pacific \\) winter)", "2026-01-03T18:00:00Z"},
+		// A tab, or a comment with no space around it, separates the zone
+		// as a space does.
+		{"Sat, 3 Jan 2026 10:00\tPST", "2026-01-03T18:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00(comment)PST", "2026-01-03T18:00:00Z"},
 		// Layouts that were already read.
 		{"Sat, 03 Jan 2026 10:00:00 +0000", "2026-01-03T10:00:00Z"},
 		{"Sat, 03 Jan 2026 10:00:00 -0700", "2026-01-03T17:00:00Z"},

@@ -554,8 +554,11 @@ func parseFeedTime(value string) time.Time {
 	// RSS dates are RFC 822 dates, which allow a one-digit day, leave out
 	// the day of the week and the seconds, and may end with a comment.
 	// mail.ParseDate reads a zone name such as PST through the server's
-	// time zone, so drop any comment and give it the offset.
+	// time zone, so drop any comment and give it the offset. RFC 822 reads
+	// a comment between two tokens, and a run of white space such as a tab,
+	// as one space.
 	value = stripRFC822Comments(value)
+	value = strings.Join(strings.Fields(value), " ")
 	if i := strings.LastIndexByte(value, ' '); i >= 0 {
 		if offset, ok := rfc822ZoneOffsets[value[i+1:]]; ok {
 			value = value[:i+1] + offset
@@ -567,9 +570,9 @@ func parseFeedTime(value string) time.Time {
 	return time.Time{}
 }
 
-// stripRFC822Comments drops the parenthesized comments, which may nest, from
-// an RFC 822 date. A backslash inside a comment quotes the next byte, as in
-// net/mail. Unbalanced parentheses leave the value as it is.
+// stripRFC822Comments replaces each parenthesized comment, which may nest, in
+// an RFC 822 date with a space. A backslash inside a comment quotes the next
+// byte, as in net/mail. Unbalanced parentheses leave the value as it is.
 func stripRFC822Comments(value string) string {
 	var out strings.Builder
 	depth := 0
@@ -582,6 +585,9 @@ func stripRFC822Comments(value string) string {
 				out.WriteByte(value[i])
 			}
 		case '(':
+			if depth == 0 {
+				out.WriteByte(' ')
+			}
 			depth++
 		case ')':
 			if depth == 0 {
