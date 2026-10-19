@@ -37,6 +37,23 @@ type APIKeyResponse struct {
 	UpdateDate *time.Time `json:"update_date,omitempty"`
 }
 
+// maskAPIToken renders an API token safe for list responses: a visible
+// prefix/suffix pair so an operator can still tell keys apart, never the
+// middle. The shape follows maskAPIKey in model_service.go (PR #20549): ""
+// stays "" (a no-record field must remain distinguishable from a masked
+// one), anything too short to survive truncation collapses to a constant so
+// a short secret is never partially echoed, and longer tokens keep 3 + 4
+// visible characters — enough to recognize `rag`-prefixed ragflow tokens.
+func maskAPIToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	if len(token) <= 7 {
+		return "***"
+	}
+	return token[:3] + "***" + token[len(token)-4:]
+}
+
 // ListAPIKeys list all API keys for a tenant
 func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
@@ -62,8 +79,13 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 		}
 
 		responses[i] = &APIKeyResponse{
-			TenantID:   key.TenantID,
-			Token:      key.Token,
+			TenantID: key.TenantID,
+			// The full token is returned exactly once, by CreateAPIKey, so
+			// the user can copy it. A GET response travels through proxies,
+			// browser history, and dev-tool network panels, so the list path
+			// must never echo the credential back (same class of leak the
+			// user-profile fix #20277 closed).
+			Token:      maskAPIToken(key.Token),
 			DialogID:   key.DialogID,
 			Source:     key.Source,
 			Beta:       beta,
