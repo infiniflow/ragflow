@@ -41,11 +41,25 @@ const (
 	// test would hand the partner id to "api.aimlapi.com.example.net" or
 	// "notapi.aimlapi.com".
 	aimlapiAttributionHost = "api.aimlapi.com"
+	// aimlapiSource is the client identifier sent as X-AIMLAPI-Source.
+	// AIMLAPI_SOURCE overrides it.
+	aimlapiSource = "agent/ragflow"
 	// aimlapiPartnerID is the partner id aimlapi.com issued for RAGFlow. Ids
 	// are minted server-side; an unknown one is accepted and silently dropped.
 	// AIMLAPI_PARTNER_ID overrides it (staging, testing).
 	aimlapiPartnerID = "part_yNkcOvbGLtgxWLjy4sRysaer"
 )
+
+// aimlapiEnvOr returns the trimmed value of an environment variable when it is
+// set — even to an empty string, which is how an override turns a header off —
+// and the default otherwise. This matches common/aimlapi_utils.py from #17491,
+// where os.environ.get(name, default) behaves the same way.
+func aimlapiEnvOr(name, fallback string) string {
+	if value, ok := os.LookupEnv(name); ok {
+		return strings.TrimSpace(value)
+	}
+	return fallback
+}
 
 // NewAimlapiModel creates a new AI/ML API model instance.
 func NewAimlapiModel(baseURL map[string]string, urlSuffix URLSuffix) *AimlapiModel {
@@ -59,22 +73,22 @@ func NewAimlapiModel(baseURL map[string]string, urlSuffix URLSuffix) *AimlapiMod
 	}
 }
 
-// applyAimlapiAttribution adds partner attribution to a request, but only
-// when the request is bound for the aimlapi.com gateway itself. It reads the
-// request's own URL, so a base URL override (a proxy, a staging host) moves
-// the request and the attribution stops with it rather than leaking.
+// applyAimlapiAttribution adds the attribution established in #17491 —
+// X-AIMLAPI-Source and X-AIMLAPI-Partner-ID — but only when the request is
+// bound for the aimlapi.com gateway itself. It reads the request's own URL, so
+// a base URL override (a proxy, a staging host) moves the request and the
+// attribution stops with it rather than leaking. Either header is omitted when
+// its override is set to an empty value.
 func applyAimlapiAttribution(req *http.Request) {
 	if req == nil || req.URL == nil || !strings.EqualFold(req.URL.Hostname(), aimlapiAttributionHost) {
 		return
 	}
-	partnerID := aimlapiPartnerID
-	if override := strings.TrimSpace(os.Getenv("AIMLAPI_PARTNER_ID")); override != "" {
-		partnerID = override
+	if source := aimlapiEnvOr("AIMLAPI_SOURCE", aimlapiSource); source != "" {
+		req.Header.Set("X-AIMLAPI-Source", source)
 	}
-	req.Header.Set("X-AIMLAPI-Source", "agent/ragflow")
-	req.Header.Set("X-AIMLAPI-Partner-ID", partnerID)
-	req.Header.Set("HTTP-Referer", "https://ragflow.io")
-	req.Header.Set("X-Title", "RAGFlow")
+	if partnerID := aimlapiEnvOr("AIMLAPI_PARTNER_ID", aimlapiPartnerID); partnerID != "" {
+		req.Header.Set("X-AIMLAPI-Partner-ID", partnerID)
+	}
 }
 
 func (a *AimlapiModel) NewInstance(baseURL map[string]string) ModelDriver {
@@ -233,16 +247,20 @@ type aimlapiModelRow struct {
 	} `json:"info"`
 }
 
-// aimlapiModelFamily maps a gateway row type onto the RAGFlow model type this
-// driver can serve, or "" for families it cannot call (image, video, audio,
-// batches, responses). "openai/chat-completions" and "anthropic/messages"
-// are both chat: one call shape serves both.
+// aimlapiModelFamily maps a gateway row type onto how this driver lists it:
+// "chat" and "embedding" for the families it can call, "infer" for a row the
+// gateway published without a type (kept, typed from its name like any other
+// catalog miss), and "" for families it cannot call (image, video, audio,
+// batches, responses). "openai/chat-completions" and "anthropic/messages" are
+// both chat: one call shape serves both.
 func aimlapiModelFamily(rowType string) string {
-	switch rowType {
+	switch strings.TrimSpace(rowType) {
 	case "openai/chat-completions", "anthropic/messages":
 		return "chat"
 	case "openai/embeddings":
 		return "embedding"
+	case "":
+		return "infer"
 	}
 	return ""
 }
@@ -278,7 +296,11 @@ func (a *AimlapiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		if id == "" || family == "" {
 			continue
 		}
-		if _, seen := familyByID[id]; seen {
+		if prev, seen := familyByID[id]; seen {
+			// a typed row outranks an untyped one for the same id
+			if prev == "infer" && family != "infer" {
+				familyByID[id] = family
+			}
 			continue
 		}
 		familyByID[id] = family

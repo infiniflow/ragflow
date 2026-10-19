@@ -12,12 +12,15 @@ import (
 	"testing"
 )
 
+// aimlapiAttributionHeaderNames is the attribution contract from #17491.
 var aimlapiAttributionHeaderNames = []string{
 	"X-AIMLAPI-Source",
 	"X-AIMLAPI-Partner-ID",
-	"HTTP-Referer",
-	"X-Title",
 }
+
+// aimlapiNonContractHeaders were never part of that contract and must not be
+// sent anywhere.
+var aimlapiNonContractHeaders = []string{"HTTP-Referer", "X-Title"}
 
 func newAimlapiForTest(baseURL string) *AimlapiModel {
 	return NewAimlapiModel(
@@ -225,6 +228,44 @@ func TestAimlapiListModelsKeepsChatAndEmbeddingOnly(t *testing.T) {
 	}
 }
 
+// A row the gateway publishes without a type is kept and typed from its name,
+// like any other catalog miss, rather than silently dropped; a typed row for the
+// same id still decides its family.
+func TestAimlapiListModelsKeepsUntypedRows(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAimlapiServer(t, "/v1/models", nil, func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{
+				{"id": "vendor/untyped-chat-model", "info": map[string]interface{}{}},
+				// untyped first, then typed as an embedding: the type wins
+				{"id": "vendor/some-embedder", "info": map[string]interface{}{}},
+				{"id": "vendor/some-embedder", "type": "openai/embeddings", "info": map[string]interface{}{}},
+				// a known family this driver cannot call is still dropped
+				{"id": "flux/dev", "type": "openai/image-generations", "info": map[string]interface{}{}},
+			},
+		})
+	})
+	defer srv.Close()
+
+	models, err := newAimlapiForTest(srv.URL).ListModels(t.Context(), &APIConfig{})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	byName := map[string]ListModelResponse{}
+	for _, m := range models {
+		byName[m.Name] = m
+	}
+	if _, ok := byName["vendor/untyped-chat-model"]; !ok {
+		t.Errorf("untyped row dropped; got %v", byName)
+	}
+	if got := byName["vendor/some-embedder"].ModelTypes; len(got) != 1 || got[0] != "embedding" {
+		t.Errorf("typed row should decide the family: types=%v", got)
+	}
+	if _, ok := byName["flux/dev"]; ok {
+		t.Errorf("image-generation row listed")
+	}
+}
+
 func TestAimlapiCheckConnectionUsesTheKeyEndpoint(t *testing.T) {
 	withSSRFBypass(t)
 	for _, tc := range []struct {
@@ -275,8 +316,10 @@ func TestAimlapiAttributionForTheGateway(t *testing.T) {
 	if !regexp.MustCompile(`^part_[A-Za-z0-9]{1,64}$`).MatchString(aimlapiPartnerID) {
 		t.Errorf("partner id %q is not a minted id", aimlapiPartnerID)
 	}
-	if h.Get("HTTP-Referer") == "" || h.Get("X-Title") != "RAGFlow" {
-		t.Errorf("HTTP-Referer=%q X-Title=%q", h.Get("HTTP-Referer"), h.Get("X-Title"))
+	for _, name := range aimlapiNonContractHeaders {
+		if h.Get(name) != "" {
+			t.Errorf("%s=%q is not part of the #17491 attribution contract", name, h.Get(name))
+		}
 	}
 }
 
@@ -307,6 +350,46 @@ func TestAimlapiAttributionPartnerOverride(t *testing.T) {
 	t.Setenv("AIMLAPI_PARTNER_ID", "part_stagingOverride")
 	if got := attributionOn("https://api.aimlapi.com/v1/models").Get("X-AIMLAPI-Partner-ID"); got != "part_stagingOverride" {
 		t.Errorf("override not honored: %q", got)
+	}
+}
+
+func TestAimlapiAttributionSourceOverride(t *testing.T) {
+	t.Setenv("AIMLAPI_SOURCE", "agent/ragflow-staging")
+	if got := attributionOn("https://api.aimlapi.com/v1/models").Get("X-AIMLAPI-Source"); got != "agent/ragflow-staging" {
+		t.Errorf("AIMLAPI_SOURCE not honored: %q", got)
+	}
+}
+
+// An override set to an empty value turns its header off, as in #17491
+// (os.environ.get returns the empty string, which the helper then omits).
+func TestAimlapiAttributionEmptyOverrideOmitsTheHeader(t *testing.T) {
+	t.Setenv("AIMLAPI_PARTNER_ID", "")
+	h := attributionOn("https://api.aimlapi.com/v1/models")
+	if _, present := h["X-Aimlapi-Partner-Id"]; present {
+		t.Errorf("X-AIMLAPI-Partner-ID sent (%q) although AIMLAPI_PARTNER_ID is set to empty", h.Get("X-AIMLAPI-Partner-ID"))
+	}
+	if got := h.Get("X-AIMLAPI-Source"); got != "agent/ragflow" {
+		t.Errorf("X-AIMLAPI-Source=%q; emptying the partner id must not touch it", got)
+	}
+
+	t.Setenv("AIMLAPI_SOURCE", "  ")
+	h = attributionOn("https://api.aimlapi.com/v1/models")
+	if _, present := h["X-Aimlapi-Source"]; present {
+		t.Errorf("X-AIMLAPI-Source sent (%q) although AIMLAPI_SOURCE is blank", h.Get("X-AIMLAPI-Source"))
+	}
+}
+
+// Unset is not the same as empty: with neither variable set, both defaults go out.
+func TestAimlapiAttributionDefaultsWhenUnset(t *testing.T) {
+	for _, name := range []string{"AIMLAPI_SOURCE", "AIMLAPI_PARTNER_ID"} {
+		if prev, ok := os.LookupEnv(name); ok {
+			os.Unsetenv(name)
+			t.Cleanup(func() { os.Setenv(name, prev) })
+		}
+	}
+	h := attributionOn("https://api.aimlapi.com/v1/models")
+	if h.Get("X-AIMLAPI-Source") != "agent/ragflow" || h.Get("X-AIMLAPI-Partner-ID") != aimlapiPartnerID {
+		t.Errorf("defaults not sent: source=%q partner=%q", h.Get("X-AIMLAPI-Source"), h.Get("X-AIMLAPI-Partner-ID"))
 	}
 }
 
@@ -409,7 +492,7 @@ func TestAimlapiAttributionNotSentToAnOverriddenBaseURL(t *testing.T) {
 		[]Message{{Role: "user", Content: "hi"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
 		t.Fatalf("chat: %v", err)
 	}
-	for _, name := range aimlapiAttributionHeaderNames {
+	for _, name := range append(append([]string{}, aimlapiAttributionHeaderNames...), aimlapiNonContractHeaders...) {
 		if seen.Get(name) != "" {
 			t.Errorf("%s leaked to %s", name, srv.URL)
 		}
@@ -451,9 +534,12 @@ func TestAimlapiProviderConfig(t *testing.T) {
 		URL       map[string]string `json:"url"`
 		URLSuffix URLSuffix         `json:"url_suffix"`
 		Models    []struct {
-			Name       string   `json:"name"`
-			ModelTypes []string `json:"model_types"`
-			Alias      []string `json:"alias"`
+			Name          string   `json:"name"`
+			ModelTypes    []string `json:"model_types"`
+			Alias         []string `json:"alias"`
+			ContextLength *int     `json:"context_length"`
+			MaxOutput     *int     `json:"max_output"`
+			MaxBatchSize  *int     `json:"max_batch_size"`
 		} `json:"models"`
 	}
 	if err := json.Unmarshal(raw, &conf); err != nil {
@@ -488,6 +574,26 @@ func TestAimlapiProviderConfig(t *testing.T) {
 		}
 		if len(m.ModelTypes) == 0 {
 			t.Errorf("model %q has no model_types", m.Name)
+		}
+		for _, mt := range m.ModelTypes {
+			if mt == "embedding" && (m.MaxBatchSize == nil || *m.MaxBatchSize <= 0) {
+				t.Errorf("embedding model %q declares no max_batch_size", m.Name)
+			}
+		}
+		if m.MaxOutput != nil && m.ContextLength != nil && *m.MaxOutput >= *m.ContextLength {
+			t.Errorf("model %q: max_output %d is not below context_length %d", m.Name, *m.MaxOutput, *m.ContextLength)
+		}
+	}
+	// limits measured against the gateway: one input past each is refused
+	wantBatch := map[string]int{
+		"openai/text-embedding-3-small":   2048,
+		"openai/text-embedding-3-large":   2048,
+		"alibaba/qwen-text-embedding-v4":  10,
+		"anthropic/voyage-multilingual-2": 1000,
+	}
+	for _, m := range conf.Models {
+		if want, ok := wantBatch[m.Name]; ok && (m.MaxBatchSize == nil || *m.MaxBatchSize != want) {
+			t.Errorf("%s max_batch_size=%v, want %d", m.Name, m.MaxBatchSize, want)
 		}
 	}
 }
