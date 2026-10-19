@@ -295,6 +295,11 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelFactory, ""))
 	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelFactory, ""))
 	nav.SetNavService(apiNavService)
+	// navigate_structure's claim leg recalls claim rows with a hybrid read; its
+	// dense half needs a query embedder, and the nav service is where the
+	// tenant's embedding model is already resolved. Without it the leg degrades
+	// to lexical-only recall (see nlp.NavService.EncodeQueryVector).
+	agentic_rag.SetClaimQueryEncoder(apiNavService.EncodeQueryVector)
 
 	// Install the compiled-wiki search service. It is backed directly by the
 	// document engine: QueryPages filters the tenant-scoped index to
