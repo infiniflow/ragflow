@@ -299,7 +299,12 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
-	return map[string]schema.ParserSetup{
+	// Normalize up front so any caller (including tests that build a
+	// ParserComponent directly from these defaults) gets the single JSON
+	// output protocol. NewParserComponent re-normalizes idempotently; the
+	// per-family literals were removed because normalizeParserOutputFormats
+	// owns this key unconditionally.
+	s := map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
@@ -380,6 +385,8 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"suffix": []string{"json", "jsonl", "ldjson"},
 		},
 	}
+	normalizeParserOutputFormats(s)
+	return s
 }
 
 // Inputs returns the static parameter metadata. The component

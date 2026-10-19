@@ -151,21 +151,39 @@ func TestTrimAllCountsEachTextOnce(t *testing.T) {
 
 // TestRecordUsageObservesSummedOwnCount pins that the calibration observation
 // uses the precomputed per-input counts: the provider total against their sum,
-// with the documented early returns preserved.
+// with the documented early returns preserved. The assertion is deliberately
+// tight (not just "> 1") so it catches a future change that stops summing or
+// silently no-ops.
 func TestRecordUsageObservesSummedOwnCount(t *testing.T) {
+	// Use an isolated calibration so the assertion is not masked by the
+	// process-wide DefaultCalibration's starting bound (1.05) nor by other
+	// tests observing the same key.
+	cal := tokenizer.NewCalibration(tokenizer.DefaultUncountedRatioUpper)
 	const key = "spy-record-usage-key"
 	emb := &embedder{}
 
-	emb.recordUsage(tokenizer.DefaultCalibration(), key, []int{2, 3, 1}, 21)
-	if r := tokenizer.DefaultCalibration().RatioUpper(key); r <= 1 {
-		t.Fatalf("RatioUpper after observing own=6 vs usage=21 = %v, want > 1", r)
+	// own=[2,3,1] sums to 6 against usage 21 -> ratio 3.5. A weak "> 1"
+	// assertion would also pass if recordUsage did nothing (default 1.05),
+	// so pin the specific ratio.
+	emb.recordUsage(cal, key, []int{2, 3, 1}, 21)
+	if got := cal.RatioUpper(key); got < 3 || got > 4 {
+		t.Fatalf("RatioUpper after observing own sum=6 vs usage=21 = %v, want ~3.5", got)
+	}
+
+	// Summation, not max/first element: the same total delivered as a single
+	// element must produce the identical ratio. This fails if recordUsage ever
+	// switches to max() or to the first element instead of the sum.
+	const keySingle = "spy-record-usage-key-single"
+	emb.recordUsage(cal, keySingle, []int{6}, 21)
+	if got, want := cal.RatioUpper(keySingle), cal.RatioUpper(key); got != want {
+		t.Fatalf("RatioUpper for summed [2,3,1] = %v but for [6] = %v; recordUsage must use the sum", want, got)
 	}
 
 	// Non-positive usage and all-zero own counts must not move the ratio.
-	before := tokenizer.DefaultCalibration().RatioUpper(key)
-	emb.recordUsage(tokenizer.DefaultCalibration(), key, []int{2, 3, 1}, 0)
-	emb.recordUsage(tokenizer.DefaultCalibration(), key, []int{0, 0}, 21)
-	if after := tokenizer.DefaultCalibration().RatioUpper(key); after != before {
+	before := cal.RatioUpper(key)
+	emb.recordUsage(cal, key, []int{2, 3, 1}, 0) // realCount <= 0 -> no-op
+	emb.recordUsage(cal, key, []int{0, 0}, 21)   // ownCount <= 0 -> no-op
+	if after := cal.RatioUpper(key); after != before {
 		t.Fatalf("RatioUpper moved from %v to %v on no-op observations", before, after)
 	}
 }

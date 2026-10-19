@@ -20,15 +20,16 @@ import (
 	"testing"
 )
 
-// TestDefaultSetupsCarryNoOutputFormatLiteral guards the dead-literal cleanup:
-// output_format is owned solely by normalizeParserOutputFormats, so the raw
-// defaults must not repeat it per family. A stale literal would imply families
-// can choose their own format, while the normalization unconditionally
-// overrides every family to JSON anyway.
-func TestDefaultSetupsCarryNoOutputFormatLiteral(t *testing.T) {
+// TestDefaultSetupsNormalizedToJSON pins that the raw defaults already carry
+// the single JSON output protocol. defaultSetups() must not ship a per-family
+// output_format literal (normalizeParserOutputFormats owns that key), yet
+// every family it returns must end up on JSON — otherwise a caller building a
+// ParserComponent straight from defaultSetups() would silently get an
+// un-normalized setup (the fragility flagged in the PR #21084 review).
+func TestDefaultSetupsNormalizedToJSON(t *testing.T) {
 	for family, setup := range defaultSetups() {
-		if _, ok := setup["output_format"]; ok {
-			t.Errorf("defaultSetups()[%q] carries a dead output_format literal; normalizeParserOutputFormats owns that key", family)
+		if got := setup["output_format"]; got != "json" {
+			t.Errorf("defaultSetups()[%q].output_format = %v, want json", family, got)
 		}
 	}
 }
