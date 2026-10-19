@@ -36,7 +36,17 @@ func newCopySourceTestStorage(backend, endpoint, bucket, prefix string) copySour
 		options.RetryMaxAttempts = 1
 	})
 	if backend == "oss" {
-		return &OSSStorage{client: client, bucket: bucket, prefixPath: prefix}
+		o := &OSSStorage{client: client}
+		o.s3Base = s3Base{
+			client:     func() *s3.Client { return o.client },
+			bucket:     bucket,
+			prefixPath: prefix,
+			typeName:   "oss",
+			resolve:    o.resolveBucketAndPath,
+			makeBucket: o.createBucket,
+			reconnect:  func(context.Context) {},
+		}
+		return o
 	}
 	s := &S3Storage{client: client}
 	s.s3Base = s3Base{
