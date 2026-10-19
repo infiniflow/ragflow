@@ -472,7 +472,10 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 func docxTextStartsRecordBoundary(text string, recordPrefixes []string) bool {
 	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, prefix := range recordPrefixes {
-		if strings.HasPrefix(trimmed, prefix) {
+		if prefix == "" {
+			continue
+		}
+		if strings.HasPrefix(text, prefix) || strings.HasPrefix(trimmed, prefix) {
 			return true
 		}
 	}
@@ -1283,7 +1286,13 @@ func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest strin
 	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	leadingWS := text[:len(text)-len(trimmed)]
 	for _, p := range prefixes {
-		if p != "" && strings.HasPrefix(trimmed, p) {
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(text, p) {
+			return p, text[len(p):]
+		}
+		if strings.HasPrefix(trimmed, p) {
 			return leadingWS + p, trimmed[len(p):]
 		}
 	}
