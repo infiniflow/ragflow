@@ -197,6 +197,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |
+| **AI Stupid Level** | Benchmark-based router (routes each request to the best-scoring model, with your own provider keys) |
 | **TokenPony** | Multi-provider aggregator |
 | **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |
 

@@ -120,6 +120,7 @@ const svgIcons = [
   LLMFactory.Opper,
   LLMFactory.TrustedRouter,
   LLMFactory.EmpirioLabs,
+  LLMFactory.AIStupidLevel,
 ];
 
 export const LlmIcon = ({
