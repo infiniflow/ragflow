@@ -228,7 +228,7 @@ export const FieldToModelType: Record<string, string> = {
 
 export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
-  [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app',
+  [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
   [LLMFactory.GreenPT]: 'https://greenpt.ai',
   [LLMFactory.Synthorai]: 'https://synthorai.io',
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',

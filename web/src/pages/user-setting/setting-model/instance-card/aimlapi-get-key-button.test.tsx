@@ -31,12 +31,12 @@ jest.mock('react-i18next', () => ({
 }));
 
 describe('AimlapiGetKeyButton', () => {
-  it('links to the AI/ML API dashboard, where keys are created', () => {
+  it('links to the AI/ML API keys page', () => {
     render(<AimlapiGetKeyButton />);
 
     const link = screen.getByRole('link', { name: /aimlapiGetKey/ });
-    expect(AIMLAPI_KEYS_URL).toBe('https://aimlapi.com/app');
-    expect(link).toHaveAttribute('href', 'https://aimlapi.com/app');
+    expect(AIMLAPI_KEYS_URL).toBe('https://aimlapi.com/app/keys');
+    expect(link).toHaveAttribute('href', 'https://aimlapi.com/app/keys');
   });
 
   it('uses the same URL as the rest of the provider settings', () => {
