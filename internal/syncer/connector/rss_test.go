@@ -208,3 +208,54 @@ func mustTime(t *testing.T, value string) time.Time {
 	}
 	return parsed
 }
+
+// TestRSSConnectorIncrementalSyncDateSpellings verifies that RSS pubDate values
+// written with a one-digit day, no seconds, no day of the week, a two-digit
+// year or a UT/GMT zone name place an item in the incremental sync window, and
+// that the date layouts read before keep their meaning.
+func TestRSSConnectorIncrementalSyncDateSpellings(t *testing.T) {
+	for _, tc := range []struct{ pubDate, want string }{
+		// Spellings that used to parse to the zero time.
+		{"Sat, 3 Jan 2026 10:00:00 GMT", "2026-01-03T10:00:00Z"},
+		{"Sat, 03 Jan 2026 10:00 GMT", "2026-01-03T10:00:00Z"},
+		{"03 Jan 2026 10:00:00 +0000", "2026-01-03T10:00:00Z"},
+		{"Sat, 03 Jan 26 10:00:00 GMT", "2026-01-03T10:00:00Z"},
+		{"Sat, 3 Jan 2026 10:00:00 UT", "2026-01-03T10:00:00Z"},
+		{"3 Jan 2026 10:00 -0700", "2026-01-03T17:00:00Z"},
+		// Layouts that were already read.
+		{"Sat, 03 Jan 2026 10:00:00 +0000", "2026-01-03T10:00:00Z"},
+		{"Sat, 03 Jan 2026 10:00:00 -0700", "2026-01-03T17:00:00Z"},
+		{"Sat, 03 Jan 2026 10:00:00 GMT", "2026-01-03T10:00:00Z"},
+		{"2026-01-03T10:00:00Z", "2026-01-03T10:00:00Z"},
+		{"2026-01-03T10:00:00.5Z", "2026-01-03T10:00:00.5Z"},
+		{"2026-01-03 10:00:00", "2026-01-03T10:00:00Z"},
+	} {
+		t.Run(tc.pubDate, func(t *testing.T) {
+			connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml", "batch_size": 10})
+			if err != nil {
+				t.Fatalf("NewRSSConnector failed: %v", err)
+			}
+			connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
+				return []byte(`<rss version="2.0"><channel><title>Feed</title><item>
+  <guid>entry</guid><title>Title</title><pubDate>` + tc.pubDate + `</pubDate><description>Body</description>
+</item></channel></rss>`), nil
+			}
+			start := mustTime(t, "2026-01-02T00:00:00Z")
+			session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")})
+			if err != nil {
+				t.Fatalf("OpenSync failed: %v", err)
+			}
+			batch, err := session.NextBatch(context.Background())
+			if err != nil {
+				t.Fatalf("NextBatch failed: %v", err)
+			}
+			if len(batch.Documents) != 1 {
+				t.Fatalf("incremental batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+			}
+			got := batch.Documents[0].UpdatedAt
+			if want := mustTime(t, tc.want); !got.Equal(want) || got.Location() != time.UTC {
+				t.Fatalf("updated at = %v, want %v in UTC", got, want)
+			}
+		})
+	}
+}

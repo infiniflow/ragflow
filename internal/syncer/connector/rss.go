@@ -26,6 +26,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -540,6 +541,11 @@ func parseFeedTime(value string) time.Time {
 		if parsed, err := time.Parse(layout, value); err == nil {
 			return parsed.UTC()
 		}
+	}
+	// RSS dates are RFC 822 dates, which allow a one-digit day and leave out
+	// the day of the week and the seconds.
+	if parsed, err := mail.ParseDate(value); err == nil {
+		return parsed.UTC()
 	}
 	return time.Time{}
 }
