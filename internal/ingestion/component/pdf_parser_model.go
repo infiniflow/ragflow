@@ -95,9 +95,6 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 		}
 	} else {
 		model, err = modelDAO.GetByID(ctx, db, selector)
-		if errorsIsRecordNotFound(err) {
-			return parser.ParseResult{}, false, nil
-		}
 		if err == nil {
 			provider, err = providerDAO.GetByID(ctx, db, model.ProviderID)
 		}

@@ -15,16 +15,21 @@
 package component
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"ragflow/internal/common"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
@@ -241,6 +246,188 @@ func TestTenantPDFParserRejectsInvalidSelection(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// TestTenantPDFParserMissingModelIDIsHandled keeps a well-formed but absent
+// explicit reference terminal, rather than treating it as an unselected parser.
+func TestTenantPDFParserMissingModelIDIsHandled(t *testing.T) {
+	const missingModelID = "7f4e7a5ce0fa4abda74cd99b6a2f89c1"
+	for _, provider := range []string{"SoMark", "OpenDataLoader"} {
+		for _, field := range []string{"parse_method", "layout_recognizer"} {
+			t.Run(provider+"/"+field, func(t *testing.T) {
+				db, _, requests := tenantPDFParserFixture(t, provider)
+				setup := schema.ParserSetup{"parse_method": "deepdoc", "output_format": "json", field: missingModelID}
+				before, err := json.Marshal(setup)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, handled, err := maybeDispatchTenantPDFParser(t.Context(), db, "sample.pdf", []byte("%PDF fixture"),
+					"tenant-1", setup)
+				if !handled {
+					t.Error("missing explicit model was left for another parser")
+				}
+				if !errors.Is(err, gorm.ErrRecordNotFound) || !strings.Contains(err.Error(), "tenant PDF model") {
+					t.Errorf("missing explicit model must return a PDF model lookup error, got %v", err)
+				}
+				if len(requests) != 0 {
+					t.Error("missing explicit model sent a parser request")
+				}
+				after, err := json.Marshal(setup)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(before, after) {
+					t.Error("failed lookup mutated the saved setup")
+				}
+			})
+		}
+	}
+}
+
+// TestTenantPDFParserMissingModelIDInvokeDoesNotFallback exercises the real
+// component with reloaded canvas params. Missing selections must neither reach
+// another parser nor rewrite the persisted or in-memory setup.
+func TestTenantPDFParserMissingModelIDInvokeDoesNotFallback(t *testing.T) {
+	const missingModelID = "7f4e7a5ce0fa4abda74cd99b6a2f89c1"
+	for _, tc := range []struct {
+		field  string
+		method string
+	}{
+		{"parse_method", "deepdoc"},
+		{"layout_recognizer", "deepdoc"},
+		{"layout_recognizer", "somark"},
+		{"layout_recognizer", "opendataloader"},
+	} {
+		t.Run(tc.field+"/"+tc.method, func(t *testing.T) {
+			db, _, requests := tenantPDFParserFixture(t, "SoMark")
+			var httpCalls, genericCalls atomic.Int64
+			fallback := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				httpCalls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"code":1,"message":"unexpected parser fallback"}`))
+			}))
+			t.Cleanup(fallback.Close)
+			t.Setenv(common.EnvSOMarkBaseUrl, fallback.URL+"/environment/somark")
+			t.Setenv(common.EnvSOMarkAPIKey, "environment-key-must-not-be-used")
+			t.Setenv(common.EnvOpenDataLoaderAPIServer, fallback.URL+"/environment/opendataloader")
+			t.Setenv(common.EnvOpenDataLoaderAPIKey, "environment-key-must-not-be-used")
+
+			originalRenderer, originalResolver := pdfVisionPageRenderer, pdfVisionModelResolver
+			originalPromptLoader, originalInvoker := pdfVisionPromptLoader, pdfVisionChatInvoker
+			originalAnalyzerFactory := doctype.NativeDocAnalyzerFactory
+			t.Cleanup(func() {
+				pdfVisionPageRenderer, pdfVisionModelResolver = originalRenderer, originalResolver
+				pdfVisionPromptLoader, pdfVisionChatInvoker = originalPromptLoader, originalInvoker
+				doctype.SetNativeDocAnalyzerFactory(originalAnalyzerFactory)
+			})
+			var renderCalls, resolveCalls, promptCalls, chatCalls int
+			// Let an erroneous VLM detour reach chat without native rendering
+			// or a real model; the sentinel error cannot satisfy the lookup check.
+			pdfVisionPageRenderer = func([]byte, [][]int) ([]pdfVisionPage, error) {
+				renderCalls++
+				return []pdfVisionPage{{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,fixture"}}, nil
+			}
+			pdfVisionModelResolver = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+				resolveCalls++
+				return nil, "unexpected-vlm", nil, nil
+			}
+			pdfVisionPromptLoader = func(string) (string, error) {
+				promptCalls++
+				return "Transcribe page {{ page }}.", nil
+			}
+			pdfVisionChatInvoker = func(context.Context, modelModule.ModelDriver, string, []modelModule.Message, *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+				chatCalls++
+				return nil, errors.New("unexpected generic VLM fallback")
+			}
+			doctype.SetNativeDocAnalyzerFactory(func() (doctype.DocAnalyzer, bool) {
+				genericCalls.Add(1)
+				return nil, false
+			})
+
+			setup := map[string]any{
+				"parse_method": tc.method, "output_format": "json", tc.field: missingModelID,
+				"somark_base_url": fallback.URL + "/setup/somark", "somark_api_key": "setup-key-must-not-be-used",
+				"opendataloader_apiserver": fallback.URL + "/setup/opendataloader",
+				"opendataloader_api_key":   "setup-key-must-not-be-used",
+			}
+			if err := db.AutoMigrate(&entity.UserCanvas{}); err != nil {
+				t.Fatal(err)
+			}
+			canvas := entity.UserCanvas{
+				ID: "parser-canvas", UserID: "tenant-1", CanvasCategory: "dataflow_canvas",
+				DSL: entity.JSONMap{"components": map[string]any{
+					"Parser:fixture": map[string]any{"obj": map[string]any{
+						"component_name": "Parser", "params": map[string]any{"pdf": setup},
+					}},
+				}},
+			}
+			if err := db.Create(&canvas).Error; err != nil {
+				t.Fatal(err)
+			}
+			var reloaded entity.UserCanvas
+			if err := db.Where("id = ?", canvas.ID).Take(&reloaded).Error; err != nil {
+				t.Fatal(err)
+			}
+			saved, err := json.Marshal(reloaded.DSL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			node := reloaded.DSL["components"].(map[string]any)["Parser:fixture"].(map[string]any)
+			params := node["obj"].(map[string]any)["params"].(map[string]any)
+			component, err := NewParserComponent(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parserComponent := component.(*ParserComponent)
+			runtimeSetup, err := json.Marshal(parserComponent.setups)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := component.Invoke(t.Context(), db, map[string]any{
+				"binary": []byte("%PDF synthetic fixture"), "file_type": "pdf",
+				"name": "sample.pdf", "tenant_id": "tenant-1",
+			})
+			if !errors.Is(err, gorm.ErrRecordNotFound) || !strings.Contains(err.Error(), "tenant PDF model") {
+				t.Errorf("Invoke must report the missing PDF model, got %v", err)
+			}
+			if out != nil {
+				t.Error("missing explicit model produced parser output")
+			}
+			if renderCalls != 0 || resolveCalls != 0 || promptCalls != 0 || chatCalls != 0 || genericCalls.Load() != 0 {
+				t.Errorf("missing explicit model entered fallback: render=%d resolve=%d prompt=%d chat=%d generic=%d",
+					renderCalls, resolveCalls, promptCalls, chatCalls, genericCalls.Load())
+			}
+			if httpCalls.Load() != 0 || len(requests) != 0 {
+				t.Errorf("missing explicit model sent HTTP requests: fallback=%d tenant=%d", httpCalls.Load(), len(requests))
+			}
+			after, err := json.Marshal(reloaded.DSL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(saved, after) {
+				t.Error("failed invocation mutated reloaded canvas params")
+			}
+			after, err = json.Marshal(parserComponent.setups)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(runtimeSetup, after) {
+				t.Error("failed invocation mutated the component setup")
+			}
+			var stored entity.UserCanvas
+			if err := db.Where("id = ?", canvas.ID).Take(&stored).Error; err != nil {
+				t.Fatal(err)
+			}
+			after, err = json.Marshal(stored.DSL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(saved, after) {
+				t.Error("failed invocation changed the persisted canvas")
+			}
+		})
 	}
 }
 
