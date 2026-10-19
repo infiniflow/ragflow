@@ -42,7 +42,6 @@ type AdminClient struct {
 	version      string
 	lastSuccess  bool
 	attemptCount int
-	clusterInfo  *utility.ClusterInfo
 }
 
 // NewAdminClient creates a new heartbeat service instance
@@ -116,8 +115,6 @@ func (h *AdminClient) SendHeartbeat() error {
 		Timestamp:   time.Now(),
 		Ext:         nil,
 	}
-
-	message.Ext = h.clusterInfo
 
 	jsonData, err := json.Marshal(message)
 	if err != nil {
