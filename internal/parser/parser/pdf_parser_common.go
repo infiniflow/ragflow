@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -392,6 +393,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 		zoom:               cfg.Zoom,
 		enableMultiColumn:  p.EnableMultiColumn,
 		flattenMediaToText: p.FlattenMediaToText,
+		parseMethod:        p.ParseMethod,
 	}, deepdocpdf.NewParser(cfg).Parse)
 	if res.Err != nil {
 		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
@@ -445,6 +447,58 @@ func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoc
 		}
 	}
 	return nil, fmt.Errorf("deepdoc: no in-process DeepDoc backend available: build with -tags cgo and provide ORT + models")
+}
+
+// analyzerFactories maps a canonical PDF parse method to a factory that builds
+// an out-of-process DocAnalyzer from a base URL. It is empty by default, so the
+// OSS build stays in-process only (see resolveDocAnalyzer). A deployment that
+// serves a parse method over an external inference service registers a factory
+// for it via RegisterAnalyzerFactory; resolveDocAnalyzerForMethod then routes
+// that method to the factory, reading the endpoint from the <METHOD>_URL
+// environment variable — a generic convention, so no per-service name is baked
+// into this package.
+//
+// Registration is expected at process start-up (init), before parsing begins;
+// the map is only read while parsing, so concurrent resolution is safe.
+var analyzerFactories = map[string]func(baseURL string) (deepdoctype.DocAnalyzer, error){}
+
+// RegisterAnalyzerFactory registers an external DocAnalyzer backend for a
+// canonical parse method. The method is normalized (aliases collapse to the
+// canonical token) so registration and resolution agree; registering the same
+// method again replaces the previous factory. It mirrors
+// deepdoctype.SetNativeDocAnalyzerFactory, but for out-of-process backends
+// selected per parse method.
+func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdoctype.DocAnalyzer, error)) {
+	analyzerFactories[normalizePDFParseMethod(method)] = factory
+}
+
+// externalAnalyzerURL derives the endpoint for a registered external method
+// from the generic <METHOD>_URL environment convention (upper-cased canonical
+// token). The value is trimmed and otherwise handed to the factory verbatim —
+// the dispatcher never interprets it as a path.
+func externalAnalyzerURL(method string) string {
+	return strings.TrimSpace(os.Getenv(strings.ToUpper(method) + "_URL"))
+}
+
+// resolveDocAnalyzerForMethod selects the DeepDoc backend for a parse method:
+//   - a method with a registered external factory (RegisterAnalyzerFactory)
+//     routes to that factory with the <METHOD>_URL endpoint, failing loudly
+//     when the URL is unset rather than silently producing empty results;
+//   - every other method (including "") uses the in-process native factory,
+//     preserving the historical in-process-only production path.
+//
+// It takes the in-process factory explicitly (like resolveDocAnalyzer) so the
+// policy is unit-testable without ONNX Runtime, and it never returns a mock.
+func resolveDocAnalyzerForMethod(method string, nativeFactory func() (deepdoctype.DocAnalyzer, bool)) (deepdoctype.DocAnalyzer, error) {
+	m := normalizePDFParseMethod(method)
+	if factory, ok := analyzerFactories[m]; ok {
+		url := externalAnalyzerURL(m)
+		if url == "" {
+			return nil, fmt.Errorf("parser: parse method %q is backed by an external analyzer but %s_URL is not set", m, strings.ToUpper(m))
+		}
+		return factory(url)
+	}
+	return resolveDocAnalyzer(nativeFactory)
 }
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
@@ -1016,7 +1070,7 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
-	analyzer, aerr := deepDocAnalyzerFromEnv()
+	analyzer, aerr := resolveDocAnalyzerForMethod(opts.parseMethod, deepdoctype.NativeDocAnalyzerFactory)
 	if aerr != nil {
 		return ParseResult{Err: aerr}
 	}
