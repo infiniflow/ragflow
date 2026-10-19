@@ -1254,18 +1254,15 @@ def hierarchical_merge(bull, sections, depth):
 
 
 def _compute_overlap_prefix(prev_text, overlapped_percent):
-    """Return (overlap_text, overlap_token_count) carved from the tail of ``prev_text``.
+    """Return the overlap text carved from the tail of ``prev_text``.
 
     ``prev_text`` is treated as if HTML/PDF markup has been stripped, so the carve
     index is computed against the visible characters, matching the existing
     behaviour of ``RAGFlowPdfParser.remove_tag`` callers above.
     """
     visible = re.sub(r"@@[\t0-9.-]+?##", "", prev_text or "")
-    if not visible:
-        return "", 0
     overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
-    overlap_text = visible[overlap_start:]
-    return overlap_text, num_tokens_from_string(overlap_text)
+    return visible[overlap_start:]
 
 
 class MergeStrategy(Enum):
@@ -1445,11 +1442,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
         if i == 0:
             out.append(c)
             continue
-        overlap_text, _ = _compute_overlap_prefix(out[-1], overlapped_percent)
-        if overlap_text:
-            out.append(overlap_text + c)
-        else:
-            out.append(c)
+        out.append(_compute_overlap_prefix(out[-1], overlapped_percent) + c)
     return out
 
 
@@ -1959,6 +1952,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
             merged.append(cks[i])
             if ck_type == "image":
                 image_idxs.append(len(merged) - 1)
+            prev_text_ck = -1
             continue
 
         if prev_text_ck < 0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
@@ -1978,6 +1972,7 @@ def naive_merge_docx(
     delimiter=DEFAULT_DELIMITER,
     table_context_size=0,
     image_context_size=0,
+    overlapped_percent=0,
 ):
     if not sections:
         return [], []
@@ -1992,7 +1987,19 @@ def naive_merge_docx(
         for i in images:
             _add_context(cks, i, image_context_size)
 
-    merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num, has_custom)
+    threshold = chunk_token_num * (100 - overlapped_percent) / 100
+    merged_cks, merged_image_idx = _merge_cks(cks, threshold, has_custom)
+
+    if overlapped_percent > 0 and not has_custom:
+        previous_text = ""
+        for ck in merged_cks:
+            if ck["ck_type"] != "text":
+                previous_text = ""
+                continue
+            if previous_text:
+                ck["text"] = _compute_overlap_prefix(previous_text, overlapped_percent) + ck["text"]
+                ck["tk_nums"] = num_tokens_from_string(ck["text"])
+            previous_text = ck["text"]
 
     return merged_cks, merged_image_idx
 
