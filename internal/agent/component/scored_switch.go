@@ -187,7 +187,7 @@ func (c *ScoredSwitchComponent) Stream(ctx context.Context, db *gorm.DB, inputs 
 // Inputs describes accepted parameters.
 func (c *ScoredSwitchComponent) Inputs() map[string]string {
 	return map[string]string{
-		"model_id":         "Chat model configured for this tenant. Any scoring model that returns a probability per option.",
+		"model_id":         "Scoring model configured for this tenant. It must return a probability for every option.",
 		"query":            "Case text. Defaults to sys.query.",
 		"image":            "Optional image variable. PNG, JPEG, or WebP bytes. Empty sends text only.",
 		"instructions":     "Choice question. Empty uses the default.",
@@ -315,15 +315,6 @@ func mergeScoredSwitchParam(base scoredSwitchParam, inputs map[string]any) (scor
 	}
 	if v, ok := stringFrom(inputs, "request_format"); ok {
 		p.RequestFormat = v
-	}
-	if v, ok := stringFrom(inputs, "driver"); ok {
-		p.Driver = v
-	}
-	if v, ok := stringFrom(inputs, "api_key"); ok {
-		p.APIKey = v
-	}
-	if v, ok := stringFrom(inputs, "base_url"); ok {
-		p.BaseURL = v
 	}
 	if _, ok := inputs["margin_threshold"]; ok {
 		v, ok := floatFrom(inputs, "margin_threshold")

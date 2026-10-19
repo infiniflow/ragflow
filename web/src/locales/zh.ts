@@ -2551,6 +2551,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       scoredSwitchAddOption: '添加选项',
       scoredSwitchEscalate: '移交',
       scoredSwitchOptionMinimum: '至少添加两个选项',
+      scoredSwitchQuestionRequired: '每个附加问题都需要说明',
+      scoredSwitchLevelMinimum: '至少添加两个等级',
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:

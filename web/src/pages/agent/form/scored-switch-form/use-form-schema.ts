@@ -39,14 +39,28 @@ export function useCreateScoredSwitchFormSchema() {
       }),
     tasks: z
       .array(
-        z.object({
-          id: z.string(),
-          type: z.enum(['noul', 'score', 'box']),
-          instructions: z.string().optional(),
-          true_text: z.string().optional(),
-          false_text: z.string().optional(),
-          levels: z.array(z.string()).optional(),
-        }),
+        z
+          .object({
+            id: z.string(),
+            type: z.enum(['noul', 'score', 'box']),
+            instructions: z.string().trim().min(1, t('flow.scoredSwitchQuestionRequired')),
+            true_text: z.string().optional(),
+            false_text: z.string().optional(),
+            levels: z.array(z.string()).optional(),
+          })
+          .superRefine((task, ctx) => {
+            if (task.type !== 'score') {
+              return;
+            }
+            const levels = (task.levels ?? []).map((level) => level.trim()).filter(Boolean);
+            if (levels.length < 2) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: t('flow.scoredSwitchLevelMinimum'),
+                path: ['levels'],
+              });
+            }
+          }),
       )
       .optional(),
   });

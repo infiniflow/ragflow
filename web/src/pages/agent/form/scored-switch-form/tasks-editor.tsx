@@ -4,6 +4,7 @@ import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Plus, Trash2 } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { v4 as uuid } from 'uuid';
 
 export type ScoredSwitchTask = {
   id: string;
@@ -42,7 +43,7 @@ export function ScoredSwitchTasks({
   };
 
   const add = (type: ScoredSwitchTask['type']) => {
-    const id = `${type}_${tasks.length + 1}`;
+    const id = `${type}_${uuid()}`;
     const task: ScoredSwitchTask = {
       id,
       type,
@@ -77,11 +78,11 @@ export function ScoredSwitchTasks({
             rows={2}
             value={task.instructions}
             placeholder={t('scoredSwitchQuestionInstructions')}
-            onChange={(event) =>
+            onChange={(value) =>
               write(
                 tasks.map((item) =>
                   item.id === task.id
-                    ? { ...item, instructions: event.target.value }
+                    ? { ...item, instructions: value ?? '' }
                     : item,
                 ),
               )

@@ -2966,6 +2966,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       scoredSwitchAddOption: 'Add option',
       scoredSwitchEscalate: 'Escalate',
       scoredSwitchOptionMinimum: 'Add at least two options',
+      scoredSwitchQuestionRequired: 'Every extra question needs instructions',
+      scoredSwitchLevelMinimum: 'Add at least two levels',
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
@@ -2982,7 +2984,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generate: 'Generate',
       answer: 'Interact',
       categorize: 'Categorize',
-      scoredSwitch: 'Scored Switch',
+      scoredSwitch: 'Scored switch',
       rewriteQuestion: 'Rewrite',
       rewrite: 'Rewrite',
       begin: 'Begin',

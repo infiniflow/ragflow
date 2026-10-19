@@ -12,6 +12,7 @@ package component
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -283,10 +284,16 @@ func routeScoredOptions(options []scoredOption, scores map[string]float64, polic
 	decision := routeDecision{Margin: margin, Scores: outScores}
 	// Strictly below, with an epsilon so 0.6-0.4 is not treated as under 0.2.
 	if policy.EscalateEnabled && (tie || scoreBelow(margin, policy.MarginThreshold) || scoreBelow(top.score, policy.MinTopScore)) {
+		if len(policy.EscalateTo) == 0 {
+			return routeDecision{}, errors.New("escalate handle is not connected")
+		}
 		decision.Escalated = true
 		decision.Handle = scoredSwitchEscalateHandle
 		decision.Next = append([]string(nil), policy.EscalateTo...)
 		return decision, nil
+	}
+	if len(top.opt.To) == 0 {
+		return routeDecision{}, fmt.Errorf("option %q is not connected", top.opt.Label)
 	}
 	decision.ChosenID = top.opt.ID
 	decision.ChosenLabel = top.opt.Label

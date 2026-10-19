@@ -202,13 +202,31 @@ func TestRouteEnabledMarginEscalates(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !decision.Escalated || decision.Handle != scoredSwitchEscalateHandle || decision.ChosenID != "" || decision.ChosenLabel != "" {
-		t.Fatalf("decision = %+v", decision)
+		t.Fatalf("decision = %#v", decision)
 	}
 	if len(decision.Next) != 1 || decision.Next[0] != "node-esc" {
 		t.Fatalf("next = %#v", decision.Next)
 	}
 	if math.Abs(decision.Margin-0.02) > 1e-9 {
 		t.Fatalf("margin = %v", decision.Margin)
+	}
+}
+
+func TestRouteErrorsWhenTargetMissing(t *testing.T) {
+	_, err := routeScoredOptions(sampleOptions(), map[string]float64{"billing": 0.51, "technical": 0.49}, routePolicy{
+		EscalateEnabled: true,
+		MarginThreshold: defaultMarginThreshold,
+	})
+	if err == nil || !strings.Contains(err.Error(), "escalate") {
+		t.Fatalf("escalate err = %v", err)
+	}
+	disconnected := sampleOptions()
+	disconnected[0].To = nil
+	_, err = routeScoredOptions(disconnected, map[string]float64{"billing": 0.9, "technical": 0.1}, routePolicy{
+		EscalateEnabled: false,
+	})
+	if err == nil || !strings.Contains(err.Error(), "billing") {
+		t.Fatalf("option err = %v", err)
 	}
 }
 

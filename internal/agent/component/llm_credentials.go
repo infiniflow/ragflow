@@ -68,6 +68,13 @@ func resolveTypedModelRef(ctx context.Context, db *gorm.DB, modelType entity.Mod
 		}
 	}
 	apiKey, baseURL = resolveTenantLLMConfig(ctx, db, driver, modelID, apiKey, baseURL, originalModelID)
+	if strings.TrimSpace(baseURL) == "" && strings.TrimSpace(driver) != "" {
+		if provider := dao.GetModelProviderManager().FindProvider(driver); provider != nil {
+			if catalogURL := strings.TrimSpace(provider.URL["default"]); catalogURL != "" {
+				baseURL = catalogURL
+			}
+		}
+	}
 	return modelID, driver, apiKey, baseURL, nil
 }
 
