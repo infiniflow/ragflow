@@ -289,6 +289,7 @@ func (a *AimlapiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 	// The same id is published once per family, so merge by id: the two
 	// chat types would otherwise list one model twice.
 	familyByID := map[string]string{}
+	indexByID := map[string]int{}
 	list := ModelList{Object: "list"}
 	for _, row := range parsed.Data {
 		id := strings.TrimSpace(row.ID)
@@ -296,15 +297,19 @@ func (a *AimlapiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		if id == "" || family == "" {
 			continue
 		}
+		item := ModelListItem{ID: id, ContextLength: row.Info.ContextLength}
 		if prev, seen := familyByID[id]; seen {
-			// a typed row outranks an untyped one for the same id
+			// A typed row outranks an untyped one for the same id: it decides
+			// the family and replaces the retained entry, metadata included.
 			if prev == "infer" && family != "infer" {
 				familyByID[id] = family
+				list.Models[indexByID[id]] = item
 			}
 			continue
 		}
 		familyByID[id] = family
-		list.Models = append(list.Models, ModelListItem{ID: id, ContextLength: row.Info.ContextLength})
+		indexByID[id] = len(list.Models)
+		list.Models = append(list.Models, item)
 	}
 
 	models := ParseListModel(list)

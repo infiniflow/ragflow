@@ -237,9 +237,10 @@ func TestAimlapiListModelsKeepsUntypedRows(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
 				{"id": "vendor/untyped-chat-model", "info": map[string]interface{}{}},
-				// untyped first, then typed as an embedding: the type wins
+				// untyped first (no metadata), then typed as an embedding with a
+				// context length: the typed row wins, metadata included
 				{"id": "vendor/some-embedder", "info": map[string]interface{}{}},
-				{"id": "vendor/some-embedder", "type": "openai/embeddings", "info": map[string]interface{}{}},
+				{"id": "vendor/some-embedder", "type": "openai/embeddings", "info": map[string]interface{}{"contextLength": 8192}},
 				// a known family this driver cannot call is still dropped
 				{"id": "flux/dev", "type": "openai/image-generations", "info": map[string]interface{}{}},
 			},
@@ -260,6 +261,12 @@ func TestAimlapiListModelsKeepsUntypedRows(t *testing.T) {
 	}
 	if got := byName["vendor/some-embedder"].ModelTypes; len(got) != 1 || got[0] != "embedding" {
 		t.Errorf("typed row should decide the family: types=%v", got)
+	}
+	if c := byName["vendor/some-embedder"].ContextLength; c == nil || *c != 8192 {
+		t.Errorf("typed row should replace the untyped entry's metadata: context length=%v, want 8192", c)
+	}
+	if n := len(models); n != 2 {
+		t.Errorf("got %d models, want 2 (the replaced duplicate must not be listed twice)", n)
 	}
 	if _, ok := byName["flux/dev"]; ok {
 		t.Errorf("image-generation row listed")
@@ -299,6 +306,19 @@ func TestAimlapiUnsupportedMethods(t *testing.T) {
 
 // --- attribution -----------------------------------------------------------
 
+// clearAimlapiAttributionEnv unsets both attribution overrides for the length
+// of a test, so assertions about the defaults hold whatever the surrounding
+// environment (a staging shell, a CI job) has exported.
+func clearAimlapiAttributionEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"AIMLAPI_SOURCE", "AIMLAPI_PARTNER_ID"} {
+		if prev, ok := os.LookupEnv(name); ok {
+			_ = os.Unsetenv(name)
+			t.Cleanup(func() { _ = os.Setenv(name, prev) })
+		}
+	}
+}
+
 func attributionOn(rawURL string) http.Header {
 	req, _ := http.NewRequest(http.MethodPost, rawURL, nil)
 	applyAimlapiAttribution(req)
@@ -306,6 +326,7 @@ func attributionOn(rawURL string) http.Header {
 }
 
 func TestAimlapiAttributionForTheGateway(t *testing.T) {
+	clearAimlapiAttributionEnv(t)
 	h := attributionOn("https://api.aimlapi.com/v1/chat/completions")
 	if got := h.Get("X-AIMLAPI-Source"); got != "agent/ragflow" {
 		t.Errorf("X-AIMLAPI-Source=%q", got)
@@ -363,6 +384,7 @@ func TestAimlapiAttributionSourceOverride(t *testing.T) {
 // An override set to an empty value turns its header off, as in #17491
 // (os.environ.get returns the empty string, which the helper then omits).
 func TestAimlapiAttributionEmptyOverrideOmitsTheHeader(t *testing.T) {
+	clearAimlapiAttributionEnv(t)
 	t.Setenv("AIMLAPI_PARTNER_ID", "")
 	h := attributionOn("https://api.aimlapi.com/v1/models")
 	if _, present := h["X-Aimlapi-Partner-Id"]; present {
@@ -381,12 +403,7 @@ func TestAimlapiAttributionEmptyOverrideOmitsTheHeader(t *testing.T) {
 
 // Unset is not the same as empty: with neither variable set, both defaults go out.
 func TestAimlapiAttributionDefaultsWhenUnset(t *testing.T) {
-	for _, name := range []string{"AIMLAPI_SOURCE", "AIMLAPI_PARTNER_ID"} {
-		if prev, ok := os.LookupEnv(name); ok {
-			os.Unsetenv(name)
-			t.Cleanup(func() { os.Setenv(name, prev) })
-		}
-	}
+	clearAimlapiAttributionEnv(t)
 	h := attributionOn("https://api.aimlapi.com/v1/models")
 	if h.Get("X-AIMLAPI-Source") != "agent/ragflow" || h.Get("X-AIMLAPI-Partner-ID") != aimlapiPartnerID {
 		t.Errorf("defaults not sent: source=%q partner=%q", h.Get("X-AIMLAPI-Source"), h.Get("X-AIMLAPI-Partner-ID"))
@@ -425,6 +442,7 @@ func (rt *aimlapiRecordingTransport) RoundTrip(req *http.Request) (*http.Respons
 // driver at the real gateway URL through a recording transport, proving the
 // hook is wired through the shared request helpers rather than only callable.
 func TestAimlapiAttributionOnEveryRequestPath(t *testing.T) {
+	clearAimlapiAttributionEnv(t)
 	rt := &aimlapiRecordingTransport{headers: map[string]http.Header{}}
 	m := newAimlapiForTest("https://api.aimlapi.com")
 	m.baseModel.httpClient = &http.Client{Transport: rt}
