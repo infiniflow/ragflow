@@ -9,14 +9,26 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { memo } from 'react';
+import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { INextOperatorForm } from '../../interface';
+import { initialRewriteQuestionValues } from '../../constant';
 import { useOwnerTenantId } from '../../context';
+import { useFormValues } from '../../hooks/use-form-values';
+import { useWatchFormChange } from '../../hooks/use-watch-form-change';
+import { INextOperatorForm } from '../../interface';
 import { GoogleLanguageOptions } from '../../options';
 
-const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
+const RewriteQuestionForm = ({ node }: INextOperatorForm) => {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
+  const defaultValues = useFormValues(initialRewriteQuestionValues, node);
+
+  const form = useForm({
+    defaultValues,
+  });
+
+  useWatchFormChange(node?.id, form);
 
   return (
     <Form {...form}>
@@ -58,4 +70,4 @@ const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
   );
 };
 
-export default RewriteQuestionForm;
+export default memo(RewriteQuestionForm);
