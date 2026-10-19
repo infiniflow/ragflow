@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package utility
+package mcpclient
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 )
 
@@ -38,6 +39,11 @@ type CallOptions struct {
 	Arguments  json.RawMessage // JSON-encoded argument object
 	Timeout    time.Duration
 	HTTPClient *http.Client
+	// AllowPrivateHosts relaxes the public-routability requirement so
+	// self-hosted MCP servers on private/docker networks work. Callers source
+	// it from the deployment flag (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS); scheme
+	// validation, DNS resolution, and IP pinning still apply.
+	AllowPrivateHosts bool
 }
 
 // CallResult is the parsed tools/call response. The MCP spec
@@ -72,12 +78,12 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Second
 	}
-	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL, opts.AllowPrivateHosts)
 	if err != nil {
 		return nil, err
 	}
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
 	}
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {
@@ -95,7 +101,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	case TransportSSE:
 		result, err := requestSSE(connectCtx, opts.URL, headers, opts.HTTPClient, "tools/call", map[string]any{
 			"name": opts.ToolName, "arguments": opts.Arguments,
-		})
+		}, opts.AllowPrivateHosts)
 		if err != nil {
 			return nil, err
 		}

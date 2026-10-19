@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package utility mcp client is a minimal Model Context Protocol (MCP) client used by
+// Package mcpclient is a minimal Model Context Protocol (MCP) client used by
 // the Go MCP-management endpoints to list a remote server's tools during
 // import and the "test" endpoint. It implements just enough of the spec to
 // negotiate a session and call tools/list:
@@ -28,7 +28,7 @@
 //
 // The full Python implementation lives in common/mcp_tool_call_conn.py; this
 // is a reduced port focused on tools/list discovery.
-package utility
+package mcpclient
 
 import (
 	"bufio"
@@ -40,6 +40,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/utility"
 	"strings"
 	"sync"
 	"time"
@@ -70,14 +71,19 @@ type Tool struct {
 
 // FetchOptions controls a single tools/list discovery call.
 type FetchOptions struct {
-	URL         string
-	ServerType  string
-	Headers     map[string]string
-	Variables   map[string]string
-	Timeout     time.Duration
-	HTTPClient  *http.Client
-	pinHostname string
-	pinIP       string
+	URL        string
+	ServerType string
+	Headers    map[string]string
+	Variables  map[string]string
+	Timeout    time.Duration
+	HTTPClient *http.Client
+	// AllowPrivateHosts relaxes the public-routability requirement so
+	// self-hosted MCP servers on private/docker networks work. Callers source
+	// it from the deployment flag (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS); scheme
+	// validation, DNS resolution, and IP pinning still apply.
+	AllowPrivateHosts bool
+	pinHostname       string
+	pinIP             string
 }
 
 // FetchTools opens a connection to the MCP server described by opts and
@@ -92,14 +98,14 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 		opts.Timeout = 10 * time.Second
 	}
 
-	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL, opts.AllowPrivateHosts)
 	if err != nil {
 		return nil, err
 	}
 	opts.pinHostname = hostname
 	opts.pinIP = resolvedIP
 	if opts.HTTPClient == nil {
-		opts.HTTPClient = PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
 	}
 
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
@@ -114,7 +120,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 	case TransportStreamableHTTP:
 		return fetchToolsStreamableHTTP(connectCtx, opts.URL, headers, opts.HTTPClient, opts.Timeout)
 	case TransportSSE:
-		return fetchToolsSSE(connectCtx, opts.URL, headers, opts.HTTPClient)
+		return fetchToolsSSE(connectCtx, opts.URL, headers, opts.HTTPClient, opts.AllowPrivateHosts)
 	default:
 		return nil, fmt.Errorf("unsupported MCP server type: %s", opts.ServerType)
 	}
@@ -304,7 +310,7 @@ func terminateStreamableSessionBestEffort(ctx context.Context, client *http.Clie
 		return http.ErrUseLastResponse
 	}
 
-	BestEffort("terminate MCP streamable HTTP session", func() error {
+	utility.BestEffort("terminate MCP streamable HTTP session", func() error {
 		req, err := http.NewRequestWithContext(cleanupCtx, http.MethodDelete, endpoint, nil)
 		if err != nil {
 			return fmt.Errorf("build MCP session termination request: %w", err)
@@ -405,8 +411,8 @@ func streamableSend(ctx context.Context, client *http.Client, endpoint, sessionI
 
 // ---------- SSE transport ----------
 
-func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client) ([]Tool, error) {
-	result, err := requestSSE(ctx, endpoint, headers, client, "tools/list", nil)
+func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, allowPrivateHosts bool) ([]Tool, error) {
+	result, err := requestSSE(ctx, endpoint, headers, client, "tools/list", nil, allowPrivateHosts)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +420,7 @@ func fetchToolsSSE(ctx context.Context, endpoint string, headers map[string]stri
 }
 
 // requestSSE initializes a session and performs one JSON-RPC request.
-func requestSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, method string, params any) (json.RawMessage, error) {
+func requestSSE(ctx context.Context, endpoint string, headers map[string]string, client *http.Client, method string, params any, allowPrivateHosts bool) (json.RawMessage, error) {
 	streamReq, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build SSE request: %w", err)
@@ -455,11 +461,11 @@ func requestSSE(ctx context.Context, endpoint string, headers map[string]string,
 	// Private targets are accepted only when they match the configured
 	// SSE endpoint host, preventing unrelated internal redirection.
 	postClient := client
-	if postHost, postIP, vErr := AssertMCPURLSafeSameOrigin(postURL, endpoint); vErr != nil {
+	if postHost, postIP, vErr := AssertMCPURLSafeSameOrigin(postURL, endpoint, allowPrivateHosts); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
-		if u.Hostname() != originalHost(endpoint) {
-			postClient = PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
+		if !strings.EqualFold(u.Hostname(), originalHost(endpoint)) {
+			postClient = utility.PinnedHTTPClient(postHost, postIP, sseTimeoutFrom(ctx))
 		}
 	}
 

@@ -30,9 +30,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
-	"ragflow/internal/utility"
+	"ragflow/internal/server"
 )
 
 const (
@@ -198,12 +199,13 @@ func fetchMCPTools(ctx context.Context, url, serverType string, headers, variabl
 	}
 	timeout := time.Duration(timeoutSeconds * float64(time.Second))
 
-	tools, err := utility.FetchTools(ctx, utility.FetchOptions{
-		URL:        url,
-		ServerType: serverType,
-		Headers:    jsonMapHeaderValues(headers),
-		Variables:  jsonMapStringValues(variables),
-		Timeout:    timeout,
+	tools, err := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+		URL:               url,
+		ServerType:        serverType,
+		Headers:           jsonMapHeaderValues(headers),
+		Variables:         jsonMapStringValues(variables),
+		Timeout:           timeout,
+		AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 	})
 	if err != nil {
 		return nil, err
@@ -760,12 +762,13 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 		stringVars := jsonMapStringValues(entity.JSONMap(variables))
 
 		mcpCtx, cancel := context.WithTimeout(ctx, timeout)
-		tools, fetchErr := utility.FetchTools(mcpCtx, utility.FetchOptions{
-			URL:        url,
-			ServerType: stype,
-			Headers:    headers,
-			Variables:  stringVars,
-			Timeout:    timeout,
+		tools, fetchErr := mcpclient.FetchTools(mcpCtx, mcpclient.FetchOptions{
+			URL:               url,
+			ServerType:        stype,
+			Headers:           headers,
+			Variables:         stringVars,
+			Timeout:           timeout,
+			AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 		})
 		cancel()
 		if fetchErr != nil {
@@ -853,7 +856,7 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 	// ErrMCPInvalidURL data errors instead of being swallowed inside the
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
-	if _, _, err := utility.AssertMCPURLSafe(req.URL); err != nil {
+	if _, _, err := mcpclient.AssertMCPURLSafe(req.URL, server.MCPAllowPrivateHosts()); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 
@@ -873,12 +876,13 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 
 	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	tools, err := utility.FetchTools(mcpCtx, utility.FetchOptions{
-		URL:        req.URL,
-		ServerType: req.ServerType,
-		Headers:    headers,
-		Variables:  vars,
-		Timeout:    timeout,
+	tools, err := mcpclient.FetchTools(mcpCtx, mcpclient.FetchOptions{
+		URL:               req.URL,
+		ServerType:        req.ServerType,
+		Headers:           headers,
+		Variables:         vars,
+		Timeout:           timeout,
+		AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: Test MCP error (id=%s): %w", ErrMCPTestFailed, mcpID, err)
@@ -902,7 +906,7 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 	return out, nil
 }
 
-func toolsAsMap(tools []utility.Tool) map[string]interface{} {
+func toolsAsMap(tools []mcpclient.Tool) map[string]interface{} {
 	m := map[string]interface{}{}
 	for _, t := range tools {
 		if t.Raw != nil {
