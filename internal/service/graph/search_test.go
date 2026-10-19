@@ -323,7 +323,7 @@ func TestNhopEntityNames_InvalidJSON(t *testing.T) {
 // --- Mock engine ---
 
 type mockKGEngine struct {
-	engine.DocEngine
+	engine.Searcher
 	searchFunc func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
 }
 

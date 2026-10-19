@@ -30,7 +30,7 @@ import (
 )
 
 type mockRetrievalEngine struct {
-	engine.DocEngine
+	engine.Searcher
 	results map[string]*types.SearchResult
 }
 
@@ -280,7 +280,7 @@ func TestEntitySearch_MultiEntities(t *testing.T) {
 
 // searchCaptureEngine is a minimal mock for testing search requests.
 type searchCaptureEngine struct {
-	engine.DocEngine
+	engine.Searcher
 	searchFn func(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
 }
 
