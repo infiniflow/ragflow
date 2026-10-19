@@ -334,6 +334,16 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
+          # Disable build attestations (provenance/SBOM). build-push-action v6
+          # otherwise attaches an application/vnd.docker.attestation.manifest.v1+json
+          # artifact to the image. That artifact is not supported by some registries
+          # (e.g. Alibaba Cloud personal OCR), and skopeo sync then fails with
+          # "unsupported image-specific operation on artifact with type
+          # application/vnd.docker.attestation.manifest.v1+json". Disabling it keeps
+          # the pushed image a clean manifest so the multi-arch index merged below
+          # contains only amd64 + arm64 image manifests.
+          provenance: false
+          sbom: false
           # Use a Go proxy that is reliable from GitHub-hosted runners; the
           # Dockerfile default (goproxy.cn) is flaky here (HTTP/2 GOAWAY).
           build-args: |
