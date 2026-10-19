@@ -4323,9 +4323,8 @@ func jsonMarshal(v interface{}) ([]byte, error) {
 	return json.Marshal(v)
 }
 
-// kbIDStrings extracts the string KB IDs from a slice of Knowledgebase.
-// Returns nil if no KB has a non-empty ID. Mirrors Python's `kb_ids`
-// iteration in dialog_service.py:651-660.
+// kbTenantIDStrings returns the deduplicated tenant IDs of kbs. Returns nil
+// if no KB carries a non-empty tenant ID.
 func kbTenantIDStrings(kbs []*entity.Knowledgebase) []string {
 	if len(kbs) == 0 {
 		return nil
@@ -4496,6 +4495,8 @@ func chatConfigFloat(value interface{}) (float64, bool) {
 	}
 }
 
+// kbIDStrings extracts the string KB IDs from a slice of Knowledgebase.
+// Returns nil if no KB has a non-empty ID.
 func kbIDStrings(kbs []*entity.Knowledgebase) []string {
 	if len(kbs) == 0 {
 		return nil
