@@ -809,8 +809,8 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 
 func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
-		"chunk_token_size": 4,
-		"delimiters":       []string{"`问：`"},
+		"chunk_token_size": 512,
+		"delimiters":       []string{"\n", "`问：`"},
 	})
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
@@ -834,11 +834,25 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 	if len(texts) != 2 {
 		t.Fatalf("texts = %q, want two record chunks", texts)
 	}
-	if !strings.Contains(texts[0], "问：first question") || !strings.Contains(texts[0], "名　　称：item one") {
+	if !strings.Contains(texts[0], "问：first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
 		t.Fatalf("first record = %q", texts[0])
 	}
 	if !strings.Contains(texts[1], "问：second question") || !strings.Contains(texts[1], "答：second answer") {
 		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
+func TestGroupDOCXUnitsByRecordBoundaryInactiveWithoutBoundary(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "plain paragraph one", DocType: "text", CKType: "text"},
+		{Text: "plain paragraph two", DocType: "text", CKType: "text"},
+	}
+	got, grouped := groupDOCXUnitsByRecordBoundary(units, []string{"问："})
+	if grouped {
+		t.Fatal("grouping should stay inactive without a record boundary")
+	}
+	if !reflect.DeepEqual(got, units) {
+		t.Fatalf("units = %#v, want unchanged %#v", got, units)
 	}
 }
 

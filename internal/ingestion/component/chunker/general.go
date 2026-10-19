@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -389,10 +390,17 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	recordPrefixes := chunk.CustomDelimiterPrefixes(c.param.Delimiters)
+	recordGrouped := false
 	if len(recordPrefixes) > 0 {
-		units = groupDOCXUnitsByRecordBoundary(units, recordPrefixes)
+		units, recordGrouped = groupDOCXUnitsByRecordBoundary(units, recordPrefixes)
 	}
-	units = splitGeneralUnitsPreservingRecordPrefix(units, primaryPattern, recordPrefixes)
+	splitPattern := primaryPattern
+	if recordGrouped {
+		// Grouped records join paragraphs with "\n"; bare "\n" in the default
+		// delimiter list must not re-split them (#20496).
+		splitPattern = chunk.CompileDelimiterListPattern(c.param.Delimiters)
+	}
+	units = splitGeneralUnitsPreservingRecordPrefix(units, splitPattern, recordPrefixes)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "\n")
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "\n")
@@ -408,12 +416,13 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 // DOCX upstream emits one paragraph per unit, so a custom delimiter that only
 // appears at the start of each logical record must group paragraphs rather
 // than split within a single paragraph (#20496).
-func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) []schema.ChunkDoc {
+func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) ([]schema.ChunkDoc, bool) {
 	if len(recordPrefixes) == 0 {
-		return units
+		return units, false
 	}
 	grouped := make([]schema.ChunkDoc, 0, len(units))
 	var current *schema.ChunkDoc
+	sawBoundary := false
 	flush := func() {
 		if current == nil {
 			return
@@ -437,8 +446,14 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		text.DocType = "text"
 		text.CKType = "text"
 		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
+			sawBoundary = true
 			flush()
 			current = &text
+			continue
+		}
+		if !sawBoundary {
+			flush()
+			grouped = append(grouped, text)
 			continue
 		}
 		if current == nil {
@@ -448,11 +463,14 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		mergeGeneralChunk(current, text, "\n")
 	}
 	flush()
-	return grouped
+	if !sawBoundary {
+		return units, false
+	}
+	return grouped, true
 }
 
 func docxTextStartsRecordBoundary(text string, recordPrefixes []string) bool {
-	trimmed := strings.TrimSpace(text)
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, prefix := range recordPrefixes {
 		if strings.HasPrefix(trimmed, prefix) {
 			return true
@@ -1262,7 +1280,7 @@ func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest strin
 	if len(prefixes) == 0 {
 		return "", text
 	}
-	trimmed := strings.TrimLeft(text, " \t")
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	leadingWS := text[:len(text)-len(trimmed)]
 	for _, p := range prefixes {
 		if p != "" && strings.HasPrefix(trimmed, p) {
