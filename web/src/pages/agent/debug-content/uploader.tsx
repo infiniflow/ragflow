@@ -24,6 +24,10 @@ type FileUploadDirectUploadProps = {
   maxFiles?: number;
 };
 
+/**
+ * Uses value as initial upload metadata and emits it with successful current selections.
+ * Each selection owns a record so removed or replaced uploads cannot change the field.
+ */
 export function FileUploadDirectUpload({
   value,
   onChange,
@@ -39,6 +43,7 @@ export function FileUploadDirectUpload({
 
   const { uploadAgentFile } = useUploadAgentFile();
 
+  /** Reports initial metadata plus successful current selections in selection order. */
   const notifyUploadedFilesChange = React.useCallback(() => {
     onChange([
       ...initialUploadedFilesRef.current,
@@ -48,6 +53,7 @@ export function FileUploadDirectUpload({
     ]);
   }, [onChange]);
 
+  /** Uploads concurrently, ignoring callbacks whose selection record is no longer current. */
   const onUpload: NonNullable<FileUploadProps['onUpload']> = React.useCallback(
     async (files, { onSuccess, onError }) => {
       try {
@@ -93,6 +99,7 @@ export function FileUploadDirectUpload({
     });
   }, []);
 
+  /** Reconciles File identities; deleting a record invalidates its pending callbacks. */
   const handleFilesChange = React.useCallback(
     (newFiles: File[]) => {
       let removedFiles = false;

@@ -32,6 +32,7 @@ type UploadResponse = { code: number; data?: UploadedFile };
 
 const UploadAgentFile = jest.fn<Promise<UploadResponse>, [File[]]>();
 
+/** Creates a controllable response so tests choose upload completion order without timers. */
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
@@ -42,6 +43,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** Renders the real uploader/store with per-File requests and observes emitted form values. */
 function setup(
   files: File[],
   options: { maxFiles?: number; value?: UploadedFile[] } = {},
@@ -61,6 +63,7 @@ function setup(
   const input =
     view.container.querySelector<HTMLInputElement>('input[type="file"]')!;
 
+  /** Selects files through the input and waits for the expected upload requests to start. */
   async function select(selectedFiles: File[], expectedUploads: number) {
     fireEvent.change(input, { target: { files: selectedFiles } });
     await waitFor(() =>
@@ -68,12 +71,14 @@ function setup(
     );
   }
 
+  /** Resolves this File's current request and flushes the resulting React updates. */
   async function complete(file: File, data: UploadedFile) {
     await act(async () => {
       requests.get(file)!.resolve({ code: 0, data });
     });
   }
 
+  /** Clicks an item's real delete control to exercise the store's selection callback. */
   function remove(index: number) {
     const item = view.getAllByRole('listitem')[index];
     fireEvent.click(
