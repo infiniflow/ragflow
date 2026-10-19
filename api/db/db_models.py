@@ -21,19 +21,12 @@ import operator
 import os
 import sys
 import time
-import typing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
 
-from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from psycopg2 import sql as psycopg2_sql
 from peewee import (
-    fn,
-    InterfaceError,
-    OperationalError,
-    ProgrammingError,
     BigIntegerField,
     BooleanField,
     CharField,
@@ -42,13 +35,20 @@ from peewee import (
     Field,
     FloatField,
     IntegerField,
+    IntegrityError,
+    InterfaceError,
     Metadata,
     Model,
     ModelInsert,
+    OperationalError,
+    ProgrammingError,
     TextField,
+    fn,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+from psycopg2 import sql as psycopg2_sql
+from quart_auth import AuthUser
 
 from api import utils
 from api.db import SerializedType
@@ -59,17 +59,17 @@ from api.db.gaussdb_error_utils import (
     is_undefined_object_error,
     sqlstate_from_exception,
 )
-from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
-
-from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
-from common.decorator import singleton
-from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
+from api.utils.json_encode import json_dumps, json_loads
 from common import settings
-
+from common.constants import MAXIMUM_TASK_PAGE_NUMBER, ParserType
+from common.decorator import singleton
+from common.time_utils import current_timestamp, date_string_to_timestamp, timestamp_to_date
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
+
+logger = logging.getLogger(__name__)
 GAUSSDB_COMPATIBLE_DATABASE_TYPES = {"GAUSSDB"}
 
 
@@ -211,7 +211,7 @@ class SerializedField(LongTextField):
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
 
-def is_continuous_field(cls: typing.Type) -> bool:
+def is_continuous_field(cls: type) -> bool:
     if cls in CONTINUOUS_FIELD_TYPE:
         return True
     for p in cls.__bases__:
@@ -220,8 +220,7 @@ def is_continuous_field(cls: typing.Type) -> bool:
         elif p is not Field and p is not object:
             if is_continuous_field(p):
                 return True
-    else:
-        return False
+    return False
 
 
 def auto_date_timestamp_field():
@@ -233,7 +232,7 @@ def auto_date_timestamp_db_field():
 
 
 def remove_field_name_prefix(field_name):
-    return field_name[2:] if field_name.startswith("f_") else field_name
+    return field_name.removeprefix("f_")
 
 
 class BaseModel(Model):
@@ -341,7 +340,7 @@ class BaseModel(Model):
 
 class JsonSerializedField(SerializedField):
     def __init__(self, object_hook=utils.from_dict_hook, object_pairs_hook=None, **kwargs):
-        super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
+        super().__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
 class PooledConnectionRetryMixin:
@@ -872,10 +871,10 @@ def with_retry(max_retries=3, retry_delay=1.0):
 
                     if retry < max_retries - 1:
                         current_delay = retry_delay * (2**retry)
-                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
+                        logging.warning(f"{func_name} {lock_name} failed: {e!s}, retrying ({retry + 1}/{max_retries})")
                         time.sleep(current_delay)
                     else:
-                        logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
+                        logging.error(f"{func_name} {lock_name} failed after all attempts: {e!s}")
 
             if last_exception:
                 raise last_exception
@@ -1763,7 +1762,7 @@ class DateTimeTzField(CharField):
             if value.tzinfo is not None:
                 return value.isoformat()
             else:
-                return value.replace(tzinfo=timezone.utc).isoformat()
+                return value.replace(tzinfo=UTC).isoformat()
         return value
 
     def python_value(self, value: str | datetime | None) -> datetime | None:
@@ -1773,7 +1772,7 @@ class DateTimeTzField(CharField):
             # The column is declared VARCHAR, but deployments upgraded from
             # older schemas may hold it as native DATETIME, in which case the
             # driver returns datetime objects instead of ISO strings.
-            return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         try:
             dt = datetime.fromisoformat(value)
         except ValueError:
@@ -1783,7 +1782,7 @@ class DateTimeTzField(CharField):
             # IndexError: list index out of range.
             logging.warning("DateTimeTzField: unparseable value %r, falling back to None", value)
             return None
-        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 class SyncLogs(DataBaseModel):
@@ -1980,7 +1979,6 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
 
     except Exception as ex:
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
-        pass
 
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
@@ -1988,7 +1986,6 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
-        pass
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2531,6 +2528,168 @@ def migrate_db():
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
     ensure_model_indexes(migrator)
+    migrate_document_meta_fields()
+
+
+@DB.connection_context()
+def _read_migration_marker(name: str) -> str:
+    """Read one migration marker out of system_settings, "" when it is absent.
+
+    Markers live in system_settings rather than in a table of their own because
+    that is where the rest of the migration tooling already keeps them:
+    tools/scripts/mysql_migration.py owns "mysql_migration.database.version" and
+    the Go server reads and writes the same key (internal/dao/migration_version.go)
+    so that either runtime can skip work the other has already done. A migration
+    marker added anywhere else would be invisible to the other runtime, which has
+    no model for it and so would never create the table.
+
+    That shared key is not reused for the migrations here. It records how far the
+    offline SQL scripts have brought the database and is advanced by
+    tools/scripts/run_migrations.sh, which docker/launch_backend_service.sh runs
+    before this code gets a chance to do anything -- it stamps v0.27.2 at
+    container start, so a server-side migration that skipped on "current >=
+    target" would never run at all. Each migration here therefore keeps a marker
+    of its own, which nothing else ever writes.
+    """
+    try:
+        row = SystemSettings.get_or_none(SystemSettings.name == name)
+    except Exception:
+        logger.exception("could not read migration marker %s", name)
+        return ""
+    return row.value if row else ""
+
+
+@DB.connection_context()
+def _record_migration_marker(name: str, value: str):
+    """Upsert one migration marker in system_settings.
+
+    Written as update-then-insert rather than a backend-specific upsert so it
+    behaves the same on MySQL, PostgreSQL and GaussDB. The timestamp columns are
+    filled by BaseModel, which stamps create_time on insert and update_time on
+    both, and derives the matching *_date columns from them.
+    """
+    changed = SystemSettings.update(value=value).where(SystemSettings.name == name).execute()
+    if changed:
+        return
+    try:
+        SystemSettings.insert(name=name, source="migration", data_type="string", value=value).execute()
+    except IntegrityError:
+        # Unreachable through today's callers: migrate_document_meta_fields is
+        # called inside init_database_tables, which holds its cross-process
+        # advisory lock for the duration, so a second process reads the marker
+        # first and stops before ever reaching the insert. Kept because this is
+        # a generic upsert -- a caller outside that lock would otherwise turn a
+        # duplicate into a startup failure. The value to write is the same one
+        # the winner inserted, so overwriting it changes nothing.
+        SystemSettings.update(value=value).where(SystemSettings.name == name).execute()
+
+
+def _backfill_enabled() -> bool:
+    """Whether the automatic startup backfill is switched on.
+
+    RAGFLOW_DOC_META_BACKFILL_ENABLED=0 defers the copy on deployments that still
+    run pre-v0.24 Python workers: those keep ``document.meta_fields`` as their
+    live source of truth, and an operator may prefer to hold the copy back until
+    the workers are retired. Nothing is recorded while it is off, so unsetting the
+    variable resumes from the same cursor. The CLI script ignores it on purpose --
+    invoking that by hand is explicit intent.
+    """
+    return os.environ.get("RAGFLOW_DOC_META_BACKFILL_ENABLED", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+        "",
+    )
+
+
+def migrate_document_meta_fields():
+    """Copy pre-v0.24 document metadata out of the orphaned MySQL column.
+
+    #12826 moved metadata into the document engine without migrating the data; the
+    orphaned column survives because Peewee never drops columns.
+
+    Runs once per database, under the ``init_database_tables`` lock, then records a
+    marker in system_settings. See _backfill_enabled() for the opt-out, which
+    deliberately records nothing so the copy resumes later. The marker has no
+    version -- the legacy column is a frozen snapshot and the copies land in a
+    store the write path maintains, so a repeat changes nothing, and only its
+    absence triggers another, which a failed write guarantees. Whether it runs
+    follows the marker, never whether the column holds data: where MySQL is still
+    the live source, a populated column is the expected state.
+    """
+    # Checked before the import so that switching the copy off costs nothing at
+    # all, rather than pulling the module in only to return unused.
+    if not _backfill_enabled():
+        logger.info("document metadata backfill: disabled by RAGFLOW_DOC_META_BACKFILL_ENABLED, marker left untouched")
+        return
+
+    # Imported lazily: this module is imported by init_database_tables, and the
+    # backfill module must not be pulled in while the models are still loading.
+    from api.db.document_meta_backfill import (
+        MIGRATION_DONE,
+        MIGRATION_NAME,
+        backfill_document_meta_fields,
+        count_candidates,
+        has_legacy_column,
+    )
+
+    done_key = MIGRATION_NAME
+    if _read_migration_marker(done_key):
+        # Silent here would leave the log unable to tell "already done" apart from
+        # "never considered", which is the first question anyone asks when the
+        # copy has not happened.
+        logger.info("document metadata backfill: already done, skipping")
+        return
+
+    # init_data.py runs init_database_tables without ever calling
+    # settings.init_settings(), so it has no document engine client. The API
+    # server does, and it is the one that should do the work.
+    if settings.docStoreConn is None:
+        logger.info("document metadata backfill: document engine client is not initialized in this process, skipping")
+        return
+
+    try:
+        if not has_legacy_column(DB):
+            # Created on v0.24.0 or later: the column never existed and never
+            # will, so record it as done and stop checking. Say so out loud: the
+            # probe failed, so the log holds an "Unknown column" error that reads
+            # like a failure without this line to explain it.
+            logger.info("document metadata backfill: document table has no meta_fields column, nothing to backfill; recording as done")
+            _record_migration_marker(done_key, MIGRATION_DONE)
+            return
+    except Exception:
+        logger.exception("document metadata backfill: could not inspect the document table")
+        return
+
+    logger.info(
+        "document metadata backfill: starting, %d documents carry a legacy value",
+        count_candidates(DB),
+    )
+    try:
+        stats = backfill_document_meta_fields(DB, settings.docStoreConn, on_conflict="skip", execute=True)
+    except Exception:
+        # No progress marker is written on failure, so the next start re-runs
+        # the scan from the beginning. on_conflict="skip" makes that idempotent.
+        logger.exception("document metadata backfill: failed, will retry on next start")
+        return
+
+    if stats["failed"]:
+        # Nothing is deleted along the way and on_conflict="skip" makes the copy
+        # idempotent, so a run that wrote nothing can simply be repeated. Marking
+        # it done here would turn a backend that rejects every write into a silent
+        # one-off no-op, because the scan itself still reaches the end and reports
+        # completion.
+        logger.error("document metadata backfill: %d documents could not be written, will retry on next start", stats["failed"])
+        return
+
+    try:
+        _record_migration_marker(done_key, MIGRATION_DONE)
+        logger.info("document metadata backfill: done, %d documents written", stats["written"])
+    except Exception:
+        # The copy is idempotent, so an unrecorded completion costs one more pass
+        # instead of duplicating metadata. It must never fail startup.
+        logger.exception("document metadata backfill: could not record its progress marker")
 
 
 def migrate_model_type_names():
@@ -2552,7 +2711,7 @@ def migrate_model_type_names():
         for old_name, new_name in RENAME_MAP.items():
             try:
                 cursor = DB.execute_sql(
-                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    f"UPDATE {table} SET model_type = %s WHERE model_type = %s",
                     (new_name, old_name),
                 )
                 if cursor.rowcount:
