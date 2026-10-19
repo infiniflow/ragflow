@@ -381,7 +381,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
 
-	if contains(c.param.SearchMethod, "full_text") {
+	if slices.Contains(c.param.SearchMethod, "full_text") {
 		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
@@ -1042,11 +1042,11 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 // This is a deliberate, go_intentional divergence. Do NOT "align" this to a
 // path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
-	return contains(searchMethods, "embedding") && kbID != ""
+	return slices.Contains(searchMethods, "embedding") && kbID != ""
 }
 
 func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string, kbID string) error {
-	needFullText := contains(searchMethods, "full_text")
+	needFullText := slices.Contains(searchMethods, "full_text")
 	needEmbedding := shouldHaveEmbedding(searchMethods, kbID)
 	if !needFullText && !needEmbedding {
 		return nil
@@ -1128,10 +1128,6 @@ func cloneInputs(m map[string]any) map[string]any {
 		cp[k] = v
 	}
 	return cp
-}
-
-func contains(s []string, v string) bool {
-	return slices.Contains(s, v)
 }
 
 func intPtr(v int) *int { return &v }

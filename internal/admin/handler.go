@@ -119,7 +119,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, "", secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -821,8 +821,7 @@ func writeSandboxError(c *gin.Context, err error) {
 	common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware authenticates system administrators for admin routes.
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -834,14 +833,15 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(ctx, token)
+		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
-		if !*user.IsSuperuser {
+		user := identity.User
+		if user.IsSuperuser == nil || !*user.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			c.Abort()
 			return
@@ -849,6 +849,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
+		c.Set("tenant_id", identity.TenantID)
 		c.Set("email", user.Email)
 		c.Next()
 	}

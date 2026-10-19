@@ -76,9 +76,8 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: OCR, or the document text of an SVG, followed by optional
-// IMAGE2TEXT enhancement.
-
+// maybeDispatchImage extracts local or selected-model OCR (native text for SVG),
+// preserves the original image and optionally appends global vision enhancement.
 func maybeDispatchImage(
 	ctx context.Context,
 	db *gorm.DB,
@@ -123,12 +122,20 @@ func maybeDispatchImage(
 			return parser.ParseResult{}, true, err
 		}
 	} else {
-		img, err := decodeDispatchImage(binary, useOCR)
+		ocrModelID := strings.TrimSpace(getStringOr(setup, "ocr_model_id", ""))
+		img, err := decodeDispatchImage(binary, useOCR && ocrModelID == "")
 		if err != nil {
 			return parser.ParseResult{}, true, err
 		}
 		if useOCR {
-			text, ocrErr = extractImageText(ctx, img)
+			if ocrModelID == "" {
+				text, ocrErr = extractImageText(ctx, img)
+			} else {
+				// Selected OCR uses original bytes, so media admission need not
+				// cover database resolution or remote inference.
+				release()
+				text, ocrErr = extractSelectedImageOCR(ctx, db, getStringOr(inputs, "tenant_id", ""), ocrModelID, binary)
+			}
 		}
 	}
 	release()
@@ -192,6 +199,8 @@ func maybeDispatchImage(
 	return parsed, true, nil
 }
 
+// decodeDispatchImage validates dimensions and raster limits for all image
+// sources, decoding pixels only when local DeepDoc OCR needs them.
 func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
@@ -206,7 +215,7 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
-	// VLM consumes the original bytes; only local OCR needs a decoded raster.
+	// VLM and PaddleOCR consume the original bytes; only DeepDoc needs a raster.
 	if !decodeRaster {
 		return nil, nil
 	}
