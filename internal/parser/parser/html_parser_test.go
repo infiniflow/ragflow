@@ -136,3 +136,28 @@ func TestHTMLParser_RemoveTOC(t *testing.T) {
 		}
 	}
 }
+
+// TestHTMLParser_BodyTextAndInlineElementsFormOneItem checks that a run of
+// text and inline elements directly under <body> is read as one item, the way
+// a browser lays it out. Each text node and each inline element was its own
+// item, so "Hello <b>world</b>, how are <a>you</a>?" came out as the five
+// items "Hello", "world", ", how are", "you" and "?". A comment or a script
+// inside the run does not end it; a block element does.
+func TestHTMLParser_BodyTextAndInlineElementsFormOneItem(t *testing.T) {
+	const doc = `<html><body>Hello <b>world</b>, how are <a href="x">you</a>?<br>` +
+		`Run <code>make</code><!-- note --><script>track()</script> now` +
+		`<p>A paragraph</p>tail <i>end</i></body></html>`
+	res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte(doc))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var got []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		got = append(got, text)
+	}
+	want := []string{"Hello world, how are you?\nRun make now", "A paragraph", "tail end"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("items = %q, want %q", got, want)
+	}
+}

@@ -247,15 +247,6 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	if err != nil {
 		return nil, err
 	}
-	modelTenantIDs := make([]string, 0, len(modelProvidersByID))
-	for _, provider := range modelProvidersByID {
-		modelTenantIDs = append(modelTenantIDs, provider.TenantID)
-	}
-	modelOwnerIDsByTenant, err := s.loadTenantOwnerIDs(ctx, modelTenantIDs)
-	if err != nil {
-		return nil, err
-	}
-
 	resources := make([]Resource, 0, len(refs))
 	for _, ref := range refs {
 		switch ref.Kind {
@@ -326,11 +317,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			resources = append(resources, syncTaskResource(task, connector, linked))
 		case ResourceKindModelProvider:
 			if provider, ok := modelProvidersByID[ref.ID]; ok {
-				ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-				if ownerUserID == "" {
-					return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+				if strings.TrimSpace(provider.UserID) == "" {
+					return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 				}
-				resources = append(resources, modelProviderResource(provider, ownerUserID))
+				resources = append(resources, modelProviderResource(provider))
 			}
 		case ResourceKindModelInstance:
 			instance, ok := modelInstancesByID[ref.ID]
@@ -341,11 +331,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			if !ok {
 				continue
 			}
-			ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-			if ownerUserID == "" {
-				return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+			if strings.TrimSpace(provider.UserID) == "" {
+				return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 			}
-			resources = append(resources, modelInstanceResource(instance, provider, ownerUserID))
+			resources = append(resources, modelInstanceResource(instance, provider))
 		case ResourceKindModel:
 			model, ok := tenantModelsByID[ref.ID]
 			if !ok {
@@ -359,11 +348,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			if !ok {
 				continue
 			}
-			ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-			if ownerUserID == "" {
-				return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+			if strings.TrimSpace(provider.UserID) == "" {
+				return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 			}
-			resources = append(resources, tenantModelResource(model, provider, ownerUserID))
+			resources = append(resources, tenantModelResource(model, provider))
 		case ResourceKindMCPServer:
 			tenantID, ok := mcpServerTenantsByID[ref.ID]
 			if !ok {

@@ -195,6 +195,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **SiliconFlow** | Chinese aggregator |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
+| **TrustedRouter** | OpenAI-compatible router |
 | **TokenPony** | Multi-provider aggregator |
 | **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |
 

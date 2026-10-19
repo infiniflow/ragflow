@@ -237,6 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Protected routes
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
+	RegisterEEProtectedRouter(authorized, r)
 	{
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")

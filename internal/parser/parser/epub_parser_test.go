@@ -206,3 +206,19 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 		}
 	}
 }
+
+// XHTML has no &nbsp; and EPUB tools often write numeric character
+// references; only a fixed list of named entities was decoded, so
+// "don&#8217;t" reached the index as written.
+func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			"<p>don&#8217;t&#160;stop &#x2014; caf&eacute; &frac12; cup &hellip; &amp; &#38; &bogus;</p>")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
+		t.Errorf("text = %q, want it to contain %q", text, want)
+	}
+}
