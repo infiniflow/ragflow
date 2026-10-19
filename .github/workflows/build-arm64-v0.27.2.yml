@@ -93,7 +93,7 @@ jobs:
       - name: Archive v0.27.2 source
         run: |
           set -euo pipefail
-          git archive --format=tar.gz --prefix=ragflow-v0.27.2/ v0.27.2 -o ragflow-v0.27.2-source.tar.gz
+          git archive --format=tar.gz --prefix=ragflow-v0.27.2/ HEAD -o ragflow-v0.27.2-source.tar.gz
 
       - name: Download Docker Compose ARM64 binary
         run: |
@@ -156,7 +156,7 @@ jobs:
             - `mysql:8.0.40`
             - `pgsty/silo:RELEASE.2026-08-06T00-00-00Z`
             - `valkey/valkey:8`
-          - `ragflow-v0.27.2-source.tar.gz`：RAGFlow v0.27.2 完整源码
+          - `ragflow-v0.27.2-source.tar.gz`：RAGFlow v0.27.2 源码（含 ARM64 构建工作流）
           - `docker-compose-linux-aarch64`：Docker Compose 插件
           - `build-arm64-v0.27.2.yml`：GitHub Actions ARM64 构建工作流
           - `setup.sh`：一键部署脚本
