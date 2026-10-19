@@ -2032,6 +2032,8 @@ export default {
       retrievalDescription: `지정된 데이터셋에서 정보를 검색하는 구성 요소입니다. 선택한 데이터셋이 동일한 임베딩 모델을 사용하는지 확인하세요.`,
       generateDescription: `LLM이 응답을 생성하도록 프롬프트하는 구성 요소입니다. 프롬프트가 올바르게 설정되었는지 확인하세요.`,
       categorizeDescription: `LLM을 사용하여 사용자 입력을 미리 정의된 카테고리로 분류하는 구성 요소입니다. 각 카테고리의 이름, 설명, 예시 및 해당 다음 구성 요소를 지정해 주세요.`,
+      scoredSwitchQuestionRequired: '추가 질문마다 설명이 필요합니다',
+      scoredSwitchLevelMinimum: '수준을 두 개 이상 추가하세요',
       relevantDescription: `LLM을 사용하여 업스트림 출력이 사용자의 최신 쿼리와 관련 있는지 평가하는 구성 요소입니다. 각 판단 결과에 대한 다음 구성 요소를 지정해 주세요.`,
       rewriteQuestionDescription: `이전 대화 컨텍스트를 기반으로 상호작용 구성 요소의 사용자 쿼리를 재작성하는 구성 요소입니다.`,
       messageDescription:

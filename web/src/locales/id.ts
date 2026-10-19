@@ -798,6 +798,8 @@ export default {
       retrievalDescription: `Komponen yang mengambil informasi dari basis pengetahuan yang ditentukan dan mengembalikan 'Respon kosong' jika tidak ada informasi yang ditemukan. Pastikan basis pengetahuan yang benar dipilih.`,
       generateDescription: `Komponen yang meminta LLM untuk menghasilkan respons. Pastikan prompt diatur dengan benar.`,
       categorizeDescription: `Komponen yang menggunakan LLM untuk mengklasifikasikan input pengguna ke dalam kategori yang telah ditentukan. Pastikan Anda menentukan nama, deskripsi, dan contoh untuk setiap kategori, bersama dengan komponen berikutnya yang sesuai.`,
+      scoredSwitchQuestionRequired: 'Setiap pertanyaan tambahan memerlukan petunjuk',
+      scoredSwitchLevelMinimum: 'Tambahkan setidaknya dua tingkat',
       relevantDescription: `Komponen yang menggunakan LLM untuk menilai apakah output hulu relevan dengan kueri terbaru pengguna. Pastikan Anda menentukan komponen berikutnya untuk setiap hasil penilaian.`,
       rewriteQuestionDescription: `Komponen yang menyempurnakan kueri pengguna jika gagal mengambil informasi yang relevan dari basis pengetahuan. Ini mengulangi proses ini hingga batas loop yang telah ditentukan tercapai. Pastikan hulu adalah 'Relevan' dan hilir adalah 'Pengambilan'.`,
       messageDescription:

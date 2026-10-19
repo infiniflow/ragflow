@@ -585,6 +585,8 @@ export default {
         'Un componente que solicita al LLM generar respuestas. Asegúrate de que el prompt esté configurado correctamente.',
       categorizeDescription:
         'Un componente que utiliza el LLM para clasificar las entradas del usuario en categorías predefinidas. Asegúrate de especificar el nombre, descripción y ejemplos para cada categoría, junto con el componente siguiente correspondiente.',
+      scoredSwitchQuestionRequired: 'Cada pregunta adicional necesita instrucciones',
+      scoredSwitchLevelMinimum: 'Añade al menos dos niveles',
       relevantDescription:
         'Un componente que usa el LLM para evaluar si la salida previa es relevante para la última consulta del usuario. Asegúrate de especificar el próximo componente para cada resultado.',
       rewriteQuestionDescription:

@@ -2834,6 +2834,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
       categorizeDescription: `Kullanıcı girişlerini önceden tanımlanmış kategorilere sınıflandırmak için LLM kullanan bir bileşen.`,
+      scoredSwitchQuestionRequired: 'Her ek soru için yönerge gerekir',
+      scoredSwitchLevelMinimum: 'En az iki düzey ekleyin',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:

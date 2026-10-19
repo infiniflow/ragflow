@@ -750,6 +750,8 @@ export default {
       retrievalDescription: `Um componente que recupera informações de bases de conhecimento especificadas (conjuntos de dados). Certifique-se de que as bases de conhecimento que você seleciona utilizam o mesmo modelo de incorporação.`,
       generateDescription: `Um componente que solicita ao LLM gerar respostas. Certifique-se de que o prompt está configurado corretamente.`,
       categorizeDescription: `Um componente que utiliza o LLM para classificar as entradas do usuário em categorias predefinidas. Certifique-se de especificar o nome, a descrição e os exemplos para cada categoria, juntamente com o próximo componente correspondente.`,
+      scoredSwitchQuestionRequired: 'Cada pergunta extra precisa de instruções',
+      scoredSwitchLevelMinimum: 'Adicione pelo menos dois níveis',
       relevantDescription: `Um componente que usa o LLM para avaliar se a saída anterior é relevante para a última consulta do usuário. Certifique-se de especificar o próximo componente para cada resultado de avaliação.`,
       rewriteQuestionDescription: `Um componente que refina uma consulta do usuário caso ela não recupere informações relevantes da base de conhecimento. Esse processo é repetido até que o limite de repetições predefinido seja alcançado.`,
       messageDescription:

@@ -2799,6 +2799,8 @@ export default {
         'LLMdan javoblar generatsiya qilishni so‘raydigan komponent. Prompt to‘g‘ri belgilanganiga ishonch hosil qiling.',
       categorizeDescription:
         'LLM yordamida foydalanuvchi kirishlarini oldindan belgilangan toifalarga tasniflaydigan komponent. Har bir toifa uchun nom, tavsif va misollarni, hamda mos keyingi komponentni belgilang.',
+      scoredSwitchQuestionRequired: 'Har bir qo‘shimcha savol uchun ko‘rsatma kerak',
+      scoredSwitchLevelMinimum: 'Kamida ikkita daraja qo‘shing',
       relevantDescription:
         'LLM yordamida yuqoridagi chiqish foydalanuvchining oxirgi so‘roviga tegishlimi yoki yo‘qligini baholaydigan komponent. Har bir hakamlik natijasi uchun keyingi komponentni belgilang.',
       rewriteQuestionDescription:

@@ -2030,6 +2030,8 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       retrievalDescription: `Un componente che recupera informazioni da dataset specificati (dataset). Assicurati che i dataset selezionati usino lo stesso modello di embedding.`,
       generateDescription: `Un componente che richiede al LLM di generare risposte. Assicurati che il prompt sia impostato correttamente.`,
       categorizeDescription: `Un componente che usa il LLM per classificare gli input utente in categorie predefinite. Assicurati di specificare il nome, la descrizione e gli esempi per ogni categoria, insieme al componente successivo corrispondente.`,
+      scoredSwitchQuestionRequired: 'Ogni domanda aggiuntiva richiede istruzioni',
+      scoredSwitchLevelMinimum: 'Aggiungi almeno due livelli',
       relevantDescription: `Un componente che usa il LLM per valutare se l'output a monte è rilevante per l'ultima query dell'utente. Assicurati di specificare il componente successivo per ogni risultato di giudizio.`,
       rewriteQuestionDescription: `Un componente che riscrive una query utente dal componente Interact, basandosi sul contesto dei dialoghi precedenti.`,
       messageDescription:

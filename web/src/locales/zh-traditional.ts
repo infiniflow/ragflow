@@ -957,6 +957,8 @@ export default {
       retrievalDescription: `此元件用於從知識庫中檢索相關資訊。選擇知識庫。如果沒有檢索到任何內容，將傳回「空響應」。`,
       generateDescription: `此元件用於呼叫LLM生成文本，請注意提示的設定。`,
       categorizeDescription: `此組件用於對文字進行分類。請指定類別的名稱、描述和範例。每個類別都指向不同的下游組件。`,
+      scoredSwitchQuestionRequired: '每個附加問題都需要說明',
+      scoredSwitchLevelMinimum: '至少添加兩個等級',
       relevantDescription: `此元件用來判斷upstream的輸出是否與使用者最新的問題相關，『是』代表相關，『否』代表不相關。`,
       rewriteQuestionDescription: `此元件用於細化使用者的提問。通常，當使用者的原始提問無法從知識庫中檢索相關資訊時，此元件可協助您將問題變更為更符合知識庫表達方式的適當問題。`,
       messageDescription:

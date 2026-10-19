@@ -1606,6 +1606,8 @@ Beispiel: Virtual Hosted Style`,
         'Eine Komponente, die das LLM auffordert, Antworten zu generieren. Stellen Sie sicher, dass der Prompt korrekt eingestellt ist.',
       categorizeDescription:
         'Eine Komponente, die das LLM verwendet, um Benutzereingaben in vordefinierte Kategorien zu klassifizieren. Stellen Sie sicher, dass Sie für jede Kategorie den Namen, die Beschreibung und Beispiele sowie die entsprechende nächste Komponente angeben.',
+      scoredSwitchQuestionRequired: 'Jede zusätzliche Frage braucht eine Anweisung',
+      scoredSwitchLevelMinimum: 'Fügen Sie mindestens zwei Stufen hinzu',
       relevantDescription:
         'Eine Komponente, die das LLM verwendet, um zu beurteilen, ob die vorgelagerte Ausgabe für die neueste Anfrage des Benutzers relevant ist. Stellen Sie sicher, dass Sie die nächste Komponente für jedes Beurteilungsergebnis angeben.',
       rewriteQuestionDescription:
