@@ -362,7 +362,7 @@ type atomFeed struct {
 
 type atomEntry struct {
 	ID         string         `xml:"id"`
-	Title      string         `xml:"title"`
+	Title      atomText       `xml:"title"`
 	Updated    string         `xml:"updated"`
 	Published  string         `xml:"published"`
 	Summary    atomText       `xml:"summary"`
@@ -372,8 +372,27 @@ type atomEntry struct {
 	Categories []atomCategory `xml:"category"`
 }
 
+// atomText is an Atom text construct or content element.
 type atomText struct {
-	Text string `xml:",innerxml"`
+	Type     string     `xml:"type,attr"`
+	Text     string     `xml:",chardata"`
+	Inner    string     `xml:",innerxml"`
+	Elements []struct{} `xml:",any"`
+}
+
+// asHTML returns the element as HTML for htmlToText according to its type.
+// Child elements (xhtml or an XML media type) are markup and are kept as
+// written. "html" is the decoded character data. Any other type is plain
+// text, escaped so that it stays literal.
+func (t atomText) asHTML() string {
+	if len(t.Elements) > 0 {
+		return t.Inner
+	}
+	switch strings.ToLower(strings.TrimSpace(t.Type)) {
+	case "html", "text/html":
+		return t.Text
+	}
+	return html.EscapeString(t.Text)
 }
 
 type atomLink struct {
@@ -445,11 +464,11 @@ func parseAtomXML(data []byte) ([]rssEntry, error) {
 		entry := rssEntry{
 			id:         strings.TrimSpace(item.ID),
 			link:       atomEntryLink(item.Links),
-			title:      htmlToText(item.Title),
+			title:      htmlToText(item.Title.asHTML()),
 			author:     strings.TrimSpace(item.Author.Name),
 			categories: atomCategories(item.Categories),
-			content:    item.Content.Text,
-			summary:    item.Summary.Text,
+			content:    item.Content.asHTML(),
+			summary:    item.Summary.asHTML(),
 			updatedAt:  parseFeedTime(firstNonEmpty(item.Updated, item.Published)),
 		}
 		entries = append(entries, entry.withDefaults())

@@ -161,6 +161,60 @@ func TestRSSConnectorValidateConnectorSetting(t *testing.T) {
 	}
 }
 
+// TestRSSConnectorReadsAtomTextByType verifies that Atom title, summary and
+// content follow their type: html (escaped or CDATA) and xhtml become plain
+// text, and text stays literal.
+func TestRSSConnectorReadsAtomTextByType(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		want  string
+	}{
+		{"html content", `<title>Title</title><content type="html">&lt;p&gt;Fish &amp;amp; chips, 2 &amp;lt; 3&lt;/p&gt;&lt;script&gt;track()&lt;/script&gt;</content>`, "Title\n\nFish & chips, 2 < 3"},
+		{"html CDATA content", `<title>Title</title><content type="html"><![CDATA[<p>Body</p><style>p { color: red }</style>]]></content>`, "Title\n\nBody"},
+		{"html CDATA summary", `<title>Title</title><summary type="html"><![CDATA[<p>Summary only</p>]]></summary>`, "Title\n\nSummary only"},
+		{"text/html content", `<title>Title</title><content type="text/html">&lt;p&gt;Body&lt;/p&gt;</content>`, "Title\n\nBody"},
+		{"padded upper case html content", `<title>Title</title><content type=" HTML ">&lt;p&gt;Body&lt;/p&gt;</content>`, "Title\n\nBody"},
+		{"xhtml content", `<title>Title</title><content type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Inline body</p></div></content>`, "Title\n\nInline body"},
+		{"XML media content", `<title>Title</title><content type="application/xhtml+xml"><div xmlns="http://www.w3.org/1999/xhtml"><p>Visible XML body</p></div></content>`, "Title\n\nVisible XML body"},
+		{"html content with child elements", `<title>Title</title><content type="html"><p>raw</p></content>`, "Title\n\nraw"},
+		{"untyped content", `<title>Title</title><content>Use &lt;token&gt; and 2 &lt; 3 &gt; 1</content>`, "Title\n\nUse <token> and 2 < 3 > 1"},
+		{"text content", `<title>Title</title><content type="text">Use &lt;token&gt; here</content>`, "Title\n\nUse <token> here"},
+		{"text content with entity", `<title>Title</title><content type="text">Write &amp;lt;tag&amp;gt; literally</content>`, "Title\n\nWrite &lt;tag&gt; literally"},
+		{"text/plain content", `<title>Title</title><content type="text/plain">Use &lt;token&gt; here</content>`, "Title\n\nUse <token> here"},
+		{"text CDATA content", `<title>Title</title><content type="text"><![CDATA[Use <token> here]]></content>`, "Title\n\nUse <token> here"},
+		{"text summary", `<title>Title</title><summary>Write &amp;lt;tag&amp;gt; and &lt;token&gt;</summary>`, "Title\n\nWrite &lt;tag&gt; and <token>"},
+		{"html title", `<title type="html"><![CDATA[Fish &amp; chips]]></title>`, "Fish & chips"},
+		{"xhtml title", `<title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">XHTML title</div></title>`, "XHTML title"},
+		{"text title", `<title>Use &lt;token&gt; &amp;amp; more</title>`, "Use <token> &amp; more"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/atom.xml"})
+			if err != nil {
+				t.Fatalf("NewRSSConnector failed: %v", err)
+			}
+			connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
+				return []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>entry</id>` + tt.entry + `</entry></feed>`), nil
+			}
+			session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+			if err != nil {
+				t.Fatalf("OpenSync failed: %v", err)
+			}
+			batch, err := session.NextBatch(context.Background())
+			if err != nil {
+				t.Fatalf("NextBatch failed: %v", err)
+			}
+			if len(batch.Documents) != 1 {
+				t.Fatalf("documents = %d, want 1", len(batch.Documents))
+			}
+			if got := string(batch.Documents[0].Blob); got != tt.want {
+				t.Fatalf("blob = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // staticRSSFeed returns a fixed RSS feed for tests.
 func staticRSSFeed(ctx context.Context, feedURL string) ([]byte, error) {
 	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
