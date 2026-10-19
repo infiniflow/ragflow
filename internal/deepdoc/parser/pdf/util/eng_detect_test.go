@@ -434,12 +434,185 @@ func TestFullTextFromChars(t *testing.T) {
 		0: {{Text: "Hello"}, {Text: " "}, {Text: "World"}},
 		1: {{Text: "Page2"}},
 	}
-	got := FullTextFromChars(chars)
-	if !strings.Contains(got, "Hello") || !strings.Contains(got, "World") || !strings.Contains(got, "Page2") {
-		t.Errorf("FullTextFromChars = %q, missing expected content", got)
+	const want = "Hello WorldPage2"
+	if got := FullTextFromChars(chars); got != want {
+		t.Errorf("FullTextFromChars = %q, want %q", got, want)
 	}
 	if FullTextFromChars(nil) != "" {
 		t.Error("nil should return empty")
+	}
+
+	// Keys are inserted out of page order. Concatenation follows ascending
+	// page number, and a second call returns the same text.
+	scrambled := map[int][]pdf.TextChar{
+		5: {{Text: "c"}},
+		1: {{Text: "a"}},
+		3: {{Text: "b"}},
+	}
+	for range 30 {
+		if got := FullTextFromChars(scrambled); got != "abc" {
+			t.Fatalf("FullTextFromChars = %q, want abc", got)
+		}
+	}
+}
+
+func TestDetectEnglishPageContiguousThreshold(t *testing.T) {
+	// These pages vote English. Python's random.choices draws character
+	// texts independently, so the same ASCII share almost never produces 30
+	// ASCII characters in a row.
+	t.Run("30 percent block on CJK", func(t *testing.T) {
+		for _, n := range []int{1000, 2000, 4000, 8000} {
+			for _, atEnd := range []bool{false, true} {
+				block := n * 30 / 100
+				lo := 0
+				if atEnd {
+					lo = n - block
+				}
+				chars := cjkPage(n)
+				for i := lo; i < lo+block; i++ {
+					chars[i].Text = "e"
+				}
+				if !DetectEnglishPage(chars, nil) || !DetectEnglishPage(chars, nil) {
+					t.Fatalf("n=%d atEnd=%v: DetectEnglishPage = false, want true", n, atEnd)
+				}
+			}
+		}
+	})
+
+	t.Run("50/50 bilingual", func(t *testing.T) {
+		for _, n := range []int{1000, 4000, 8000} {
+			half := n / 2
+			for _, englishFirst := range []bool{true, false} {
+				chars := cjkPage(n)
+				for i := range chars {
+					if (i < half) == englishFirst {
+						chars[i].Text = "e"
+					}
+				}
+				if !DetectEnglishPage(chars, nil) {
+					t.Fatalf("n=%d englishFirst=%v: DetectEnglishPage = false, want true", n, englishFirst)
+				}
+			}
+		}
+	})
+
+	t.Run("numeric table", func(t *testing.T) {
+		// 60% digits in one block, the rest CJK labels.
+		for _, n := range []int{1000, 4000, 8000} {
+			block := n * 60 / 100
+			for _, lo := range []int{0, n - block} {
+				chars := cjkPage(n)
+				digits := 0
+				for i := lo; i < lo+block; i++ {
+					chars[i].Text = string(rune('0' + i%10))
+					digits++
+				}
+				if digits*100/n != 60 {
+					t.Fatalf("digits = %d/%d, want 60%%", digits, n)
+				}
+				if !DetectEnglishPage(chars, nil) {
+					t.Fatalf("n=%d lo=%d: DetectEnglishPage = false, want true", n, lo)
+				}
+			}
+		}
+	})
+
+	t.Run("interleaved with one run", func(t *testing.T) {
+		// Three ASCII characters and two CJK, so the page is 60% ASCII and
+		// the longest run is 3. One 30-character run then makes each span
+		// count as English text.
+		for _, n := range []int{1000, 8000} {
+			chars := make([]pdf.TextChar, n)
+			ascii := 0
+			for i := range chars {
+				if i%5 < 3 {
+					chars[i].Text = "e"
+					ascii++
+				} else {
+					chars[i].Text = "你"
+				}
+			}
+			if ascii*5 != n*3 {
+				t.Fatalf("ASCII = %d/%d, want 60%%", ascii, n)
+			}
+			if DetectEnglishPage(chars, nil) {
+				t.Fatal("interleaved page without a 30-character run voted English")
+			}
+			start := n / 5 * 2
+			for i := start; i < start+30; i++ {
+				if chars[i].Text != "e" {
+					chars[i].Text = "e"
+					ascii++
+				}
+			}
+			if ascii*100/n > 62 {
+				t.Fatalf("ASCII = %d/%d, want about 60%%", ascii, n)
+			}
+			if !asciiRunAtLeast(chars, start, start+29, 30) {
+				t.Fatal("fixture has no 30-character ASCII run")
+			}
+			if !DetectEnglishPage(chars, nil) {
+				t.Fatalf("n=%d: DetectEnglishPage = false, want true; sample %q", n, DefaultSampleChars(chars, 100))
+			}
+		}
+	})
+
+	t.Run("29 and 30 percent boundary", func(t *testing.T) {
+		// Pages of 1000 to 8000 characters. 29% of the page never covers 30
+		// spans. 31% does, at every offset. 30% does when the block starts
+		// on a span boundary, and a 1000-character block of 300 characters
+		// at offset 5 covers only 29.
+		for _, n := range []int{1000, 1001, 2000, 3456, 4000, 8000} {
+			if offset, bad := slidingBlockDisagrees(n, n*29/100, false); bad {
+				t.Fatalf("29%% n=%d offset=%d: DetectEnglishPage = true, want false", n, offset)
+			}
+			if offset, bad := slidingBlockDisagrees(n, n*31/100, true); bad {
+				t.Fatalf("31%% n=%d offset=%d: DetectEnglishPage = false, want true", n, offset)
+			}
+			chars := cjkPage(n)
+			block := n * 30 / 100
+			for i := range block {
+				chars[i].Text = "e"
+			}
+			if !DetectEnglishPage(chars, nil) {
+				t.Fatalf("30%% n=%d offset=0: DetectEnglishPage = false, want true", n)
+			}
+		}
+		chars := cjkPage(1000)
+		for i := 5; i < 305; i++ {
+			chars[i].Text = "e"
+		}
+		if DetectEnglishPage(chars, nil) {
+			t.Fatal("30% of 1000 characters at offset 5: DetectEnglishPage = true, want false")
+		}
+	})
+}
+
+// cjkPage returns n CJK characters.
+func cjkPage(n int) []pdf.TextChar {
+	chars := make([]pdf.TextChar, n)
+	for i := range chars {
+		chars[i].Text = "你"
+	}
+	return chars
+}
+
+// slidingBlockDisagrees slides one ASCII block across a CJK page and reports
+// the first offset whose English vote is not want.
+func slidingBlockDisagrees(n, block int, want bool) (int, bool) {
+	chars := cjkPage(n)
+	for i := range block {
+		chars[i].Text = "e"
+	}
+	for offset := 0; ; offset++ {
+		if DetectEnglishPage(chars, nil) != want {
+			return offset, true
+		}
+		if offset == n-block {
+			return 0, false
+		}
+		chars[offset].Text = "你"
+		chars[offset+block].Text = "e"
 	}
 }
 

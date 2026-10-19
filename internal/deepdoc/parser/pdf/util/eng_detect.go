@@ -1,6 +1,8 @@
 package util
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -39,11 +41,26 @@ func IsASCIIPrintable(r rune) bool {
 // them. An English span gives its first ASCII character; any other span
 // gives its first non-ASCII character when it has one.
 //
-// A page with no real 30-character run therefore never samples one, and a
-// short English block cannot make a mostly CJK page English. Whether
-// punctuation inside English text is bridged depends only on the text
-// around it, not on page length or where it falls against the spans. The
-// same page always yields the same sample.
+// A page with no real 30-character run therefore never samples one. The
+// page votes English when the sample contains 30 ASCII characters in a
+// row, so a contiguous English block flips that vote at about 30% of the
+// page. On pages of 1000 to 8000 characters, a block of 29% stays within
+// 29 spans at every offset. A block of 30% covers 30 spans when it starts
+// on a span boundary, and can cover only 29 when it starts in the middle
+// of a span (300 characters at offset 5 on a 1000-character page). A block
+// of 31% covers 30 spans at every offset. A 30-character heading on a long,
+// mostly CJK page still covers only a few spans, so it does not vote
+// English.
+//
+// Python's random.choices draws character texts independently, with
+// replacement, in an unseeded order. A reproducible sample is not that
+// distribution: at an ASCII share of about 30 to 60 percent, random.choices
+// almost never draws 30 ASCII characters in a row, even when those
+// characters form one contiguous block. This sampler walks the page in
+// order, so the block is a run in the sample. Whether punctuation inside
+// English text is bridged depends only on the text around it, not on page
+// length or where it falls against the spans. The same page always yields
+// the same sample.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
@@ -122,11 +139,12 @@ func breaksASCIIRun(s string) bool {
 	return false
 }
 
-// FullTextFromChars concatenates all chars text across pages for scan noise detection.
+// FullTextFromChars concatenates character text in ascending page number.
+// Map iteration order would otherwise change the string from call to call.
 func FullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 	var sb strings.Builder
-	for _, chars := range pageChars {
-		for _, c := range chars {
+	for _, page := range slices.Sorted(maps.Keys(pageChars)) {
+		for _, c := range pageChars[page] {
 			sb.WriteString(c.Text)
 		}
 	}
