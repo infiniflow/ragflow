@@ -17,6 +17,7 @@
 import { render, screen } from '@testing-library/react';
 
 import { buttonVariants } from '@/components/ui/button';
+import { APIMapUrl, LLMFactory } from '@/constants/llm';
 
 import {
   AIMLAPI_KEYS_URL,
@@ -36,6 +37,17 @@ describe('AimlapiGetKeyButton', () => {
     const link = screen.getByRole('link', { name: /aimlapiGetKey/ });
     expect(AIMLAPI_KEYS_URL).toBe('https://aimlapi.com/app');
     expect(link).toHaveAttribute('href', 'https://aimlapi.com/app');
+  });
+
+  it('uses the same URL as the rest of the provider settings', () => {
+    render(<AimlapiGetKeyButton />);
+
+    // provider-header-bar and available-models link through APIMapUrl; the
+    // button must not drift to a second address
+    expect(screen.getByRole('link', { name: /aimlapiGetKey/ })).toHaveAttribute(
+      'href',
+      APIMapUrl[LLMFactory.AIMLAPI],
+    );
   });
 
   it('opens it in a new tab without handing over the opener', () => {

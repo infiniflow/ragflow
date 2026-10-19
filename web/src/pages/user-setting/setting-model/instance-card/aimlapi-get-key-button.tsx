@@ -15,12 +15,14 @@
  */
 
 import { buttonVariants } from '@/components/ui/button';
+import { APIMapUrl, LLMFactory } from '@/constants/llm';
 import { KeyRound } from 'lucide-react';
 import { FC } from 'react';
 import { useTranslation } from 'react-i18next';
 
-/** Where an AI/ML API account creates and copies its API keys. */
-export const AIMLAPI_KEYS_URL = 'https://aimlapi.com/app';
+/** Where an AI/ML API account creates and copies its API keys — the same
+ *  URL the provider header and the model list link to. */
+export const AIMLAPI_KEYS_URL = APIMapUrl[LLMFactory.AIMLAPI];
 
 /**
  * "Get API key" control for the AIMLAPI provider dialog. Opens the AI/ML API
