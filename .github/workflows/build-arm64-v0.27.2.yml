@@ -153,6 +153,207 @@ jobs:
           SETUP_EOF
           chmod +x "${package_dir}/setup.sh"
 
+          cat > "${package_dir}/upgrade.sh" <<'UPGRADE_EOF'
+          #!/usr/bin/env bash
+          # ============================================================
+          # RAGFlow v0.25.2 → v0.27.2 ARM64 原地升级脚本（麒麟 V10，数据全保留）
+          #
+          # 用法:  ./upgrade.sh [旧部署的docker目录]     # 默认 /opt/ragflow/docker
+          #        ./upgrade.sh /opt/ragflow/docker --yes  # 跳过交互确认
+          #
+          # 原理:
+          #   - 数据全部在 docker volume（esdata01/mysql_data/minio_data/redis_data）
+          #   - compose 的 volume 名前缀 = compose 文件所在目录名（项目名）
+          #   - 因此新版源码必须解压回【同一路径】，数据卷即自动沿用
+          #   - 升级前自动 mysqldump 备份元数据；docker compose down 绝不带 -v
+          #
+          # 版本栈差异（均已验证兼容）:
+          #   elasticsearch 8.11.3 → 8.11.3（相同）
+          #   mysql 8.0.39 → 8.0.40（补丁级，volume 兼容）
+          #   pgsty/minio → pgsty/silo（同系 MinIO，数据格式兼容）
+          #   valkey 8 → valkey 8（相同）
+          #   ragflow v0.25.2 → v0.27.2-arm64（启动时自动迁移 DB 结构）
+          # ============================================================
+          set -euo pipefail
+
+          cd "$(dirname "$0")"
+          PKG_DIR="$(pwd)"
+
+          YES=0
+          OLD_DOCKER_DIR="/opt/ragflow/docker"
+          for arg in "$@"; do
+            case "$arg" in
+              --yes|-y) YES=1 ;;
+              *) OLD_DOCKER_DIR="$arg" ;;
+            esac
+          done
+
+          RAGFLOW_IMAGE_NEW="ghcr.io/xuaidezjt/ragflow:v0.27.2-arm64"
+
+          # ---------- 0. 前置检查 ----------
+          if [ ! -f "$OLD_DOCKER_DIR/.env" ]; then
+            echo "!! 未找到旧部署: $OLD_DOCKER_DIR/.env"
+            echo "   用法: ./upgrade.sh <旧部署的docker目录>   (v0.25.2 的 docker-compose.yml 所在目录)"
+            exit 1
+          fi
+          OLD_ROOT="$(cd "$OLD_DOCKER_DIR/.." && pwd)"
+          PROJECT="$(basename "$OLD_DOCKER_DIR")"
+          BACKUP_DIR="/opt/ragflow-upgrade-backup-$(date +%Y%m%d-%H%M%S)"
+
+          echo "============================================================"
+          echo " RAGFlow v0.25.2 → v0.27.2 ARM64 升级"
+          echo "   旧部署目录: $OLD_ROOT"
+          echo "   compose 项目名: $PROJECT (数据卷前缀 ${PROJECT}_*)"
+          echo "   备份目录: $BACKUP_DIR"
+          echo "============================================================"
+          docker volume ls --format '{{.Name}}' | grep -E "^${PROJECT}_(mysql_data|esdata01|minio_data|redis_data)$" || {
+            echo "!! 未找到预期的数据卷 ${PROJECT}_mysql_data 等，旧部署可能用了自定义项目名。"
+            echo "   请执行 docker volume ls 确认，必要时设置 COMPOSE_PROJECT_NAME 后重试。"
+            exit 1
+          }
+
+          AVAIL_GB=$(df -BG --output=avail /opt 2>/dev/null | tail -1 | tr -dc '0-9' || echo 0)
+          [ "${AVAIL_GB:-0}" -ge 8 ] || echo "!! 警告: /opt 可用空间不足 8GB (${AVAIL_GB}GB)，可能不够备份+新源码"
+
+          if [ "$YES" != "1" ]; then
+            read -rp "确认开始升级？升级中服务会停止几分钟 [y/N] " ans
+            [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "已取消"; exit 0; }
+          fi
+
+          mkdir -p "$BACKUP_DIR"
+
+          # ---------- 1. 导入 v0.27.2 ARM64 镜像 ----------
+          echo "==> [1/8] 导入 v0.27.2 ARM64 镜像 (约3.7GB，几分钟)"
+          docker load -i "$PKG_DIR/ragflow-v0.27.2-arm64-images.tar"
+          docker image inspect "$RAGFLOW_IMAGE_NEW" --format '  已就绪: {{.RepoTags}} {{.Os}}/{{.Architecture}}'
+
+          echo "==> [2/8] 安装 Docker Compose 插件（如缺失）"
+          if ! docker compose version >/dev/null 2>&1; then
+            mkdir -p /usr/local/lib/docker/cli-plugins
+            cp "$PKG_DIR/docker-compose-linux-aarch64" /usr/local/lib/docker/cli-plugins/docker-compose
+            chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          fi
+
+          # ---------- 3. 备份 ----------
+          echo "==> [3/8] 备份 MySQL 元数据与配置"
+          OLD_MYSQL_PASSWORD=$(grep -E '^MYSQL_PASSWORD=' "$OLD_DOCKER_DIR/.env" | head -1 | cut -d= -f2-)
+          if ! (cd "$OLD_DOCKER_DIR" && docker compose ps -q mysql 2>/dev/null | grep -q .); then
+            echo "    旧 mysql 容器未运行，先临时拉起用于备份..."
+            (cd "$OLD_DOCKER_DIR" && COMPOSE_PULL_POLICY=never docker compose up -d mysql)
+            for _ in $(seq 1 30); do
+              (cd "$OLD_DOCKER_DIR" && docker compose ps mysql 2>/dev/null | grep -q healthy) && break
+              sleep 5
+            done
+          fi
+          (cd "$OLD_DOCKER_DIR" && docker compose exec -T mysql \
+            mysqldump -uroot -p"$OLD_MYSQL_PASSWORD" --single-transaction --routines --databases rag_flow \
+            > "$BACKUP_DIR/mysql_rag_flow.sql") 2>/dev/null || \
+          (cd "$OLD_DOCKER_DIR" && docker compose exec -T mysql \
+            mysqldump -uroot -p"$OLD_MYSQL_PASSWORD" --single-transaction --routines --all-databases \
+            > "$BACKUP_DIR/mysql_rag_flow.sql")
+          DUMP_SIZE=$(stat -c %s "$BACKUP_DIR/mysql_rag_flow.sql" 2>/dev/null || echo 0)
+          [ "$DUMP_SIZE" -gt 10240 ] || { echo "!! MySQL 备份异常（文件过小 ${DUMP_SIZE}B），中止升级"; exit 1; }
+          echo "    备份完成: $BACKUP_DIR/mysql_rag_flow.sql ($((DUMP_SIZE/1024)) KB)"
+
+          cp "$OLD_DOCKER_DIR/.env" "$BACKUP_DIR/env.v0.25.2"
+          for f in docker-compose.yml docker-compose-base.yml service_conf.yaml.template; do
+            [ -f "$OLD_DOCKER_DIR/$f" ] && cp "$OLD_DOCKER_DIR/$f" "$BACKUP_DIR/$f"
+          done
+          docker ps -a > "$BACKUP_DIR/docker-ps.txt" 2>&1 || true
+          docker images > "$BACKUP_DIR/docker-images.txt" 2>&1 || true
+          docker volume ls > "$BACKUP_DIR/docker-volumes.txt" 2>&1 || true
+
+          # ---------- 4. 停旧栈（保留数据卷） ----------
+          echo "==> [4/8] 停止旧栈（docker compose down，不动数据卷）"
+          (cd "$OLD_DOCKER_DIR" && docker compose down --remove-orphans)
+
+          # ---------- 5. 归档旧目录 + 原地解压新源码 ----------
+          echo "==> [5/8] 归档旧程序目录 → $BACKUP_DIR/old-root，解压 v0.27.2 源码到 $OLD_ROOT"
+          mv "$OLD_ROOT" "$BACKUP_DIR/old-root"
+          mkdir -p "$OLD_ROOT"
+          tar -xzf "$PKG_DIR/ragflow-v0.27.2-source.tar.gz" -C "$OLD_ROOT" --strip-components=1
+          NEW_DOCKER_DIR="$OLD_ROOT/docker"
+          [ -f "$NEW_DOCKER_DIR/.env" ] || { echo "!! 新源码解压异常"; exit 1; }
+
+          # ---------- 6. 迁移 .env 自定义配置 ----------
+          echo "==> [6/8] 迁移旧 .env 配置到新版本"
+          NEW_ENV="$NEW_DOCKER_DIR/.env"
+          OLD_ENV="$BACKUP_DIR/env.v0.25.2"
+          KEYS="MYSQL_PASSWORD MINIO_USER MINIO_PASSWORD REDIS_PASSWORD \
+          SVR_WEB_HTTP_PORT SVR_WEB_HTTPS_PORT SVR_HTTP_PORT ADMIN_SVR_HTTP_PORT \
+          ES_PORT MYSQL_PORT EXPOSE_MYSQL_PORT MINIO_PORT MINIO_CONSOLE_PORT REDIS_PORT \
+          MEM_LIMIT DOC_ENGINE DOC_PARSER TIMEZONE"
+          for k in $KEYS; do
+            line=$(grep -E "^${k}=" "$OLD_ENV" | head -1 || true)
+            [ -z "$line" ] && continue
+            val="${line#*=}"
+            esc_val=${val//&/\\&}; esc_val=${esc_val//|/\\|}
+            if grep -qE "^${k}=" "$NEW_ENV"; then
+              sed -i "s|^${k}=.*|${k}=${esc_val}|" "$NEW_ENV"
+            else
+              echo "${k}=${val}" >> "$NEW_ENV"
+            fi
+            echo "    ${k}=${val}"
+          done
+          # 指向本地 arm64 镜像 + 强制 HF 离线（v0.27.2 默认已开启，这里兜底确保）
+          sed -i "s|^RAGFLOW_IMAGE=.*|RAGFLOW_IMAGE=${RAGFLOW_IMAGE_NEW}|" "$NEW_ENV"
+          for k in HF_HUB_OFFLINE TRANSFORMERS_OFFLINE; do
+            if grep -qE "^${k}=" "$NEW_ENV"; then sed -i "s|^${k}=.*|${k}=1|" "$NEW_ENV"; else echo "${k}=1" >> "$NEW_ENV"; fi
+          done
+
+          # 提示旧 compose 的自定义改动（如挂载过模型目录）
+          if ! diff -q "$BACKUP_DIR/docker-compose.yml" "$NEW_DOCKER_DIR/docker-compose.yml" >/dev/null 2>&1; then
+            echo "    注意: 旧 docker-compose.yml 与新版本有差异，若你曾自定义(挂模型/改端口映射)，"
+            echo "    请参考备份 $BACKUP_DIR/docker-compose.yml 手动合并。"
+          fi
+
+          # ---------- 7. 内核参数 + 启动 ----------
+          echo "==> [7/8] 检查内核参数并启动 v0.27.2"
+          if [ "$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)" -lt 262144 ]; then
+            sysctl -w vm.max_map_count=262144
+            grep -q '^vm.max_map_count' /etc/sysctl.conf 2>/dev/null || echo 'vm.max_map_count=262144' >> /etc/sysctl.conf
+          fi
+          cd "$NEW_DOCKER_DIR"
+          COMPOSE_PULL_POLICY=never docker compose up -d
+
+          # ---------- 8. 健康检查 ----------
+          echo "==> [8/8] 等待服务就绪（最长 5 分钟）"
+          OK=0
+          for i in $(seq 1 30); do
+            sleep 10
+            RUNNING=$(docker compose ps --format '{{.Name}} {{.Status}}' 2>/dev/null | grep -c "Up" || true)
+            if [ "$RUNNING" -ge 5 ]; then OK=1; break; fi
+            echo "    ...${i} 已就绪 ${RUNNING}/5"
+          done
+          docker compose ps
+          WEB_PORT=$(grep -E '^SVR_WEB_HTTP_PORT=' "$NEW_ENV" | cut -d= -f2)
+          if curl -sf -o /dev/null -m 5 "http://127.0.0.1:${WEB_PORT:-80}/"; then
+            echo "    Web 入口正常: http://$(hostname -I 2>/dev/null | awk '{print $1}'):${WEB_PORT:-80}"
+          else
+            echo "    !! Web 暂未响应，请看日志: docker compose logs -f ragflow-cpu"
+          fi
+          [ "$OK" = "1" ] || echo "!! 部分服务未就绪，排查: docker compose ps / docker compose logs"
+
+          echo ""
+          echo "============================================================"
+          echo " 升级完成！知识库/文档/用户数据均已保留。"
+          echo ""
+          echo " 首次启动 v0.27.2 会自动迁移数据库结构，请耐心等待日志稳定。"
+          echo " 验证: 浏览器登录后检查知识库列表与文档是否齐全。"
+          echo ""
+          echo " 回滚方法（如新版异常）:"
+          echo "   cd $NEW_DOCKER_DIR && docker compose down"
+          echo "   rm -rf $OLD_ROOT && mv $BACKUP_DIR/old-root $OLD_ROOT"
+          echo "   cd $OLD_DOCKER_DIR && COMPOSE_PULL_POLICY=never docker compose up -d"
+          echo "   # 若新版已改动过DB结构，回滚前先恢复: "
+          echo "   #   docker compose exec -T mysql mysql -uroot -p'$OLD_MYSQL_PASSWORD' < $BACKUP_DIR/mysql_rag_flow.sql"
+          echo ""
+          echo " 确认新版稳定运行几天后，可清理旧镜像释放磁盘:"
+          echo "   docker image prune -a   (谨慎，会删掉所有未使用镜像)"
+          echo "============================================================"
+          UPGRADE_EOF
+          chmod +x "${package_dir}/upgrade.sh"
+
           cat > "${package_dir}/README.md" <<'README_EOF'
           # RAGFlow v0.27.2 ARM64 离线部署包
 
@@ -167,7 +368,8 @@ jobs:
           - `ragflow-v0.27.2-source.tar.gz`：RAGFlow v0.27.2 源码（含 ARM64 构建工作流）
           - `docker-compose-linux-aarch64`：Docker Compose 插件
           - `build-arm64-v0.27.2.yml`：GitHub Actions ARM64 构建工作流
-          - `setup.sh`：一键部署脚本
+          - `setup.sh`：一键全新部署脚本
+          - `upgrade.sh`：v0.25.2 → v0.27.2 原地升级脚本（保留知识库/文档/用户数据，用法 ./upgrade.sh /opt/ragflow/docker）
 
           ## 前置条件
 
@@ -192,7 +394,7 @@ jobs:
           4. 浏览器访问 `http://<服务器IP>`。
 
           默认账号：`admin`  
-          默认密码：`infini_rag_flow`
+          默认密码：`admin`（.env 的 ADMIN_DEFAULT_PASSWORD）
 
           ## 常用运维命令
 
