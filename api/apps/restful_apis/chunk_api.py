@@ -39,7 +39,6 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
-from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -63,6 +62,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
@@ -1188,6 +1188,41 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
         return server_error_response(e)
 
 
+async def _next_source_chunk_order(tenant_id, dataset_id, document_id):
+    """Order a manually added chunk after the document's source chunks.
+
+    Disabled rows are skipped: parent rows carry a reserved order above every
+    source chunk.
+    """
+    order_by = OrderByExpr()
+    order_by.desc("chunk_order_int")
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["chunk_order_int"],
+            [],
+            {"doc_id": document_id, "available_int": 1},
+            [],
+            order_by,
+            0,
+            1,
+            search.index_name(tenant_id),
+            [dataset_id],
+        )
+        fields = settings.docStoreConn.get_fields(res, ["chunk_order_int"])
+    except Exception:
+        logging.exception("Failed to read the highest chunk_order_int of document %s", document_id)
+        return 0
+
+    orders = []
+    for row in fields.values():
+        try:
+            orders.append(int(row.get("chunk_order_int") or 0))
+        except (TypeError, ValueError):
+            continue
+    return max(orders) + 1 if orders else 0
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1267,6 +1302,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     )
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
+    d["chunk_order_int"] = await _next_source_chunk_order(dataset_tenant_id, dataset_id, document_id)
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)

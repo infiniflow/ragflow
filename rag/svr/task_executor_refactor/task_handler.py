@@ -21,8 +21,10 @@ for handling document processing tasks with refactored, testable methods.
 """
 
 import asyncio
-import logging
 import json
+import logging
+from collections.abc import AsyncIterator, Callable
+from timeit import default_timer as timer
 
 # Wiki / artifact compilation pipeline lives in
 # ``rag.svr.task_executor_refactor.dataset_wiki_generator`` — see the
@@ -33,27 +35,29 @@ import json
 # validate_and_correct_chain) moved to ``chunk_post_processor``.
 import xxhash
 
-from timeit import default_timer as timer
-from typing import AsyncIterator, Callable, Dict, List, Optional
-
-from api.db.services.document_service import DocumentService
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
 from api.db.joint_services.tenant_model_service import (
+    get_model_config_by_id,
     get_tenant_default_model_by_type,
     resolve_model_config,
-    get_model_config_by_id,
 )
+from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
+from common import settings
+from common.chunk_order import DERIVED_CHUNK_ORDER_BASE
+from common.connection_utils import timeout
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
-from common.connection_utils import timeout
 from common.misc_utils import thread_pool_exec
+from rag.graphrag.general.index import run_graphrag_for_kb
 from rag.nlp import search
-from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
+from rag.prompts.generator import run_toc_from_text
 from rag.svr.task_executor_refactor.chunk_service import ChunkService
+from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
 from rag.svr.task_executor_refactor.dataflow_service import BillingHook, DataflowService
 from rag.svr.task_executor_refactor.embedding_service import EmbeddingService
 from rag.svr.task_executor_refactor.post_processor import PostProcessor
@@ -61,11 +65,6 @@ from rag.svr.task_executor_refactor.raptor_service import RaptorService
 from rag.svr.task_executor_refactor.raptor_utils import delete_raptor_chunks
 from rag.svr.task_executor_refactor.recording_context import RecordingContext
 from rag.svr.task_executor_refactor.task_context import TaskContext
-from rag.graphrag.general.index import run_graphrag_for_kb
-from api.db.services.file2document_service import File2DocumentService
-from rag.prompts.generator import run_toc_from_text
-from common import settings
-
 
 _EMBEDDING_FACTORIES_REQUIRING_API_KEY = frozenset(
     {
@@ -135,7 +134,7 @@ class TaskHandler:
     def __init__(
         self,
         ctx: TaskContext,
-        billing_hook: Optional[BillingHook] = None,
+        billing_hook: BillingHook | None = None,
     ):
         """Initialize TaskHandler.
 
@@ -336,7 +335,7 @@ class TaskHandler:
         ctx = self._task_context
         ctx.progress_cb(1, "Clone task placeholder")
 
-    async def _bind_embedding_model(self) -> Optional[tuple]:
+    async def _bind_embedding_model(self) -> tuple | None:
         """Bind embedding model to task.
 
         Returns:
@@ -385,7 +384,7 @@ class TaskHandler:
             vts, _ = embedding_model.encode(["ok"])
             return embedding_model, len(vts[0])
         except Exception as e:
-            error_message = f"Fail to bind embedding model: {str(e)}"
+            error_message = f"Fail to bind embedding model: {e!s}"
             ctx.progress_cb(-1, msg=error_message)
             logging.exception(error_message)
             raise
@@ -549,7 +548,7 @@ class TaskHandler:
                 logging.info(f"GraphRAG task result for task {ctx.raw_task}:\n{result}")
 
             ctx.recording_context.record("graphrag_result", result)
-            ctx.progress_cb(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
+            ctx.progress_cb(prog=1.0, msg=f"Knowledge Graph done ({timer() - start_ts:.2f}s)")
 
     async def _run_standard_chunking(
         self,
@@ -598,7 +597,7 @@ class TaskHandler:
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         ctx.recording_context.record("chunk_ids_count", len(chunk_ids))
 
-        logging.info("Build document {}: {:.2f}s".format(ctx.name, timer() - start_ts))
+        logging.info(f"Build document {ctx.name}: {timer() - start_ts:.2f}s")
 
         if not chunks:
             ctx.progress_cb(msg=f"No chunk built from {ctx.name}")
@@ -612,10 +611,10 @@ class TaskHandler:
                 return
             task_time_cost = timer() - task_start_ts
             ctx.recording_context.record("task_status", "completed")
-            ctx.progress_cb(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
+            ctx.progress_cb(prog=1.0, msg=f"Task done ({task_time_cost:.2f}s)")
             return
 
-        ctx.progress_cb(msg="Generate {} chunks".format(len(chunks)))
+        ctx.progress_cb(msg=f"Generate {len(chunks)} chunks")
 
         # Embed chunks
         start_ts = timer()
@@ -625,14 +624,14 @@ class TaskHandler:
         except TaskCanceledException:
             raise
         except Exception as e:
-            error_message = "Generate embedding error:{}".format(str(e))
+            error_message = f"Generate embedding error:{e!s}"
             ctx.progress_cb(-1, error_message)
             logging.exception(error_message)
             raise
 
         ctx.recording_context.record("token_count", token_count)
         ctx.recording_context.record("vector_size", vector_size)
-        progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
+        progress_message = f"Embedding chunks ({timer() - start_ts:.2f}s)"
         logging.info(progress_message)
         ctx.progress_cb(msg=progress_message)
 
@@ -663,7 +662,7 @@ class TaskHandler:
         post_processor = PostProcessor(ctx=ctx)
         await post_processor.process_table_parser_metadata(task_doc_id, chunks)
 
-        ctx.progress_cb(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+        ctx.progress_cb(msg=f"Indexing done ({timer() - start_ts:.2f}s).")
 
         toc_chunk = await self._process_toc_thread(toc_thread)
         if toc_chunk:
@@ -692,9 +691,9 @@ class TaskHandler:
 
         task_time_cost = timer() - task_start_ts
         ctx.recording_context.record("task_status", "completed")
-        ctx.progress_cb(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
+        ctx.progress_cb(prog=1.0, msg=f"Task done ({task_time_cost:.2f}s)")
 
-        logging.info("Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(ctx.name, ctx.from_page, ctx.to_page, len(chunks), token_count, task_time_cost))
+        logging.info(f"Chunk doc({ctx.name}), page({ctx.from_page}-{ctx.to_page}), chunks({len(chunks)}), token({token_count}), elapsed:{task_time_cost:.2f}")
 
     async def _run_document_post_chunking_if_last(
         self,
@@ -743,7 +742,7 @@ class TaskHandler:
         kb_id: str,
         doc_id: str,
         batch_size: int = 500,
-    ) -> AsyncIterator[List[Dict]]:
+    ) -> AsyncIterator[list[dict]]:
         """Stream a document's chunks from the doc store one batch at a time.
 
         Async generator that yields successive batches of up to ``batch_size``
@@ -810,7 +809,7 @@ class TaskHandler:
                 # be identified without guessing from ids.
                 try:
                     recovery_fields = [*select_fields, "available_int"]
-                    recovered_batch: List[Dict] = []
+                    recovered_batch: list[dict] = []
                     recovery_offset = 0
                     recovery_page_size = 1000
                     while True:
@@ -864,7 +863,7 @@ class TaskHandler:
                     logging.exception("load_chunks_for_doc: recovery query failed for doc=%s", doc_id)
                 return
 
-            batch: List[Dict] = []
+            batch: list[dict] = []
             for row_id, row in field_map.items():
                 if row.get("compile_kwd"):
                     continue
@@ -884,7 +883,7 @@ class TaskHandler:
             offset += batch_size
 
     @classmethod
-    def _build_toc(cls, ctx: TaskContext, docs: List[Dict], progress_cb: Callable) -> Optional[Dict]:
+    def _build_toc(cls, ctx: TaskContext, docs: list[dict], progress_cb: Callable) -> dict | None:
         """Build table of contents."""
         progress_cb(msg="Start to generate table of content ...")
         chat_model_config = resolve_model_config(ctx.tenant_id, LLMType.CHAT, ctx.llm_id)
@@ -935,11 +934,12 @@ class TaskHandler:
                 d["toc_kwd"] = "toc"
                 d["available_int"] = 0
                 d["page_num_int"] = [100000000]
+                d["chunk_order_int"] = DERIVED_CHUNK_ORDER_BASE
                 d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
                 return d
             return None
 
-    async def _delete_raptor_chunks(self, doc_id: str, tenant_id: str, kb_id: str, keep_method: Optional[str]) -> int:
+    async def _delete_raptor_chunks(self, doc_id: str, tenant_id: str, kb_id: str, keep_method: str | None) -> int:
         """Delete RAPTOR chunks."""
         if self._task_context.write_interceptor:
             return self._task_context.write_interceptor.intercept("delete_raptor_chunks")
