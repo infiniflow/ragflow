@@ -1429,7 +1429,7 @@ def _reconstruct_image_chunk(paragraphs, group):
 
 
 def _apply_overlap_unconditional(chunks, overlapped_percent):
-    """Prepend an overlap prefix from the previous chunk at each new-chunk
+    """Prepend an overlap prefix from the previous original chunk at each new-chunk
     boundary, UNCONDITIONALLY when ``overlapped_percent > 0`` (unified JSON
     strategy). The prefix is never dropped for not fitting the budget, so
     context is continuous across every chunk boundary; a chunk may therefore
@@ -1442,7 +1442,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
         if i == 0:
             out.append(c)
             continue
-        out.append(_compute_overlap_prefix(out[-1], overlapped_percent) + c)
+        out.append(_compute_overlap_prefix(chunks[i - 1], overlapped_percent) + c)
     return out
 
 
@@ -1996,10 +1996,11 @@ def naive_merge_docx(
             if ck["ck_type"] != "text":
                 previous_text = ""
                 continue
+            original = ck["text"]
             if previous_text:
-                ck["text"] = _compute_overlap_prefix(previous_text, overlapped_percent) + ck["text"]
+                ck["text"] = _compute_overlap_prefix(previous_text, overlapped_percent) + original
                 ck["tk_nums"] = num_tokens_from_string(ck["text"])
-            previous_text = ck["text"]
+            previous_text = original
 
     return merged_cks, merged_image_idx
 

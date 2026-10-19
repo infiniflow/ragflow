@@ -70,10 +70,10 @@ def test_docx_builtin_applies_configured_overlap():
     outputs = json.loads(result.stdout.strip().splitlines()[-1])
     assert outputs == [
         ["ABCDEFGHI。", "KLMNOPQRS。", "UVWXYZ123。"],
-        ["ABCDEFGHI。", "I。KLMNOPQRS。", "RS。UVWXYZ123。"],
-        ["ABCDEFGHI。", "I。KLMNOPQRS。", "RS。UVWXYZ123。"],
-        ["ABCDEFGHI。", "HI。KLMNOPQRS。", "QRS。UVWXYZ123。"],
-        ["ABCDEFGHI。", "HI。KLMNOPQRS。", "QRS。UVWXYZ123。"],
+        ["ABCDEFGHI。", "I。KLMNOPQRS。", "S。UVWXYZ123。"],
+        ["ABCDEFGHI。", "I。KLMNOPQRS。", "S。UVWXYZ123。"],
+        ["ABCDEFGHI。", "HI。KLMNOPQRS。", "RS。UVWXYZ123。"],
+        ["ABCDEFGHI。", "HI。KLMNOPQRS。", "RS。UVWXYZ123。"],
     ]
 
 
@@ -87,6 +87,18 @@ def test_docx_overlap_reserves_chunk_budget():
 
     assert [chunk["text"] for chunk in chunks] == ["AAA。BBB。", "B。CCC。DDD。"]
     assert [chunk["tk_nums"] for chunk in chunks] == [8, 10]
+
+
+def test_docx_overlap_does_not_carry_earlier_chunks_through_short_chunk():
+    chunks, _ = naive_merge_docx(
+        [("A" * 99 + "。x。y。", None, None)],
+        chunk_token_num=1,
+        delimiter="。",
+        overlapped_percent=30,
+    )
+
+    assert [chunk["text"] for chunk in chunks] == ["A" * 99 + "。", "A" * 29 + "。x。", "。y。"]
+    assert chunks[2]["tk_nums"] == 3
 
 
 def test_docx_zero_overlap_preserves_chunking():
