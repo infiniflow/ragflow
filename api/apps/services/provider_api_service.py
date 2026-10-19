@@ -199,6 +199,21 @@ def list_providers(tenant_id: str, all_available: bool = False):
     return True, providers
 
 
+def _find_provider_name_ignoring_case(tenant_id: str, provider_name: str) -> str | None:
+    """
+    Find an existing provider name that collides with provider_name when case is ignored.
+
+    :param tenant_id: tenant ID
+    :param provider_name: provider/factory name to look up
+    :return: the colliding provider name, or None when there is none
+    """
+    target = provider_name.strip().casefold()
+    for existing_name in TenantModelProviderService.list_provider_names_by_tenant_id(tenant_id):
+        if existing_name and existing_name.strip().casefold() == target:
+            return existing_name
+    return None
+
+
 def add_provider(tenant_id: str, provider_name: str):
     """
     Add a provider (factory) for a tenant.
@@ -214,9 +229,11 @@ def add_provider(tenant_id: str, provider_name: str):
     if provider_name not in allowed_factories:
         return False, f"Provider '{provider_name}' is not allowed"
 
-    existing = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
-    if existing:
-        return False, f"Provider {provider_name} already exists"
+    duplicate = _find_provider_name_ignoring_case(tenant_id, provider_name)
+    if duplicate:
+        if duplicate == provider_name:
+            return False, f"Provider {provider_name} already exists"
+        return False, f"Provider {provider_name} already exists as '{duplicate}' (provider names are case-insensitive)"
 
     TenantModelProviderService.insert(tenant_id=tenant_id, provider_name=provider_name)
     return True, "success"
