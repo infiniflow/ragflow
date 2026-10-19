@@ -687,30 +687,12 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run search API tests against Infinity
-        run: |
-          set -euo pipefail
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
-          fi
-          source .venv/bin/activate
-          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee infinity_search_api_test.log
-
       - name: Run Go API tests against Infinity
-        # Search fixtures above configure the default models used by the Go suite.
-        # Go API tests have no priority filtering; run the full suite every time.
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1265,30 +1247,12 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run search API tests against Elasticsearch
-        run: |
-          set -euo pipefail
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
-          fi
-          source .venv/bin/activate
-          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee es_search_api_test.log
-
       - name: Run Go API tests against Elasticsearch
-        # Search fixtures above configure the default models used by the Go suite.
-        # Go API tests have no priority filtering; run the full suite every time.
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
