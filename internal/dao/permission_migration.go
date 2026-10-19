@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/entity"
 
@@ -29,6 +30,13 @@ const permissionMigrationTargetVersion = "v1.0.0-rc3.dev1"
 
 // migratePermissions applies the permission schema migration and records its version.
 func migratePermissions(ctx context.Context, db *gorm.DB) error {
+	version, err := GetDatabaseMigrationVersion(ctx, db)
+	if err != nil {
+		return fmt.Errorf("read database migration version: %w", err)
+	}
+	if shouldSkipMigration(version, permissionMigrationTargetVersion) {
+		return nil
+	}
 	if err := migratePermissionDataEE(ctx, db); err != nil {
 		return fmt.Errorf("migrate enterprise permission data: %w", err)
 	}
@@ -44,15 +52,114 @@ func migratePermissions(ctx context.Context, db *gorm.DB) error {
 	if err := migrateUserCanvasTenantID(ctx, db); err != nil {
 		return err
 	}
-	version, err := GetDatabaseMigrationVersion(ctx, db)
-	if err != nil {
-		return fmt.Errorf("read database migration version: %w", err)
-	}
-	if shouldSkipMigration(version, permissionMigrationTargetVersion) {
-		return nil
-	}
 	if err := setDatabaseMigrationVersion(ctx, db, permissionMigrationTargetVersion); err != nil {
 		return fmt.Errorf("mark permission migration version: %w", err)
+	}
+	return nil
+}
+
+// migrateUserTenantDuplicates removes duplicate legacy memberships before
+// AutoMigrate creates the unique (user_id, tenant_id) index.
+func migrateUserTenantDuplicates(ctx context.Context, db *gorm.DB) error {
+	scoped := db.WithContext(ctx)
+	migrator := scoped.Migrator()
+	if !migrator.HasTable(&entity.UserTenant{}) {
+		return nil
+	}
+	hasIndex, err := hasUserTenantUniqueIndex(ctx, scoped)
+	if err != nil {
+		return fmt.Errorf("inspect user_tenant unique index: %w", err)
+	}
+	if hasIndex {
+		return nil
+	}
+
+	return scoped.Transaction(func(tx *gorm.DB) error {
+		var duplicateKeys []struct {
+			UserID   string `gorm:"column:user_id"`
+			TenantID string `gorm:"column:tenant_id"`
+		}
+		if err := tx.Model(&entity.UserTenant{}).
+			Select("user_id, tenant_id").
+			Group("user_id, tenant_id").
+			Having("COUNT(*) > 1").
+			Scan(&duplicateKeys).Error; err != nil {
+			return fmt.Errorf("find duplicate user_tenant memberships: %w", err)
+		}
+
+		for _, key := range duplicateKeys {
+			var memberships []entity.UserTenant
+			if err := tx.Where("user_id = ? AND tenant_id = ?", key.UserID, key.TenantID).
+				Order("CASE WHEN status = '1' THEN 0 ELSE 1 END").
+				Order("CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'normal' THEN 2 WHEN 'invite' THEN 3 ELSE 4 END").
+				Order("update_time DESC").
+				Order("create_time ASC").
+				Order("id ASC").
+				Find(&memberships).Error; err != nil {
+				return fmt.Errorf("list duplicate user_tenant memberships for user %s in tenant %s: %w", key.UserID, key.TenantID, err)
+			}
+			if len(memberships) < 2 {
+				continue
+			}
+			keepID := memberships[0].ID
+			for _, duplicate := range memberships[1:] {
+				if err := remapUserTenantReferences(ctx, tx, duplicate.ID, keepID); err != nil {
+					return err
+				}
+				if err := tx.Where("id = ?", duplicate.ID).Delete(&entity.UserTenant{}).Error; err != nil {
+					return fmt.Errorf("delete duplicate user_tenant membership %s: %w", duplicate.ID, err)
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func hasUserTenantUniqueIndex(ctx context.Context, db *gorm.DB) (bool, error) {
+	indexes, err := db.WithContext(ctx).Migrator().GetIndexes(&entity.UserTenant{})
+	if err != nil {
+		return false, err
+	}
+	for _, index := range indexes {
+		unique, known := index.Unique()
+		if !known || !unique {
+			continue
+		}
+		columns := index.Columns()
+		if len(columns) != 2 {
+			continue
+		}
+		columnSet := map[string]struct{}{"user_id": {}, "tenant_id": {}}
+		for _, column := range columns {
+			delete(columnSet, strings.ToLower(column))
+		}
+		if len(columnSet) == 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func remapUserTenantReferences(ctx context.Context, tx *gorm.DB, oldID, newID string) error {
+	references := []struct {
+		table  string
+		column string
+	}{
+		{table: "group_info", column: "owner_id"},
+		{table: "group_member", column: "member_id"},
+		{table: "department_member", column: "member_id"},
+		{table: "permission", column: "member_id"},
+	}
+	for _, reference := range references {
+		migrator := tx.WithContext(ctx).Migrator()
+		if !migrator.HasTable(reference.table) || !migrator.HasColumn(reference.table, reference.column) {
+			continue
+		}
+		if err := tx.WithContext(ctx).Table(reference.table).
+			Where(reference.column+" = ?", oldID).
+			Update(reference.column, newID).Error; err != nil {
+			return fmt.Errorf("remap %s.%s from membership %s to %s: %w", reference.table, reference.column, oldID, newID, err)
+		}
 	}
 	return nil
 }

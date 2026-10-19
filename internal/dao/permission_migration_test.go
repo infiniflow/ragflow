@@ -149,8 +149,14 @@ func TestMigratePermissions(t *testing.T) {
 	if err := db.Exec("UPDATE user_tenant SET invited_by = NULL WHERE id = ?", "membership-1").Error; err != nil {
 		t.Fatalf("clear invited_by: %v", err)
 	}
-	if err := db.Exec("UPDATE tenant_model_provider SET user_id = ? WHERE id = ?", "owner-user", "provider-1").Error; err != nil {
-		t.Fatalf("set model provider owner: %v", err)
+	if err := db.Exec("UPDATE tenant_model_provider SET user_id = '' WHERE id = ?", "provider-1").Error; err != nil {
+		t.Fatalf("clear model provider owner: %v", err)
+	}
+	if err := db.Exec("UPDATE api_token SET user_id = '' WHERE tenant_id = ? AND token = ?", "tenant-1", "token-1").Error; err != nil {
+		t.Fatalf("clear API token owner: %v", err)
+	}
+	if err := db.Exec("UPDATE user_canvas SET tenant_id = '' WHERE id = ?", "canvas-1").Error; err != nil {
+		t.Fatalf("clear canvas tenant: %v", err)
 	}
 	if err := migratePermissions(ctx, db); err != nil {
 		t.Fatalf("repeat permission migration: %v", err)
@@ -158,7 +164,90 @@ func TestMigratePermissions(t *testing.T) {
 	if err := db.Take(&provider, "id = ?", "provider-1").Error; err != nil {
 		t.Fatalf("read model provider after repeated migration: %v", err)
 	}
-	if provider.UserID != "owner-user" {
-		t.Fatalf("repeated migration overwrote model provider user_id = %q, want owner-user", provider.UserID)
+	if provider.UserID != "" {
+		t.Fatalf("repeated migration backfilled model provider user_id = %q, want it unchanged", provider.UserID)
+	}
+	if err := db.Take(&token, "tenant_id = ? AND token = ?", "tenant-1", "token-1").Error; err != nil {
+		t.Fatalf("read API token after repeated migration: %v", err)
+	}
+	if token.UserID == nil || *token.UserID != "" {
+		t.Fatalf("repeated migration backfilled API token user_id = %v, want it unchanged", token.UserID)
+	}
+	if err := db.Take(&canvas, "id = ?", "canvas-1").Error; err != nil {
+		t.Fatalf("read canvas after repeated migration: %v", err)
+	}
+	if canvas.TenantID == nil || *canvas.TenantID != "" {
+		t.Fatalf("repeated migration backfilled canvas tenant_id = %v, want it unchanged", canvas.TenantID)
+	}
+}
+
+func TestMigrateUserTenantDuplicates(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("create user_tenant table: %v", err)
+	}
+	if err := db.Migrator().DropIndex(&entity.UserTenant{}, "idx_user_tenant_user_tenant"); err != nil {
+		t.Fatalf("drop user_tenant unique index: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE group_info (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL)`,
+		`CREATE TABLE group_member (id TEXT PRIMARY KEY, member_id TEXT NOT NULL)`,
+		`CREATE TABLE department_member (id TEXT PRIMARY KEY, member_id TEXT NOT NULL)`,
+		`CREATE TABLE permission (id TEXT PRIMARY KEY, member_id TEXT)`,
+		`INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by, status) VALUES
+			('member-normal', 'user-1', 'tenant-1', 'normal', 'user-1', '1'),
+			('member-owner', 'user-1', 'tenant-1', 'owner', 'user-1', '1')`,
+		`INSERT INTO group_info (id, owner_id) VALUES ('group-1', 'member-normal')`,
+		`INSERT INTO group_member (id, member_id) VALUES ('group-member-1', 'member-normal')`,
+		`INSERT INTO department_member (id, member_id) VALUES ('department-member-1', 'member-normal')`,
+		`INSERT INTO permission (id, member_id) VALUES ('permission-1', 'member-normal')`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("execute test setup statement: %v", err)
+		}
+	}
+
+	if err := migrateUserTenantDuplicates(context.Background(), db); err != nil {
+		t.Fatalf("deduplicate user_tenant memberships: %v", err)
+	}
+	var memberships []entity.UserTenant
+	if err := db.Find(&memberships).Error; err != nil {
+		t.Fatalf("read user_tenant memberships: %v", err)
+	}
+	if len(memberships) != 1 || memberships[0].ID != "member-owner" {
+		t.Fatalf("kept user_tenant memberships = %+v, want only owner membership", memberships)
+	}
+	for _, reference := range []struct {
+		table string
+		id    string
+	}{
+		{table: "group_info", id: "group-1"},
+		{table: "group_member", id: "group-member-1"},
+		{table: "department_member", id: "department-member-1"},
+		{table: "permission", id: "permission-1"},
+	} {
+		var row struct {
+			OwnerID  string `gorm:"column:owner_id"`
+			MemberID string `gorm:"column:member_id"`
+		}
+		if err := db.Table(reference.table).Where("id = ?", reference.id).Take(&row).Error; err != nil {
+			t.Fatalf("read %s reference: %v", reference.table, err)
+		}
+		memberID := row.MemberID
+		if memberID == "" {
+			memberID = row.OwnerID
+		}
+		if memberID != "member-owner" {
+			t.Fatalf("%s membership reference = %q, want member-owner", reference.table, memberID)
+		}
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("auto-migrate unique user_tenant index: %v", err)
+	}
+	if err := db.Exec("INSERT INTO user_tenant (id, user_id, tenant_id, role) VALUES (?, ?, ?, ?)", "member-duplicate", "user-1", "tenant-1", "normal").Error; err == nil {
+		t.Fatal("duplicate user_tenant membership was accepted after AutoMigrate")
 	}
 }

@@ -227,6 +227,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		if err = migrateUserTenantDuplicates(ctx, DB); err != nil {
+			return fmt.Errorf("failed to deduplicate user_tenant memberships: %w", err)
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
