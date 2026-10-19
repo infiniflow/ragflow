@@ -55,9 +55,11 @@ type BaseModel struct {
 	// spark_api_password bundle) set it in their constructor.
 	authHeader func(*APIConfig) (string, string)
 	// requestHeaders, when non-nil, adds driver-specific headers to every
-	// request built by the shared helpers, after authentication. It receives
-	// the request itself, so a driver can decide from the actual destination
-	// (e.g. AI/ML API sends partner attribution only to its own gateway host).
+	// request built by the shared helpers. It runs before authentication is
+	// applied, so authentication headers take precedence over anything it
+	// sets. It receives the request itself, so a driver can decide from the
+	// actual destination (e.g. AI/ML API sends partner attribution only to its
+	// own gateway host).
 	requestHeaders func(*http.Request)
 }
 
@@ -189,7 +191,8 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 
 // applyAuth sets the authentication header on req. Drivers with a custom
 // authHeader hook (e.g. Xiaomi's api-key header, Xunfei's spark_api_password
-// bundle) use it; the default is "Authorization: Bearer <key>".
+// bundle) use it; the default is "Authorization: Bearer <key>". A driver's
+// requestHeaders hook runs first, so the authentication header always wins.
 func (b *BaseModel) applyAuth(req *http.Request, apiConfig *APIConfig) {
 	if b.requestHeaders != nil {
 		b.requestHeaders(req)

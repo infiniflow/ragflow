@@ -419,6 +419,25 @@ func TestAimlapiAttributionNotSentToAnOverriddenBaseURL(t *testing.T) {
 	}
 }
 
+// TestRequestHeadersRunBeforeAuthentication pins the documented order in
+// applyAuth: a driver's requestHeaders hook runs first, so a header it sets
+// can never replace the authentication header.
+func TestRequestHeadersRunBeforeAuthentication(t *testing.T) {
+	b := BaseModel{requestHeaders: func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer from-the-hook")
+		req.Header.Set("X-Driver-Header", "kept")
+	}}
+	req, _ := http.NewRequest(http.MethodPost, "https://api.aimlapi.com/v1/chat/completions", nil)
+	apiKey := "test-key"
+	b.applyAuth(req, &APIConfig{ApiKey: &apiKey})
+	if got := req.Header.Get("Authorization"); got != "Bearer test-key" {
+		t.Errorf("Authorization=%q, want the API key to win over the hook", got)
+	}
+	if got := req.Header.Get("X-Driver-Header"); got != "kept" {
+		t.Errorf("X-Driver-Header=%q, want the hook's own header kept", got)
+	}
+}
+
 // --- provider config -------------------------------------------------------
 
 func TestAimlapiProviderConfig(t *testing.T) {
