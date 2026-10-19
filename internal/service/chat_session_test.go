@@ -1967,3 +1967,59 @@ func TestChatCompletions_SharedSessionReadonlyForTeammate(t *testing.T) {
 		t.Fatalf("update calls=%d, want 0", len(store.updateCalled))
 	}
 }
+
+func TestChatCompletions_CancelledNonStreamDoesNotPersistBlankTurn(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		UserID:   strPtr("user-1"),
+		Message:  json.RawMessage(`[{"role":"user","content":"hello"}]`),
+	}
+	store.dialogs["chat-1"] = &entity.Chat{
+		ID:           "chat-1",
+		TenantID:     "user-1",
+		LLMID:        "chat@factory",
+		LLMSetting:   entity.JSONMap{},
+		PromptConfig: entity.JSONMap{"parameters": []interface{}{}},
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Pipeline returns an empty channel because context was cancelled
+	ch := make(chan AsyncChatResult)
+	close(ch)
+	pipeline := &fakePipeline{resultChan: ch}
+
+	svc := &ChatSessionService{
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          pipeline,
+	}
+
+	_, _ = svc.ChatCompletions(
+		ctx,
+		"user-1",
+		"chat-1",
+		"session-1",
+		nil,
+		"cancelled question",
+		nil, "", nil, nil,
+		false, false, nil,
+	)
+
+	// The initial user question is saved (1 update), but no assistant turn
+	// should be persisted via updateSessionMessages when context is cancelled.
+	if len(store.updateCalled) != 1 {
+		t.Fatalf("expected 1 updateByID call for user question, got %d", len(store.updateCalled))
+	}
+	for _, call := range store.updateCalled {
+		if hu, ok := call.updates["history_update"].(dao.ConversationHistoryUpdate); ok {
+			if hu.Message["role"] == "assistant" {
+				t.Fatalf("assistant message should not be persisted on cancelled context: %v", hu.Message)
+			}
+		}
+	}
+}
