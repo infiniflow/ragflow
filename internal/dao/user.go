@@ -46,6 +46,16 @@ func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id uint) (*entity.
 	return &user, nil
 }
 
+// GetByIDString gets a user by its string ID.
+func (dao *UserDAO) GetByIDString(ctx context.Context, db *gorm.DB, id string) (*entity.User, error) {
+	var user entity.User
+	err := db.WithContext(ctx).Where("id = ?", id).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (dao *UserDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.User, error) {
 	var user entity.User
 	err := db.WithContext(ctx).Where("id = ?", tenantID).First(&user).Error
