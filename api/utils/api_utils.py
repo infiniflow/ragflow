@@ -32,7 +32,6 @@ from quart import (
     has_app_context,
 )
 from werkzeug.exceptions import BadRequest as WerkzeugBadRequest
-from werkzeug.exceptions import Unauthorized as WerkzeugUnauthorized
 
 try:
     from quart.exceptions import BadRequest as QuartBadRequest
@@ -137,11 +136,14 @@ def get_data_error_result(code=RetCode.DATA_ERROR, message="Sorry! Data missing!
 def server_error_response(e):
     # Quart invokes this handler outside the original except block, so we must pass exc_info manually.
     logging.error("Unhandled exception during request", exc_info=(type(e), e, e.__traceback__))
-    # Upstream model authentication failures are application errors, not request authentication failures.
-    if isinstance(e, WerkzeugUnauthorized):
-        resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
-        resp.status_code = RetCode.UNAUTHORIZED
-        return resp
+    try:
+        msg = repr(e).lower()
+        if getattr(e, "code", None) == 401 or ("unauthorized" in msg) or ("401" in msg):
+            resp = get_json_result(code=RetCode.UNAUTHORIZED, message="Unauthorized")
+            resp.status_code = RetCode.UNAUTHORIZED
+            return resp
+    except Exception as ex:
+        logging.warning(f"error checking authorization: {ex}")
 
     if repr(e).find("index_not_found_exception") >= 0:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message="No chunk found, please upload file and parse it.")
