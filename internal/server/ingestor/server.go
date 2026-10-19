@@ -118,9 +118,8 @@ func logTokenizerCounters() {
 }
 
 // Run starts the RAGFlow ingestion worker. It blocks until ctx is cancelled
-// (OS shutdown signal) or the ingestor receives a shutdown command from the
-// admin, then gracefully stops the ingestor.
-func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+// (OS shutdown signal), then gracefully stops the ingestor.
+func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -235,19 +234,14 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		defer hb.Stop()
 	}
 
-	// Wait for either an OS shutdown signal or a shutdown command from the admin
-	select {
-	case <-ctx.Done():
-		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
-	case <-ingestor.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.Name))
-		cancel()
-	}
+	// Wait for OS shutdown signal
+	<-ctx.Done()
+	common.Info("Received shutdown signal")
+	common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.Name))
 
 	// Create context with timeout for graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
 	ingestor.Stop(shutdownCtx)
 

@@ -75,9 +75,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/services", r.handler.GetServices)
 			protected.GET("/service_types/:service_type", r.handler.GetServicesByType)
 			protected.GET("/services/:service_name", r.handler.GetService)
-			protected.DELETE("/services/:service_name", r.handler.ShutdownService)
-			protected.PUT("/services/:service_name", r.handler.RestartService)
-			protected.POST("/services/:service_name", r.handler.StartService)
 
 			// Variables/Settings
 			protected.GET("/variables", r.handler.ListVariables)
@@ -110,7 +107,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/engine", r.handler.PingEngine)
 
 			protected.GET("/ingestors", r.handler.ListIngestors)
-			protected.DELETE("/ingestors", r.handler.ShutdownIngestor)
 
 			// Sandbox
 			protected.GET("/sandbox/providers", r.handler.ListSandboxProviders)

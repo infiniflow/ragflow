@@ -59,12 +59,6 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.RunBenchmark(commandCount, cmd)
 	case "admin_list_services":
 		return c.AdminListServicesCommand(commandCount, cmd)
-	case "admin_start_service":
-		return c.AdminStartServiceCommand(commandCount, cmd)
-	case "admin_restart_service":
-		return c.AdminRestartServiceCommand(commandCount, cmd)
-	case "admin_shutdown_service":
-		return c.AdminShutdownServiceCommand(commandCount, cmd)
 	case "admin_grant_user_admin":
 		return c.AdminGrantUserAdminCommand(commandCount, cmd)
 	case "admin_revoke_user_admin":
@@ -157,8 +151,6 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminStopIngestionCommand(commandCount, cmd)
 	case "admin_remove_ingestion_tasks":
 		return c.AdminRemoveIngestionCommand(commandCount, cmd)
-	case "admin_shutdown_ingestor_command":
-		return c.AdminShutdownIngestor(commandCount, cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(commandCount, cmd)
 	case "user_list_message_queue_command":
