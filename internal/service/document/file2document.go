@@ -19,10 +19,15 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
+	"runtime/debug"
+	"slices"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -46,6 +51,11 @@ var (
 	ErrLinkInternal = errors.New("Internal server error.")
 )
 
+// convertTimeout caps one background conversion. It is a ceiling against stuck
+// backends, not an expected duration, and is generous so large folder links are
+// not silently truncated after the HTTP response has already returned.
+const convertTimeout = 30 * time.Minute
+
 // File2DocumentService handles linking files to datasets.
 type File2DocumentService struct {
 	fileDAO          *dao.FileDAO
@@ -54,6 +64,7 @@ type File2DocumentService struct {
 	userTenantDAO    *dao.UserTenantDAO
 	documentSvc      *DocumentService
 	documentDAO      *dao.DocumentDAO
+	convertFilesFn   func(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error
 }
 
 // NewFile2DocumentService creates a File2DocumentService.
@@ -97,8 +108,11 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	}
 
 	// ── 2. Validate KBs exist ────────────────────────────────────────────────
-	kbMap := make(map[string]*entity.Knowledgebase, len(req.KbIDs))
-	for _, kbID := range req.KbIDs {
+	// Clone so the background goroutine never shares a backing array with the
+	// caller's request.
+	kbIDs := slices.Clone(req.KbIDs)
+	kbMap := make(map[string]*entity.Knowledgebase, len(kbIDs))
+	for _, kbID := range kbIDs {
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 		if err != nil || kb == nil {
 			return ErrLinkDatasetNotFound
@@ -162,22 +176,42 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	}
 
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
-	kbIDs := req.KbIDs
-	go func() {
-		newCtx := context.Background()
-		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
-			common.Warn("file2document.convertFiles failed",
-				zap.Strings("file_ids", allFileIDs),
-				zap.Strings("kb_ids", kbIDs),
-				zap.Error(err))
-		}
-	}()
+	go s.runConversion(ctx, allFileIDs, kbIDs, userID, mode)
 
 	return nil
 }
 
+// runConversion runs convertFiles detached from the request lifecycle. It is
+// synchronous so callers (and tests) decide how to schedule it.
+func (s *File2DocumentService) runConversion(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) {
+	defer func() {
+		if r := recover(); r != nil {
+			common.Error("file2document: convertFiles panic", fmt.Errorf("panic: %v", r),
+				zap.Strings("file_ids", fileIDs),
+				zap.Strings("kb_ids", kbIDs),
+				zap.String("stack", string(debug.Stack())),
+			)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), convertTimeout)
+	defer cancel()
+
+	convert := s.convertFiles
+	if s.convertFilesFn != nil {
+		convert = s.convertFilesFn
+	}
+	if err := convert(ctx, fileIDs, kbIDs, userID, mode); err != nil {
+		common.Warn("file2document.convertFiles failed",
+			zap.Strings("file_ids", fileIDs),
+			zap.Strings("kb_ids", kbIDs),
+			zap.Error(err))
+	}
+}
+
 // convertFiles mirrors Python _convert_files: keep existing links, remove links
 // outside the requested KBs in replace mode, then add any missing links.
+// Failures on one file do not stop the others; all errors are returned joined.
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
 	replaceExisting := mode != "add"
 	kbIDs = dedupeStrings(kbIDs)
@@ -185,99 +219,143 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 	for _, kbID := range kbIDs {
 		requestedKBIDs[kbID] = struct{}{}
 	}
+
+	var errs []error
 	for _, fileID := range fileIDs {
-		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
-		if err != nil {
-			common.Warn("convertFiles: GetByFileID failed", zap.String("fileID", fileID), zap.Error(err))
+		if ctx.Err() != nil {
+			break
 		}
-
-		existingKBIDs := make(map[string]struct{})
-		for _, m := range mappings {
-			if m.DocumentID == nil {
-				continue
-			}
-			doc, getErr := s.documentDAO.GetByID(ctx, dao.DB, *m.DocumentID)
-			if getErr != nil || doc == nil {
-				continue
-			}
-			existingKBIDs[doc.KbID] = struct{}{}
-			if replaceExisting {
-				if _, exists := requestedKBIDs[doc.KbID]; exists {
-					continue
-				}
-				if err = s.documentSvc.RemoveDocumentKeepFile(ctx, doc.ID); err != nil {
-					common.Warn("convertFiles: RemoveDocumentKeepFile failed", zap.String("docID", doc.ID), zap.Error(err))
-					continue
-				}
-				if err = s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, doc.ID); err != nil {
-					common.Warn("convertFiles: DeleteByDocumentID failed", zap.String("docID", doc.ID), zap.Error(err))
-				}
-			}
+		if err := s.convertFile(ctx, fileID, kbIDs, requestedKBIDs, userID, replaceExisting); err != nil {
+			errs = append(errs, err)
 		}
+	}
+	if err := ctx.Err(); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
 
-		// Reload the source file.
-		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
-		if err != nil || file == nil {
+// convertFile links one file to every requested KB. A failure while inspecting
+// or removing its existing links aborts the file, so a later retry cannot
+// create duplicates or leave a half-replaced state.
+func (s *File2DocumentService) convertFile(ctx context.Context, fileID string, kbIDs []string, requestedKBIDs map[string]struct{}, userID string, replaceExisting bool) error {
+	mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
+	if err != nil {
+		return fmt.Errorf("get mappings for file %s: %w", fileID, err)
+	}
+
+	var errs []error
+	existingKBIDs := make(map[string]struct{})
+	for _, m := range mappings {
+		if m.DocumentID == nil {
 			continue
 		}
-
-		// Create a document + mapping in each target KB.
-		for _, kbID := range kbIDs {
-			if _, exists := existingKBIDs[kbID]; exists {
-				continue
+		doc, err := s.documentDAO.GetByID(ctx, dao.DB, *m.DocumentID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// The mapping points to a deleted document; drop it so it does not
+			// accumulate.
+			if delErr := s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, *m.DocumentID); delErr != nil {
+				errs = append(errs, fmt.Errorf("delete dangling mapping for doc %s: %w", *m.DocumentID, delErr))
 			}
-			kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
-			if err != nil || kb == nil {
-				continue
-			}
-
-			// Mirror Python duplicate_name: generate a non-colliding document
-			// name within the dataset so that linking does not silently create
-			// duplicate-name documents in the same KB.
-			docName, err := s.documentSvc.UniqueDocumentName(ctx, kbID, file.Name)
-			if err != nil {
-				common.Warn("convertFiles: UniqueDocumentName failed",
-					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
-				continue
-			}
-
-			selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
-			parserID, pipelineID := parserSelectionColumns(selection)
-			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
-			doc := &entity.Document{
-				ID:           common.GenerateUUID(),
-				KbID:         kb.ID,
-				ParserID:     parserID,
-				PipelineID:   pipelineID,
-				ParserConfig: parserConfig,
-				CreatedBy:    userID,
-				Type:         file.Type,
-				Name:         &docName,
-				Suffix:       suffix,
-				Size:         file.Size,
-			}
-			if file.Location != nil {
-				doc.Location = file.Location
-			}
-
-			// InsertDocument creates the row and increments KB doc_num in one
-			// transaction, so a failed insert never leaves a stale counter.
-			if err = s.documentSvc.InsertDocument(ctx, doc); err != nil {
-				common.Warn("convertFiles: InsertDocument failed",
-					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
-				continue
-			}
-
-			mapping := &entity.File2Document{
-				ID:         common.GenerateUUID(),
-				FileID:     &fileID,
-				DocumentID: &doc.ID,
-			}
-			if err = s.file2DocumentDAO.Create(ctx, dao.DB, mapping); err != nil {
-				common.Warn("convertFiles: Create file2document mapping failed",
-					zap.String("fileID", fileID), zap.String("docID", doc.ID), zap.Error(err))
-			}
+			continue
 		}
+		if err != nil {
+			return errors.Join(append(errs, fmt.Errorf("get doc %s for file %s: %w", *m.DocumentID, fileID, err))...)
+		}
+
+		existingKBIDs[doc.KbID] = struct{}{}
+		if !replaceExisting {
+			continue
+		}
+		if _, keep := requestedKBIDs[doc.KbID]; keep {
+			continue
+		}
+		if err := s.documentSvc.RemoveDocumentKeepFile(ctx, doc.ID); err != nil {
+			return errors.Join(append(errs, fmt.Errorf("remove doc %s: %w", doc.ID, err))...)
+		}
+		// The document is gone at this point, so a leftover mapping is dangling
+		// and gets cleaned up by the next run; no need to abort the file.
+		if err := s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, doc.ID); err != nil {
+			errs = append(errs, fmt.Errorf("delete mapping for doc %s: %w", doc.ID, err))
+		}
+	}
+
+	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
+	if err != nil {
+		return errors.Join(append(errs, fmt.Errorf("get file %s: %w", fileID, err))...)
+	}
+
+	for _, kbID := range kbIDs {
+		if ctx.Err() != nil {
+			break
+		}
+		if _, exists := existingKBIDs[kbID]; exists {
+			continue
+		}
+		if err := s.linkFileToKB(ctx, file, kbID, userID); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// linkFileToKB creates a document in the KB for the file and records the
+// file2document mapping. If the mapping cannot be created, the just-inserted
+// document is rolled back so no orphan is left behind.
+func (s *File2DocumentService) linkFileToKB(ctx context.Context, file *entity.File, kbID, userID string) error {
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+	if err != nil {
+		return fmt.Errorf("get kb %s: %w", kbID, err)
+	}
+
+	// Mirror Python duplicate_name: generate a non-colliding document
+	// name within the dataset so that linking does not silently create
+	// duplicate-name documents in the same KB.
+	docName, err := s.documentSvc.UniqueDocumentName(ctx, kbID, file.Name)
+	if err != nil {
+		return fmt.Errorf("unique name for file %s in kb %s: %w", file.ID, kbID, err)
+	}
+
+	selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+	parserID, pipelineID := parserSelectionColumns(selection)
+	suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
+	doc := &entity.Document{
+		ID:           common.GenerateUUID(),
+		KbID:         kb.ID,
+		ParserID:     parserID,
+		PipelineID:   pipelineID,
+		ParserConfig: parserConfig,
+		CreatedBy:    userID,
+		Type:         file.Type,
+		Name:         &docName,
+		Suffix:       suffix,
+		Size:         file.Size,
+	}
+	if file.Location != nil {
+		doc.Location = file.Location
+	}
+
+	// InsertDocument creates the row and increments KB doc_num in one
+	// transaction, so a failed insert never leaves a stale counter.
+	if err := s.documentSvc.InsertDocument(ctx, doc); err != nil {
+		return fmt.Errorf("insert doc %s: %w", doc.ID, err)
+	}
+
+	mapping := &entity.File2Document{
+		ID:         common.GenerateUUID(),
+		FileID:     &file.ID,
+		DocumentID: &doc.ID,
+	}
+	if err := s.file2DocumentDAO.Create(ctx, dao.DB, mapping); err != nil {
+		createErr := fmt.Errorf("create mapping for file %s doc %s: %w", file.ID, doc.ID, err)
+		// ctx may be the very reason the mapping failed (deadline), so the
+		// rollback runs on its own bounded context.
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
+		defer cancel()
+		if rbErr := s.documentSvc.RemoveDocumentKeepFile(rollbackCtx, doc.ID); rbErr != nil {
+			return errors.Join(createErr, fmt.Errorf("rollback doc %s: %w", doc.ID, rbErr))
+		}
+		return createErr
 	}
 	return nil
 }
