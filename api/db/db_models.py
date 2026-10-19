@@ -2575,12 +2575,13 @@ def _record_migration_marker(name: str, value: str):
         SystemSettings.insert(name=name, source="migration", data_type="string", value=value).execute()
     except IntegrityError:
         # Unreachable through today's callers: migrate_document_meta_fields is
-        # called inside init_database_tables, which holds its cross-process
-        # advisory lock for the duration, so a second process reads the marker
-        # first and stops before ever reaching the insert. Kept because this is
-        # a generic upsert -- a caller outside that lock would otherwise turn a
-        # duplicate into a startup failure. The value to write is the same one
-        # the winner inserted, so overwriting it changes nothing.
+        # reached only through init_database_tables, via migrate_db(), and that
+        # holds its cross-process advisory lock for the duration, so a second
+        # process reads the marker first and stops before ever reaching the
+        # insert. Kept because this is a generic upsert -- a caller outside that
+        # lock would otherwise turn a duplicate into a startup failure. The value
+        # to write is the same one the winner inserted, so overwriting it changes
+        # nothing.
         SystemSettings.update(value=value).where(SystemSettings.name == name).execute()
 
 
