@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -943,6 +944,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 }
 
 func validatePromptConfigParameters(promptConfig map[string]interface{}) error {
+	if _, err := agentic_rag.ParseOverride(promptConfig["agentic_rag"]); err != nil {
+		return err
+	}
 	parameters, ok := promptConfig["parameters"].([]interface{})
 	if !ok {
 		return nil
