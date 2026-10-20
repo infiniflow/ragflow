@@ -52,9 +52,12 @@ describe('useListMcpServer', () => {
 
     await waitFor(() => expect(mockListMcpServers).toHaveBeenCalled());
 
-    expect(mockListMcpServers).toHaveBeenCalledWith(
-      { keywords: '', page: 1, page_size: 3, mcp_ids: 'mcp-1,mcp-2,mcp-3' },
-    );
+    expect(mockListMcpServers).toHaveBeenCalledWith({
+      keywords: '',
+      page: 1,
+      page_size: 3,
+      mcp_ids: 'mcp-1,mcp-2,mcp-3',
+    });
   });
 
   it('preserves search pagination for the regular MCP list', async () => {
@@ -62,8 +65,10 @@ describe('useListMcpServer', () => {
 
     await waitFor(() => expect(mockListMcpServers).toHaveBeenCalled());
 
-    expect(mockListMcpServers).toHaveBeenCalledWith(
-      { keywords: 'ignored search', page: 4, page_size: 10 },
-    );
+    expect(mockListMcpServers).toHaveBeenCalledWith({
+      keywords: 'ignored search',
+      page: 4,
+      page_size: 10,
+    });
   });
 });
