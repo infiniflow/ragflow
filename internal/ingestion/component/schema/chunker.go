@@ -390,6 +390,11 @@ type TitleChunkerParam struct {
 	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The Python
 	// default is 512; valid range when non-zero is 128..8000.
 	ChunkTokenCap int `json:"chunk_token_cap"`
+
+	// TableContextSize and ImageContextSize are per-side media context budgets.
+	// Zero disables context; whole sentences may exceed a positive budget.
+	TableContextSize int `json:"table_context_size"`
+	ImageContextSize int `json:"image_context_size"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is
@@ -410,6 +415,12 @@ func (TitleChunkerParam) Defaults() TitleChunkerParam {
 // expressible in pure-data terms: when Method == "hierarchy" the
 // hierarchy depth and level config must be present.
 func (p *TitleChunkerParam) Validate() error {
+	if p.TableContextSize < 0 {
+		return errInvalidValue{Field: "table_context_size", Value: fmt.Sprintf("%d", p.TableContextSize)}
+	}
+	if p.ImageContextSize < 0 {
+		return errInvalidValue{Field: "image_context_size", Value: fmt.Sprintf("%d", p.ImageContextSize)}
+	}
 	// chunk_token_cap: 0 disables the ceiling; when set it must be a positive
 	// integer in [128, 8000] (mirrors Python title_chunker #18455). Checked
 	// BEFORE the method switch so an unset method cannot bypass the range.

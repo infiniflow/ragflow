@@ -154,6 +154,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -270,7 +271,8 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Int("record_groups", len(recordGroups)),
 	)
 
-	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(upstream))
+	_, docID := resolveImageUploadContext(parentCtx, map[string]any{"doc_id": upstream.DocID})
+	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). prefixes re-attaches each
@@ -321,7 +323,9 @@ func NewHierarchyTitleChunker(params map[string]any) (runtime.Component, error) 
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
 	}

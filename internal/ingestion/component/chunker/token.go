@@ -306,6 +306,15 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	// how a downstream TokenChunker merges these chunks — a separate
 	// concern, out of scope here).
 	for i := range docs {
+		// Only this bridge receives IDs finalized by the title-family
+		// builder. Mark them for the shared crop helper without extending
+		// ID trust to General/Token chunks decoded from upstream input.
+		if docs[i].ID != "" {
+			if docs[i].Extra == nil {
+				docs[i].Extra = make(map[string]json.RawMessage)
+			}
+			docs[i].Extra[titleMediaContextIDKey] = json.RawMessage("true")
+		}
 		if docs[i].CKType == "" {
 			switch docs[i].DocType {
 			case "image", "table":
@@ -319,6 +328,7 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	out := schema.ChunkDocsToMaps(cropped)
 	for _, m := range out {
 		delete(m, "ck_type")
+		delete(m, titleMediaContextIDKey)
 	}
 	return out
 }

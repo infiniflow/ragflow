@@ -141,6 +141,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
 // on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
 func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -177,7 +178,8 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream))
+	_, docID := resolveImageUploadContext(parentCtx, map[string]any{"doc_id": upstream.DocID})
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
@@ -304,8 +306,13 @@ func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 // stay aligned with the returned chunks after empty groups are dropped and
 // root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
 // chunk's chain to every piece it splits off.
-func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
+// docID scopes contextual captionless media identities to their source document.
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool, docID string) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
+	var mediaIdentities []string
+	if p.TableContextSize > 0 || p.ImageContextSize > 0 {
+		mediaIdentities = make([]string, 0, len(groups))
+	}
 	var outPrefixes []string
 	if prefixes != nil {
 		outPrefixes = make([]string, 0, len(groups))
@@ -325,6 +332,21 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		mediaIdentity := ""
+		if !g[0].isText() && (g[0].contextAbove != "" || g[0].contextBelow != "") {
+			media := materializeMediaContext(schema.ChunkDoc{
+				Text: chunkText, ContextAbove: g[0].contextAbove, ContextBelow: g[0].contextBelow,
+			})
+			chunk["text"] = media.Text
+			chunk["tk_nums"] = intValue(media.TKNums)
+			if chunkText == "" {
+				imgID := ""
+				if g[0].imgID != nil {
+					imgID = *g[0].imgID
+				}
+				mediaIdentity = mediaChunkIdentity(g[0].image, imgID)
+			}
+		}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -365,6 +387,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunk["positions"] = m
 		}
 		chunks = append(chunks, chunk)
+		if mediaIdentities != nil {
+			mediaIdentities = append(mediaIdentities, mediaIdentity)
+		}
 		if prefixes != nil {
 			outPrefixes = append(outPrefixes, prefixes[i])
 		}
@@ -373,13 +398,27 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if _, contextual := chunks[i]["tk_nums"]; contextual {
+				chunks[i]["tk_nums"] = tokenizeStr(toString(chunks[i]["text"]))
+			}
 			if prefixes != nil {
 				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
 			}
 		}
 		chunks = chunks[1:]
+		if mediaIdentities != nil {
+			mediaIdentities = mediaIdentities[1:]
+		}
 		if prefixes != nil {
 			outPrefixes = outPrefixes[1:]
+		}
+	}
+	for i, identity := range mediaIdentities {
+		if identity != "" {
+			// Context can give two distinct captionless images identical
+			// bodies. Keep their payload identity as well as the final body
+			// in the key, before either crop or decorator upload can run.
+			chunks[i]["id"] = common.ChunkID(docID, identity+"\x00"+toString(chunks[i]["text"]))
 		}
 	}
 	return chunks, outPrefixes
@@ -600,7 +639,9 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
 	}

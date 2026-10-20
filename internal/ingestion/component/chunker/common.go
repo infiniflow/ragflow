@@ -345,6 +345,12 @@ const mediaChunkIDPrefix = "\x00media:"
 // that id) or computed by the decorator fallback — never both — and both hash
 // the same identity.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Only the title crop bridge marks these finalized IDs; other
+	// chunkers may carry upstream IDs whose text they have since rewritten.
+	if ck.ID != "" && string(ck.Extra[titleMediaContextIDKey]) == "true" {
+		return ck.ID
+	}
 	return common.ChunkID(docID, chunkIDSource(ck))
 }
 
