@@ -19,6 +19,7 @@ import types
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+
 from common.doc_store.doc_store_base import FusionExpr, MatchDenseExpr, MatchTextExpr
 
 
@@ -92,10 +93,10 @@ def dealer_cls():
         DOC_ENGINE_VASTBASE=False,
     )
     if common_module is not None:
-        setattr(common_module, "settings", settings_stub)
+        common_module.settings = settings_stub
     token_utils_stub = _install_module("common.token_utils", num_tokens_from_string=lambda value: len(str(value).split()))
     if common_module is not None:
-        setattr(common_module, "token_utils", token_utils_stub)
+        common_module.token_utils = token_utils_stub
 
     _install_module("roman_numbers")
     _install_module("word2number", w2n=types.SimpleNamespace(word_to_num=lambda value: 0))
@@ -127,7 +128,7 @@ def dealer_cls():
     memory_utils.__path__ = []
     sys.modules["memory.utils"] = memory_utils
     if memory_module is not None:
-        setattr(memory_module, "utils", memory_utils)
+        memory_module.utils = memory_utils
     for short_name in ("es_conn", "infinity_conn", "ob_conn"):
         module = _install_module(
             f"memory.utils.{short_name}",
@@ -158,18 +159,18 @@ def dealer_cls():
                 if hasattr(common_module, "settings"):
                     delattr(common_module, "settings")
             else:
-                setattr(common_module, "settings", saved_common_settings)
+                common_module.settings = saved_common_settings
             if saved_common_token_utils is None:
                 if hasattr(common_module, "token_utils"):
                     delattr(common_module, "token_utils")
             else:
-                setattr(common_module, "token_utils", saved_common_token_utils)
+                common_module.token_utils = saved_common_token_utils
         if memory_module is not None:
             if saved_memory_utils is None:
                 if hasattr(memory_module, "utils"):
                     delattr(memory_module, "utils")
             else:
-                setattr(memory_module, "utils", saved_memory_utils)
+                memory_module.utils = saved_memory_utils
 
 
 def make_dealer(dealer_cls):
@@ -324,12 +325,38 @@ async def test_dense_only_fallback_can_be_disabled(dealer_cls):
 
 
 @pytest.mark.asyncio
-async def test_document_scope_keeps_existing_filter_only_retry(dealer_cls):
+async def test_document_scope_retries_with_scored_legs_not_filter_only(dealer_cls):
+    """A document scope that matched nothing keeps the document filter and
+    retries with scored legs instead of dropping every MATCH expression.
+
+    A filter-only query cannot carry a score on Infinity (it rejects the score
+    column, error 3013), so its rows read back as 0.0 across the board — the
+    "all scores collapsed" signature of infiniflow/infinity#3523, which is
+    indistinguishable from a real retrieval failure and has already masked one.
+    """
     calls = await run_retry_search(dealer_cls, [0, 1], doc_ids=["doc-1"])
 
     assert len(calls) == 2
     assert calls[1][0][2]["doc_id"] == ["doc-1"]
-    assert calls[1][0][3] == []
+    assert len(calls[1][0][3]) == 3
+    assert all(len(args[3]) > 0 for args, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_document_scope_returns_empty_instead_of_filter_only_scan(dealer_cls):
+    """When even the scored retries miss, the document scope returns empty
+    rather than scanning the document with no MATCH expression: the chunks are
+    there, they simply cannot say how relevant they are.
+
+    Callers that want a document's chunks regardless of relevance use the
+    chunk-list API, not retrieval.
+    """
+    calls = await run_retry_search(dealer_cls, [0, 0, 0], doc_ids=["doc-1"])
+
+    assert len(calls) == 3
+    assert len(calls[-1][0][3]) == 1
+    assert isinstance(calls[-1][0][3][0], MatchDenseExpr)
+    assert all(len(args[3]) > 0 for args, _ in calls)
 
 
 def retrieval_chunk(score, doc_id, doc_name, content="risk contract"):

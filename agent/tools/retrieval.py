@@ -14,22 +14,23 @@
 #  limitations under the License.
 #
 import asyncio
-from functools import partial
 import json
 import os
 import re
 from abc import ABC
-from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from common.constants import LLMType
+from functools import partial
+
+from agent.tools.base import ToolBase, ToolMeta, ToolParamBase
+from api.db.joint_services import memory_message_service
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.doc_metadata_service import DocMetadataService
-from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService, validate_dataset_embedding_models
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
-from api.db.joint_services import memory_message_service
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
 from common import settings
 from common.connection_utils import timeout
+from common.constants import LLMType
+from common.metadata_utils import apply_meta_data_filter
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
 
@@ -209,6 +210,11 @@ class Retrieval(ToolBase, ABC):
                 rerank_mdl=rerank_mdl,
                 rank_feature=label_question(query, kbs),
                 rerank_candidates_count=self._param.rerank_candidates_count,
+                # Agentic consumer: no dense-only rescue. An agent reads these
+                # chunks as evidence, so rows the query's own words never
+                # matched would look like evidence it did not ask for. Mirrors
+                # the Go side (internal/agent/tool/retrieval.go).
+                allow_dense_fallback=False,
             )
             if self.check_if_canceled("Retrieval processing"):
                 return
