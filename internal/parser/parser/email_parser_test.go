@@ -1503,6 +1503,7 @@ func TestHTMLBodyToText(t *testing.T) {
 		{"layout table cells", `<table><tr><td>a</td><td>b</td></tr></table>`, "a\nb"},
 		{"multi-row layout table stays line-separated", `<p>intro</p><table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table><p>outro</p>`, "intro\na\nb\nc\noutro"},
 		{"inline tags stay on one line", `<p>Hello <b>world</b></p>`, "Hello world"},
+		{"definition list and rule", `<div>A<dl><dt>Term</dt><dd>Def</dd></dl>B<hr>C</div>`, "A\nTerm\nDef\nB\nC"},
 		{"br forces a break", `one<br>two`, "one\ntwo"},
 		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
 	}

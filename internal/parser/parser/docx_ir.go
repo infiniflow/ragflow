@@ -189,9 +189,17 @@ func joinCellText(cell docxIRCell) string {
 }
 
 // docxIRTableToHTML converts a table IR element to an HTML table string.
-func docxIRTableToHTML(el docxIRElement) string {
+// A non-empty caption is emitted as a leading <caption> element so the
+// structured TableData contract (ParseTableHTML) carries it through to the
+// chunk renderer, which escapes it again on output.
+func docxIRTableToHTML(el docxIRElement, caption string) string {
 	var sb strings.Builder
 	sb.WriteString("<table>")
+	if caption != "" {
+		sb.WriteString("<caption>")
+		sb.WriteString(html.EscapeString(caption))
+		sb.WriteString("</caption>")
+	}
 	for _, row := range el.Rows {
 		sb.WriteString("<tr>")
 		for _, cell := range row.Cells {
@@ -326,10 +334,76 @@ func docxElementText(el docxIRElement, cellSep string) string {
 	}
 }
 
+// docxHeading is one entry of the heading outline stack.
+type docxHeading struct {
+	level int
+	text  string
+}
+
+// pushDOCXHeading folds a heading into the outline stack: a heading at
+// level L supersedes every entry at level >= L (sibling and deeper
+// headings end), then becomes the innermost entry. Empty headings are
+// ignored so they never truncate the outline.
+func pushDOCXHeading(stack []docxHeading, level int, text string) []docxHeading {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return stack
+	}
+	for len(stack) > 0 && stack[len(stack)-1].level >= level {
+		stack = stack[:len(stack)-1]
+	}
+	return append(stack, docxHeading{level: level, text: text})
+}
+
+// docxHeadingLocationCaption renders the heading outline as a table
+// location caption, mirroring Python's Docx.__get_nearest_title, which
+// injected "<caption>Table Location: {hierarchy}</caption>" into the table
+// HTML. It returns "" when the table sits under no heading.
+func docxHeadingLocationCaption(headings []docxHeading) string {
+	if len(headings) == 0 {
+		return ""
+	}
+	titles := make([]string, len(headings))
+	for i, h := range headings {
+		titles[i] = h.text
+	}
+	return "Table Location: " + strings.Join(titles, " > ")
+}
+
 // buildDOCXJSONSections converts an office_oxide IR JSON string into a
 // slice of structured items compatible with the chunker's JSON input
 // contract. Each item carries at least text and doc_type_kwd.
+//
+// A table carries the heading hierarchy it sits under as its caption,
+// mirroring Python's Docx.__get_nearest_title. office_oxide resolves Word
+// heading styles into element type "heading" plus a level, so the outline
+// is tracked from those elements alone.
+//
+// This is the caption-only (heading hierarchy) entry point. Use
+// buildDOCXJSONSectionsWithCaptions to also attach Caption-styled paragraph
+// text (a temporary stopgap; see docx_caption_scan.go).
 func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, nil)
+}
+
+// buildDOCXJSONSectionsWithCaptions is buildDOCXJSONSections plus the
+// TEMPORARY Caption-styled-paragraph detection. tableCaptions must be aligned
+// by position with the tables in the IR (see docx_caption_scan.go).
+//
+// TEMPORARY: remove once office_oxide emits paragraph styles
+// (yfedoseev/office_oxide#455).
+func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, tableCaptions)
+}
+
+// buildDOCXJSONSectionsCore is the shared implementation of the two entry
+// points above. tableCaptions, when non-nil, supplies a descriptive caption
+// for each table indexed by reading order; an explicit caption is preferred
+// over the synthesized heading-location caption. The position alignment
+// between tableCaptions and the IR tables is approximate (document-body order
+// vs office_oxide IR order) and is a known limitation of the temporary
+// Caption-style stopgap in docx_caption_scan.go.
+func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
@@ -339,10 +413,30 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 	}
 	var sections []map[string]any
 	tableSequence := 0
+	var headings []docxHeading
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {
 			switch el.Type {
 			case "paragraph", "heading":
+				if el.Type == "heading" {
+					level := el.Level
+					if level <= 0 {
+						level = 1
+					}
+					headings = pushDOCXHeading(headings, level, docxElementText(el, "\n"))
+				}
+				// TEMPORARY (docx_caption_scan.go): when a paragraph's text
+				// exactly matches the Caption recovered for the next table,
+				// suppress it as a standalone text section — it is attached
+				// to that table as the caption instead. The text match keeps
+				// this safe if the document scan and the IR element order
+				// ever desync: a non-matching paragraph is never dropped.
+				if tableSequence < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[tableSequence]); explicit != "" &&
+						strings.TrimSpace(docxElementText(el, " ")) == explicit {
+						continue
+					}
+				}
 				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading", budget)
 
 			case "image":
@@ -350,10 +444,19 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 
 			case "table":
 				tableSequence++
-				html := docxIRTableToHTML(el)
-				if html == "<table></table>" {
+				if len(el.Rows) == 0 {
 					continue
 				}
+				// Prefer an explicit Caption-styled paragraph (temporary
+				// stopgap, see docx_caption_scan.go) over the synthesized
+				// heading-location caption.
+				caption := docxHeadingLocationCaption(headings)
+				if idx := tableSequence - 1; idx >= 0 && idx < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[idx]); explicit != "" {
+						caption = explicit
+					}
+				}
+				html := docxIRTableToHTML(el, caption)
 				table := map[string]any{
 					"text":         html,
 					"image":        nil,

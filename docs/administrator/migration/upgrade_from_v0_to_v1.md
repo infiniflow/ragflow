@@ -210,6 +210,8 @@ First verify that `v1.0.0-rc1` started successfully and that its migration compl
 
 Sign in to RAGFlow and confirm that existing data and configuration are present, then test document retrieval, a new document upload, one Chat, and one Agent run.
 
+If you used **Tongyi-Qianwen** in the v0.x deployment, go to **User settings** **>** **Model providers** and edit the Tongyi-Qianwen instance. Reselect the **Base URL** for your region and save the instance again before verifying the models. For the China region, replace `https://dashscope.aliyuncs.com/compatible-mode/v1` with `https://dashscope.aliyuncs.com`.
+
 If the Python deployment used Tag datasets, confirm that they are no longer treated as datasets, reconfigure their tag files in the Go backend, and verify tag extraction on a representative document.
 
 Keep the `v0.27.2` backup until the upgraded deployment has completed acceptance testing and operated successfully under normal workload.

@@ -32,7 +32,9 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
-		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1}},
+		// The table sits under heading "Title", so it carries the
+		// heading-location caption (mirrors Python __get_nearest_title).
+		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -41,8 +43,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 }
 
 // TestBuildDOCXJSONSections_EmptyTableSkipped verifies that a table
-// with no rows renders as "<table></table>" and is dropped by the
-// "if html == \"<table></table>\" { continue }" guard.
+// with no rows is dropped before it can become a section.
 func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	irJSON := `{"sections":[{"elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"keep"}]},

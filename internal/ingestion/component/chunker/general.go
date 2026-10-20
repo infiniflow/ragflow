@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -404,17 +405,36 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
-	if !customDelimiter {
+	recordPrefixes := chunk.CustomDelimiterPrefixes(c.param.Delimiters)
+	recordGrouped := false
+	if len(recordPrefixes) > 0 {
+		units, recordGrouped = groupDOCXUnitsByRecordBoundary(units, recordPrefixes)
+	}
+	splitPattern := primaryPattern
+	if recordGrouped {
+		// Grouped records join paragraphs with "\n"; bare "\n" in the default
+		// delimiter list must not re-split them (#20496).
+		splitPattern = chunk.CompileDelimiterListPattern(c.param.Delimiters)
+	}
+	if !customDelimiter && !recordGrouped {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 		units = separateGeneralTextBlocks(units)
 	}
-	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
-	if customDelimiter {
+	if recordGrouped {
+		units = splitGeneralUnitsPreservingRecordPrefix(units, splitPattern, recordPrefixes)
+	} else {
+		units = splitGeneralUnits(units, splitPattern, !customDelimiter)
+	}
+	if customDelimiter || recordGrouped {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	} else {
 		units = mergeDOCXUnits(units, c.param.ChunkTokenSize)
 	}
-	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "")
+	overlapSep := ""
+	if recordGrouped {
+		overlapSep = "\n"
+	}
+	units = applyGeneralOverlap(units, c.param.OverlappedPercent, overlapSep)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
@@ -446,6 +466,77 @@ func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
 		previousText = i
 	}
 	return units
+}
+
+// groupDOCXUnitsByRecordBoundary merges consecutive text paragraphs into one
+// unit until a paragraph begins with a custom (backtick) delimiter prefix.
+// DOCX upstream emits one paragraph per unit, so a custom delimiter that only
+// appears at the start of each logical record must group paragraphs rather
+// than split within a single paragraph (#20496).
+func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) ([]schema.ChunkDoc, bool) {
+	if len(recordPrefixes) == 0 {
+		return units, false
+	}
+	grouped := make([]schema.ChunkDoc, 0, len(units))
+	var current *schema.ChunkDoc
+	sawBoundary := false
+	flush := func() {
+		if current == nil {
+			return
+		}
+		grouped = append(grouped, *current)
+		current = nil
+	}
+	for _, unit := range units {
+		if itemDocType(unit) != "text" {
+			flush()
+			media := cloneChunkDoc(unit)
+			media.DocType = itemDocType(media)
+			media.CKType = media.DocType
+			grouped = append(grouped, media)
+			continue
+		}
+		if strings.TrimSpace(unit.Text) == "" {
+			continue
+		}
+		text := cloneChunkDoc(unit)
+		text.DocType = "text"
+		text.CKType = "text"
+		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
+			sawBoundary = true
+			flush()
+			current = &text
+			continue
+		}
+		if !sawBoundary {
+			flush()
+			grouped = append(grouped, text)
+			continue
+		}
+		if current == nil {
+			current = &text
+			continue
+		}
+		mergeGeneralChunk(current, text, "\n")
+	}
+	flush()
+	if !sawBoundary {
+		return units, false
+	}
+	return grouped, true
+}
+
+func docxTextStartsRecordBoundary(text string, recordPrefixes []string) bool {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	for _, prefix := range recordPrefixes {
+		if prefix == "" {
+			continue
+		}
+		if strings.HasPrefix(text, prefix) || strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeDOCXUnits keeps the previous text merge target across intervening
@@ -1233,6 +1324,62 @@ func joinGeneralOverlapText(prefix, text, separator string) string {
 		return prefix + text
 	}
 	return prefix + separator + text
+}
+
+// splitGeneralUnitsPreservingRecordPrefix is splitGeneralUnits, except a
+// leading custom-delimiter record prefix (for example "问：") is kept on the
+// first fragment. Inline delimiter matches are still dropped in splitByDelim
+// drop mode.
+func splitGeneralUnitsPreservingRecordPrefix(units []schema.ChunkDoc, pattern *regexp.Regexp, recordPrefixes []string) []schema.ChunkDoc {
+	result := make([]schema.ChunkDoc, 0, len(units))
+	for _, unit := range units {
+		unit = cloneChunkDoc(unit)
+		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		unit.DocType = itemDocType(unit)
+		unit.CKType = unit.DocType
+		prefix, rest := peelLeadingRecordPrefix(unit.Text, recordPrefixes)
+		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(rest) {
+			unit.Text = prefix + rest
+			unit.TKNums = intPtr(tokenizeStr(unit.Text))
+			result = append(result, unit)
+			continue
+		}
+		parts := splitByDelim(rest, pattern, false)
+		filtered := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			filtered = append(filtered, part)
+		}
+		if len(filtered) > 0 {
+			filtered[0] = prefix + filtered[0]
+		}
+		for _, piece := range sliceGeneralSplitPieces(unit, filtered) {
+			result = append(result, piece)
+		}
+	}
+	return result
+}
+
+func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest string) {
+	if len(prefixes) == 0 {
+		return "", text
+	}
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	leadingWS := text[:len(text)-len(trimmed)]
+	for _, p := range prefixes {
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(text, p) {
+			return p, text[len(p):]
+		}
+		if strings.HasPrefix(trimmed, p) {
+			return leadingWS + p, trimmed[len(p):]
+		}
+	}
+	return "", text
 }
 
 func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) []schema.ChunkDoc {

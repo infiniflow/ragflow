@@ -20,7 +20,10 @@
 // makes the naming rules unit-testable without booting any subsystem.
 package bootstrap
 
-import "fmt"
+import (
+	"fmt"
+	"ragflow/internal/common"
+)
 
 // TempServerName returns the placeholder server name used for the temporary,
 // stdout-only logger that exists before the configuration is loaded. An
@@ -30,11 +33,11 @@ import "fmt"
 // This is intentionally distinct from ResolveServerName: the final name for
 // api/admin additionally embeds the resolved HTTP port, which is only known
 // after the configuration is initialized.
-func TempServerName(mode string, nameFlag *string) string {
+func TempServerName(serverType common.ServerType, nameFlag *string) string {
 	if nameFlag != nil {
 		return *nameFlag
 	}
-	return mode + "_server"
+	return string(serverType) + "_server"
 }
 
 // ResolveServerName derives the final server name for a mode, preserving the
@@ -68,5 +71,24 @@ func ResolveServerName(mode string, nameFlag *string, port int) (string, error) 
 		return "migrate", nil
 	default:
 		return "", fmt.Errorf("unsupported server mode %q", mode)
+	}
+}
+
+func GetServerType(args *ServerArgs) common.ServerType {
+	switch *args.Mode {
+	case "api":
+		return common.ServerTypeAPI
+	case "admin":
+		return common.ServerTypeAdmin
+	case "ingestor":
+		return common.ServerTypeIngestion
+	case "syncer":
+		return common.ServerTypeFileSyncer
+	case "deepdoc":
+		return common.ServerTypeDeepDocCPU
+	case "migrate":
+		return common.ServerTypeMigrate
+	default:
+		return common.ServerTypeUnknown
 	}
 }

@@ -642,9 +642,10 @@ export default {
         'PDF 解析方法：auto（自动检测）、txt（文本提取）、ocr（光学字符识别）',
       mineruFormulaEnable: '公式识别',
       mineruFormulaEnableTip:
-        '启用公式识别。注意：对于西里尔文档可能无法正常工作。',
+        '通过 /file_parse 启用公式识别。Hybrid 后端的此开关仅控制行内公式，块级公式仍会识别。V1 不支持关闭此选项。',
       mineruTableEnable: '表格识别',
-      mineruTableEnableTip: '启用表格识别和提取。',
+      mineruTableEnableTip:
+        '通过 /file_parse 启用表格识别和提取。V1 不支持关闭此选项。',
       paddleocrOptions: 'PaddleOCR 选项',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
