@@ -1949,7 +1949,6 @@ class RAGFlowPdfParser:
         return poss
 
     def crop(self, text, ZM=3, need_position=False):
-        imgs = []
         poss = self.extract_positions(text)
         if not poss:
             if need_position:
@@ -1964,110 +1963,107 @@ class RAGFlowPdfParser:
 
         page_count = len(self.page_images)
 
-        filtered_poss = []
+        normalized = []
         for pns, left, right, top, bottom in poss:
             if not pns:
                 logging.warning("Empty page index list in crop; skipping this position.")
                 continue
-            valid_pns = [p for p in pns if 0 <= p < page_count]
-            if not valid_pns:
-                logging.warning(f"All page indices {pns} out of range for {page_count} pages; skipping.")
+            if any(not (0 <= p < page_count) for p in pns):
+                logging.warning("Page indices %s out of range for %s pages during crop; skipping this position.", pns, page_count)
                 continue
-            filtered_poss.append((valid_pns, left, right, top, bottom))
+            if any(b != a + 1 for a, b in zip(pns, pns[1:])):
+                logging.warning("Nonconsecutive page indices %s during crop; skipping this position.", pns)
+                continue
+            left, right = sorted((left, right))
+            if len(pns) == 1:
+                top, bottom = sorted((top, bottom))
+            normalized.append((pns, left, right, top, bottom))
 
-        poss = filtered_poss
-        if not poss:
-            logging.warning("No valid positions after filtering; skip cropping.")
-            if need_position:
-                return None, None
-            return
-
-        max_width = max(np.max([right - left for (_, left, right, _, _) in poss]), 6)
         GAP = 6
-        pos = poss[0]
-        first_page_idx = pos[0][0]
-        poss.insert(0, ([first_page_idx], pos[1], pos[2], max(0, pos[3] - 120), max(pos[3] - GAP, 0)))
-        pos = poss[-1]
-        last_page_idx = pos[0][-1]
-        if not (0 <= last_page_idx < page_count):
-            logging.warning(f"Last page index {last_page_idx} out of range for {page_count} pages; skipping crop.")
+        CONTEXT = 120
+
+        def _crop_range(pns, left, right, top, bottom, is_context=False):
+            # A tag's top is local to its first page, bottom to its last.
+            # Keep all offsets in pixels; comparing these local endpoints or
+            # swapping a negative remainder would invent content across pages.
+            start = top * ZM
+            end = bottom * ZM + sum(self.page_images[pn].height for pn in pns[:-1])
+            if end <= start:
+                if not is_context:
+                    logging.warning(
+                        "Skipping empty crop range pages=%s raw=(%s,%s,%s,%s) reason=non_positive_vertical_span",
+                        pns,
+                        left,
+                        right,
+                        top,
+                        bottom,
+                    )
+                return []
+            pieces = []
+            offset = 0
+            for pn in pns:
+                page_width, page_height = self.page_images[pn].size
+                x0 = max(0.0, min(left * ZM, page_width))
+                x1 = max(0.0, min(right * ZM, page_width))
+                y0 = max(0.0, min(start - offset, page_height))
+                y1 = max(0.0, min(end - offset, page_height))
+                offset += page_height
+                # PIL rounds endpoints, not their difference. A positive float
+                # span can still collapse to a zero-pixel crop.
+                if round(x1) <= round(x0) or round(y1) <= round(y0):
+                    if not is_context:
+                        logging.warning(
+                            "Skipping empty crop page=%s raw=(%s,%s,%s,%s) clamped=(%s,%s,%s,%s) reason=empty_after_clamp",
+                            pn + self.page_from,
+                            left,
+                            right,
+                            top,
+                            bottom,
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                        )
+                    continue
+                pieces.append((pn, self.page_images[pn].crop((x0, y0, x1, y1)), (x0 / ZM, y0 / ZM, x1 / ZM, y1 / ZM)))
+            return pieces
+
+        body = []
+        for pns, left, right, top, bottom in normalized:
+            pieces = _crop_range(pns, left, max(left + 10, right), top, bottom)
+            if pieces:
+                body.append((left, right, pieces))
+        if not body:
             if need_position:
                 return None, None
             return
-        last_page_height = self.page_images[last_page_idx].size[1] / ZM
-        poss.append(
-            (
-                [last_page_idx],
-                pos[1],
-                pos[2],
-                min(last_page_height, pos[4] + GAP),
-                min(last_page_height, pos[4] + 120),
-            )
-        )
+
+        max_width = max(max(right - left for left, right, _pieces in body), GAP)
+        first_left, _first_right, first_pieces = body[0]
+        first_pn, _first_img, (_fx0, first_top, _fx1, _first_bottom) = first_pieces[0]
+        last_left, _last_right, last_pieces = body[-1]
+        last_pn, _last_img, (_lx0, _last_top, _lx1, last_bottom) = last_pieces[-1]
+
+        def _context(pn, left, top, bottom):
+            return [(img, True) for _page, img, _box in _crop_range([pn], left, left + max_width, top, bottom, is_context=True)]
+
+        head = _context(first_pn, first_left, first_top - CONTEXT, first_top - GAP)
+        tail = _context(last_pn, last_left, last_bottom + GAP, last_bottom + CONTEXT)
 
         positions = []
-        for ii, (pns, left, right, top, bottom) in enumerate(poss):
-            if 0 < ii < len(poss) - 1:
-                right = max(left + 10, right)
-            else:
-                right = left + max_width
-            bottom *= ZM
-            for pn in pns[1:]:
-                if 0 <= pn - 1 < page_count:
-                    bottom += self.page_images[pn - 1].size[1]
-                else:
-                    logging.warning(f"Page index {pn}-1 out of range for {page_count} pages during crop; skipping height accumulation.")
+        body_slices = []
+        for _left, _right, pieces in body:
+            for pn, img, (x0, y0, x1, y1) in pieces:
+                body_slices.append((img, False))
+                positions.append((pn + self.page_from, x0, x1, y0, y1))
+        imgs = head + body_slices + tail
 
-            if not (0 <= pns[0] < page_count):
-                logging.warning(f"Base page index {pns[0]} out of range for {page_count} pages during crop; skipping this segment.")
-                continue
-
-            page_height = self.page_images[pns[0]].size[1]
-            x0, y0, x1, y1 = left * ZM, top * ZM, right * ZM, min(bottom, page_height)
-            y0 = max(0, min(y0, page_height))
-            y1 = max(0, min(y1, page_height))
-            if x0 > x1:
-                x0, x1 = x1, x0
-            if y0 > y1:
-                y0, y1 = y1, y0
-            if x1 <= x0 or y1 <= y0:
-                bottom -= self.page_images[pns[0]].size[1]
-                continue
-
-            imgs.append(self.page_images[pns[0]].crop((x0, y0, x1, y1)))
-            if 0 < ii < len(poss) - 1:
-                positions.append((pns[0] + self.page_from, left, right, top, min(bottom, self.page_images[pns[0]].size[1]) / ZM))
-            bottom -= self.page_images[pns[0]].size[1]
-            for pn in pns[1:]:
-                if not (0 <= pn < page_count):
-                    logging.warning(f"Page index {pn} out of range for {page_count} pages during crop; skipping this page.")
-                    continue
-                x0, y0, x1, y1 = left * ZM, 0, right * ZM, min(bottom, self.page_images[pn].size[1])
-                if x0 > x1:
-                    x0, x1 = x1, x0
-                if y0 > y1:
-                    y0, y1 = y1, y0
-                if x1 <= x0 or y1 <= y0:
-                    bottom -= self.page_images[pn].size[1]
-                    continue
-                imgs.append(self.page_images[pn].crop((x0, y0, x1, y1)))
-                if 0 < ii < len(poss) - 1:
-                    positions.append((pn + self.page_from, left, right, 0, min(bottom, self.page_images[pn].size[1]) / ZM))
-                bottom -= self.page_images[pn].size[1]
-
-        if not imgs:
-            if need_position:
-                return None, None
-            return
-        height = 0
-        for img in imgs:
-            height += img.size[1] + GAP
-        height = int(height)
-        width = int(np.max([i.size[0] for i in imgs]))
+        height = sum(img.height + GAP for img, _is_context in imgs)
+        width = max(img.width for img, _is_context in imgs)
         pic = Image.new("RGB", (width, height), (245, 245, 245))
         height = 0
-        for ii, img in enumerate(imgs):
-            if ii == 0 or ii + 1 == len(imgs):
+        for img, is_context in imgs:
+            if is_context:
                 img = img.convert("RGBA")
                 overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
                 overlay.putalpha(128)
