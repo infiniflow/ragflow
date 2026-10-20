@@ -26,3 +26,12 @@ func (c *CLI) AdminListUserAgentsCommand(commandCount int, cmd *Command) (Respon
 func (p *Parser) parseAdminListUserAgentsEE(userName string) (*Command, error) {
 	return nil, errors.New("listing user agents is only available in the enterprise edition")
 }
+
+// AdminListUserDatasetsCommand is available only in the enterprise edition.
+func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("listing user datasets is only available in the enterprise edition")
+}
+
+func (p *Parser) parseAdminListUserDatasetsEE(userName string) (*Command, error) {
+	return nil, errors.New("listing user datasets is only available in the enterprise edition")
+}
