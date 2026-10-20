@@ -188,6 +188,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewApiRouteModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
+	case "empiriolabs ai":
+		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
