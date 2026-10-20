@@ -837,7 +837,7 @@ func (h *Handler) ShowSystemLicense(c *gin.Context) {
 			return
 		}
 	}
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 type SetSystemLicenseConfigRequest struct {

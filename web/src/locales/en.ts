@@ -707,9 +707,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
       mineruFormulaEnable: 'Formula recognition',
       mineruFormulaEnableTip:
-        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+        'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
       mineruTableEnable: 'Table recognition',
-      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruTableEnableTip:
+        'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',

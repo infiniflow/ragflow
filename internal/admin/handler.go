@@ -60,15 +60,9 @@ type ErrorResponse struct {
 func (h *Handler) Healthz(c *gin.Context) {
 	result, allOK := service.GetComponentsHealthz(c.Request.Context())
 	if allOK {
-		c.JSON(http.StatusOK, gin.H{
-			"code": 0,
-			"data": result,
-		})
+		common.SuccessWithData(c, result, "success")
 	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": common.CodeServerError,
-			"data": result,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, result, "")
 	}
 }
 
@@ -1244,7 +1238,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1254,7 +1248,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1275,7 +1269,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, "SUCCESS")
+	common.SuccessWithData(c, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

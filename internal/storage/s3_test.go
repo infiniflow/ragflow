@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
@@ -31,7 +32,19 @@ func newS3TestStorage(region string, handler s3RoundTripper) *S3Storage {
 		options.UsePathStyle = true
 		options.RetryMaxAttempts = 1
 	})
-	return &S3Storage{client: client}
+	s := &S3Storage{client: client}
+	s.s3Base = s3Base{
+		client:     func() *s3.Client { return s.client },
+		bucket:     "",
+		prefixPath: "",
+		typeName:   "s3",
+		// Identity folding: these tests exercise the shared surface with no
+		// default bucket / prefix configured.
+		resolve:    func(bucket, fnm string) (string, string) { return bucket, fnm },
+		makeBucket: s.createBucket,
+		reconnect:  func(context.Context) {},
+	}
+	return s
 }
 
 func s3Response(status int, body string) *http.Response {

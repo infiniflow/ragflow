@@ -491,6 +491,50 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	}
 }
 
+// TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost locks in that the
+// DoPinned host guard is case-insensitive. DNS hostnames are
+// case-insensitive, so a URL host spelled with a different case than
+// originalHost (e.g. a user-typed "EXAMPLE.TEST" vs the resolver's
+// lowercased "example.test") must still be pinned and delivered, not
+// refused. A genuinely different host is still refused by
+// TestHTTPHelper_DoPinnedRefusesMismatchedURLHost.
+func TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	u, perr := neturl.Parse(srv.URL)
+	if perr != nil {
+		t.Fatalf("parse server URL %q: %v", srv.URL, perr)
+	}
+	serverHost, serverPort, sperr := net.SplitHostPort(u.Host)
+	if sperr != nil {
+		t.Fatalf("split server host:port from %q: %v", u.Host, sperr)
+	}
+	// URL host is UPPER-case; originalHost (as a resolver would record
+	// it) is lower-case — DNS-equivalent, so the pin must proceed.
+	targetURL := fmt.Sprintf("http://EXAMPLE.TEST:%s/", serverPort)
+	pinnedIP := net.ParseIP(serverHost)
+	if pinnedIP == nil {
+		t.Fatalf("server host %q is not an IP literal", serverHost)
+	}
+
+	h := NewHTTPHelper()
+	resp, err := h.DoPinned(ctx,
+		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
+	if err != nil {
+		t.Fatalf("DoPinned rejected case-insensitive equivalent host: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+}
+
 // TestHTTPHelper_DoPinnedBypassesProxy locks in the proxy bypass
 // added after the post-Phase-7 review: even when baseTransport.Proxy
 // is set (e.g. via HTTP_PROXY / HTTPS_PROXY env), DoPinned must NOT
