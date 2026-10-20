@@ -38,7 +38,7 @@ func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a.png)", Label: "image"}}}}}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a(1).png)", Label: "image"}}}}}
 	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)

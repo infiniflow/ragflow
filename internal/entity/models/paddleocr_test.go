@@ -499,6 +499,7 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 		{"only page number", `[{"block_label":"number","block_content":"12"}]`, "page fallback", "[]"},
 		{"empty blocks", `[{"block_content":"  "}]`, "page fallback", "[]"},
 		{"markdown image", `[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
+		{"parenthesized image destination", `[{"block_content":"![figure](https://example.invalid/a(1).png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
 		{"html image", `[{"block_content":"<div><img src=\"a.png\"></div>"}]`, "page fallback", "[]"},
 		{"text among images", `[{"block_content":"![figure](a.png)"},{"block_content":"positioned text","block_bbox":[10,20,30,40]}]`, "![figure](a.png)\npositioned text", "[10 20 30 40]"},
 	} {
