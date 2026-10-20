@@ -113,10 +113,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
     if (parseType === ParseType.BuiltIn) {
       form.setValue('pipeline_id', '');
     }
-    if (defaultModelDictionary?.embd_id) {
-      form.setValue('embedding_model', defaultModelDictionary?.embd_id);
+  }, [parseType, form]);
+
+  // Backfill the default embedding model once the async query resolves, but
+  // never overwrite a model the user has already picked.
+  useEffect(() => {
+    if (defaultModelDictionary?.embd_id && !form.getValues('embedding_model')) {
+      form.setValue('embedding_model', defaultModelDictionary.embd_id);
     }
-  }, [parseType, form, defaultModelDictionary]);
+  }, [defaultModelDictionary, form]);
 
   return (
     <Form {...form}>
@@ -145,7 +150,10 @@ export function InputForm({ onOk }: IModalProps<any>) {
         />
 
         <EmbeddingModelItem line={2} isEdit={false} />
-        <ParseTypeItem />
+        <ParseTypeItem
+          builtInLabelKey="knowledgeList.builtInTemplate"
+          pipelineLabelKey="knowledgeList.ingestionPipeline"
+        />
         {parseType === ParseType.BuiltIn && (
           <BackendVariant
             go={<BuiltinPipelineItem name={ChunkMethodName} />}

@@ -1,7 +1,7 @@
 import { EmptyType } from '@/components/empty/constant';
 import Empty from '@/components/empty/empty';
 import FileStatusBadge from '@/components/file-status-badge';
-import { FileIcon, IconFontFill } from '@/components/icon-font';
+import { FileIcon } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
@@ -18,14 +18,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-  ProcessingType,
-  ProcessingTypeMap,
-  RunningStatusMap,
-} from '@/constants/knowledge';
+import { ProcessingTypeMap, RunningStatusMap } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import { IDataSourceInfoMap } from '@/pages/user-setting/data-source/interface';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import {
@@ -42,9 +40,17 @@ import {
 } from '@tanstack/react-table';
 import { TFunction } from 'i18next';
 import { ArrowUpDown, Eye, MonitorUp } from 'lucide-react';
-import { FC, useMemo, useState } from 'react';
+import { FC, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+import {
+  ProcessingTypeViewModeMap,
+  ViewModeIconMap,
+  ViewModeLabelKeyMap,
+} from '../compilation/constants';
 import { RunningStatus } from '../dataset/constant';
 import ProcessLogModal, { ILogInfo } from '../process-log-modal';
+import { useIngestionMessages } from '../ingestion-message-hooks';
 import { LogTabs } from './dataset-common';
 import { DocumentLog, FileLogsTableProps, IFileLogItem } from './interface';
 
@@ -216,6 +222,7 @@ export const getFileLogsTableColumns = (
 
 export const getDatasetLogsTableColumns = (
   t: TFunction<'translation', string>,
+  tRoot: TFunction<'translation', string>,
   showLog: (row: Row<IFileLogItem & DocumentLog>, active: LogTabs) => void,
 ) => {
   // const { t } = useTranslate('knowledgeDetails');
@@ -273,34 +280,25 @@ export const getDatasetLogsTableColumns = (
     {
       accessorKey: 'task_type',
       header: t('processingType'),
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2 text-text-primary">
-          {(ProcessingType.knowledgeGraph === row.original.task_type ||
-            row.original.task_type === 'GraphRAG') && (
-            <IconFontFill
-              name={`knowledgegraph`}
-              className="text-text-secondary"
-            ></IconFontFill>
-          )}
-          {ProcessingType.raptor === row.original.task_type && (
-            <IconFontFill
-              name={`dataflow-01`}
-              className="text-text-secondary"
-            ></IconFontFill>
-          )}
-          {ProcessingTypeMap[row.original.task_type as ProcessingType] ||
-            row.original.task_type}
-        </div>
-      ),
+      cell: ({ row }) => {
+        const taskType = row.original.task_type;
+        const viewMode = ProcessingTypeViewModeMap[taskType];
+        const Icon = viewMode ? ViewModeIconMap[viewMode] : undefined;
+        return (
+          <div className="flex items-center gap-2 text-text-primary">
+            {Icon && <Icon className="size-4 text-text-secondary" />}
+            {viewMode
+              ? tRoot(ViewModeLabelKeyMap[viewMode])
+              : ProcessingTypeMap[taskType as keyof typeof ProcessingTypeMap] ||
+                taskType}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'operation_status',
       header: t('status'),
       cell: ({ row }) => (
-        // <FileStatusBadge
-        //   status={row.original.status}
-        //   name={row.original.statusName}
-        // />
         <FileStatusBadge
           status={row.original.operation_status as RunningStatus}
           name={
@@ -341,10 +339,22 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [rowSelection, setRowSelection] = useState({});
   const { t } = useTranslate('knowledgeDetails');
+  const { t: tRoot } = useTranslation();
   const { t: tDatasetOverview } = useTranslate('datasetOverview');
   const [isModalVisible, setIsModalVisible] = useState(false);
-  const [logInfo, setLogInfo] = useState<IFileLogItem>();
-  const showLog = (row: Row<IFileLogItem & DocumentLog>) => {
+  const [logInfo, setLogInfo] = useState<ILogInfo>();
+  const [selectedLogID, setSelectedLogID] = useState<string>();
+  const { id: routeId } = useParams();
+  const { knowledgeId } = useGetKnowledgeSearchParams();
+  const datasetId = knowledgeId || routeId;
+  const isGoBackend = useIsGoBackend();
+  const {
+    data: messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  } = useIngestionMessages(datasetId, selectedLogID, isModalVisible);
+  const showLog = useCallback((row: Row<IFileLogItem & DocumentLog>) => {
     const logDetail = {
       taskId: row.original?.dsl?.task_id,
       fileName: row.original.document_name,
@@ -355,18 +365,48 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
       duration: formatSecondsToHumanReadable(
         row.original.process_duration || 0,
       ),
-      details: row.original.progress_msg,
-    } as unknown as IFileLogItem;
-    console.log('logDetail', logDetail);
+      details: row.original.progress_msg ?? '',
+    } as ILogInfo;
     setLogInfo(logDetail);
+    setSelectedLogID(row.original.id);
     setIsModalVisible(true);
-  };
+  }, []);
+  const modalLogInfo = useMemo<ILogInfo | undefined>(() => {
+    if (!logInfo) {
+      return undefined;
+    }
+    if (!isGoBackend) {
+      return logInfo;
+    }
+    return {
+      ...logInfo,
+      // Keep the seeded progress_msg visible until events arrive: blanking
+      // details unconditionally flashes an empty modal while the messages
+      // query is still loading (mirrors the dataset page's useShowLog).
+      details: messages?.items.length ? '' : logInfo.details,
+      // An empty array is truthy, so passing it through would render a blank
+      // events pane next to the seeded details; collapse it to undefined.
+      events: messages?.items.length ? messages.items : undefined,
+      loadPreviousEvents: hasPreviousPage
+        ? () => fetchPreviousPage()
+        : undefined,
+      hasPreviousEvents: hasPreviousPage,
+      isLoadingPreviousEvents: isFetchingPreviousPage,
+    };
+  }, [
+    isGoBackend,
+    logInfo,
+    messages,
+    fetchPreviousPage,
+    hasPreviousPage,
+    isFetchingPreviousPage,
+  ]);
   const { dataSourceInfo } = useDataSourceInfo();
   const columns = useMemo(() => {
     return active === LogTabs.FILE_LOGS
       ? getFileLogsTableColumns(t, showLog, dataSourceInfo)
-      : getDatasetLogsTableColumns(t, showLog);
-  }, [active, t]);
+      : getDatasetLogsTableColumns(t, tRoot, showLog);
+  }, [active, dataSourceInfo, showLog, t, tRoot]);
 
   const currentPagination = useMemo(
     () => ({
@@ -399,8 +439,8 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
   });
 
   return (
-    <div className="size-full flex flex-col">
-      <Table rootClassName="max-h-full mb-4">
+    <div className="flex flex-col flex-1 min-h-0 w-full">
+      <Table rootClassName="flex-1 min-h-0 mb-4">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
@@ -459,7 +499,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
           title={active === LogTabs.FILE_LOGS ? t('fileLogs') : t('datasetLog')}
           visible={isModalVisible}
           onCancel={() => setIsModalVisible(false)}
-          logInfo={logInfo as unknown as ILogInfo}
+          logInfo={modalLogInfo as ILogInfo}
         />
       )}
     </div>

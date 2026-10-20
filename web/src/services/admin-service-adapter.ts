@@ -3,6 +3,8 @@ import { pickByBackend } from '@/utils/backend-variant';
 export type GoServiceStatus = {
   type: string;
   name: string;
+  host: string;
+  port: number;
   status: string;
   elapsed: string;
   message: string;
@@ -18,8 +20,8 @@ export const adaptServiceList = (
         name: service.name,
         service_type: service.type,
         status: service.status,
-        host: '-',
-        port: '-',
+        host: service.host || '-',
+        port: service.port || '-',
         extra: { elapsed: service.elapsed, message: service.message },
       })),
     python: () => services as AdminService.ListServicesItem[],

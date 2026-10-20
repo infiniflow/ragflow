@@ -66,6 +66,12 @@ export type SelectWithSearchFlagProps = {
   // Return false to veto selecting the custom value on Enter
   onNoMatchEnter?(searchValue: string): boolean | void;
   disableAutoSelectOnEnter?: boolean;
+  // Custom display for a value matching no option (e.g. the referenced entity
+  // was deleted or is inaccessible). Opt-in: without it the raw value shows.
+  renderMissingValue?: (value: string) => ReactNode;
+  // While true, an unmatched value is treated as not-yet-loaded instead of
+  // missing, so the missing-value display doesn't flash before options arrive.
+  loading?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
 };
@@ -142,6 +148,8 @@ export const SelectWithSearch = forwardRef<
       onlyShowSelectedIcon = false,
       onNoMatchEnter,
       disableAutoSelectOnEnter = false,
+      renderMissingValue,
+      loading = false,
       testId,
       optionTestIdPrefix,
     },
@@ -178,6 +186,11 @@ export const SelectWithSearch = forwardRef<
     }, [options, value]);
 
     const selectLabel = selectedOption?.label;
+
+    // Mirrors TreeSelect: an unmatched value means the referenced option is
+    // gone — unless options may simply not have loaded yet.
+    const missingValue =
+      value && !selectedOption && !loading ? value : undefined;
 
     const showSearch = useMemo(() => {
       if (allowCustomValue || alwaysShowSearch) {
@@ -267,7 +280,11 @@ export const SelectWithSearch = forwardRef<
               triggerClassName,
             )}
           >
-            {selectLabel || value ? (
+            {missingValue && renderMissingValue ? (
+              <span className="flex min-w-0 items-center gap-2 truncate text-text-primary">
+                {renderMissingValue(missingValue)}
+              </span>
+            ) : selectLabel || value ? (
               <span className="flex min-w-0 options-center gap-2 truncate text-text-primary">
                 {onlyShowSelectedIcon && selectedOption?.icon
                   ? selectedOption.icon

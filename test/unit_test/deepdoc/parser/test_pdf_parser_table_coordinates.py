@@ -386,3 +386,24 @@ def test_extract_table_figure_preserves_textless_figures(monkeypatch):
     assert isinstance(descriptions, list)
     assert descriptions == [""]
     assert poss == [(0, 50, 200, 50, 200)]
+
+
+def test_extract_positions_accepts_negative_coordinates(monkeypatch):
+    """A content box may extend above the page origin (top < 0).
+
+    ``_line_tag`` writes such tags (``top`` is offset by ``page_cum_height``),
+    so ``extract_positions`` must parse them instead of silently dropping the
+    section image -- mirrors the Go-side fix in #19945.
+    """
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser
+    tag = "@@50\t45.0\t549.7\t-3.0\t737.9##"
+    assert parser.extract_positions(tag) == [([49], 45.0, 549.7, -3.0, 737.9)]
+    assert parser.remove_tag(f"body {tag} tail") == "body  tail"
+
+
+def test_extract_positions_accepts_negative_coordinates_with_page_range(monkeypatch):
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser
+    tag = "@@3-4\t1.5\t2.5\t-0.5\t3.5##"
+    assert parser.extract_positions(tag) == [([2, 3], 1.5, 2.5, -0.5, 3.5)]

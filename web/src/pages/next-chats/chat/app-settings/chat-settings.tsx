@@ -60,6 +60,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
+    // shouldUnregister: false keeps every field mounted in the form state, which
+    // includes all nine per-provider *_api_key fields. Switching provider therefore
+    // KEEPS the keys already typed for the others and saves them with the dialog —
+    // deliberate (a user may switch back), but it is why the payload can carry more
+    // than one provider key.
     shouldUnregister: false,
     mode: 'onChange',
     defaultValues: {

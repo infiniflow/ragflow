@@ -191,7 +191,7 @@ data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {
 
 data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": " to assist you based on the knowledge base provided.", "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": null, "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": null}
 
-data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": null, "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": "stop", "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": {"prompt_tokens": 5, "completion_tokens": 188, "total_tokens": 193}}
+data:{"id": "chatcmpl-3b0397f277f511f0b47f729e3aa55728", "choices": [{"delta": {"content": null, "role": "assistant", "function_call": null, "tool_calls": null, "reasoning_content": null}, "finish_reason": "stop", "index": 0, "logprobs": null}], "created": 1755084508, "model": "model", "object": "chat.completion.chunk", "system_fingerprint": "", "usage": {"prompt_tokens": 5, "completion_tokens": 188, "total_tokens": 193}, "retrieval_usage": {"embedding_tokens": 12}}
 
 data:[DONE]
 ```
@@ -224,9 +224,16 @@ Non-stream:
         },
         "prompt_tokens": 5,
         "total_tokens": 60
+    },
+    "retrieval_usage": {
+        "embedding_tokens": 12
     }
 }
 ```
+
+:::tip NOTE
+`retrieval_usage` is a RAGFlow-specific extension, not part of the OpenAI response schema, and is only present when the chat assistant's knowledge base actually triggered an embedding call for this request (e.g. embedding the question for retrieval, or embedding the generated answer for citation matching). `embedding_tokens` is the total across every such call for this request. It is reported separately from `usage` because these are embedding-model tokens, not chat-model prompt/completion tokens — mixing the two would break the `total_tokens == prompt_tokens + completion_tokens` invariant that `usage` follows. If your knowledge base's embedding model shares the same underlying provider/resource as the chat model (e.g. both are deployed on the same Azure OpenAI resource), `usage.prompt_tokens + retrieval_usage.embedding_tokens` is what that resource's own usage dashboard will show as consumed for this request, not `usage.prompt_tokens` alone.
+:::
 
 Failure:
 

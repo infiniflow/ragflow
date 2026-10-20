@@ -156,9 +156,9 @@ const TraceTypeMap: Record<GenerateType, TraceType> = {
   [GenerateType.SessionGraph]: TraceType.SessionGraph,
 };
 
-export const useTraceRunData = (type: GenerateType) => {
+export const useTraceRunData = (type: GenerateType, open = true) => {
   const { id } = useParams();
-  return useTraceQuery(type, TraceTypeMap[type], true, id);
+  return useTraceQuery(type, TraceTypeMap[type], open, id);
 };
 
 export const useUnBindTask = () => {

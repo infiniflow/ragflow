@@ -13,6 +13,7 @@ import { TriangleAlert } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NodeHandleId, RetrievalFrom } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { LabelCard } from './card';
@@ -38,17 +39,28 @@ function InnerRetrievalNode({
 
   const persistedDatasetIds = isMemory ? [] : knowledgeBaseIds;
 
+  // Names resolve through the canvas owner's datasets/memories — a shared
+  // canvas references the owner's resources, while an imported dsl.json makes
+  // the importer the owner.
+  const ownerTenantId = useOwnerTenantId();
+
   // Resolve names/avatars for the persisted ids directly: the paginated
   // knowledge list can miss them (unloaded pages, emptied datasets filtered
   // out). Shares the byIds query with the staleness check below.
-  const { data: datasets } = useFetchDatasetsByIds(persistedDatasetIds);
+  const { data: datasets } = useFetchDatasetsByIds(
+    persistedDatasetIds,
+    ownerTenantId,
+  );
 
   // Mirror the form's stale-dataset validation: a persisted id referencing a
   // dataset that has since been deleted or emptied of chunks is flagged on
   // the node as well. Stays empty while the lookup is in flight.
-  const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds);
+  const { staleDatasetIds } = useStaleDatasetIds(
+    persistedDatasetIds,
+    ownerTenantId,
+  );
 
-  const memoryList = useFetchAllMemoryList();
+  const memoryList = useFetchAllMemoryList(ownerTenantId);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>

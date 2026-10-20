@@ -59,6 +59,7 @@ from common.data_source import (
     AsanaConnector,
     ImapConnector,
     ZendeskConnector,
+    ZoteroConnector,
     SeaFileConnector,
     RDBMSConnector,
     BigQueryConnector,
@@ -2125,6 +2126,55 @@ class AzureDevOps(SyncBase):
         return wrapper()
 
 
+class Zotero(SyncBase):
+    SOURCE_NAME: str = FileSource.ZOTERO
+
+    def _zotero_batch_size(self) -> int:
+        raw_batch_size = self.conf.get("batch_size", INDEX_BATCH_SIZE)
+        try:
+            batch_size = int(raw_batch_size)
+        except (TypeError, ValueError):
+            batch_size = INDEX_BATCH_SIZE
+        if batch_size <= 0:
+            batch_size = INDEX_BATCH_SIZE
+        return batch_size
+
+    async def _prepare_connector(self, task: dict):
+        conf = self.conf
+        user_id = (conf.get("zotero_user_id") or conf["credentials"].get("zotero_user_id") or "").strip()
+        self.connector = ZoteroConnector(
+            zotero_user_id=user_id,
+            storage_mode=conf.get("storage_mode", "zotero_storage"),
+            webdav_url=conf.get("webdav_url"),
+            batch_size=self._zotero_batch_size(),
+        )
+        self.connector.load_credentials(conf["credentials"])
+        self.connector.validate_local_settings()
+        self.log_connection(
+            "Zotero",
+            f"user_id={user_id} storage={conf.get('storage_mode', 'zotero_storage')}",
+            task,
+        )
+
+    async def _initialize_for_prune(self, task: dict):
+        await self._prepare_connector(task)
+
+    async def _generate(self, task: dict):
+        await self._prepare_connector(task)
+
+        poll_start = task.get("poll_range_start")
+        if task["reindex"] == "1" or poll_start is None:
+            document_generator = self.connector.load_from_state()
+        else:
+            end_ts = datetime.now(timezone.utc).timestamp()
+            document_generator = self.connector.poll_source(
+                poll_start.timestamp(),
+                end_ts,
+            )
+
+        return iter_in_worker_thread(document_generator)
+
+
 class SeaFile(SyncBase):
     SOURCE_NAME: str = FileSource.SEAFILE
 
@@ -2437,6 +2487,7 @@ func_factory = {
     FileSource.ASANA: Asana,
     FileSource.IMAP: IMAP,
     FileSource.ZENDESK: Zendesk,
+    FileSource.ZOTERO: Zotero,
     FileSource.GITHUB: Github,
     FileSource.GITLAB: Gitlab,
     FileSource.BITBUCKET: Bitbucket,
