@@ -278,7 +278,7 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 		return p.tracker
 	}
 	if p.kv != nil {
-		return canvas.NewRunTracker(defaultTrackerTTL)
+		return canvas.NewRunTrackerWithClient(p.kv.GetClient(), defaultTrackerTTL)
 	}
 	return nil
 }

@@ -44,7 +44,7 @@ type forbiddenPackage struct {
 
 var forbiddenPackages = []forbiddenPackage{
 	{importPath: "ragflow/internal/dao", pkgName: "dao", symbols: []string{"DB"}},
-	{importPath: "ragflow/internal/engine", pkgName: "engine", symbols: []string{"Get", "GetMessageQueueEngine"}},
+	{importPath: "ragflow/internal/engine", pkgName: "engine", symbols: []string{"Get*"}},
 	{importPath: "ragflow/internal/engine/kvrocks", pkgName: "kvrocks", symbols: []string{"Get"}},
 }
 
@@ -156,7 +156,15 @@ func fileForbiddenHits(fset *token.FileSet, file *ast.File) []string {
 			return true
 		}
 		for _, sym := range fp.symbols {
-			if sel.Sel.Name == sym {
+			switch {
+			case strings.HasSuffix(sym, "*"):
+				// A trailing "*" matches every selector beginning with the
+				// prefix, so "engine.Get*" forbids engine.Get / GetMessageQueueEngine /
+				// GetEngineType — any process-wide engine singleton accessor.
+				if strings.HasPrefix(sel.Sel.Name, strings.TrimSuffix(sym, "*")) {
+					hits = append(hits, fp.pkgName+"."+sel.Sel.Name)
+				}
+			case sel.Sel.Name == sym:
 				hits = append(hits, fp.pkgName+"."+sym)
 			}
 		}
@@ -191,7 +199,7 @@ const note = "dao.DB and kvrocks.Get() in a string literal must not count either
 func f() {
 	_ = note
 	_ = dao.NewDocumentDAO
-	_ = engine.GetEngineType
+	_ = engine.EngineInfinity
 }
 `
 	if hits := parseSource(t, src); len(hits) != 0 {
@@ -244,6 +252,16 @@ import eng "ragflow/internal/engine"
 func f() { _ = eng.GetMessageQueueEngine() }
 `,
 			want: "engine.GetMessageQueueEngine",
+		},
+		{
+			name: "engine.Get* prefix catches GetEngineType",
+			src: `package snippet
+
+import "ragflow/internal/engine"
+
+func f() { _ = engine.GetEngineType() }
+`,
+			want: "engine.GetEngineType",
 		},
 		{
 			name: "unrelated identifier named engine is not a violation",

@@ -1273,7 +1273,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	}
 
 	searchReq := &enginetypes.SearchRequest{
-		IndexNames:   memorySearchIndexNames(memories),
+		IndexNames:   memorySearchIndexNames(memories, s.docEngine),
 		Offset:       0,
 		Limit:        topN,
 		SelectFields: memoryMessageSelectFields(),
@@ -1421,7 +1421,7 @@ func MemoryIndexName(tenantID string) string {
 	return fmt.Sprintf("memory_%s_%s", prefix, tenantID)
 }
 
-func memorySearchIndexNames(memories []*entity.Memory) []string {
+func memorySearchIndexNames(memories []*entity.Memory, docEngine engine.DocEngine) []string {
 	seen := make(map[string]struct{}, len(memories))
 	indexNames := make([]string, 0, len(memories))
 	for _, memory := range memories {
@@ -1429,7 +1429,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 			continue
 		}
 		indexName := MemoryIndexName(memory.TenantID)
-		if engine.GetEngineType() == "infinity" {
+		if docEngine != nil && docEngine.GetType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
 		if _, ok := seen[indexName]; ok {
@@ -1527,7 +1527,7 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	} else if limit > maxMessageLimit {
 		limit = maxMessageLimit
 	}
-	indexNames := memorySearchIndexNames(memories)
+	indexNames := memorySearchIndexNames(memories, s.docEngine)
 	memoryIDs := make([]string, 0, len(memories))
 	for _, memory := range memories {
 		if memory == nil || strings.TrimSpace(memory.ID) == "" {
@@ -1813,7 +1813,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		filter["session_id"] = keywords
 	}
 	filter["memory_id"] = []string{memoryID}
-	indexNames := memorySearchIndexNames([]*entity.Memory{memory})
+	indexNames := memorySearchIndexNames([]*entity.Memory{memory}, s.docEngine)
 
 	rawReq := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,

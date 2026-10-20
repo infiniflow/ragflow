@@ -178,14 +178,17 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 // these filter keys and would reject the query or silently drop unknown fields.
 // The guard is checked at every dataset-structure write/delete/rebuild entry so
 // those engines never leave partial state or hit an unknown-filter error (plan §5).
-func datasetStructureSupported() bool {
-	switch engine.GetEngineType() {
-	case "infinity", "elasticsearch":
-		return true
-	case "":
+// It reads the engine injected via engineWriter.eng rather than the process
+// global, so the dependency is explicit.
+func (w engineWriter) datasetStructureSupported() bool {
+	if w.eng == nil {
 		// Engine not initialized (unit tests inject a fake engine directly via
 		// engineWriter.eng). The guard is only meaningful against a real engine
 		// type, so an empty type is treated as supported.
+		return true
+	}
+	switch w.eng.GetType() {
+	case "infinity", "elasticsearch", "":
 		return true
 	default:
 		return false
@@ -194,8 +197,12 @@ func datasetStructureSupported() bool {
 
 // errDatasetStructureUnsupported returns an error (not a silent no-op) naming
 // the engine when a dataset-structure operation runs on an unsupported engine.
-func errDatasetStructureUnsupported() error {
-	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
+func (w engineWriter) errDatasetStructureUnsupported() error {
+	engineType := ""
+	if w.eng != nil {
+		engineType = w.eng.GetType()
+	}
+	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engineType)
 }
 
 // writeMergedBatchSize bounds how many rows each parallel InsertChunks call
@@ -482,8 +489,8 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	if len(buckets) == 0 {
 		return nil
 	}
-	if !datasetStructureSupported() {
-		return errDatasetStructureUnsupported()
+	if !w.datasetStructureSupported() {
+		return w.errDatasetStructureUnsupported()
 	}
 	if w.eng == nil {
 		return errEngineNotConfigured
@@ -821,8 +828,8 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 	if len(deletedDocIDs) == 0 {
 		return nil
 	}
-	if !datasetStructureSupported() {
-		return errDatasetStructureUnsupported()
+	if !w.datasetStructureSupported() {
+		return w.errDatasetStructureUnsupported()
 	}
 	if w.eng == nil {
 		return errEngineNotConfigured
@@ -1536,8 +1543,8 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 	if len(variants) == 0 {
 		// Navigation roles and searchable wiki outputs are separate from the
 		// dataset-scoped structure sweep.
-		if !datasetStructureSupported() {
-			return errDatasetStructureUnsupported()
+		if !w.datasetStructureSupported() {
+			return w.errDatasetStructureUnsupported()
 		}
 		_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 			"kb_id": kb,
@@ -1573,8 +1580,8 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 				return fmt.Errorf("delete merged (wiki): %w", err)
 			}
 		case kccommon.VariantStructure, kccommon.VariantMindmap:
-			if !datasetStructureSupported() {
-				return errDatasetStructureUnsupported()
+			if !w.datasetStructureSupported() {
+				return w.errDatasetStructureUnsupported()
 			}
 			// structure/mindmap dataset rows are scope_kwd="dataset" +
 			// type_kwd ∈ {entity,relation,kg_build_meta} with a raw

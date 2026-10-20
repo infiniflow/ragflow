@@ -154,12 +154,20 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), []string{"pdf", "docx", "txt"}, &ingestioncore.Deps{
+	ingestorDeps := &ingestioncore.Deps{
 		Engine: engine.Get(),
 		DB:     dao.DB,
 		MQ:     engine.GetMessageQueueEngine(),
 		KV:     kvrocks.Get(),
-	})
+	}
+	// Fail fast at the assembly point: a misconfigured ingestor (missing doc
+	// engine, database, or message queue) must never reach Start as a "healthy"
+	// service that silently cannot consume.
+	if err = ingestorDeps.Validate(); err != nil {
+		common.Error("Invalid ingestor dependencies", err)
+		return fmt.Errorf("ingestor dependencies invalid: %w", err)
+	}
+	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), []string{"pdf", "docx", "txt"}, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
