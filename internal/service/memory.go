@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/kvrocks"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
@@ -284,19 +285,40 @@ func generateOutputFormat(typesToExtract []string) string {
 // MemoryService handles business logic for memory operations
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
-	memoryDAO *dao.MemoryDAO
-	docEngine engine.DocEngine
+	memoryDAO     *dao.MemoryDAO
+	db            *gorm.DB
+	docEngine     engine.DocEngine
+	kvrocksClient *kvrocks.Client
 }
 
-// NewMemoryService creates a new MemoryService instance
+// MemoryServiceOption configures a MemoryService at construction time.
+type MemoryServiceOption func(*MemoryService)
+
+// WithMemoryKvrocks binds the kvrocks client used to mint raw-message ids for
+// the transient MemoryMessageService the MemoryService constructs. It keeps the
+// kvrocks dependency explicit rather than read from a package global.
+func WithMemoryKvrocks(kv *kvrocks.Client) MemoryServiceOption {
+	return func(s *MemoryService) { s.kvrocksClient = kv }
+}
+
+// NewMemoryService creates a new MemoryService instance. db and eng are the
+// process-wide relational handle and doc engine; they are resolved once at the
+// server assembly point and injected here rather than read from the package
+// globals (arch_test.go guards that rule). kv is optional and defaults to nil,
+// in which case raw-message ids fall back to wall-clock values.
 //
 // Returns:
 //   - *MemoryService: Initialized service instance with DAO
-func NewMemoryService() *MemoryService {
-	return &MemoryService{
+func NewMemoryService(db *gorm.DB, eng engine.DocEngine, opts ...MemoryServiceOption) *MemoryService {
+	s := &MemoryService{
 		memoryDAO: dao.NewMemoryDAO(),
-		docEngine: engine.Get(),
+		db:        db,
+		docEngine: eng,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateMemoryRequest defines the request structure for creating a memory
@@ -380,14 +402,14 @@ type MemoryFiltersResponse struct {
 }
 
 func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*MemoryFiltersResponse, error) {
-	memoryIDs, err := accessibleMemoryIDs(ctx, userID, permission.OperationRead)
+	memoryIDs, err := s.accessibleMemoryIDs(ctx, userID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
 	if len(memoryIDs) == 0 {
 		return &MemoryFiltersResponse{}, nil
 	}
-	memories, _, err := s.memoryDAO.GetByFilter(ctx, dao.DB, memoryIDs, nil, nil, "", "", 1, 0)
+	memories, _, err := s.memoryDAO.GetByFilter(ctx, s.db, memoryIDs, nil, nil, "", "", 1, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +530,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	}
 
 	memoryName, err := common.UniqueName(memoryName, MemoryNameLimit, func(candidate string) (bool, error) {
-		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, s.db, candidate, userID)
 		if err != nil {
 			return false, err
 		}
@@ -545,11 +567,11 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	if req.TenantLLMID != nil {
 		memory.TenantLLMID = req.TenantLLMID
 	}
-	if err = s.memoryDAO.Create(ctx, dao.DB, memory); err != nil {
+	if err = s.memoryDAO.Create(ctx, s.db, memory); err != nil {
 		return nil, errors.New("could not create new memory")
 	}
 
-	createdMemory, err := s.memoryDAO.GetByID(ctx, dao.DB, newID)
+	createdMemory, err := s.memoryDAO.GetByID(ctx, s.db, newID)
 	if err != nil {
 		return nil, errors.New("could not create new memory")
 	}
@@ -575,11 +597,11 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 //	resp, err := service.UpdateMemory("tenant123", "memory456", req)
 func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
-	if err := checkMemoryPermission(ctx, userID, memoryID, permission.OperationUpdate); err != nil {
+	if err := s.checkMemoryPermission(ctx, userID, memoryID, permission.OperationUpdate); err != nil {
 		return nil, err
 	}
 
-	currentMemory, err := s.memoryDAO.GetByID(ctx, dao.DB, memoryID)
+	currentMemory, err := s.memoryDAO.GetByID(ctx, s.db, memoryID)
 	if err != nil {
 		return nil, fmt.Errorf("memory '%s' not found", memoryID)
 	}
@@ -591,7 +613,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 			return nil, err
 		}
 		available, nameErr := common.NameAvailable(strings.TrimSpace(currentMemory.Name), memoryName, func(candidate string) (bool, error) {
-			existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, ownerTenantID)
+			existing, err := s.memoryDAO.GetByNameAndTenant(ctx, s.db, candidate, ownerTenantID)
 			if err != nil {
 				return false, err
 			}
@@ -612,7 +634,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
 		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
-			if err := checkMemoryPermission(ctx, userID, memoryID, permission.OperationShare); err != nil {
+			if err := s.checkMemoryPermission(ctx, userID, memoryID, permission.OperationShare); err != nil {
 				return nil, err
 			}
 		}
@@ -857,11 +879,11 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 		}
 	}
 
-	if err = s.memoryDAO.UpdateByID(ctx, dao.DB, memoryID, updateDict); err != nil {
+	if err = s.memoryDAO.UpdateByID(ctx, s.db, memoryID, updateDict); err != nil {
 		return nil, errors.New("failed to update memory")
 	}
 
-	updatedMemory, err := s.memoryDAO.GetByID(ctx, dao.DB, memoryID)
+	updatedMemory, err := s.memoryDAO.GetByID(ctx, s.db, memoryID)
 	if err != nil {
 		return nil, errors.New("failed to get updated memory")
 	}
@@ -936,7 +958,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 	}
 
 	// Delete memory record
-	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
+	if err := s.memoryDAO.DeleteByID(ctx, s.db, memoryID); err != nil {
 		return errors.New("failed to delete memory")
 	}
 
@@ -1268,7 +1290,7 @@ func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Mem
 	}
 
 	searchReq := &enginetypes.SearchRequest{
-		IndexNames:   memorySearchIndexNames(memories),
+		IndexNames:   memorySearchIndexNames(memories, s.docEngine),
 		Offset:       0,
 		Limit:        topN,
 		SelectFields: memoryMessageSelectFields(),
@@ -1304,14 +1326,14 @@ func (s *MemoryService) filterAccessibleMemories(ctx context.Context, userID str
 		return []*entity.Memory{}, nil
 	}
 
-	accessibleIDs, err := filterMemoryIDs(ctx, userID, memoryIDs, permission.OperationUse)
+	accessibleIDs, err := s.filterMemoryIDs(ctx, userID, memoryIDs, permission.OperationUse)
 	if err != nil {
 		return nil, err
 	}
 	if len(accessibleIDs) == 0 {
 		return []*entity.Memory{}, nil
 	}
-	return s.memoryDAO.GetByIDs(ctx, dao.DB, accessibleIDs)
+	return s.memoryDAO.GetByIDs(ctx, s.db, accessibleIDs)
 }
 
 func splitFilterValues(values interface{}) []string {
@@ -1416,7 +1438,7 @@ func MemoryIndexName(tenantID string) string {
 	return fmt.Sprintf("memory_%s_%s", prefix, tenantID)
 }
 
-func memorySearchIndexNames(memories []*entity.Memory) []string {
+func memorySearchIndexNames(memories []*entity.Memory, docEngine engine.DocEngine) []string {
 	seen := make(map[string]struct{}, len(memories))
 	indexNames := make([]string, 0, len(memories))
 	for _, memory := range memories {
@@ -1424,7 +1446,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 			continue
 		}
 		indexName := MemoryIndexName(memory.TenantID)
-		if engine.GetEngineType() == "infinity" {
+		if docEngine != nil && docEngine.GetType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
 		if _, ok := seen[indexName]; ok {
@@ -1522,7 +1544,7 @@ func (s *MemoryService) getRecentMessage(ctx context.Context, memories []*entity
 	} else if limit > maxMessageLimit {
 		limit = maxMessageLimit
 	}
-	indexNames := memorySearchIndexNames(memories)
+	indexNames := memorySearchIndexNames(memories, s.docEngine)
 	memoryIDs := make([]string, 0, len(memories))
 	for _, memory := range memories {
 		if memory == nil || strings.TrimSpace(memory.ID) == "" {
@@ -1586,10 +1608,10 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID s
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := checkMemoryPermission(ctx, userID, memoryID, operation); err != nil {
+	if err := s.checkMemoryPermission(ctx, userID, memoryID, operation); err != nil {
 		return nil, err
 	}
-	memory, err := s.memoryDAO.GetByIDWithContext(ctx, dao.DB, memoryID)
+	memory, err := s.memoryDAO.GetByIDWithContext(ctx, s.db, memoryID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, permission.ErrResourceNotFound
@@ -1619,7 +1641,7 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID s
 //
 //	resp, err := service.ListMemories("user123", []string{}, []string{"semantic"}, "table", "test", 1, 10)
 func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, canvasID string) (*ListMemoryResponse, error) {
-	memoryIDs, err := accessibleMemoryIDsForCanvas(ctx, userID, canvasID)
+	memoryIDs, err := s.accessibleMemoryIDsForCanvas(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
 	}
@@ -1627,7 +1649,7 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
 	}
 
-	memories, total, err := s.memoryDAO.GetByFilter(ctx, dao.DB, memoryIDs, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	memories, total, err := s.memoryDAO.GetByFilter(ctx, s.db, memoryIDs, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1642,8 +1664,8 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
-			"embd_id":      ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
+			"llm_id":       ResolveTenantModelDisplayName(ctx, s.db, ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      ResolveTenantModelDisplayName(ctx, s.db, ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1724,7 +1746,7 @@ func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID st
 // getMemoryConfig retrieves the full configuration of a memory without access
 // control checks. This is for trusted internal callers such as queue processing.
 func (s *MemoryService) getMemoryConfig(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
-	memory, err := s.memoryDAO.GetWithOwnerNameByID(ctx, dao.DB, memoryID)
+	memory, err := s.memoryDAO.GetWithOwnerNameByID(ctx, s.db, memoryID)
 	if err != nil {
 		return nil, fmt.Errorf("get memory %q: %w", memoryID, err)
 	}
@@ -1808,7 +1830,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		filter["session_id"] = keywords
 	}
 	filter["memory_id"] = []string{memoryID}
-	indexNames := memorySearchIndexNames([]*entity.Memory{memory})
+	indexNames := memorySearchIndexNames([]*entity.Memory{memory}, s.docEngine)
 
 	rawReq := &enginetypes.SearchRequest{
 		IndexNames:   indexNames,
@@ -1921,7 +1943,7 @@ func (s *MemoryService) memoryMessageAgentNames(messages []map[string]interface{
 		ID    string  `gorm:"column:id"`
 		Title *string `gorm:"column:title"`
 	}
-	if err := dao.DB.Model(&entity.UserCanvas{}).Select("id, title").Where("id IN ?", agentIDs).Scan(&agents).Error; err != nil {
+	if err := s.db.Model(&entity.UserCanvas{}).Select("id, title").Where("id IN ?", agentIDs).Scan(&agents).Error; err != nil {
 		return nil, err
 	}
 	agentNames := make(map[string]string, len(agents))
@@ -1944,7 +1966,7 @@ func (s *MemoryService) memoryMessageTasks(memoryID string) (map[string]map[stri
 		ChunkIDs    *string `gorm:"column:chunk_ids"`
 		CreateTime  *int64  `gorm:"column:create_time"`
 	}
-	if err := dao.DB.Model(&entity.Task{}).
+	if err := s.db.Model(&entity.Task{}).
 		Select("id, doc_id, from_page, progress, progress_msg, digest, chunk_ids, create_time").
 		Where("doc_id IN ?", []string{memoryID}).
 		Order("create_time ASC").

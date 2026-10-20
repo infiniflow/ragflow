@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 )
@@ -73,7 +74,7 @@ func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
 	// req.UserID is the memory-message partition key and must not be trusted as
 	// the permission subject. The canvas owner can access memory-1, but caller
 	// cannot, so using req.UserID here would incorrectly authorize this write.
-	err := NewMemorySaverAdapter(NewMemoryService()).Save(ctx, component.MemorySaveRequest{
+	err := NewMemorySaverAdapter(NewMemoryService(dao.DB, engine.Get())).Save(ctx, component.MemorySaveRequest{
 		MemoryIDs: []string{memory.ID},
 		UserID:    "canvas-owner",
 		AgentID:   canvas.ID,
