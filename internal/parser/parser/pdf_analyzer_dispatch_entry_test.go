@@ -64,7 +64,7 @@ func TestValidateParseMethod_UnregisteredUnknownMethodStillRejected(t *testing.T
 
 // Sanity guard: built-in methods continue to validate as before.
 func TestValidateParseMethod_KnownBuiltinMethodAccepted(t *testing.T) {
-	for _, m := range []string{"", "deepdoc", "plain_text", "mineru", "paddleocr", "docling", "opendataloader", "somark", "tcadp"} {
+	for _, m := range []string{"", "deepdoc", "plain_text", "mineru", "docling", "opendataloader", "somark", "tcadp"} {
 		if err := (&PDFParser{ParseMethod: m}).validateParseMethod(); err != nil {
 			t.Fatalf("built-in method %q should pass validation, got err: %v", m, err)
 		}

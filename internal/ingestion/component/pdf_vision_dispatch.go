@@ -668,11 +668,8 @@ func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, t
 	return driver, modelName, apiConfig, err
 }
 
-// dispatchPaddleOCRPdf submits a PDF to the tenant's PaddleOCR OCR model and
-// returns parsed sections. The resolved driver runs the protocol it knows:
-// the cloud "PaddleOCR" driver submits a job and polls the v2/ocr/jobs
-// endpoint, the local "PaddleOCR.local" driver POSTs synchronously to
-// layout-parsing — both mirror the Python paddleocr_parser paths.
+// dispatchPaddleOCRPdf resolves the tenant's cloud or local OCR model and
+// converts its page blocks to the structured PDF parser output.
 func dispatchPaddleOCRPdf(
 	ctx context.Context,
 	db *gorm.DB,
@@ -697,14 +694,9 @@ func dispatchPaddleOCRPdf(
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
-	if resp == nil || resp.Text == nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
-	}
-	if strings.TrimSpace(*resp.Text) == "" {
-		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
-	}
 
-	return buildMarkdownOCRDispatchResult(*resp.Text), nil
+	result := parser.PaddleOCRPDFResult(ctx, filename, binary, resp)
+	return result, result.Err
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.

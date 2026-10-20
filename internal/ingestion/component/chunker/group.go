@@ -325,6 +325,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		if g[0].preserveOrder {
+			chunk["_preserve_order"] = true
+		}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -540,17 +543,18 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				meta[k] = json.RawMessage(v)
 			}
 			out = append(out, lineRecord{
-				text:         recordText,
-				docType:      dt,
-				imgID:        imgID,
-				image:        image,
-				layout:       it.Layout,
-				ckType:       it.CKType,
-				pdfPositions: it.PDFPositions,
-				positions:    it.Positions,
-				sheet:        it.Sheet,
-				sheetIndex:   it.SheetIndex,
-				parentMeta:   meta,
+				text:          recordText,
+				docType:       dt,
+				imgID:         imgID,
+				image:         image,
+				layout:        it.Layout,
+				ckType:        it.CKType,
+				pdfPositions:  it.PDFPositions,
+				positions:     it.Positions,
+				preserveOrder: it.PreserveOrder,
+				sheet:         it.Sheet,
+				sheetIndex:    it.SheetIndex,
+				parentMeta:    meta,
 			})
 		}
 		// TextParser intentionally emits one coordinate-free text item for the
