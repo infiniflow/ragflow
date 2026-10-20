@@ -61,6 +61,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -114,6 +115,11 @@ type MemoryMessageService struct {
 	// package-level state and has no init-order race. A nil client falls back
 	// to wall-clock ids.
 	kvrocksClient *kvrocks.Client
+	// mqEngine backs the publish path. It is injected at construction
+	// (inherited from the owning MemoryService) rather than read from the
+	// process-wide engine.GetMessageQueueEngine() global, so the memory
+	// module's publish path carries no package-level global dependency.
+	mqEngine engine.MessageQueue
 }
 
 // NewMemoryMessageService constructs a service bound to the
@@ -127,16 +133,19 @@ type MemoryMessageService struct {
 // When the MemoryService has no client bound, ids fall back to wall-clock
 // values — acceptable for local/test paths.
 func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
-	s := &MemoryMessageService{
+	var mq engine.MessageQueue
+	var kv *kvrocks.Client
+	if memories != nil {
+		mq = memories.mqEngine
+		kv = memories.kvrocksClient
+	}
+	return &MemoryMessageService{
 		memories:      memories,
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
-		taskPublisher: NewMessageQueueTaskPublisher(),
+		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
+		kvrocksClient: kv,
 	}
-	if memories != nil {
-		s.kvrocksClient = memories.kvrocksClient
-	}
-	return s
 }
 
 // queueSaveToMemoryTask runs the memory-persistence flow for the
