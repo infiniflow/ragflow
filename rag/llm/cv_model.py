@@ -1323,6 +1323,15 @@ class GoogleCV(AnthropicCV, GeminiCV):
                 yield ans
 
 
+class DeepSeekCV(GptV4):
+    _FACTORY_NAME = "DeepSeek"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.deepseek.com/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.deepseek.com/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
 class MoonshotCV(GptV4):
     _FACTORY_NAME = "Moonshot"
 
