@@ -14,7 +14,8 @@
 //
 // ManualChunker groups adjacent records by heading after sorting PDF records
 // by page, top and left. Records with parser-established order or without
-// coordinates retain their input positions.
+// coordinates retain their input positions. Geometry is the ordering fallback
+// when the producer has not declared an authoritative reading sequence.
 package chunker
 
 import (

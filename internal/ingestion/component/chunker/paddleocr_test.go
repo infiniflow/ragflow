@@ -73,6 +73,9 @@ func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
 	}
 	tables := 0
 	for _, ck := range chunks {
+		if _, exists := ck["_preserve_order"]; exists {
+			t.Fatalf("parser reading-order flag leaked into indexed chunk: %v", ck)
+		}
 		positions, ok := ck["position_int"].([][]int)
 		if !ok || len(positions) == 0 {
 			t.Fatalf("chunk missing indexed positions: %v", ck)

@@ -131,7 +131,8 @@ type ChunkDoc struct {
 	Positions     json.RawMessage `json:"positions,omitempty"`
 	Sheet         string          `json:"sheet,omitempty"`
 	SheetIndex    *int            `json:"sheet_index,omitempty"`
-	// PreserveOrder keeps parser-established reading order despite PDF coordinates.
+	// PreserveOrder declares the input sequence authoritative; geometry sorting
+	// must retain it. PaddleOCR sets this for its ordered layout blocks.
 	PreserveOrder bool `json:"_preserve_order,omitempty"`
 	// TableData is the structured table contract. When a chunk carries it
 	// the table content is consumed directly from here instead of being

@@ -116,15 +116,6 @@ func readErrorBody(body io.Reader) string {
 	return string(data)
 }
 
-// logBody truncates an already-buffered response payload to maxErrorBodyBytes
-// so it is safe for log fields and error strings.
-func logBody(body []byte) string {
-	if len(body) > maxErrorBodyBytes {
-		return string(body[:maxErrorBodyBytes]) + "…(truncated)"
-	}
-	return string(body)
-}
-
 func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := p.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
