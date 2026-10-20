@@ -292,6 +292,54 @@ func TestTitleFamilyPlainPayloadSkipsMediaContext(t *testing.T) {
 	}
 }
 
+// TestTitleGeneralImageChunkParityAtDefaults pins the verified chunk-level
+// equivalence: with no context configured, General and Title both emit the
+// bare image chunk (empty text, payload intact). Any user-visible divergence
+// at defaults therefore comes from configuration (General form has context
+// knobs) or downstream stages, not from chunk dropping here.
+func TestTitleGeneralImageChunkParityAtDefaults(t *testing.T) {
+	payload := "data:image/png;base64," + pngBase64
+	items := titleImageContextItems()
+
+	gen, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := gen.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.docx", "file_type": "docx",
+		"output_format": "json", "json": items,
+	})
+	if err != nil {
+		t.Fatalf("General Invoke: %v", err)
+	}
+	gchunks, _ := out["chunks"].([]map[string]any)
+	var gimg map[string]any
+	for _, ck := range gchunks {
+		if ck["doc_type_kwd"] == "image" {
+			gimg = ck
+		}
+	}
+	if gimg == nil {
+		t.Fatalf("General emitted no image chunk: %#v", gchunks)
+	}
+
+	grp, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	tchunks := invokeTitleFamily(t, grp, items)
+	timg := findImageChunk(t, tchunks)
+
+	for _, ck := range []map[string]any{gimg, timg} {
+		if ck["image"] != payload {
+			t.Errorf("image payload lost: %#v", ck)
+		}
+		if got, _ := ck["text"].(string); got != "" {
+			t.Errorf("default image chunk text = %q, want empty", got)
+		}
+	}
+}
+
 // TestContextSizeRejectsNegativeFractions pins the fix for values such as
 // -0.5, which int() truncates to 0 and would otherwise pass the non-negative
 // validation while silently disabling the setting.
