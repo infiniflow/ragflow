@@ -871,6 +871,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	seedMemoryMessages(t)
 
 	docEngine := &memoryMessageDocEngine{
+		engineType: "infinity",
 		searchResp: &enginetypes.SearchResult{
 			Total: 1,
 			Chunks: []map[string]interface{}{
@@ -910,11 +911,11 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 		t.Fatal("expected doc engine search request")
 	}
 	// The per-memory index name gains a `_<memoryID>` suffix on infinity
-	// (see memorySearchIndexNames). The engine type is process-global and set
-	// by sibling integration tests, so make the expectation engine-aware rather
-	// than hard-coding the non-infinity name.
+	// (see memorySearchIndexNames). The service now reads the engine type from
+	// the injected doc engine rather than the process-global engine type, so
+	// derive the expectation from the injected docEngine's type.
 	wantIndexName := "memory_user-1"
-	if engine.GetEngineType() == "infinity" {
+	if docEngine.GetType() == "infinity" {
 		wantIndexName = "memory_user-1_mem-owned"
 	}
 	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
