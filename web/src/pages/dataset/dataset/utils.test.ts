@@ -303,10 +303,16 @@ describe('hasUnsupportedTypeGap', () => {
 
 describe('builtinParserSwitchTarget', () => {
   it('maps owned file types to their built-in pipelines', () => {
-    // Images still switch to picture; video is blocked and keeps the dataset
-    // selection (null) even though the visual suffix set lists the video
-    // extensions for legacy categorization parity.
+    // Images switch to picture; video uploads are accepted into the visual
+    // bucket and switched to picture as well, but parsing stays blocked
+    // because no parser implements video analysis.
     expect(switchTarget('photo.JPG')).toBe('picture');
+    expect(switchTarget('movie.mp4')).toBe('picture');
+    expect(switchTarget('clip.mov')).toBe('picture');
+    expect(switchTarget('clip.webm')).toBe('picture');
+    expect(switchTarget('clip.rmvb')).toBe('picture');
+    expect(switchTarget('clip.asf')).toBe('picture');
+    expect(switchTarget('clip.mpa')).toBe('picture');
     expect(switchTarget('song.mp3')).toBe('audio');
     expect(switchTarget('song.opus')).toBe('audio');
     expect(switchTarget('deck.ppt')).toBe('presentation');
@@ -331,16 +337,6 @@ describe('builtinParserSwitchTarget', () => {
     // Frontend-known audio suffixes the backend rejects at upload keep the
     // dataset selection too — the switch map mirrors the backend exactly.
     expect(switchTarget('song.wma')).toBeNull();
-    // Video is temporarily unsupported: no auto-switch to picture.
-    expect(switchTarget('movie.mp4')).toBeNull();
-    expect(switchTarget('clip.mov')).toBeNull();
-    expect(switchTarget('clip.webm')).toBeNull();
-    // Legacy containers the backend accepts must behave the same; before the
-    // shared extension set they fell through to the visual bucket and were
-    // promised a switch to picture.
-    expect(switchTarget('clip.rmvb')).toBeNull();
-    expect(switchTarget('clip.asf')).toBeNull();
-    expect(switchTarget('clip.mpa')).toBeNull();
   });
 });
 

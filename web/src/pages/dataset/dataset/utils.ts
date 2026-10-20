@@ -209,9 +209,10 @@ const GeneralFamilyFileTypes = new Set<FileType>([
   FileType.Docx,
 ]);
 
-// Image extensions accepted as visual at upload, mirroring the visual bucket in
-// utility.FilenameType (internal/utility/file.go). Video has its own FileType
-// and is deliberately absent: it must never auto-switch to picture.
+// Image extensions accepted as visual at upload, including the legacy video
+// containers that the visual bucket admits (mirrors utility.FilenameType).
+// Video never auto-switches: builtinParserSwitchTarget short-circuits it to
+// null before this set is consulted.
 const VisualSwitchSuffixes = new Set([
   'jpg',
   'jpeg',
@@ -265,10 +266,12 @@ export function builtinParserSwitchTarget(
   name: string,
   fileType: FileType | undefined,
 ): BuiltinSwitchTarget | null {
-  // Video is accepted at upload but unsupported for parsing (no backend parser
-  // implements video analysis), so it never auto-switches to picture.
+  // Video uploads are accepted (visual bucket) but unsupported for parsing (no
+  // parser implements video analysis). Report them as unsupported and keep the
+  // picture switch the backend performs: the row is still unparsable, so the
+  // user is warned at upload and blocked at parse-click.
   if (fileType === FileType.Video) {
-    return null;
+    return 'picture';
   }
   const suffix = getExtension(name);
   if (VisualSwitchSuffixes.has(suffix)) {

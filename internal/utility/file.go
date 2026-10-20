@@ -54,10 +54,10 @@ var (
 	filenameLenLimit = 255
 
 	// videoExtensions is the single source of truth for video containers.
-	// Upload admission (FilenameType), runtime dispatch (GetFileType) and the
-	// ingestion parser-family mapping all read this set, so an extension can no
-	// longer be accepted by one path and rejected (or routed to picture) by
-	// another.
+	// GetFileType (runtime dispatch) and the ingestion parser-family mapping
+	// read this set. FilenameType keeps the legacy upload bucket (video is
+	// admitted as visual and routed to the picture pipeline), so every video
+	// container accepted below must also be present here.
 	videoExtensions = map[string]struct{}{
 		"mp4": {}, "avi": {}, "mkv": {}, "mov": {}, "webm": {}, "flv": {},
 		"mpeg": {}, "mpg": {}, "wmv": {}, "3gp": {}, "3gpp": {},
@@ -163,11 +163,13 @@ func FilenameType(filename string) FileType {
 		return FileTypeOTHER
 	}
 
-	// Video has its own upload category: it is accepted at upload but no parser
-	// implements video analysis, so it must not be conflated with images (which
-	// the picture pipeline owns).
+	// Video is admitted at upload in the legacy visual bucket and routed to the
+	// picture pipeline; parsing is blocked later (no parser implements video
+	// analysis). Keep the admission here so every video container in the shared
+	// set passes the upload gate, including webm/flv/3gp/3gpp which the old
+	// bucket missed.
 	if IsVideoFilename(normalized) {
-		return FileTypeVIDEO
+		return FileTypeVISUAL
 	}
 
 	if matched, _ := regexp.MatchString(`.*\.pdf$`, normalized); matched {

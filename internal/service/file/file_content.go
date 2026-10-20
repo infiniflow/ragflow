@@ -139,7 +139,7 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 
 		ft := utility.FilenameType(name)
-		if ft == utility.FileTypeVIDEO {
+		if utility.IsVideoFilename(name) {
 			// Uploads accept video, but no parser implements video analysis.
 			// Report that instead of inlining the container as a bogus image
 			// data URI (the old visual classification) or dumping raw bytes.

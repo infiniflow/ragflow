@@ -38,33 +38,34 @@ func TestFilenameTypeBMP(t *testing.T) {
 	}
 }
 
-// TestFilenameTypeVideo covers the video/visual split: video has its own
-// upload category, so it is accepted at upload without being routed as an
-// image. Every extension in the shared video set must classify as video.
+// TestFilenameTypeVideo covers the upload bucket: video is admitted as visual
+// (legacy categorization) and routed to the picture pipeline; parsing is
+// blocked later. Every extension in the shared video set must classify as
+// visual here, while GetFileType reports them as video for runtime dispatch.
 func TestFilenameTypeVideo(t *testing.T) {
 	cases := []struct {
 		name string
 		want FileType
 	}{
-		{"clip.mp4", FileTypeVIDEO},
-		{"clip.mov", FileTypeVIDEO},
-		{"CLIP.MOV", FileTypeVIDEO},
-		{"clip.mkv", FileTypeVIDEO},
-		{"clip.webm", FileTypeVIDEO},
-		{"clip.flv", FileTypeVIDEO},
-		{"clip.wmv", FileTypeVIDEO},
-		{"clip.mpeg", FileTypeVIDEO},
-		{"clip.mpg", FileTypeVIDEO},
-		{"clip.3gp", FileTypeVIDEO},
-		{"clip.3gpp", FileTypeVIDEO},
-		{"clip.rm", FileTypeVIDEO},
-		{"clip.rmvb", FileTypeVIDEO},
-		{"clip.asf", FileTypeVIDEO},
-		{"clip.dat", FileTypeVIDEO},
-		{"clip.asx", FileTypeVIDEO},
-		{"clip.wvx", FileTypeVIDEO},
-		{"clip.mpe", FileTypeVIDEO},
-		{"clip.mpa", FileTypeVIDEO},
+		{"clip.mp4", FileTypeVISUAL},
+		{"clip.mov", FileTypeVISUAL},
+		{"CLIP.MOV", FileTypeVISUAL},
+		{"clip.mkv", FileTypeVISUAL},
+		{"clip.webm", FileTypeVISUAL},
+		{"clip.flv", FileTypeVISUAL},
+		{"clip.wmv", FileTypeVISUAL},
+		{"clip.mpeg", FileTypeVISUAL},
+		{"clip.mpg", FileTypeVISUAL},
+		{"clip.3gp", FileTypeVISUAL},
+		{"clip.3gpp", FileTypeVISUAL},
+		{"clip.rm", FileTypeVISUAL},
+		{"clip.rmvb", FileTypeVISUAL},
+		{"clip.asf", FileTypeVISUAL},
+		{"clip.dat", FileTypeVISUAL},
+		{"clip.asx", FileTypeVISUAL},
+		{"clip.wvx", FileTypeVISUAL},
+		{"clip.mpe", FileTypeVISUAL},
+		{"clip.mpa", FileTypeVISUAL},
 		{"photo.jpg", FileTypeVISUAL},
 	}
 	for _, tc := range cases {

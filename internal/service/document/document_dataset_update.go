@@ -17,7 +17,6 @@ import (
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -341,7 +340,7 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 		if !validDocumentChunkMethods[cm] {
 			return common.CodeDataError, fmt.Errorf("Field: <chunk_method> - Message: <`chunk_method` %s doesn't exist> - Value: <%s>", cm, cm)
 		}
-		if (doc.Type == "visual" && !isVideoFile(doc.Name) && cm != "picture") || (isPresentationFile(doc.Name) && cm != "presentation") {
+		if (doc.Type == "visual" && cm != "picture") || (isPresentationFile(doc.Name) && cm != "presentation") {
 			return common.CodeDataError, errors.New("not supported yet")
 		}
 	}
@@ -352,12 +351,10 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 			return common.CodeDataError, err
 		}
 		// The parser_id type constraint (visual/presentation) only applies in
-		// builtin mode — in pipeline mode parser_id is not applicable. Legacy
-		// video rows are stored as visual but are exempt: no parser can process
-		// them, so they must stay selectable.
+		// builtin mode — in pipeline mode parser_id is not applicable.
 		if sel != nil && sel.IsBuiltIn() && present["parser_id"] && req.ParserID != nil {
 			parserID := strings.TrimSpace(*req.ParserID)
-			if (doc.Type == "visual" && !isVideoFile(doc.Name) && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
+			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
 				return common.CodeDataError, errors.New("not supported yet")
 			}
 		}
@@ -429,16 +426,6 @@ func isPresentationFile(name *string) bool {
 	}
 	ext := strings.ToLower(filepath.Ext(*name))
 	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
-}
-
-// isVideoFile reports whether the document is a video. Rows uploaded before
-// video got its own file type stored Type="visual"; they must stay editable
-// even though no parser can process them.
-func isVideoFile(name *string) bool {
-	if name == nil {
-		return false
-	}
-	return utility.IsVideoFilename(*name)
 }
 
 func validateMetaFields(meta map[string]any) error {

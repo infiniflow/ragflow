@@ -2471,30 +2471,6 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	}
 }
 
-// TestUpdateDatasetDocumentAllowsVideoParserChange covers legacy rows: video
-// uploads used to be stored as Type="visual", and the visual-only picture rule
-// trapped them (parse is blocked, but reselecting a parser returned 400).
-func TestUpdateDatasetDocumentAllowsVideoParserChange(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "clip.mov", 0, 0)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("type", "visual").Error; err != nil {
-		t.Fatalf("update doc type: %v", err)
-	}
-
-	parserID := "naive"
-	parseType := 1
-	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID:  &parserID,
-		ParseType: &parseType,
-	}, map[string]bool{"parser_id": true, "parse_type": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
-	}
-}
-
 func TestUpdateDatasetDocumentRejectedParserConfigPreservesNames(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
