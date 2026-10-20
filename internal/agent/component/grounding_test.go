@@ -140,8 +140,10 @@ func TestGrounding_Applied(t *testing.T) {
 	if inv.calls != 1 {
 		t.Errorf("expected 1 chat call, got %d", inv.calls)
 	}
-	if inv.streamCalls != 1 || deltas != 2 || streamed != "grounded answer [ID:0]" {
-		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 2 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
+	// Grounding is buffered, so the only emitted delta is the final
+	// grounded answer.
+	if inv.streamCalls != 1 || deltas != 1 || streamed != "grounded answer [ID:0]" {
+		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 1 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
 	}
 	// System message should contain the citation prompt + sources block.
 	if got := inv.lastReq.Messages[0].Role; got != schema.System {
@@ -440,10 +442,10 @@ func TestGrounding_MarkerOnlyFallsBack(t *testing.T) {
 	}
 }
 
-// TestGrounding_MarkerOnlyStreamErrors: once marker-only deltas have been
-// streamed, grounding must surface an error rather than silently accepting
-// the markers or re-emitting the original answer afterward (#20613).
-func TestGrounding_MarkerOnlyStreamErrors(t *testing.T) {
+// TestGrounding_MarkerOnlyStreamFallsBack: grounding deltas are buffered,
+// so a marker-only stream never reaches the client and the original answer
+// is emitted instead (#20613).
+func TestGrounding_MarkerOnlyStreamFallsBack(t *testing.T) {
 	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"[ID:0] [ID:1]"}}}
 	prev := getDefaultChatInvoker()
 	SetDefaultChatInvoker(inv)
@@ -462,15 +464,19 @@ func TestGrounding_MarkerOnlyStreamErrors(t *testing.T) {
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
-	if err == nil {
-		t.Fatal("Invoke: want error after marker-only grounding stream, got nil")
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(err.Error(), "markers without answer text") {
-		t.Errorf("error=%v, want markers-without-answer-text", err)
+	want := "The reimbursement request requires manager approval."
+	if got, _ := out["content"].(string); got != want {
+		t.Errorf("content=%q, want %q (marker-only grounding must not replace original)", got, want)
 	}
-	if streamed == "" {
-		t.Error("expected marker deltas to have been emitted before the error")
+	if got := out["grounding_status"]; got == "applied" {
+		t.Errorf("grounding_status=%v, want not applied for marker-only stream", got)
+	}
+	if streamed != want {
+		t.Errorf("streamed=%q, want the buffered original answer %q", streamed, want)
 	}
 	if inv.streamCalls != 1 {
 		t.Errorf("expected 1 stream call, got %d", inv.streamCalls)
@@ -511,9 +517,9 @@ func TestGrounding_NonNumericMarkerOnlyFallsBack(t *testing.T) {
 	}
 }
 
-// TestGrounding_NonNumericMarkerOnlyStreamErrors: streamed marker-only
-// responses with non-numeric IDs must error the same way as numeric ones.
-func TestGrounding_NonNumericMarkerOnlyStreamErrors(t *testing.T) {
+// TestGrounding_NonNumericMarkerOnlyStreamFallsBack: streamed marker-only
+// responses with non-numeric IDs fall back like numeric ones.
+func TestGrounding_NonNumericMarkerOnlyStreamFallsBack(t *testing.T) {
 	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"[ID:simple-0] [ID:ck-1]"}}}
 	prev := getDefaultChatInvoker()
 	SetDefaultChatInvoker(inv)
@@ -535,15 +541,19 @@ func TestGrounding_NonNumericMarkerOnlyStreamErrors(t *testing.T) {
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
-	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
-	if err == nil {
-		t.Fatal("Invoke: want error after non-numeric marker-only grounding stream, got nil")
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
 	}
-	if !strings.Contains(err.Error(), "markers without answer text") {
-		t.Errorf("error=%v, want markers-without-answer-text", err)
+	want := "The reimbursement request requires manager approval."
+	if got, _ := out["content"].(string); got != want {
+		t.Errorf("content=%q, want %q (non-numeric marker-only grounding must not replace original)", got, want)
 	}
-	if streamed == "" {
-		t.Error("expected marker deltas to have been emitted before the error")
+	if got := out["grounding_status"]; got == "applied" {
+		t.Errorf("grounding_status=%v, want not applied for non-numeric marker-only stream", got)
+	}
+	if streamed != want {
+		t.Errorf("streamed=%q, want the buffered original answer %q", streamed, want)
 	}
 	if inv.streamCalls != 1 {
 		t.Errorf("expected 1 stream call, got %d", inv.streamCalls)
