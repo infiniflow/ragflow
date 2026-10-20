@@ -88,7 +88,7 @@ func anyUseful(verdicts []Verdict) bool {
 
 func TestDecisionheadWindowPolicyProbe(t *testing.T) {
 	if !Available() {
-		t.Fatalf("Laya unavailable: set RAGFLOW_DECISION_DIR and start the inference sidecar")
+		t.Skipf("Laya unavailable: set RAGFLOW_DECISION_DIR and start the inference sidecar")
 	}
 	raw, err := os.ReadFile(probePath("DECISIONHEAD_PROBE_IN", "/tmp/decisionhead_probe_input.json"))
 	if err != nil {
