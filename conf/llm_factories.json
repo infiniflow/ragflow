@@ -3484,6 +3484,14 @@
             "url": "https://openrouter.ai/api/v1"
         },
         {
+            "name": "TrustedRouter",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.trustedrouter.com/v1"
+        },
+        {
             "name": "Demon Route",
             "logo": "",
             "tags": "LLM",

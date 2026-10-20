@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,7 +48,9 @@ var chunkerOutputs = map[string]string{
 // (rag/flow/compiler/compiler.py registers component_name = "Compiler"), so a
 // canvas saved by the Python frontend and Go's built-in ingestion templates
 // both reference the node as "Compiler" and resolve to the same component.
-const componentNameCompiler = "Compiler"
+// The value itself lives in the schema package so the pipeline layer can
+// reference the same identity.
+const componentNameCompiler = schema.ComponentNameCompiler
 
 // KnowledgeCompilerComponent is the runtime.Component surface. Param is set at
 // construction from the DSL; per-call overrides flow through the inputs map.
@@ -804,12 +808,7 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 // LLM/embedding work begins.
 // mapKeys returns the sorted keys of m, for diagnostics logging.
 func mapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }
 
 func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, error) {

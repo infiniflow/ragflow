@@ -193,7 +193,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 
 	delimPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatMarkdown:
@@ -1826,18 +1826,6 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keep
 		}
 	}
 	return out
-}
-
-// compileChildrenPattern is the children_delimiters version of
-// compileDelimPattern. Returns nil when no delimiters exist.
-// compileChildrenPattern builds the children-split regex from a
-// `children_delimiters` list. Every non-empty entry is active (including bare
-// ones), and backtick-wrapped entries contribute their inner content — see
-// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
-// consistent with the main delimiter list (backtick stripping + rune-descending
-// order) instead of re-implementing a divergent copy.
-func compileChildrenPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 func intValue(v *int) int {

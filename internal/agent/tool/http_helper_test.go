@@ -277,8 +277,11 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Do err = %v, want context.DeadlineExceeded (callers branch on errors.Is for this)", err)
 	}
-	if got := atomic.LoadInt32(&hits); got != 1 {
-		t.Errorf("server hits = %d, want 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
+	// 0 is allowed: under a loaded machine the 50ms deadline can expire during the
+	// dial, before the request reaches the handler. What this test really pins is
+	// that a ctx deadline is NOT retried (a regression would show 2+ attempts).
+	if got := atomic.LoadInt32(&hits); got > 1 {
+		t.Errorf("server hits = %d, want at most 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
 	}
 }
 

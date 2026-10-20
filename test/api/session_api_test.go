@@ -62,8 +62,8 @@ func TestRESTSessionLifecyclePersistsAndDeletes(t *testing.T) {
 		t.Fatalf("updated name was not persisted: %v", persisted)
 	}
 
-	deleted := object(t, restOK(t, restCall(t, TestConfig, http.MethodDelete, "/chats/"+chatID+"/sessions", apiObject{"ids": []string{sessionID}}, nil))["data"])
-	if deleted["success_count"] != float64(1) {
+	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/chats/"+chatID+"/sessions", apiObject{"ids": []string{sessionID}}, nil))["data"]
+	if deleted != true {
 		t.Fatalf("delete result=%v", deleted)
 	}
 	remaining := restOK(t, restCall(t, TestConfig, http.MethodGet, "/chats/"+chatID+"/sessions", nil, apiObject{"page_size": 20}))
@@ -108,7 +108,10 @@ func TestRESTSessionValidationAndIsolation(t *testing.T) {
 	other := createRESTChat(t, nil)
 	otherID := other["id"].(string)
 	cross := restCall(t, TestConfig, http.MethodGet, "/chats/"+otherID+"/sessions/"+session["id"].(string), nil, nil)
-	restCode(t, cross, http.StatusOK, 404)
+	restCode(t, cross, http.StatusOK, 102)
+	if cross.JSON["message"] != "session does not belong to this chat" {
+		t.Fatalf("cross-chat session error=%v", cross.JSON)
+	}
 	invalidChat := restCall(t, TestConfig, http.MethodPost, "/chats/"+uniqueName("missing")+"/sessions", apiObject{"name": "x"}, nil)
 	restCode(t, invalidChat, http.StatusOK, 404)
 }
@@ -146,9 +149,12 @@ func TestRESTSessionAuthorizationAndFiltering(t *testing.T) {
 	if len(filtered) != 1 || object(t, filtered[0])["name"] != "filter_2" {
 		t.Fatalf("name filter returned %v", filtered)
 	}
-	page := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/chats/"+chatID+"/sessions", nil, apiObject{"page": 2, "page_size": 2}))["data"])
-	if len(array(t, page)) != 2 {
+	page := array(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/chats/"+chatID+"/sessions", nil, apiObject{"page": 2, "page_size": 2, "orderby": "name", "desc": false}))["data"])
+	if len(page) != 2 {
 		t.Fatalf("page size was not applied: %v", page)
+	}
+	if object(t, page[0])["name"] != "filter_2" || object(t, page[1])["name"] != "filter_3" {
+		t.Fatalf("page offset or ordering was not applied: %v", page)
 	}
 }
 
@@ -212,21 +218,42 @@ func TestRESTChatCompletionValidationAndStreamContract(t *testing.T) {
 	if err != nil || len(events) < 2 {
 		t.Fatalf("invalid completion SSE: events=%d err=%v", len(events), err)
 	}
-	var sawData, sawTerminal bool
-	for _, event := range events {
-		if event.Data == "[DONE]" {
-			sawTerminal = true
-			continue
-		}
+	var sawData, sawFinal, sawTerminal bool
+	var streamSessionID string
+	for i, event := range events {
 		var payload apiObject
 		if err := json.Unmarshal([]byte(event.Data), &payload); err != nil {
 			t.Fatalf("SSE event is not JSON: %q", event.Data)
 		}
-		if payload["data"] != nil {
-			sawData = true
+		if payload["code"] != float64(0) {
+			t.Fatalf("SSE event returned an error: %v", payload)
+		}
+		if payload["data"] == true {
+			if i != len(events)-1 {
+				t.Fatal("SSE terminal event was followed by more events")
+			}
+			sawTerminal = true
+			continue
+		}
+		data := object(t, payload["data"])
+		sessionID, ok := data["session_id"].(string)
+		if !ok || sessionID == "" || data["chat_id"] != chatID {
+			t.Fatalf("SSE event lost chat/session identity: %v", data)
+		}
+		if streamSessionID == "" {
+			streamSessionID = sessionID
+		} else if sessionID != streamSessionID {
+			t.Fatalf("SSE session identity changed: got=%s want=%s", sessionID, streamSessionID)
+		}
+		if _, ok := data["answer"].(string); !ok {
+			t.Fatalf("SSE event omitted answer: %v", data)
+		}
+		sawData = true
+		if data["final"] == true {
+			sawFinal = true
 		}
 	}
-	if !sawData || !sawTerminal {
-		t.Fatalf("SSE lacked data and terminal events: %v", events)
+	if !sawData || !sawFinal || !sawTerminal {
+		t.Fatalf("SSE lacked answer, final, or terminal events: %v", events)
 	}
 }

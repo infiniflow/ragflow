@@ -131,6 +131,44 @@
                                 "kt",
                                 "sql"
                             ]
+                        },
+                        "image": {
+                            "ocr_enabled": true,
+                            "output_format": "json",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "bmp",
+                                "gif",
+                                "jpeg",
+                                "jpg",
+                                "png",
+                                "svg",
+                                "tif",
+                                "tiff",
+                                "webp"
+                            ]
+                        },
+                        "email": {
+                            "fields": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "date",
+                                "subject",
+                                "body",
+                                "attachments"
+                            ],
+                            "output_format": "text",
+                            "preprocess": [
+                                "main_content"
+                            ],
+                            "suffix": [
+                                "eml",
+                                "msg"
+                            ]
                         }
                     }
                 },
@@ -342,6 +380,31 @@
                                         "main_content"
                                     ],
                                     "vlm": {}
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "ocr_enabled": true,
+                                    "output_format": "json",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
+                                },
+                                {
+                                    "fileFormat": "email",
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
+                                    ],
+                                    "output_format": "text",
+                                    "preprocess": [
+                                        "main_content"
+                                    ]
                                 }
                             ]
                         },
