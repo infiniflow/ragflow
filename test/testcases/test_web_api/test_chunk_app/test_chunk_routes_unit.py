@@ -304,6 +304,23 @@ def _load_chunk_module(monkeypatch):
 
     redis_conn_mod = ModuleType("rag.utils.redis_conn")
     redis_conn_mod.RedisDistributedLock = _RedisDistributedLock
+
+    class _RedisConn:
+        def __init__(self):
+            self.store = {}
+
+        def exist(self, key):
+            return key in self.store
+
+        def set(self, key, value, exp=3600):
+            self.store[key] = value
+            return True
+
+        def delete(self, key):
+            self.store.pop(key, None)
+            return True
+
+    redis_conn_mod.REDIS_CONN = _RedisConn()
     monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_conn_mod)
 
     rag_qa_mod = ModuleType("rag.app.qa")
@@ -356,6 +373,7 @@ def _load_chunk_module(monkeypatch):
     image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
     image_utils_mod.remove_chunk_image = lambda *_args, **_kwargs: None
     image_utils_mod.IMAGE_UPDATE_MODE_REMOVE = "remove"
+    image_utils_mod.IMAGE_UPDATE_MODE_REPLACE = "replace"
     image_utils_mod.IMAGE_UPDATE_MODES = frozenset({"append", "replace", "remove"})
     monkeypatch.setitem(sys.modules, "api.utils.image_utils", image_utils_mod)
 
@@ -981,6 +999,99 @@ def test_restful_add_chunk_image_store_keeps_event_loop_responsive(monkeypatch):
     assert res["code"] == 0, res
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
     assert ticks >= 5, f"event loop was blocked while the chunk image was stored ({ticks} ticks)"
+
+
+_VALID_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_embedding_skips_image_store(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    store_calls = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda *args, **kwargs: store_calls.append((args, kwargs)))
+    _set_request_json(monkeypatch, module, {"content": "image chunk behind a stalled embed", "image_base64": _VALID_IMAGE_B64})
+    release = threading.Event()
+
+    def stalled_encode(_self, _inputs):
+        release.wait(5)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", stalled_encode)
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert store_calls == [], "a timed-out request must not store its image once the embedding returns"
+    assert module.settings.docStoreConn.inserted == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_image_store_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    release = threading.Event()
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, **_kwargs: release.wait(5))
+    _set_request_json(monkeypatch, module, {"content": "chunk behind a stalled image store", "image_base64": _VALID_IMAGE_B64})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "an image store that returns after the deadline must not be followed by an insert"
+    assert module.DocumentService.increment_calls == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_replaces_the_image(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    store_modes = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, mode="append", **_kwargs: store_modes.append(mode))
+    _set_request_json(monkeypatch, module, {"content": "retried image chunk", "image_base64": _VALID_IMAGE_B64})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert store_modes == ["replace", "replace"], "a retry must replace the chunk image, not append a second copy"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_counts_chunk_whose_count_failed(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    _set_request_json(monkeypatch, module, {"content": "chunk whose count failed"})
+    count_calls = []
+
+    def flaky_increment(*args):
+        count_calls.append(args)
+        if len(count_calls) == 1:
+            raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(module.DocumentService, "increment_chunk_num", flaky_increment)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert len(module.settings.docStoreConn.inserted) == 1, "the insert succeeded before the count failed"
+
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(count_calls) == 2, "the retry must count the chunk whose count failed"
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(count_calls) == 2, "once counted, a further retry must not count the chunk again"
 
 
 @pytest.mark.p2

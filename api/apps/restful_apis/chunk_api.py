@@ -56,6 +56,7 @@ from api.utils.api_utils import (
 )
 from api.utils.image_utils import (
     IMAGE_UPDATE_MODE_REMOVE,
+    IMAGE_UPDATE_MODE_REPLACE,
     IMAGE_UPDATE_MODES,
     remove_chunk_image,
     store_chunk_image,
@@ -75,7 +76,7 @@ from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
-from rag.utils.redis_conn import RedisDistributedLock
+from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 
 
 def _encode_with_request_user(embd_mdl, texts, req):
@@ -90,6 +91,9 @@ _ADD_CHUNK_TIMEOUT_SECONDS = float(os.getenv("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS"
 # A worker that outlives its request may still be inside the doc-store insert,
 # so its chunk lock must outlive the request deadline by a wide margin.
 _ADD_CHUNK_LOCK_TTL_SECONDS = 10 * _ADD_CHUNK_TIMEOUT_SECONDS
+# How long a retry can still count a chunk whose insert succeeded but whose
+# count did not.
+_ADD_CHUNK_PENDING_COUNT_TTL_SECONDS = 24 * 3600
 # add_chunk stores the chunk image, embeds and indexes in this pool so a stalled
 # object store, model provider or doc store cannot freeze the event loop. Python
 # cannot stop a worker that outlives its request, so the pool also bounds how
@@ -1282,11 +1286,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     index_name = search.index_name(dataset_tenant_id)
     abandoned = threading.Event()
 
-    def _store_image_embed_and_index():
-        if image_binary is not None:
-            store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
-            if store_err:
-                return store_err
+    def _write_chunk():
         v, c = _encode_with_request_user(
             embd_mdl,
             [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
@@ -1294,22 +1294,38 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         )
         v = 0.1 * v[0] + 0.9 * v[1]
         d[f"q_{len(v)}_vec"] = v.tolist()
+        if abandoned.is_set():
+            return None
         # The chunk id derives from its content, so a client retrying a timed-out
-        # request targets the same chunk. Count it only when it is new, so the
-        # retry overwrites it instead of counting it twice.
+        # request targets the same chunk. Writes for one chunk are serialized, and
+        # a retry overwrites the chunk and its image instead of duplicating them.
         lock = RedisDistributedLock(f"add_chunk:{chunk_id}", timeout=_ADD_CHUNK_LOCK_TTL_SECONDS, blocking_timeout=_ADD_CHUNK_TIMEOUT_SECONDS)
         if not lock.acquire():
             raise _ChunkBeingAdded
         try:
             if abandoned.is_set():
                 return None
-            is_new = settings.docStoreConn.get(chunk_id, index_name, [dataset_id]) is None
+            exists = settings.docStoreConn.get(chunk_id, index_name, [dataset_id]) is not None
             # The read can itself stall past the deadline.
             if abandoned.is_set():
                 return None
+            if image_binary is not None:
+                store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, mode=IMAGE_UPDATE_MODE_REPLACE)
+                if store_err:
+                    return store_err
+                if abandoned.is_set():
+                    return None
+            # Count the chunk when it is new, or when an earlier attempt inserted
+            # it but failed to count it. The pending marker is set before the
+            # insert and cleared only once the count is recorded.
+            pending_count_key = f"add_chunk_pending_count:{chunk_id}"
+            needs_count = not exists or bool(REDIS_CONN.exist(pending_count_key))
+            if needs_count and not REDIS_CONN.set(pending_count_key, "1", _ADD_CHUNK_PENDING_COUNT_TTL_SECONDS):
+                raise RuntimeError(f"Failed to record the pending count for chunk {chunk_id}")
             settings.docStoreConn.insert([d], index_name, dataset_id)
-            if is_new:
+            if needs_count:
                 DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+                REDIS_CONN.delete(pending_count_key)
         finally:
             lock.release()
         return None
@@ -1318,7 +1334,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     ctx = contextvars.copy_context()
     try:
         async with asyncio.timeout(_ADD_CHUNK_TIMEOUT_SECONDS) as deadline:
-            store_err = await loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, _store_image_embed_and_index)
+            store_err = await loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, _write_chunk)
     except TimeoutError:
         if not deadline.expired():
             raise
