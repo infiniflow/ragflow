@@ -171,6 +171,13 @@ func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filena
 		return selection, base
 	}
 	if rebuilt, ok := rebuildParserConfig(ctx, kb, target, filename, base); ok {
+		// Video has no parser that implements it, so a switch to picture is
+		// expected to stay unparsable; log the routing decision for debugging.
+		if family == "video" {
+			common.Debug("document: video upload switched to picture pipeline",
+				zap.String("filename", filename),
+				zap.String("parser_id", target))
+		}
 		return &service.ParserSelection{Mode: service.ParseModeBuiltIn, ParserID: target}, rebuilt
 	}
 	return selection, base

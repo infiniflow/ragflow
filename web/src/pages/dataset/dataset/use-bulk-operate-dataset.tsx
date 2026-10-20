@@ -1,4 +1,5 @@
 import { Modal } from '@/components/ui/modal/modal';
+import { FileType } from '@/constants/file';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -72,14 +73,20 @@ export function useBulkOperateDataset({
             .map((x) => x.id);
 
           if (validIds.length === 0) {
+            // Pure-video selections have no parser that can process them, so
+            // offering anything that implies a fix would mislead. Acknowledge
+            // instead, mirroring the single-document run path.
+            const videoOnly = gaps.every(
+              (gap) => gap.fileType === FileType.Video,
+            );
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
               content: buildParserGapModalContent(t, gaps, {
                 missingModel: 'knowledgeDetails.addModelToParseHint',
                 unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
               }),
-              showCancel: false,
-              okText: t('common.cancel'),
+              showCancel: !videoOnly,
+              okText: t(videoOnly ? 'common.ok' : 'common.cancel'),
               closable: false,
             });
             return;

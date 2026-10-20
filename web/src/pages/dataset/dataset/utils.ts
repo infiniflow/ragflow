@@ -209,10 +209,10 @@ const GeneralFamilyFileTypes = new Set<FileType>([
   FileType.Docx,
 ]);
 
-// Image extensions accepted as visual at upload, including the legacy video
-// containers that the visual bucket admits (mirrors utility.FilenameType).
-// Video never auto-switches: builtinParserSwitchTarget short-circuits it to
-// null before this set is consulted.
+// Image extensions admitted as visual at upload (mirrors the visual bucket in
+// utility.FilenameType). Video is not listed here: it takes the explicit
+// Video branch in builtinParserSwitchTarget below, which keeps the picture
+// switch the backend performs.
 const VisualSwitchSuffixes = new Set([
   'jpg',
   'jpeg',
