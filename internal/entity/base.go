@@ -167,14 +167,23 @@ func (j *JSONMap) Scan(value interface{}) error {
 	}
 	// Python/legacy rows sometimes stored a JSON object as a JSON-encoded
 	// string ("{...}"). Try parsing directly first, then unwrap one level.
-	if err := json.Unmarshal([]byte(raw), j); err == nil {
+	// Decode into fresh maps: Unmarshal into a reused non-nil map keeps
+	// stale keys from a previous Scan.
+	var fresh JSONMap
+	if err := json.Unmarshal([]byte(raw), &fresh); err == nil {
+		*j = fresh
 		return nil
 	}
 	var quoted string
 	if err := json.Unmarshal([]byte(raw), &quoted); err != nil {
 		return json.Unmarshal([]byte(raw), j)
 	}
-	return json.Unmarshal([]byte(quoted), j)
+	var unwrapped JSONMap
+	if err := json.Unmarshal([]byte(quoted), &unwrapped); err != nil {
+		return err
+	}
+	*j = unwrapped
+	return nil
 }
 
 func (j *JSONMap) GormDataType() string {

@@ -102,6 +102,15 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 	}
 }
 
+// retrievalRegistryKeys lists every registry key whose factory is
+// buildRetrievalTool, so DSL metadata handling does not depend on which
+// alias the canvas used.
+var retrievalRegistryKeys = map[string]struct{}{
+	"retrieval":         {},
+	"search_my_dataset": {},
+	"search_my_dateset": {},
+}
+
 // BuildByName resolves a tool name into an Eino BaseTool.
 func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
 	key := normalizeToolName(name)
@@ -146,12 +155,14 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	// component_name, function_name and description are DSL metadata, not
 	// constructor arguments for most tools. Strip them before handing the
 	// params to the factory; keep function_name/description only for
-	// retrieval so each instance can advertise its DSL-defined name.
+	// retrieval so each instance can advertise its DSL-defined name. All
+	// registered retrieval aliases count — a DSL using function_name
+	// "search_my_dataset" resolves to that registry key, not "retrieval".
 	cleanParams := params
 	if cleanParams != nil {
 		cleanParams = cloneToolParams(cleanParams)
 		delete(cleanParams, "component_name")
-		if key != "retrieval" {
+		if _, isRetrieval := retrievalRegistryKeys[key]; !isRetrieval {
 			delete(cleanParams, "function_name")
 			delete(cleanParams, "description")
 		}

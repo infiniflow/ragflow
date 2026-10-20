@@ -1446,13 +1446,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		return nil, err
 	}
 	canvasTenantID := canvasRow.UserID
-	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, canvasRow.UserID); terr == nil && len(tenantIDs) > 0 {
-		canvasTenantID = tenantIDs[0]
-	} else if terr != nil {
-		common.Warn("service: RunAgent userTenantDAO.GetTenantIDsByUserID (canvas owner tenant not populated)",
-			zap.String("canvas_user_id", canvasRow.UserID),
-			zap.Error(terr))
-	}
 	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = common.GenerateToken()

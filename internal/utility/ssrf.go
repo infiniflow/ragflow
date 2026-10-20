@@ -60,5 +60,17 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// The pinned dialer only guarantees the host, not the scheme:
+			// a same-host HTTPS -> HTTP redirect would carry credential
+			// headers in cleartext.
+			if via[0].URL.Scheme == "https" && req.URL.Scheme == "http" {
+				return fmt.Errorf("refusing HTTPS to HTTP redirect to %q", req.URL)
+			}
+			return nil
+		},
 	}
 }
