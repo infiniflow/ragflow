@@ -110,6 +110,7 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  RadeonCloud = 'Radeon Cloud',
 }
 
 // Please lowercase the file name
@@ -203,6 +204,7 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.RadeonCloud]: 'radeon-cloud',
 };
 
 export const ModelTypeToField: Record<string, string> = {

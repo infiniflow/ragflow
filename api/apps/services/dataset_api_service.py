@@ -1923,7 +1923,6 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
     from api.apps.services import structure_graph_common as sgc
     from api.db.services.compilation_template_service import CompilationTemplateService
-    from api.db.services.tenant_llm_service import TenantLLMService
     from common.doc_store.doc_store_base import OrderByExpr
 
     keywords = (keywords or "").strip()
@@ -2094,15 +2093,9 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         resolved_kind,
     )
 
-    # ── keywords mode: name matching/KNN across the kind → matched subgraph. ──
+    # ── keywords mode: name matching across the kind → matched subgraph. ──
     if keywords:
         if not kind_template_ids:
-            return True, empty
-        try:
-            model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING.value, kb.embd_id)
-            embd_mdl = TenantLLMService.model_instance(model_config)
-        except Exception:
-            logging.exception("get_dataset_structure: embedding bind failed for kb=%s", dataset_id)
             return True, empty
 
         def _scope_for_template(row: dict):
@@ -2119,11 +2112,9 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
             index_nm,
             dataset_id,
-            embd_mdl,
             {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset", "doc"]},
             keywords,
             _scope_for_template,
-            log_ctx=f"kb={dataset_id}",
             excluded_doc_ids=dataset_excluded_doc_ids,
         )
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:

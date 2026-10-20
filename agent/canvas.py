@@ -114,9 +114,9 @@ class Graph:
     def validate_component_parameters(dsl):
         component_params = {}
         for k, cpn in dsl["components"].items():
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
-            param.update(cpn["obj"]["params"])
             try:
+                param = component_class(cpn["obj"]["component_name"] + "Param")()
+                param.update(cpn["obj"]["params"])
                 param.check()
             except Exception as e:
                 raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")

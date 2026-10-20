@@ -39,7 +39,6 @@ from api.db.services.llm_service import LLMBundle
 from api.db.services.search_service import SearchService
 from api.db.services.task_service import TaskService, cancel_all_task_of
 from api.db.services.tenant_llm_service import TenantLLMService
-from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from api.utils.api_utils import (
     add_tenant_id_to_kwargs,
     check_duplicate_ids,
@@ -63,6 +62,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces
@@ -880,24 +880,15 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
         return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
+    # ── keywords mode: name matching → matched entities' subgraph ──
     if keywords:
-        try:
-            embd_id = DocumentService.get_embd_id(document_id)
-            model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
-            embd_mdl = TenantLLMService.model_instance(model_config)
-        except Exception:
-            logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
-            return get_result(data=_response([]))
         try:
             bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
                 index_name,
                 dataset_id,
-                embd_mdl,
                 {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
                 keywords,
                 _resolve_bucket,
-                log_ctx=f"doc={document_id}",
             )
         except Exception as e:
             return server_error_response(e)
@@ -1188,6 +1179,42 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
         return server_error_response(e)
 
 
+async def _next_source_chunk_order(tenant_id, dataset_id, document_id):
+    """Order a manually added chunk after the document's source chunks.
+
+    Only enabled rows are read, so parent rows (``available_int=0`` and numbered
+    from ``DERIVED_CHUNK_ORDER_BASE`` upwards) never decide the next order. A
+    document left without an enabled source row returns 0: the added chunk is
+    then its only enabled row. A failed read raises instead of falling back to
+    0, because a default-ordered row is exactly what this numbering replaces.
+    Two concurrent adds can read the same maximum and share an order; the chunk
+    list still breaks that tie on ``create_timestamp_flt``.
+    """
+    order_by = OrderByExpr()
+    order_by.desc("chunk_order_int")
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        ["chunk_order_int"],
+        [],
+        {"doc_id": document_id, "available_int": 1},
+        [],
+        order_by,
+        0,
+        1,
+        search.index_name(tenant_id),
+        [dataset_id],
+    )
+    fields = settings.docStoreConn.get_fields(res, ["chunk_order_int"])
+
+    orders = []
+    for row in fields.values():
+        try:
+            orders.append(int(row.get("chunk_order_int") or 0))
+        except (TypeError, ValueError):
+            continue
+    return max(orders) + 1 if orders else 0
+
+
 @manager.route("/datasets/<dataset_id>/documents/<document_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -1246,6 +1273,17 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             d["tag_feas"] = validate_tag_features(req["tag_feas"])
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
+
+    # Read the order before the image store and the embedding call: a doc-store
+    # failure must not leave an orphaned image or pay for an unused embedding.
+    try:
+        d["chunk_order_int"] = await _next_source_chunk_order(dataset_tenant_id, dataset_id, document_id)
+    except Exception:
+        logging.exception("Failed to read the highest chunk_order_int of document %s", document_id)
+        return get_error_data_result(
+            message="Failed to read the document's chunk order, please retry.",
+            code=RetCode.SERVER_ERROR,
+        )
 
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))

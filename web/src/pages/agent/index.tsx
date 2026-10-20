@@ -25,7 +25,6 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -73,8 +72,6 @@ import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
 import WebhookSheet from './webhook-sheet';
-import { RunTooltip } from './flow-tooltip';
-import { debugRunLimitsTooltipKey } from './utils/debug-run-limits';
 
 /**
  * Standardizes dropdown menu item styling for agent management actions.
@@ -106,15 +103,6 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const isGoBackend = useIsGoBackend();
-  // Resolves the i18n key for the canvas "Run" tooltip describing the Go-side
-  // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
-  // canvas on the golang backend — an agent canvas runs the agent, not an
-  // ingestion debug preview, so it must never show this tooltip.
-  const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
-  // The golang backend's ingestion (dataflow) canvas hides the Run/test-run
-  // entry entirely; the agent canvas keeps its Run button on both backends.
-  const showRunButton = !(isGoBackend && isPipeline);
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
@@ -337,12 +325,7 @@ export default function Agent() {
           >
             <LaptopMinimalCheck /> {t('flow.save')}
           </ButtonLoading>
-          {showRunButton &&
-            (runTooltipKey ? (
-              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-            ) : (
-              runButton
-            ))}
+          {!isPipeline && runButton}
           {isConversationMode && (
             <Button variant={'secondary'} onClick={handleExploreClick}>
               <Compass />

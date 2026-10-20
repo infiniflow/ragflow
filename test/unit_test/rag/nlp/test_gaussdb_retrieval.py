@@ -89,6 +89,7 @@ def dealer_cls():
         DOC_ENGINE_INFINITY=False,
         DOC_ENGINE_OCEANBASE=False,
         DOC_ENGINE_SERENEDB=False,
+        DOC_ENGINE_VASTBASE=False,
     )
     if common_module is not None:
         setattr(common_module, "settings", settings_stub)
