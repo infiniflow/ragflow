@@ -5,19 +5,20 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity/models"
 )
 
 func TestPaddleOCRBlockPosition(t *testing.T) {
-	page := models.OCRPage{Index: 2, Width: 900, Height: 800}
+	page := models.OCRPage{Index: 2, Width: 600, Height: 800}
 	for _, tc := range []struct {
 		name string
 		box  []float64
 		want []any
 	}{
-		{"rectangle", []float64{30, 40, 300, 160}, []any{3, float64(10), float64(100), float64(20), float64(80)}},
+		{"rectangle", []float64{30, 40, 300, 160}, []any{3, float64(15), float64(150), float64(20), float64(80)}},
 		{"noncanonical polygon", []float64{30, 40, 300, 40, 300, 160, 30, 160}, nil},
 		{"clip", []float64{-30, -40, 1200, 1000}, []any{3, float64(0), float64(300), float64(0), float64(400)}},
 		{"zero", []float64{1, 1, 1, 2}, nil},
@@ -119,6 +120,23 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 			formatted := pdfItemsToResult("title.pdf", ItemsToMaps(result.JSON), "markdown", 1)
 			if formatted.Markdown != tc.want {
 				t.Fatalf("markdown=%q; want %q", formatted.Markdown, tc.want)
+			}
+		})
+	}
+}
+
+func TestPaddleOCRPDFResultRejectsRenderedEmptyText(t *testing.T) {
+	for _, label := range []string{"text", "doc_title", "paragraph_title"} {
+		t.Run(label, func(t *testing.T) {
+			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Label: label, Text: "---"}}}}}
+			result := PaddleOCRPDFResult(t.Context(), "separator.pdf", nil, response)
+			if result.Err == nil || !strings.Contains(result.Err.Error(), "empty text") {
+				t.Fatalf("rendered-empty document accepted: %+v", result)
+			}
+			response.Pages[0].Blocks = append(response.Pages[0].Blocks, models.OCRBlock{Text: "body"})
+			result = PaddleOCRPDFResult(t.Context(), "mixed.pdf", nil, response)
+			if result.Err != nil || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "body" {
+				t.Fatalf("empty placeholder survived beside body: %+v", result)
 			}
 		})
 	}

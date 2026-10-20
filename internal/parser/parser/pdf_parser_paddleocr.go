@@ -38,6 +38,11 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		if !hasPageCount && page.Index+1 > pageCount {
 			pageCount = page.Index + 1
 		}
+		size := sizes[page.Index]
+		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("PaddleOCR page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", page.Index+1, page.Width, page.Height, size[0], size[1]))
+			size = [2]float64{}
+		}
 		for _, block := range page.Blocks {
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
@@ -51,18 +56,26 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 				return parsed
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
-			position := paddleOCRBlockPosition(page, block.BBox, sizes[page.Index])
+			position := paddleOCRBlockPosition(page, block.BBox, size)
 			label := strings.ToLower(strings.TrimSpace(block.Label))
 			isTitle := label == "doc_title" || label == "paragraph_title"
+			if label == "figure_title" || label == "table_title" {
+				label = "caption"
+			}
 			for _, item := range parsed.JSON {
-				if text, ok := item.(TextItem); ok && isTitle && text.CKType == "text" {
-					prefix := "## "
-					if label == "doc_title" {
-						prefix = "# "
+				if text, ok := item.(TextItem); ok {
+					if strings.TrimSpace(text.Text) == "" {
+						continue
 					}
-					text.Text = prefix + text.Text
-					text.CKType = "heading"
-					item = text
+					if isTitle && text.CKType == "text" {
+						prefix := "## "
+						if label == "doc_title" {
+							prefix = "# "
+						}
+						text.Text = prefix + text.Text
+						text.CKType = "heading"
+						item = text
+					}
 				}
 				fields := item.ToMap()
 				// Page identity is retained even when the block has no usable geometry.
@@ -98,7 +111,7 @@ func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64
 	if page.Index < 0 || !paddleOCRPositive(page.Width) || !paddleOCRPositive(page.Height) || !paddleOCRPositive(size[0]) || !paddleOCRPositive(size[1]) {
 		return nil
 	}
-	if len(bbox) != 4 {
+	if !paddleOCRAspectRatioMatches(page, size) || len(bbox) != 4 {
 		return nil
 	}
 	for _, v := range bbox {
@@ -118,6 +131,12 @@ func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64
 		return nil
 	}
 	return []any{page.Index + 1, left, right, top, bottom}
+}
+
+// Allow 2% variation for renderer pixel rounding, but reject anisotropic scaling.
+func paddleOCRAspectRatioMatches(page models.OCRPage, size [2]float64) bool {
+	xScale, yScale := size[0]/page.Width, size[1]/page.Height
+	return math.Max(xScale, yScale) <= 1.02*math.Min(xScale, yScale)
 }
 
 func paddleOCRPositive(value float64) bool {

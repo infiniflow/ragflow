@@ -91,8 +91,13 @@ func parsePaddleOCRResultBody(body []byte) (*OCRFileResponse, error) {
 		if firstIndex != nil && *firstIndex >= 0 {
 			pageIdentityKnown = true
 		}
-		if len(pages) > 0 && pageIdentityKnown {
-			nextPage = pages[len(pages)-1].Index + 1
+		if pageIdentityKnown {
+			for _, page := range pages {
+				if page.Index < nextPage {
+					return nil, fmt.Errorf("paddleocr result: entry %d (log_id=%q): source page index %d repeats or precedes an earlier page (next index %d)", i+1, entry.LogID, page.Index, nextPage)
+				}
+				nextPage = page.Index + 1
+			}
 		}
 		if entry.ErrorCode != 0 || len(pages) == 0 {
 			warning := fmt.Sprintf("paddleocr result: entry %d (log_id=%q)", i+1, entry.LogID)
@@ -195,17 +200,19 @@ func (pruned paddleOCRPrunedResult) blocks() []OCRBlock {
 }
 
 func paddleOCRBox(raw json.RawMessage) []float64 {
-	var box []float64
-	if err := json.Unmarshal(raw, &box); err != nil {
+	var coordinates []*float64
+	if err := json.Unmarshal(raw, &coordinates); err != nil {
 		return nil
 	}
-	if len(box) != 4 && len(box) != 8 {
+	if len(coordinates) != 4 && len(coordinates) != 8 {
 		return nil
 	}
-	for _, value := range box {
-		if math.IsNaN(value) || math.IsInf(value, 0) {
+	box := make([]float64, len(coordinates))
+	for i, value := range coordinates {
+		if value == nil || math.IsNaN(*value) || math.IsInf(*value, 0) {
 			return nil
 		}
+		box[i] = *value
 	}
 	if len(box) == 8 {
 		left, top, right, bottom := box[0], box[1], box[0], box[1]

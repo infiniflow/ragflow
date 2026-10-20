@@ -466,6 +466,9 @@ func TestPaddleOCRResultPageIdentity(t *testing.T) {
 		{"recognition polygon becomes rectangle", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["polygon"],"rec_boxes":[[300,160,30,140,50,40,280,60]]}}]}}`, 1, 0, "polygon", "[30 40 300 160]"},
 		{"unsupported box keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[1,2,3,4,5,6]]}}]}}`, 1, 0, "retained", "[]"},
 		{"degenerate box keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[10,20,10,40]]}}]}}`, 1, 0, "retained", "[]"},
+		{"null rectangle keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[10,null,30,40]]}}]}}`, 1, 0, "retained", "[]"},
+		{"null polygon keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[30,40,null,160,100,160,100,40]]}}]}}`, 1, 0, "retained", "[]"},
+		{"zero coordinate is valid", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[0,0,30,40]]}}]}}`, 1, 0, "retained", "[0 0 30 40]"},
 		{"invalid box keeps text", `{"result":{"layoutParsingResults":[{"prunedResult":{"parsing_res_list":[{"block_content":"retained","block_bbox":[10,"bad",30,40]}]}}]}}`, 1, 0, "retained", "[]"},
 		{"pretty object", "{\n\"result\": {\n\"ocrResults\": [{\"prunedResult\": {\"rec_texts\": [\"pretty\"]}}]\n}}", 1, 0, "pretty", "[]"},
 	}
@@ -644,5 +647,28 @@ func TestPaddleOCRPageSizeFallbackRequiresAlignedIdentity(t *testing.T) {
 				t.Fatalf("text lost: %v", page)
 			}
 		})
+	}
+}
+
+func TestPaddleOCRRejectsRepeatedOrDecreasingSourcePages(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"repeated across entries", `{"logId":"first","result":{"layoutParsingResults":[{"prunedResult":{"page_index":0},"markdown":{"text":"first"}}]}}
+{"logId":"second","result":{"layoutParsingResults":[{"prunedResult":{"page_index":0},"markdown":{"text":"second"}}]}}`},
+		{"decreasing across entries", `{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":2},"markdown":{"text":"first"}}]}}
+{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":1},"markdown":{"text":"second"}}]}}`},
+		{"repeated within entry", `{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":0},"markdown":{"text":"first"}},{"prunedResult":{"page_index":0},"markdown":{"text":"second"}}]}}`},
+		{"decreasing after inferred page", `{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":0},"markdown":{"text":"first"}},{"markdown":{"text":"second"}},{"prunedResult":{"page_index":1},"markdown":{"text":"third"}}]}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parsePaddleOCRResultBody([]byte(tc.body))
+			if err == nil || !strings.Contains(err.Error(), "source page index") || !strings.Contains(err.Error(), "entry") {
+				t.Fatalf("expected identifiable source-page error, got %v", err)
+			}
+		})
+	}
+	body := `{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":2},"markdown":{"text":"third"}},{"prunedResult":{"page_index":4},"markdown":{"text":"fifth"}}]}}`
+	response, err := parsePaddleOCRResultBody([]byte(body))
+	if err != nil || len(response.Pages) != 2 || response.Pages[0].Index != 2 || response.Pages[1].Index != 4 {
+		t.Fatalf("valid source-page gaps rejected: response=%+v err=%v", response, err)
 	}
 }

@@ -188,3 +188,26 @@ func TestPDFSortingPreservesMarkedBarriersWithinMixedInput(t *testing.T) {
 		}
 	})
 }
+
+func TestPaddleOCRCaptionsRemainBodyInTitleChunking(t *testing.T) {
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{
+		{Text: "Document title", Label: "doc_title"},
+		{Text: "Figure caption", Label: "figure_title"},
+		{Text: "Table caption", Label: "table_title"},
+		{Text: "Ordinary body.", Label: "text"},
+	}}}}
+	result := parser.PaddleOCRPDFResult(t.Context(), "captions.pdf", nil, response)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	units, _, err := schema.ChunkDocsFromDocItem(result.JSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := recordsFromStructured(units)
+	params := defaultsTitle()
+	levels := resolveTitleLevels(records, &params)
+	if len(levels) != 4 || levels[0] >= bodyLevel || levels[1] != bodyLevel || levels[2] != bodyLevel || levels[3] != bodyLevel {
+		t.Fatalf("caption became a section heading: levels=%v records=%+v", levels, records)
+	}
+}
