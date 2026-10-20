@@ -1159,7 +1159,10 @@ export const useFetchDatasetsByIds = (
   ids: string[],
   ownerTenantId?: string,
 ) => {
-  const sortedIds = useMemo(() => ids.filter(isDatasetId).sort(), [ids]);
+  const sortedIds = useMemo(
+    () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
+    [ids],
+  );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
     queryKey: KnowledgeListKeys.byIds(sortedIds),
     enabled: sortedIds.length > 0,
