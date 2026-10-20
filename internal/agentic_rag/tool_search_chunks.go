@@ -50,7 +50,13 @@ Returns an XML <search_results count="N" query="..."> document (unified with gre
 
 // searchChunksArgs is the JSON the model sends into InvokableRun.
 type searchChunksArgs struct {
-	Queries                  []string `json:"queries"`
+	Queries []string `json:"queries"`
+	// Intent is what THIS call is trying to find, in the caller's own words.
+	// The filter judges a hit against THIS rather than against the overall
+	// question alone, because a necessary middle step of a multi-hop run is
+	// often irrelevant to the final question while being exactly what the step
+	// needed. Optional: omitted means the filter falls back to the question.
+	Intent                   string   `json:"intent,omitempty"`
 	DatasetIDs               []string `json:"dataset_ids,omitempty"`
 	DocScope                 []string `json:"doc_scope,omitempty"`
 	TopN                     int      `json:"top_n,omitempty"`
@@ -129,7 +135,11 @@ func (k *SearchChunksTool) Info(_ context.Context) (*schema.ToolInfo, error) {
       "maximum": 1
     }
   },
-  "required": ["queries"]
+    "intent": {
+      "type": "string",
+      "description": "REQUIRED: what information THIS call needs, in one sentence, e.g. the first name of Sarah Polk's mother, needed to build the final name. Each returned passage is kept or dropped by whether it serves this stated need, so name the fact you are looking for - not the search terms, and not 'relevant information'."
+    },
+  "required": ["queries", "intent"]
 }`
 	s := &jsonschema.Schema{}
 	if err := json.Unmarshal([]byte(schemaJSON), s); err != nil {
@@ -153,6 +163,10 @@ func (k *SearchChunksTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 		return "", fmt.Errorf("search_chunks: parse arguments: %w", err)
 	}
+
+	// Published for the decision filter: it judges each passage against this
+	// stated need, which is narrower than the overall question.
+	ctx = withIntent(ctx, args.Intent)
 
 	// The keyword share is the model's to choose here (default 0.7): this tool
 	// IS the fusion leg. Weight 0 does not turn it into a pure vector search —

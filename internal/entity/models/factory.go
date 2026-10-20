@@ -57,6 +57,11 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "openai-api-compatible":
 		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
+	case "systemone":
+		// Not chat-completions-shaped: this provider speaks TypeSafe System One,
+		// where one request carries many questions and the answer is a labelled
+		// verdict per question rather than a message.
+		return NewSystemOneModel(baseURL, urlSuffix), nil
 	case "mws":
 		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":

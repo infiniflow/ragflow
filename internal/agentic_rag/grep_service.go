@@ -57,9 +57,9 @@ type regexpSearchable interface {
 // ListByDocIDs reads the full original chunks belonging to the given document
 // ids, skipping graph (relation/entity/location) chunks so callers get the
 // actual document text. It backs the list_chunks deep-read runtime.
-// Because content_with_weight is now a searchable keyword field (content with a
-// sparsegram index on Infinity), it reads the docs' chunks directly via the
-// regexp pushdown (match-all "." scoped by doc_id), no longer needing a
+// It reads the docs' chunks through a metadata filter (doc_id scoped), never
+// through content matching, so it works on every index generation, no longer
+// needing a
 // content_ltks-based general recall.
 func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
 	if g == nil || g.docEngine == nil {
@@ -184,6 +184,19 @@ func (g *GrepAdapter) FetchChunksByID(ctx context.Context, req runtime.GrepReque
 // the ES _source payload; withFullContent=false leaves RetrievalChunk.Content
 // empty so the index pass stays lightweight. Results come back in reading
 // order (doc_id, page_num_int, chunk_order_int).
+// deepReadPathFilterSearch tags every list_chunks deep-read log line, so a run
+// can be traced to the filter-based Search rather than the former regexp
+// pushdown.
+const deepReadPathFilterSearch = "filter_search"
+
+// deepReadFetchLimit is the single-page window for one deep read. A document has
+// to fit inside the engine's max result window (10 000); a document with more
+// chunks than this is reported as truncated rather than silently cut.
+const deepReadFetchLimit = common.MAX_RESULT_WINDOW
+
+// fetchScoped reads the chunks of one document — optionally narrowed to a set of
+// chunk ids — with a pure metadata filter. See the query construction below for
+// why it must not match on content.
 func (g *GrepAdapter) fetchScoped(
 	ctx context.Context, req runtime.GrepRequest,
 	selectFields []string, withFullContent bool,
@@ -200,27 +213,37 @@ func (g *GrepAdapter) fetchScoped(
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
-	se, ok := g.docEngine.(regexpSearchable)
-	if !ok {
-		return nil, runtime.ErrRegexpNotSupported
-	}
+	// A PURE METADATA FILTER, with no content matching at all.
+	//
+	// Both deep-read passes only ever ask "which chunks belong to this
+	// document", and the answer used to be expressed as a match-all regexp over
+	// content_with_weight. That is bound to the field's mapping: on an index
+	// built before content_with_weight became a searchable keyword, the field is
+	// text with index:false and the engine rejects the query outright —
+	//
+	//	Cannot search on field [content_with_weight] since it is not indexed
+	//
+	// A filter query answers identically on every index generation, keeps chunks
+	// longer than a keyword's ignore_above limit visible, and works on engines
+	// that never implemented regexp pushdown.
 	filter := map[string]interface{}{
 		"available_int": 1,
-		"doc_id":        docIDs,
 		"must_not":      map[string]interface{}{"exists": "compile_kwd"},
 	}
-	if ids := nonEmptyStrings(req.ChunkScope); len(ids) > 0 {
-		filter["id"] = ids
+	if len(docIDs) > 0 {
+		filter["doc_id"] = docIDs
+	}
+	if len(chunkIDs) > 0 {
+		filter["id"] = chunkIDs
 	}
 
-	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
-		TenantID:     req.TenantID,
+	res, err := g.docEngine.Search(ectx, &enginetypes.SearchRequest{
+		IndexNames:   []string{indexNameFor(req.TenantID, "")},
 		KbIDs:        req.DatasetIDs,
-		Pattern:      ".*",
-		Sort:         sortExprFromFields(grepChunksSortFields),
-		SelectFields: selectFields,
-		ReturnAll:    true,
+		Limit:        deepReadFetchLimit,
 		Filter:       filter,
+		SelectFields: selectFields,
+		OrderBy:      sortExprFromFields(grepChunksSortFields),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list_chunks: scoped recall: %w", err)
