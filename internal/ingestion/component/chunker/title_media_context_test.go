@@ -255,6 +255,43 @@ func TestTitleFamilyContextLeavesTextChunksUnchanged(t *testing.T) {
 	}
 }
 
+// TestTitleFamilyPlainPayloadSkipsMediaContext documents the payload boundary:
+// a markdown/text upstream carries no media records, so the context budgets are
+// a no-op there. Image recovery for those payloads belongs to the parser layer,
+// not the chunker finalizer.
+func TestTitleFamilyPlainPayloadSkipsMediaContext(t *testing.T) {
+	comp, err := NewGroupTitleChunker(map[string]any{
+		"levels":             [][]string{{`^# `}},
+		"image_context_size": 20,
+		"table_context_size": 20,
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.md",
+		"output_format": "markdown",
+		"markdown":      "# Report\n\nbody paragraph",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("chunks: want >=1, got 0")
+	}
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "image" || ck["img_id"] != nil || ck["image"] != nil {
+			t.Errorf("plain payload must not synthesize media: %#v", ck)
+		}
+		for _, key := range []string{"context_above", "context_below"} {
+			if _, exists := ck[key]; exists {
+				t.Errorf("plain text chunk must not carry %s: %#v", key, ck)
+			}
+		}
+	}
+}
+
 // TestContextSizeRejectsNegativeFractions pins the fix for values such as
 // -0.5, which int() truncates to 0 and would otherwise pass the non-negative
 // validation while silently disabling the setting.
