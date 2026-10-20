@@ -618,13 +618,12 @@ func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, conte
 	}
 	var resp *ChatInvokeResponse
 	var err error
-	emittedVisible := false
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		// Deltas are intentionally not forwarded to the client: a failed or
+		// marker-only grounding stream must not leave partial output visible
+		// while the caller falls back to the original answer.
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			return nil
+			return ctx.Err()
 		})
 	} else {
 		resp, err = inv.Invoke(ctx, db, req)
@@ -636,13 +635,8 @@ func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, conte
 		return "", fmt.Errorf("citation grounding returned no response")
 	}
 	// Marker-only grounding must not silently replace the first-pass answer
-	// (#20613). Non-stream (or stream that never emitted) can fall back.
-	// Once invalid deltas have already been streamed, surface an error so the
-	// caller does not append the original answer after the bad markers.
+	// (#20613); fall back to it instead.
 	if !citationGroundingHasSubstantiveText(resp.Content) {
-		if emittedVisible {
-			return content, fmt.Errorf("citation grounding returned markers without answer text")
-		}
 		return content, nil
 	}
 	return resp.Content, nil

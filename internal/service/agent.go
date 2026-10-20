@@ -2348,6 +2348,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if answer == "" && shouldEmitMessage {
 				if failureText, ok := agentRunFailureText(err); ok {
 					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, failureText, thinking, referencePayload, dsl, state, true); persistErr != nil {
+						s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
+						s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+						return nil, canvas.NewInternalRunError(
+							fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+						)
+					}
 					meData, _ := json.Marshal(canvas.MessageEndEvent{
 						Attachment: attachment,
 						Reference:  referencePayload,
