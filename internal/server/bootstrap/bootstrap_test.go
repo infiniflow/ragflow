@@ -17,6 +17,7 @@
 package bootstrap
 
 import (
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -140,10 +141,10 @@ func TestTempServerName(t *testing.T) {
 	if got := TempServerName("api", strPtr("named")); got != "named" {
 		t.Errorf("TempServerName(api, named) = %q, want named", got)
 	}
-	for _, mode := range []string{"api", "admin", "ingestor", "syncer", "deepdoc", "migrate"} {
-		got := TempServerName(mode, nil)
-		if want := mode + "_server"; got != want {
-			t.Errorf("TempServerName(%q, nil) = %q, want %q", mode, got, want)
+	for _, serverType := range []common.ServerType{common.ServerTypeAPI, common.ServerTypeAdmin, common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeMigrate} {
+		got := TempServerName(serverType, nil)
+		if want := string(serverType) + "_server"; got != want {
+			t.Errorf("TempServerName(%q, nil) = %q, want %q", serverType, got, want)
 		}
 	}
 	// Empty-name override is honored as empty (non-nil pointer wins).
