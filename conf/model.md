@@ -179,6 +179,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
 | **Demon Route** | OpenAI-compatible router |
+| **EmpirioLabs AI** | AI inference provider |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |

@@ -57,6 +57,42 @@ while retaining table recognition:
 }
 ```
 
+### Tenant SoMark and OpenDataLoader models
+
+The Go Parser can use an enrolled **SoMark** or **OpenDataLoader** OCR model
+by tenant-model ID or by `model@instance@provider` reference, for example:
+
+```json
+{
+  "pdf": {
+    "parse_method": "SoMark-model@production@SoMark",
+    "output_format": "json"
+  }
+}
+```
+
+`layout_recognizer` also accepts a reference. Selection follows the existing PDF
+model rule: a model reference in `parse_method` takes precedence; otherwise the
+reference in `layout_recognizer` is used.
+
+The selected model and instance must be active, OCR-capable and owned by the
+current tenant/provider. The Parser resolves the instance endpoint and key on
+each execution, so credential changes apply without resaving the pipeline.
+SoMark supports ordinary instance key/base-URL storage; OpenDataLoader also
+supports its provider-card JSON configuration, including nested `api_key` maps.
+
+For an explicit reference, a missing endpoint, inaccessible/disabled model or
+invalid instance configuration is an error. The Parser never substitutes another
+instance, a global environment credential or a generic VLM. An empty optional
+key remains empty. Transport SSRF protections still apply.
+
+SoMark's non-secret per-model format/feature settings supply defaults; explicit
+pipeline options override them. An explicit `false` is retained. Resolved
+credentials stay on the per-run parser object, not in saved pipeline settings.
+
+Bare engine names (`somark`, `opendataloader`) continue to use their existing
+parser-specific setup/environment configuration.
+
 ### Other file types
 
 For image files:
