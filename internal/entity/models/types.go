@@ -133,8 +133,9 @@ type OCRPage struct {
 	Blocks []OCRBlock `json:"blocks"`
 }
 
-// OCRBlock carries a layout region in source-image pixels. BBox is either
-// [left, top, right, bottom] or a flattened polygon; an absent box is unlocated.
+// OCRBlock carries a layout region in source-image pixels. BBox is
+// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
+// provider coordinates to this rectangle before returning blocks.
 type OCRBlock struct {
 	Text  string    `json:"text"`
 	Label string    `json:"label,omitempty"`

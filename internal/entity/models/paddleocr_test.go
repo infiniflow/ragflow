@@ -462,6 +462,10 @@ func TestPaddleOCRResultPageIdentity(t *testing.T) {
 		{"block only", `{"result":{"layoutParsingResults":[{"prunedResult":{"width":1200,"height":1600,"parsing_res_list":[{"block_content":"body","block_bbox":[20,40,100,120]}]}}]}}`, 1, 0, "body", "[20 40 100 120]"},
 		{"blank middle page", `{"result":{"ocrResults":[{"prunedResult":{"width":1200,"height":1600,"rec_texts":["first"],"rec_boxes":[[20,40,100,120]]}},{"prunedResult":{}},{"prunedResult":{"width":900,"height":1200,"rec_texts":["third","unlocated"],"rec_boxes":[[30,60,90,120]]}}]}}`, 3, 2, "third", "[30 60 90 120]"},
 		{"explicit source index", `{"result":{"layoutParsingResults":[{"prunedResult":{"page_index":4,"parsing_res_list":[{"block_content":"fifth","block_bbox":[20,40,100,120]}]}}]}}`, 1, 4, "fifth", "[20 40 100 120]"},
+		{"layout polygon becomes rectangle", `{"result":{"layoutParsingResults":[{"prunedResult":{"parsing_res_list":[{"block_content":"polygon","block_bbox":[300,160,30,140,50,40,280,60]}]}}]}}`, 1, 0, "polygon", "[30 40 300 160]"},
+		{"recognition polygon becomes rectangle", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["polygon"],"rec_boxes":[[300,160,30,140,50,40,280,60]]}}]}}`, 1, 0, "polygon", "[30 40 300 160]"},
+		{"unsupported box keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[1,2,3,4,5,6]]}}]}}`, 1, 0, "retained", "[]"},
+		{"degenerate box keeps text", `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["retained"],"rec_boxes":[[10,20,10,40]]}}]}}`, 1, 0, "retained", "[]"},
 		{"invalid box keeps text", `{"result":{"layoutParsingResults":[{"prunedResult":{"parsing_res_list":[{"block_content":"retained","block_bbox":[10,"bad",30,40]}]}}]}}`, 1, 0, "retained", "[]"},
 		{"pretty object", "{\n\"result\": {\n\"ocrResults\": [{\"prunedResult\": {\"rec_texts\": [\"pretty\"]}}]\n}}", 1, 0, "pretty", "[]"},
 	}

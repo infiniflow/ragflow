@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 )
 
@@ -181,6 +182,27 @@ func (pruned paddleOCRPrunedResult) blocks() []OCRBlock {
 func paddleOCRBox(raw json.RawMessage) []float64 {
 	var box []float64
 	if err := json.Unmarshal(raw, &box); err != nil {
+		return nil
+	}
+	if len(box) != 4 && len(box) != 8 {
+		return nil
+	}
+	for _, value := range box {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil
+		}
+	}
+	if len(box) == 8 {
+		left, top, right, bottom := box[0], box[1], box[0], box[1]
+		for i := 2; i < len(box); i += 2 {
+			left = math.Min(left, box[i])
+			right = math.Max(right, box[i])
+			top = math.Min(top, box[i+1])
+			bottom = math.Max(bottom, box[i+1])
+		}
+		box = []float64{left, top, right, bottom}
+	}
+	if box[2] <= box[0] || box[3] <= box[1] {
 		return nil
 	}
 	return box

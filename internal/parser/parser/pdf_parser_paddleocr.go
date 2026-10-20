@@ -99,7 +99,7 @@ func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64
 	if page.Index < 0 || !paddleOCRPositive(page.Width) || !paddleOCRPositive(page.Height) || !paddleOCRPositive(size[0]) || !paddleOCRPositive(size[1]) {
 		return nil
 	}
-	if len(bbox) != 4 && len(bbox) != 8 {
+	if len(bbox) != 4 {
 		return nil
 	}
 	for _, v := range bbox {
@@ -108,15 +108,6 @@ func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64
 		}
 	}
 	left, top, right, bottom := bbox[0], bbox[1], bbox[2], bbox[3]
-	if len(bbox) == 8 {
-		left, right, top, bottom = bbox[0], bbox[0], bbox[1], bbox[1]
-		for i := 2; i < len(bbox); i += 2 {
-			left = math.Min(left, bbox[i])
-			right = math.Max(right, bbox[i])
-			top = math.Min(top, bbox[i+1])
-			bottom = math.Max(bottom, bbox[i+1])
-		}
-	}
 	if right <= left || bottom <= top {
 		return nil
 	}

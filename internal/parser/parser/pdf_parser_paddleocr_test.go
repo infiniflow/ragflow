@@ -18,7 +18,7 @@ func TestPaddleOCRBlockPosition(t *testing.T) {
 		want []any
 	}{
 		{"rectangle", []float64{30, 40, 300, 160}, []any{3, float64(10), float64(100), float64(20), float64(80)}},
-		{"polygon", []float64{30, 40, 300, 40, 300, 160, 30, 160}, []any{3, float64(10), float64(100), float64(20), float64(80)}},
+		{"noncanonical polygon", []float64{30, 40, 300, 40, 300, 160, 30, 160}, nil},
 		{"clip", []float64{-30, -40, 1200, 1000}, []any{3, float64(0), float64(300), float64(0), float64(400)}},
 		{"zero", []float64{1, 1, 1, 2}, nil},
 		{"outside", []float64{1000, 900, 1100, 1000}, nil},
