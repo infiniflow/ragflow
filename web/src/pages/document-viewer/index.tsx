@@ -19,7 +19,9 @@ import CSVFileViewer from '@/components/document-preview/csv-preview';
 
 // Extract the filename from a Content-Disposition header value, or return
 // undefined when the header is missing/malformed.
-const parseContentDispositionFilename = (header?: string): string | undefined => {
+const parseContentDispositionFilename = (
+  header?: string,
+): string | undefined => {
   if (!header) return undefined;
   const match = /filename[^;=\n]*=(["']?)([^"';\n]*)\1/.exec(header);
   return match?.[2]?.trim();
@@ -47,8 +49,7 @@ const DocumentViewer = () => {
       const filename =
         parseContentDispositionFilename(
           response.headers['content-disposition'],
-        ) ||
-        (ext ? `${documentId}.${ext}` : documentId);
+        ) || (ext ? `${documentId}.${ext}` : documentId);
       downloadFileFromBlob(response.data, filename);
     } catch {
       message.error(t('message.failed'));
