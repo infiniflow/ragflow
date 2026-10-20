@@ -362,6 +362,8 @@ export const initialTitleChunkerValues = {
   root_chunk_as_heading: false,
   hierarchyChunkTokenCap: 512,
   groupChunkTokenCap: 512,
+  table_context_size: 0,
+  image_context_size: 0,
   hierarchyRules: cloneDeep(originalRules),
   groupRules: cloneDeep(originalRules),
 };

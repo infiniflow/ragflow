@@ -366,4 +366,36 @@ describe('TitleChunker per-method config round trip', () => {
     expect(form.hierarchyRules).toEqual([{ levels: [{ expression: '^##' }] }]);
     expect(form.groupRules).toEqual([{ levels: [{ expression: '^##' }] }]);
   });
+
+  it('preserves media context budgets on load and save', () => {
+    const form = transformApiConfigToForm('TitleChunker', {
+      method: 'hierarchy',
+      hierarchy: 3,
+      levels: [['^#']],
+      chunk_token_cap: 512,
+      table_context_size: 12,
+      image_context_size: 24,
+    });
+    expect(form.table_context_size).toBe(12);
+    expect(form.image_context_size).toBe(24);
+
+    const api = transformFormConfigToApi('TitleChunker', {
+      ...form,
+      method: 'hierarchy',
+      hierarchyHierarchy: '3',
+      hierarchyRules: [{ levels: [{ expression: '^#' }] }],
+      groupRules: [{ levels: [{ expression: '^#' }] }],
+    });
+    expect(api.table_context_size).toBe(12);
+    expect(api.image_context_size).toBe(24);
+
+    const manual = transformFormConfigToApi('ManualChunker', {
+      ...form,
+      method: 'group',
+      hierarchyGroup: '0',
+      groupRules: [{ levels: [{ expression: '^#' }] }],
+    });
+    expect(manual.table_context_size).toBe(12);
+    expect(manual.image_context_size).toBe(24);
+  });
 });

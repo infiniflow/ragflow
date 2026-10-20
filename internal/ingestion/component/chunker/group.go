@@ -227,7 +227,11 @@ func finalizeTitleChunks(chunks []map[string]any, p *titleChunkerParam) map[stri
 		return raw
 	}
 	docs, ok, err := schema.ChunkDocsFromAny(chunks)
-	if err != nil || !ok {
+	if err != nil {
+		common.Warn("TitleChunker: media context skipped, chunk conversion failed", zap.Error(err))
+		return raw
+	}
+	if !ok {
 		return raw
 	}
 	attachGeneralMediaContext(docs, p.TableContextSize, p.ImageContextSize, nil)

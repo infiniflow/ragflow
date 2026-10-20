@@ -249,6 +249,22 @@ func NumericFromAny(v any) (float64, bool) {
 	return 0, false
 }
 
+// ContextSizeFromAny parses a media-context budget (table_context_size /
+// image_context_size). A negative value is preserved as -1 instead of being
+// truncated toward zero by the float→int conversion, so the component's
+// Validate rejects it rather than silently disabling the setting (e.g.
+// -0.5 would otherwise become 0 and pass the non-negative check).
+func ContextSizeFromAny(v any) (int, bool) {
+	f, ok := NumericFromAny(v)
+	if !ok {
+		return 0, false
+	}
+	if f < 0 {
+		return -1, true
+	}
+	return int(f), true
+}
+
 // NormalizeOverlappedPercent mirrors Python common/float_utils.py:50-58
 // (normalize_overlapped_percent). Python's user-facing input is a [0,1)
 // fraction (token_chunker.py validates "[0, 1)"); this converts it to the

@@ -119,11 +119,11 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	} else if v, ok := conf["children_delimiters"].([]string); ok {
 		p.TokenChunkerParam.ChildrenDelimiters = append([]string(nil), v...)
 	}
-	if v, ok := schema.NumericFromAny(conf["table_context_size"]); ok {
-		p.TokenChunkerParam.TableContextSize = int(v)
+	if v, ok := schema.ContextSizeFromAny(conf["table_context_size"]); ok {
+		p.TokenChunkerParam.TableContextSize = v
 	}
-	if v, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
-		p.TokenChunkerParam.ImageContextSize = int(v)
+	if v, ok := schema.ContextSizeFromAny(conf["image_context_size"]); ok {
+		p.TokenChunkerParam.ImageContextSize = v
 	}
 }
 

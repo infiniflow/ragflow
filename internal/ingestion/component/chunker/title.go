@@ -104,11 +104,11 @@ func (p *titleChunkerParam) Update(conf map[string]any) {
 	if v, ok := schema.NumericFromAny(conf["chunk_token_cap"]); ok {
 		p.TitleChunkerParam.ChunkTokenCap = int(v)
 	}
-	if v, ok := schema.NumericFromAny(conf["table_context_size"]); ok {
-		p.TitleChunkerParam.TableContextSize = int(v)
+	if v, ok := schema.ContextSizeFromAny(conf["table_context_size"]); ok {
+		p.TitleChunkerParam.TableContextSize = v
 	}
-	if v, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
-		p.TitleChunkerParam.ImageContextSize = int(v)
+	if v, ok := schema.ContextSizeFromAny(conf["image_context_size"]); ok {
+		p.TitleChunkerParam.ImageContextSize = v
 	}
 }
 
