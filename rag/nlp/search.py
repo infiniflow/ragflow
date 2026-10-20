@@ -357,9 +357,6 @@ class Dealer:
                                 rank_feature=rank_feature,
                             )
                             total = self.dataStore.get_total(res)
-                    elif filters.get("doc_id"):
-                        res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
-                        total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
                         matchDense = copy.deepcopy(dense_template)
