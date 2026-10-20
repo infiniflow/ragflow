@@ -103,8 +103,16 @@ describe('buildModelTree', () => {
 
   it('leaves types without an allowlist unrestricted', () => {
     const models = [
-      addedModel({ name: 'a', model_type: ['chat'], provider_name: 'ProviderA' }),
-      addedModel({ name: 'b', model_type: ['chat'], provider_name: 'ProviderB' }),
+      addedModel({
+        name: 'a',
+        model_type: ['chat'],
+        provider_name: 'ProviderA',
+      }),
+      addedModel({
+        name: 'b',
+        model_type: ['chat'],
+        provider_name: 'ProviderB',
+      }),
     ];
 
     const tree = build(models, ['chat']);

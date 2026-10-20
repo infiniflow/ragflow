@@ -182,7 +182,8 @@ export const ModelTreeSelect = forwardRef<
   }, [providers, modelTypes]);
 
   const treeData = useMemo(
-    () => buildModelTree(allAddedModels, modelTypes, undefined, allowedProviders),
+    () =>
+      buildModelTree(allAddedModels, modelTypes, undefined, allowedProviders),
     [allAddedModels, modelTypes, allowedProviders],
   );
 

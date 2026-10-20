@@ -1030,10 +1030,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       model: '模型',
       modelTip: '大语言聊天模型',
-      tokensSpent: '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+      tokensSpent:
+        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
-      decisionModelTip: '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
+      decisionModelTip:
+        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
