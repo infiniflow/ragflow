@@ -35,6 +35,13 @@ deepdoc:
 admin:
   host: 0.0.0.0
   http_port: 9381
+vastbase:
+  host: 'host.docker.internal'
+  port: 5432
+  user: 'vastbase'
+  password: 'Vastdata@123'
+  db_name: 'vastbase'
+  dbcompatibility: 'B'
 mysql:
   name: 'rag_flow'
   user: 'root'

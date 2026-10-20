@@ -30,34 +30,36 @@ import logging
 from datetime import datetime
 from functools import partial
 from timeit import default_timer as timer
-from typing import Any, Dict, List
+from typing import Any
 
 import xxhash
-from common import settings
-from common.connection_utils import timeout
-from common.constants import PAGERANK_FLD, TAG_FLD
-from common.misc_utils import thread_pool_exec
-from common.float_utils import normalize_overlapped_percent
+
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import TaskService
-from rag.nlp import search, DEFAULT_DELIMITER
-from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
-from rag.svr.task_executor_refactor.task_context import TaskContext
-from rag.utils.base64_image import image2id
+from common import settings
+from common.chunk_order import assign_chunk_order, assign_derived_chunk_order
+from common.connection_utils import timeout
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common.float_utils import normalize_overlapped_percent
+from common.misc_utils import thread_pool_exec
+from rag.nlp import DEFAULT_DELIMITER, search
 
 # Re-export for backward compatibility
 from rag.svr.task_executor_refactor.chunk_builder import (
+    extract_outline,
     get_parser,
     run_chunking,
-    extract_outline,
 )
 from rag.svr.task_executor_refactor.chunk_post_processor import (
-    extract_keywords,
-    generate_questions,
-    generate_metadata,
     apply_built_in_metadata,
     apply_tags,
+    extract_keywords,
+    generate_metadata,
+    generate_questions,
 )
+from rag.svr.task_executor_refactor.constants import GRAPH_RAPTOR_FAKE_DOC_ID
+from rag.svr.task_executor_refactor.task_context import TaskContext
+from rag.utils.base64_image import image2id
 
 
 def make_mother_chunk_id(dataset_id: str, doc_id: str, content: str) -> str:
@@ -70,7 +72,7 @@ def make_mother_chunk_id(dataset_id: str, doc_id: str, content: str) -> str:
     return xxhash.xxh64(f"{dataset_id}\0{doc_id}\0{content}".encode("utf-8")).hexdigest()
 
 
-def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
+def apply_document_availability(chunks: list[dict[str, Any]], status) -> int:
     """Stamp ordinary source chunks available_int=0 when document status is disabled.
 
     Compiled products (compile_kwd) are left alone — they are already non-searchable.
@@ -87,13 +89,13 @@ def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
     return stamped
 
 
-def apply_source_chunks_document_availability(chunks: List[Dict[str, Any]]) -> None:
+def apply_source_chunks_document_availability(chunks: list[dict[str, Any]]) -> None:
     """Apply each source document's status to its ordinary (non-RAPTOR) chunks.
 
     Mixed RAPTOR batches can carry chunks from multiple documents; stamp each
     group from its own document status instead of the first doc_id in the batch.
     """
-    source_chunks_by_doc_id: Dict[str, List[Dict[str, Any]]] = {}
+    source_chunks_by_doc_id: dict[str, list[dict[str, Any]]] = {}
     for ck in chunks:
         if ck.get("raptor_kwd"):
             continue
@@ -148,7 +150,7 @@ class ChunkService:
         self,
         storage_binary: bytes,
         on_chunking_start=None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Build chunks from document binary.
 
         This is the main entry point for chunk building. It orchestrates:
@@ -192,6 +194,9 @@ class ChunkService:
         # Run chunking (delegated)
         cks = await run_chunking(chunker, storage_binary, ctx, on_chunking_start)
 
+        # Stamp reading order before the parallel upload below reorders docs.
+        assign_chunk_order(cks, ctx.from_page)
+
         # Record raw chunks
         self._task_context.recording_context.record("raw_chunks", cks)
 
@@ -233,7 +238,7 @@ class ChunkService:
 
         return docs
 
-    async def _prepare_docs_and_upload(self, cks: List[Dict]) -> List[Dict]:
+    async def _prepare_docs_and_upload(self, cks: list[dict]) -> list[dict]:
         """Prepare docs and upload images to MinIO."""
         ctx = self._task_context
         docs = []
@@ -281,7 +286,7 @@ class ChunkService:
             raise
 
         el = timer() - st
-        logging.info("MINIO PUT({}) cost {:.3f} s".format(ctx.name, el))
+        logging.info(f"MINIO PUT({ctx.name}) cost {el:.3f} s")
         return docs
 
     def _progress(self, prog=None, msg=None):
@@ -298,7 +303,7 @@ class ChunkService:
         task_id: str,
         task_tenant_id: str,
         task_dataset_id: str,
-        chunks: List[Dict[str, Any]],
+        chunks: list[dict[str, Any]],
         doc_bulk_size: int = None,
     ) -> bool:
         """Insert chunks into document store.
@@ -327,7 +332,7 @@ class ChunkService:
         # Insert main chunks
         return await self._insert_main_chunks(task_id, task_tenant_id, task_dataset_id, chunks, doc_bulk_size)
 
-    def _apply_document_availability(self, chunks: List[Dict[str, Any]]) -> None:
+    def _apply_document_availability(self, chunks: list[dict[str, Any]]) -> None:
         """Hide source chunks when the owning document is disabled (status=0).
 
         Disabling before parse only updates MySQL; later inserts would otherwise
@@ -348,7 +353,7 @@ class ChunkService:
             )
 
     @classmethod
-    def _create_mother_chunks(cls, chunks: List[Dict], dataset_id: str) -> List[Dict]:
+    def _create_mother_chunks(cls, chunks: list[dict], dataset_id: str) -> list[dict]:
         """Create mother chunks from summary fields.
 
         Mother chunks are summary/abstract chunks that are stored separately.
@@ -381,6 +386,9 @@ class ChunkService:
 
             mothers.append(mom_ck)
 
+        # Parent rows must list after the source chunks they were derived from.
+        assign_derived_chunk_order(mothers)
+
         return mothers
 
     async def _insert_mother_chunks(
@@ -388,7 +396,7 @@ class ChunkService:
         task_id: str,
         task_tenant_id: str,
         task_dataset_id: str,
-        mothers: List[Dict],
+        mothers: list[dict],
         doc_bulk_size: int,
     ) -> bool:
         """Insert mother chunks in batches."""
@@ -420,7 +428,7 @@ class ChunkService:
         task_id: str,
         task_tenant_id: str,
         task_dataset_id: str,
-        chunks: List[Dict],
+        chunks: list[dict],
         doc_bulk_size: int,
     ) -> bool:
         """Insert main chunks in batches with cancellation handling."""
@@ -468,7 +476,7 @@ class ChunkService:
         task_id: str,
         task_tenant_id: str,
         task_dataset_id: str,
-        chunks: List[Dict],
+        chunks: list[dict],
         up_to_batch: int,
         doc_bulk_size: int,
     ):
@@ -489,7 +497,7 @@ class ChunkService:
                     task_id,
                 )
 
-    async def _update_task_chunk_ids(self, task_id: str, chunk_ids: List[str]) -> bool:
+    async def _update_task_chunk_ids(self, task_id: str, chunk_ids: list[str]) -> bool:
         """Update chunk IDs in the task record."""
         from peewee import DoesNotExist
 
@@ -510,7 +518,7 @@ class ChunkService:
         self,
         task_tenant_id: str,
         task_dataset_id: str,
-        chunk_ids: List[str],
+        chunk_ids: list[str],
     ):
         """Roll back an insertion by deleting chunks and images."""
         await self._intercept_doc_store_delete({"id": chunk_ids}, search.index_name(task_tenant_id), task_dataset_id)

@@ -76,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.3-x64-v3
+    image: infiniflow/infinity:v0.7.4-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -200,8 +200,9 @@ services:
       - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
       - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
       # Shared secret for the /run API. Set it in .env (same value is passed
-      # to the ragflow service); when empty the API stays open (backwards
-      # compatible) but a warning is logged.
+      # to the ragflow service). Current Sandbox source rejects unconfigured
+      # authentication; verify the behavior of the deployed image version.
+      - SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED=${SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED:-false}
       - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
       # Sandbox runner containers get no external network by default.
       - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}
@@ -273,6 +274,30 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+
+  vastbase:
+    profiles:
+      - vastbase
+    image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
+    env_file: .env
+    environment:
+      - VB_PASSWORD=${VB_PASSWORD}
+      - VB_USERNAME=${VB_USERNAME}
+      - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+    ports:
+      - ${VB_PORT:-5432}:5432
+    volumes:
+      - vastbase_data:/home/vastbase/data
+      - ./vastbase/init:/docker-entrypoint-initdb.d
+      - ./vastbase/license:/home/vastbase/vastbase/lic
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "vsql -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   minio:
     image: pgsty/silo:RELEASE.2026-08-06T00-00-00Z
@@ -510,6 +535,8 @@ volumes:
   nats_data:
     driver: local
   clickhouse_data:
+    driver: local
+  vastbase_data:
     driver: local
 
 networks:

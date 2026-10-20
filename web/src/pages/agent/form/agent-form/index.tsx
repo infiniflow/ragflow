@@ -276,6 +276,7 @@ function AgentForm({ node }: INextOperatorForm) {
                         max={8}
                         min={0}
                         className="w-full"
+                        integer
                       ></NumberInput>
                     </FormControl>
                   </FormItem>

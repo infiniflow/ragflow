@@ -31,10 +31,7 @@ import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
 import { FormSchema, ParserFormSchemaType } from './schema';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
-import {
-  HtmlFormFields,
-  TextMarkdownFormFields,
-} from './text-html-form-fields';
+import { TextMarkdownFormFields } from './text-html-form-fields';
 import { buildInitialParserSetup } from './utils';
 import { AudioFormFields, VideoFormFields } from './video-form-fields';
 import { WordFormFields } from './word-form-fields';
@@ -55,7 +52,6 @@ const FileFormatWidgetMap = {
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
   [FileType.TextMarkdown]: TextMarkdownFormFields,
-  [FileType.Html]: HtmlFormFields,
 };
 
 type ParserItemProps = {
