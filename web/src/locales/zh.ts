@@ -2488,7 +2488,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
-      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N 指定需要提取的关键词数量。`,
@@ -2504,7 +2503,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answer: '对话',
       categorize: '问题分类',
       relevant: '是否相关',
-      rewriteQuestion: '问题优化',
       begin: '开始',
       message: '回复消息',
       blank: '空',
