@@ -431,7 +431,7 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}
-	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultClaimer())
+	e.knowledgeCompile = e.newKnowledgeCompileConsumer()
 	n := e.kcConcurrency
 	if n <= 0 {
 		n = int32(runtime.NumCPU())
@@ -445,6 +445,19 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		e.compileWg.Add(1)
 		go e.compileLoop(i)
 	}
+}
+
+// newKnowledgeCompileConsumer builds the dataset-level knowledge-compile
+// consumer with its storage dependencies injected from the ingestor's Deps
+// bundle. The consumer fails fast on storage access when WithStorage is omitted
+// (see knowledge_compile.NewConsumer), so the doc engine + db MUST be threaded
+// through here — never construct it with a bare NewConsumer in production. The
+// assembly point can assert c.IsStorageConfigured() before relying on merges.
+func (e *Ingestor) newKnowledgeCompileConsumer() *knowledge_compile.Consumer {
+	return knowledge_compile.NewConsumer(
+		knowledge_compile.DefaultClaimer(),
+		knowledge_compile.WithStorage(e.deps.Engine, e.deps.DB),
+	)
 }
 
 // compileLoop is one of the owned dataset-level compile workers. It runs the

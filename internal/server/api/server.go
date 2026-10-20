@@ -56,6 +56,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	_ "ragflow/internal/ingestion/wire"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
@@ -136,6 +137,14 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Bind the kvrocks client used to mint raw-message ids so the memory
 	// queue reads it from the explicit binding rather than kvrocks.Get().
 	service.InitMemoryKvrocks(kvrocks.Get())
+	// Bind the relational handle and document engine into the production
+	// embedder and knowledge-compiler resolvers. The API process shares the
+	// task-package composition root with the ingestor: without these, the
+	// embedder resolver would read a nil db and fail at run time when the API
+	// process runs ingestion runs (e.g. in a combined --api --ingestor deploy
+	// where the ingestor bindings do not apply).
+	task.InitEmbedderResolver(dao.DB)
+	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()

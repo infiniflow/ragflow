@@ -158,10 +158,24 @@ func TestNewConsumerWithoutConfiguredStorageFailsFast(t *testing.T) {
 	// the first storage access. Previously it silently read zero products and
 	// acked the batch as merged.
 	consumer := NewConsumer(NewFakeScheduler())
+	if consumer.IsStorageConfigured() {
+		t.Fatal("unconfigured consumer must report IsStorageConfigured() == false")
+	}
 	err := consumer.processBatch(context.Background(), "tenant-1", "kb-1", "claim-token-1",
 		[]BacklogEntry{{DocID: "doc-1", EventType: string(EventTypeCompleted), Variants: []string{"wiki"}}},
 		[]string{kccommon.TaskTypeWiki})
 	requireEngineError(t, err)
+}
+
+// TestWithStorageConfiguresReaderWriter pins the contract that WithStorage
+// (the production wiring path) installs an engine-backed reader, writer, and
+// contribution store. Without this, a bare NewConsumer silently wires nothing
+// and the production merge path is dead.
+func TestWithStorageConfiguresReaderWriter(t *testing.T) {
+	consumer := NewConsumer(NewFakeScheduler(), WithStorage(&fakeEngine{engineType: "infinity"}, nil))
+	if !consumer.IsStorageConfigured() {
+		t.Fatal("WithStorage must report IsStorageConfigured() == true")
+	}
 }
 
 func TestNewWikiContributionStoreWithoutEngineFailsFast(t *testing.T) {

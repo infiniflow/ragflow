@@ -88,6 +88,7 @@ func WithStorage(eng engine.DocEngine, db *gorm.DB) Option {
 		c.reader = engineReader{eng: eng}
 		c.writer = engineWriter{eng: eng, db: db, commitService: file.NewFileCommitService()}
 		c.contributions = newWikiContributionStore(eng)
+		c.storageConfigured = true
 	}
 }
 

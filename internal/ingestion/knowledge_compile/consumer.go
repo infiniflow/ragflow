@@ -62,6 +62,13 @@ type Consumer struct {
 	factory       DeduperFactory
 	contributions wikiContributionStore
 
+	// storageConfigured is set by WithStorage and records that the consumer was
+	// assembled with an injected doc engine + db. An unconfigured consumer fails
+	// fast on its first storage access (errEngineNotConfigured); callers can
+	// assert this flag before relying on merges so a wiring regression is caught
+	// at assembly rather than as a silently-acked empty batch.
+	storageConfigured bool
+
 	ttl            time.Duration
 	heartbeat      time.Duration
 	pollInterval   time.Duration
@@ -113,6 +120,14 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 		o(c)
 	}
 	return c
+}
+
+// IsStorageConfigured reports whether the consumer was assembled with a doc
+// engine + db via WithStorage. The production ingestor must build it that way;
+// an unconfigured consumer fails fast on storage access, so this flag lets the
+// assembly point assert wiring before any batch is processed.
+func (c *Consumer) IsStorageConfigured() bool {
+	return c.storageConfigured
 }
 
 // Run is one owned worker loop (Option E §11.5/§11.7): it wakes on NATS notify

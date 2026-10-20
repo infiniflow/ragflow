@@ -694,6 +694,9 @@ func init() {
 	modelFactory := service.NewModelFactory()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
+			if embedderResolverDB == nil {
+				return "", fmt.Errorf("embedder: resolver not initialized; call task.InitEmbedderResolver(dao.DB) at server startup")
+			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, embedderResolverDB, kbID)
 			if err != nil {
 				return "", err
