@@ -35,6 +35,7 @@ from peewee import (
     Field,
     FloatField,
     IntegerField,
+    IntegrityError,
     InterfaceError,
     Metadata,
     Model,
@@ -67,6 +68,8 @@ from common.time_utils import current_timestamp, date_string_to_timestamp, times
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
+
+logger = logging.getLogger(__name__)
 GAUSSDB_COMPATIBLE_DATABASE_TYPES = {"GAUSSDB"}
 
 
@@ -2004,7 +2007,7 @@ _INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "medi
 
 
 def _get_column_data_type(table_name: str, column_name: str) -> str | None:
-    if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+    if settings.DATABASE_TYPE.upper() == "POSTGRES":
         cursor = DB.execute_sql(
             """
             SELECT data_type
@@ -2039,19 +2042,30 @@ def migrate_tenant_model_id_column_types(migrator):
     this helper is a no-op when columns are already ``varchar`` — it only
     converts if the script did not run or did not finish.
 
-    It does not backfill ``tenant_model.id`` values. Postgres/GaussDB still run
+    It does not backfill ``tenant_model.id`` values. Postgres still runs
     ``migrate_postgres_family_model_provider_tables()`` later for seeding,
     ``model_type`` merge, and id backfill.
 
     There is no matching in-place ALTER for ``tenant_model.model_type`` on any
     dialect: converting that column before ``tenant_model_seeding`` /
-    ``model_type_merge`` would skip those stages. Postgres/GaussDB also run
+    ``model_type_merge`` would skip those stages. Postgres also runs
     ``migrate_postgres_family_model_provider_tables()`` for seeding, merge, and
     backfill. MySQL/OceanBase non-Docker deployments that skip
     ``run_migrations.sh`` get only this ``tenant_*_id`` fallback — they must run
     ``mysql_migration.py`` manually or #18755 (``model_type`` bitmask merge) can
     persist.
+
+    GaussDB is skipped: its integer values are only useful together with the
+    ``tenant_model_id_migration`` backfill, and GaussDB intentionally does not
+    run that path (see ``migrate_postgres_family_model_provider_tables``).
+    Converting here alone would clear every legacy id to NULL with nothing to
+    restore it, so GaussDB keeps its current columns until the dedicated
+    GaussDB upgrade path lands.
     """
+    if is_gaussdb_compatible_database():
+        logging.info("Skipping tenant_*_id type migration on GaussDB; use the GaussDB upgrade path")
+        return
+
     target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
     for table_name, column_name in TENANT_MODEL_ID_COLUMNS:
@@ -2079,7 +2093,7 @@ def migrate_tenant_model_id_column_types(migrator):
             alter_db_add_column(migrator, table_name, column_name, target_field)
             continue
 
-        mysql_family = settings.DATABASE_TYPE.upper() not in {"POSTGRES"} and not is_gaussdb_compatible_database()
+        mysql_family = settings.DATABASE_TYPE.upper() != "POSTGRES"
         leftover_sql = f"UPDATE `{table_name}` SET `{column_name}` = NULL WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
 
         if col_type not in _INTEGER_COLUMN_TYPES:
@@ -2098,7 +2112,7 @@ def migrate_tenant_model_id_column_types(migrator):
             continue
 
         try:
-            if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+            if settings.DATABASE_TYPE.upper() == "POSTGRES":
                 # Legacy integers were tenant_llm row ids, never 32-char tenant_model.id
                 # values. Cast them away rather than leaving strings such as "42".
                 DB.execute_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE varchar(32) USING CAST(NULL AS varchar(32))')
@@ -2781,6 +2795,169 @@ def migrate_db():
     # tenant_model and would discard indexes created on the pre-merge table.
     migrate_postgres_family_model_provider_tables()
     ensure_model_indexes(migrator)
+    migrate_document_meta_fields()
+
+
+@DB.connection_context()
+def _read_migration_marker(name: str) -> str:
+    """Read one migration marker out of system_settings, "" when it is absent.
+
+    Markers live in system_settings rather than in a table of their own because
+    that is where the rest of the migration tooling already keeps them:
+    tools/scripts/mysql_migration.py owns "mysql_migration.database.version" and
+    the Go server reads and writes the same key (internal/dao/migration_version.go)
+    so that either runtime can skip work the other has already done. A migration
+    marker added anywhere else would be invisible to the other runtime, which has
+    no model for it and so would never create the table.
+
+    That shared key is not reused for the migrations here. It records how far the
+    offline SQL scripts have brought the database and is advanced by
+    tools/scripts/run_migrations.sh, which docker/launch_backend_service.sh runs
+    before this code gets a chance to do anything -- it stamps v0.27.2 at
+    container start, so a server-side migration that skipped on "current >=
+    target" would never run at all. Each migration here therefore keeps a marker
+    of its own, which nothing else ever writes.
+    """
+    try:
+        row = SystemSettings.get_or_none(SystemSettings.name == name)
+    except Exception:
+        logger.exception("could not read migration marker %s", name)
+        return ""
+    return row.value if row else ""
+
+
+@DB.connection_context()
+def _record_migration_marker(name: str, value: str):
+    """Upsert one migration marker in system_settings.
+
+    Written as update-then-insert rather than a backend-specific upsert so it
+    behaves the same on MySQL, PostgreSQL and GaussDB. The timestamp columns are
+    filled by BaseModel, which stamps create_time on insert and update_time on
+    both, and derives the matching *_date columns from them.
+    """
+    changed = SystemSettings.update(value=value).where(SystemSettings.name == name).execute()
+    if changed:
+        return
+    try:
+        SystemSettings.insert(name=name, source="migration", data_type="string", value=value).execute()
+    except IntegrityError:
+        # Unreachable through today's callers: migrate_document_meta_fields is
+        # reached only through init_database_tables, via migrate_db(), and that
+        # holds its cross-process advisory lock for the duration, so a second
+        # process reads the marker first and stops before ever reaching the
+        # insert. Kept because this is a generic upsert -- a caller outside that
+        # lock would otherwise turn a duplicate into a startup failure. The value
+        # to write is the same one the winner inserted, so overwriting it changes
+        # nothing.
+        SystemSettings.update(value=value).where(SystemSettings.name == name).execute()
+
+
+def _backfill_enabled() -> bool:
+    """Whether the automatic startup backfill is switched on.
+
+    RAGFLOW_DOC_META_BACKFILL_ENABLED=0 defers the copy on deployments that still
+    run pre-v0.24 Python workers: those keep ``document.meta_fields`` as their
+    live source of truth, and an operator may prefer to hold the copy back until
+    the workers are retired. Nothing is recorded while it is off, so unsetting the
+    variable resumes from the same cursor. The CLI script ignores it on purpose --
+    invoking that by hand is explicit intent.
+    """
+    return os.environ.get("RAGFLOW_DOC_META_BACKFILL_ENABLED", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+        "",
+    )
+
+
+def migrate_document_meta_fields():
+    """Copy pre-v0.24 document metadata out of the orphaned MySQL column.
+
+    #12826 moved metadata into the document engine without migrating the data; the
+    orphaned column survives because Peewee never drops columns.
+
+    Runs once per database, under the ``init_database_tables`` lock, then records a
+    marker in system_settings. See _backfill_enabled() for the opt-out, which
+    deliberately records nothing so the copy resumes later. The marker has no
+    version -- the legacy column is a frozen snapshot and the copies land in a
+    store the write path maintains, so a repeat changes nothing, and only its
+    absence triggers another, which a failed write guarantees. Whether it runs
+    follows the marker, never whether the column holds data: where MySQL is still
+    the live source, a populated column is the expected state.
+    """
+    # Checked before the import so that switching the copy off costs nothing at
+    # all, rather than pulling the module in only to return unused.
+    if not _backfill_enabled():
+        logger.info("document metadata backfill: disabled by RAGFLOW_DOC_META_BACKFILL_ENABLED, marker left untouched")
+        return
+
+    # Imported lazily: this module is imported by init_database_tables, and the
+    # backfill module must not be pulled in while the models are still loading.
+    from api.db.document_meta_backfill import (
+        MIGRATION_DONE,
+        MIGRATION_NAME,
+        backfill_document_meta_fields,
+        count_candidates,
+        has_legacy_column,
+    )
+
+    done_key = MIGRATION_NAME
+    if _read_migration_marker(done_key):
+        # Silent here would leave the log unable to tell "already done" apart from
+        # "never considered", which is the first question anyone asks when the
+        # copy has not happened.
+        logger.info("document metadata backfill: already done, skipping")
+        return
+
+    # init_data.py runs init_database_tables without ever calling
+    # settings.init_settings(), so it has no document engine client. The API
+    # server does, and it is the one that should do the work.
+    if settings.docStoreConn is None:
+        logger.info("document metadata backfill: document engine client is not initialized in this process, skipping")
+        return
+
+    try:
+        if not has_legacy_column(DB):
+            # Created on v0.24.0 or later: the column never existed and never
+            # will, so record it as done and stop checking. Say so out loud: the
+            # probe failed, so the log holds an "Unknown column" error that reads
+            # like a failure without this line to explain it.
+            logger.info("document metadata backfill: document table has no meta_fields column, nothing to backfill; recording as done")
+            _record_migration_marker(done_key, MIGRATION_DONE)
+            return
+    except Exception:
+        logger.exception("document metadata backfill: could not inspect the document table")
+        return
+
+    logger.info(
+        "document metadata backfill: starting, %d documents carry a legacy value",
+        count_candidates(DB),
+    )
+    try:
+        stats = backfill_document_meta_fields(DB, settings.docStoreConn, on_conflict="skip", execute=True)
+    except Exception:
+        # No progress marker is written on failure, so the next start re-runs
+        # the scan from the beginning. on_conflict="skip" makes that idempotent.
+        logger.exception("document metadata backfill: failed, will retry on next start")
+        return
+
+    if stats["failed"]:
+        # Nothing is deleted along the way and on_conflict="skip" makes the copy
+        # idempotent, so a run that wrote nothing can simply be repeated. Marking
+        # it done here would turn a backend that rejects every write into a silent
+        # one-off no-op, because the scan itself still reaches the end and reports
+        # completion.
+        logger.error("document metadata backfill: %d documents could not be written, will retry on next start", stats["failed"])
+        return
+
+    try:
+        _record_migration_marker(done_key, MIGRATION_DONE)
+        logger.info("document metadata backfill: done, %d documents written", stats["written"])
+    except Exception:
+        # The copy is idempotent, so an unrecorded completion costs one more pass
+        # instead of duplicating metadata. It must never fail startup.
+        logger.exception("document metadata backfill: could not record its progress marker")
 
 
 def migrate_model_type_names():

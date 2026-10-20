@@ -105,6 +105,15 @@
             ]
         },
         {
+            "name": "Radeon Cloud",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "rank": "50",
+            "url": "https://developer.amd.com.cn/radeon/api/v1",
+            "llm": []
+        },
+        {
             "name": "aimlapi.com",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",

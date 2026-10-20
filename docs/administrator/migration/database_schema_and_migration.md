@@ -54,8 +54,10 @@ The [postgres_migration.py](https://github.com/infiniflow/ragflow/blob/main/tool
 | Database | `tenant_*_id` fallback in `migrate_db()` | `model_type` merge fallback in `migrate_db()` |
 |----------|------------------------------------------|-----------------------------------------------|
 | PostgreSQL | Yes (column retype) | Yes (`migrate_postgres_family_model_provider_tables()`, skipped when the version marker is already `v0.27.0`) |
-| GaussDB | Yes (column retype via `migrate_db()`) | **No** — postgres-shaped migration SQL is not run on GaussDB |
+| GaussDB | **No** — skipped, because the retype is only safe together with the `tenant_model_id_migration` backfill, which GaussDB does not run | **No** — postgres-shaped migration SQL is not run on GaussDB |
 | MySQL / OceanBase | Yes (column retype) | **No** — run `mysql_migration.py` / `run_migrations.sh` manually |
+
+GaussDB therefore keeps its current `tenant_*_id` columns on both paths: converting them without the backfill would clear every legacy id to `NULL` with nothing to restore it. A GaussDB-specific upgrade path is still required for #18755 / #18756.
 
 Neither path ALTERs `tenant_model.model_type` to integer first — `tenant_model_seeding` and `model_type_merge` skip when that column is already an integer, which would leave unmerged duplicate rows.
 

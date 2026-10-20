@@ -106,6 +106,30 @@ def test_migrate_tenant_model_id_column_types_converts_postgres_integer(monkeypa
     assert "::text" not in sql
 
 
+def test_migrate_tenant_model_id_column_types_skips_gaussdb(monkeypatch):
+    # GaussDB intentionally does not run the tenant_model_id_migration backfill,
+    # so converting the columns here would clear every legacy id to NULL with
+    # nothing to restore them. Leave GaussDB untouched.
+    def fail(*_args, **_kwargs):
+        raise AssertionError("GaussDB must be left to the dedicated upgrade path")
+
+    class FakeDB:
+        table_exists = staticmethod(fail)
+        execute_sql = staticmethod(fail)
+
+    class Migrator:
+        def alter_column_type(self, *_args):
+            fail()
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "gaussdb")
+    monkeypatch.setattr(db_models, "DB", FakeDB)
+    monkeypatch.setattr(db_models, "_get_column_data_type", fail)
+    monkeypatch.setattr(db_models, "alter_db_add_column", fail)
+    monkeypatch.setattr(db_models, "migrate", fail)
+
+    db_models.migrate_tenant_model_id_column_types(Migrator())
+
+
 def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch):
     altered = []
     queries = []
@@ -189,6 +213,7 @@ def test_migrate_db_invokes_tenant_model_id_column_migration(monkeypatch):
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
     monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
+    monkeypatch.setattr(db_models, "migrate_document_meta_fields", lambda: None)
 
     db_models.migrate_db()
 
@@ -212,6 +237,7 @@ def test_migrate_db_invokes_postgres_model_provider_data_migration(monkeypatch):
     ensure_events = []
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: ensure_events.append("ensure_indexes"))
     monkeypatch.setattr(db_models, "migrate_postgres_family_model_provider_tables", lambda: events.append("pg_model_provider"))
+    monkeypatch.setattr(db_models, "migrate_document_meta_fields", lambda: None)
 
     db_models.migrate_db()
 
