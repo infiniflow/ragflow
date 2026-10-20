@@ -1,6 +1,7 @@
 package chunker
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -47,6 +48,11 @@ func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
+	for _, item := range result.JSON {
+		if strings.Contains(fmt.Sprint(item.ToMap()), "IgnoredFurniture") {
+			t.Fatalf("page furniture emitted as a parser item: %v", item)
+		}
+	}
 	parsed := map[string]any{"name": "sample.pdf", "file_type": "pdf", "output_format": "json", "json": result.JSON, "file": result.File}
 	general, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512, "table_context_size": 32})
 	if err != nil {
@@ -74,6 +80,9 @@ func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
 	}
 	tables := 0
 	for _, ck := range chunks {
+		if strings.Contains(fmt.Sprint(ck), "IgnoredFurniture") {
+			t.Fatalf("page furniture leaked into indexed chunk: %v", ck)
+		}
 		if _, exists := ck["_preserve_order"]; exists {
 			t.Fatalf("parser reading-order flag leaked into indexed chunk: %v", ck)
 		}

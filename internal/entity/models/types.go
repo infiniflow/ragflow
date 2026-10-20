@@ -143,9 +143,11 @@ type OCRBlock struct {
 }
 
 type OCRFileResponse struct {
-	Text     *string   `json:"text"`
-	Pages    []OCRPage `json:"-"`
-	Warnings []string  `json:"-"`
+	Text *string `json:"text"`
+	// Pages is optional structured output for internal parsing; nil means unavailable.
+	Pages []OCRPage `json:"-"`
+	// Warnings reports partial failures internally; the public response stays text-only.
+	Warnings []string `json:"-"`
 }
 
 type ListModelResponse struct {

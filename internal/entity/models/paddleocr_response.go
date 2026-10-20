@@ -174,6 +174,12 @@ func paddleOCRPages(result paddleOCRResult, nextPage int) []OCRPage {
 func (pruned paddleOCRPrunedResult) blocks() []OCRBlock {
 	var blocks []OCRBlock
 	for _, raw := range pruned.Blocks {
+		// Match PaddleX PaddleOCR-VL's default markdown_ignore_labels for
+		// structured output: paddlex/configs/pipelines/PaddleOCR-VL.yaml (release/3.7).
+		switch strings.ToLower(strings.TrimSpace(raw.Label)) {
+		case "header", "header_image", "footer", "footer_image", "number", "aside_text", "footnote":
+			continue
+		}
 		blocks = append(blocks, OCRBlock{Text: raw.Text, Label: raw.Label, BBox: paddleOCRBox(raw.BBox)})
 	}
 	if len(pruned.Blocks) == 0 {

@@ -495,6 +495,8 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 		wantBox  string
 	}{
 		{"no blocks", `[]`, "page fallback", "[]"},
+		{"only header", `[{"block_label":"header","block_content":"ignored header","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
+		{"only page number", `[{"block_label":"number","block_content":"12"}]`, "page fallback", "[]"},
 		{"empty blocks", `[{"block_content":"  "}]`, "page fallback", "[]"},
 		{"markdown image", `[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
 		{"html image", `[{"block_content":"<div><img src=\"a.png\"></div>"}]`, "page fallback", "[]"},
@@ -520,6 +522,22 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 			}
 			if response.Text == nil || *response.Text != "page fallback" {
 				t.Fatalf("API text changed: %+v", response.Text)
+			}
+		})
+	}
+}
+
+func TestPaddleOCRPagesExcludeMarkdownIgnoredLabels(t *testing.T) {
+	for _, label := range []string{"header", "header_image", "footer", "footer_image", "number", "aside_text", "footnote", " HEADER "} {
+		t.Run(label, func(t *testing.T) {
+			body := `{"result":{"layoutParsingResults":[{"markdown":{"text":"body"},"prunedResult":{"parsing_res_list":[{"block_label":"` + label + `","block_content":"ignored furniture"},{"block_label":"text","block_content":"body","block_bbox":[10,20,30,40]}]}}]}}`
+			response, err := parsePaddleOCRResultBody([]byte(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			blocks := response.Pages[0].Blocks
+			if len(blocks) != 1 || blocks[0].Text != "body" || fmt.Sprint(blocks[0].BBox) != "[10 20 30 40]" {
+				t.Fatalf("blocks=%+v", blocks)
 			}
 		})
 	}

@@ -8,6 +8,16 @@
           "height": 1684,
           "parsing_res_list": [
             {
+              "block_label": "header",
+              "block_content": "IgnoredFurnitureHeader",
+              "block_bbox": [
+                10,
+                10,
+                100,
+                30
+              ]
+            },
+            {
               "block_label": "text",
               "block_content": "Paragraph 1.",
               "block_bbox": [
@@ -83,6 +93,16 @@
                 1219
               ],
               "block_order": 4
+            },
+            {
+              "block_label": "number",
+              "block_content": "IgnoredFurniturePageNumber",
+              "block_bbox": [
+                10,
+                1600,
+                100,
+                1640
+              ]
             }
           ]
         },

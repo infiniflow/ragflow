@@ -65,6 +65,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 					item = text
 				}
 				fields := item.ToMap()
+				// Page identity is retained even when the block has no usable geometry.
 				fields["page_number"] = page.Index + 1
 				fields["_preserve_order"] = true
 				if isTitle {
