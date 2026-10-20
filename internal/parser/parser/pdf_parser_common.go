@@ -476,8 +476,29 @@ var analyzerFactories = map[string]func(baseURL string) (deepdoctype.DocAnalyzer
 // method again replaces the previous factory. It mirrors
 // deepdoctype.SetNativeDocAnalyzerFactory, but for out-of-process backends
 // selected per parse method.
+//
+// Two registrations are rejected (panic) because they would fail silently:
+//   - a built-in method that ParseWithResult dispatches to an internal engine
+//     (every switch case other than the fall-through to DeepDoc) — the switch
+//     intercepts it before resolution runs, so the factory would never be used;
+//   - the empty (default) method — routing it externally would hijack every
+//     caller that omits parse_method and divert the default in-process path.
+//
+// The only built-in that may be overridden externally is "deepdoc", which falls
+// through to the DeepDoc path and is the DEEPDOC_URL convention. Any
+// non-built-in custom method name is also accepted. Registration is expected at
+// process start-up (init); the map is only read while parsing.
 func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdoctype.DocAnalyzer, error)) {
-	analyzerFactories[normalizePDFParseMethod(method)] = factory
+	m := normalizePDFParseMethod(method)
+	if m == "" {
+		panic("parser: RegisterAnalyzerFactory: cannot register an external analyzer for the empty (default) parse method; use an explicit method name")
+	}
+	if m != "deepdoc" {
+		if _, builtin := supportedPDFParseMethods[m]; builtin {
+			panic(fmt.Sprintf("parser: RegisterAnalyzerFactory: cannot register an external analyzer for built-in method %q; it is dispatched to an internal engine and the factory would be ignored", m))
+		}
+	}
+	analyzerFactories[m] = factory
 }
 
 // externalAnalyzerURL derives the endpoint for a registered external method
@@ -510,9 +531,10 @@ func resolveDocAnalyzerForMethod(method string, nativeFactory func() (deepdoctyp
 }
 
 // GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
-// single production entry point now that the external HTTP service is no longer
-// a backend. PDF and non-PDF image parsers use it instead of constructing a
-// client.
+// in-process entry point used by PDF (deepdoc method) and non-PDF image parsers.
+// External, out-of-process backends are now available too, but only per parse
+// method via RegisterAnalyzerFactory (resolved in resolveDocAnalyzerForMethod);
+// GetDocAnalyzer itself stays in-process only and is never the external path.
 func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
 	return deepDocAnalyzerFromEnv()
 }
