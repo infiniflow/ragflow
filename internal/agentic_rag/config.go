@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -57,6 +58,14 @@ type Template struct {
 	// knowledge layer, which is what keeps an unconfigured deployment
 	// byte-identical to one without this feature.
 	Ontology *TemplateOntology `json:"ontology" yaml:"ontology"`
+	// strictTools marks a template whose tool list is complete: it opts out of
+	// the compiled-knowledge injection, so the set the file names is the set the
+	// model sees.
+	strictTools bool
+	// customContent marks a template whose content came from an override rather
+	// than from the shipped file, so a caller can tell an operator-edited prompt
+	// from the built-in one.
+	customContent bool
 }
 
 // TemplateOntology is a template's declared knowledge-layer binding.
@@ -223,6 +232,10 @@ func resolveTemplateFor(id string) (Template, error) {
 				if strings.TrimSpace(t.Content) == "" {
 					return Template{}, fmt.Errorf("agentic_rag: template %q has no prompt content in %s", id, defaultConfigPath())
 				}
+				t.Tools = slices.Clone(t.Tools)
+				if t.Temperature != nil {
+					t.Temperature = new(*t.Temperature)
+				}
 				return t, nil
 			}
 		}
@@ -267,16 +280,17 @@ func TemplateOntologyFor(templateID string) *OntologyRunConfig {
 // skipped with a warning. The conversation's web capability is added here so
 // all retrieval tools use the same agent dispatch path.
 func toolsFor(ctx context.Context, t Template, tenantID string, datasetIDs []string, tools []tool.BaseTool) []tool.BaseTool {
-	if len(tools) > 0 {
+	if len(tools) > 0 && !t.strictTools {
 		return append(append([]tool.BaseTool(nil), tools...), webSearchTools(ctx)...)
 	}
 	reg := toolRegistry()
 	names := t.Tools
-	if len(names) == 0 {
+	if len(names) == 0 && !t.strictTools {
 		names = make([]string, 0, len(reg))
 		for n := range reg {
 			names = append(names, n)
 		}
+		slices.Sort(names)
 	}
 	out := make([]tool.BaseTool, 0, len(names))
 	for _, name := range names {

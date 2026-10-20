@@ -3492,6 +3492,14 @@
             "url": "https://api.trustedrouter.com/v1"
         },
         {
+            "name": "AI Stupid Level",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://aistupidlevel.info/v1"
+        },
+        {
             "name": "Demon Route",
             "logo": "",
             "tags": "LLM",
@@ -3507,6 +3515,14 @@
             "status": "1",
             "llm": [],
             "url": "https://api.opper.ai/v3/compat"
+        },
+        {
+            "name": "EmpirioLabs AI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.empiriolabs.ai/v1"
         },
         {
             "name": "StepFun",

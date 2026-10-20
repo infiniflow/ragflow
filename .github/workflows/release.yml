@@ -244,10 +244,11 @@ jobs:
 
   # Publish the ragflow Python SDK to PyPI. Runs on a GitHub-hosted runner so
   # it no longer depends on the self-hosted release runner. Only stable v* tags
-  # (not nightly/prerelease) publish, per the `if` below.
-  release:
+  # (not nightly/prerelease) publish, gated by the `if` on this job.
+  publish_sdk:
     needs:
       - prepare
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     steps:
       # https://github.com/actions/checkout/blob/v6/README.md
@@ -261,7 +262,6 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Build and push ragflow-sdk
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
 

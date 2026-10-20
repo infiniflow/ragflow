@@ -44,6 +44,18 @@ const agenticRunTimeout = 15 * time.Minute
 // operator who removed or renamed the template.
 const defaultAgenticTemplateID = "smart-reasoning"
 
+func resolveChatAgenticTemplate(chat *entity.Chat, kwargs map[string]interface{}) (agentic_rag.Template, error) {
+	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		mode = defaultAgenticTemplateID
+	}
+	override, err := agentic_rag.ParseOverride(chat.PromptConfig["agentic_rag"])
+	if err != nil {
+		return agentic_rag.Template{}, err
+	}
+	return agentic_rag.ResolveTemplate(mode, override)
+}
+
 // agenticRag drives ONE conversation turn through the smart-reasoning agent
 // (internal/agentic_rag): an eino-ADK ReAct explorer whose toolset is the
 // corpus itself (grep / lexical / semantic locate, list_chunks deep read).
@@ -65,6 +77,10 @@ func (s *ChatPipelineService) agenticRag(
 	kwargs map[string]interface{},
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
+	tmpl, err := resolveChatAgenticTemplate(chat, kwargs)
+	if err != nil {
+		return nil, err
+	}
 	out := make(chan AsyncChatResult, 16)
 	// Wire the document-metadata resolver the metadata_search tool needs. The
 	// eino agentic_rag package must not import service (service imports it), so
@@ -82,7 +98,9 @@ func (s *ChatPipelineService) agenticRag(
 	//
 	// AsyncChat only dispatches here with a non-empty KB scope, so the
 	// citation lookup below is always kb_id-bounded.
-	mode := agenticTemplateIDFor(kwargs)
+	// The template was resolved once above and travels into the run, so the id
+	// that selects the knowledge binding is the same id the run executes.
+	mode := tmpl.ID
 	// The knowledge layer's binding for this turn, resolved once from the three
 	// layers that may declare it (request → template → assistant). Nil means the
 	// turn runs exactly as it would without the feature.
@@ -164,7 +182,7 @@ func (s *ChatPipelineService) agenticRag(
 		// like the regular AsyncChat path does, then let the template pin its
 		// sampling when it declares one (smart-reasoning pins 0.5).
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if temp := agentic_rag.TemplateTemperature(mode); temp != nil {
+		if temp := tmpl.Temperature; temp != nil {
 			pinned := *chatCfg
 			pinned.Temperature = temp
 			chatCfg = &pinned
@@ -204,8 +222,12 @@ func (s *ChatPipelineService) agenticRag(
 			SynthModel: synth,
 			Messages:   agentMessages,
 			TemplateID: mode,
-			TenantID:   chat.TenantID,
-			UserID:     userID,
+			// The same resolved template the turn's model setup used: resolving
+			// twice would let an override applied between the two reads produce a
+			// prompt and a tool set from different revisions.
+			Template: &tmpl,
+			TenantID: chat.TenantID,
+			UserID:   userID,
 			// An empty document scope is what puts the turn in the direct-answer
 			// mode: the knowledge layer is then the only thing there is to read.
 			Ontology:        ontology,

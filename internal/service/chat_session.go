@@ -1442,11 +1442,11 @@ func (s *ChatSessionService) ChatCompletions(
 			finalLegacyAnswer["answer"] = fullAnswer.String()
 			delete(finalLegacyAnswer, "start_to_think")
 			delete(finalLegacyAnswer, "end_to_think")
-			finalChunk := sseWrapper{Code: 0, Message: "", Data: sanitizeJSONFloats(finalLegacyAnswer)}
+			finalChunk := sseWrapper{Code: 0, Message: "success", Data: sanitizeJSONFloats(finalLegacyAnswer)}
 			sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk)))
 		}
 
-		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
+		wrapper := sseWrapper{Code: 0, Message: "success", Data: true}
 		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
 	} else {
 		ans := accumulateNonStreamAnswer(resultChan)
@@ -1793,9 +1793,9 @@ type sseAnswerChunk struct {
 	ThinkEvent   interface{}            `json:"think_event,omitempty"`
 }
 
-// sseWrapper wraps the SSE response with deterministic field order matching Python:
+// sseWrapper wraps the SSE response with deterministic field order:
 //
-//	{"code": 0, "message": "", "data": ...}
+//	{"code": 0, "message": "success", "data": ...}
 type sseWrapper struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
@@ -1915,7 +1915,7 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		EndToThink:   endToThink,
 		ThinkEvent:   ans["think_event"],
 	}
-	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
+	wrapper := sseWrapper{Code: 0, Message: "success", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
 }
 

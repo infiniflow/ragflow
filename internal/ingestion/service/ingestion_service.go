@@ -28,9 +28,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
@@ -139,6 +138,14 @@ type Ingestor struct {
 	// DB fallback when Redis is unavailable. Tests may override this to
 	// simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
+
+	// deps bundles the process-wide singletons the ingestor depends on
+	// (document engine, relational handle, task broker, kvrocks). It is
+	// injected at construction (NewIngestor) rather than read from the
+	// package globals (arch_test.go guards that rule). A nil bundle is
+	// normalized to an empty Deps; a nil sub-value disables the matching
+	// capability (e.g. a nil DB skips startup task scheduling).
+	deps *ingestion.Deps
 }
 
 type worker struct {
@@ -156,9 +163,16 @@ type pendingDocumentCompileEvent struct {
 	taskTypes []string
 }
 
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
+// NewIngestor constructs the ingestion consumer. db, mq, and kv are the
+// process-wide relational handle, message-queue engine, and kvrocks client;
+// they are resolved once at the server assembly point and injected here rather
+// than read from the package globals (arch_test.go guards that rule).
+func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
+	}
+	if deps == nil {
+		deps = &ingestion.Deps{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
@@ -183,6 +197,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		heartbeatInterval:        defaultHeartbeatInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
+		deps:                     deps,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -221,14 +236,14 @@ func (e *Ingestor) Start() error {
 // pools, compile consumers, or consume loops, and the first initialization
 // error is retained and returned to every later caller.
 func (e *Ingestor) start() error {
-	msgQueueEngine := engine.GetMessageQueueEngine()
+	msgQueueEngine := e.deps.MQ
 	if msgQueueEngine == nil {
 		return fmt.Errorf("message queue engine not initialized; run engine.InitMessageQueue first")
 	}
 	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
-	if dao.DB != nil {
+	if e.deps.DB != nil {
 		if err := e.ingestionTaskSvc.ScheduleCreatedTasks(e.ctx); err != nil {
 			common.Warn(fmt.Sprintf("schedule CREATED ingestion tasks at startup: %v", err))
 		}
@@ -253,7 +268,7 @@ func (e *Ingestor) start() error {
 // startMemoryTaskReconciler starts the owned loop that recovers durable memory
 // tasks whose initial wake-up was lost or whose retry became due.
 func (e *Ingestor) startMemoryTaskReconciler() {
-	if e.memorySvc == nil || dao.DB == nil || e.reconcileMemoryTasks == nil {
+	if e.memorySvc == nil || e.deps.DB == nil || e.reconcileMemoryTasks == nil {
 		return
 	}
 	e.memoryReconcileWg.Add(1)
@@ -301,7 +316,7 @@ func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
 // and limiting this ingestor to one outstanding broker request.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
-	msgQueueEngine := engine.GetMessageQueueEngine()
+	msgQueueEngine := e.deps.MQ
 	for {
 		var w *worker
 		select {
@@ -406,17 +421,17 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 // is logged and the pipeline continues to write available_int=0 compiled
 // chunks; they just won't be merged until a scheduler is available.
 func (e *Ingestor) startDatasetKnowledgeCompile() {
-	mq := engine.GetMessageQueueEngine()
+	mq := e.deps.MQ
 	if mq == nil {
 		common.Warn("message queue not initialized; dataset-level compile consumer disabled")
 		return
 	}
 	knowledge_compile.SetModelConfig(e.kcLLMID, e.kcEmbedding)
-	if err := knowledge_compile.Provision(e.ctx, mq, dao.DB); err != nil {
+	if err := knowledge_compile.Provision(e.ctx, mq, e.deps.DB); err != nil {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}
-	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultClaimer())
+	e.knowledgeCompile = e.newKnowledgeCompileConsumer()
 	n := e.kcConcurrency
 	if n <= 0 {
 		n = int32(runtime.NumCPU())
@@ -430,6 +445,19 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		e.compileWg.Add(1)
 		go e.compileLoop(i)
 	}
+}
+
+// newKnowledgeCompileConsumer builds the dataset-level knowledge-compile
+// consumer with its storage dependencies injected from the ingestor's Deps
+// bundle. The consumer fails fast on storage access when WithStorage is omitted
+// (see knowledge_compile.NewConsumer), so the doc engine + db MUST be threaded
+// through here — never construct it with a bare NewConsumer in production. The
+// assembly point can assert c.IsStorageConfigured() before relying on merges.
+func (e *Ingestor) newKnowledgeCompileConsumer() *knowledge_compile.Consumer {
+	return knowledge_compile.NewConsumer(
+		knowledge_compile.DefaultClaimer(),
+		knowledge_compile.WithStorage(e.deps.Engine, e.deps.DB),
+	)
 }
 
 // compileLoop is one of the owned dataset-level compile workers. It runs the
@@ -778,7 +806,7 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
-	if rc := kvrocks.Get(); rc != nil {
+	if rc := e.deps.KV; rc != nil {
 		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
 			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
@@ -828,7 +856,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	// by the DB status (STOPPING), which defaultCancelCheck falls back to
 	// when the Redis flag is absent. Clearing a stale flag here is safe:
 	// a genuine concurrent cancel sets the task to STOPPING in DB.
-	if rc := kvrocks.Get(); rc != nil {
+	if rc := e.deps.KV; rc != nil {
 		key := fmt.Sprintf("%s-cancel", task.ID)
 		utility.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
 			rc.Delete(ctx, key)
@@ -1048,7 +1076,7 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.
 func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
-	rc := kvrocks.Get()
+	rc := e.deps.KV
 	if rc != nil {
 		if ok, _ := rc.Exist(ctx, fmt.Sprintf("%s-cancel", taskID)); ok {
 			return true
@@ -1171,7 +1199,7 @@ func (e *Ingestor) releaseTask(taskID string) {
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 	const documentBulkSize = 32
 
-	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
+	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, e.deps.DB, ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
@@ -1195,7 +1223,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// text, source-chunk references, images, or vectors, so sending the whole
 	// document through one Elasticsearch bulk request can exceed the request
 	// size limit even when the individual chunks are valid.
-	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, documentBulkSize)
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, documentBulkSize, e.deps)
 	if err != nil {
 		return err
 	}
@@ -1278,7 +1306,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: missing run identity", ingestionTask.ID))
 		return
 	}
-	run, err := dao.NewPipelineOperationLogDAO().GetByID(ctx, dao.DB, *ingestionTask.PipelineLogID)
+	run, err := dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, *ingestionTask.PipelineLogID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: load run %s: %v", ingestionTask.ID, *ingestionTask.PipelineLogID, err))
 		return
@@ -1293,7 +1321,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		Status:        status,
 		PipelineLogID: *ingestionTask.PipelineLogID,
 	}
-	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
+	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
 	}

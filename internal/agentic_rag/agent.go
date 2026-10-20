@@ -35,6 +35,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/tokenizer"
 )
@@ -108,6 +109,8 @@ type Input struct {
 	// request's agent_mode. It is mandatory: an empty or unknown id fails the
 	// run with a clear error — there is no default/env/first-template fallback.
 	TemplateID string
+	// Template is the per-run resolved configuration, shared with model setup.
+	Template *Template
 	// OnDelta, when non-nil, receives each incremental (content, reasoning)
 	// delta as it streams. When nil, deltas fall back to runtime.EmitAgentMessage.
 	OnDelta func(contentDelta, thinkingDelta string)
@@ -365,10 +368,20 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		defer forgetConversation(convKey)
 	}
 
-	tmpl, errT := resolveTemplateFor(in.TemplateID)
-	if errT != nil {
-		common.ErrorCtx(ctx, "agentic_rag: resolve template", errT)
-		return RunOutput{}, errT
+	// The caller may resolve the template once and share it with model setup
+	// (Input.Template); otherwise the run resolves it itself. The run still
+	// resolves rather than requiring it: a nil Template must not turn a
+	// misconfigured caller into a nil-dereference inside the loop.
+	var tmpl Template
+	if in.Template != nil {
+		tmpl = *in.Template
+	} else {
+		var err error
+		tmpl, err = ResolveTemplate(in.TemplateID, nil)
+		if err != nil {
+			common.ErrorCtx(ctx, "agentic_rag: resolve template", err)
+			return RunOutput{}, err
+		}
 	}
 
 	// Shared per-run duration tally: every tool invocation is timed and
@@ -403,35 +416,10 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 
 	// With no explicit tools, use the requested template. The config reloads
 	// when its mtime changes so operators can change the tool list and prompt.
-	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
-	// The compiled-knowledge tools are injected, never declared: they only make
-	// sense when the bound datasets have produced knowledge-compilation products
-	// (navigation tree / compiled structure / knowledge graph / per-document
-	// panorama), so an uncompiled corpus never offers - or pays for - them. A
-	// caller that passes explicit tools owns its own set and is left untouched.
-	//
-	// The decision is logged on every run. The injection is otherwise silent, so
-	// "the tool was never offered" would be indistinguishable from "the tool was
-	// offered and the model ignored it" in the server log - which is exactly the
-	// question a tool-usage review asks.
-	compiledInjected := false
-	if len(in.Tools) != 0 {
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "caller supplied an explicit tool list"))
-	} else if datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
-		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
-		tools = append(tools, compiled...)
-		compiledInjected = true
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "compile_kwd rows present in the bound datasets"),
-			zap.Int("tools", len(compiled)))
-	} else {
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "no compile_kwd row in the bound datasets"))
-	}
+	// Template tools plus the injected compiled-knowledge set (toolsForRun owns
+	// both decisions and their logging). The knowledge-layer tool is added here
+	// because it is a property of this run's ontology mode, not of the template.
+	tools := toolsForRun(ctx, tmpl, in, engine.Get())
 	tools = ontologyToolsFor(ctx, tools, mode)
 
 	// The forced-retrieval gate. In the direct-answer mode the corpus tools are
@@ -466,7 +454,7 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	// A recall that does not cover the question is discarded here. The loop then
 	// runs exactly as it would have without the recall, and navigate_structure
 	// stays available for the model to call on demand.
-	if compiledInjected {
+	if len(in.Tools) == 0 && !tmpl.strictTools {
 		pf := recallCompiledClaims(ctx, in.TenantID, in.DatasetIDs, in.Messages)
 		if pf.sufficient {
 			answer, aerr := answerFromClaims(ctx, synthModelFor(in), tmpl.Content, in.Messages, pf)
@@ -527,6 +515,14 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		}
 		tools = kept
 	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		if info, err := t.Info(ctx); err == nil && info != nil {
+			names = append(names, info.Name)
+		}
+	}
+	common.InfoCtx(ctx, "agentic_rag: configured runtime tools",
+		zap.String("template", tmpl.ID), zap.Bool("strict_tools", tmpl.strictTools), zap.Strings("tools", names))
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),
@@ -634,7 +630,11 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 		defer synthCancel()
 		synthCtx = tokenizer.WithUsagePhase(synthCtx, "synth")
-		synth, synthErr := finalizeAnswer(synthCtx, synthModelFor(in), in.Messages, final, evidence)
+		synthMessages := in.Messages
+		if tmpl.customContent {
+			synthMessages = append([]*schema.Message{schema.SystemMessage(tmpl.Content)}, synthMessages...)
+		}
+		synth, synthErr := finalizeAnswer(synthCtx, synthModelFor(in), synthMessages, final, evidence)
 		if synthErr != nil {
 			// Without this an empty final is completely silent: the run looks
 			// healthy in every other log line and the user simply gets nothing.
