@@ -27,7 +27,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
@@ -36,6 +35,14 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// errEngineNotConfigured is returned by the engine-backed reader, writer, and
+// contribution store when they were assembled without a doc engine. The
+// consumer's storage dependencies are injected by the server assembly point
+// (see WithDocEngine); an unconfigured consumer fails loudly on its first
+// storage access instead of silently reading zero products or acking writes
+// that never happened.
+var errEngineNotConfigured = errors.New("knowledge_compile: doc engine is not configured; wire ingestion.Deps.Engine at the server assembly point")
 
 // kcDB is the package-level MySQL handle installed by Provision. It backs the
 // doc enumeration used by RebuildDataset; it is nil (and docLister returns no
@@ -81,13 +88,18 @@ type rewriteScheduler interface {
 
 // NewConsumer constructs a Consumer driven by the given Claimer. Tests pass a
 // FakeScheduler and override the Reader/Writer/Deduper via options.
+//
+// The default reader, writer, and contribution store are unconfigured: the
+// production assembly point passes WithDocEngine(ingestion.Deps.Engine). A
+// consumer that reaches storage without it fails fast (errEngineNotConfigured)
+// rather than silently processing an empty dataset.
 func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
-		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService(), resolveLanguage: datasetLanguageByID},
+		reader:         engineReader{},
+		writer:         engineWriter{commitService: file.NewFileCommitService()},
 		factory:        defaultDeduperFactory,
-		contributions:  newWikiContributionStore(engine.Get()),
+		contributions:  newWikiContributionStore(nil),
 		ttl:            2 * time.Minute,
 		heartbeat:      20 * time.Second,
 		pollInterval:   2 * time.Second,

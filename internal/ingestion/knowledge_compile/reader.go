@@ -90,10 +90,11 @@ func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, 
 	return ids, true, err
 }
 
-// engineReader loads the per-document compiled products through the global
-// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
-// process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
-// the storage schema, so this reader is not backend-specific.
+// engineReader loads the per-document compiled products through the injected
+// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). The engine is wired by
+// the server assembly point (see WithDocEngine); the engine abstraction owns
+// the storage schema, so this reader is not backend-specific. A reader without
+// an engine fails fast instead of silently reporting "no products".
 type engineReader struct {
 	eng engine.DocEngine
 }
@@ -150,13 +151,10 @@ const loadDocProductsLimit = 5000
 // results are paged so a document with more than loadDocProductsLimit rows is
 // not silently truncated.
 func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	var out []kccommon.Product
 	offset := 0
 	for {
@@ -213,11 +211,11 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 }
 
 func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return kccommon.Product{}, errEngineNotConfigured
 	}
-	if eng == nil || id == "" {
+	eng := r.eng
+	if id == "" {
 		return kccommon.Product{}, nil
 	}
 	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
@@ -240,13 +238,10 @@ func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id stri
 }
 
 func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
@@ -276,11 +271,11 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 }
 
 func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
 	}
-	if eng == nil || len(slugs) == 0 {
+	eng := r.eng
+	if len(slugs) == 0 {
 		return nil, nil
 	}
 	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
@@ -525,13 +520,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 // SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
 // compile_kwd=variant) of the KB and returns the closest hit above minScore.
 func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
+	if r.eng == nil {
+		return kccommon.Product{}, 0, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return kccommon.Product{}, 0, nil
-	}
 	if topN <= 0 {
 		topN = 1
 	}

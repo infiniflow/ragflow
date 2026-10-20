@@ -140,7 +140,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, taskI
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
 
-	task, acquired, err := s.memoryTaskDAO.Claim(ctx, dao.DB, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
+	task, acquired, err := s.memoryTaskDAO.Claim(ctx, s.memories.db, taskID, leaseOwner, memoryNow(), memoryTaskLeaseTTL)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return s.failTaskMissingDurableState(ctx, taskID)
@@ -223,11 +223,11 @@ func (s *MemoryMessageService) persistMemoryTaskFailure(ctx context.Context, tas
 	}
 	if errors.Is(runErr, errPermanentMemoryTask) || task.AttemptCount >= memoryTaskMaxAttempts {
 		action = "mark failed"
-		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, dao.DB, task.TaskID, leaseOwner, reportedErr.Error(), now)
+		updated, err = s.memoryTaskDAO.MarkFailed(persistCtx, s.memories.db, task.TaskID, leaseOwner, reportedErr.Error(), now)
 	} else {
 		action = "schedule retry"
 		nextRetryAt := now.Add(memoryTaskRetryDelay(task.AttemptCount))
-		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, dao.DB, task.TaskID, leaseOwner, now, nextRetryAt, reportedErr.Error())
+		updated, err = s.memoryTaskDAO.ScheduleRetry(persistCtx, s.memories.db, task.TaskID, leaseOwner, now, nextRetryAt, reportedErr.Error())
 	}
 	if err != nil {
 		return MemoryTaskLeaveUnsettled, errors.Join(reportedErr, fmt.Errorf("memory: %s for task %s: %w", action, task.TaskID, err))
@@ -244,7 +244,7 @@ func (s *MemoryMessageService) failTaskMissingDurableState(ctx context.Context, 
 	if s.taskDAO == nil {
 		s.taskDAO = dao.NewTaskDAO()
 	}
-	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
+	task, err := s.taskDAO.GetByID(ctx, s.memories.db, taskID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return MemoryTaskAcknowledge, fmt.Errorf("memory: task %s is not found", taskID)
@@ -258,7 +258,7 @@ func (s *MemoryMessageService) failTaskMissingDurableState(ctx context.Context, 
 	failure := fmt.Errorf("memory: task %s cannot resume because it is missing durable execution state after the server upgrade; save the message again", taskID)
 	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), memoryTaskFailureWriteTimeout)
 	defer cancel()
-	updated, updateErr := s.taskDAO.MarkActiveMemoryTaskFailed(persistCtx, dao.DB, taskID, failure.Error())
+	updated, updateErr := s.taskDAO.MarkActiveMemoryTaskFailed(persistCtx, s.memories.db, taskID, failure.Error())
 	if updateErr != nil {
 		return MemoryTaskLeaveUnsettled, errors.Join(failure, fmt.Errorf("memory: mark task failed: %w", updateErr))
 	}
@@ -295,7 +295,7 @@ func (s *MemoryMessageService) renewMemoryTaskLease(ctx context.Context, cancel 
 		case <-ticker.C:
 			renewedAt := memoryNow()
 			renewCtx, renewCancel := context.WithTimeout(ctx, memoryTaskLeaseRenewTimeout)
-			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, dao.DB, taskID, leaseOwner, renewedAt, memoryTaskLeaseTTL)
+			renewed, err := s.memoryTaskDAO.RenewLease(renewCtx, s.memories.db, taskID, leaseOwner, renewedAt, memoryTaskLeaseTTL)
 			renewCancel()
 			if err == nil && renewed {
 				leaseExpiresAt = renewedAt.Add(memoryTaskLeaseTTL)
@@ -355,7 +355,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 			if encodeErr != nil {
 				return fmt.Errorf("memory: encode task %s extraction: %w", task.TaskID, encodeErr)
 			}
-			updated, persistErr := s.memoryTaskDAO.PersistExtraction(ctx, dao.DB, task.TaskID, leaseOwner, memoryNow(), encoded)
+			updated, persistErr := s.memoryTaskDAO.PersistExtraction(ctx, s.memories.db, task.TaskID, leaseOwner, memoryNow(), encoded)
 			if persistErr != nil {
 				return fmt.Errorf("memory: persist task %s extraction: %w", task.TaskID, persistErr)
 			}
@@ -376,7 +376,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 			if err := s.storeMemoryTaskExtraction(ctx, task, msg); err != nil {
 				return err
 			}
-			updated, storeErr := s.memoryTaskDAO.MarkStored(ctx, dao.DB, task.TaskID, leaseOwner, memoryNow())
+			updated, storeErr := s.memoryTaskDAO.MarkStored(ctx, s.memories.db, task.TaskID, leaseOwner, memoryNow())
 			if storeErr != nil {
 				return fmt.Errorf("memory: mark task %s stored: %w", task.TaskID, storeErr)
 			}
@@ -390,7 +390,7 @@ func (s *MemoryMessageService) resumeMemoryTask(ctx context.Context, task *entit
 			if len(task.Extraction) == 0 {
 				progressMsg = memoryNoExtractionProgress
 			}
-			completed, completeErr := s.memoryTaskDAO.Complete(ctx, dao.DB, task.TaskID, leaseOwner, progressMsg, memoryNow())
+			completed, completeErr := s.memoryTaskDAO.Complete(ctx, s.memories.db, task.TaskID, leaseOwner, progressMsg, memoryNow())
 			if completeErr != nil {
 				return fmt.Errorf("memory: complete task %s: %w", task.TaskID, completeErr)
 			}
@@ -729,7 +729,7 @@ func (s *MemoryMessageService) updateTaskProgress(ctx context.Context, taskID st
 		return errors.New("memory: empty task id")
 	}
 	stamped := time.Now().Format(memoryTimeLayout) + " " + msg
-	if err := s.taskDAO.UpdateProgress(ctx, dao.DB, taskID, progress, stamped); err != nil {
+	if err := s.taskDAO.UpdateProgress(ctx, s.memories.db, taskID, progress, stamped); err != nil {
 		common.Warn("memory: update task progress failed", zap.Error(err))
 		return err
 	}

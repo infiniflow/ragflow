@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/file"
 
 	"gorm.io/gorm"
 )
@@ -75,6 +76,20 @@ func WithReader(r Reader) Option { return func(c *Consumer) { c.reader = r } }
 
 // WithWriter overrides the chunk Writer (used in tests).
 func WithWriter(w Writer) Option { return func(c *Consumer) { c.writer = w } }
+
+// WithStorage wires the process-wide doc engine and database handle into the
+// consumer's default reader, writer, and wiki contribution store. The server
+// assembly point passes ingestion.Deps here; a consumer assembled without it
+// fails fast on its first storage access (errEngineNotConfigured) instead of
+// silently reading zero products. Apply it before any WithReader/WithWriter
+// overrides.
+func WithStorage(eng engine.DocEngine, db *gorm.DB) Option {
+	return func(c *Consumer) {
+		c.reader = engineReader{eng: eng}
+		c.writer = engineWriter{eng: eng, db: db, commitService: file.NewFileCommitService()}
+		c.contributions = newWikiContributionStore(eng)
+	}
+}
 
 // WithDeduperFactory overrides the per-tenant Deduper factory.
 func WithDeduperFactory(f DeduperFactory) Option { return func(c *Consumer) { c.factory = f } }

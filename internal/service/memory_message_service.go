@@ -176,7 +176,7 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			failure := fmt.Errorf("store raw memory message: %w", err)
-			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, dao.DB, task.ID, failure.Error())
+			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, s.memories.db, task.ID, failure.Error())
 			if failErr != nil {
 				failure = errors.Join(failure, fmt.Errorf("mark memory task failed: %w", failErr))
 			} else if !failed {
@@ -203,6 +203,9 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 	if s == nil {
 		return errors.New("memory: nil MemoryMessageService")
 	}
+	if s.memories == nil {
+		return errors.New("memory: nil memory service dependency")
+	}
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
@@ -210,7 +213,7 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		return errors.New("memory task publisher is not initialized")
 	}
 
-	tasks, err := s.memoryTaskDAO.ListDue(ctx, dao.DB, memoryNow(), limit)
+	tasks, err := s.memoryTaskDAO.ListDue(ctx, s.memories.db, memoryNow(), limit)
 	if err != nil {
 		return fmt.Errorf("memory: list due tasks: %w", err)
 	}
@@ -226,10 +229,23 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 	return reconcileErr
 }
 
+// memoryKvrocks is bound once at the server composition root via
+// InitMemoryKvrocks. Production code reads it to mint raw-message ids
+// instead of calling kvrocks.Get() directly, so the dependency is
+// resolved explicitly at assembly time.
+var memoryKvrocks *kvrocks.Client
+
+// InitMemoryKvrocks binds the kvrocks client used to mint raw-message ids.
+// Call it from every server composition root that can run the memory queue
+// (API and ingestor); a nil binding falls back to wall-clock ids.
+func InitMemoryKvrocks(kv *kvrocks.Client) {
+	memoryKvrocks = kv
+}
+
 // generateRawMessageID returns the Redis auto-increment id used by the Python
 // side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
 func generateRawMessageID(ctx context.Context) int64 {
-	if redisClient := kvrocks.Get(); redisClient != nil {
+	if redisClient := memoryKvrocks; redisClient != nil {
 		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
@@ -380,7 +396,7 @@ func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entit
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
-	return s.memoryTaskDAO.CreateWithTask(ctx, dao.DB, task, memoryTask)
+	return s.memoryTaskDAO.CreateWithTask(ctx, s.memories.db, task, memoryTask)
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID

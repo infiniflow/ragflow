@@ -124,7 +124,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
-	memoryService := service.NewMemoryService()
+	memoryService := service.NewMemoryService(dao.DB, engine.Get())
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
@@ -133,6 +133,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
 	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
+	// Bind the kvrocks client used to mint raw-message ids so the memory
+	// queue reads it from the explicit binding rather than kvrocks.Get().
+	service.InitMemoryKvrocks(kvrocks.Get())
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
