@@ -134,7 +134,6 @@ interface OntologyModelGraphProps {
   graph?: IOntologyGraph;
   /** Class name to emphasize, controlled by the host page. */
   highlightClass?: string | null;
-  onClassClick?: (classType: string) => void;
   className?: string;
   /**
    * Scope for the drill-down. Without it the graph still renders — every piece
@@ -168,7 +167,6 @@ interface OntologyModelGraphProps {
 function OntologyModelGraph({
   graph,
   highlightClass,
-  onClassClick,
   className,
   datasetId,
   documentId,
@@ -335,9 +333,8 @@ function OntologyModelGraph({
       setSelected(node.id);
       // A class click means the next edge click is a fresh question.
       setSelectedLink(null);
-      onClassClick?.(node.id);
     },
-    [onClassClick],
+    [],
   );
 
   const handleLinkHover = useCallback((link: OntologyGraphLink | null) => {
@@ -356,9 +353,8 @@ function OntologyModelGraph({
       // own count and its own drill-down.
       const sourceId = linkEndpointId(link.source);
       setSelected(sourceId);
-      onClassClick?.(sourceId);
     },
-    [onClassClick],
+    [],
   );
 
   const handleNodeHover = useCallback((node: OntologyNodeObject | null) => {
@@ -1054,119 +1050,127 @@ function OntologyModelGraph({
           />
         )}
 
-        <div className="absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-3 text-xs text-text-secondary">
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ background: ClassColor }}
-            />
-            {t('knowledgeCompilation.ontologyDeclaredClass', {
-              defaultValue: 'Declared class',
-            })}
-          </span>
-          <span className="flex items-center gap-1">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ background: UndeclaredClassColor }}
-            />
-            {t('knowledgeCompilation.ontologyUndeclaredClass', {
-              defaultValue: 'Observed, not declared',
-            })}
-          </span>
-          <label className="flex cursor-pointer items-center gap-1">
-            <input
-              type="checkbox"
-              checked={showInheritance}
-              onChange={(event) => setShowInheritance(event.target.checked)}
-            />
-            <span
-              className="inline-block h-0 w-4 border-t-2 border-dashed"
-              style={{ borderColor: InheritanceColor }}
-            />
-            {t('knowledgeCompilation.ontologyShowInheritance', {
-              defaultValue: 'Inheritance',
-            })}
-          </label>
-          <label className="flex cursor-pointer items-center gap-1">
-            <input
-              type="checkbox"
-              checked={showUndeclared}
-              onChange={(event) => setShowUndeclared(event.target.checked)}
-            />
-            {t('knowledgeCompilation.ontologyShowUndeclared', {
-              defaultValue: 'Show undeclared classes and properties',
-            })}
-          </label>
-          <label className="flex cursor-pointer items-center gap-1">
-            <input
-              type="checkbox"
-              checked={focusedOnly}
-              onChange={(event) => setFocusedOnly(event.target.checked)}
-            />
-            {t('knowledgeCompilation.ontologyFocusedOnly', {
-              defaultValue: 'Only the focused class’s edges',
-            })}
-          </label>
-          {/* Classes can be dragged out of the crowd, so there must be a way
-              back to the layout the ontology itself implies. */}
-          <button
-            type="button"
-            className="rounded border border-border-button px-1.5 py-0.5 hover:bg-bg-base"
-            onClick={resetLayout}
-          >
-            {t('knowledgeCompilation.ontologyResetLayout', {
-              defaultValue: 'Reset layout',
-            })}
-          </button>
-        </div>
-
-        {(graph?.pitfalls?.length ?? 0) > 0 && (
-          // Grouped by category and capped, the way the reference detector
-          // reports: fifteen flat sentences on a canvas overlay is a wall, while
-          // "Logical · 2" tells the reader what kind of problem they are looking
-          // at before they read a word of it.
-          <div className="absolute bottom-2 right-2 z-10 flex max-h-[calc(100%-1rem)] max-w-[calc(100%-1rem)] flex-col gap-1 overflow-auto text-xs">
-            {PitfallCategoryOrder.map((category) => {
-              const found = (graph?.pitfalls ?? []).filter(
-                (pitfall) => (pitfall.category ?? 'structural') === category,
-              );
-              if (found.length === 0) return null;
-              return (
-                <div key={category} className="flex flex-col gap-1">
-                  <span className="text-text-secondary">
-                    {pitfallCategoryLabel(category, t)} · {found.length}
-                  </span>
-                  {found.map((pitfall) => (
-                    <div
-                      key={pitfall.code}
-                      // The service's own sentence stays in the tooltip: it names
-                      // the classes and properties, so the panel stays readable
-                      // and nothing is lost.
-                      title={pitfall.message}
-                      className={cn(
-                        'rounded-md border bg-bg-card px-2 py-1',
-                        pitfall.severity === 'error'
-                          ? 'border-red-400 text-red-500'
-                          : 'border-border-button text-text-secondary',
-                      )}
-                    >
-                      {pitfallLabel(pitfall.code, t)}
-                      {pitfall.subjects?.length > 0 && (
-                        <span className="ml-1 opacity-70">
-                          ({pitfall.subjects.slice(0, 3).join(', ')}
-                          {pitfall.subjects.length > 3
-                            ? ` +${pitfall.subjects.length - 3}`
-                            : ''}
-                          )
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
+        {/* ONE bottom bar, not two absolutely placed blocks: both were pinned
+            with `bottom-2` at the same stacking level, so once the detail column
+            narrows the canvas the pitfall list (right) grew leftwards and painted
+            OVER the legend (left) — the toggles and the list became one
+            unreadable pile. One row cannot overlap itself, and each half keeps
+            its own surface so the canvas does not show through it either. */}
+        <div className="absolute inset-x-2 bottom-2 z-10 flex items-end justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-md border border-border-button bg-bg-card px-2 py-1 text-xs text-text-secondary">
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: ClassColor }}
+              />
+              {t('knowledgeCompilation.ontologyDeclaredClass', {
+                defaultValue: 'Declared class',
+              })}
+            </span>
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ background: UndeclaredClassColor }}
+              />
+              {t('knowledgeCompilation.ontologyUndeclaredClass', {
+                defaultValue: 'Observed, not declared',
+              })}
+            </span>
+            <label className="flex cursor-pointer items-center gap-1">
+              <input
+                type="checkbox"
+                checked={showInheritance}
+                onChange={(event) => setShowInheritance(event.target.checked)}
+              />
+              <span
+                className="inline-block h-0 w-4 border-t-2 border-dashed"
+                style={{ borderColor: InheritanceColor }}
+              />
+              {t('knowledgeCompilation.ontologyShowInheritance', {
+                defaultValue: 'Inheritance',
+              })}
+            </label>
+            <label className="flex cursor-pointer items-center gap-1">
+              <input
+                type="checkbox"
+                checked={showUndeclared}
+                onChange={(event) => setShowUndeclared(event.target.checked)}
+              />
+              {t('knowledgeCompilation.ontologyShowUndeclared', {
+                defaultValue: 'Show undeclared classes and properties',
+              })}
+            </label>
+            <label className="flex cursor-pointer items-center gap-1">
+              <input
+                type="checkbox"
+                checked={focusedOnly}
+                onChange={(event) => setFocusedOnly(event.target.checked)}
+              />
+              {t('knowledgeCompilation.ontologyFocusedOnly', {
+                defaultValue: 'Only the focused class’s edges',
+              })}
+            </label>
+            {/* Classes can be dragged out of the crowd, so there must be a way
+                back to the layout the ontology itself implies. */}
+            <button
+              type="button"
+              className="rounded border border-border-button px-1.5 py-0.5 hover:bg-bg-base"
+              onClick={resetLayout}
+            >
+              {t('knowledgeCompilation.ontologyResetLayout', {
+                defaultValue: 'Reset layout',
+              })}
+            </button>
           </div>
-        )}
+
+          {(graph?.pitfalls?.length ?? 0) > 0 && (
+            // Grouped by category and capped, the way the reference detector
+            // reports: fifteen flat sentences on a canvas overlay is a wall, while
+            // "Logical · 2" tells the reader what kind of problem they are looking
+            // at before they read a word of it.
+            <div className="flex max-h-48 min-w-0 flex-col gap-1 overflow-auto rounded-md border border-border-button bg-bg-card px-2 py-1 text-xs">
+              {PitfallCategoryOrder.map((category) => {
+                const found = (graph?.pitfalls ?? []).filter(
+                  (pitfall) => (pitfall.category ?? 'structural') === category,
+                );
+                if (found.length === 0) return null;
+                return (
+                  <div key={category} className="flex flex-col gap-1">
+                    <span className="text-text-secondary">
+                      {pitfallCategoryLabel(category, t)} · {found.length}
+                    </span>
+                    {found.map((pitfall) => (
+                      <div
+                        key={pitfall.code}
+                        // The service's own sentence stays in the tooltip: it names
+                        // the classes and properties, so the panel stays readable
+                        // and nothing is lost.
+                        title={pitfall.message}
+                        className={cn(
+                          'rounded-md border bg-bg-card px-2 py-1',
+                          pitfall.severity === 'error'
+                            ? 'border-red-400 text-red-500'
+                            : 'border-border-button text-text-secondary',
+                        )}
+                      >
+                        {pitfallLabel(pitfall.code, t)}
+                        {pitfall.subjects?.length > 0 && (
+                          <span className="ml-1 opacity-70">
+                            ({pitfall.subjects.slice(0, 3).join(', ')}
+                            {pitfall.subjects.length > 3
+                              ? ` +${pitfall.subjects.length - 3}`
+                              : ''}
+                            )
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
     </div>
