@@ -390,6 +390,18 @@ type TitleChunkerParam struct {
 	// boundaries into <= cap sub-chunks. 0 disables the ceiling. The Python
 	// default is 512; valid range when non-zero is 128..8000.
 	ChunkTokenCap int `json:"chunk_token_cap"`
+
+	// TableContextSize is the number of surrounding tokens to attach
+	// to table chunks. 0 disables. Mirrors TokenChunkerParam: the title
+	// family folds the context into the chunk body via the shared
+	// chunkOutputs builder, so a captionless table stays retrievable.
+	TableContextSize int `json:"table_context_size"`
+
+	// ImageContextSize is the number of surrounding tokens to attach
+	// to image chunks. 0 disables. Without it a captionless Word/MD image
+	// has an empty retrievable body and its preview never surfaces —
+	// the gap GeneralChunker never had.
+	ImageContextSize int `json:"image_context_size"`
 }
 
 // Defaults returns the Python default TitleChunkerParam. `Method` is
@@ -417,6 +429,12 @@ func (p *TitleChunkerParam) Validate() error {
 		if p.ChunkTokenCap < 128 || p.ChunkTokenCap > 8000 {
 			return errInvalidValue{Field: "chunk_token_cap", Value: fmt.Sprintf("%d", p.ChunkTokenCap)}
 		}
+	}
+	if p.TableContextSize < 0 {
+		return errInvalidValue{Field: "table_context_size", Value: fmt.Sprintf("%d", p.TableContextSize)}
+	}
+	if p.ImageContextSize < 0 {
+		return errInvalidValue{Field: "image_context_size", Value: fmt.Sprintf("%d", p.ImageContextSize)}
 	}
 	switch p.Method {
 	case "hierarchy", "group":

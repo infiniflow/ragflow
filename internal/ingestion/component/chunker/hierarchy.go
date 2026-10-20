@@ -300,11 +300,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
-	out := map[string]any{
-		"output_format": "chunks",
-		"chunks":        chunks,
-	}
-	return out, nil
+	return finalizeTitleChunks(chunks, p), nil
 }
 
 // HierarchyTitleChunkerComponent is the standalone variant entry point.

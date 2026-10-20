@@ -207,11 +207,31 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
-	out := map[string]any{
+	return finalizeTitleChunks(chunks, p), nil
+}
+
+// finalizeTitleChunks emits the built title-family chunks. When table/image
+// context is configured it attaches the surrounding context through the shared
+// attachGeneralMediaContext (the General path's implementation) and folds it
+// via the shared chunkOutputs builder, so a captionless Word/MD image carries
+// retrievable text and its preview surfaces at retrieval time. The attach
+// implementation stays single-sourced in general.go; this only routes title
+// output through it. With both sizes at 0 the chunks pass through untouched,
+// keeping default pipelines byte-identical.
+func finalizeTitleChunks(chunks []map[string]any, p *titleChunkerParam) map[string]any {
+	raw := map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
 	}
-	return out, nil
+	if p == nil || (p.TableContextSize <= 0 && p.ImageContextSize <= 0) {
+		return raw
+	}
+	docs, ok, err := schema.ChunkDocsFromAny(chunks)
+	if err != nil || !ok {
+		return raw
+	}
+	attachGeneralMediaContext(docs, p.TableContextSize, p.ImageContextSize, nil)
+	return chunkOutputs(docs)
 }
 
 // groupRecords mirrors `GroupTitleChunker.build_chunks`: merges
