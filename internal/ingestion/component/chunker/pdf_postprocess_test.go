@@ -19,7 +19,7 @@ func TestPDFTableNotesDoNotHideCellsDuringChunking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := component.Invoke(t.Context(), nil, map[string]any{"name": "sample.pdf", "output_format": "json", "json": result.JSON})
+	out, err := component.Invoke(t.Context(), nil, map[string]any{"name": "sample.pdf", "file_type": "pdf", "output_format": "json", "json": result.JSON})
 	if err != nil {
 		t.Fatal(err)
 	}
