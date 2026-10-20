@@ -146,6 +146,11 @@ func (t *SearchOntologyTool) invokableRun(ctx context.Context, argumentsInJSON s
 		TopK:                args.TopK,
 		SimilarityThreshold: args.SimilarityThreshold,
 		DocumentScope:       binding.DocumentScope,
+		// A follow-up lookup is the same knowledge scope as the prefetch, so the
+		// hypergraph section is on whenever the binding turned it on: a turn
+		// whose first lookup carried blocks and whose second did not would make
+		// the model think the layer had changed under it.
+		HypergraphRecall: binding.Config.HypergraphRecall,
 	})
 	if err != nil {
 		// The layer being unreachable is a fact the model has to know, so it is
@@ -214,7 +219,50 @@ func formatOntologyResults(ctx context.Context, toolName, question string, diges
 		b.WriteString("  <notice>no assertion in the knowledge scope matches this request" +
 			" — this is a coverage gap in the model or the corpus, not an answer</notice>\n")
 	}
+	if digest.Hypergraph != nil {
+		b.WriteString(renderOntologyHypergraphXML(digest.Hypergraph, reg))
+	}
 	b.WriteString("</ontology_result>")
+	return b.String()
+}
+
+// renderOntologyHypergraphXML writes the factual blocks as elements. The
+// coverage attributes are the section's own statement about completeness, so
+// they travel with it: a caller that saw four blocks and no coverage would read
+// them as the whole of what the corpus holds.
+func renderOntologyHypergraphXML(hg *OntologyHypergraph, reg *EvidenceRegistry) string {
+	var b strings.Builder
+	cov := hg.Coverage
+	b.WriteString(fmt.Sprintf("  <hypergraph edges=\"%d\" hit_nodes=\"%d\" covered_nodes=\"%d\" orphan_hits=\"%d\" node_coverage=\"%.2f\" slot_coverage=\"%.2f\" sufficient=\"%t\" partial=\"%t\"",
+		len(hg.Edges), cov.HitNodes, cov.CoveredNodes, cov.OrphanHits, cov.NodeCoverage, cov.SlotCoverage, cov.Sufficient, cov.Partial))
+	if hg.Degrade != nil {
+		b.WriteString(` degrade_code="` + xmlEscape(hg.Degrade.Code) + `"`)
+	}
+	b.WriteString(">\n")
+	if hg.Degrade != nil {
+		b.WriteString("    <degrade code=\"" + xmlEscape(hg.Degrade.Code) + "\">" + xmlEscape(hg.Degrade.Reason) + "</degrade>\n")
+	}
+	blocks := hg.Edges
+	if len(blocks) > ontologyHypergraphMaxBlocks {
+		blocks = blocks[:ontologyHypergraphMaxBlocks]
+	}
+	for i, block := range blocks {
+		b.WriteString(fmt.Sprintf("    <hyperedge n=\"%d\" row_id=\"%s\" root=\"%s\" root_type=\"%s\" depth=\"%d\" covered_nodes=\"%d\"",
+			i+1, xmlEscape(block.RowID), xmlEscape(block.Root), xmlEscape(block.RootType), block.Depth, block.CoveredNodes))
+		if ref := ontologyHypergraphBlockRef(block, reg); ref != "" {
+			b.WriteString(` ref="` + xmlEscape(ref) + `"`)
+		}
+		b.WriteString(">\n")
+		facts := block.Facts
+		if len(facts) > ontologyHypergraphMaxFactsPerBlock {
+			facts = facts[:ontologyHypergraphMaxFactsPerBlock]
+		}
+		for _, fact := range facts {
+			b.WriteString("      <fact path=\"" + xmlEscape(fact.Path) + "\">" + xmlEscape(fact.Value) + "</fact>\n")
+		}
+		b.WriteString("    </hyperedge>\n")
+	}
+	b.WriteString("  </hypergraph>\n")
 	return b.String()
 }
 

@@ -40,6 +40,12 @@ type ontologyBindingPayload struct {
 	ModelVersion        int      `json:"model_version"`
 	KnowledgeDatasetIDs []string `json:"knowledge_dataset_ids"`
 	Enabled             *bool    `json:"enabled"`
+	// HypergraphRecall turns on the compiled hyperedge section (factual blocks,
+	// the chunks behind them, and their coverage). It is part of the binding
+	// because the section is an addition to this scope's knowledge — not a
+	// global mode — and one assistant measuring it must not change what another
+	// one sees.
+	HypergraphRecall *bool `json:"hypergraph_recall"`
 }
 
 // OntologyBindingFor resolves this turn's knowledge-layer binding.
@@ -77,6 +83,7 @@ func (p ontologyBindingPayload) toRunConfig() *agentic_rag.OntologyRunConfig {
 		ModelID:             strings.TrimSpace(p.ModelID),
 		ModelVersion:        p.ModelVersion,
 		KnowledgeDatasetIDs: dedupeStrings(p.KnowledgeDatasetIDs),
+		HypergraphRecall:    p.HypergraphRecall != nil && *p.HypergraphRecall,
 	}
 	if !cfg.Enabled() {
 		return nil

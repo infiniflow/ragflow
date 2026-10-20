@@ -67,6 +67,11 @@ type OntologyRunConfig struct {
 	ModelID             string
 	ModelVersion        int
 	KnowledgeDatasetIDs []string
+	// HypergraphRecall adds the compiled hyperedge section to this turn's
+	// digest. It is a per-binding switch rather than a deployment-wide one
+	// because it exists to be measured: the same assistant, the same questions,
+	// one boolean apart.
+	HypergraphRecall bool
 }
 
 // Enabled reports whether the binding is complete enough to run the knowledge
@@ -208,6 +213,10 @@ func ontologyPrefetch(ctx context.Context, mode ontologyMode, in Input, b ontolo
 		// and DocumentScope below is what decides whether its quotation may be
 		// cited. Narrowing here would silently drop the vocabulary too.
 		DocumentScope: b.DocumentScope,
+		// The hypergraph section is requested by the binding, not by the mode:
+		// a knowledge layer that is on for the run may still be measured
+		// without it.
+		HypergraphRecall: b.Config.HypergraphRecall,
 	}
 	digest, err := GetOntologyService().Retrieve(ctx, req)
 	if err != nil {
@@ -335,6 +344,10 @@ func ontologyDigestBlock(mode ontologyMode, digest *OntologyDigest, reg *Evidenc
 		}
 	}
 
+	if digest.Hypergraph != nil {
+		b.WriteString(renderOntologyHypergraph(digest.Hypergraph, reg))
+	}
+
 	if digest.Citations.Unresolvable > 0 {
 		b.WriteString(fmt.Sprintf("- %d assertion(s) cite chunks that are not readable in this conversation's scope; "+
 			"their wording is usable as a search hint, their quotation is not citable.\n", digest.Citations.Unresolvable))
@@ -363,10 +376,105 @@ func ontologyDigestBlock(mode ontologyMode, digest *OntologyDigest, reg *Evidenc
 			"when they do not answer.\n")
 		b.WriteString("- Where an assertion carries a quotation, cite that quotation's chunk rather than a re-read " +
 			"paraphrase of the same passage.\n")
+		b.WriteString("- A factual block groups slots that came from one place. Route multi-part questions along a " +
+			"block's slots — they are the parts that were stated together — and quote the original chunk, not the block.\n")
 		b.WriteString("- If the assertions do not cover the question, do not stretch them: search the corpus, and say " +
 			"which part of the answer rests on the knowledge layer and which on the documents.\n")
 	}
 	return b.String()
+}
+
+// ontologyHypergraphMaxBlocks and ontologyHypergraphMaxFactsPerBlock bound the
+// hypergraph section. The blocks are pointers into the original text, not a
+// substitute for it, so the section stays small on purpose: a block that has to
+// be truncated still names its chunks, and reading them is one tool call.
+const (
+	ontologyHypergraphMaxBlocks        = 4
+	ontologyHypergraphMaxFactsPerBlock = 12
+)
+
+// renderOntologyHypergraph writes the hypergraph section: the factual blocks
+// assembled for this question, and the coverage that says how complete they are.
+//
+// The coverage line is not decoration. A reader that gets three blocks and no
+// coverage number will assume the blocks are the whole story; the number is what
+// lets it decide to search instead of to answer.
+func renderOntologyHypergraph(hg *OntologyHypergraph, reg *EvidenceRegistry) string {
+	if hg == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n### Factual blocks (hypergraph)\n")
+	if len(hg.Edges) == 0 {
+		reason := "the compiled layer holds no block for this question"
+		if hg.Degrade != nil {
+			reason = hg.Degrade.Code + ": " + hg.Degrade.Reason
+		}
+		b.WriteString("- No factual block was assembled (" + reason + ").\n")
+		return b.String()
+	}
+	blocks := hg.Edges
+	if len(blocks) > ontologyHypergraphMaxBlocks {
+		blocks = blocks[:ontologyHypergraphMaxBlocks]
+	}
+	for i, block := range blocks {
+		head := fmt.Sprintf("%d. [hyperedge:%s] %s (%s",
+			i+1, shortOntologyHandle(block.RowID), firstNonEmpty(block.Root, "?"), firstNonEmpty(block.RootType, "?"))
+		if block.Depth > 0 {
+			head += fmt.Sprintf(", depth %d", block.Depth)
+		}
+		head += fmt.Sprintf(", explains %d of this question's slots)", block.CoveredNodes)
+		if ref := ontologyHypergraphBlockRef(block, reg); ref != "" {
+			head += " " + ref
+		}
+		b.WriteString(head + "\n")
+		facts := block.Facts
+		if len(facts) > ontologyHypergraphMaxFactsPerBlock {
+			facts = facts[:ontologyHypergraphMaxFactsPerBlock]
+		}
+		for _, fact := range facts {
+			b.WriteString("   " + fact.Path + ": " + fact.Value + "\n")
+		}
+		if len(block.Facts) > len(facts) {
+			b.WriteString(fmt.Sprintf("   (%d further slot(s) in this block; read its chunks)\n", len(block.Facts)-len(facts)))
+		}
+	}
+	if len(hg.Edges) > len(blocks) {
+		b.WriteString(fmt.Sprintf("- (%d further block(s) not shown.)\n", len(hg.Edges)-len(blocks)))
+	}
+	cov := hg.Coverage
+	b.WriteString(fmt.Sprintf("- Coverage: %d of %d recalled slot(s) covered by %d block(s); node_coverage=%.2f, slot_coverage=%.2f (sufficient: %t).\n",
+		cov.CoveredNodes, cov.HitNodes, len(hg.Edges), cov.NodeCoverage, cov.SlotCoverage, cov.Sufficient))
+	if cov.OrphanHits > 0 {
+		b.WriteString(fmt.Sprintf("- %d recalled slot(s) belong to no block: the blocks are an incomplete view of what was "+
+			"recalled, so treat an absent slot as unassembled rather than as absent from the corpus.\n", cov.OrphanHits))
+	}
+	if cov.Partial {
+		b.WriteString("- One recall leg failed, so these coverage numbers are over a smaller slot set than the question warrants.\n")
+	}
+	return b.String()
+}
+
+// ontologyHypergraphBlockRef stamps a block's first readable chunk and returns
+// the [ID:n] handle to render. A block whose chunks are unreadable gets no
+// handle: the block's facts are then a lead, not a citation.
+func ontologyHypergraphBlockRef(block OntologyHyperedge, reg *EvidenceRegistry) string {
+	if reg == nil || len(block.ChunkIDs) == 0 {
+		return ""
+	}
+	if n := reg.Stamp(block.ChunkIDs[0]); n >= 0 {
+		return fmt.Sprintf("[ID:%d]", n)
+	}
+	return ""
+}
+
+// shortOntologyHandle keeps a handle readable: a row id is a 64-character hash
+// and the section has to stay scannable.
+func shortOntologyHandle(id string) string {
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:12]
 }
 
 // renderOntologyAssertion writes one assertion line, stamping its citation so

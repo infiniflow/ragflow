@@ -63,6 +63,7 @@ func (a *OntologyAdapter) Retrieve(ctx context.Context, req agentic_rag.Ontology
 		SimilarityThreshold: req.SimilarityThreshold,
 		DocumentScope:       req.DocumentScope,
 		SkipUnreviewed:      req.SkipUnreviewed,
+		HypergraphRecall:    req.HypergraphRecall,
 	})
 	if err != nil {
 		return nil, err

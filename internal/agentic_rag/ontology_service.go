@@ -43,6 +43,14 @@ const (
 	// look" and "there is nothing there" are different facts, and only one of
 	// them is about the corpus.
 	OntologyDegradeCoverageUnknown = "coverage_unknown"
+	// OntologyDegradeHypergraphAbsent means the hypergraph recall was asked for
+	// and produced no factual block: the knowledge scope has no compiled
+	// hyperedge rows, or the recalled slots belong to none. It is a degrade of
+	// the hypergraph section alone — the assertion rows are unaffected — and it
+	// is stated rather than implied because "no block was assembled" and "the
+	// corpora holds no slots for this question" read the same from an empty
+	// section.
+	OntologyDegradeHypergraphAbsent = "hypergraph_absent"
 )
 
 // OntologyEvidence* grade how much the rows of one digest may be leaned on.
@@ -151,6 +159,95 @@ type OntologyCitations struct {
 	Unresolvable int `json:"unresolvable"`
 }
 
+// OntologyHypergraphFact is one `path: value` row of a factual block. The path
+// is the natural-language phrasing of the attribute path (the same text the
+// key-side vector was built from), never the mechanical dotted form: the block
+// is read by a model, and the mechanical form is a storage key.
+type OntologyHypergraphFact struct {
+	Path  string `json:"path"`
+	Value string `json:"value"`
+}
+
+// OntologyHyperedge is one selected factual block: a set of slots that occur
+// together in one root context. It is the retrieval unit and the citation unit
+// of the hypergraph layer — several facts below one handle is what says they
+// came from the same place.
+type OntologyHyperedge struct {
+	// RowID is the block's row id. It is a citation handle
+	// (`hyperedge:<row id>`) rather than a fact: the row is the compiled
+	// product, and the chunk a reader can open is in ChunkIDs.
+	RowID string `json:"row_id"`
+	// Root is the entity the block was flattened from, and RootType its class.
+	Root     string `json:"root"`
+	RootType string `json:"root_type"`
+	// Depth is how far the block's deepest entity sits below the root.
+	Depth int `json:"depth"`
+	// Facts are the block's slots, in path order so the rendering is
+	// reproducible run to run.
+	Facts []OntologyHypergraphFact `json:"facts"`
+	// CoveredNodes is how many of this question's recalled slots this block
+	// contributed. It is what the coverage selection maximized, and it is what
+	// lets a reader see why this block and not another was assembled.
+	CoveredNodes int `json:"covered_nodes"`
+	// ChunkIDs are the root entity's source chunks: the original text this
+	// block was compiled from.
+	ChunkIDs []string `json:"chunk_ids"`
+	DocIDs   []string `json:"doc_ids"`
+}
+
+// OntologyHypergraphChunk is one original chunk a selected block points at. The
+// content is carried because the block itself is a compiled digest of it: a
+// reader has to be able to get from the block back to the prose.
+type OntologyHypergraphChunk struct {
+	ChunkID string `json:"chunk_id"`
+	DocID   string `json:"doc_id"`
+	DocName string `json:"doc_name"`
+	Content string `json:"content"`
+	// CoveredNodes is the contribution of the block that pulled this chunk in,
+	// so the ordering of the chunk block is explainable.
+	CoveredNodes int `json:"covered_nodes"`
+}
+
+// OntologyHypergraphCoverage is how much of the question's recalled slot set the
+// assembled blocks explain. It is computed exactly, over the selected blocks
+// rather than over a sample, which is what makes it usable as a sufficiency
+// signal: every number here is a count of things that were actually recalled.
+type OntologyHypergraphCoverage struct {
+	// HitNodes is the number of distinct slots the recall legs returned.
+	HitNodes int `json:"hit_nodes"`
+	// CoveredNodes is how many of them ended up inside a selected block.
+	CoveredNodes int `json:"covered_nodes"`
+	// OrphanHits is slots that belong to no block at all — no hyperedge_ids, or
+	// only edges outside the selected set. A non-zero value says the blocks are
+	// an incomplete view of what was recalled, and it is the one number that
+	// must never be read as "the corpus lacks this".
+	OrphanHits int `json:"orphan_hits"`
+	// NodeCoverage is CoveredNodes/HitNodes.
+	NodeCoverage float64 `json:"node_coverage"`
+	// SlotCoverage is the covered (class, attribute) pairs over the pairs the
+	// recalled slots name: whether the blocks speak to the attributes this
+	// question touched, not merely to its terms.
+	SlotCoverage float64 `json:"slot_coverage"`
+	// Sufficient is the zero-LLM gate: enough slots covered, and no slot left
+	// without a block.
+	Sufficient bool `json:"sufficient"`
+	// Partial reports that one recall leg failed, so the slot set these numbers
+	// are computed over is smaller than it should have been.
+	Partial bool `json:"partial"`
+}
+
+// OntologyHypergraph is the hypergraph layer's contribution to one digest: the
+// blocks it assembled, the original chunks they point at, and the coverage that
+// says how complete the assembly is.
+type OntologyHypergraph struct {
+	Edges    []OntologyHyperedge        `json:"edges"`
+	Chunks   []OntologyHypergraphChunk  `json:"chunks"`
+	Coverage OntologyHypergraphCoverage `json:"coverage"`
+	// Degrade explains an empty or partial section; nil when the recall ran and
+	// produced blocks.
+	Degrade *OntologyDegrade `json:"degrade,omitempty"`
+}
+
 // OntologyDigest is what one L1 retrieval produced. It is the whole interface
 // between the knowledge layer and the agent loop: the vocabulary the model
 // should speak in, the seeds it should start from, the handles it may read, and
@@ -183,6 +280,12 @@ type OntologyDigest struct {
 	// Total is the row count the engine reported, which can exceed
 	// len(Assertions) because the request bounds how many rows are carried.
 	Total int64 `json:"total"`
+	// Hypergraph is the hypergraph layer's contribution, present only when the
+	// caller asked for it (ontology_hypergraph_recall). It is a section of the
+	// digest rather than a separate result because its blocks belong to the
+	// same question, the same model version and the same coverage story as the
+	// assertions above — a second payload would let the two disagree.
+	Hypergraph *OntologyHypergraph `json:"hypergraph,omitempty"`
 }
 
 // OntologyDegrade is the machine-readable reason plus the sentence a human
@@ -234,6 +337,12 @@ type OntologyRetrieveRequest struct {
 	// because a model whose latest compile is unreviewed would otherwise be
 	// invisible until a human got to it.
 	SkipUnreviewed bool
+	// HypergraphRecall adds the compiled hyperedge layer to the digest: two
+	// hypernode recall legs, greedy block selection and the coverage those
+	// blocks explain. It is off by default so the layer can be measured against
+	// the assertion-only path on the same questions (see
+	// hypergraph_retrieval.md §4), and off is exactly the previous behaviour.
+	HypergraphRecall bool
 }
 
 // ErrOntologyServiceMissing is returned when no knowledge-layer service was

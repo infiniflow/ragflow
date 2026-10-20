@@ -76,6 +76,66 @@ func OntologyDigestReceipt(digest *agentic_rag.OntologyDigest) map[string]interf
 			"reason": digest.Degrade.Reason,
 		}
 	}
+	if digest.Hypergraph != nil {
+		out["hypergraph"] = ontologyHypergraphReceipt(digest.Hypergraph)
+	}
+	return out
+}
+
+// ontologyHypergraphReceipt renders the hypergraph section: how many blocks were
+// assembled, how much of the recalled slot set they explain, and the original
+// chunks they point at.
+//
+// The coverage numbers are carried verbatim because they are the section's only
+// claim about its own completeness: a panel that showed the blocks without them
+// would present four blocks as the whole answer.
+func ontologyHypergraphReceipt(hg *agentic_rag.OntologyHypergraph) map[string]interface{} {
+	edges := make([]map[string]interface{}, 0, len(hg.Edges))
+	for _, edge := range hg.Edges {
+		facts := make([]map[string]interface{}, 0, len(edge.Facts))
+		for _, fact := range edge.Facts {
+			facts = append(facts, map[string]interface{}{"path": fact.Path, "value": fact.Value})
+		}
+		edges = append(edges, map[string]interface{}{
+			"row_id":        edge.RowID,
+			"root":          edge.Root,
+			"root_type":     edge.RootType,
+			"depth":         edge.Depth,
+			"facts":         facts,
+			"covered_nodes": edge.CoveredNodes,
+			"chunk_ids":     edge.ChunkIDs,
+			"doc_ids":       edge.DocIDs,
+		})
+	}
+	chunks := make([]map[string]interface{}, 0, len(hg.Chunks))
+	for _, chunk := range hg.Chunks {
+		chunks = append(chunks, map[string]interface{}{
+			"chunk_id":      chunk.ChunkID,
+			"doc_id":        chunk.DocID,
+			"doc_name":      chunk.DocName,
+			"content":       chunk.Content,
+			"covered_nodes": chunk.CoveredNodes,
+		})
+	}
+	out := map[string]interface{}{
+		"edges":  edges,
+		"chunks": chunks,
+		"coverage": map[string]interface{}{
+			"hit_nodes":     hg.Coverage.HitNodes,
+			"covered_nodes": hg.Coverage.CoveredNodes,
+			"orphan_hits":   hg.Coverage.OrphanHits,
+			"node_coverage": hg.Coverage.NodeCoverage,
+			"slot_coverage": hg.Coverage.SlotCoverage,
+			"sufficient":    hg.Coverage.Sufficient,
+			"partial":       hg.Coverage.Partial,
+		},
+	}
+	if hg.Degrade != nil {
+		out["degrade"] = map[string]interface{}{
+			"code":   hg.Degrade.Code,
+			"reason": hg.Degrade.Reason,
+		}
+	}
 	return out
 }
 

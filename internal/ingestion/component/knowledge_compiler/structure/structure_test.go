@@ -1385,6 +1385,85 @@ func TestBuildHypergraphHypernodeIsSharedAcrossRoots(t *testing.T) {
 	}
 }
 
+// Membership is what ONE document can compute: the hyperedge ids a row carries
+// are the blocks that document produced. Two documents stating the same
+// (path, value) must therefore get two rows — with a document-free id they
+// share one, and because the writer replaces whole rows the later document's
+// membership would be the only one left, silently dropping the earlier
+// document's slots from the layer (hypergraph_retrieval.md §3 P0-1).
+func TestBuildHypergraphHypernodeIsDocumentScoped(t *testing.T) {
+	prods := adaAndLondon()
+	ids := map[string]string{}
+	for _, docID := range []string{"d1", "d2"} {
+		cfg := CompileConfig{DocID: docID, TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+		rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, prods)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			kind, _ := r.Meta["kind"].(string)
+			if kind != "hypernode" {
+				continue
+			}
+			path, _ := r.Meta["path"].(string)
+			if path != "person:name" {
+				continue
+			}
+			if role, _ := r.Meta["node_role"].(string); role != "key" {
+				continue
+			}
+			if prev, ok := ids[docID]; ok {
+				t.Fatalf("document %s produced two person:name key rows (%s, %s)", docID, prev, r.ID)
+			}
+			ids[docID] = r.ID
+		}
+	}
+	if ids["d1"] == "" || ids["d2"] == "" {
+		t.Fatalf("missing hypernode rows: %v", ids)
+	}
+	if ids["d1"] == ids["d2"] {
+		t.Fatalf("the same (path, value) in two documents shares row id %q; "+
+			"the second document would overwrite the first one's membership", ids["d1"])
+	}
+}
+
+// node_value is the slot's value in exact spelling on BOTH halves: a key row's
+// payload holds the attribute path, so without the column a key row cannot be
+// joined to its value row and an entity's name node can only be found by full
+// text.
+func TestBuildHypergraphHypernodeCarriesNodeValue(t *testing.T) {
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, adaAndLondon())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind != "hypernode" {
+			continue
+		}
+		path, _ := r.Meta["path"].(string)
+		role, _ := r.Meta["node_role"].(string)
+		value, _ := r.Meta["node_value"].(string)
+		if value == "" {
+			t.Fatalf("%s %s row carries no node_value", path, role)
+		}
+		seen[path+"|"+role] = value
+	}
+	for _, want := range []string{
+		"person:name|key", "person:name|value",
+		"person:birth_date|key", "person:birth_date|value",
+	} {
+		if seen[want] == "" {
+			t.Errorf("no node_value for %s", want)
+		}
+	}
+	if seen["person:name|key"] != "Ada Lovelace" || seen["person:name|value"] != "Ada Lovelace" {
+		t.Errorf("both halves must state the same value, got key=%q value=%q",
+			seen["person:name|key"], seen["person:name|value"])
+	}
+}
+
 // A template with no declared object properties writes no extra rows, so every
 // other variant's row count is untouched.
 func TestBuildHypergraphSkippedWithoutOntology(t *testing.T) {

@@ -788,6 +788,15 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 				return err
 			}
 		}
+		// node_value_kwd is the slot's value in exact spelling. It is written on
+		// both halves because a key row's payload holds the attribute path, not
+		// the value: without this column a key row cannot be joined to its value
+		// row, and matching an entity's name node would fall back to full text.
+		if v := metaString(p.Meta, "node_value"); v != "" {
+			if err := doc.SetExtraValue("node_value_kwd", v); err != nil {
+				return err
+			}
+		}
 		// hyperedge_ids is the membership relation (E(n) in the paper): every
 		// hyperedge this hypernode belongs to. An array, because the same
 		// hypernode is shared by every block whose path reaches it.

@@ -20,10 +20,12 @@ import (
 // Vocabulary, fixed:
 //
 //	hypernode = one (path, value) pair, i.e. one assertion about one attribute
-//	            path of one term. It is GLOBALLY unique: the same pair produced
-//	            by two different roots is the same hypernode, which is why a
-//	            hypernode row carries no root identity (no name_kwd /
-//	            entity_type_kwd) — roots reach it through hyperedge_ids.
+//	            path of one term. It is document-scoped: the same pair produced
+//	            by two roots inside one document is the same hypernode (which is
+//	            why a hypernode row carries no root identity — no name_kwd /
+//	            entity_type_kwd — and roots reach it through hyperedge_ids),
+//	            while two documents each keep their own row, because each can
+//	            only compute its own membership.
 //	hyperedge = one flattened factual block: a set of hypernodes sharing a root
 //	            context. Its row payload IS the `{"key": "value", …}` dictionary
 //	            OG-RAG's RAG_QUERY_PROMPT asks for.
@@ -333,10 +335,11 @@ func hyperedgePayload(d hyperedgeDraft) map[string]any {
 // index (no declared object properties) returns no rows at all, so every
 // non-ontology template is untouched.
 //
-// Row ids: a hyperedge is document-scoped (its payload is the document's block),
-// while a hypernode is keyed on (path, value) only — the same pair from two
-// documents or two roots is THE SAME hypernode, which is what keeps the value
-// side of the index small and its counts honest.
+// Row ids: both families are document-scoped. A hyperedge's payload is one
+// document's block; a hypernode is keyed on (path, value) *within* a document,
+// so the same pair from two roots collapses into one row while the same pair
+// from two documents does not — membership is computed per document, and the
+// writer replaces whole rows.
 func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product) ([]common.Product, error) {
 	idx := buildHypergraphIndex(prods, cfg.ParserConfig)
 	if idx == nil {
@@ -446,8 +449,11 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 			"prop":          acc.fact.prop,
 			"hyperedge_ids": acc.edgeIDs,
 			"depth":         acc.depth,
-			// A hypernode has no single owning document — it exists for the whole
-			// KB — so the fields that place a row in a document are not set here.
+			// node_value is the slot's value in exact spelling, written on both
+			// halves. It is what joins a key row to its value row (a key row's
+			// payload holds the path, not the value) and what lets a retrieval
+			// match an entity's name node by equality instead of by full text.
+			"node_value":       acc.fact.val,
 			"source_chunk_ids": acc.chunks,
 			"mention_count":    len(acc.edgeIDs),
 		}
@@ -496,7 +502,15 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 	}
 	for _, key := range nodeOrder {
 		acc := nodes[key]
-		hash := common.StableRowID(acc.fact.path+"\x00"+acc.fact.val, cfg.TemplateID)
+		// The document id is part of a hypernode's id. Without it the same
+		// (path, value) produced by two documents is one row id, and since the
+		// writer replaces whole rows the later document overwrites the earlier
+		// one's membership — its hyperedge_ids, source_chunk_ids and counts —
+		// and the earlier document's slots become unreachable from the layer.
+		// Scoping the id to the document keeps the membership a document can
+		// actually compute; a KB-wide node needs membership rows of its own, not
+		// a longer array (see hypergraph_retrieval.md §3 P0-1).
+		hash := common.StableRowID(acc.fact.path+"\x00"+acc.fact.val, cfg.DocID, cfg.TemplateID)
 		for _, suffix := range []string{":k", ":v"} {
 			rows = append(rows, common.Product{
 				ID:       hash + suffix,

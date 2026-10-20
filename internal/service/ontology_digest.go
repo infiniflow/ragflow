@@ -354,6 +354,85 @@ func ontologyCoverage(
 	return out
 }
 
+// applyOntologyHypergraph attaches the hypergraph section and lets it narrow the
+// assertion list it belongs to.
+//
+// One rule is applied: a relation whose two endpoints both appear inside ONE
+// assembled block is not a separate fact — the block already states it, in the
+// same place, in the same words — and listing it again spends the assertion
+// budget on a duplicate. The endpoints are compared lowercased because the
+// compiled name columns are lowercased while a relation row stores the display
+// spelling.
+//
+// The counts are then recomputed rather than adjusted: the digest's citation and
+// review numbers are what a caller reads to decide whether a quotation may be
+// used, and a decrement applied by hand would drift from the assertions the
+// block now carries.
+func applyOntologyHypergraph(digest *agentic_rag.OntologyDigest, hg *agentic_rag.OntologyHypergraph, documentScope []string) {
+	if digest == nil || hg == nil {
+		return
+	}
+	digest.Hypergraph = hg
+	if len(digest.Assertions) == 0 {
+		return
+	}
+	blockNames := ontologyHypergraphBlockNames(hg)
+	kept := make([]agentic_rag.OntologyAssertion, 0, len(digest.Assertions))
+	digest.UnreviewedCount = 0
+	digest.Citations = agentic_rag.OntologyCitations{}
+	for _, assertion := range digest.Assertions {
+		if assertion.Kind == "relation" && ontologyRelationStatedByBlock(assertion, blockNames) {
+			continue
+		}
+		kept = append(kept, assertion)
+		if assertion.ReviewStatus == string(AssertionReviewUnreviewed) {
+			digest.UnreviewedCount++
+		}
+		digest.Citations.Resolvable, digest.Citations.Unresolvable = countOntologyCitations(
+			digest.Citations.Resolvable, digest.Citations.Unresolvable, assertion, documentScope)
+	}
+	digest.Assertions = kept
+}
+
+// ontologyHypergraphBlockNames returns, per assembled block, the lowercased
+// names of the entities the block states. Only `:name` slots count: an attribute
+// slot that happens to hold an entity's name is a statement about a value, not
+// about the related entity.
+func ontologyHypergraphBlockNames(hg *agentic_rag.OntologyHypergraph) []map[string]bool {
+	out := make([]map[string]bool, 0, len(hg.Edges))
+	for _, edge := range hg.Edges {
+		names := make(map[string]bool, len(edge.Facts))
+		for _, fact := range edge.Facts {
+			if !strings.HasSuffix(strings.TrimSpace(fact.Path), ":name") {
+				continue
+			}
+			if value := strings.ToLower(strings.TrimSpace(fact.Value)); value != "" {
+				names[value] = true
+			}
+		}
+		if len(names) > 0 {
+			out = append(out, names)
+		}
+	}
+	return out
+}
+
+// ontologyRelationStatedByBlock reports whether one block already states this
+// relation by naming both of its endpoints.
+func ontologyRelationStatedByBlock(assertion agentic_rag.OntologyAssertion, blockNames []map[string]bool) bool {
+	from := strings.ToLower(strings.TrimSpace(assertion.From))
+	to := strings.ToLower(strings.TrimSpace(assertion.To))
+	if from == "" || to == "" {
+		return false
+	}
+	for _, names := range blockNames {
+		if names[from] && names[to] {
+			return true
+		}
+	}
+	return false
+}
+
 // toStringValue renders an engine field as text: numbers keep their exact
 // value (an attribute is a value, and 1.5 must not become "1.5" by way of a
 // lossy format), and composite payloads print as they are.

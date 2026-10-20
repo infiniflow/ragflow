@@ -43,6 +43,11 @@ type ontologyABoxRetrievalBody struct {
 	// SkipUnreviewed drops pending assertions. The default keeps them, tagged:
 	// a model whose latest compile is unreviewed would otherwise be invisible.
 	SkipUnreviewed bool `json:"skip_unreviewed,omitempty"`
+	// HypergraphRecall adds the compiled hyperedge section to the digest: the
+	// factual blocks the question's slots belong to, the original chunks behind
+	// them, and the coverage they explain. Off by default so the section can be
+	// compared against the assertion-only result on the same question.
+	HypergraphRecall bool `json:"hypergraph_recall,omitempty"`
 }
 
 // Retrieve answers with the compiled rows that fit the requested structure. The
@@ -91,6 +96,7 @@ func (h *OntologyABoxRetrievalHandler) Retrieve(c *gin.Context) {
 		SimilarityThreshold: body.SimilarityThreshold,
 		DocumentScope:       body.DocumentScope,
 		SkipUnreviewed:      body.SkipUnreviewed,
+		HypergraphRecall:    body.HypergraphRecall,
 	})
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

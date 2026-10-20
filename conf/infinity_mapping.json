@@ -37,6 +37,7 @@
 	"to_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"node_role_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"path_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"node_value_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"hyperedge_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"entity_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"entity_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

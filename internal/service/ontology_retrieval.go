@@ -61,6 +61,12 @@ type OntologyABoxRetrievalRequest struct {
 	// a model whose latest compile is unreviewed would otherwise be invisible
 	// until a human got to it.
 	SkipUnreviewed bool
+	// HypergraphRecall adds the compiled hyperedge layer to the digest: two
+	// hypernode recall legs, greedy selection of the factual blocks those slots
+	// belong to, the original chunks behind them, and the coverage they explain.
+	// Off by default: it is a measurable addition, and the assertion-only path
+	// has to stay exactly as it was for the two to be compared.
+	HypergraphRecall bool
 }
 
 // OntologyABoxDegrade* are the machine-readable reasons the returned rows are
@@ -165,6 +171,13 @@ type OntologyABoxRetrievalService struct {
 	// flow without a database: they are the two steps that need one.
 	structureLoader ontologyStructureLoader
 	coverageScanner ontologyCoverageScanner
+	// rowReader and chunkReader back the hypergraph section: a block by id, the
+	// blocks an entity's name belongs to, and the original text behind a block.
+	// They are seams for the same reason as the two above — the section's logic
+	// (selection, assembly, coverage) is what has to be testable without a
+	// document engine.
+	rowReader   ontologyRowReader
+	chunkReader ontologyChunkReader
 }
 
 // NewOntologyABoxRetrievalService wires the production boundaries: the dataset
@@ -177,6 +190,8 @@ func NewOntologyABoxRetrievalService(docEngine engine.DocEngine, documentDAO *da
 		searcher:        nlp.NewRetrievalService(docEngine, documentDAO),
 		structureLoader: loadOntologyTemplate,
 		coverageScanner: scanOntologyCoverage,
+		rowReader:       readOntologyRows,
+		chunkReader:     fetchChunksByIDs,
 	}
 }
 
@@ -317,6 +332,14 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 	}
 
 	digest := buildOntologyDigest(out.Chunks, out.Total, declared, ref, out.Filter, out.StructureApplied, degrade, req.DocumentScope)
+	// The hypergraph section is assembled from the same page the digest was
+	// built from, so the two can never describe different row sets. It is
+	// attached after the digest because it also *narrows* it: an assertion whose
+	// endpoints both appear inside one assembled block is no longer a separate
+	// fact, and the counts that follow are recomputed over what is left.
+	if hg := s.buildOntologyHypergraph(ctx, scope, req, out.Chunks); hg != nil {
+		applyOntologyHypergraph(digest, hg, req.DocumentScope)
+	}
 	if digest.Degrade == nil && len(digest.Assertions) > 0 &&
 		digest.Citations.Resolvable == 0 && digest.Citations.Unresolvable > 0 {
 		// The assertions are real, but none of their sources is readable in this
