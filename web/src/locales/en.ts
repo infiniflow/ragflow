@@ -3588,10 +3588,7 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
-      checklistTitle:
-        'Resolve the following issues before running or publishing',
-      checklistResolveBefore:
-        'Please resolve the issues in the checklist first',
+      checklistTitle: 'The following issues may affect running or publishing',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:
