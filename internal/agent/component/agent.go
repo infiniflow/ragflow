@@ -641,7 +641,9 @@ func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, conte
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
 		// Deltas are discarded: grounding runs in batches and the caller emits
 		// only the final grounded text, so streaming each batch would repeat
-		// the whole answer once per batch.
+		// the whole answer once per batch — and a failed or marker-only
+		// stream must not leave partial output visible while the caller
+		// falls back to the original answer.
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			return ctx.Err()
 		})
