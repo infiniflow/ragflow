@@ -9,7 +9,11 @@ description: >-
   classes it may run between, which is what makes the result a typed model
   graph rather than a bag of triples. `domain`/`range` accept a
   "|"-separated list when a property is legitimately polymorphic, and a class's
-  `parent` declares rdfs:subClassOf.
+  `parent` declares rdfs:subClassOf. A class or property may also list `aliases`
+  (the other names it is known by), and a datatype property may declare `enum`
+  (a closed value set) and `required` (every instance is expected to carry it).
+  `aliases` and `enum` are stated to the model; `required` is only judged on the
+  stored rows, because a model told an attribute is mandatory invents a value.
 config:
   kind: ontology
   base_uri: http://example.org/ontology#
@@ -80,13 +84,18 @@ config:
           [{"quote": "<verbatim source sentence, copied exactly>",
           "chunk_id": "<source chunk id the sentence was taken from>"}]
     # The first field's key set is what the template editor renders, so it lists
-    # every key an entity field may carry (label / parent included) even where
-    # the value is empty. `parent` is rdfs:subClassOf; it names another class.
+    # every key an entity field may carry (label / parent / aliases included) even
+    # where the value is empty. `parent` is rdfs:subClassOf; it names another
+    # class. `aliases` are the other names this class is known by: they reach the
+    # prompt as a hint and are resolved back to `type` on the way in, so a model
+    # that answers "company" for a declared `organization` does not create a
+    # second spelling of the same class.
     fields:
       - type: agent
         label: Agent
         description: Anything that can bear a role — the upper class of person and organization.
         parent: ''
+        aliases: []
         rule: |
           - Declare instances as `person` or `organization`, never as `agent`.
       - type: person
@@ -100,6 +109,7 @@ config:
         label: Organization
         description: A collective body — company, university, government agency, army, sports team, band, NGO.
         parent: agent
+        aliases: [organisation]
         rule: |
           - Use the official name; keep widely used abbreviations only when the source uses them as the name.
           - A government of a country is an organization, not a place.
@@ -172,7 +182,15 @@ config:
           [{"quote": "<verbatim source sentence naming both endpoints>",
           "chunk_id": "<source chunk id the sentence was taken from>"}]
     # The first field's key set drives the template editor, so it lists every
-    # key a property field may carry (`datatype` included) even where empty.
+    # key a property field may carry (`datatype` / `aliases` / `enum` / `required`
+    # included) even where empty.
+    #
+    # `aliases` behave as they do on a class: hinted in the prompt, resolved back
+    # to `type` on the way in. `enum` is a closed value set for a datatype
+    # property — it is stated in the prompt and enforced on the stored value.
+    # `required` is NOT stated in the prompt (a model told an attribute is
+    # mandatory will supply one rather than leave a gap); it is judged on the
+    # stored rows and reported as `missing` on the class's attribute list.
     fields:
       # ---------------- Object properties: individual -> individual ----------------
       - type: born_in
@@ -180,6 +198,9 @@ config:
         domain: person
         range: place
         datatype: ''
+        aliases: []
+        enum: []
+        required: false
         label: born_in
         description: A person was born in a place.
         rule: |

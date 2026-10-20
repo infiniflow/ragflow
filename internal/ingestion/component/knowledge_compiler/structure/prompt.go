@@ -149,15 +149,31 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIn
 		if desc := common.Localize(f["description"], lang); desc != "" {
 			lines = append(lines, "  description: "+desc)
 		}
-		// `kind`, `datatype` and `parent` carry the standard model as structure
-		// rather than prose: `kind` splits an object property (two individuals)
-		// from a datatype property (a literal), `datatype` names the literal's
-		// type, and `parent` is rdfs:subClassOf.
+		// The declared alternatives for this term. They are stated so the model
+		// recognises a document's own wording as this class or property instead
+		// of proposing a new one; the projection maps an alias back to the
+		// declaration, so answering with one costs no accuracy.
+		if aliases := splitValueList(f["aliases"]); len(aliases) > 0 {
+			lines = append(lines, "  aliases: "+strings.Join(aliases, ", "))
+		}
+		// `kind`, `datatype`, `parent`, `aliases` and `enum` carry the standard
+		// model as structure rather than prose: `kind` splits an object property
+		// (two individuals) from a datatype property (a literal), `datatype`
+		// names the literal's type, `parent` is rdfs:subClassOf, `aliases` lists
+		// the other names this term is known by, and `enum` is a closed value set.
+		//
+		// `required` is deliberately NOT rendered. It is an acceptance rule — a
+		// value the document did not state is missing, not owed — and telling the
+		// model an attribute is mandatory is exactly how invented values are
+		// produced. It is checked on the stored rows instead.
 		if k := strings.TrimSpace(firstStringOf(f["kind"])); k != "" {
 			lines = append(lines, "  kind: "+k)
 		}
 		if dt := strings.TrimSpace(firstStringOf(f["datatype"])); dt != "" {
 			lines = append(lines, "  datatype: "+dt)
+		}
+		if enum := splitValueList(f["enum"]); len(enum) > 0 {
+			lines = append(lines, "  enum: "+strings.Join(enum, " | "))
 		}
 		if parent := strings.TrimSpace(firstStringOf(f["parent"])); parent != "" {
 			lines = append(lines, "  parent: "+parent)

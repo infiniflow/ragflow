@@ -173,6 +173,15 @@ var ontologyDatatypeKinds = map[string]bool{
 	"date": true,
 }
 
+const (
+	// maxOntologyEnumValues bounds a declared closed value set. An enum is
+	// rendered into every extraction prompt, so an unbounded one is a prompt-size
+	// bug wearing a declaration's clothes.
+	maxOntologyEnumValues = 64
+	// maxOntologyTermLength bounds one alias or enum value, for the same reason.
+	maxOntologyTermLength = 64
+)
+
 // validateOntologyTemplate checks the cross-references a standard ontology
 // template carries: rdfs:subClassOf (class `parent`), and a property's
 // `domain` / `range` / `datatype`. Every one of them is a reference from one
@@ -196,12 +205,18 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 
 	classes := map[string]bool{}
 	parentOf := map[string][]string{}
+	terms := make([]declaredTerm, 0, 8)
 	for _, f := range fieldsOf("entity") {
 		name := strings.TrimSpace(yamlStr(f["type"]))
 		if name == "" {
 			continue
 		}
 		classes[name] = true
+		terms = append(terms, declaredTerm{
+			kind:    "class",
+			name:    name,
+			aliases: splitTemplateValues(f["aliases"]),
+		})
 		if parents := splitTypeList(yamlStr(f["parent"])); len(parents) > 0 {
 			parentOf[name] = parents
 		}
@@ -247,6 +262,13 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 		domain := strings.TrimSpace(yamlStr(f["domain"]))
 		rangeRaw := strings.TrimSpace(yamlStr(f["range"]))
 		datatype := strings.ToLower(strings.TrimSpace(yamlStr(f["datatype"])))
+		enumValues := splitTemplateValues(f["enum"])
+		required, _ := templateBool(f["required"])
+		terms = append(terms, declaredTerm{
+			kind:    "property",
+			name:    name,
+			aliases: splitTemplateValues(f["aliases"]),
+		})
 
 		if kind == "" {
 			// Infer from the declaration: a range naming a declared class is an
@@ -278,6 +300,17 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 					return fmt.Errorf("property %q declares unknown range class %q", name, r)
 				}
 			}
+			// A closed value set and a mandatory value are both datatype-property
+			// ideas. On an object property they would be silently ignored, which is
+			// worse than refusing them: "required" there could only mean a minimum
+			// cardinality, and that judgment needs a review queue this build does
+			// not have yet.
+			if len(enumValues) > 0 {
+				return fmt.Errorf("object property %q declares an enum, which only applies to datatype properties", name)
+			}
+			if required {
+				return fmt.Errorf("object property %q declares required, which only applies to datatype properties", name)
+			}
 		case "datatype":
 			if len(splitTypeList(domain)) == 0 {
 				return fmt.Errorf("datatype property %q declares no domain", name)
@@ -290,11 +323,120 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 			if datatype != "" && !ontologyDatatypeKinds[datatype] {
 				return fmt.Errorf("property %q declares unsupported datatype %q", name, datatype)
 			}
+			if len(enumValues) > maxOntologyEnumValues {
+				return fmt.Errorf("property %q declares %d enum values, at most %d are allowed", name, len(enumValues), maxOntologyEnumValues)
+			}
+			for _, v := range enumValues {
+				if utf8.RuneCountInString(v) > maxOntologyTermLength {
+					return fmt.Errorf("property %q declares an enum value longer than %d characters", name, maxOntologyTermLength)
+				}
+			}
 		default:
 			return fmt.Errorf("property %q has invalid kind %q (want object or datatype)", name, kind)
 		}
 	}
+	return validateDeclaredAliases(terms)
+}
+
+// declaredTerm is one class or property plus the alternative names it declares.
+// Aliases are resolved back to their term at compile time, so two terms claiming
+// the same string would resolve to whichever the map happened to hold.
+type declaredTerm struct {
+	kind    string
+	name    string
+	aliases []string
+}
+
+// validateDeclaredAliases rejects an alias that collides with another term of the
+// same kind, or with its own name.
+//
+// The collision is not cosmetic: the compiler maps every alias back to its
+// canonical name (ontologyTermIndex), so two claimants would put the same row in
+// different classes depending on map order — a model graph that changes between
+// restarts. A term aliasing itself is refused for the same reason: it reads as a
+// pasted duplicate and its mapping is a no-op.
+//
+// Class and property namespaces are checked separately on purpose. A class and a
+// property sharing a name is a warning-level finding the model graph already
+// reports (class_property_name_collision), not an error, and the two alias maps
+// are separate so the ambiguity cannot leak across kinds.
+func validateDeclaredAliases(terms []declaredTerm) error {
+	for _, kind := range []string{"class", "property"} {
+		owner := map[string]string{}
+		for _, t := range terms {
+			if t.kind == kind {
+				owner[strings.ToLower(t.name)] = t.name
+			}
+		}
+		for _, t := range terms {
+			if t.kind != kind {
+				continue
+			}
+			for _, alias := range t.aliases {
+				if utf8.RuneCountInString(alias) > maxOntologyTermLength {
+					return fmt.Errorf("%s %q declares an alias longer than %d characters", kind, t.name, maxOntologyTermLength)
+				}
+				if strings.EqualFold(alias, t.name) {
+					return fmt.Errorf("%s %q lists itself as an alias", kind, t.name)
+				}
+				if prev, taken := owner[strings.ToLower(alias)]; taken && !strings.EqualFold(prev, t.name) {
+					return fmt.Errorf("%s %q declares alias %q, which already names %s %q", kind, t.name, alias, kind, prev)
+				}
+				owner[strings.ToLower(alias)] = t.name
+			}
+		}
+	}
 	return nil
+}
+
+// splitTemplateValues reads a declared value list from a template field. The
+// editor writes a YAML list, a hand-edited config may carry a "|"-separated
+// string; both mean the same closed set.
+func splitTemplateValues(v interface{}) []string {
+	var raw []string
+	switch x := v.(type) {
+	case string:
+		raw = strings.Split(x, "|")
+	case []string:
+		raw = x
+	case []interface{}:
+		raw = make([]string, 0, len(x))
+		for _, item := range x {
+			raw = append(raw, yamlStr(item))
+		}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+// templateBool reads a declared boolean, tolerating the string form a hand-edited
+// config may carry. reported is false when the field is absent.
+func templateBool(v interface{}) (value, reported bool) {
+	switch x := v.(type) {
+	case nil:
+		return false, false
+	case bool:
+		return x, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "yes", "1":
+			return true, true
+		case "false", "no", "0", "":
+			return false, true
+		}
+	}
+	return false, false
 }
 
 // ValidateTemplatePayload validates a single template payload, mirroring the

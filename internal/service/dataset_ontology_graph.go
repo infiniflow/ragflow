@@ -104,6 +104,15 @@ type OntologyAttribute struct {
 	// so it costs no extra query — and it is information a pure ontology
 	// configuration (OntoBricks' viewer) cannot have.
 	Assertions int `json:"assertions"`
+	// Required mirrors the template's declaration: every instance of this class is
+	// expected to carry the attribute.
+	Required bool `json:"required,omitempty"`
+	// Missing is how many instances of this class do NOT carry the attribute. It
+	// is only populated for a required attribute, because "how many are missing"
+	// has no threshold to compare against otherwise. The fix is never in the
+	// document — it is either a wrong `required` or an extraction gap — so the
+	// number is reported rather than turned into a rejected row.
+	Missing int `json:"missing,omitempty"`
 }
 
 // OntologyInheritanceEdge is rdfs:subClassOf drawn as its own edge type, the way
@@ -224,6 +233,12 @@ type OntologyQuality struct {
 	// Pitfalls mirrors the declaration findings so the reader does not have to
 	// count a list to know whether the template itself is sound.
 	Pitfalls int `json:"pitfalls"`
+	// RequiredValuesMissing sums, over every (class, required attribute) pair, how
+	// many instances lack the declared value. It is the only place an acceptance
+	// rule shows up as a number: the value is never invented to satisfy it, and no
+	// row is rejected because of it — the reader decides whether the declaration
+	// is wrong or the extraction is.
+	RequiredValuesMissing int `json:"required_values_missing"`
 	// DroppedSamples are the first few rejections, so the panel can list them and
 	// point at the property whose declaration wants widening.
 	DroppedSamples []OntologyDroppedRelation `json:"dropped_samples,omitempty"`
@@ -277,6 +292,11 @@ type declaredProperty struct {
 	datatype string
 	domains  []string
 	ranges   []string
+	// required is an acceptance rule: every instance of the domain class is
+	// expected to carry this attribute. It is never rendered into the extraction
+	// prompt — a mandatory attribute is how invented values get produced — so it
+	// is judged on the stored rows instead (see OntologyAttribute.Missing).
+	required bool
 }
 
 // isObject reports whether the property joins two individuals, which is what
@@ -355,6 +375,7 @@ func parseDeclaredOntology(cfg map[string]interface{}) declaredOntology {
 			datatype:    strings.TrimSpace(jsonStringAt(field, "datatype")),
 			domains:     splitTypeList(jsonStringAt(field, "domain")),
 			ranges:      splitTypeList(jsonStringAt(field, "range")),
+			required:    jsonBoolAt(field, "required"),
 		}
 	}
 	return out
@@ -407,7 +428,7 @@ type attributeCounts map[string]map[string]int
 // the declarer: the value is stored on the instance row, so "how many persons
 // have an alias" is the question a node panel asks, even though `agent` declares
 // `alias`.
-func (d declaredOntology) effectiveAttributes(class string, counts attributeCounts) []OntologyAttribute {
+func (d declaredOntology) effectiveAttributes(class string, entities int, counts attributeCounts) []OntologyAttribute {
 	out := make([]OntologyAttribute, 0, 4)
 	seen := map[string]bool{}
 	self := true
@@ -423,13 +444,25 @@ func (d declaredOntology) effectiveAttributes(class string, counts attributeCoun
 				continue
 			}
 			seen[name] = true
+			carried := counts[class][name]
+			missing := 0
+			if prop.required {
+				// Clamped: an instance count and an attribute tally come from the
+				// same scan, but a truncated scan (counts_truncated) or a row
+				// written before the declaration could make the tally larger.
+				if missing = entities - carried; missing < 0 {
+					missing = 0
+				}
+			}
 			out = append(out, OntologyAttribute{
 				Type:          name,
 				Datatype:      prop.datatype,
 				Label:         prop.label,
 				Description:   prop.description,
 				InheritedFrom: inheritedFrom,
-				Assertions:    counts[class][name],
+				Assertions:    carried,
+				Required:      prop.required,
+				Missing:       missing,
 			})
 		}
 		self = false
@@ -1057,6 +1090,9 @@ func buildOntologyQuality(
 		if class.Declared && class.Entities == 0 {
 			quality.ClassesWithoutInstances++
 		}
+		for _, attribute := range class.Attributes {
+			quality.RequiredValuesMissing += attribute.Missing
+		}
 	}
 	return quality
 }
@@ -1219,7 +1255,7 @@ func mergeOntologyClasses(declared declaredOntology, counts map[string]int, attr
 			Label:       class.label,
 			Description: class.description,
 			Parent:      class.parents,
-			Attributes:  declared.effectiveAttributes(name, attrs),
+			Attributes:  declared.effectiveAttributes(name, counts[name], attrs),
 			Entities:    counts[name],
 			Declared:    true,
 		})
@@ -1360,6 +1396,25 @@ func jsonStringAt(container map[string]interface{}, key string) string {
 		return s
 	}
 	return ""
+}
+
+// jsonBoolAt reads a boolean-valued key, tolerating the string form a
+// hand-edited config may carry. Absent reads as false, which is what "not
+// required" means.
+func jsonBoolAt(container map[string]interface{}, key string) bool {
+	if container == nil {
+		return false
+	}
+	switch v := container[key].(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true", "yes", "1":
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Drilling into the graph: a class's instances, a property's assertions ----

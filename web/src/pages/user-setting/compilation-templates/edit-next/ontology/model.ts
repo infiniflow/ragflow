@@ -35,16 +35,29 @@ export const OntologyClassKeys = [
   'label',
   'description',
   'parent',
+  'aliases',
   'rule',
 ] as const;
 
-/** A property field, same idea. */
+/**
+ * A property field, same idea.
+ *
+ * `enum` and `required` are the acceptance half of a declaration: `enum` closes a
+ * datatype property's value set (stated to the model, enforced on the stored
+ * value), `required` says every instance of the domain class should carry the
+ * attribute. `required` is deliberately not stated to the model — a model told an
+ * attribute is mandatory invents a value — so it only shows up as a `missing`
+ * count on the class's attribute list.
+ */
 export const OntologyPropertyKeys = [
   'type',
   'kind',
   'domain',
   'range',
   'datatype',
+  'aliases',
+  'enum',
+  'required',
   'label',
   'description',
   'rule',
@@ -123,6 +136,21 @@ export const canonicalClasses = (fields?: OntologyField[]): OntologyField[] =>
 
 export const canonicalProperties = (fields?: OntologyField[]): OntologyField[] =>
   (fields ?? []).map((field) => canonicalField(field, OntologyPropertyKeys));
+
+/**
+ * valueListText renders a declared list (`aliases`, `enum`) for a text input.
+ *
+ * A template saved by the YAML editor carries an array; the input edits the
+ * "|"-separated form, which the service reads as the same closed set. Rendering
+ * an array with `String()` would join it with commas and turn two aliases into
+ * one string, so the distinction has to be made here.
+ */
+export const valueListText = (value: unknown): string =>
+  Array.isArray(value) ? value.map(String).join(' | ') : String(value ?? '');
+
+/** valueListTruthy reads a declared flag that may arrive as a bool or a string. */
+export const valueListTruthy = (value: unknown): boolean =>
+  value === true || String(value ?? '').trim().toLowerCase() === 'true';
 
 /** Reads the two sections the ontology canvas edits. */
 export const draftFromSections = (
@@ -434,6 +462,23 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
     });
 
     if (kind === OntologyKind.Object) {
+      // A closed value set and a mandatory value are both datatype-property
+      // ideas. The service refuses them on an object property instead of
+      // ignoring them, so mirroring it here catches the mistake before saving.
+      if (splitTypeList(String(field.enum ?? '')).length > 0) {
+        issues.push({
+          code: 'enum_on_object',
+          message: `Object property ${name} declares an enum, which only applies to datatype properties.`,
+          subject: name,
+        });
+      }
+      if (valueListTruthy(field.required)) {
+        issues.push({
+          code: 'required_on_object',
+          message: `Object property ${name} declares required, which only applies to datatype properties.`,
+          subject: name,
+        });
+      }
       if (ranges.length === 0) {
         issues.push({
           code: 'missing_range',

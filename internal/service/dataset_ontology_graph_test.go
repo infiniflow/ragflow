@@ -58,7 +58,7 @@ func TestEffectiveAttributesResolveInheritance(t *testing.T) {
 
 	// person declares birth_date; alias is inherited from agent. The object
 	// property is an edge, so it must not appear here.
-	attrs := declared.effectiveAttributes("person", attributeCounts{"person": {"birth_date": 7, "alias": 3}})
+	attrs := declared.effectiveAttributes("person", 10, attributeCounts{"person": {"birth_date": 7, "alias": 3}})
 	byName := map[string]OntologyAttribute{}
 	for _, a := range attrs {
 		byName[a.Type] = a
@@ -80,9 +80,63 @@ func TestEffectiveAttributesResolveInheritance(t *testing.T) {
 	}
 
 	// agent has no parent, so its own attribute is not marked inherited.
-	agentAttrs := declared.effectiveAttributes("agent", nil)
+	agentAttrs := declared.effectiveAttributes("agent", 0, nil)
 	if len(agentAttrs) != 1 || agentAttrs[0].Type != "alias" || agentAttrs[0].InheritedFrom != "" {
 		t.Fatalf("agent attributes = %+v, want [alias own]", agentAttrs)
+	}
+}
+
+// `required` is an acceptance rule, so it is judged on the stored rows: the graph
+// reports how many instances lack the value. The projection never invents it and
+// never drops the row, because a missing value is a fact about the document or
+// about the extraction — only the reader can tell which.
+func TestEffectiveAttributesReportMissingRequiredValues(t *testing.T) {
+	cfg := ontologyTestConfig(
+		[]map[string]interface{}{
+			{"type": "agent"},
+			{"type": "person", "parent": "agent"},
+		},
+		[]map[string]interface{}{
+			{"type": "alias", "kind": "datatype", "datatype": "list", "domain": "agent", "required": true},
+			{"type": "birth_date", "kind": "datatype", "datatype": "date", "domain": "person"},
+		},
+	)
+	declared := parseDeclaredOntology(cfg)
+
+	attrs := declared.effectiveAttributes("person", 5, attributeCounts{"person": {"alias": 2, "birth_date": 5}})
+	byName := map[string]OntologyAttribute{}
+	for _, a := range attrs {
+		byName[a.Type] = a
+	}
+	if got := byName["alias"]; !got.Required || got.Assertions != 2 || got.Missing != 3 {
+		t.Errorf("alias = %+v, want required with 2 of 5 carried, 3 missing", got)
+	}
+	// An attribute nobody declared required reports no gap, even when it is not
+	// universally filled: without the declaration there is no threshold to judge.
+	if got := byName["birth_date"]; got.Required || got.Missing != 0 {
+		t.Errorf("birth_date = %+v, want not required and no gap", got)
+	}
+
+	// A tally larger than the instance count — a truncated scan, or rows written
+	// before the declaration existed — must not produce a negative gap.
+	if got := declared.effectiveAttributes("agent", 1, attributeCounts{"agent": {"alias": 9}}); got[0].Missing != 0 {
+		t.Errorf("agent alias missing = %d, want 0 (clamped)", got[0].Missing)
+	}
+}
+
+func TestBuildOntologyQualitySumsMissingRequiredValues(t *testing.T) {
+	graph := &OntologyGraph{Classes: []OntologyClassNode{
+		{Type: "person", Declared: true, Entities: 5, Attributes: []OntologyAttribute{
+			{Type: "alias", Required: true, Assertions: 2, Missing: 3},
+		}},
+		{Type: "agent", Declared: true, Entities: 1, Attributes: []OntologyAttribute{
+			{Type: "alias", Required: true, Assertions: 1},
+		}},
+	}}
+
+	quality := buildOntologyQuality(graph, 0, 0, nil, false)
+	if quality.RequiredValuesMissing != 3 {
+		t.Fatalf("required_values_missing = %d, want 3", quality.RequiredValuesMissing)
 	}
 }
 

@@ -37,6 +37,8 @@ import {
   removeProperty,
   renameClass,
   sectionsFromDraft,
+  valueListText,
+  valueListTruthy,
   splitTypeList,
   updateField,
   validateDraft,
@@ -1224,6 +1226,22 @@ export function OntologyCanvasEditor({
                   onChange={(value) => editClass(classIndex, { parent: value })}
                 />
               </label>
+              {/* The other names this class is known by. They reach the prompt as
+                  a hint and are resolved back to `type` on the way in, so a model
+                  answering "company" for a declared `organization` does not create
+                  a second spelling of the same class. */}
+              <label className="flex flex-col gap-1">
+                {t('knowledgeCompilation.fieldAliases', {
+                  defaultValue: 'Aliases (| separated)',
+                })}
+                <Input
+                  value={valueListText(selectedClass.aliases)}
+                  data-testid="ontology-class-aliases"
+                  onChange={(event) =>
+                    editClass(classIndex, { aliases: event.target.value })
+                  }
+                />
+              </label>
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldRule')}
                 <Textarea
@@ -1379,6 +1397,18 @@ export function OntologyCanvasEditor({
                 />
               </label>
               <label className="flex flex-col gap-1">
+                {t('knowledgeCompilation.fieldAliases', {
+                  defaultValue: 'Aliases (| separated)',
+                })}
+                <Input
+                  value={valueListText(selectedProperty.aliases)}
+                  data-testid="ontology-property-aliases"
+                  onChange={(event) =>
+                    editProperty(propertyIndex, { aliases: event.target.value })
+                  }
+                />
+              </label>
+              <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldKind')}
                 <SelectWithSearch
                   value={selectedKind}
@@ -1417,19 +1447,59 @@ export function OntologyCanvasEditor({
                 </label>
               )}
               {selectedKind === OntologyKind.Datatype && (
-                <label className="flex flex-col gap-1">
-                  {t('knowledgeCompilation.fieldDatatype')}
-                  <SelectWithSearch
-                    value={String(selectedProperty.datatype ?? '')}
-                    options={OntologyDatatypeKinds.map((kind) => ({
-                      label: kind,
-                      value: kind,
-                    }))}
-                    onChange={(value) =>
-                      editProperty(propertyIndex, { datatype: value })
-                    }
-                  />
-                </label>
+                <>
+                  <label className="flex flex-col gap-1">
+                    {t('knowledgeCompilation.fieldDatatype')}
+                    <SelectWithSearch
+                      value={String(selectedProperty.datatype ?? '')}
+                      options={OntologyDatatypeKinds.map((kind) => ({
+                        label: kind,
+                        value: kind,
+                      }))}
+                      onChange={(value) =>
+                        editProperty(propertyIndex, { datatype: value })
+                      }
+                    />
+                  </label>
+                  {/* A closed value set: stated to the model so it cannot invent a
+                      category, and enforced on the stored value so a stray one
+                      never reaches a filter. */}
+                  <label className="flex flex-col gap-1">
+                    {t('knowledgeCompilation.fieldEnum', {
+                      defaultValue: 'Allowed values (| separated)',
+                    })}
+                    <Input
+                      value={valueListText(selectedProperty.enum)}
+                      data-testid="ontology-property-enum"
+                      onChange={(event) =>
+                        editProperty(propertyIndex, { enum: event.target.value })
+                      }
+                    />
+                  </label>
+                  {/* Acceptance only: this is never rendered into the prompt,
+                      because a model told an attribute is mandatory supplies one
+                      instead of leaving a gap. It is judged on the stored rows and
+                      reported as `missing` on the class's attribute list. */}
+                  <label className="flex flex-col gap-1">
+                    {t('knowledgeCompilation.fieldRequired', {
+                      defaultValue: 'Required on every instance',
+                    })}
+                    <SelectWithSearch
+                      value={
+                        valueListTruthy(selectedProperty.required)
+                          ? 'true'
+                          : ''
+                      }
+                      options={[
+                        { label: '—', value: '' },
+                        { label: 'true', value: 'true' },
+                      ]}
+                      onChange={(value) =>
+                        editProperty(propertyIndex, { required: value })
+                      }
+                    />
+                  </label>
+                </>
               )}
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.description')}

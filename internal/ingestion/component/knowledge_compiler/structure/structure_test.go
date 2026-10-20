@@ -1126,16 +1126,16 @@ func TestOntologyAttributes(t *testing.T) {
 	cfg := ontologyParserConfig()
 
 	// Flat payload keys, plus the inherited `alias`.
-	flat := ontologyAttributes(map[string]any{
+	flat, rejected := ontologyAttributes(map[string]any{
 		"type": "person", "alias": []any{"Ada Augusta Byron"}, "birth_date": "1815-12-10",
 	}, "person", cfg)
-	if len(flat) != 2 || flat["birth_date"] != "1815-12-10" {
-		t.Fatalf("flat attributes = %v, want alias + birth_date", flat)
+	if rejected != 0 || len(flat) != 2 || flat["birth_date"] != "1815-12-10" {
+		t.Fatalf("flat attributes = %v (rejected %d), want alias + birth_date", flat, rejected)
 	}
 
 	// The nested shape object the entity output_fields ask for. The invented key
 	// must not reach the filterable column.
-	nested := ontologyAttributes(map[string]any{
+	nested, _ := ontologyAttributes(map[string]any{
 		"type":       "person",
 		"attributes": map[string]any{"birth_date": "1815-12-10", "invented": "x"},
 	}, "person", cfg)
@@ -1144,7 +1144,7 @@ func TestOntologyAttributes(t *testing.T) {
 	}
 
 	// Values that carry nothing must not bloat the column.
-	if got := ontologyAttributes(map[string]any{
+	if got, _ := ontologyAttributes(map[string]any{
 		"type": "person", "birth_date": "   ", "alias": []any{},
 	}, "person", cfg); got != nil {
 		t.Fatalf("empty attribute values must yield no attr, got %v", got)
@@ -1152,8 +1152,185 @@ func TestOntologyAttributes(t *testing.T) {
 
 	// A template declaring no datatype properties yields nothing, so every
 	// non-ontology template is unaffected.
-	if got := ontologyAttributes(map[string]any{"type": "letter", "x": "y"}, "letter", graphParserConfig()); got != nil {
+	if got, _ := ontologyAttributes(map[string]any{"type": "letter", "x": "y"}, "letter", graphParserConfig()); got != nil {
 		t.Fatalf("plain graph template must yield no attr, got %v", got)
+	}
+}
+
+// A declared datatype is a promise about the stored value, and `attr` is the only
+// place a value is ever range-filtered: an integer kept as "328" and a date kept
+// as "3 May 1937" answer zero rows forever. Every value is therefore coerced, and
+// a value that fits nothing is counted instead of stored.
+func TestOntologyAttributesNormalizeDatatypes(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{
+			"fields": []any{map[string]any{"type": "work", "description": "a work"}},
+		},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "published_date", "kind": "datatype", "domain": "work", "datatype": "date"},
+			map[string]any{"type": "pages", "kind": "datatype", "domain": "work", "datatype": "int"},
+			map[string]any{"type": "genre", "kind": "datatype", "domain": "work", "datatype": "list",
+				"enum": []any{"novel", "poem"}},
+			map[string]any{"type": "is_open", "kind": "datatype", "domain": "work", "datatype": "bool"},
+			map[string]any{"type": "note", "kind": "datatype", "domain": "work"},
+		}},
+	}
+
+	got, rejected := ontologyAttributes(map[string]any{
+		"type":           "work",
+		"published_date": "3 May 1937",
+		"pages":          "328",
+		"genre":          []any{"novel", "treatise"},
+		"is_open":        "true",
+		"note":           " kept verbatim ",
+	}, "work", cfg)
+	if rejected != 0 {
+		t.Fatalf("rejected = %d, want 0 (attrs %v)", rejected, got)
+	}
+	if got["published_date"] != "1937-05-03" {
+		t.Errorf("published_date = %v, want 1937-05-03", got["published_date"])
+	}
+	if got["pages"] != int64(328) {
+		t.Errorf("pages = %v, want int64(328)", got["pages"])
+	}
+	// The value set keeps what it recognises and drops the rest, so a stray
+	// category never reaches a filter.
+	if genres, ok := got["genre"].([]string); !ok || len(genres) != 1 || genres[0] != "novel" {
+		t.Errorf("genre = %v, want [novel]", got["genre"])
+	}
+	if got["is_open"] != true {
+		t.Errorf("is_open = %v, want true", got["is_open"])
+	}
+	// No declared datatype means no coercion: the template never said what the
+	// value is, so trimming is the only safe change.
+	if got["note"] != "kept verbatim" {
+		t.Errorf("note = %v, want trimmed string", got["note"])
+	}
+
+	// A value that fits no declared type is dropped and counted, not stored as if
+	// it were valid.
+	bad, rejected := ontologyAttributes(map[string]any{
+		"type": "work", "published_date": "sometime in spring", "pages": "many",
+	}, "work", cfg)
+	if rejected != 2 || len(bad) != 0 {
+		t.Fatalf("bad values = %v (rejected %d), want nothing kept and 2 counted", bad, rejected)
+	}
+}
+
+// The projection stamps a row with the canonical class, so a model that answers
+// with a declared alias does not create a second spelling of the same class.
+// An undeclared name keeps its own spelling, because drift must stay visible.
+func TestOntologyTermIndexResolvesDeclaredAliases(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "organization", "aliases": []any{"company", "firm"}},
+			map[string]any{"type": "person"},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "born_in", "kind": "object", "domain": "person", "range": "organization",
+				"aliases": []any{"place_of_birth"}},
+			map[string]any{"type": "works_for", "kind": "object", "domain": "person", "range": "organization"},
+		}},
+	}
+	classes, props := ontologyTermIndex(cfg)
+
+	if got := resolveDeclaredType(classes, "Company"); got != "organization" {
+		t.Errorf("class alias Company = %q, want organization", got)
+	}
+	if got := resolveDeclaredType(classes, "PERSON"); got != "person" {
+		t.Errorf("declared name must resolve case-insensitively, got %q", got)
+	}
+	if got := resolveDeclaredType(classes, "startup"); got != "startup" {
+		t.Errorf("undeclared class = %q, want it kept as observed", got)
+	}
+	if got := resolveDeclaredType(props, "place_of_birth"); got != "born_in" {
+		t.Errorf("property alias = %q, want born_in", got)
+	}
+	if got := resolveDeclaredType(props, "works_for"); got != "works_for" {
+		t.Errorf("declared property = %q, want works_for", got)
+	}
+	if got := resolveDeclaredType(props, "invented"); got != "invented" {
+		t.Errorf("undeclared property = %q, want it kept as observed", got)
+	}
+}
+
+// The projection — not just the prompt — honours a declared alias, so choosing the
+// alternative name does not create a second spelling of the same class. That
+// matters downstream: `entity_type` is what the model graph counts, what
+// type-scoped retrieval filters on, and what the quality ledger would otherwise
+// report as vocabulary drift.
+func TestBuildRowsResolvesDeclaredAliases(t *testing.T) {
+	cfg := ontologyParserConfig()
+	cfg["entity"].(map[string]any)["fields"].([]any)[1].(map[string]any)["aliases"] =
+		[]any{"human", "individual"}
+	cfg["relation"].(map[string]any)["fields"].([]any)[0].(map[string]any)["aliases"] =
+		[]any{"place_of_birth"}
+
+	rows, err := buildRows(context.Background(), common.Deps{Embed: hashEmbedder{dim: 4}}, CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: cfg,
+	},
+		[]map[string]any{{"type": "Human", "name": "Ada"}},
+		[]map[string]any{{"type": "place_of_birth", "source": "Ada", "target": "London"}},
+		[]string{"c1"},
+	)
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want entity + relation", len(rows))
+	}
+	for _, row := range rows {
+		switch kind, _ := row.Meta["kind"].(string); kind {
+		case "entity":
+			if got := row.Meta["entity_type"]; got != "person" {
+				t.Errorf("entity_type = %v, want the declared class person", got)
+			}
+		case "relation":
+			if got := row.Meta["relation_type"]; got != "born_in" {
+				t.Errorf("relation_type = %v, want the declared property born_in", got)
+			}
+		}
+	}
+}
+
+// A declared alias and a closed value set are generative facts: they stop the
+// model proposing a second name for a class it already has, and stop it inventing
+// a category. `required` is an acceptance rule and must not be stated, because a
+// model told an attribute is mandatory will supply one rather than leave a gap.
+func TestOntologyPromptStatesAliasesAndEnumsButNotRequired(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "organization", "description": "an organisation",
+				"aliases": []any{"company", "firm"}},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "works_for", "kind": "object", "domain": "organization",
+				"range": "organization", "aliases": []any{"employed_by"}},
+			map[string]any{"type": "genre", "kind": "datatype", "domain": "organization",
+				"datatype": "string", "enum": []any{"novel", "poem"}, "required": true},
+		}},
+	}
+
+	node, edge := HypergraphPrompts(cfg, "en")
+
+	if !strings.Contains(node, "  aliases: company, firm") {
+		t.Errorf("entity prompt must state class aliases\n---\n%s", node)
+	}
+	for _, want := range []string{"  aliases: employed_by", "  enum: novel | poem"} {
+		if !strings.Contains(edge, want) {
+			t.Errorf("relation prompt missing %q\n---\n%s", want, edge)
+		}
+	}
+	for _, prompt := range []string{node, edge} {
+		if strings.Contains(prompt, "  required:") {
+			t.Errorf("required must never reach the extraction prompt\n---\n%s", prompt)
+		}
 	}
 }
 
