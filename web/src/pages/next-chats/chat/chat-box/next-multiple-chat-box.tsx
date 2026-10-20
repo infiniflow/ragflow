@@ -113,12 +113,12 @@ const ChatCard = forwardRef(function ChatCard(
     scrollToBottom,
     isAtBottom,
   } = useSendSingleMessage({
-      controller,
-      value,
-      setValue,
-      files,
-      clearFiles,
-    });
+    controller,
+    value,
+    setValue,
+    files,
+    clearFiles,
+  });
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -265,7 +265,10 @@ const ChatCard = forwardRef(function ChatCard(
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 min-h-0">
-        <div ref={messageContainerRef} className="relative h-full overflow-auto">
+        <div
+          ref={messageContainerRef}
+          className="relative h-full overflow-auto"
+        >
           <div className="w-full">
             {derivedMessages?.map((message, i) => {
               return (
