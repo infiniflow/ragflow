@@ -131,8 +131,9 @@ func TestRC2DataMigration_RollbackOnFailure(t *testing.T) {
 		t.Fatalf("failed to set rc1 migration version: %v", err)
 	}
 
-	// Insert knowledgebase with invalid parser config that will fail json unmarshal
-	insertIngestionConfig(t, db, "knowledgebase", "kb-invalid", "general", `not-valid-json`)
+	// Convert a knowledgebase row before the invalid document row fails migration.
+	insertIngestionConfig(t, db, "knowledgebase", "kb-0", "general", `{"chunk_token_num":128}`)
+	insertIngestionConfig(t, db, "document", "doc-invalid", "general", `not-valid-json`)
 
 	// Seed tenant model that should NOT be modified due to rollback
 	seedLegacyTenantModelMaxTokens(t, db, 65536)
@@ -151,7 +152,17 @@ func TestRC2DataMigration_RollbackOnFailure(t *testing.T) {
 	// Run rc2 migration which should fail
 	err := migrateRC2Data(ctx, db)
 	if err == nil {
-		t.Fatal("expected migrateRC2Data to fail on invalid parser_config JSON")
+		t.Fatal("expected migrateRC2Data to fail on invalid document parser_config JSON")
+	}
+
+	// The knowledgebase conversion ran before the document failed, so rollback must
+	// restore the original flat configuration rather than partially upgrading it.
+	var checkKB entity.Knowledgebase
+	if err := db.Where("id = ?", "kb-0").Take(&checkKB).Error; err != nil {
+		t.Fatalf("failed to read checkKB: %v", err)
+	}
+	if _, remains := checkKB.ParserConfig["chunk_token_num"]; !remains {
+		t.Fatal("expected kb-0 parser_config to remain in its original flat form")
 	}
 
 	// Verify tenant model extra was NOT modified
