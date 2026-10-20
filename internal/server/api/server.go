@@ -125,7 +125,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
-	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()))
+	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()

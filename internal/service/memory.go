@@ -289,6 +289,7 @@ type MemoryService struct {
 	db            *gorm.DB
 	docEngine     engine.DocEngine
 	kvrocksClient *kvrocks.Client
+	mqEngine      engine.MessageQueue
 }
 
 // MemoryServiceOption configures a MemoryService at construction time.
@@ -299,6 +300,14 @@ type MemoryServiceOption func(*MemoryService)
 // kvrocks dependency explicit rather than read from a package global.
 func WithMemoryKvrocks(kv *kvrocks.Client) MemoryServiceOption {
 	return func(s *MemoryService) { s.kvrocksClient = kv }
+}
+
+// WithMemoryMQEngine binds the MQ engine used by the memory module's publish
+// path (MemoryMessageService -> MessageQueueTaskPublisher). It keeps the
+// dependency explicit rather than read from the process-wide
+// engine.GetMessageQueueEngine() global.
+func WithMemoryMQEngine(mq engine.MessageQueue) MemoryServiceOption {
+	return func(s *MemoryService) { s.mqEngine = mq }
 }
 
 // NewMemoryService creates a new MemoryService instance. db and eng are the
