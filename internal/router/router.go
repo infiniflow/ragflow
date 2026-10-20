@@ -687,6 +687,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				system.PUT("/memory", r.systemHandler.SetMemory)
 				system.GET("/concurrency", r.systemHandler.GetConcurrency)
 				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
+				system.GET("/quota", r.systemHandler.GetQuota)
 			}
 
 			// Chat Channel
