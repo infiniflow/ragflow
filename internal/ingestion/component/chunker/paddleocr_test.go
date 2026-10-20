@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
@@ -148,4 +149,33 @@ func TestPaddleOCRChunkersPreserveColumnReadingOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPDFSortingPreservesMarkedBarriersWithinMixedInput(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "late before", PDFPositions: mustPosJSON(t, 1, 0, 10, 30, 35)},
+		{Text: "early before", PDFPositions: mustPosJSON(t, 1, 0, 10, 10, 15)},
+		{Text: "first marked", PreserveOrder: true, PDFPositions: mustPosJSON(t, 1, 0, 10, 90, 95)},
+		{Text: "second marked", PreserveOrder: true, PDFPositions: mustPosJSON(t, 1, 0, 10, 5, 10)},
+		{Text: "late after", PDFPositions: mustPosJSON(t, 1, 0, 10, 40, 45)},
+		{Text: "early after", PDFPositions: mustPosJSON(t, 1, 0, 10, 20, 25)},
+	}
+	want := []string{"early before", "late before", "first marked", "second marked", "early after", "late after"}
+	t.Run("general", func(t *testing.T) {
+		got := generalChunkTexts(sortPDFUnits(units))
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("mixed reading order=%v; want %v", got, want)
+		}
+	})
+	t.Run("manual", func(t *testing.T) {
+		records := recordsFromStructured(units)
+		sortRecordsByPosition(records)
+		var got []string
+		for _, record := range records {
+			got = append(got, record.text)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("mixed reading order=%v; want %v", got, want)
+		}
+	})
 }

@@ -54,24 +54,25 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
 			position := paddleOCRBlockPosition(page, block.BBox, sizes[page.Index])
+			label := strings.ToLower(strings.TrimSpace(block.Label))
+			isTitle := label == "doc_title" || label == "paragraph_title"
 			for _, item := range parsed.JSON {
+				if text, ok := item.(TextItem); ok && isTitle && text.CKType == "text" {
+					prefix := "## "
+					if label == "doc_title" {
+						prefix = "# "
+					}
+					text.Text = prefix + text.Text
+					text.CKType = "heading"
+					item = text
+				}
 				fields := item.ToMap()
 				fields["page_number"] = page.Index + 1
 				fields["_preserve_order"] = true
-				label := strings.ToLower(strings.TrimSpace(block.Label))
-				if label != "" {
-					fields["layout"] = label
-				}
-				if label == "doc_title" || label == "paragraph_title" {
+				if isTitle {
 					fields["layout"] = "title"
-					if fields["ck_type"] == "text" {
-						prefix := "## "
-						if label == "doc_title" {
-							prefix = "# "
-						}
-						fields["text"] = prefix + fields["text"].(string)
-						fields["ck_type"] = "heading"
-					}
+				} else if label != "" {
+					fields["layout"] = label
 				}
 				if len(position) > 0 {
 					matrix := [][]any{position}
