@@ -20,6 +20,10 @@ export function useValues(node?: RAGFlowNodeType) {
       ...initialScoredSwitchValues,
       ...formData,
       items,
+      field_mode: formData.field_mode === true,
+      reference_date: formData.reference_date ?? '',
+      include_quantiles: formData.include_quantiles === true,
+      return_state_text: formData.return_state_text === true,
       escalate_enabled: formData.escalate_enabled !== false,
     };
   }, [node]);

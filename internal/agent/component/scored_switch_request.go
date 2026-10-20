@@ -47,15 +47,18 @@ type scoringCall struct {
 }
 
 type scoringCallInput struct {
-	Model        string
-	BaseURL      string
-	APIKey       string
-	Format       string
-	Instructions string
-	Query        string
-	Options      []scoredOption
-	Images       []scoringImage
-	Tasks        []scoringTask
+	Model            string
+	BaseURL          string
+	APIKey           string
+	Format           string
+	Instructions     string
+	Query            string
+	Options          []scoredOption
+	Images           []scoringImage
+	Tasks            []scoringTask
+	ReferenceDate    string
+	IncludeQuantiles bool
+	ReturnStateText  bool
 }
 
 func normalizeRequestFormat(raw string) (string, error) {

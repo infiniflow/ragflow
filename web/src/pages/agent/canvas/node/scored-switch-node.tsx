@@ -45,11 +45,15 @@ function InnerScoredSwitchNode({
     () => (get(data, 'form.items', []) ?? []) as OptionItem[],
     [data],
   );
-  const showEscalate = showsScoredSwitchEscalateHandle(
-    get(data, 'form.escalate_enabled'),
-  );
+  const fieldMode = get(data, 'form.field_mode') === true;
+  const showEscalate =
+    !fieldMode &&
+    showsScoredSwitchEscalateHandle(get(data, 'form.escalate_enabled'));
   const positions = useMemo(() => {
     const list: Array<{ top: number; name: string; uuid: string }> = [];
+    if (fieldMode) {
+      return list;
+    }
     items.forEach((item, index) => {
       const previous = list[index - 1]?.top ?? 0;
       list.push({
@@ -59,16 +63,23 @@ function InnerScoredSwitchNode({
       });
     });
     return list;
-  }, [items]);
+  }, [fieldMode, items]);
   const escalateTop =
     positions.length === 0 ? 86 : positions[positions.length - 1].top + 32;
 
   useEffect(() => {
-    if (!showEscalate) {
+    if (fieldMode) {
+      items.forEach((item) => {
+        if (item?.uuid) {
+          deleteEdges(id, item.uuid);
+        }
+      });
+      deleteEdges(id, ScoredSwitchEscalateHandleId);
+    } else if (!showEscalate) {
       deleteEdges(id, ScoredSwitchEscalateHandleId);
     }
     updateNodeInternals(id);
-  }, [deleteEdges, id, items, showEscalate, updateNodeInternals]);
+  }, [deleteEdges, fieldMode, id, items, showEscalate, updateNodeInternals]);
 
   return (
     <ToolBar selected={selected} id={id} label={data.label}>

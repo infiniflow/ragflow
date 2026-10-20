@@ -2032,6 +2032,12 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       categorizeDescription: `Un componente che usa il LLM per classificare gli input utente in categorie predefinite. Assicurati di specificare il nome, la descrizione e gli esempi per ogni categoria, insieme al componente successivo corrispondente.`,
       scoredSwitchQuestionRequired: 'Ogni domanda aggiuntiva richiede istruzioni',
       scoredSwitchLevelMinimum: 'Aggiungi almeno due livelli',
+      scoredSwitchFieldMinimum: 'Aggiungi almeno un campo',
+      scoredSwitchFieldNameInvalid: 'Il nome del campo deve iniziare con una lettera o un trattino basso',
+      scoredSwitchListItemsRequired: 'Un elenco richiede un tipo di elemento',
+      scoredSwitchEstimateBoundsRequired: 'Una stima richiede un minimo e un massimo',
+      scoredSwitchForecastRequired: 'Una previsione richiede un orizzonte e un intervallo',
+      scoredSwitchDecimalsRange: 'I decimali devono essere compresi tra 0 e 6',
       relevantDescription: `Un componente che usa il LLM per valutare se l'output a monte è rilevante per l'ultima query dell'utente. Assicurati di specificare il componente successivo per ogni risultato di giudizio.`,
       rewriteQuestionDescription: `Un componente che riscrive una query utente dal componente Interact, basandosi sul contesto dei dialoghi precedenti.`,
       messageDescription:

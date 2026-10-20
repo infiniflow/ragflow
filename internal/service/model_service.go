@@ -2261,7 +2261,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		if v, ok := modelExtra["thinking"]; ok && isTruthy(v) {
 			features = append(features, "thinking")
 		}
-		for _, key := range []string{"supports_image", "supports_box", "supports_noul", "supports_score"} {
+		for _, key := range scoringFeatureKeys {
 			if v, ok := modelExtra[key]; ok && isTruthy(v) {
 				features = append(features, key)
 			}
@@ -2286,13 +2286,30 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	return modelList, nil
 }
 
+var scoringFeatureKeys = []string{
+	"supports_image",
+	"supports_box",
+	"supports_noul",
+	"supports_score",
+	"supports_fields",
+	"supports_field_text",
+	"supports_field_number",
+	"supports_field_date",
+	"supports_field_time",
+	"supports_field_datetime",
+	"supports_field_duration",
+	"supports_field_list",
+	"supports_field_estimate",
+	"supports_field_forecast",
+}
+
 func featuresFromModelExtra(raw string) []string {
 	extra := map[string]interface{}{}
 	if raw != "" {
 		_ = json.Unmarshal([]byte(raw), &extra)
 	}
 	features := make([]string, 0)
-	for _, key := range []string{"supports_image", "supports_box", "supports_noul", "supports_score"} {
+	for _, key := range scoringFeatureKeys {
 		if v, ok := extra[key]; ok && isTruthy(v) {
 			features = append(features, key)
 		}

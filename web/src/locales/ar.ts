@@ -1493,6 +1493,12 @@ export default {
         'مكون يستخدم LLM لتصنيف مدخلات المستخدم إلى فئات محددة مسبقًا. تأكد من تحديد الاسم والوصف والأمثلة لكل فئة، بالإضافة إلى المكون التالي المقابل.',
       scoredSwitchQuestionRequired: 'يحتاج كل سؤال إضافي إلى تعليمات',
       scoredSwitchLevelMinimum: 'أضف مستويين على الأقل',
+      scoredSwitchFieldMinimum: 'أضف حقلاً واحداً على الأقل',
+      scoredSwitchFieldNameInvalid: 'يجب أن يبدأ اسم الحقل بحرف أو شرطة سفلية',
+      scoredSwitchListItemsRequired: 'تحتاج القائمة إلى نوع عنصر',
+      scoredSwitchEstimateBoundsRequired: 'يحتاج التقدير إلى حد أدنى وحد أقصى',
+      scoredSwitchForecastRequired: 'تحتاج التوقعات إلى أفق وفاصل',
+      scoredSwitchDecimalsRange: 'يجب أن تكون المنازل العشرية من 0 إلى 6',
       relevantDescription:
         'مكون يستخدم LLM لتقييم ما إذا كانت المخرجات الأولية ذات صلة بأحدث استعلام للمستخدم. تأكد من تحديد المكون التالي لكل نتيجة للحكم.',
       rewriteQuestionDescription:

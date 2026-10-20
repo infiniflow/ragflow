@@ -180,6 +180,7 @@ function buildScoredSwitch(edges: Edge[], nodes: Node[], nodeId: string) {
     }>;
     const escalateEnabled = showsScoredSwitchEscalateHandle(
       params.escalate_enabled,
+      params.field_mode,
     );
     params.escalate_enabled = escalateEnabled;
     params.options = items.map((item) => ({

@@ -11,4 +11,8 @@ describe('showsScoredSwitchEscalateHandle', () => {
   it('hides the escalate handle when escalation is off', () => {
     expect(showsScoredSwitchEscalateHandle(false)).toBe(false);
   });
+
+  it('hides choice escalation when the model extracts fields', () => {
+    expect(showsScoredSwitchEscalateHandle(true, true)).toBe(false);
+  });
 });

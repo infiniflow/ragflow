@@ -1908,6 +1908,12 @@ export default {
       categorizeDescription: `LLMを使用してユーザーの入力を事前定義されたカテゴリに分類するコンポーネント。各カテゴリの名前、説明、例、および対応する次のコンポーネントを指定してください。`,
       scoredSwitchQuestionRequired: '追加の質問には説明が必要です',
       scoredSwitchLevelMinimum: '少なくとも2つのレベルを追加してください',
+      scoredSwitchFieldMinimum: 'フィールドを1つ以上追加してください',
+      scoredSwitchFieldNameInvalid: 'フィールド名は文字またはアンダースコアで始める必要があります',
+      scoredSwitchListItemsRequired: 'リストには項目の種類が必要です',
+      scoredSwitchEstimateBoundsRequired: '推定には最小値と最大値が必要です',
+      scoredSwitchForecastRequired: '予測には期間と間隔が必要です',
+      scoredSwitchDecimalsRange: '小数点以下の桁数は0から6です',
       relevantDescription: `LLMを使用して、上流の出力がユーザーの最新のクエリに関連しているかどうかを評価するコンポーネント。各判定結果に対して次のコンポーネントを指定してください。`,
       rewriteQuestionDescription: `ナレッジベースから関連情報を取得できなかった場合にユーザーのクエリを修正するコンポーネント。定義されたループの上限に達するまでこのプロセスを繰り返します。上流が「Relevant」、下流が「Retrieval」であることを確認してください。`,
 

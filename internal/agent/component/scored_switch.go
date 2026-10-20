@@ -1,10 +1,13 @@
 // Package component — ScoredSwitch.
 //
-// One scoring-model call ranks every configured option. The request is the
-// public choice contract (state, one choice question, a probability per
-// option). Image bytes travel as content parts, or as asset references when
-// the endpoint requires that shape. JEV 1.4 is the specimen that contract
-// was checked against; the component itself is not vendor-specific.
+// One scoring-model call either ranks every configured option or extracts
+// typed fields. Choice requests use the public questions contract (state,
+// one choice question, a probability per option). Image bytes travel as
+// content parts, or as asset references when the endpoint requires that
+// shape. JEV 1.4 is the specimen that contract was checked against.
+// Field requests use a separate body: state, a map of typed fields, and
+// an optional images array. The fields specimen is the public Clairic
+// input schema. The component itself is not vendor-specific.
 //
 // Escalation is a single extra output. It fires when the top two scores
 // are tied, the margin is below the node threshold, or the top score is
@@ -34,20 +37,23 @@ type ScoredSwitchComponent struct {
 }
 
 type scoredSwitchParam struct {
-	ModelID         string
-	Driver          string
-	APIKey          string
-	BaseURL         string
-	Query           string
-	Image           string
-	Instructions    string
-	RequestFormat   string
-	MarginThreshold *float64
-	MinTopScore     *float64
-	EscalateEnabled *bool
-	Options         []scoredOption
-	EscalateTo      []string
-	Tasks           []scoringTask
+	ModelID          string
+	Driver           string
+	APIKey           string
+	BaseURL          string
+	Query            string
+	Image            string
+	Instructions     string
+	RequestFormat    string
+	MarginThreshold  *float64
+	MinTopScore      *float64
+	EscalateEnabled  *bool
+	Options          []scoredOption
+	EscalateTo       []string
+	Tasks            []scoringTask
+	ReferenceDate    string
+	IncludeQuantiles *bool
+	ReturnStateText  *bool
 }
 
 // NewScoredSwitchComponent builds a component from resolved parameters.
@@ -74,6 +80,13 @@ func (c *ScoredSwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	if strings.TrimSpace(p.ModelID) == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
+	}
+	caps := loadScoringCapabilities(ctx, db, originalModelID)
+	if c.caps != nil {
+		caps = *c.caps
+	}
+	if caps.Fields {
+		return c.invokeFields(ctx, p, caps, inputs)
 	}
 	format, err := normalizeRequestFormat(p.RequestFormat)
 	if err != nil {
@@ -102,10 +115,6 @@ func (c *ScoredSwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	_, wire, err := scoringEndpoint(p.BaseURL, format)
 	if err != nil {
 		return nil, err
-	}
-	caps := loadScoringCapabilities(ctx, db, originalModelID)
-	if c.caps != nil {
-		caps = *c.caps
 	}
 	allowImages := !caps.Known || caps.Image
 	if !allowImages {
@@ -163,6 +172,9 @@ func (c *ScoredSwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 		"answers":         parseTypedAnswers(body),
 		"_next":           stringListToAny(decision.Next),
 	}
+	if usage := parseScoringUsage(body); usage != nil {
+		out["usage"] = usage
+	}
 	if parsed.HasConfidence {
 		out["confidence"] = parsed.Confidence
 	}
@@ -211,15 +223,18 @@ func (c *ScoredSwitchComponent) Outputs() map[string]string {
 		"selected_handle": "Option id or escalate.",
 		"confidence":      "Model confidence when the payload includes it. Not used for routing.",
 		"raw":             "Truncated model payload for debugging.",
-		"_next":           "Downstream component id for the single chosen branch.",
+		"usage":           "Token and pass counts when the payload includes them.",
+		"state_text":      "Text the spans index into, when the model returns it.",
+		"_next":           "Downstream component id for the single chosen branch. Empty when the model extracts fields and does not choose a branch.",
 	}
 }
 
 // GetInputForm exposes the case text and optional image to the run form.
 func (c *ScoredSwitchComponent) GetInputForm() map[string]any {
 	return map[string]any{
-		"query": map[string]any{"type": "line", "name": "Query"},
-		"image": map[string]any{"type": "line", "name": "Image"},
+		"query":          map[string]any{"type": "line", "name": "Query"},
+		"image":          map[string]any{"type": "line", "name": "Image"},
+		"reference_date": map[string]any{"type": "line", "name": "Reference date"},
 	}
 }
 
@@ -315,6 +330,23 @@ func mergeScoredSwitchParam(base scoredSwitchParam, inputs map[string]any) (scor
 	}
 	if v, ok := stringFrom(inputs, "request_format"); ok {
 		p.RequestFormat = v
+	}
+	if v, ok := stringFrom(inputs, "reference_date"); ok {
+		p.ReferenceDate = v
+	}
+	if _, ok := inputs["include_quantiles"]; ok {
+		v, ok := boolPtrFrom(inputs, "include_quantiles")
+		if !ok {
+			return p, &ParamError{Field: "include_quantiles", Reason: "must be a boolean"}
+		}
+		p.IncludeQuantiles = v
+	}
+	if _, ok := inputs["return_state_text"]; ok {
+		v, ok := boolPtrFrom(inputs, "return_state_text")
+		if !ok {
+			return p, &ParamError{Field: "return_state_text", Reason: "must be a boolean"}
+		}
+		p.ReturnStateText = v
 	}
 	if _, ok := inputs["margin_threshold"]; ok {
 		v, ok := floatFrom(inputs, "margin_threshold")
@@ -486,6 +518,23 @@ func init() {
 		}
 		if v, ok := stringFrom(params, "request_format"); ok {
 			p.RequestFormat = v
+		}
+		if v, ok := stringFrom(params, "reference_date"); ok {
+			p.ReferenceDate = v
+		}
+		if _, ok := params["include_quantiles"]; ok {
+			v, ok := boolPtrFrom(params, "include_quantiles")
+			if !ok {
+				return nil, &ParamError{Field: "include_quantiles", Reason: "must be a boolean"}
+			}
+			p.IncludeQuantiles = v
+		}
+		if _, ok := params["return_state_text"]; ok {
+			v, ok := boolPtrFrom(params, "return_state_text")
+			if !ok {
+				return nil, &ParamError{Field: "return_state_text", Reason: "must be a boolean"}
+			}
+			p.ReturnStateText = v
 		}
 		if v, ok := stringFrom(params, "driver"); ok {
 			p.Driver = v

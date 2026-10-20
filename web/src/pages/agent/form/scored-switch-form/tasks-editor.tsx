@@ -6,13 +6,37 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { v4 as uuid } from 'uuid';
 
+export type ScoredSwitchTaskType =
+  | 'noul'
+  | 'score'
+  | 'box'
+  | 'text'
+  | 'number'
+  | 'date'
+  | 'time'
+  | 'datetime'
+  | 'duration'
+  | 'list'
+  | 'estimate'
+  | 'forecast';
+
 export type ScoredSwitchTask = {
   id: string;
-  type: 'noul' | 'score' | 'box';
+  type: ScoredSwitchTaskType;
   instructions: string;
   true_text?: string;
   false_text?: string;
   levels?: string[];
+  unit?: string;
+  items?: string;
+  integer?: boolean;
+  decimals?: number | '';
+  min?: string;
+  max?: string;
+  step?: string;
+  scale?: string;
+  horizon?: number | '';
+  interval?: string;
 };
 
 export function ScoredSwitchTasks({

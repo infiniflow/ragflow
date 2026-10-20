@@ -11,20 +11,41 @@ import (
 )
 
 type scoringTask struct {
-	ID           string
-	Type         string
-	Instructions string
-	TrueText     string
-	FalseText    string
-	Levels       []string
+	ID            string
+	Type          string
+	Instructions  string
+	TrueText      string
+	FalseText     string
+	Levels        []string
+	Unit          string
+	Items         string
+	Scale         string
+	Interval      string
+	Integer       *bool
+	Decimals      *int
+	Horizon       *int
+	Min           any
+	Max           any
+	Step          any
+	NullThreshold *float64
 }
 
 type scoringCapabilities struct {
-	Known bool
-	Image bool
-	Box   bool
-	Noul  bool
-	Score bool
+	Known         bool
+	Image         bool
+	Box           bool
+	Noul          bool
+	Score         bool
+	Fields        bool
+	FieldText     bool
+	FieldNumber   bool
+	FieldDate     bool
+	FieldTime     bool
+	FieldDateTime bool
+	FieldDuration bool
+	FieldList     bool
+	FieldEstimate bool
+	FieldForecast bool
 }
 
 func taskQuestion(task scoringTask) (map[string]any, error) {
@@ -81,11 +102,23 @@ func tasksNeedImageHeader(tasks []scoringTask) bool {
 }
 
 func filterTasks(tasks []scoringTask, caps scoringCapabilities) []scoringTask {
-	if !caps.Known {
-		return tasks
-	}
 	out := make([]scoringTask, 0, len(tasks))
+	if caps.Fields {
+		for _, task := range tasks {
+			if fieldTypeEnabled(task.Type, caps) {
+				out = append(out, task)
+			}
+		}
+		return out
+	}
 	for _, task := range tasks {
+		if !isQuestionTask(task.Type) {
+			continue
+		}
+		if !caps.Known {
+			out = append(out, task)
+			continue
+		}
 		switch task.Type {
 		case "box":
 			if caps.Box {
@@ -104,6 +137,49 @@ func filterTasks(tasks []scoringTask, caps scoringCapabilities) []scoringTask {
 	return out
 }
 
+func isQuestionTask(kind string) bool {
+	switch kind {
+	case "noul", "score", "box":
+		return true
+	default:
+		return false
+	}
+}
+
+func isFieldTask(kind string) bool {
+	switch kind {
+	case "text", "number", "date", "time", "datetime", "duration", "list", "estimate", "forecast":
+		return true
+	default:
+		return false
+	}
+}
+
+func fieldTypeEnabled(kind string, caps scoringCapabilities) bool {
+	switch kind {
+	case "text":
+		return caps.FieldText
+	case "number":
+		return caps.FieldNumber
+	case "date":
+		return caps.FieldDate
+	case "time":
+		return caps.FieldTime
+	case "datetime":
+		return caps.FieldDateTime
+	case "duration":
+		return caps.FieldDuration
+	case "list":
+		return caps.FieldList
+	case "estimate":
+		return caps.FieldEstimate
+	case "forecast":
+		return caps.FieldForecast
+	default:
+		return false
+	}
+}
+
 func loadScoringCapabilities(ctx context.Context, db *gorm.DB, modelRef string) scoringCapabilities {
 	if db == nil || !isBareTenantModelID(modelRef) {
 		return scoringCapabilities{}
@@ -117,11 +193,21 @@ func loadScoringCapabilities(ctx context.Context, db *gorm.DB, modelRef string) 
 		_ = json.Unmarshal([]byte(model.Extra), &extra)
 	}
 	return scoringCapabilities{
-		Known: true,
-		Image: extraBool(extra["supports_image"]),
-		Box:   extraBool(extra["supports_box"]),
-		Noul:  extraBool(extra["supports_noul"]),
-		Score: extraBool(extra["supports_score"]),
+		Known:         true,
+		Image:         extraBool(extra["supports_image"]),
+		Box:           extraBool(extra["supports_box"]),
+		Noul:          extraBool(extra["supports_noul"]),
+		Score:         extraBool(extra["supports_score"]),
+		Fields:        extraBool(extra["supports_fields"]),
+		FieldText:     extraBool(extra["supports_field_text"]),
+		FieldNumber:   extraBool(extra["supports_field_number"]),
+		FieldDate:     extraBool(extra["supports_field_date"]),
+		FieldTime:     extraBool(extra["supports_field_time"]),
+		FieldDateTime: extraBool(extra["supports_field_datetime"]),
+		FieldDuration: extraBool(extra["supports_field_duration"]),
+		FieldList:     extraBool(extra["supports_field_list"]),
+		FieldEstimate: extraBool(extra["supports_field_estimate"]),
+		FieldForecast: extraBool(extra["supports_field_forecast"]),
 	}
 }
 
@@ -147,7 +233,8 @@ func parseTypedAnswers(body []byte) map[string]any {
 		}
 		kind, _ := obj["type"].(string)
 		switch strings.ToLower(strings.TrimSpace(kind)) {
-		case "choice", "noul", "score", "box":
+		case "choice", "noul", "score", "box",
+			"text", "number", "date", "time", "datetime", "duration", "list", "estimate", "forecast":
 			out[id] = obj
 		}
 	}
@@ -198,6 +285,31 @@ func parseScoringTasks(raw any) ([]scoringTask, error) {
 		task := scoringTask{ID: id, Type: kind, Instructions: instructions}
 		task.TrueText, _ = stringFrom(obj, "true_text")
 		task.FalseText, _ = stringFrom(obj, "false_text")
+		task.Unit, _ = stringFrom(obj, "unit")
+		task.Items, _ = stringFrom(obj, "items")
+		task.Scale, _ = stringFrom(obj, "scale")
+		task.Interval, _ = stringFrom(obj, "interval")
+		if _, ok := obj["integer"]; ok {
+			task.Integer, _ = boolPtrFrom(obj, "integer")
+		}
+		if n, ok := intFromJSON(obj["decimals"]); ok {
+			task.Decimals = &n
+		}
+		if n, ok := intFromJSON(obj["horizon"]); ok {
+			task.Horizon = &n
+		}
+		if n, ok := floatFromJSON(obj["null_threshold"]); ok {
+			task.NullThreshold = &n
+		}
+		if bound, ok := boundFromJSON(obj["min"]); ok {
+			task.Min = bound
+		}
+		if bound, ok := boundFromJSON(obj["max"]); ok {
+			task.Max = bound
+		}
+		if bound, ok := boundFromJSON(obj["step"]); ok {
+			task.Step = bound
+		}
 		if levels, ok := obj["levels"].([]any); ok {
 			for _, level := range levels {
 				switch typed := level.(type) {

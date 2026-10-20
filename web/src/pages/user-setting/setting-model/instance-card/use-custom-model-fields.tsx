@@ -72,6 +72,16 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
       { value: 'supports_box', label: 'modelFeatureBoxSupport' },
       { value: 'supports_noul', label: 'modelFeatureYesNo' },
       { value: 'supports_score', label: 'modelFeatureLevels' },
+      { value: 'supports_fields', label: 'modelFeatureFields' },
+      { value: 'supports_field_text', label: 'modelFeatureFieldText' },
+      { value: 'supports_field_date', label: 'modelFeatureFieldDate' },
+      { value: 'supports_field_time', label: 'modelFeatureFieldTime' },
+      { value: 'supports_field_datetime', label: 'modelFeatureFieldDateTime' },
+      { value: 'supports_field_duration', label: 'modelFeatureFieldDuration' },
+      { value: 'supports_field_number', label: 'modelFeatureFieldNumber' },
+      { value: 'supports_field_list', label: 'modelFeatureFieldList' },
+      { value: 'supports_field_estimate', label: 'modelFeatureFieldEstimate' },
+      { value: 'supports_field_forecast', label: 'modelFeatureFieldForecast' },
     ],
   },
 ];
@@ -166,11 +176,25 @@ export const SOMARK_FEATURE_OPTIONS: { value: string; label: string }[] = [
  * from the legacy `SoMarkInstanceCard` (table_image and image_understanding
  * default to `true`).
  */
+export const SCORING_FIELD_TYPE_KEYS = [
+  'supports_field_text',
+  'supports_field_number',
+  'supports_field_date',
+  'supports_field_time',
+  'supports_field_datetime',
+  'supports_field_duration',
+  'supports_field_list',
+  'supports_field_estimate',
+  'supports_field_forecast',
+] as const;
+
 export const SCORING_CAPABILITY_KEYS = [
   'supports_image',
   'supports_box',
   'supports_noul',
   'supports_score',
+  'supports_fields',
+  ...SCORING_FIELD_TYPE_KEYS,
 ] as const;
 
 export const SOMARK_DEFAULT_FEATURES = [

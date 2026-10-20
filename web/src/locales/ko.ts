@@ -2034,6 +2034,12 @@ export default {
       categorizeDescription: `LLM을 사용하여 사용자 입력을 미리 정의된 카테고리로 분류하는 구성 요소입니다. 각 카테고리의 이름, 설명, 예시 및 해당 다음 구성 요소를 지정해 주세요.`,
       scoredSwitchQuestionRequired: '추가 질문마다 설명이 필요합니다',
       scoredSwitchLevelMinimum: '수준을 두 개 이상 추가하세요',
+      scoredSwitchFieldMinimum: '필드를 하나 이상 추가하세요',
+      scoredSwitchFieldNameInvalid: '필드 이름은 문자 또는 밑줄로 시작해야 합니다',
+      scoredSwitchListItemsRequired: '목록에는 항목 유형이 필요합니다',
+      scoredSwitchEstimateBoundsRequired: '추정에는 최솟값과 최댓값이 필요합니다',
+      scoredSwitchForecastRequired: '예측에는 기간과 간격이 필요합니다',
+      scoredSwitchDecimalsRange: '소수 자릿수는 0에서 6 사이여야 합니다',
       relevantDescription: `LLM을 사용하여 업스트림 출력이 사용자의 최신 쿼리와 관련 있는지 평가하는 구성 요소입니다. 각 판단 결과에 대한 다음 구성 요소를 지정해 주세요.`,
       rewriteQuestionDescription: `이전 대화 컨텍스트를 기반으로 상호작용 구성 요소의 사용자 쿼리를 재작성하는 구성 요소입니다.`,
       messageDescription:

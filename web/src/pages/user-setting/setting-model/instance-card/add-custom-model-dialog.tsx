@@ -39,7 +39,10 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { SCORING_CAPABILITY_KEYS } from './use-custom-model-fields';
+import {
+  SCORING_CAPABILITY_KEYS,
+  SCORING_FIELD_TYPE_KEYS,
+} from './use-custom-model-fields';
 
 export interface AddCustomModelDialogFields {
   /** Field name (maps to IProviderModelItem key) */
@@ -362,15 +365,33 @@ function FeatureSwitchGroup({
   const scoringSelected =
     Array.isArray(modelTypes) && modelTypes.includes('scoring');
   const scoringKeys = new Set<string>(SCORING_CAPABILITY_KEYS);
-  const options = (field.options ?? []).filter(
-    (opt) => scoringSelected || !scoringKeys.has(opt.value),
-  );
+  const fieldTypeKeys = new Set<string>(SCORING_FIELD_TYPE_KEYS);
   const currentValues = (fieldProps.value as string[]) ?? [];
+  const fieldsOn = currentValues.includes('supports_fields');
+  const options = (field.options ?? []).filter((opt) => {
+    if (!scoringSelected && scoringKeys.has(opt.value)) {
+      return false;
+    }
+    if (fieldTypeKeys.has(opt.value) && !fieldsOn) {
+      return false;
+    }
+    return true;
+  });
   const tips: Record<string, string> = {
     supports_image: t('modelFeatureImageSupportTip'),
     supports_box: t('modelFeatureBoxSupportTip'),
     supports_noul: t('modelFeatureYesNoTip'),
     supports_score: t('modelFeatureLevelsTip'),
+    supports_fields: t('modelFeatureFieldsTip'),
+    supports_field_text: t('modelFeatureFieldTextTip'),
+    supports_field_date: t('modelFeatureFieldDateTip'),
+    supports_field_time: t('modelFeatureFieldTimeTip'),
+    supports_field_datetime: t('modelFeatureFieldDateTimeTip'),
+    supports_field_duration: t('modelFeatureFieldDurationTip'),
+    supports_field_number: t('modelFeatureFieldNumberTip'),
+    supports_field_list: t('modelFeatureFieldListTip'),
+    supports_field_estimate: t('modelFeatureFieldEstimateTip'),
+    supports_field_forecast: t('modelFeatureFieldForecastTip'),
   };
 
   return (

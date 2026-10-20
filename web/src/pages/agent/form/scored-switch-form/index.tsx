@@ -25,7 +25,7 @@ import { BlurTextarea } from '@/components/ui/textarea';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { useUpdateNodeInternals } from '@xyflow/react';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { ScoredSwitchEscalateHandleId } from '../../scored-switch';
@@ -37,6 +37,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 import { QueryVariable } from '../components/query-variable';
 import { initialScoredSwitchValues } from '../../constant';
+import { ScoredSwitchFields } from './fields-editor';
 import { ScoredSwitchOptions } from './options-editor';
 import { ScoredSwitchTasks } from './tasks-editor';
 import { useCreateScoredSwitchFormSchema } from './use-form-schema';
@@ -62,6 +63,18 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
   const boxSupport = features.has('supports_box');
   const yesNoSupport = features.has('supports_noul');
   const levelSupport = features.has('supports_score');
+  const fieldMode = features.has('supports_fields');
+  useEffect(() => {
+    if (!addedModels) {
+      return;
+    }
+    if (form.getValues('field_mode') !== fieldMode) {
+      form.setValue('field_mode', fieldMode, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [addedModels, fieldMode, form]);
   const escalateEnabled = useWatch({
     control: form.control,
     name: 'escalate_enabled',
@@ -117,6 +130,16 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
         type: initialScoredSwitchValues.outputs.answers.type,
         description: t('flow.scoredSwitchOutputAnswers'),
       },
+      {
+        title: 'usage',
+        type: initialScoredSwitchValues.outputs.usage.type,
+        description: t('flow.scoredSwitchOutputUsage'),
+      },
+      {
+        title: 'state_text',
+        type: initialScoredSwitchValues.outputs.state_text.type,
+        description: t('flow.scoredSwitchOutputStateText'),
+      },
     ],
     [t],
   );
@@ -129,7 +152,11 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
           <QueryVariable
             name="image"
             label={t('flow.scoredSwitchImage')}
-            tooltip={t('flow.scoredSwitchImageTip')}
+            tooltip={
+              fieldMode
+                ? t('flow.scoredSwitchFieldImageTip')
+                : t('flow.scoredSwitchImageTip')
+            }
           ></QueryVariable>
         )}
         <ModelTreeSelectFormField
@@ -139,7 +166,7 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
           modelTypes={ModelTypeMap.scoring_id}
           ownerTenantId={ownerTenantId}
         ></ModelTreeSelectFormField>
-        {imageSupport && (
+        {imageSupport && !fieldMode && (
         <FormField
           control={form.control}
           name="request_format"
@@ -171,6 +198,8 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
           )}
         />
         )}
+        {!fieldMode && (
+        <>
         <FormField
           control={form.control}
           name="instructions"
@@ -271,6 +300,77 @@ function ScoredSwitchForm({ node }: INextOperatorForm) {
                   <FormMessage />
                 </FormItem>
               )}
+            />
+          </>
+        )}
+        </>
+        )}
+        {fieldMode && (
+          <>
+            <FormField
+              control={form.control}
+              name="reference_date"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel tooltip={t('flow.scoredSwitchReferenceDateTip')}>
+                    {t('flow.scoredSwitchReferenceDate')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input placeholder="2026-01-01" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="include_quantiles"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between gap-4">
+                  <FormLabel className="w-fit" tooltip={t('flow.scoredSwitchQuantilesTip')}>
+                    {t('flow.scoredSwitchQuantiles')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      className="!m-0"
+                      checked={field.value === true}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="return_state_text"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between gap-4">
+                  <FormLabel className="w-fit" tooltip={t('flow.scoredSwitchStateTextTip')}>
+                    {t('flow.scoredSwitchStateText')}
+                  </FormLabel>
+                  <FormControl>
+                    <Switch
+                      className="!m-0"
+                      checked={field.value === true}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <Separator />
+            <ScoredSwitchFields
+              allow={{
+                text: features.has('supports_field_text'),
+                date: features.has('supports_field_date'),
+                time: features.has('supports_field_time'),
+                datetime: features.has('supports_field_datetime'),
+                duration: features.has('supports_field_duration'),
+                number: features.has('supports_field_number'),
+                list: features.has('supports_field_list'),
+                estimate: features.has('supports_field_estimate'),
+                forecast: features.has('supports_field_forecast'),
+              }}
             />
           </>
         )}

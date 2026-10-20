@@ -2836,6 +2836,12 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       categorizeDescription: `Kullanıcı girişlerini önceden tanımlanmış kategorilere sınıflandırmak için LLM kullanan bir bileşen.`,
       scoredSwitchQuestionRequired: 'Her ek soru için yönerge gerekir',
       scoredSwitchLevelMinimum: 'En az iki düzey ekleyin',
+      scoredSwitchFieldMinimum: 'En az bir alan ekleyin',
+      scoredSwitchFieldNameInvalid: 'Alan adı bir harf veya alt çizgi ile başlamalıdır',
+      scoredSwitchListItemsRequired: 'Bir liste için öğe türü gerekir',
+      scoredSwitchEstimateBoundsRequired: 'Bir tahmin için alt ve üst sınır gerekir',
+      scoredSwitchForecastRequired: 'Bir öngörü için ufuk ve aralık gerekir',
+      scoredSwitchDecimalsRange: 'Ondalık basamak 0 ile 6 arasında olmalıdır',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:

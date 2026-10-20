@@ -752,6 +752,12 @@ export default {
       categorizeDescription: `Um componente que utiliza o LLM para classificar as entradas do usuário em categorias predefinidas. Certifique-se de especificar o nome, a descrição e os exemplos para cada categoria, juntamente com o próximo componente correspondente.`,
       scoredSwitchQuestionRequired: 'Cada pergunta extra precisa de instruções',
       scoredSwitchLevelMinimum: 'Adicione pelo menos dois níveis',
+      scoredSwitchFieldMinimum: 'Adicione pelo menos um campo',
+      scoredSwitchFieldNameInvalid: 'O nome do campo deve começar com uma letra ou sublinhado',
+      scoredSwitchListItemsRequired: 'Uma lista precisa de um tipo de item',
+      scoredSwitchEstimateBoundsRequired: 'Uma estimativa precisa de um mínimo e um máximo',
+      scoredSwitchForecastRequired: 'Uma previsão precisa de um horizonte e um intervalo',
+      scoredSwitchDecimalsRange: 'As casas decimais devem ser de 0 a 6',
       relevantDescription: `Um componente que usa o LLM para avaliar se a saída anterior é relevante para a última consulta do usuário. Certifique-se de especificar o próximo componente para cada resultado de avaliação.`,
       rewriteQuestionDescription: `Um componente que refina uma consulta do usuário caso ela não recupere informações relevantes da base de conhecimento. Esse processo é repetido até que o limite de repetições predefinido seja alcançado.`,
       messageDescription:

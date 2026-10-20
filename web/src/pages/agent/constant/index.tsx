@@ -132,6 +132,10 @@ export const initialScoredSwitchValues = {
   image: '',
   instructions: '',
   request_format: 'content_parts',
+  field_mode: false,
+  reference_date: '',
+  include_quantiles: false,
+  return_state_text: false,
   escalate_enabled: true,
   margin_threshold: ScoredSwitchDefaultMarginThreshold,
   min_top_score: ScoredSwitchDefaultMinTopScore,
@@ -154,6 +158,8 @@ export const initialScoredSwitchValues = {
     confidence: { type: 'number' },
     raw: { type: 'string' },
     answers: { type: 'object' },
+    usage: { type: 'object' },
+    state_text: { type: 'string' },
   },
 };
 
