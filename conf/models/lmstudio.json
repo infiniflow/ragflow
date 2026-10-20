@@ -1,9 +1,0 @@
-{
-  "name": "LM-Studio",
-  "url_suffix": {
-    "chat": "chat/completions",
-    "models": "models",
-    "embedding": "embeddings"
-  },
-  "class": "local"
-}

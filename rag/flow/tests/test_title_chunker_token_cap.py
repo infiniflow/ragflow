@@ -589,3 +589,125 @@ def test_hard_split_lossless_with_real_truncate():
         # tokenizer, not just be a lossless concatenation.
         assert real_token_utils.num_tokens_from_string(ck["text"]) <= 20, f"hard-split chunk exceeds token cap: {ck['text']!r}"
     assert "".join(ck["text"] for ck in chunks) == body + "\n"
+
+
+def test_hierarchy_split_repeats_heading_path_without_losing_body():
+    prefix = "第一编 总则\n第一章 基本规定\n"
+    body = "正文内容。" * 30
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", "第一章 基本规定", body, "第二章 自然人", "后章正文。"]]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", chunk_token_cap=45)
+    first_chapter = chunks[:-1]
+    assert len(first_chapter) > 1
+    assert all(chunk["text"].startswith(prefix) for chunk in first_chapter)
+    assert "".join(chunk["text"][len(prefix) :] for chunk in first_chapter) == body + "\n"
+    assert chunks[-1]["text"] == "第一编 总则\n第二章 自然人\n后章正文。\n"
+    assert all(len(chunk["text"]) <= 45 for chunk in chunks)
+
+
+def test_hierarchy_split_repeats_root_heading_and_hard_splits_body():
+    prefix = "文档名称\n\n第一编 总则\n第一章 基本规定\n"
+    body = "x" * 120
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["文档名称", "第一编 总则", "第一章 基本规定", body]]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", root_chunk_as_heading=True, chunk_token_cap=45)
+    assert len(chunks) > 1
+    assert all(chunk["text"].startswith(prefix) for chunk in chunks)
+    assert "".join(chunk["text"][len(prefix) :] for chunk in chunks) == body + "\n"
+    assert all(len(chunk["text"]) <= 45 for chunk in chunks)
+
+
+def test_hierarchy_heading_that_leaves_no_body_budget_fails():
+    import pytest
+
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 很长的标题", "正文。"]]
+    with pytest.raises(ValueError, match="heading"):
+        _run("hierarchy", _json_upstream(items), levels=[[r"第.+编"]], hierarchy="1", chunk_token_cap=10)
+
+
+def test_hierarchy_heading_content_options_keep_existing_inheritance():
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", "编的说明。", "第一章 基本规定", "正文内容。" * 20]]
+    for include_heading_content in (False, True):
+        chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", include_heading_content=include_heading_content, chunk_token_cap=45)
+        if include_heading_content:
+            assert chunks[0]["text"] == "第一编 总则\n编的说明。\n"
+            descendants = chunks[1:]
+            prefix = "第一编 总则\n第一章 基本规定\n"
+        else:
+            descendants = chunks
+            prefix = "第一编 总则\n第一章 基本规定\n"
+        assert len(descendants) > 1
+        assert all(chunk["text"].startswith(prefix) for chunk in descendants)
+        expected_body = ("" if include_heading_content else "编的说明。\n") + "正文内容。" * 20 + "\n"
+        assert "".join(chunk["text"][len(prefix) :] for chunk in descendants) == expected_body
+        assert all(len(chunk["text"]) <= 45 for chunk in chunks)
+
+
+def test_hierarchy_disabled_cap_keeps_heading_once():
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", "正文内容。" * 20]]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编"]], hierarchy="1", chunk_token_cap=0)
+    assert len(chunks) == 1
+    assert chunks[0]["text"] == "第一编 总则\n" + "正文内容。" * 20 + "\n"
+
+
+def test_hierarchy_split_heading_keeps_pdf_positions():
+    positions = [[1, 10, 200, 50, 80]]
+    items = [{"text": text, "doc_type_kwd": "text", "positions": positions} for text in ["第一编 总则", "正文内容。" * 20]]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编"]], hierarchy="1", chunk_token_cap=45, faithful_positions=True)
+    assert len(chunks) > 1
+    assert all(chunk["text"].startswith("第一编 总则\n") for chunk in chunks)
+    assert all(chunk["position_int"] == positions for chunk in chunks)
+    chunks[0]["position_int"][0][0] = 999
+    assert all(chunk["position_int"] == positions for chunk in chunks[1:])
+
+
+def test_hierarchy_split_repeats_heading_with_real_tokenizer():
+    spec = importlib.util.spec_from_file_location("real_title_token_utils", Path(__file__).resolve().parents[3] / "common/token_utils.py")
+    token_utils = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(token_utils)
+    heading = "第一编 总则\n"
+    body = "中文混合English文本，" * 30
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", body]]
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _group_module):
+        common_module.truncate = token_utils.truncate
+        common_module.num_tokens_from_string = token_utils.num_tokens_from_string
+        param = common_module.TitleChunkerParam()
+        param.method = "hierarchy"
+        param.levels = [[r"第.+编"]]
+        param.hierarchy = "1"
+        param.chunk_token_cap = 24
+        process = common_module.ProcessBase(None, "title", param)
+        process._canvas = types.SimpleNamespace(_doc_id="doc", _tenant_id="tenant")
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream(items))
+        asyncio.run(chunker.invoke())
+        chunks = process._outputs["chunks"]
+    assert len(chunks) > 1
+    assert all(chunk["text"].startswith(heading) for chunk in chunks)
+    assert all(token_utils.num_tokens_from_string(chunk["text"]) <= 24 for chunk in chunks)
+    assert "".join(chunk["text"][len(heading) :] for chunk in chunks) == body + "\n"
+
+
+def test_hierarchy_long_parent_body_is_split_without_repeating_it():
+    parent_body = "父级正文。" * 30
+    prefix = "第一编 总则\n第一章 基本规定\n"
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", parent_body, "第一章 基本规定", "子章正文。"]]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", chunk_token_cap=128)
+    assert len(chunks) > 1
+    assert all(chunk["text"].startswith(prefix) for chunk in chunks)
+    assert "".join(chunk["text"][len(prefix) :] for chunk in chunks) == parent_body + "\n子章正文。\n"
+    assert all(len(chunk["text"]) <= 128 for chunk in chunks)
+
+
+def test_group_long_root_keeps_plain_splitting_behavior():
+    root = "很长的文档前言。" * 30
+    items = [{"text": text, "doc_type_kwd": "text"} for text in [root, "第一章 基本规定", "子章正文。"]]
+    chunks = _run("group", _json_upstream(items), levels=[[r"第.+章"]], hierarchy="1", root_chunk_as_heading=True, chunk_token_cap=128)
+    assert len(chunks) > 1
+    assert "".join(chunk["text"] for chunk in chunks) == root + "\n\n第一章 基本规定\n子章正文。\n"
+    assert all(len(chunk["text"]) <= 128 for chunk in chunks)
+
+
+def test_hierarchy_short_parent_body_keeps_original_order():
+    items = [{"text": text, "doc_type_kwd": "text"} for text in ["第一编 总则", "编的说明。", "第一章 基本规定", "子章正文。"]]
+    for cap in (0, 128):
+        chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", chunk_token_cap=cap)
+        assert len(chunks) == 1
+        assert chunks[0]["text"] == "第一编 总则\n编的说明。\n第一章 基本规定\n子章正文。\n"

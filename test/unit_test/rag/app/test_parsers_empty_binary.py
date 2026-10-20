@@ -130,11 +130,12 @@ def test_docx_empty_binary_does_not_open_display_name(module_name):
 
 @pytest.mark.p2
 def test_qa_excel_empty_binary_loads_from_bytes():
-    """openpyxl must receive the empty bytes, so the failure describes the
-    payload rather than a file missing under the display name."""
+    """The Q&A parser loads the workbook through `_load_excel_to_workbook`,
+    like the table parser, so empty bytes reach its CSV fallback. Reaching
+    that failure proves it was handed the bytes and not the display name."""
     qa = _load("qa")
 
-    with pytest.raises(BadZipFile, match="File is not a zip file"):
+    with pytest.raises(Exception, match="Failed to parse CSV and convert to Excel Workbook"):
         qa.Excel()(XLSX_NAME, b"", callback=_noop_callback)
 
 

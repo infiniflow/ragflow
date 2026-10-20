@@ -18,12 +18,12 @@ import csv
 import logging
 import re
 from copy import deepcopy
+from html import escape as html_escape
 from io import BytesIO
 from timeit import default_timer as timer
 
 from docx import Document
 from markdown import markdown
-from openpyxl import load_workbook
 
 from common.constants import MAXIMUM_PAGE_NUMBER
 from common.float_utils import get_float
@@ -34,10 +34,14 @@ from rag.nlp import add_positions, concat_img, docx_question_level, has_qbullet,
 
 class Excel(ExcelParser):
     def __call__(self, fnm, binary=None, callback=None):
+        # The workbook has to be opened with data_only, or a cell holding a formula
+        # yields `=CONCATENATE(...)` instead of the answer Excel computed for it.
+        # RAGFlowExcelParser._load_excel_to_workbook does that, and carries the CSV
+        # and pandas fallbacks every other Excel path in the repo relies on.
         if binary is None:
-            wb = load_workbook(fnm)
-        else:
-            wb = load_workbook(BytesIO(binary))
+            with open(fnm, "rb") as f:
+                binary = f.read()
+        wb = Excel._load_excel_to_workbook(binary)
         total = 0
         for sheetname in wb.sheetnames:
             total += len(list(wb[sheetname].rows))
@@ -237,7 +241,8 @@ class Docx(DocxParser):
                         else:
                             break
                     i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))
@@ -289,6 +294,36 @@ def beAdoc(d, q, a, eng, row_num=-1):
 def mdQuestionLevel(s):
     match = re.match(r"#*", s)
     return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
+
+
+def csv_pair_delimiter(lines):
+    """TAB, the documented delimiter, unless the file reads as comma separated.
+
+    A file with no TAB reads with comma. A comma separated file can still hold a
+    TAB inside one field, so a file with a TAB reads with comma only when the
+    first non-empty row holds no TAB, every row with a TAB splits into two values,
+    and the two-value rows with no TAB outnumber all other non-empty rows.
+    """
+    if not any("\t" in line for line in lines):
+        return ","
+    tab_free_pairs = other_rows = 0
+    try:
+        for row in csv.reader((line + "\n" for line in lines), delimiter=","):
+            values = [field for field in row if field.strip()]
+            if not values:
+                continue
+            has_tab = any("\t" in field for field in row)
+            first_row = tab_free_pairs + other_rows == 0
+            if has_tab and (first_row or len(values) != 2):
+                return "\t"
+            if len(values) == 2 and not has_tab:
+                tab_free_pairs += 1
+            else:
+                other_rows += 1
+    except csv.Error:
+        # An unclosed quote can run past the field size limit when a TAB file is read with comma.
+        return "\t"
+    return "," if tab_free_pairs > other_rows else "\t"
 
 
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
@@ -355,7 +390,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
-        delimiter = "\t" if any("\t" in line for line in lines) else ","
+        delimiter = csv_pair_delimiter(lines)
 
         fails = []
         question, answer = "", ""

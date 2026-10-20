@@ -65,7 +65,7 @@ export default {
       pleaseSelect: 'Please select',
       pleaseInput: 'Please input',
       modelUnavailable:
-        'The previously selected model has been deleted, please select another one',
+        'The selected model is unavailable (deleted or no permission), please select another one',
       submit: 'Submit',
       clear: 'Clear',
       embedIntoSite: 'Embed into webpage',
@@ -387,6 +387,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       welcome: 'Welcome back',
       description: 'Which datasets will you use today?',
       createKnowledgeBase: 'Create dataset',
+      builtInTemplate: 'Built-in template',
+      ingestionPipeline: 'Ingestion pipeline',
       name: 'Name',
       namePlaceholder: 'Please input name.',
       doc: 'Docs',
@@ -471,6 +473,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       redoAll: 'Clear existing chunks',
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
+      clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
@@ -559,13 +562,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Conduct a retrieval test to check if RAGFlow can recover the intended content for the LLM. If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the Retrieval agent component settings.',
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
-        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.',
+        'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
       vectorSimilarityWeight: 'Vector similarity weight',
       vectorSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
-        'This sets the weight of keyword similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
+        'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
       testText: 'Test text',
       testTextPlaceholder: 'Input your question here!',
       testingLabel: 'Run',
@@ -614,7 +617,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       close: 'Close',
       rerankModel: 'Rerank model',
       rerankPlaceholder: 'Select value',
-      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time. If you wish to use a rerank model, ensure you use a SaaS reranker; if you prefer a locally deployed rerank model, ensure you start RAGFlow with docker-compose-gpu.yml.`,
+      rerankTip: `Optional. If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity; if a rerank model is selected, a weighted reranking score will replace the weighted vector cosine similarity. Please be aware that using a rerank model will significantly increase the system's response time.`,
       topK: 'Top-K',
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
@@ -736,7 +739,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       editLinkDataPipeline: 'Edit ingestion pipeline',
       linkPipelineSetTip: 'Manage ingestion pipeline linkage with this dataset',
       default: 'Default',
-      dataPipeline: 'Switch or configure ingestion pipeline.',
+      dataPipeline: 'Select or switch the parsing mode',
       linkDataPipeline: 'Link ingestion pipeline',
       enableAutoGenerate: 'Enable auto generate',
       teamPlaceholder: 'Please select a team.',
@@ -746,6 +749,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parseType: 'Parse mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      noConfigChunkerHint:
+        'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
         'Update your dataset configuration here, particularly the LLM and prompts.',
       name: 'Dataset name',
@@ -772,6 +777,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       chinese: 'Chinese',
       portugueseBr: 'Portuguese (Brazil)',
       embeddingModelPlaceholder: 'Please select a embedding model.',
+      checkingEmbedding: 'Checking embedding model compatibility…',
       chunkMethodPlaceholder: 'Please select a chunking method.',
       tableColumnMode: 'Column mode',
       tableColumnModeAuto: 'Auto',
@@ -942,6 +948,8 @@ Paragraphs:
       entityTypes: 'Entity types',
       compilationTemplate: 'Operator',
       compilationTemplateRequired: 'Please select an operator',
+      compilationTemplateUnavailable:
+        'The selected operator is unavailable (deleted or no permission), please select another one',
       createTemplate: 'Create template',
       scopeFile: 'File',
       vietnamese: 'Vietnamese',
@@ -1076,18 +1084,18 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       knowledgeBasesPlaceholder: 'Select value',
       knowledgeBasesMessage: 'Please select',
       datasetUnavailable:
-        'The selected knowledge base is unavailable (deleted or has no chunks), please re-select',
+        'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
       system: 'System prompt',
-      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
 **Essential Rules:**
   - Your answer must be derived **solely** from this dataset: {knowledge}.
   - **When information is available**: Summarize the content to give a detailed answer.
-  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the knowledge base!"
+  - **When information is unavailable**: Your response must contain this exact sentence: "The answer you are looking for is not found in the dataset!"
   - **Always consider** the entire conversation history.`,
-      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided knowledge base.
+      systemInitialValue: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
       **Essential Rules:**
         - Your answer must be derived **solely** from this dataset: \`{knowledge}\`.
@@ -1613,7 +1621,7 @@ Example: Virtual Hosted Style`,
       timeStarted: 'Time started',
       log: 'Log',
       rssDescription:
-        'Connect to a public RSS or Atom feed and sync feed entries into your knowledge base.',
+        'Connect to a public RSS or Atom feed and sync feed entries into your dataset.',
       confluenceDescription:
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
@@ -1644,6 +1652,33 @@ Example: Virtual Hosted Style`,
         'Email address that has access to the Drive content being synced',
       zendeskDescription:
         'Connect your Zendesk to sync tickets, articles, and other content.',
+      zoteroDescription:
+        'Connect your Zotero library to sync PDF attachments from papers and references.',
+      dataSourceFieldZoteroUserId: 'Zotero user ID',
+      dataSourceFieldZoteroApiKey: 'Zotero API key',
+      dataSourceFieldZoteroStorageMode: 'Attachment storage',
+      dataSourceOptionZoteroCloudStorage: 'Zotero cloud',
+      dataSourceOptionZoteroWebdav: 'WebDAV',
+      dataSourceFieldZoteroWebdavPassword: 'WebDAV password',
+      zoteroUserIdTip:
+        'Your numeric Zotero user ID from https://www.zotero.org/settings/keys.',
+      zoteroApiKeyTip:
+        'Create a personal API key with library access at https://www.zotero.org/settings/keys.',
+      zoteroStorageModeTip:
+        'Choose Zotero cloud to download files via the Web API, or WebDAV if your attachments are stored on your own WebDAV server.',
+      zoteroWebdavUrlTip:
+        'HTTPS URL of your WebDAV server. Zotero cloud storage does not provide a hosted WebDAV endpoint.',
+      zoteroWebdavUrlRequired:
+        'WebDAV server URL is required when attachment storage is WebDAV.',
+      dataSourceFieldZoteroWebdavUsername: 'WebDAV username',
+      zoteroWebdavUsernameTip:
+        'Username for WebDAV Basic authentication. This is often different from your Zotero user ID.',
+      zoteroWebdavUsernameRequired:
+        'WebDAV username is required when attachment storage is WebDAV.',
+      zoteroWebdavPasswordTip:
+        'WebDAV password from Zotero storage settings (not your Zotero account password).',
+      zoteroWebdavPasswordRequired:
+        'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
         'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
       google_driveSharedFoldersTip:
@@ -2157,6 +2192,8 @@ Example: Virtual Hosted Style`,
       editModel: 'Edit model',
       instanceName: 'Instance name',
       instanceNameMessage: 'Please input the instance name!',
+      instanceNameInvalidCharacters:
+        'Instance name may only contain ASCII letters, digits, underscores, and hyphens.',
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
@@ -2390,7 +2427,7 @@ Example: Virtual Hosted Style`,
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
-      modelFeatureToolCall: 'Tool call',
+      modelFeatureToolCall: 'Tool calling',
       modelFeatureFunctionCall: 'Function call',
       modelNameRequired: 'Model name is required',
       modelNameDuplicate: 'Model name already exists',
@@ -2457,7 +2494,7 @@ Example: Virtual Hosted Style`,
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',
-      compilationTitleSuffix: "' dataset",
+      compilationTitleSuffix: ' dataset',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',
@@ -2795,11 +2832,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       stringTransformDescription:
         'Modifies text content. Currently supports: Splitting or concatenating text.',
       foundation: 'Foundation',
+      tool: 'Tool',
       tools: 'Tools',
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
@@ -2812,7 +2850,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       msgTip:
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
-      messageMsg: 'Please input message or delete this field.',
+      messageMsg: 'Message cannot be empty',
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
@@ -2922,6 +2960,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       addPageNumbers: 'Add Page Numbers',
       addTimestamp: 'Add Timestamp',
       watermarkText: 'Watermark Text',
+      headerText: 'Header Text',
+      footerText: 'Footer Text',
+      includeDownloadInfoInContent: 'Append download info to content',
+      contentPlaceholder: 'Enter markdown content...',
+      filenamePlaceholder: 'document.ext (auto-generated if empty)',
+      contentRequired: 'Content is required',
+      fontSizeMin: 'Font size must be at least 12',
       channel: 'Channel',
       channelTip: `Perform text search or news search on the component's input`,
       text: 'Text',
@@ -3490,28 +3535,47 @@ This process aggregates variables from multiple branches into a single variable 
         'Extracts raw text and structure from files for downstream processing.',
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
-      nodeFormInvalid:
-        'Cannot save: "{{name}}" has invalid settings. Please fix them first',
-      agentModelMissing:
-        'Cannot save: "{{name}}" has no model selected. Please choose one first',
-      retrievalDatasetMissing:
-        'Cannot save: "{{name}}" has no dataset selected. Please choose one first',
-      retrievalMemoryMissing:
-        'Cannot save: "{{name}}" has no memories selected. Please choose them first',
+      nodeFormInvalid: 'Invalid settings, please fix them first',
+      agentModelMissing: 'No model selected, please choose one first',
+      extractorModelMissing: 'No model selected, please choose one first',
+      retrievalDatasetMissing: 'No dataset selected, please choose one first',
+      retrievalMemoryMissing: 'No memories selected, please choose them first',
+      checklist: 'Checklist',
+      checklistEmpty: 'No issues found',
+      checklistTitle:
+        'Resolve the following issues before running or publishing',
+      checklistResolveBefore:
+        'Please resolve the issues in the checklist first',
+      issueNotConnected: 'This step is not connected to anything',
+      issueVariableInvalid: 'Invalid variable: {{variable}}',
+      memoryUnavailable:
+        'The selected memory is unavailable (deleted), please re-select',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} dataset retrieval step(s) without a bound knowledge base. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalTemplateMemoryHint:
         'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
         'Transforms text into the required data structure (e.g., vector embeddings for Embedding Search) depending on the chosen search method.',
+      generalChunkerDescription:
+        'A general-purpose chunking method for most document types, with flexible control over chunk size, overlap, and context.',
       tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         'Split text into chunks by token length with optional delimiters and overlap.',
       titleChunkerDescription:
         'Split documents into sections by title hierarchy. Define heading levels with regex rules, then choose Hierarchy or Group mode to control how chunks are structured.',
       titleChunker: 'Title Chunker',
+      manualChunkerDescription:
+        'A chunking method for manual-style documents such as product manuals and user guides, with structure-aware splitting that preserves relevant context.',
+      oneChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      qAChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      tableChunkerDescription:
+        'No additional configuration is required for this chunker.',
+      pageChunkerDescription:
+        'No additional configuration is required for this chunker.',
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
@@ -3547,7 +3611,7 @@ This process aggregates variables from multiple branches into a single variable 
       searchMethodTip: `Defines how the content can be searched — by full-text, embedding, or both.
 The Indexer will store the content in the corresponding data structures for the selected methods.`,
       // file: 'File',
-      parserMethod: 'PDF parser',
+      parserMethod: 'Parser',
       tableResultType: 'Table result type',
       markdownImageResponseType: 'Markdown image response type',
       // systemPrompt: 'System Prompt',

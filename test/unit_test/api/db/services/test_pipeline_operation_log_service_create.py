@@ -30,10 +30,13 @@ import json
 import sys
 import types
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+from common.constants import PipelineTaskType, TaskStatus, VALID_PIPELINE_TASK_TYPES
 
 # --------------------------------------------------------------------------- #
 # Module load: stub transitive imports the service module pulls in at top level
@@ -101,7 +104,7 @@ def _install_stubs(monkeypatch):
 
     sys.modules["api.db.services.canvas_service"].UserCanvasService = _class_stub(["get_by_id"])
     sys.modules["api.db.services.document_service"].DocumentService = _class_stub(["get_by_id", "update_progress_immediately"])
-    sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _class_stub(["get_by_id"])
+    sys.modules["api.db.services.knowledgebase_service"].KnowledgebaseService = _class_stub(["get_by_id", "update_by_id"])
     sys.modules["api.db.services.task_service"].TaskService = _class_stub(["get_by_id"])
     sys.modules["api.db.services.task_service"].GRAPH_RAPTOR_FAKE_DOC_ID = "fake"
     sys.modules["api.db.services.common_service"].CommonService = _class_stub(["save"])
@@ -131,41 +134,9 @@ def _install_stubs(monkeypatch):
     monkeypatch.setitem(sys.modules, "rag.flow.parser", parser_pkg)
     monkeypatch.setitem(sys.modules, "rag.flow.parser.parser", parser_sub)
 
-    # Stub PipelineTaskType/TaskStatus so the create() branching works.
-    import enum
-
-    class PipelineTaskType(str, enum.Enum):
-        PARSE = "Parse"
-        DOWNLOAD = "Download"
-        RAPTOR = "RAPTOR"
-        GRAPH_RAG = "GraphRAG"
-        MINDMAP = "Mindmap"
-        MEMORY = "Memory"
-        ARTIFACT = "Wiki"
-        SKILL = "Skill"
-        STRUCTURE_GRAPH = "StructureGraph"
-        STRUCTURE_MINDMAP = "StructureMindmap"
-        TIMELINE = "Timeline"
-        SESSION_GRAPH = "SessionGraph"
-        SESSION_ESSENCE = "SessionEssence"
-        STRUCTURE = "Structure"
-
-    class TaskStatus(str, enum.Enum):
-        CANCEL = "cancel"
-        DONE = "done"
-        FAIL = "fail"
-
     sys.modules["common.constants"].PipelineTaskType = PipelineTaskType
     sys.modules["common.constants"].TaskStatus = TaskStatus
-    sys.modules["api.db"].VALID_PIPELINE_TASK_TYPES = {
-        PipelineTaskType.PARSE,
-        PipelineTaskType.DOWNLOAD,
-        PipelineTaskType.RAPTOR,
-        PipelineTaskType.GRAPH_RAG,
-        PipelineTaskType.MINDMAP,
-        PipelineTaskType.ARTIFACT,
-        PipelineTaskType.SKILL,
-    }
+    sys.modules["common.constants"].VALID_PIPELINE_TASK_TYPES = VALID_PIPELINE_TASK_TYPES
 
     # Load the module under test. Build the path from this test file's
     # location so the test works regardless of the developer's checkout
@@ -252,6 +223,43 @@ def captured_log(monkeypatch, pol_module):
 
     monkeypatch.setattr(pol_module.PipelineOperationLogService, "save", classmethod(_fake_save))
     return captured
+
+
+@pytest.mark.parametrize(
+    "task_type",
+    [
+        PipelineTaskType.STRUCTURE_GRAPH,
+        PipelineTaskType.STRUCTURE_MINDMAP,
+        PipelineTaskType.TIMELINE,
+        PipelineTaskType.SESSION_GRAPH,
+        PipelineTaskType.SESSION_ESSENCE,
+        PipelineTaskType.STRUCTURE,
+    ],
+)
+def test_create_records_completed_dataset_compilation(pol_module, captured_log, task_type):
+    document = _make_document()
+    kb = MagicMock(tenant_id="tenant-1")
+    started_at = datetime(2026, 10, 20, 12, 0, 0)
+    task = MagicMock(progress=1, progress_msg="Done", begin_at=started_at, process_duration=12)
+
+    with (
+        patch.object(pol_module.DocumentService, "get_by_id", return_value=(True, document)),
+        patch.object(pol_module.KnowledgebaseService, "get_by_id", return_value=(True, kb)),
+        patch.object(pol_module.KnowledgebaseService, "update_by_id") as update_kb,
+        patch.object(pol_module.TaskService, "get_by_id", return_value=(True, task)),
+    ):
+        pol_module.PipelineOperationLogService.create(
+            document_id="fake",
+            pipeline_id="",
+            task_type=task_type,
+            task_id="task-1",
+            referred_document_id="doc-1",
+        )
+
+    assert captured_log["log"]["document_id"] == "fake"
+    assert captured_log["log"]["task_type"] == task_type
+    assert captured_log["log"]["operation_status"] == TaskStatus.DONE.value
+    update_kb.assert_called_once_with("kb-1", {pol_module._PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: started_at + pol_module.timedelta(seconds=12)})
 
 
 def test_create_prefers_pipeline_parser_for_parse_task(pol_module, captured_log, monkeypatch):

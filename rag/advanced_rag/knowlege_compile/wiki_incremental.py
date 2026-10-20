@@ -16,7 +16,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+import random
 import re
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Callable
 
 import numpy as np
@@ -28,14 +32,19 @@ from rag.prompts.generator import message_fit_in
 from rag.nlp import search
 
 from ._common import (
+    env_int as _env_int,
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
     stable_row_id as _stable_row_id,
 )
 
+_LOGGER = logging.getLogger(__name__)
 
 # ----- REFINE progress -----
 
 WIKI_REFINE_PROGRESS_UPDATES = 20
+WIKI_REFINE_LLM_RETRIES = _env_int("WIKI_REFINE_LLM_RETRIES", 2, minimum=0)
+WIKI_REFINE_LLM_RETRY_BASE_DELAY = _env_int("WIKI_REFINE_LLM_RETRY_BASE_DELAY", 30, minimum=0)
+WIKI_REFINE_LLM_RETRY_MAX_DELAY = _env_int("WIKI_REFINE_LLM_RETRY_MAX_DELAY", 120, minimum=0)
 
 
 async def _wiki_run_refine_tasks(tasks: list, progress: Callable[[str], None]) -> None:
@@ -186,6 +195,102 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
     if any(line.lstrip().startswith("**ERROR**") for line in response.splitlines()):
         raise RuntimeError(f"Wiki LLM call failed: {response}")
     return response
+
+
+def _wiki_retryable_llm_error(error: Exception) -> bool:
+    """Retry explicit transient LLM failures, excluding permanent 429 errors."""
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        body = body.get("error", body)
+    codes = [getattr(error, "code", None)]
+    if isinstance(body, dict):
+        codes.extend((body.get("code"), body.get("type")))
+    text = " ".join(str(value).lower() for value in (*codes, error) if value is not None)
+    # chat_model's ERROR_QUOTA also covers temporary capacity/request limits.
+    # Reject explicit permanent details, not that label or bare quota/credit words.
+    if any(
+        marker in text
+        for marker in (
+            "insufficient_quota",
+            "insufficient quota",
+            "insufficient_credit",
+            "insufficient credit",
+            "insufficient_balance",
+            "insufficient balance",
+            "credit balance is too low",
+            "billing_hard_limit",
+            "billing hard limit",
+            "billing_limit",
+            "billing limit",
+            "欠费",
+            "余额不足",
+            "额度不足",
+            "invalid_api_key",
+            "authentication_error",
+            "permission_denied",
+            "invalid_request_error",
+            "context_length_exceeded",
+            "model_not_found",
+            "error_authentication",
+            "error_invalid_request",
+            "error_content_filter",
+            "error_model",
+        )
+    ):
+        return False
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    if status is None:
+        # Adapters may flatten HTTP errors to strings. Require a status label:
+        # ordinary request/quota counts such as 400 or 429 are not HTTP evidence.
+        match = re.search(r"\b(?:http(?:/\d(?:\.\d)?)?(?:\s+status(?:\s+code)?)?|status(?:[_ ]code)?|error code)[\"']?\s*[:=]?\s*[\"']?([1-5]\d{2})\b", text)
+        if match:
+            status = int(match.group(1))
+    if status is not None:
+        return status in (408, 429, 500, 502, 503, 504, 529)
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return True
+    return any(
+        marker in text
+        for marker in ("error_rate_limit", "rate_limit_exceeded", "rate_limit_error", "error_timeout", "error_connection", "error_server", "rate limit", "too many requests", "timed out")
+    )
+
+
+def _wiki_retry_after(error: Exception) -> float:
+    """Read Retry-After when the provider preserves the HTTP response."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    value = next((value for name, value in headers.items() if name.lower() == "retry-after"), None)
+    if value is None:
+        return 0.0
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        try:
+            delay = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+    return max(0.0, delay) if math.isfinite(delay) else 0.0
+
+
+async def _wiki_ask_page_writer(chat_mdl, system_prompt: str, user_prompt: str, *, page_id: str) -> str:
+    """Recover a page's LLM call after provider/pool retries, before any writes."""
+    for attempt in range(WIKI_REFINE_LLM_RETRIES + 1):
+        try:
+            return await _chat_mdl_ask(chat_mdl, system_prompt, user_prompt)
+        except Exception as exc:
+            if attempt >= WIKI_REFINE_LLM_RETRIES or min(WIKI_REFINE_LLM_RETRY_BASE_DELAY, WIKI_REFINE_LLM_RETRY_MAX_DELAY) <= 0 or not _wiki_retryable_llm_error(exc):
+                raise
+            retry_after = _wiki_retry_after(exc)
+            if retry_after > WIKI_REFINE_LLM_RETRY_MAX_DELAY:
+                # Do not retry before the server's reset or wait without a bound.
+                raise
+            backoff = min(WIKI_REFINE_LLM_RETRY_MAX_DELAY, WIKI_REFINE_LLM_RETRY_BASE_DELAY * (2**attempt))
+            delay = min(WIKI_REFINE_LLM_RETRY_MAX_DELAY, max(retry_after, backoff + random.uniform(0, backoff * 0.25)))
+            _LOGGER.warning("wiki REFINE: retrying page=%s attempt=%d/%d delay=%.2fs error_type=%s", page_id, attempt + 1, WIKI_REFINE_LLM_RETRIES, delay, type(exc).__name__)
+            await asyncio.sleep(delay)
+    raise AssertionError("Wiki page writer retry loop exhausted unexpectedly")
 
 
 def _wiki_should_re_synthesize(
@@ -2023,10 +2128,11 @@ async def _wiki_refine_page(
         )
 
     # Call LLM
-    response = await _chat_mdl_ask(
+    response = await _wiki_ask_page_writer(
         chat_mdl,
         system_prompt,
         user_prompt,
+        page_id=page_id,
     )
 
     if not response or not response.strip():

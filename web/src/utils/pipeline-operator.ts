@@ -35,7 +35,7 @@ import {
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
 import { pickByBackend } from '@/utils/backend-variant';
-import { cloneDeep, isEmpty } from 'lodash';
+import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
 
@@ -339,6 +339,7 @@ export function transformApiConfigToForm(
     case Operator.GeneralChunker:
       return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
       return config ?? {};
@@ -407,6 +408,13 @@ export function transformFormConfigToApi(
       return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
+    case Operator.ManualChunker:
+      // These fields are UI-only for the title chunker and are not read by
+      // the backend ManualChunker component (manual.go pins method=group,
+      // ignores the token cap).
+      return transformTitleChunkerParams(
+        omit(config, ['include_heading_content', 'chunk_token_cap']) as any,
+      );
     default:
       return config;
   }
@@ -429,6 +437,7 @@ export function normalizeOperatorForm(
       };
     }
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return {
         ...cloneDeep(initialTitleChunkerValues),
         ...rawForm,

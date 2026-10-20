@@ -15,7 +15,11 @@ const Popover = ({
   onOpenChange,
   disableOutsideClick = false,
 }: PopoverProps) => {
-  const [open, setOpen] = React.useState(true);
+  // Initialize from the prop instead of a hard-coded `true`: the latter
+  // renders every popover open for the first frame(s) until the effect syncs,
+  // and Radix's close sequence then steals focus to the trigger — scrolling
+  // any scrollable ancestor (e.g. the dataset configuration form) to it.
+  const [open, setOpen] = React.useState(!!openState);
   React.useEffect(() => {
     setOpen(!!openState);
   }, [openState]);

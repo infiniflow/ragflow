@@ -20,6 +20,7 @@ import re
 
 # Keep all legacy chunker renames in one place so the migration rule stays readable.
 COMPONENT_RENAMES = {
+    "GeneralChunker": "TokenChunker",
     "Splitter": "TokenChunker",
     "HierarchicalMerger": "TitleChunker",
     "PDFGenerator": "DocGenerator",

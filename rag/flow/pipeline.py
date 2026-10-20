@@ -19,10 +19,33 @@ import json
 import logging
 import random
 from timeit import default_timer as timer
+
+import numpy as np
+
 from agent.canvas import Graph
 from api.db.services.document_service import DocumentService
 from api.db.services.task_service import has_canceled, TaskService, CANVAS_DEBUG_DOC_ID
 from rag.utils.redis_conn import REDIS_CONN
+
+
+def _sanitize_for_json(obj):
+    """Recursively convert numpy scalars/arrays to plain Python types.
+
+    Component outputs flow into ``json.dumps`` (END trace log) and into the
+    document store bulk insert, neither of which understands ``np.float32``
+    and friends (e.g. ``Object of type float32 is not JSON serializable``).
+    Upstream components pass most fields through untouched, so clean the
+    final output here instead of trusting every producer.
+    """
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
 
 
 class Pipeline(Graph):
@@ -168,10 +191,11 @@ class Pipeline(Graph):
             idx += 1
             self.path.extend(cpn_obj.get_downstream())
 
-        self.callback("END", 1 if not self.error else -1, json.dumps(self.get_component_obj(self.path[-1]).output(), ensure_ascii=False))
+        final_output = _sanitize_for_json(self.get_component_obj(self.path[-1]).output())
+        self.callback("END", 1 if not self.error else -1, json.dumps(final_output, ensure_ascii=False))
 
         if not self.error:
-            return self.get_component_obj(self.path[-1]).output()
+            return final_output
 
         TaskService.update_progress(self.task_id, {"progress": -1, "progress_msg": f"[ERROR]: {self.error}"})
 

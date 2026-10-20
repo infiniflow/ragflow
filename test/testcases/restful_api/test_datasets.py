@@ -14,18 +14,18 @@
 #  limitations under the License.
 #
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG
+
 from test.testcases.configs import INVALID_API_TOKEN, IS_GO_PROXY
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import encode_avatar
 from test.testcases.utils.file_utils import create_image_file, create_txt_file
-
 
 ARGUMENT_ERROR_CODE = 102 if IS_GO_PROXY else 101
 PARSER_ID_FIELD = "parser_id" if IS_GO_PROXY else "chunk_method"
@@ -53,6 +53,17 @@ def _expected_chunk_method(chunk_method):
     if IS_GO_PROXY and chunk_method == "naive":
         return "general"
     return chunk_method
+
+
+def _assert_go_pipeline_parser_config(parser_config, chunker_prefix="GeneralChunker:"):
+    assert parser_config
+    assert "File" in parser_config, parser_config
+    assert any(key.startswith("Parser:") for key in parser_config), parser_config
+    assert any(key.startswith(chunker_prefix) for key in parser_config), parser_config
+    assert all(isinstance(params, dict) for params in parser_config.values()), parser_config
+    assert "chunk_token_num" not in parser_config, parser_config
+    assert "raptor" not in parser_config, parser_config
+    assert "graphrag" not in parser_config, parser_config
 
 
 def _is_infinity_doc_engine(rest_client: RestClient) -> bool:
@@ -1315,9 +1326,12 @@ def test_dataset_create_parser_config_missing_raptor_and_graphrag(rest_client, c
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert "raptor" not in parser_config, body
-    assert "graphrag" not in parser_config, body
-    assert parser_config["chunk_token_num"] == 1024, body
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(parser_config)
+    else:
+        assert "raptor" not in parser_config, body
+        assert "graphrag" not in parser_config, body
+        assert parser_config["chunk_token_num"] == 1024, body
 
 
 @pytest.mark.p3
@@ -1457,7 +1471,7 @@ def test_dataset_create_concurrent_contract(rest_client, clear_datasets):
 )
 def test_dataset_create_parser_config_valid_matrix_contract(rest_client, clear_datasets, name, parser_config):
     if IS_GO_PROXY:
-        pytest.skip("Go CreateDataset does not accept parser_config")
+        pytest.skip("Go CreateDataset does not accept legacy flat parser_config")
     payload = {"name": name, "parser_config": parser_config}
     res = rest_client.post("/datasets", json=payload)
     assert res.status_code == 200
@@ -1494,9 +1508,12 @@ def test_dataset_create_parser_config_bugfix_contract(rest_client, clear_dataset
     body = res.json()
     assert body["code"] == 0, body
     actual_parser_config = body["data"]["parser_config"]
-    assert "raptor" not in actual_parser_config, body
-    assert "graphrag" not in actual_parser_config, body
-    assert actual_parser_config["chunk_token_num"] == 1024, body
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(actual_parser_config)
+    else:
+        assert "raptor" not in actual_parser_config, body
+        assert "graphrag" not in actual_parser_config, body
+        assert actual_parser_config["chunk_token_num"] == 1024, body
 
 
 @pytest.mark.p2
@@ -1516,9 +1533,20 @@ def test_dataset_create_parser_config_different_chunk_methods_contract(rest_clie
     body = res.json()
     assert body["code"] == 0, body
     parser_config = body["data"]["parser_config"]
-    assert parser_config["chunk_token_num"] == 512, body
-    assert "raptor" not in parser_config, body
-    assert "graphrag" not in parser_config, body
+    if IS_GO_PROXY:
+        chunker_prefix = {
+            "qa": "QAChunker:",
+            "manual": "ManualChunker:",
+            "paper": "TitleChunker:",
+            "book": "TitleChunker:",
+            "laws": "TitleChunker:",
+            "presentation": "PageChunker:",
+        }[chunk_method]
+        _assert_go_pipeline_parser_config(parser_config, chunker_prefix)
+    else:
+        assert parser_config["chunk_token_num"] == 512, body
+        assert "raptor" not in parser_config, body
+        assert "graphrag" not in parser_config, body
 
 
 def test_dataset_create_name_invalid_and_duplicate_contract(rest_client, clear_datasets):
@@ -1803,8 +1831,11 @@ def test_dataset_create_parser_config_defaults_and_extra_fields_contract(rest_cl
     unset_parser_config = unset_payload["data"]["parser_config"]
     none_parser_config = none_payload["data"]["parser_config"]
     assert empty_parser_config == unset_parser_config == none_parser_config
-    for key in DEFAULT_PARSER_CONFIG:
-        assert key in empty_parser_config, empty_payload
+    if IS_GO_PROXY:
+        _assert_go_pipeline_parser_config(empty_parser_config)
+    else:
+        for key in DEFAULT_PARSER_CONFIG:
+            assert key in empty_parser_config, empty_payload
 
     unsupported_field_payloads = [
         {"name": "id", "id": "id"},
@@ -2480,6 +2511,30 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_tags")
     second_dataset_id = create_dataset("dataset_tags_second")
 
+    # The aggregation route is served by both backends, so it is asserted
+    # before the backend-specific tag list contract below.
+    aggregate_res = rest_client.get(
+        "/datasets/tags/aggregation",
+        params={"dataset_ids": f"{dataset_id},{second_dataset_id}"},
+    )
+    assert aggregate_res.status_code == 200
+    aggregate_payload = aggregate_res.json()
+    assert aggregate_payload["code"] in (0, 102), aggregate_payload
+
+    empty_aggregate_res = rest_client.get("/datasets/tags/aggregation")
+    assert empty_aggregate_res.status_code == 200
+    empty_aggregate_payload = empty_aggregate_res.json()
+    assert empty_aggregate_payload["code"] != 0, empty_aggregate_payload
+
+    if IS_GO_PROXY:
+        # Go keeps no tag dataset, so the per-dataset tag routes are not served
+        # at all; tagging is driven by the dataset's tag source file and only
+        # the aggregation route survives. Assert the contract that replaced the
+        # old 200 responses instead of the route's payload.
+        assert rest_client.get(f"/datasets/{dataset_id}/tags").status_code == 404
+        assert rest_client.get("/datasets/invalid_id/tags").status_code == 404
+        return
+
     list_tags_res = rest_client.get(f"/datasets/{dataset_id}/tags")
     assert list_tags_res.status_code == 200
     list_tags_payload = list_tags_res.json()
@@ -2494,23 +2549,19 @@ def test_dataset_tags_and_aggregation(rest_client, create_dataset):
     invalid_list_tags_payload = invalid_list_tags_res.json()
     assert invalid_list_tags_payload["code"] != 0, invalid_list_tags_payload
 
-    aggregate_res = rest_client.get(
-        "/datasets/tags/aggregation",
-        params={"dataset_ids": f"{dataset_id},{second_dataset_id}"},
-    )
-    assert aggregate_res.status_code == 200
-    aggregate_payload = aggregate_res.json()
-    assert aggregate_payload["code"] in (0, 102), aggregate_payload
-
-    empty_aggregate_res = rest_client.get("/datasets/tags/aggregation")
-    assert empty_aggregate_res.status_code == 200
-    empty_aggregate_payload = empty_aggregate_res.json()
-    assert empty_aggregate_payload["code"] != 0, empty_aggregate_payload
-
 
 @pytest.mark.p2
 def test_dataset_tags_delete_and_rename_validation(rest_client, create_dataset):
     dataset_id = create_dataset("dataset_tag_mutation")
+
+    if IS_GO_PROXY:
+        # Same removal as above: with no tag dataset there is nothing to rename
+        # or delete, so both the validation cases and the invalid-dataset cases
+        # are now unrouted instead of argument errors.
+        for url in (f"/datasets/{dataset_id}/tags", "/datasets/invalid_id/tags"):
+            assert rest_client.delete(url, json={"tags": ["tag1"]}).status_code == 404
+            assert rest_client.put(url, json={"from_tag": "old", "to_tag": "new"}).status_code == 404
+        return
 
     delete_missing_tags = rest_client.delete(f"/datasets/{dataset_id}/tags", json={})
     assert delete_missing_tags.status_code == 200

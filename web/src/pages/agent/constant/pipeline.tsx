@@ -214,14 +214,12 @@ export const initialParserValues = {
       fileFormat: FileType.Html,
       output_format: TextJsonOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       flatten_media_to_text: false,
-      remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
@@ -438,8 +436,12 @@ export const NoDebugOperatorsList = [Operator.File];
 // legacy Python operator and is deliberately excluded.
 export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
+// Pipeline operators limited to a single instance per canvas. Title/Token
+// chunkers are separate entries here (each blocks its own duplication) but
+// also share one slot: see the chunker group rule in buildPipelineNextOperators.
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.Compiler,
   Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,

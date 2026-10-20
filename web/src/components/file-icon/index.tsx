@@ -34,7 +34,7 @@ const FileIcon = ({ name, id }: IProps) => {
   const { data: fileThumbnails, setDocumentIds } =
     useFetchDocumentThumbnailsByIds();
   const fileThumbnail = fileThumbnails[id];
-  const blobUrl = useAuthenticatedImageUrl(fileThumbnail);
+  const { src: blobUrl } = useAuthenticatedImageUrl(fileThumbnail);
 
   useEffect(() => {
     if (id) {

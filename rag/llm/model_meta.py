@@ -144,9 +144,22 @@ class Bedrock(Base):
             request.headers["Authorization"] = f"Bearer {api_key}"
 
         client.meta.events.register("before-sign.bedrock.*", add_bearer_token)
-        return client.list_foundation_models(byInferenceType="ON_DEMAND")
+        raw_model_list = client.list_foundation_models()
+        # Models served only through cross-region inference profiles (recent Claude, OpenAI GPT-6) are called by
+        # the profile id (``us.openai.gpt-6-sol``), so list the profiles too.
+        try:
+            raw_model_list["inferenceProfileSummaries"] = [
+                profile for page in client.get_paginator("list_inference_profiles").paginate(typeEquals="SYSTEM_DEFINED") for profile in page.get("inferenceProfileSummaries", [])
+            ]
+        except ClientError as error:
+            logging.warning("Bedrock: could not list inference profiles in region %s, listing on-demand models only: %s", region, error)
+        return raw_model_list
 
     def _format_model_list(self, raw_model_list: dict[str, object]) -> list[dict[str, object]]:
+        profile_ids: dict[str, list[str]] = {}
+        for profile in raw_model_list.get("inferenceProfileSummaries", []):
+            for model_id in dict.fromkeys(model.get("modelArn", "").rsplit("/", 1)[-1] for model in profile.get("models", [])):
+                profile_ids.setdefault(model_id, []).append(profile["inferenceProfileId"])
         models: list[dict[str, object]] = []
         for summary in raw_model_list.get("modelSummaries", []):
             if not isinstance(summary, dict):
@@ -158,11 +171,14 @@ class Bedrock(Base):
             lifecycle_status = (summary.get("modelLifecycle") or {}).get("status")
             if not model_id or "TEXT" not in input_modalities or "rerank" in model_id.lower():
                 continue
-            if inference_types and "ON_DEMAND" not in inference_types:
-                continue
+            # Foundation-model ids that are not ON_DEMAND can only be called through an inference profile.
+            names = [model_id] if "ON_DEMAND" in inference_types else profile_ids.get(model_id, [])
             if lifecycle_status and lifecycle_status != "ACTIVE":
                 continue
             if "EMBEDDING" in output_modalities and model_id.startswith(("amazon.titan-embed-text", "cohere.embed-")):
+                if "ON_DEMAND" not in inference_types:
+                    # BedrockEmbed reads the provider from the ``amazon.``/``cohere.`` prefix, so it cannot take a profile id.
+                    continue
                 model_types = [LLMType.EMBEDDING.value]
             elif "TEXT" in output_modalities:
                 model_types = [LLMType.CHAT.value]
@@ -170,7 +186,7 @@ class Bedrock(Base):
                     model_types.append(LLMType.VISION.value)
             else:
                 continue
-            models.append({"name": model_id, "model_types": model_types, "max_tokens": 8192, "features": []})
+            models.extend({"name": name, "model_types": model_types, "max_tokens": 8192, "features": []} for name in names)
         return models
 
     async def get_model_list(self) -> list[dict[str, object]]:
@@ -663,6 +679,22 @@ class OpenAIAPICompatible(Base):
             )
 
         return model_list
+
+
+class Xiaomi(OpenAIAPICompatible):
+    """Xiaomi MiMo serves an OpenAI-compatible catalog behind an api-key header."""
+
+    _FACTORY_NAME = "Xiaomi"
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            return None
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers={"api-key": self._get_api_key()}) as resp:
+                if resp.status != 200:
+                    return None
+                return await resp.json()
 
 
 class MWS(OpenAIAPICompatible):
@@ -1393,3 +1425,10 @@ class AIMLAPI(Base):
                 entry["model_types"].append(LLMType.VISION.value)
 
         return list(merged.values())
+
+
+class RadeonCloud(OpenAIAPICompatible):
+    _FACTORY_NAME = "Radeon Cloud"
+
+    def __init__(self, api_key, base_url=None):
+        super().__init__(api_key, base_url or "https://developer.amd.com.cn/radeon/api/v1")
