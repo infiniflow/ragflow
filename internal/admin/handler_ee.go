@@ -1122,27 +1122,6 @@ func (h *Handler) ListUserDatasets(c *gin.Context) {
 	common.SuccessWithData(c, datasets, "")
 }
 
-// ListUserAgents handle show user agents
-func (h *Handler) ListUserAgents(c *gin.Context) {
-	username, err := getUserName(c)
-	if err != nil {
-		return
-	}
-	ctx := c.Request.Context()
-
-	agents, err := h.service.ListUserAgents(ctx, username)
-	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, agents, "")
-}
-
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
 	username, err := getUserName(c)

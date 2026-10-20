@@ -41,7 +41,6 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 		&entity.User{},
 		&entity.UserTenant{},
 		&entity.Knowledgebase{},
-		&entity.UserCanvas{},
 	)
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
@@ -94,15 +93,6 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 	}
 	if err := db.Create(&datasets).Error; err != nil {
 		t.Fatalf("create datasets: %v", err)
-	}
-
-	agents := []entity.UserCanvas{
-		{ID: "agent-own", UserID: user.ID, Title: testutil.StrPtr("Own agent"), Permission: "me", CanvasCategory: "agent_canvas"},
-		{ID: "agent-team", UserID: "tenant-2", Title: testutil.StrPtr("Team agent"), Permission: "team", CanvasCategory: "agent_canvas"},
-		{ID: "agent-private", UserID: "tenant-2", Title: testutil.StrPtr("Private agent"), Permission: "me", CanvasCategory: "agent_canvas"},
-	}
-	if err := db.Create(&agents).Error; err != nil {
-		t.Fatalf("create agents: %v", err)
 	}
 
 	return NewHandler(NewService())
@@ -179,39 +169,5 @@ func TestListUserDatasetsReturnsAccessibleDatasets(t *testing.T) {
 	}
 	if dataset := datasetsByName["Team dataset"]; dataset.Permission != "team" || dataset.Status != "1" {
 		t.Fatalf("unexpected team dataset: %+v", dataset)
-	}
-}
-
-func TestListUserAgentsReturnsAccessibleAgents(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	handler := setupAdminUserDetailTest(t)
-	response := callAdminUserHandler(t, handler.ListUserAgents)
-
-	var agents []struct {
-		Title          string `json:"title"`
-		Permission     string `json:"permission"`
-		CanvasCategory string `json:"canvas_category"`
-	}
-	if err := json.Unmarshal(response.Data, &agents); err != nil {
-		t.Fatalf("decode agents: %v", err)
-	}
-	if len(agents) != 2 {
-		t.Fatalf("agents length = %d, want 2: %+v", len(agents), agents)
-	}
-	agentsByTitle := make(map[string]struct {
-		Permission     string
-		CanvasCategory string
-	}, len(agents))
-	for _, agent := range agents {
-		agentsByTitle[agent.Title] = struct {
-			Permission     string
-			CanvasCategory string
-		}{Permission: agent.Permission, CanvasCategory: agent.CanvasCategory}
-	}
-	if agent := agentsByTitle["Own agent"]; agent.Permission != "me" || agent.CanvasCategory != "agent" {
-		t.Fatalf("unexpected own agent: %+v", agent)
-	}
-	if agent := agentsByTitle["Team agent"]; agent.Permission != "team" || agent.CanvasCategory != "agent" {
-		t.Fatalf("unexpected team agent: %+v", agent)
 	}
 }

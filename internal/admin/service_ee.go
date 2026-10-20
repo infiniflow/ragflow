@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"sort"
-	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -640,42 +639,6 @@ func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[str
 			"status":      status,
 			"create_date": dataset.CreateDate,
 			"update_date": dataset.UpdateDate,
-		})
-	}
-	return result, nil
-}
-
-// ListUserAgents show user agents for enterprise edition
-func (s *Service) ListUserAgents(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-
-	agents, err := s.canvasDAO.GetAllCanvasesByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user agents: %w", err)
-	}
-
-	result := make([]map[string]interface{}, 0, len(agents))
-	for _, agent := range agents {
-		title := ""
-		if agent.Title != nil {
-			title = *agent.Title
-		}
-		result = append(result, map[string]interface{}{
-			"title":           title,
-			"permission":      agent.Permission,
-			"canvas_category": strings.SplitN(agent.CanvasCategory, "_", 2)[0],
-			"avatar":          agent.Avatar,
 		})
 	}
 	return result, nil

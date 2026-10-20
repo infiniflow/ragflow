@@ -2307,27 +2307,6 @@ func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (Resp
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s datasets", userName))
 }
-func (c *CLI) AdminListUserAgentsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s agents: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("list user %s agents", userName))
-}
 func (c *CLI) AdminListUserChatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
