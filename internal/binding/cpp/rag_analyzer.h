@@ -145,6 +145,11 @@ private:
 
     void EnglishNormalize(const std::vector<std::string>& tokens, std::vector<std::string>& res);
 
+    // ASCII-lowercases term into lowercase_string_buffer_, growing it first:
+    // ToLower() ignores its out_limit, so a token longer than the buffer
+    // overflowed the heap.
+    const char* LowercaseTerm(const std::string& term);
+
 public:
     [[nodiscard]] std::vector<std::pair<std::vector<std::string_view>, double>> GetBestTokensTopN(
         std::string_view chars, uint32_t n) const;
