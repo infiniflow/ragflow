@@ -1146,6 +1146,21 @@ func userInputMeta(userInput any) []zap.Field {
 	return fields
 }
 
+// prepareAgentCompletionMessages resolves the run query and the messages kept
+// for the run. An explicit question/query collapses the request to one user
+// turn. Otherwise the caller's messages are kept: OpenAI-compatible clients
+// resend the whole conversation and may carry no session, so their messages
+// are the only dependable history.
+func prepareAgentCompletionMessages(req *agentChatCompletionsRequest) error {
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return err
+	}
+	req.Messages = service.CompletionMessages(req.Question, req.Query, req.Messages)
+	req.Query = question
+	return nil
+}
+
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1157,17 +1172,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
-	if err != nil {
+	if err := prepareAgentCompletionMessages(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
-	}
-	req.Query = question
-	if req.Question != "" || req.Query != "" {
-		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
-	}
-	if len(req.Messages) > 0 {
-		req.Messages = req.Messages[len(req.Messages)-1:]
 	}
 	if req.AgentID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")

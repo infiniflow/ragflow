@@ -2117,10 +2117,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 			}
 		}
-		state.SetHistory(c.History)
-		if messages, ok := root["openai_messages"].([]map[string]interface{}); ok && len(messages) > 1 {
-			state.SetHistory(openAICompatPriorHistory(messages))
+		history := c.History
+		if messages, ok := root["openai_messages"].([]map[string]interface{}); ok {
+			history = openAICompatSeedHistory(history, messages)
 		}
+		state.SetHistory(history)
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		query := agentRunQuery(userInput)
@@ -2810,6 +2811,34 @@ func openAICompatPriorHistory(messages []map[string]interface{}) []map[string]an
 	}
 	return history
 }
+
+// openAICompatSeedHistory picks the history a run starts from. The client's
+// earlier messages replace what the session stored, except when they hold no
+// user turn (system or developer instructions, an assistant greeting) while
+// the session already has turns: SetHistory replaces rather than merges, so
+// seeding from them would erase the conversation of a caller that resumes by
+// session_id.
+func openAICompatSeedHistory(stored []map[string]any, messages []map[string]interface{}) []map[string]any {
+	prior := openAICompatPriorHistory(messages)
+	if len(prior) == 0 {
+		return stored
+	}
+	if len(stored) > 0 && !hasUserTurn(prior) {
+		return stored
+	}
+	return prior
+}
+
+// hasUserTurn reports whether the history contains something the user said.
+func hasUserTurn(history []map[string]any) bool {
+	for _, entry := range history {
+		if role, _ := entry["role"].(string); role == "user" {
+			return true
+		}
+	}
+	return false
+}
+
 func pythonHistoryRepr(value any) string {
 	switch item := value.(type) {
 	case nil:

@@ -17,6 +17,20 @@ func ResolveStoreHistoryMessages(kwargs map[string]interface{}) (bool, error) {
 	return false, nil
 }
 
+// CompletionMessages returns the messages a completion runs on. An explicit
+// question/query collapses the request to that single user turn; otherwise the
+// caller's own history is kept untouched.
+func CompletionMessages(question, query string, messages []map[string]interface{}) []map[string]interface{} {
+	text := question
+	if text == "" {
+		text = query
+	}
+	if text == "" {
+		return messages
+	}
+	return []map[string]interface{}{{"role": "user", "content": text}}
+}
+
 // ResolveCompletionQuestion picks explicit question/query text before the final user message.
 func ResolveCompletionQuestion(question, query string, messages []map[string]interface{}) (string, error) {
 	if question != "" {
