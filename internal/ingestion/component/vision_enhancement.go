@@ -375,17 +375,37 @@ func maybeDispatchVisionEnhancement(
 			zap.Int("failed_items", failedItems), zap.String("first_failure", firstFailure))
 	}
 
-	// Append descriptions after parser-provided text and captions.
-	for slot, itemIdx := range items {
-		desc := strings.TrimSpace(descriptions[slot])
-		if desc == "" {
+	// Candidate indices are in document order. Build output once so a table's
+	// description can follow it without changing later candidates' indices.
+	enhanced := make([]parser.DocItem, 0, len(dispatched.JSON)+len(items))
+	slot := 0
+	for itemIdx, item := range dispatched.JSON {
+		if slot >= len(items) || items[slot] != itemIdx {
+			enhanced = append(enhanced, item)
 			continue
 		}
-		m := dispatched.JSON[itemIdx].ToMap()
-		appendItemText(m, desc)
-		dispatched.JSON[itemIdx] = parser.DocItemFromMap(m)
+		desc := strings.TrimSpace(descriptions[slot])
+		slot++
+		if desc == "" {
+			enhanced = append(enhanced, item)
+			continue
+		}
+		m := item.ToMap()
+		if table, ok := m["table"].(*entity.TableData); ok && table != nil && m["doc_type_kwd"] == "table" {
+			note := parser.TextItem{Text: desc, Extra: map[string]any{"layout": "text"}}
+			for _, key := range []string{"page_number", "_preserve_order"} {
+				if value, ok := m[key]; ok {
+					note.Extra[key] = value
+				}
+			}
+			enhanced = append(enhanced, item, note)
+		} else {
+			appendItemText(m, desc)
+			enhanced = append(enhanced, parser.DocItemFromMap(m))
+		}
 		modified = true
 	}
+	dispatched.JSON = enhanced
 
 	return dispatched, modified, nil
 }

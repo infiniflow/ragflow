@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,7 +29,11 @@ func pdfFileMeta(filename string, pageCount int) map[string]any {
 func markdownItemText(item map[string]any) string {
 	if dt, _ := item["doc_type_kwd"].(string); dt == "table" {
 		if td, ok := item["table"].(*entity.TableData); ok && td != nil {
-			return tableutil.RenderTableHTML(td)
+			markup := tableutil.RenderTableHTML(td)
+			if notes, _ := item["text"].(string); strings.TrimSpace(notes) != "" {
+				return strings.TrimRight(markup, "\n") + "\n\n" + notes
+			}
+			return markup
 		}
 		return ""
 	}
@@ -43,10 +48,14 @@ func pdfItemsToResult(filename string, items []map[string]any, outputFormat stri
 	pageCount = normalizePDFPageCount(pageCount, items)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
+		docs := make([]DocItem, 0, len(items))
+		for _, item := range items {
+			docs = appendPDFItem(docs, item)
+		}
 		return ParseResult{
 			OutputFormat: "json",
 			File:         pdfFileMeta(filename, pageCount),
-			JSON:         MapsToItems(items),
+			JSON:         docs,
 		}
 	case "markdown":
 		var b strings.Builder
@@ -149,4 +158,25 @@ func rowsHaveText(rows [][]string) bool {
 		}
 	}
 	return false
+}
+
+func pdfMarkdownToResult(ctx context.Context, filename, markdown, outputFormat string, pageCount int) ParseResult {
+	fileMeta := pdfFileMeta(filename, pageCount)
+	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
+	case "", "json":
+		res := parsePDFMarkdown(ctx, filename, markdown)
+		if res.Err != nil {
+			return res
+		}
+		res.File = fileMeta
+		return res
+	case "markdown":
+		return ParseResult{
+			OutputFormat: "markdown",
+			File:         fileMeta,
+			Markdown:     markdown,
+		}
+	default:
+		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+	}
 }

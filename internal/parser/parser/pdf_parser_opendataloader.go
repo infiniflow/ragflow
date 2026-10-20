@@ -68,7 +68,7 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return parseMinerUMarkdownResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
+		return pdfMarkdownToResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }

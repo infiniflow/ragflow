@@ -120,19 +120,6 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	}
 }
 
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
-	if result.OutputFormat != "markdown" {
-		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
-	}
-	if result.Markdown != "# Heading" {
-		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
-	}
-	if result.JSON != nil {
-		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
-	}
-}
-
 type monkeyOCRv2FakeDriver struct {
 	modelModule.ModelDriver
 }

@@ -24,6 +24,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
@@ -79,15 +80,24 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
-
-	method := getStringOr(setup, "parse_method", "")
-	layout := getStringOr(setup, "layout_recognizer", "")
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	layoutLower := strings.ToLower(strings.TrimSpace(layout))
-
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
 		return result, true, err
 	}
+	result, handled, err := dispatchPDFBackend(ctx, db, filename, binary, tenantID, setup)
+	if err != nil || !handled {
+		return result, handled, err
+	}
+	flatten, _ := setup["flatten_media_to_text"].(bool)
+	pdf := parser.PDFParser{FlattenMediaToText: flatten}
+	result = pdf.NormalizeResult(ctx, filename, result)
+	return result, true, result.Err
+}
+
+func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
+	method := getStringOr(setup, "parse_method", "")
+	layout := getStringOr(setup, "layout_recognizer", "")
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
 
 	monkeySelector := layout
 	if strings.TrimSpace(monkeySelector) == "" {
@@ -276,8 +286,7 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []pa
 }
 
 func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
-	// Keep the backend's Markdown intact here. buildParserOutputs is the
-	// single normalization boundary for all non-JSON parser responses.
+	// The PDF dispatch boundary converts backend Markdown before enhancement.
 	return parser.ParseResult{
 		OutputFormat: "markdown",
 		Markdown:     md,
@@ -919,6 +928,20 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 		jsonItem["positions"] = positions
 		if page, ok := positions[0][0].(int); ok {
 			jsonItem["page_number"] = page
+		}
+	}
+	if typ == "table" {
+		body, _ := item["table_body"].(string)
+		if table, err := tableutil.ParseTableHTML(body); err == nil && table != nil && len(table.Grid) > 0 {
+			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
+			if caption != "" && caption != table.Caption {
+				table.Caption = strings.TrimSpace(table.Caption + "\n" + caption)
+			}
+			if page, ok := jsonItem["page_number"].(int); ok {
+				table.Page = page
+			}
+			jsonItem["table"] = table
+			jsonItem["text"] = strings.Join(stringSlice(item["table_footnote"]), "\n")
 		}
 	}
 	return jsonItem
