@@ -20,8 +20,9 @@ from functools import partial
 
 import xxhash
 
-from agent.component.llm import LLMParam, LLM
 from agent.component.base import ComponentBase
+from agent.component.llm import LLM, LLMParam
+from common.chunk_order import TOC_CHUNK_ORDER_BASE, drop_parent_link
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.prompts.generator import run_toc_from_text
 
@@ -85,12 +86,20 @@ class Extractor(ProcessBase, LLM):
 
         if toc:
             d = deepcopy(docs[-1])
+            # The TOC row only borrows the last chunk's position columns. Its
+            # parent link must go, or insert_chunks derives a duplicate parent.
+            drop_parent_link(d)
             d["doc_id"] = self._canvas._doc_id
             d["toc"] = json.dumps(toc, ensure_ascii=False)
             d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
             d["toc_kwd"] = "toc"
             d["available_int"] = 0
             d["page_num_int"] = [100000000]
+            # Only number the TOC when the pipeline numbered the chunks too: a
+            # docstore that sorts missing values last would otherwise list the
+            # TOC before them.
+            if d.get("chunk_order_int") is not None:
+                d["chunk_order_int"] = TOC_CHUNK_ORDER_BASE
             d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             return d
         return None
