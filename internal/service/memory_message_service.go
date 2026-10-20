@@ -108,19 +108,35 @@ type MemoryMessageService struct {
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
 	resumeTask    func(context.Context, *entity.MemoryTask, string) error
+	// kvrocksClient mints raw-message ids via Redis auto-increment. It is
+	// injected at construction (inherited from the owning MemoryService) rather
+	// than read from a package global, so the memory module holds no mutable
+	// package-level state and has no init-order race. A nil client falls back
+	// to wall-clock ids.
+	kvrocksClient *kvrocks.Client
 }
 
 // NewMemoryMessageService constructs a service bound to the
 // supplied MemoryService. Caller is expected to register this as
 // the default MemorySaver in the Message component via
 // `component.SetMemorySaver(...)` at boot.
+//
+// The kvrocks client used to mint raw-message ids is inherited from the
+// supplied MemoryService (which receives it via WithMemoryKvrocks at the
+// composition root), so the memory module carries no package-level global.
+// When the MemoryService has no client bound, ids fall back to wall-clock
+// values — acceptable for local/test paths.
 func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
-	return &MemoryMessageService{
+	s := &MemoryMessageService{
 		memories:      memories,
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
 		taskPublisher: NewMessageQueueTaskPublisher(),
 	}
+	if memories != nil {
+		s.kvrocksClient = memories.kvrocksClient
+	}
+	return s
 }
 
 // queueSaveToMemoryTask runs the memory-persistence flow for the
@@ -163,7 +179,7 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 		// keeps the same field set as Python:344-386 so the
 		// downstream extractor can consume the row without
 		// schema changes.
-		rawMessageID := generateRawMessageID(ctx)
+		rawMessageID := generateRawMessageID(ctx, s.kvrocksClient)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 		task, memoryTask := buildMemoryTaskRecords(rawMessageID, memoryID, msg)
 		if err := s.insertMemoryTask(ctx, task, memoryTask); err != nil {
@@ -176,7 +192,7 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			failure := fmt.Errorf("store raw memory message: %w", err)
-			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, dao.DB, task.ID, failure.Error())
+			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, s.memories.db, task.ID, failure.Error())
 			if failErr != nil {
 				failure = errors.Join(failure, fmt.Errorf("mark memory task failed: %w", failErr))
 			} else if !failed {
@@ -203,6 +219,9 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 	if s == nil {
 		return errors.New("memory: nil MemoryMessageService")
 	}
+	if s.memories == nil {
+		return errors.New("memory: nil memory service dependency")
+	}
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
@@ -210,7 +229,7 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		return errors.New("memory task publisher is not initialized")
 	}
 
-	tasks, err := s.memoryTaskDAO.ListDue(ctx, dao.DB, memoryNow(), limit)
+	tasks, err := s.memoryTaskDAO.ListDue(ctx, s.memories.db, memoryNow(), limit)
 	if err != nil {
 		return fmt.Errorf("memory: list due tasks: %w", err)
 	}
@@ -227,10 +246,14 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 }
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
-// side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
-func generateRawMessageID(ctx context.Context) int64 {
-	if redisClient := kvrocks.Get(); redisClient != nil {
-		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
+// side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`). When kv
+// is nil it falls back to a wall-clock id, so callers that do not configure a
+// kvrocks client (local/test paths) still produce a unique-enough id. The
+// client is passed in explicitly rather than read from a package global, which
+// keeps the memory module free of mutable package-level state and its init race.
+func generateRawMessageID(ctx context.Context, kv *kvrocks.Client) int64 {
+	if kv != nil {
+		if id := kv.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
 	}
@@ -380,7 +403,7 @@ func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entit
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
-	return s.memoryTaskDAO.CreateWithTask(ctx, dao.DB, task, memoryTask)
+	return s.memoryTaskDAO.CreateWithTask(ctx, s.memories.db, task, memoryTask)
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID

@@ -40,6 +40,8 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 type embedder struct {
@@ -666,6 +668,24 @@ func newEmbedderResolver(
 	}
 }
 
+// embedderResolverDB is the relational handle the production embedder resolver
+// uses to read a knowledgebase's configured embedding model id. It is bound once
+// at the server assembly point via InitEmbedderResolver; a nil value makes the
+// resolver return an error at call time instead of silently reading zero rows.
+// It replaces the previous process-wide dao.DB lookup so the task package (the
+// composition root for ingestion runs) no longer reaches the global directly
+// (arch_test.go guards that rule).
+var embedderResolverDB *gorm.DB
+
+// InitEmbedderResolver binds the relational handle used by the production
+// embedder resolver. The task package is the composition root for ingestion
+// runs; the server assembly point passes the process-wide db here rather than
+// letting the resolver read dao.DB. Call it once during server startup, before
+// any ingestion run.
+func InitEmbedderResolver(db *gorm.DB) {
+	embedderResolverDB = db
+}
+
 // init wires the production embedder resolver into the component package. The
 // component package must not import internal/service (dependency direction),
 // so the concrete resolver is injected here - the task package is the
@@ -674,7 +694,10 @@ func init() {
 	modelFactory := service.NewModelFactory()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
-			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
+			if embedderResolverDB == nil {
+				return "", fmt.Errorf("embedder: resolver not initialized; call task.InitEmbedderResolver(dao.DB) at server startup")
+			}
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, embedderResolverDB, kbID)
 			if err != nil {
 				return "", err
 			}
