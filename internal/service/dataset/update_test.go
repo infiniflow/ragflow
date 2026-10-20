@@ -1156,6 +1156,7 @@ func insertDatasetUpdateModelProvider(t *testing.T, id, tenantID, providerName s
 
 	provider := &entity.TenantModelProvider{
 		ID:           id,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		ProviderName: providerName,
 	}

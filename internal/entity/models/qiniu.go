@@ -291,3 +291,7 @@ func (q *QiniuModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 func (q *QiniuModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", q.Name())
 }
+
+func (q *QiniuModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}

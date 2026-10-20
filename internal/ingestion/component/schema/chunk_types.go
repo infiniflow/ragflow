@@ -242,10 +242,11 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 }
 
 // ChunkDocsFromDocItem converts a parser-produced []DocItem directly into a
-// typed chunk slice, without routing through DocItem.ToMap. It reads the
-// typed fields of each item and feeds the canonical wire map to ChunkDocFromMap,
-// so the resulting []ChunkDoc is identical to what the historical
-// ChunkDocsFromAny([]DocItem) path produced (which round-tripped via ToMap).
+// typed chunk slice by projecting each item through its canonical DocItem.ToMap
+// wire shape and decoding the result via ChunkDocFromMap (see chunkDocFromDocItem).
+// The resulting []ChunkDoc is therefore identical to what the historical
+// ChunkDocsFromAny([]DocItem) path produced, which round-tripped through the same
+// ToMap projection.
 // This is the consumer-side entry the chunker uses once parsers emit DocItems
 // directly; other callers that still pass []map[string]any / []any / []ChunkDoc
 // keep using ChunkDocsFromAny.

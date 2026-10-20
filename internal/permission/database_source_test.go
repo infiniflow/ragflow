@@ -998,8 +998,8 @@ func TestDatabaseCheckerAuthorizesTenantModelsAndSeparatesInstanceUseFromRead(t 
 	}
 
 	providers := []entity.TenantModelProvider{
-		{ID: "team-provider", ProviderName: "openai", TenantID: "team-tenant"},
-		{ID: "other-provider", ProviderName: "openai", TenantID: "other-tenant"},
+		{ID: "team-provider", UserID: "team-owner", ProviderName: "openai", TenantID: "team-tenant"},
+		{ID: "other-provider", UserID: "other-owner", ProviderName: "openai", TenantID: "other-tenant"},
 	}
 	for i := range providers {
 		if err := db.Create(&providers[i]).Error; err != nil {

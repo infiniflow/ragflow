@@ -691,14 +691,24 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	}
 }
 
-// TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family default
-// output_format must be "json" (matching Python parser.py:212), not "text".
+// TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family output
+// format must be "json" (matching Python parser.py:212), not "text".
 // With "text" the structured email fields (from/to/subject/attachments/...) are
-// flattened into a blob and lost downstream.
+// flattened into a blob and lost downstream. The value is owned by
+// normalizeParserOutputFormats, so the assertion goes through the constructed
+// component rather than the raw defaults.
 func TestDefaultEmailOutputFormatIsJSON(t *testing.T) {
-	got, _ := defaultSetups()["email"]["output_format"].(string)
+	comp, err := NewParserComponent(nil)
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	pc, ok := comp.(*ParserComponent)
+	if !ok {
+		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", comp)
+	}
+	got, _ := pc.setups["email"]["output_format"].(string)
 	if got != "json" {
-		t.Fatalf("email default output_format = %q, want json", got)
+		t.Fatalf("email output_format = %q, want json", got)
 	}
 }
 

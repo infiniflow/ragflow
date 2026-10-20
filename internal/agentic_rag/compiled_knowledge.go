@@ -91,3 +91,41 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, tenantID string, dataset
 	}
 	return len(res.Chunks) > 0
 }
+
+// datasetsHaveClaims reports whether any bound dataset carries knowledge-compiled
+// CLAIM rows (entity_type_kwd="claim").
+//
+// It is the gate for the claim prefetch and is deliberately STRICTER than
+// datasetsHaveCompiledKnowledge: a dataset compiled into a navigation tree or a
+// timeline has compile_kwd rows but no evidence rows, so the looser probe would
+// let the pipeline spend a routing call plus two retrieval legs per document to
+// learn that there is nothing to prefetch. claimRowsPresent wraps it so tests can
+// drive the gate without an engine.
+func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []string) bool {
+	if len(datasetIDs) == 0 {
+		return false
+	}
+	de := engine.Get()
+	if de == nil {
+		return false
+	}
+	res, err := de.Search(ctx, &enginetypes.SearchRequest{
+		IndexNames:         []string{indexNameFor(tenantID, "")},
+		KbIDs:              datasetIDs,
+		SelectFields:       []string{"id"},
+		Filter:             map[string]interface{}{"entity_type_kwd": []string{navClaimRowType}},
+		Limit:              1,
+		IncludeUnavailable: true,
+	})
+	if err != nil || res == nil {
+		common.DebugCtx(ctx, "agentic_rag: claim probe failed",
+			zap.String("tenant_id", tenantID),
+			zap.Strings("datasets", datasetIDs),
+			zap.Error(err))
+		return false
+	}
+	return len(res.Chunks) > 0
+}
+
+// claimRowsPresent is the claim-prefetch gate; tests replace it.
+var claimRowsPresent = datasetsHaveClaims

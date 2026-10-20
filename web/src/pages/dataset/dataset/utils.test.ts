@@ -143,6 +143,7 @@ const SavedConfig: SavedParserConfig = {
   setups: [
     { fileFormat: FileType.PDF, parse_method: 'DeepDOC' },
     { fileFormat: FileType.Image, ocr_enabled: true },
+    { fileFormat: FileType.Email, fields: ['subject', 'body'] },
     { fileFormat: FileType.Audio, vlm: { llm_id: '' } },
     { fileFormat: FileType.Video },
   ],
@@ -218,6 +219,11 @@ describe('findParserGap', () => {
     });
   });
 
+  it('passes image/email with a general-like setup — no switch needed', () => {
+    expect(findParserGap(FileType.Image, SavedConfig)).toBeNull();
+    expect(findParserGap(FileType.Email, SavedConfig)).toBeNull();
+  });
+
   it('passes image with an ocr-only setup — no model required', () => {
     expect(findParserGap(FileType.Image, SavedConfig)).toBeNull();
   });
@@ -231,7 +237,14 @@ describe('findParserGap', () => {
 describe('findFilesParserGaps', () => {
   it('returns a gap per failing file, mixing both reasons', () => {
     const gaps = findFilesParserGaps(
-      ['song.mp3', 'notes.docx', 'photo.jpg', 'movie.mp4'],
+      [
+        'song.mp3',
+        'notes.docx',
+        'photo.jpg',
+        'movie.mp4',
+        'deck.pptx',
+        'mail.eml',
+      ],
       SavedConfig,
     );
     expect(gaps).toEqual([
@@ -245,6 +258,11 @@ describe('findFilesParserGaps', () => {
         name: 'notes.docx',
         reason: ParserGapReason.UnsupportedType,
         fileType: FileType.Docx,
+      },
+      {
+        name: 'deck.pptx',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.PowerPoint,
       },
     ]);
   });
