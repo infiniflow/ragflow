@@ -17,9 +17,12 @@
 package chunker
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
+
+	"ragflow/internal/parser/tableutil"
 )
 
 // tableChunksOf drives TableChunker.Invoke and returns the emitted maps.
@@ -38,6 +41,33 @@ func tableChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 		t.Fatalf("chunks not []map[string]any: %T", out["chunks"])
 	}
 	return chunks
+}
+
+// tableItem builds a chunker JSON input item carrying the structured TableData
+// contract a post-migration producer emits (derived from markup), plus any
+// extra fields (positions, sheet_index, ck_type, ...). It deliberately does
+// NOT set "text": the chunker derives a plain text body from TableData.
+func tableItem(t *testing.T, html string, extra ...map[string]any) map[string]any {
+	t.Helper()
+	td, err := tableutil.ParseTableHTML(html)
+	if err != nil {
+		t.Fatalf("ParseTableHTML(%q): %v", html, err)
+	}
+	b, err := json.Marshal(td)
+	if err != nil {
+		t.Fatalf("marshal TableData: %v", err)
+	}
+	var tbl map[string]any
+	if err := json.Unmarshal(b, &tbl); err != nil {
+		t.Fatalf("unmarshal TableData: %v", err)
+	}
+	item := map[string]any{"table": tbl, "doc_type_kwd": "table"}
+	if len(extra) > 0 {
+		for k, v := range extra[0] {
+			item[k] = v
+		}
+	}
+	return item
 }
 
 // TestTableChunker_OneChunkPerRow ports the Python table chunker's contract:
@@ -83,8 +113,8 @@ func TestTableChunker_EmptyRows(t *testing.T) {
 }
 
 // TestTableChunkerPreservesHeaderOnlyTable: the header row only becomes a
-// chunk itself when the segment has no data rows — then the whole markup is
-// the table's only searchable representation.
+// chunk itself when the segment has no data rows — then the whole table's
+// plain-text rendering is the table's only searchable representation.
 func TestTableChunkerPreservesHeaderOnlyTable(t *testing.T) {
 	segment := spreadsheetSegmentItem("Sheet1", []string{"ID", "Name"}, nil, 1, 1)
 	chunks := tableChunksOf(t, map[string]any{
@@ -95,8 +125,14 @@ func TestTableChunkerPreservesHeaderOnlyTable(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want the header-only table preserved", len(chunks))
 	}
-	if chunks[0]["ck_type"] != "table" || chunks[0]["text"] != segment["text"] {
-		t.Fatalf("chunk = %#v, want the header-only segment whole", chunks[0])
+	if chunks[0]["ck_type"] != "table" {
+		t.Fatalf("chunk = %#v, want a table chunk", chunks[0])
+	}
+	if got, ok := chunks[0]["text"].(string); !ok || got == "" {
+		t.Fatalf("header-only chunk must carry a plain-text body, got %#v", chunks[0]["text"])
+	}
+	if chunks[0]["table"] != nil {
+		t.Fatalf("structured TableData must be cleared on the emitted chunk: %#v", chunks[0]["table"])
 	}
 }
 
@@ -112,18 +148,20 @@ func TestTableChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
 		t.Fatalf("got %d chunks, want data row plus header-only segment", len(chunks))
 	}
 	// The header row of the data segment never becomes a chunk of its own;
-	// its column names live in the row record text instead.
-	if chunks[0]["text"] != "- ID: A-1\n- Name: paid" {
+	// its column names ride along as the HTML header of the row chunk.
+	row0, _ := chunks[0]["text"].(string)
+	if !strings.Contains(row0, "<table>") || !strings.Contains(row0, "<td>A-1</td>") ||
+		!strings.Contains(row0, "<td>paid</td>") || !strings.Contains(row0, "<th>ID</th>") {
 		t.Fatalf("chunk0 = %#v", chunks[0])
 	}
-	if chunks[1]["text"] != headerSegment["text"] {
-		t.Fatalf("chunk1 = %#v, want the header-only segment whole", chunks[1])
+	if chunks[1]["ck_type"] != "table" || chunks[1]["table"] != nil {
+		t.Fatalf("chunk1 = %#v, want the header-only segment whole with TableData cleared", chunks[1])
 	}
 }
 
 // TestTableChunker_ExpandsHTMLRowsWithAlignedPositions covers the P2
-// expander: one HTML <table> item with a row-aligned position matrix (one
-// tuple per <tr>, header included) becomes one chunk per data row, each
+// expander: one table item with a row-aligned position matrix (one
+// tuple per row, header included) becomes one chunk per data row, each
 // carrying its own tuple and the Python "- field: value" line format.
 func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 	table := "<table><caption>orders</caption>\n" +
@@ -135,23 +173,24 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 		"name":          "orders.xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{
-				"text":         table,
-				"doc_type_kwd": "table",
-				"ck_type":      "table",
-				"sheet_index":  1,
-				"positions":    [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}},
-			},
+			tableItem(t, table, map[string]any{
+				"ck_type":     "table",
+				"sheet_index": 1,
+				"positions":   [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}},
+			}),
 		},
 	})
 	if len(chunks) != 2 {
 		t.Fatalf("got %d chunks, want one per data row", len(chunks))
 	}
-	if chunks[0]["text"] != "- ID: A-1\n- Status: paid" {
+	c0, _ := chunks[0]["text"].(string)
+	if !strings.Contains(c0, "<td>A-1</td>") || !strings.Contains(c0, "<td>paid</td>") || !strings.Contains(c0, "<th>ID</th>") {
 		t.Errorf("chunk0 text = %v", chunks[0]["text"])
 	}
-	// The empty cell is skipped, matching the Python table chunker's per-cell skip.
-	if chunks[1]["text"] != "- ID: A-2" {
+	// The empty cell is skipped in the row record; the HTML row keeps the row's
+	// own id and renders the empty cell plainly.
+	c1, _ := chunks[1]["text"].(string)
+	if !strings.Contains(c1, "<td>A-2</td>") {
 		t.Errorf("chunk1 text = %v", chunks[1]["text"])
 	}
 	if got := fmt.Sprintf("%v", chunks[0]["positions"]); !strings.Contains(got, "2") || strings.Contains(got, "3") {
@@ -172,12 +211,10 @@ func TestTableChunker_WholeTableTupleNotCopiedToRows(t *testing.T) {
 		"name":          "sheet.csv",
 		"output_format": "json",
 		"json": []map[string]any{
-			{
-				"text":         table,
-				"doc_type_kwd": "table",
-				"sheet_index":  1,
-				"positions":    [][]float64{{1, 1, 2, 1, 1}},
-			},
+			tableItem(t, table, map[string]any{
+				"sheet_index": 1,
+				"positions":   [][]float64{{1, 1, 2, 1, 1}},
+			}),
 		},
 	})
 	if len(chunks) != 2 {
@@ -190,7 +227,7 @@ func TestTableChunker_WholeTableTupleNotCopiedToRows(t *testing.T) {
 	}
 }
 
-// TestTableChunker_NonSpreadsheetPositionsNotAttached: a markup item without
+// TestTableChunker_NonSpreadsheetPositionsNotAttached: a table item without
 // spreadsheet identity must not have its positions read as per-row tuples —
 // PDF items write layout boxes into the same field, so a five-field matrix
 // that happens to align must still be ignored.
@@ -200,12 +237,10 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 		"name":          "document.docx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{
-				"text":         table,
-				"doc_type_kwd": "table",
-				"ck_type":      "table",
-				"positions":    [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}},
-			},
+			tableItem(t, table, map[string]any{
+				"ck_type":   "table",
+				"positions": [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}},
+			}),
 		},
 	})
 	if len(chunks) != 2 {
@@ -219,36 +254,47 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 }
 
 // TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload: a table whose only
-// row is the header has nothing to expand; the whole markup stays one chunk.
+// row is the header has nothing to expand; the whole table stays one chunk
+// carrying its HTML rendering.
 func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 	table := "<table><caption>t</caption>\n<tr><th>A</th><th>B</th></tr>\n</table>\n"
+	td, err := tableutil.ParseTableHTML(table)
+	if err != nil {
+		t.Fatalf("ParseTableHTML: %v", err)
+	}
+	want := tableutil.RenderTableHTML(td)
 	chunks := tableChunksOf(t, map[string]any{
 		"name":          "template.xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": table, "doc_type_kwd": "table", "ck_type": "table"},
+			tableItem(t, table, map[string]any{"ck_type": "table"}),
 		},
 	})
-	if len(chunks) != 1 || chunks[0]["text"] != table {
-		t.Fatalf("header-only table must stay a single whole-payload chunk, got %#v", chunks)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want the single header-only chunk", len(chunks))
+	}
+	if chunks[0]["text"] != want {
+		t.Fatalf("header-only chunk text = %q, want %q", chunks[0]["text"], want)
 	}
 }
 
 // TestTableChunker_HeaderlessHTMLFirstRowIsHeader: with no <th> row the
-// first row names the columns, matching SplitLargeHTMLTable's convention.
+// first row names the columns, matching splitLargeTable's convention.
 func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
 	table := "<table><tr><td>k</td><td>v</td></tr><tr><td>a</td><td>b</td></tr></table>"
 	chunks := tableChunksOf(t, map[string]any{
 		"name":          "kv.csv",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": table, "doc_type_kwd": "table"},
+			tableItem(t, table),
 		},
 	})
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want the single data row", len(chunks))
 	}
-	if chunks[0]["text"] != "- k: a\n- v: b" {
+	txt, _ := chunks[0]["text"].(string)
+	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") ||
+		!strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
 		t.Errorf("text = %v", chunks[0]["text"])
 	}
 }

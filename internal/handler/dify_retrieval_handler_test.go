@@ -31,6 +31,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
@@ -41,43 +43,36 @@ import (
 
 type mockKBService struct {
 	KBServiceIface
-	getByIDFn    func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	accessibleFn func(ctx context.Context, kbID, userID string) bool
+	getKnowledgebaseByIDFn func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	checkAccessFn          func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
 }
 
-func (m *mockKBService) GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
-	if m.getByIDFn != nil {
-		return m.getByIDFn(ctx, kbID)
+func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+	if m.getKnowledgebaseByIDFn != nil {
+		return m.getKnowledgebaseByIDFn(ctx, kbID)
 	}
 	return &entity.Knowledgebase{
 		ID: kbID, TenantID: "tenant1", EmbdID: "text-embedding",
 	}, nil
 }
 
-func (m *mockKBService) Accessible(ctx context.Context, kbID, userID string) bool {
-	if m.accessibleFn != nil {
-		return m.accessibleFn(ctx, kbID, userID)
+func (m *mockKBService) CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+	if m.checkAccessFn != nil {
+		return m.checkAccessFn(ctx, subject, datasetID, operation)
 	}
-	return true
+	return nil
 }
 
-type mockModelResolver struct {
-	resolveModelConfigFn        func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error)
-	resolveDefaultModelConfigFn func(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error)
+type mockModelFactory struct{}
+
+func (mockModelFactory) NewEmbeddingModel(context.Context, service.ModelAccess, string) (*modelModule.EmbeddingModel, error) {
+	name := "test-model"
+	return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}, 0), nil
 }
 
-func (m *mockModelResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error) {
-	if m.resolveModelConfigFn != nil {
-		return m.resolveModelConfigFn(ctx, tenantID, modelType, modelRef)
-	}
-	return &service.ModelTarget{ModelName: "test-model"}, nil
-}
-
-func (m *mockModelResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error) {
-	if m.resolveDefaultModelConfigFn != nil {
-		return m.resolveDefaultModelConfigFn(ctx, tenantID, modelType)
-	}
-	return &service.ModelTarget{ModelName: "test-model"}, nil
+func (mockModelFactory) NewDefaultChatModel(context.Context, service.ModelAccess) (*modelModule.ChatModel, error) {
+	name := "test-model"
+	return modelModule.NewChatModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}), nil
 }
 
 type mockMetadataService struct {
@@ -161,12 +156,12 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 
 func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 	h := &DifyRetrievalHandler{
-		kbSvc:         &mockKBService{},
-		modelResolver: &mockModelResolver{},
-		metadataSvc:   &mockMetadataService{},
-		retrievalSvc:  &mockRetrievalService{},
-		docDAO:        &mockDocDAO{},
-		docEngine:     &mockDocEngine{},
+		kbSvc:        &mockKBService{},
+		modelFactory: mockModelFactory{},
+		metadataSvc:  &mockMetadataService{},
+		retrievalSvc: &mockRetrievalService{},
+		docDAO:       &mockDocDAO{},
+		docEngine:    &mockDocEngine{},
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -182,12 +177,12 @@ func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 
 func setupDifyTestNoAuth() (*DifyRetrievalHandler, *gin.Engine) {
 	h := &DifyRetrievalHandler{
-		kbSvc:         &mockKBService{},
-		modelResolver: &mockModelResolver{},
-		metadataSvc:   &mockMetadataService{},
-		retrievalSvc:  &mockRetrievalService{},
-		docDAO:        &mockDocDAO{},
-		docEngine:     &mockDocEngine{},
+		kbSvc:        &mockKBService{},
+		modelFactory: mockModelFactory{},
+		metadataSvc:  &mockMetadataService{},
+		retrievalSvc: &mockRetrievalService{},
+		docDAO:       &mockDocDAO{},
+		docEngine:    &mockDocEngine{},
 	}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -357,7 +352,7 @@ func TestDifyRetrieval_MissingArgs(t *testing.T) {
 func TestDifyRetrieval_KBNotFound(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, gorm.ErrRecordNotFound
 		},
 	}
@@ -386,15 +381,20 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		accessibleFn: func(ctx context.Context, kbID, userID string) bool { return false },
+		checkAccessFn: func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+			if operation != permission.OperationUse {
+				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
+			}
+			return permission.ErrPermissionDenied
+		},
 	}
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
 	}
 }
 
@@ -448,7 +448,7 @@ func strPtr(s string) *string { return &s }
 func TestDifyRetrieval_KBDBError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, errors.New("connection refused")
 		},
 	}

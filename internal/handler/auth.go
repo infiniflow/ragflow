@@ -33,20 +33,20 @@ type AuthHandler struct {
 	userService userTokenResolver
 }
 
-// ResolveMCPUser applies the same API-key/JWT resolution used by the public
-// MCP route, for the standalone native MCP transport.
+// ResolveMCPUser applies the same API-key and user-token resolution used by
+// the public MCP route, for the standalone native MCP transport.
 func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) (*entity.User, error) {
 	if authorization == "" {
 		return nil, fmt.Errorf("missing authorization header")
 	}
-	if u, code, err := h.userService.GetUserByToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		return u, nil
+	if identity, code, err := h.userService.ResolveAccessToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return identity.User, nil
 	}
-	if u, code, err := h.userService.GetUserByAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		return u, nil
+	if identity, code, err := h.userService.ResolveAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return identity.User, nil
 	}
-	if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		return u, nil
+	if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return identity.User, nil
 	}
 	return nil, fmt.Errorf("invalid authorization")
 }
@@ -54,12 +54,11 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 // userTokenResolver is the subset of UserService the auth
 // middleware actually depends on. We keep it as a small interface
 // so the test suite can swap in a stub without spinning up the
-// full UserService (which requires a live Redis + JWT secret).
+// full UserService (which requires a live Redis + token signing key).
 type userTokenResolver interface {
-	GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
-	GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error)
+	ResolveAccessToken(ctx context.Context, authorization string) (*service.AuthIdentity, common.ErrorCode, error)
+	ResolveAPIToken(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error)
+	ResolveBetaAPIToken(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error)
 }
 
 // NewAuthHandler create auth handler
@@ -69,23 +68,18 @@ func NewAuthHandler() *AuthHandler {
 	}
 }
 
-// BetaAuthMiddleware resolves a user token, API token, or `beta` API token
+// BetaAuthMiddleware resolves a user token, API token, or beta API token
 // from the Authorization header and sets the user on the gin.Context.
 //
-// A beta token can also be a regular user JWT or API token. Order of
+// A beta endpoint also accepts user and regular API tokens. Order of
 // precedence:
 //
-//  1. Beta API token         → GetUserByBetaAPIToken
-//  2. JWT (regular session) → existing UserService.GetUserByToken
-//  3. API token              → GetUserByAPIToken
+//  1. User token             → ResolveAccessToken
+//  2. API token              → ResolveAPIToken
+//  3. Beta API token         → ResolveBetaAPIToken
 //  4. Fall through           → code 102 "Authorization is not valid!"
 //
-// IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
-// prefix. UserService.GetUserByToken accepts the raw Authorization
-// header value and ExtractAccessToken handles Bearer stripping
-// internally. The existing AuthMiddleware() above also passes the
-// raw header to GetUserByToken without pre-filtering, so a non-Bearer
-// regular user token must keep working here too.
+// The user-token branch accepts either a raw token or a Bearer token.
 func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -103,24 +97,24 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// AUTH_JWT
-		if u, code, err := h.userService.GetUserByToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
+		if identity, code, err := h.userService.ResolveAccessToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			setAuthIdentity(c, identity)
 			c.Next()
 			return
 		}
 		// Then try a regular API token (non-beta public bot flow).
-		if u, code, err := h.userService.GetUserByAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
+		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			setAuthIdentity(c, identity)
 			c.Set("auth_via_api_token", true)
 			c.Next()
 			return
 		}
 		// Fall back to beta API token (public bot access).
-		if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			c.Set("user", u)
-			if tok, terr := h.userService.GetAPITokenByBeta(ctx, auth); terr == nil && tok != nil && tok.DialogID != nil {
-				c.Set("agent_id", *tok.DialogID)
+		if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			setAuthIdentity(c, identity)
+			c.Set("auth_via_beta_token", true)
+			if identity.APIToken != nil && identity.APIToken.DialogID != nil {
+				c.Set("agent_id", *identity.APIToken.DialogID)
 			}
 			c.Next()
 			return
@@ -131,8 +125,8 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 	}
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware authenticates API requests and rejects system admins from
+// using the tenant API surface.
 func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -145,10 +139,9 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 
 		authViaAPIToken := false
 
-		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(ctx, token)
+		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
-			user, code, err = h.userService.GetUserByAPIToken(ctx, token)
+			identity, code, err = h.userService.ResolveAPIToken(ctx, token)
 			if err != nil {
 				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 				c.Abort()
@@ -157,7 +150,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			authViaAPIToken = true
 		}
 
-		if user.IsSuperuser != nil && *user.IsSuperuser {
+		if identity.User.IsSuperuser != nil && *identity.User.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Super user shouldn't access the URL")
 			c.Abort()
 			return
@@ -172,10 +165,15 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user", user)
-		c.Set("user_id", user.ID)
-		c.Set("email", user.Email)
+		setAuthIdentity(c, identity)
+		c.Set("email", identity.User.Email)
 		c.Set("auth_via_api_token", authViaAPIToken)
 		c.Next()
 	}
+}
+
+func setAuthIdentity(c *gin.Context, identity *service.AuthIdentity) {
+	c.Set("user", identity.User)
+	c.Set("user_id", identity.User.ID)
+	c.Set("tenant_id", identity.TenantID)
 }

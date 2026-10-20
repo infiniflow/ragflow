@@ -110,6 +110,9 @@ export enum LLMFactory {
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
+  DemonRoute = 'Demon Route',
+  TrustedRouter = 'TrustedRouter',
 }
 
 // Please lowercase the file name
@@ -203,6 +206,8 @@ export const IconMap = {
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
+  [LLMFactory.TrustedRouter]: 'trustedrouter',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -231,6 +236,8 @@ export const APIMapUrl = {
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
+  [LLMFactory.TrustedRouter]: 'https://trustedrouter.com/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -252,7 +259,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',
@@ -280,7 +287,7 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
-  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -315,7 +322,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

@@ -66,7 +66,8 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
  */
 export function useCanvasChecklist({
   ownerTenantId,
-}: { ownerTenantId?: string } = {}) {
+  canvasID,
+}: { ownerTenantId?: string; canvasID?: string } = {}) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
   const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
@@ -76,11 +77,10 @@ export function useCanvasChecklist({
     data: memoryList,
     isLoading: memoryLoading,
     isError: memoryError,
-  } = useFetchAllMemoryList(ownerTenantId);
-  // Validate against the canvas owner's resources: a shared canvas runs with
-  // the owner's models/groups/memories, while an imported dsl.json makes the
-  // importer the owner — so references pointing anywhere else surface as
-  // issues.
+  } = useFetchAllMemoryList(canvasID);
+  // Model and template-group references use the canvas owner's tenant.
+  // Dataset and memory references are scoped by canvasID so both the canvas
+  // owner and current user can use the resource.
   const { validIds: modelValidIds, isFetched: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
   const {
@@ -91,7 +91,7 @@ export function useCanvasChecklist({
   const datasetIds = useMemo(() => collectAllDatasetIds(nodes), [nodes]);
   const { staleDatasetIds, settled: datasetsSettled } = useStaleDatasetIds(
     datasetIds,
-    ownerTenantId,
+    canvasID,
   );
 
   const inputs: CanvasChecklistInputs = useMemo(

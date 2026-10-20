@@ -32,6 +32,7 @@ import (
 	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	mdparser "github.com/gomarkdown/markdown/parser"
+	"ragflow/internal/parser/tableutil"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -96,7 +97,8 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	rawText := string(data)
+	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	rawText := string(decoded)
 	// Render any GFM/HTML table inline as an HTML block before parsing. This
 	// keeps the document as one item per top-level block (the table becomes a
 	// normal text item) instead of collapsing the whole document into a single
@@ -130,7 +132,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 		File: map[string]any{
 			"name": filename,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: warnings,
 	}
 }
@@ -437,11 +439,18 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
 			if isTableHTML(txt) {
-				*out = append(*out, map[string]any{
-					"text":         txt,
+				// Emit the structured TableData contract so the chunker reads
+				// rows directly instead of re-parsing markup. ParseTableHTML
+				// mirrors the legacy chunker extraction. html.Parse is
+				// infallible, so the parse always yields a non-nil TableData
+				// and no legacy HTML `text` is kept.
+				td, _ := tableutil.ParseTableHTML(txt)
+				table := map[string]any{
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
-				})
+					"table":        td,
+				}
+				*out = append(*out, table)
 				continue
 			}
 			// Non-table HTML block: ordinary text, no ck_type.

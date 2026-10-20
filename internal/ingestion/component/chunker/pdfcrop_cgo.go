@@ -19,12 +19,13 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
-	pdfpos "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
@@ -118,8 +119,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	}
 
 	out := make([]schema.ChunkDoc, len(chunks))
-	sem := make(chan struct{}, cropConcurrency())
-	var wg sync.WaitGroup
+	var candidateIndices []int
 	for i := range chunks {
 		ck := chunks[i]
 		out[i] = ck
@@ -145,22 +145,52 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		if len(raw) == 0 {
 			raw = ck.Positions
 		}
-		var matrix [][]any
-		if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+		if len(raw) == 0 {
 			continue
 		}
-		positions := util.PositionsFromMatrix(matrix)
-		if len(positions) == 0 {
-			continue
+		candidateIndices = append(candidateIndices, i)
+	}
+	if len(candidateIndices) == 0 {
+		return out
+	}
+
+	total := int64(len(candidateIndices))
+	var settled atomic.Int64
+	sem := make(chan struct{}, cropConcurrency())
+	var wg sync.WaitGroup
+	for _, idx := range candidateIndices {
+		if ctx.Err() != nil {
+			break
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, ck schema.ChunkDoc, positions []pdfpos.Position) {
+		go func(chunkIdx int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := ctx.Err(); err != nil {
+			if ctx.Err() != nil {
 				return
 			}
+			defer func() {
+				if ctx.Err() == nil {
+					done := settled.Add(1)
+					agentruntime.ReportComponentFraction(ctx, float64(done)/float64(total))
+				}
+			}()
+
+			ck := out[chunkIdx]
+			raw := ck.PDFPositions
+			if len(raw) == 0 {
+				raw = ck.Positions
+			}
+			var matrix [][]any
+			if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+				return
+			}
+			positions := util.PositionsFromMatrix(matrix)
+			if len(positions) == 0 {
+				return
+			}
+
 			single := make(map[int]image.Image, len(positions))
 			acquired := make([]int, 0, len(positions))
 			for _, pos := range positions {
@@ -179,7 +209,12 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if len(single) == 0 {
 				return
 			}
-			img := util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+			var img string
+			if cropChunkType(ck) == "text" {
+				img = util.CropTextSectionPositions(positions, single, deepdoctype.DlaScale)
+			} else {
+				img = util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+			}
 			// Release the page bitmaps now that cropping is done. They are no
 			// longer needed and may be evicted under the LRU cap; the image
 			// below is encoded from single and does not depend on the pages.
@@ -189,7 +224,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if img == "" {
 				return
 			}
-			out[i].Image = "data:image/png;base64," + img
+			out[chunkIdx].Image = "data:image/png;base64," + img
 
 			// Stream the freshly cropped preview to object storage and drop
 			// the in-memory base64 immediately, instead of carrying every
@@ -200,7 +235,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			// only in canvas debug (dry-run) mode, where no persist stage
 			// runs and the decorator's debug branch drops the raw bytes.
 			if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
-				if raw, derr := base64.StdEncoding.DecodeString(img); derr == nil {
+				if rawBytes, derr := base64.StdEncoding.DecodeString(img); derr == nil {
 					// Key the streamed upload under the chunk's canonical id,
 					// so the MinIO object is stored under exactly the key the
 					// decorator (imageUploadDecorator) later exposes as
@@ -214,11 +249,11 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					// positions, so reading the canonical text here does not
 					// alter the cropped image or the chunker's later output
 					// text.
-					chunkID := canonicalChunkID(docID, out[i])
-					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
-						out[i].ImgID = imgID
-						out[i].Image = ""
-						out[i].ID = chunkID
+					chunkID := canonicalChunkID(docID, out[chunkIdx])
+					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, rawBytes); uerr == nil {
+						out[chunkIdx].ImgID = imgID
+						out[chunkIdx].Image = ""
+						out[chunkIdx].ID = chunkID
 					} else {
 						// Note: the document text is intentionally NOT logged
 						// here (CWE-532). The upload is retried at the persist
@@ -228,9 +263,12 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					}
 				}
 			}
-		}(i, ck, positions)
+		}(idx)
 	}
 	wg.Wait()
+	if ctx.Err() == nil {
+		agentruntime.ReportComponentFraction(ctx, 1.0)
+	}
 	return out
 }
 
@@ -250,14 +288,17 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // set (general/token) it takes priority, so headings (CKType "heading") stay
 // excluded from preview cropping.
 func needsCrop(ck schema.ChunkDoc) bool {
-	typ := ck.CKType
-	if typ == "" {
-		typ = ck.DocType
-	}
-	switch typ {
+	switch cropChunkType(ck) {
 	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:
 		return false
 	}
+}
+
+func cropChunkType(ck schema.ChunkDoc) string {
+	if ck.CKType != "" {
+		return ck.CKType
+	}
+	return ck.DocType
 }

@@ -18,14 +18,16 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"time"
 )
 
 // APIKeyResponse key response
 type APIKeyResponse struct {
+	UserID     string     `json:"user_id"`
 	TenantID   string     `json:"tenant_id"`
 	Token      string     `json:"token"`
 	DialogID   *string    `json:"dialog_id,omitempty"`
@@ -49,7 +51,7 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 	for i, key := range keys {
 		beta := key.Beta
 		if beta == nil || *beta == "" {
-			generatedBeta := utility.GenerateBetaAPIToken()
+			generatedBeta := common.GenerateBetaAPIToken()
 			if err = dao.DB.WithContext(ctx).Model(&entity.APIToken{}).
 				Where("tenant_id = ? AND token = ?", tenantID, key.Token).
 				Updates(map[string]interface{}{
@@ -62,6 +64,7 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 		}
 
 		responses[i] = &APIKeyResponse{
+			UserID:     apiTokenUserID(key.UserID),
 			TenantID:   key.TenantID,
 			Token:      key.Token,
 			DialogID:   key.DialogID,
@@ -83,17 +86,21 @@ type CreateAPIKeyRequest struct {
 }
 
 // CreateAPIKey creates a new API key for a tenant
-func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+func (s *SystemService) CreateAPIKey(ctx context.Context, userID, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+	if userID == "" || tenantID == "" {
+		return nil, fmt.Errorf("user and tenant context are required")
+	}
 	APITokenDAO := dao.NewAPITokenDAO()
 
 	// Generate key and beta values
 	// key: "ragflow-" + secrets.token_urlsafe(32)
-	APIToken := utility.GenerateAPIToken()
+	APIToken := common.GenerateAPIToken()
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
-	betaAPIKey := utility.GenerateBetaAPIToken()
+	betaAPIKey := common.GenerateBetaAPIToken()
 
 	APIKeyData := &entity.APIToken{
 		TenantID: tenantID,
+		UserID:   &userID,
 		Token:    APIToken,
 		Beta:     &betaAPIKey,
 	}
@@ -103,6 +110,7 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 	}
 
 	return &APIKeyResponse{
+		UserID:     userID,
 		TenantID:   APIKeyData.TenantID,
 		Token:      APIKeyData.Token,
 		DialogID:   APIKeyData.DialogID,
@@ -113,6 +121,13 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 		UpdateTime: APIKeyData.UpdateTime,
 		UpdateDate: APIKeyData.UpdateDate,
 	}, nil
+}
+
+func apiTokenUserID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {

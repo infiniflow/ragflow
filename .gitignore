@@ -32,6 +32,10 @@ docker/ragflow-logs/
 /flask_session
 /logs
 internal/rag/res/deepdoc/
+# DeepDoc model weights and the HuggingFace download cache, fetched by
+# ragflow_deps/download_deps.py. Same artifacts as internal/rag/res/deepdoc/,
+# under the legacy Python resource path.
+rag/res/
 
 # Exclude sdk generated files
 sdk/python/ragflow.egg-info/

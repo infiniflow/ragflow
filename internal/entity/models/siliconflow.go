@@ -65,11 +65,10 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -100,11 +99,10 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -164,11 +162,10 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, request
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Embedding)
 
 	apiKey := *apiConfig.ApiKey
 
@@ -247,11 +244,10 @@ func (s *SiliconflowModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -311,12 +307,10 @@ func (s *SiliconflowModel) Balance(ctx context.Context, apiConfig *APIConfig) (m
 		return nil, err
 	}
 
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), s.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -456,11 +450,10 @@ func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, reques
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), s.baseModel.URLSuffix.Rerank)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -518,11 +511,10 @@ func (s *SiliconflowModel) TranscribeAudio(ctx context.Context, modelName *strin
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -671,11 +663,10 @@ func (s *SiliconflowModel) AudioSpeech(ctx context.Context, modelName *string, a
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, false))
 	if err != nil {
@@ -720,11 +711,10 @@ func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName 
 		return fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	jsonData, err := json.Marshal(siliconflowTTSRequestBody(*modelName, *audioContent, ttsConfig, true))
 	if err != nil {
@@ -790,5 +780,9 @@ func (s *SiliconflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (s *SiliconflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
+func (s *SiliconflowModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }

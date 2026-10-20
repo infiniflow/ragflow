@@ -14,6 +14,8 @@
  *  limitations under the License.
  */
 
+import type { IReferenceChunk } from '@/interfaces/database/chat';
+
 export const normalizeCitationDigits = (text: string) => {
   if (!text) return text;
   return text.replace(/[٠-٩۰-۹]/g, (char) => {
@@ -43,6 +45,53 @@ export const parseCitationIndex = (value: string): CitationKey => {
   if (/^[0-9a-fA-F]+$/.test(normalized)) return normalized;
   return Number.NaN;
 };
-
 export const citationMarkerReg =
   /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/g;
+
+// Resolve the chunk a citation marker points at. A numeric key is the
+// chunk's position in the payload — the plain-chat contract, where the
+// backend numbers each marker by its index into reference.chunks. A string
+// key is the chunk id an agent answer embeds in its [ID:<chunkId>] markers;
+// match it against the chunk's own id, never positionally: the payload
+// ships in retrieval order, which is unrelated to the order the answer
+// cites passages in, so a positional read permutes the sources. A chunk id
+// is 16 hex chars — an all-digit id would parse as a position (~0.05% per
+// id), accepted and recorded here so it is not rediscovered as a mystery.
+export const resolveCitationChunk = (
+  chunks:
+    | IReferenceChunk[]
+    | Record<string, IReferenceChunk>
+    | null
+    | undefined,
+  key: CitationKey,
+): IReferenceChunk | undefined => {
+  const list = Array.isArray(chunks) ? chunks : Object.values(chunks ?? {});
+  if (typeof key === 'number') {
+    return list[key];
+  }
+  return list.find(
+    (chunk) =>
+      chunk?.id === key ||
+      (chunk as { chunk_id?: string } | undefined)?.chunk_id === key,
+  );
+};
+
+// Map each unique citation marker ([n] or [ID:<chunkId>]) to its stable
+// 0-based display position by first occurrence; the chip renders
+// position + 1. This numbering is display-only — the chunk behind a marker
+// is resolved by resolveCitationChunk, never by this position.
+export const buildCitationDisplayMap = (
+  content: string,
+): Map<CitationKey, number> => {
+  const map = new Map<CitationKey, number>();
+  const reg = new RegExp(citationMarkerReg.source, citationMarkerReg.flags);
+  let match: RegExpExecArray | null;
+  while ((match = reg.exec(content ?? '')) !== null) {
+    const key = parseCitationIndex(match[0]);
+    if (Number.isNaN(key)) continue;
+    if (!map.has(key)) {
+      map.set(key, map.size);
+    }
+  }
+  return map;
+};

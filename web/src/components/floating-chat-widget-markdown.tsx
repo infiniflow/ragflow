@@ -114,6 +114,12 @@ const FloatingChatWidgetMarkdown = ({
           return;
         }
         if (!documentUrl) return;
+        // Web page documents carry their own url; opening the internal
+        // /document route for them lands on an empty page.
+        if (/^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
         window.open(
           `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
           '_blank',

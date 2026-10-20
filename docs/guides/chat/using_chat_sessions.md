@@ -41,7 +41,7 @@ Click the paperclip icon in the message box, or drag files into the message box,
 
 Text files can be parsed into text for the model to reference. Processing images requires a model with multimodal capabilities.
 
-![Upload files in a conversation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
+![Upload files in a conversation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files_chat.jpg)
 
 Files uploaded in a conversation provide supplemental context only and are not automatically added to a knowledge base. To make a file permanently available for knowledge base retrieval, add it to a knowledge base and complete parsing.
 

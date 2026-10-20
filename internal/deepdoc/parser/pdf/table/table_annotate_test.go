@@ -247,15 +247,29 @@ func TestAnnotateBoxLayouts_FooterKeptInMiddle(t *testing.T) {
 	}
 }
 
-func TestAnnotateBoxLayouts_ReferenceAlwaysGarbage(t *testing.T) {
-	// Reference type is always garbage regardless of position (no keep_feat).
-	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70}}
+func TestAnnotateBoxLayouts_ReferenceEntryDropped(t *testing.T) {
+	// Ordinary reference-list text remains garbage regardless of position.
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70, Text: "A. Author, A reference entry."}}
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 150, X1: 300, Y1: 210, Label: "reference", Confidence: 0.9},
 	}
 	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 300)
 	if len(boxes) != 0 {
-		t.Errorf("reference: should always be garbage-filtered, got %q", boxes[0].LayoutType)
+		t.Errorf("reference entry should be garbage-filtered, got %q", boxes[0].LayoutType)
+	}
+}
+
+func TestAnnotateBoxLayouts_ReferenceCaptionPreserved(t *testing.T) {
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70, Text: "Table 8: Prompt for the Pick Task."}}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 150, X1: 300, Y1: 210, Label: "reference", Confidence: 0.9},
+	}
+	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 300)
+	if len(boxes) != 1 {
+		t.Fatalf("reference caption should be preserved, got %d boxes", len(boxes))
+	}
+	if boxes[0].Text != "Table 8: Prompt for the Pick Task." || boxes[0].LayoutType != "reference" {
+		t.Errorf("reference caption changed: got text=%q layout=%q", boxes[0].Text, boxes[0].LayoutType)
 	}
 }
 

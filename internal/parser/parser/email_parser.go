@@ -27,6 +27,7 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -140,7 +141,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// Text representation: flatten fields into a single string for explicit
 	// text output and callers that need a display representation.
 	var sb strings.Builder
-	for k, v := range content {
+	for _, k := range emailTextKeys(content) {
+		v := content[k]
 		// The metadata map (every non-basic header: Received chains,
 		// DKIM/ARC signatures, …) stays available in the JSON output, but
 		// flattening it into chunkable text buries the message under
@@ -199,15 +201,38 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	content["doc_type_kwd"] = "text"
 	items := []map[string]any{content}
 	if headerText := searchableEmailHeaders(content); headerText != "" {
-		items = append(items, NewTextJSONItem(headerText))
+		items = append(items, NewTextJSONItem(headerText).ToMap())
 	}
 	items = append(items, extraItems...)
 	return ParseResult{
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename},
-		JSON:         items,
-		Text:         text,
+		JSON:         MapsToItems(items),
 	}
+}
+
+// emailTextFields is the order the text output writes an email's fields in:
+// the headers in the order searchableEmailHeaders gives them, then the body.
+var emailTextFields = []string{"from", "to", "cc", "bcc", "date", "subject", "text", "text_html"}
+
+// emailTextKeys returns content's keys in emailTextFields order, followed by
+// any other key in sorted order. Ranging over the map instead wrote the
+// fields in a different order on every parse of the same message.
+func emailTextKeys(content map[string]any) []string {
+	keys := make([]string, 0, len(content))
+	for _, k := range emailTextFields {
+		if _, ok := content[k]; ok {
+			keys = append(keys, k)
+		}
+	}
+	var rest []string
+	for k := range content {
+		if !slices.Contains(emailTextFields, k) {
+			rest = append(rest, k)
+		}
+	}
+	slices.Sort(rest)
+	return append(keys, rest...)
 }
 
 // searchableEmailHeaders returns the user-facing headers as a separate JSON
@@ -846,7 +871,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		var texts []string
 		if res.OutputFormat == "json" && len(res.JSON) > 0 {
 			for _, it := range res.JSON {
-				if t, ok := it["text"].(string); ok {
+				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {
 						texts = append(texts, t)
 					}

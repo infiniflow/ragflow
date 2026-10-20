@@ -60,15 +60,9 @@ type ErrorResponse struct {
 func (h *Handler) Healthz(c *gin.Context) {
 	result, allOK := service.GetComponentsHealthz(c.Request.Context())
 	if allOK {
-		c.JSON(http.StatusOK, gin.H{
-			"code": 0,
-			"data": result,
-		})
+		common.SuccessWithData(c, result, "success")
 	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": common.CodeServerError,
-			"data": result,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, result, "")
 	}
 }
 
@@ -119,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, "", secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -682,7 +676,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -740,7 +735,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig(c.Request.Context())
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
 		writeSandboxError(c, err)
 		return
@@ -820,8 +815,7 @@ func writeSandboxError(c *gin.Context, err error) {
 	common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware authenticates system administrators for admin routes.
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -833,14 +827,15 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(ctx, token)
+		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
-		if !*user.IsSuperuser {
+		user := identity.User
+		if user.IsSuperuser == nil || !*user.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			c.Abort()
 			return
@@ -848,6 +843,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
+		c.Set("tenant_id", identity.TenantID)
 		c.Set("email", user.Email)
 		c.Next()
 	}
@@ -1145,7 +1141,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",
@@ -1242,7 +1238,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1252,7 +1248,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1273,7 +1269,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, "SUCCESS")
+	common.SuccessWithData(c, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

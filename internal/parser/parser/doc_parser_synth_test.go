@@ -162,7 +162,7 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 			t.Errorf("parsed text missing %q; got:\n%s", want, pr.Text)
 		}
 	}
-	if got, _ := pr.JSON[0]["text"].(string); got != pr.Text {
+	if got, _ := pr.JSON[0].ToMap()["text"].(string); got != pr.Text {
 		t.Errorf("JSON text = %q, want complete parser text %q", got, pr.Text)
 	}
 

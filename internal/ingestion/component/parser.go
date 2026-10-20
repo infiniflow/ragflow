@@ -64,9 +64,8 @@
 //     the upload step is the responsibility of a separate
 //     side-effect component (out of scope for Phase 2.2).
 //
-//   - The Python _param.check() business validation
-//     (parse_method whitelist, conditional lang checks) is mirrored
-//     by (*ParserComponent).Check() below, which NewParserComponent
+//   - The Python _param.check() business validation (parse_method whitelist)
+//     is mirrored by (*ParserComponent).Check() below, which NewParserComponent
 //     runs at construction time. Neither backend validates
 //     audio/video vlm.llm_id: Python's check() has no such branch,
 //     and the audio model is resolved at dispatch time with a
@@ -89,12 +88,15 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
-const ComponentNameParser = "Parser"
+// ComponentNameParser is the canonical Parser component name; the value lives
+// in the schema package so the pipeline layer can reference the same identity.
+const ComponentNameParser = schema.ComponentNameParser
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
@@ -112,6 +114,17 @@ const pageFormFeed = '\f'
 type ParserComponent struct {
 	setups                  map[string]schema.ParserSetup
 	enableVisionEnhancement bool
+	vision                  visionSettings
+}
+
+// visionSettings carries the global vision-enhancement choices. They sit at the
+// Parser params top level (vlm) instead of a per-family setup, so one model and
+// prompt serve the enhanced file types rather than each family repeating them.
+// Response language is deliberately absent: it belongs to the knowledge base,
+// which also drives tokenization, so the two can never disagree.
+type visionSettings struct {
+	modelID      string
+	systemPrompt string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -125,6 +138,7 @@ type ParserComponent struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
+//	  "vlm":                  {"llm_id": string, "system_prompt": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -149,8 +163,27 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			return nil, errors.New("parser: enable_vision_enhancement must be a boolean")
 		}
 	}
+	var vision visionSettings
+	if raw, exists := params["vlm"]; exists {
+		vlm, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("parser: vlm must be an object")
+		}
+		if rawID, exists := vlm["llm_id"]; exists {
+			vision.modelID, ok = rawID.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.llm_id must be a string")
+			}
+		}
+		if rawPrompt, exists := vlm["system_prompt"]; exists {
+			vision.systemPrompt, ok = rawPrompt.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.system_prompt must be a string")
+			}
+		}
+	}
 	for k, raw := range params {
-		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" {
+		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" || k == "vlm" {
 			continue
 		}
 		ftCfg, ok := raw.(map[string]any)
@@ -165,7 +198,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 	}
 	normalizeParserOutputFormats(s)
-	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement}
+	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
@@ -224,98 +257,118 @@ func cloneParserSetupValue(value any) any {
 //     either, and audio dispatch resolves a missing/empty model to
 //     the tenant default, so validating it here would only block
 //     otherwise valid pipelines (see ingestion_pipeline_audio.json).
+//   - any language: a missing language is no longer fatal downstream —
+//     captions fall back to the knowledge base language and MinerU to its own
+//     default — and Check runs before run inputs exist, so the knowledge base
+//     value cannot be consulted here. Rejecting stored canvases for it would
+//     only break pipelines that resolve fine at run time.
 func (c *ParserComponent) Check() error {
-	// PDF family (parser.py:252-261).
 	if pdf, ok := c.setups["pdf"]; ok {
-		pm, _ := pdf["parse_method"].(string)
-		if pm == "" {
+		if pm, _ := pdf["parse_method"].(string); pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
-		if !parser.IsPDFParseMethod(pm) {
-			// A parse_method outside the known vocabulary is treated as a
-			// VLM model reference, which requires lang (Python
-			// parser.py:257-258).
-			if lang, _ := pdf["lang"].(string); lang == "" {
-				return errors.New("PDF VLM language does not support empty value")
-			}
+		if _, err := readMinerUExtractionOptions(pdf); err != nil {
+			return err
 		}
 	}
-	// Image OCR runs independently of optional vision enhancement.
+	// The whole image contract keys off whether ocr_enabled is present, so a
+	// value of the wrong type must not quietly read as "absent" and fall back to
+	// the legacy parse_method inference.
 	if img, ok := c.setups["image"]; ok {
-		pm, _ := img["parse_method"].(string)
-		// A model selected for optional image enhancement needs a language
-		// only when enhancement is enabled.
-		if c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
-			if lang, _ := img["lang"].(string); lang == "" {
-				return errors.New("image VLM language does not support empty value")
+		if raw, exists := img["ocr_enabled"]; exists {
+			if _, isBool := raw.(bool); !isBool {
+				return errors.New("parser: image ocr_enabled must be a boolean")
 			}
+		}
+		if raw, exists := img["ocr_model_id"]; exists {
+			if _, isString := raw.(string); !isString {
+				return errors.New("parser: image ocr_model_id must be a string")
+			}
+		}
+		// An image needs at least one text source: local OCR or the global
+		// vision enhancement. With neither, the item carries no text and the
+		// Tokenizer drops it, so reject the configuration at build time
+		// instead of indexing nothing silently.
+		if !c.enableVisionEnhancement && !imageSetupRunsOCR(img) {
+			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
 		}
 	}
 	return nil
 }
 
+// imageSetupRunsOCR mirrors the OCR selection in maybeDispatchImage
+// (media_dispatch.go): the ocr_enabled switch wins when present, otherwise
+// the legacy parse_method reading applies ("ocr"/empty runs local OCR).
+
+func imageSetupRunsOCR(setup schema.ParserSetup) bool {
+	if ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool); hasOCRFlag {
+		return ocrEnabled
+	}
+	method := getStringOr(setup, "parse_method", "")
+	return method == "" || strings.EqualFold(method, "ocr")
+}
+
 func defaultSetups() map[string]schema.ParserSetup {
-	return map[string]schema.ParserSetup{
+	// Normalize up front so any caller (including tests that build a
+	// ParserComponent directly from these defaults) gets the single JSON
+	// output protocol. NewParserComponent re-normalizes idempotently; the
+	// per-family literals were removed because normalizeParserOutputFormats
+	// owns this key unconditionally.
+	s := map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
-			"lang":                  "Chinese",
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"pdf"},
-			"output_format":         "json",
 		},
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
 			"html4excel":            false,
-			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
 			"suffix":               []string{"doc"},
-			"output_format":        "json",
 		},
 		"docx": {
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"docx"},
-			"output_format":         "json",
 		},
 		"markdown": {
 			"flatten_media_to_text": false,
 			"suffix":                []string{"md", "markdown", "mdx"},
 			"remove_toc":            false,
-			"output_format":         "json",
 		},
 		"text&code": {
 			"suffix": []string{
 				"txt", "py", "js", "java", "c", "cpp", "h", "php",
 				"go", "ts", "sh", "cs", "kt", "sql",
 			},
-			"output_format": "json",
 		},
 		"html": {
 			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"output_format":        "json",
 		},
 		"slides": {
-			"parse_method":  "deepdoc",
-			"suffix":        []string{"pptx", "ppt"},
-			"output_format": "json",
+			"parse_method": "deepdoc",
+			"suffix":       []string{"pptx", "ppt"},
 		},
 		"image": {
+			// Default stays on the legacy parse_method shape. ocr_enabled is
+			// deliberately NOT set here: NewParserComponent overlays params on
+			// top of these defaults, so the mere presence of ocr_enabled in the
+			// merged setup proves the caller chose the switch shape. A default
+			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
 			"llm_id":        "",
-			"lang":          "Chinese",
 			"system_prompt": "",
 			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
-			"output_format": "json",
 		},
 		"email": {
 			"suffix": []string{"eml", "msg"},
@@ -323,7 +376,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -331,22 +383,20 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
 		},
 		"video": {
-			"suffix":        []string{"mp4", "avi", "mkv"},
-			"output_format": "json",
-			"prompt":        "",
+			"suffix": []string{"mp4", "avi", "mkv"},
+			"prompt": "",
 		},
 		"epub": {
-			"suffix":        []string{"epub"},
-			"output_format": "json",
+			"suffix": []string{"epub"},
 		},
 		"json": {
-			"suffix":        []string{"json", "jsonl", "ldjson"},
-			"output_format": "json",
+			"suffix": []string{"json", "jsonl", "ldjson"},
 		},
 	}
+	normalizeParserOutputFormats(s)
+	return s
 }
 
 // Inputs returns the static parameter metadata. The component
@@ -397,7 +447,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical extension used for parser dispatch (for example pdf, md, xlsx, or other).",
 		"output_format": "string: always \"json\".",
-		"json":          "[]map[string]any: canonical structured parser items.",
+		"json":          "[]parser.DocItem: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"file":          "map[string]any: backend-produced file metadata, when present.",
 		"doc_id":        "string: source document ID, when present.",
@@ -414,7 +464,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "name":           string (from inputs["name"], file.name, or doc_id),
 //	  "file_type":      string (canonical extension used for parser dispatch),
 //	  "output_format": "json",
-//	  "json":           []map[string]any,
+//	  "json":           []parser.DocItem,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -481,7 +531,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledImage bool
 	if !handledVision && !handledMedia {
 		// Image dispatch: OCR with independently controlled VLM enhancement.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -496,12 +546,21 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
+		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+		enhanceOn := c.enableVisionEnhancement
+		split := progress.NewSplit(parsePagesOn, enhanceOn)
+		pageWin := split.Take(parsePagesOn)
+		visionWin := split.Take(enhanceOn)
+
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if dispatched.Err == nil && ctx.Err() == nil {
+			pageWin.Report(ctx, 1.0)
+		}
 
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or
@@ -535,7 +594,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	items, _ := out["json"].([]map[string]any)
+	items, _ := out["json"].([]parser.DocItem)
 	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
@@ -543,7 +602,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
@@ -557,9 +616,6 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	}
 	if dispatched.Markdown != "" {
 		return "markdown"
-	}
-	if dispatched.HTML != "" {
-		return "html"
 	}
 	if dispatched.Text != "" {
 		return "text"

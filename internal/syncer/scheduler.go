@@ -172,22 +172,54 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 		return s.publish(ctx, taskID, false)
 	}
 	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	s.scheduleTimerLocked(ctx, taskID, delay)
+	return nil
+}
+
+// scheduleTimerLocked replaces a timer while holding timerMu.
+func (s *Scheduler) scheduleTimerLocked(ctx context.Context, taskID string, delay time.Duration) {
 	if existing := s.timers[taskID]; existing != nil {
 		existing.Stop()
 	}
-	timer := time.AfterFunc(delay, func() {
-		if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
-			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
-			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
-			return
-		}
-		s.timerMu.Lock()
-		delete(s.timers, taskID)
-		s.timerMu.Unlock()
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		s.handleTimerWakeup(ctx, taskID, &timer)
 	})
 	s.timers[taskID] = timer
-	s.timerMu.Unlock()
-	return nil
+}
+
+// handleTimerWakeup is also exercised directly by callback-path unit tests.
+// The timer pointer is only read while holding timerMu, which also protects
+// the assignment made by scheduleTimerLocked.
+func (s *Scheduler) handleTimerWakeup(ctx context.Context, taskID string, timer **time.Timer) {
+	if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
+		common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
+		s.retryTimerIfCurrent(ctx, taskID, timer)
+		return
+	}
+	s.retireTimer(taskID, timer)
+}
+
+// retryTimerIfCurrent prevents an outdated callback's failure from replacing
+// a newer schedule. The identity check and replacement are one critical section.
+func (s *Scheduler) retryTimerIfCurrent(ctx context.Context, taskID string, timer **time.Timer) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	if ctx.Err() != nil || s.timers[taskID] != *timer {
+		return
+	}
+	s.scheduleTimerLocked(ctx, taskID, 3*time.Second)
+}
+
+// retireTimer removes only the timer whose callback finished. A newer
+// schedule for the same task must remain registered for replacement/shutdown.
+func (s *Scheduler) retireTimer(taskID string, timer **time.Timer) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	if s.timers[taskID] == *timer {
+		delete(s.timers, taskID)
+	}
 }
 
 func (s *Scheduler) publish(ctx context.Context, taskID string, wakeup bool) error {
@@ -221,6 +253,10 @@ func (s *Scheduler) stopTimers() {
 }
 
 // taskDelay reports the delay before publication and whether the task must be scheduled at all.
+// A non-positive frequency disables periodic rescheduling (fail-closed):
+// the task runs at most once (when never run before) instead of being
+// republished with no interval, which would hot-loop sync workers, NATS,
+// and the upstream source.
 func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
 	freq := int64(0)
 	switch task.TaskType {
@@ -232,8 +268,16 @@ func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.D
 		}
 		freq = task.ConnectorPruneFreq
 	}
-	if freq <= 0 || task.UpdateDate == nil {
+	if task.UpdateDate == nil {
 		return 0, true
+	}
+	if freq <= 0 {
+		common.Warn("syncer task not scheduled: non-positive frequency",
+			zap.String("task_id", task.ID),
+			zap.String("connector_id", task.ConnectorID),
+			zap.String("task_type", task.TaskType),
+			zap.Int64("frequency_minutes", freq))
+		return 0, false
 	}
 	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true
 }

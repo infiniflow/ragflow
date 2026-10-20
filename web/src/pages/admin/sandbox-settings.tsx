@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
   LucideChevronDown,
@@ -70,9 +70,16 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
 // Local executes code on the host process without isolation; hide it from selection.
 const HiddenProviders = ['local'];
 
+const SandboxKeys = {
+  providers: () => ['admin/listSandboxProviders'] as const,
+  config: (provider: string | null) =>
+    ['admin/getSandboxConfig', provider] as const,
+  schema: (provider: string | null) =>
+    ['admin/getSandboxProviderSchema', provider] as const,
+};
+
 function AdminSandboxSettings() {
   const { t } = useTranslation();
-  const queryClient = useQueryClient();
 
   // State
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
@@ -94,7 +101,7 @@ function AdminSandboxSettings() {
 
   // Fetch providers list
   const { data: providers = [], isLoading: providersLoading } = useQuery({
-    queryKey: ['admin/listSandboxProviders'],
+    queryKey: SandboxKeys.providers(),
     queryFn: async () => (await listSandboxProviders()).data.data,
     select: (data) =>
       data.filter((provider) => !HiddenProviders.includes(provider.id)),
@@ -103,16 +110,29 @@ function AdminSandboxSettings() {
   // Fetch current config
   const {
     data: currentConfig,
-    isLoading: configLoading,
+    isFetching: configLoading,
+    isError: configError,
     refetch: refetchConfig,
   } = useQuery({
-    queryKey: ['admin/getSandboxConfig'],
-    queryFn: async () => (await getSandboxConfig()).data.data,
+    queryKey: SandboxKeys.config(selectedProvider),
+    queryFn: async () => {
+      const response = (await getSandboxConfig(selectedProvider ?? undefined))
+        .data;
+      if (response.code !== 0) {
+        throw new Error(
+          response.message || 'Failed to load sandbox configuration',
+        );
+      }
+      return response.data;
+    },
+    gcTime: 0,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
   // Fetch provider schema when provider is selected
   const { data: providerSchema = {} } = useQuery({
-    queryKey: ['admin/getSandboxProviderSchema', selectedProvider],
+    queryKey: SandboxKeys.schema(selectedProvider),
     queryFn: async () =>
       (await getSandboxProviderSchema(selectedProvider!)).data.data,
     enabled: !!selectedProvider,
@@ -126,7 +146,6 @@ function AdminSandboxSettings() {
     }) => (await setSandboxConfig(params)).data,
     onSuccess: () => {
       message.success('Sandbox configuration updated successfully');
-      // queryClient.invalidateQueries({ queryKey: ['admin/getSandboxConfig'] });
       refetchConfig();
     },
     onError: (error: Error) => {
@@ -151,7 +170,9 @@ function AdminSandboxSettings() {
   // Initialize state when current config is loaded
   useEffect(() => {
     if (currentConfig) {
-      setSelectedProvider(currentConfig.provider_type);
+      setSelectedProvider(
+        (provider) => provider ?? currentConfig.provider_type,
+      );
       setConfigValues(currentConfig.config || {});
     }
   }, [currentConfig]);
@@ -189,15 +210,9 @@ function AdminSandboxSettings() {
 
   // Handle provider change
   const handleProviderChange = (providerId: string) => {
+    if (providerId === selectedProvider) return;
     setSelectedProvider(providerId);
-    if (currentConfig?.provider_type === providerId) {
-      setConfigValues(currentConfig.config || {});
-    } else {
-      setConfigValues({});
-    }
-    queryClient.invalidateQueries({
-      queryKey: ['admin/getSandboxProviderSchema'],
-    });
+    setConfigValues({});
   };
 
   // Handle config value change
@@ -244,7 +259,7 @@ function AdminSandboxSettings() {
   const handleSave = (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
 
-    if (!selectedProvider) return;
+    if (!selectedProvider || configLoading || configError) return;
 
     setConfigMutation.mutate({
       providerType: selectedProvider,
@@ -254,7 +269,7 @@ function AdminSandboxSettings() {
 
   // Handle test connection
   const handleTestConnection = () => {
-    if (!selectedProvider) return;
+    if (!selectedProvider || configLoading || configError) return;
 
     setTestModalOpen(true);
     setTestResult(null);
@@ -456,6 +471,13 @@ function AdminSandboxSettings() {
               <div className="flex items-center justify-center h-96"></div>
             ) : (
               <>
+                {configError && (
+                  <p role="alert">
+                    {t(
+                      'admin.sandboxSettingsPage.testConnectionResultModal.failed',
+                    )}
+                  </p>
+                )}
                 {/* Provider Selection */}
                 <Card className="!shadow-none bg-transparent">
                   <CardHeader>
@@ -525,7 +547,7 @@ function AdminSandboxSettings() {
                   </CardHeader>
 
                   {/* Provider Configuration */}
-                  {selectedProvider && selectedProviderData && (
+                  {selectedProvider && selectedProviderData && !configError && (
                     <CardContent className="pt-6 border-t-0.5 border-border-button">
                       <form onSubmit={handleSave}>
                         <article>

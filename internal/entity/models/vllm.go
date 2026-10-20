@@ -100,12 +100,12 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
@@ -134,10 +134,10 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
@@ -153,10 +153,16 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 // Encode encodes a list of texts into embeddings
 type vllmEmbeddingResponse struct {
+	ID   string `json:"id"`
 	Data []struct {
 		Index     int       `json:"index"`
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
+	// llama-server and vLLM report the request's token usage alongside the vectors.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed embeds a list of texts into embeddings
@@ -185,7 +191,7 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -241,6 +247,15 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		embeddings = append(embeddings, embeddingData)
 	}
 
+	// The provider's own token count is the oracle the ingest path calibrates its
+	// tokenizer against (see internal/tokenizer: ObserveUsage). Without it a
+	// llama-server deployment that counts with the calibrated estimate never leaves
+	// its default ratio. This mirrors OpenAIModel.Embed.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
+
 	return embeddings, nil
 }
 
@@ -261,7 +276,7 @@ func (v *VllmModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, v.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -335,10 +350,16 @@ type vllmRerankRequest struct {
 // field is intentionally ignored — callers reconstruct text from the
 // original input via Index.
 type vllmRerankResponse struct {
+	ID      string `json:"id"`
 	Results []struct {
 		Index          int     `json:"index"`
 		RelevanceScore float64 `json:"relevance_score"`
 	} `json:"results"`
+	// vLLM reports the request's token usage alongside the scores.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank scores documents against the query using a vLLM rerank model
@@ -376,7 +397,7 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -439,6 +460,13 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 		})
 	}
 
+	// Report the provider's token usage, mirroring OpenAIModel.Embed and this
+	// driver's Embed, so rerank calls are counted instead of always reporting zero.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "rerank")
+
 	return &rerankResponse, nil
 }
 
@@ -475,5 +503,9 @@ func (v *VllmModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 }
 
 func (v *VllmModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}
+
+func (v *VllmModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

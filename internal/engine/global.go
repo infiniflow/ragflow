@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine/nats"
 	"ragflow/internal/engine/oceanbase"
 	"ragflow/internal/engine/serenedb"
+	"ragflow/internal/engine/vastbase"
 	"ragflow/internal/server"
 	"ragflow/internal/tokenizer"
 
@@ -63,6 +64,8 @@ func InitDocEngine(ctx context.Context) error {
 			}
 		case "serenedb":
 			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
+		case "vastbase":
+			globalEngine, err = vastbase.NewEngine(globalConfig.GetVastbaseConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}
