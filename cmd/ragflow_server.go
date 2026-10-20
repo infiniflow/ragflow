@@ -341,10 +341,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	serverType := bootstrap.GetServerType(arguments)
+
 	// Temporary logger name (pre-config): explicit --name wins, else
 	// "<mode>_server". The final name (with the resolved port for api/admin)
 	// is derived below after the configuration is loaded.
-	serverName := bootstrap.TempServerName(*arguments.Mode, arguments.Name)
+	serverName := bootstrap.TempServerName(serverType, arguments.Name)
 
 	logLevel := bootstrap.SelectedLogLevel(arguments, "")
 	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
@@ -390,8 +392,8 @@ func main() {
 	// dropped: ResolveServerName resolves them to "<mode>_server", matching the
 	// original no-name behavior.
 	var resolvedPort int
-	switch *arguments.Mode {
-	case "api":
+	switch serverType {
+	case common.ServerTypeAPI:
 		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
@@ -399,7 +401,7 @@ func main() {
 		}
 		globalConfig.SetAPIServerHTTPPort(port)
 		resolvedPort = port
-	case "admin":
+	case common.ServerTypeAdmin:
 		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
@@ -407,11 +409,10 @@ func main() {
 		}
 		globalConfig.SetAdminHTTPPort(port)
 		resolvedPort = port
-	case "ingestor", "syncer", "deepdoc", "migrate":
+	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
 		// No port embedding; the final name is derived below.
 	default:
-		err = errors.New(*arguments.Mode)
-		common.Error("invalid server mode", err)
+		common.Error(fmt.Sprintf("invalid server mode: %v", serverType), nil)
 		os.Exit(1)
 	}
 
@@ -432,8 +433,8 @@ func main() {
 	// logger exists: its registration lines (and the Fatal abort on a missing
 	// backend) must land in the run's log file, not in the pre-config
 	// stdout-only window.
-	switch *arguments.Mode {
-	case "api", "ingestor":
+	switch serverType {
+	case common.ServerTypeAPI, common.ServerTypeIngestion:
 		if err = deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
@@ -442,7 +443,7 @@ func main() {
 	}
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.Mode, serverName, globalConfig.GetMode()))
+	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
 	// Start pprof server if requested
@@ -459,7 +460,7 @@ func main() {
 	// downgrade check nor any of the engines started below, so it can run
 	// before any server mode boots (see docker/entrypoint.sh and
 	// docker/launch_backend_service.sh).
-	migrate := *arguments.Mode == "migrate"
+	migrate := serverType == common.ServerTypeMigrate
 	if migrate {
 		common.Info("Running database migrations")
 	}
@@ -512,34 +513,34 @@ func main() {
 		arguments.Name = &serverName
 	}
 
-	switch *arguments.Mode {
-	case "api":
+	switch serverType {
+	case common.ServerTypeAPI:
 		if err = apipkg.Run(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
-	case "admin":
+	case common.ServerTypeAdmin:
 		if err = admin.Run(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
-	case "ingestor":
+	case common.ServerTypeIngestion:
 		if err = ingestorpkg.Run(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
-	case "syncer":
+	case common.ServerTypeFileSyncer:
 		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
-	case "deepdoc":
+	case common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocCPU:
 		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:
-		fmt.Printf("Invalid server mode: %s\n", *arguments.Mode)
+		fmt.Printf("Invalid server mode: %v\n", serverType)
 		os.Exit(1)
 	}
 }
