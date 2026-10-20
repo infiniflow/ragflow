@@ -405,15 +405,11 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 			return
 		}
 		// Add a line break between block children so headings, paragraphs,
-		// and list items don't run together.
-		if !w.pre {
-			switch n.Data {
-			case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-				"tr", "blockquote":
-				if w.b.Len() > 0 && !w.endsNL {
-					w.hardBreak()
-				}
-			}
+		// and list items don't run together. A block starts on a new line as
+		// well as ending one: without the break before it, the text in front
+		// of a nested <div> ran into the block's own ("Name:Alice").
+		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			walkHTMLLeaf(child, w, out, ckType, trim, state)
@@ -626,10 +622,16 @@ func htmlAttribute(n *html.Node, key string) string {
 	return ""
 }
 
+// isBlockTag reports whether a browser lays tag out as a block, on lines of
+// its own (the elements the HTML rendering rules display as block or list
+// item), so its text must not run into the text around it.
 func isBlockTag(tag string) bool {
 	switch tag {
 	case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-		"tr", "blockquote", "div", "section", "article", "header", "footer":
+		"tr", "blockquote", "div", "section", "article", "header", "footer",
+		"main", "nav", "aside", "address", "hgroup", "search", "center",
+		"ul", "ol", "menu", "dl", "dt", "dd", "figure", "figcaption",
+		"details", "summary", "dialog", "form", "fieldset", "legend", "hr":
 		return true
 	}
 	return false
