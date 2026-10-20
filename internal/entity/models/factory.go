@@ -123,6 +123,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewDemonRouteModel(baseURL, urlSuffix), nil
 	case "trustedrouter":
 		return NewTrustedRouterModel(baseURL, urlSuffix), nil
+	case "ai stupid level":
+		return NewAIStupidLevelModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
