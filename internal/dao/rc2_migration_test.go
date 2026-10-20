@@ -21,7 +21,6 @@ import (
 	"errors"
 	"testing"
 
-
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
@@ -112,7 +111,6 @@ func TestRC2DataMigration_StartupOrderPreservesTenantModelMaxTokens(t *testing.T
 		t.Fatal("flat chunk_token_num was not converted")
 	}
 
-
 	// 7. Verify version marker is rc2
 	ver, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
@@ -192,6 +190,18 @@ func TestRC2DataMigration_RollsBackWhenMarkerWriteFails(t *testing.T) {
 		t.Fatalf("failed to set rc1 migration version: %v", err)
 	}
 	insertIngestionConfig(t, db, "knowledgebase", "kb-marker-failure", "general", `{"chunk_token_num":128}`)
+	seedLegacyTenantModelMaxTokens(t, db, 65536)
+	targetModel := entity.TenantModel{
+		ID:         "model-marker-failure",
+		ModelName:  "custom-model",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelType:  int(entity.ModelTypeChat),
+		Extra:      `{"is_tools":true}`,
+	}
+	if err := db.Create(&targetModel).Error; err != nil {
+		t.Fatalf("failed to seed target tenant model: %v", err)
+	}
 
 	if err := db.Callback().Create().Before("gorm:create").Register("test:fail_rc2_migration_marker", func(tx *gorm.DB) {
 		setting, ok := tx.Statement.Dest.(*entity.SystemSettings)
@@ -212,6 +222,13 @@ func TestRC2DataMigration_RollsBackWhenMarkerWriteFails(t *testing.T) {
 	}
 	if _, remains := checkKB.ParserConfig["chunk_token_num"]; !remains {
 		t.Fatal("expected parser config conversion to roll back after marker write failure")
+	}
+	var checkModel entity.TenantModel
+	if err := db.Where("id = ?", targetModel.ID).Take(&checkModel).Error; err != nil {
+		t.Fatalf("failed to read tenant model: %v", err)
+	}
+	if checkModel.Extra != `{"is_tools":true}` {
+		t.Fatalf("expected tenant model extra to roll back, got: %s", checkModel.Extra)
 	}
 
 	version, err := GetDatabaseMigrationVersion(ctx, db)
