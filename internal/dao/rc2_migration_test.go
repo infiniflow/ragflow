@@ -18,6 +18,7 @@ package dao
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 
@@ -181,6 +182,44 @@ func TestRC2DataMigration_RollbackOnFailure(t *testing.T) {
 	}
 	if ver != conversationHistoryTargetVersion {
 		t.Fatalf("database version = %q, want %q", ver, conversationHistoryTargetVersion)
+	}
+}
+
+func TestRC2DataMigration_RollsBackWhenMarkerWriteFails(t *testing.T) {
+	ctx := t.Context()
+	db := setupRC2MigrationDB(t)
+	if err := setDatabaseMigrationVersion(ctx, db, conversationHistoryTargetVersion); err != nil {
+		t.Fatalf("failed to set rc1 migration version: %v", err)
+	}
+	insertIngestionConfig(t, db, "knowledgebase", "kb-marker-failure", "general", `{"chunk_token_num":128}`)
+
+	if err := db.Callback().Create().Before("gorm:create").Register("test:fail_rc2_migration_marker", func(tx *gorm.DB) {
+		setting, ok := tx.Statement.Dest.(*entity.SystemSettings)
+		if ok && setting.Name == migrationDBVersionMarker && setting.Value == rc2MigrationTargetVersion {
+			tx.AddError(errors.New("injected migration marker write failure"))
+		}
+	}); err != nil {
+		t.Fatalf("failed to register migration marker failure callback: %v", err)
+	}
+
+	if err := migrateRC2Data(ctx, db); err == nil {
+		t.Fatal("expected migrateRC2Data to fail when writing the rc2 marker")
+	}
+
+	var checkKB entity.Knowledgebase
+	if err := db.Where("id = ?", "kb-marker-failure").Take(&checkKB).Error; err != nil {
+		t.Fatalf("failed to read checkKB: %v", err)
+	}
+	if _, remains := checkKB.ParserConfig["chunk_token_num"]; !remains {
+		t.Fatal("expected parser config conversion to roll back after marker write failure")
+	}
+
+	version, err := GetDatabaseMigrationVersion(ctx, db)
+	if err != nil {
+		t.Fatalf("failed to read migration version: %v", err)
+	}
+	if version != conversationHistoryTargetVersion {
+		t.Fatalf("database version = %q, want %q", version, conversationHistoryTargetVersion)
 	}
 }
 
