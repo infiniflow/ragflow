@@ -48,7 +48,7 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, abort_doc_chunking_counter
 from common import settings
-from common.chunk_order import DERIVED_CHUNK_ORDER_BASE
+from common.chunk_order import TOC_CHUNK_ORDER_BASE, drop_parent_link
 from common.connection_utils import timeout
 from common.constants import LLMType
 from common.exceptions import TaskCanceledException
@@ -930,11 +930,16 @@ class TaskHandler:
                 import copy
 
                 d = copy.deepcopy(docs[-1])
+                # The TOC row only borrows the last chunk's position columns. Its
+                # parent link must go, or insert_chunks derives a duplicate parent.
+                drop_parent_link(d)
                 d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
                 d["toc_kwd"] = "toc"
                 d["available_int"] = 0
                 d["page_num_int"] = [100000000]
-                d["chunk_order_int"] = DERIVED_CHUNK_ORDER_BASE
+                # Each parsing task builds its own TOC, so offset by the task's
+                # first page to keep a multi-range document's TOCs in range order.
+                d["chunk_order_int"] = TOC_CHUNK_ORDER_BASE + max(int(ctx.from_page or 0), 0)
                 d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
                 return d
             return None

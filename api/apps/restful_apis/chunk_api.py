@@ -1191,28 +1191,29 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
 async def _next_source_chunk_order(tenant_id, dataset_id, document_id):
     """Order a manually added chunk after the document's source chunks.
 
-    Disabled rows are skipped: parent rows carry a reserved order above every
-    source chunk.
+    Only enabled rows are read, so parent rows (``available_int=0`` and numbered
+    from ``DERIVED_CHUNK_ORDER_BASE`` upwards) never decide the next order. A
+    document left without an enabled source row returns 0: the added chunk is
+    then its only enabled row. A failed read raises instead of falling back to
+    0, because a default-ordered row is exactly what this numbering replaces.
+    Two concurrent adds can read the same maximum and share an order; the chunk
+    list still breaks that tie on ``create_timestamp_flt``.
     """
     order_by = OrderByExpr()
     order_by.desc("chunk_order_int")
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["chunk_order_int"],
-            [],
-            {"doc_id": document_id, "available_int": 1},
-            [],
-            order_by,
-            0,
-            1,
-            search.index_name(tenant_id),
-            [dataset_id],
-        )
-        fields = settings.docStoreConn.get_fields(res, ["chunk_order_int"])
-    except Exception:
-        logging.exception("Failed to read the highest chunk_order_int of document %s", document_id)
-        return 0
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        ["chunk_order_int"],
+        [],
+        {"doc_id": document_id, "available_int": 1},
+        [],
+        order_by,
+        0,
+        1,
+        search.index_name(tenant_id),
+        [dataset_id],
+    )
+    fields = settings.docStoreConn.get_fields(res, ["chunk_order_int"])
 
     orders = []
     for row in fields.values():
@@ -1282,6 +1283,17 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
 
+    # Read the order before the image store and the embedding call: a doc-store
+    # failure must not leave an orphaned image or pay for an unused embedding.
+    try:
+        d["chunk_order_int"] = await _next_source_chunk_order(dataset_tenant_id, dataset_id, document_id)
+    except Exception:
+        logging.exception("Failed to read the highest chunk_order_int of document %s", document_id)
+        return get_error_data_result(
+            message="Failed to read the document's chunk order, please retry.",
+            code=RetCode.SERVER_ERROR,
+        )
+
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
@@ -1302,7 +1314,6 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     )
     v = 0.1 * v[0] + 0.9 * v[1]
     d[f"q_{len(v)}_vec"] = v.tolist()
-    d["chunk_order_int"] = await _next_source_chunk_order(dataset_tenant_id, dataset_id, document_id)
     settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
 
     DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)

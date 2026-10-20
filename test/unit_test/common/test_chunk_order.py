@@ -17,9 +17,13 @@
 from common.chunk_order import (
     DERIVED_CHUNK_ORDER_BASE,
     PAGE_ORDER_STRIDE,
+    PARENT_LINK_FIELDS,
+    TOC_CHUNK_ORDER_BASE,
     assign_chunk_order,
     assign_derived_chunk_order,
+    drop_parent_link,
 )
+from common.constants import MAXIMUM_PAGE_NUMBER
 
 
 class TestAssignChunkOrder:
@@ -63,3 +67,62 @@ class TestAssignDerivedChunkOrder:
 
     def test_derived_values_fit_the_int32_chunk_column(self):
         assert 0 < DERIVED_CHUNK_ORDER_BASE < 2**31 - 1
+
+    def test_derived_base_is_above_every_page_indexed_source_order(self):
+        # Only page-indexed documents produce derived rows and a page range is
+        # capped at MAXIMUM_PAGE_NUMBER. The spreadsheet parser's row offset is
+        # confined to table documents, which never carry derived rows.
+        assert MAXIMUM_PAGE_NUMBER * PAGE_ORDER_STRIDE < DERIVED_CHUNK_ORDER_BASE
+
+
+class TestDropParentLink:
+    def test_removes_every_field_insert_chunks_derives_a_parent_from(self):
+        toc = drop_parent_link(
+            {
+                "id": "t1",
+                "mom": "parent text",
+                "mom_with_weight": "parent text",
+                "mom_id": "m1",
+                "content_with_weight": "toc",
+            }
+        )
+
+        assert [field for field in PARENT_LINK_FIELDS if field in toc] == []
+        assert toc["content_with_weight"] == "toc"
+
+    def test_leaves_a_source_chunk_unchanged(self):
+        chunk = {"id": "c1", "content_with_weight": "row", "content_ltks": "row"}
+
+        assert drop_parent_link(chunk) is chunk
+        assert chunk == {"id": "c1", "content_with_weight": "row", "content_ltks": "row"}
+
+
+class TestTocBand:
+    def test_toc_lists_after_every_parent_row_on_the_order_column_alone(self):
+        # The TOC row owns a band above the parent rows, so no second sort key is
+        # needed to place a document's table of contents last.
+        parents = assign_derived_chunk_order([{"id": "p1"}, {"id": "p2"}])
+        toc = {"id": "t1", "chunk_order_int": TOC_CHUNK_ORDER_BASE}
+
+        ordered = sorted(parents + [toc], key=lambda chunk: chunk["chunk_order_int"])
+
+        assert [chunk["id"] for chunk in ordered] == ["p1", "p2", "t1"]
+
+    def test_toc_band_keeps_the_parent_rows_inside_int32(self):
+        assert DERIVED_CHUNK_ORDER_BASE < TOC_CHUNK_ORDER_BASE < 2**31 - 1
+
+    def test_toc_band_covers_the_largest_task_page_offset(self):
+        # A task offsets its TOC by its first page, which is capped by
+        # MAXIMUM_PAGE_NUMBER.
+        assert TOC_CHUNK_ORDER_BASE + MAXIMUM_PAGE_NUMBER < 2**31 - 1
+
+    def test_multi_range_tocs_keep_range_order(self):
+        # One parsing task builds one TOC, so a document parsed in several page
+        # ranges has several TOC rows; the page offset keeps them in range order.
+        parents = assign_derived_chunk_order([{"id": "p1"}])
+        later = {"id": "t2", "chunk_order_int": TOC_CHUNK_ORDER_BASE + 20}
+        earlier = {"id": "t1", "chunk_order_int": TOC_CHUNK_ORDER_BASE}
+
+        ordered = sorted(parents + [later, earlier], key=lambda chunk: chunk["chunk_order_int"])
+
+        assert [chunk["id"] for chunk in ordered] == ["p1", "t1", "t2"]
