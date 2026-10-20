@@ -880,24 +880,15 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             scope = {"doc_id": [document_id], "compile_kwd": [compile_kwd_val], "must_not": {"exists": "compilation_template_ids"}}
         return {"template_id": bucket_id, "template_name": bucket_name, "kind": bucket_kind}, scope
 
-    # ── keywords mode: name matching/KNN → matched entities' subgraph ──
+    # ── keywords mode: name matching → matched entities' subgraph ──
     if keywords:
-        try:
-            embd_id = DocumentService.get_embd_id(document_id)
-            model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
-            embd_mdl = TenantLLMService.model_instance(model_config)
-        except Exception:
-            logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
-            return get_result(data=_response([]))
         try:
             bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
                 index_name,
                 dataset_id,
-                embd_mdl,
                 {"doc_id": [document_id], "knowledge_graph_kwd": ["entity"]},
                 keywords,
                 _resolve_bucket,
-                log_ctx=f"doc={document_id}",
             )
         except Exception as e:
             return server_error_response(e)
