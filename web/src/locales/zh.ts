@@ -642,9 +642,10 @@ export default {
         'PDF 解析方法：auto（自动检测）、txt（文本提取）、ocr（光学字符识别）',
       mineruFormulaEnable: '公式识别',
       mineruFormulaEnableTip:
-        '启用公式识别。注意：对于西里尔文档可能无法正常工作。',
+        '通过 /file_parse 启用公式识别。Hybrid 后端的此开关仅控制行内公式，块级公式仍会识别。V1 不支持关闭此选项。',
       mineruTableEnable: '表格识别',
-      mineruTableEnableTip: '启用表格识别和提取。',
+      mineruTableEnableTip:
+        '通过 /file_parse 启用表格识别和提取。V1 不支持关闭此选项。',
       paddleocrOptions: 'PaddleOCR 选项',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'PaddleOCR 服务的 API 端点 URL',
@@ -2350,7 +2351,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       imageOcr: 'OCR',
       imageOcrTip:
-        '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+        '使用本地 OCR 或所选 PaddleOCR 模型提取图片文字。视觉增强独立于该开关，为图片补充描述。',
+      imageOcrModel: 'OCR 模型',
+      imageOcrLocal: 'DeepDoc',
+      imageOcrModelTip:
+        '选择 DeepDoc 使用本地 OCR，或选择已添加的 PaddleOCR 或 PaddleOCR.local 模型。关闭 OCR 会保留选择但不执行 OCR；SVG 直接读取文字。',
+      imageOcrModelsError:
+        'OCR 模型加载失败，已保留当前选择。请稍后重试，或选择 DeepDoc 使用本地 OCR。',
+      imageOcrNoModels:
+        '尚未添加 PaddleOCR 模型。可使用本地 DeepDoc OCR，或在模型设置中添加 PaddleOCR 模型。',
       imageTextSourceRequired: '图片需要文本来源，请保留 OCR 或视觉增强。',
       visionEnhancementPromptTip:
         '自定义视觉模型的指令。留空则使用内置提示词。',

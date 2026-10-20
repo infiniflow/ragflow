@@ -33,6 +33,9 @@ func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ 
 	f.mu.Unlock()
 	return f.hits, nil
 }
+func (f *navRoutingFake) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
 func (f *navRoutingFake) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return f.clusters, int64(len(f.clusters)), nil
 }

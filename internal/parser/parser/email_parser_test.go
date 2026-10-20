@@ -111,6 +111,44 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
+// TestEmailParser_EmlTextFieldOrder pins the order of the text output: the
+// headers first, in the order of the JSON header item, then the body. The
+// fields used to come out in Go's map order, a different one on every parse.
+func TestEmailParser_EmlTextFieldOrder(t *testing.T) {
+	raw := strings.Join([]string{
+		"From: a@example.com",
+		"To: b@example.com",
+		"Cc: c@example.com",
+		"Subject: Quarterly numbers",
+		"Date: Mon, 1 Sep 2026 10:00:00 +0000",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Revenue grew.",
+	}, "\r\n")
+	want := strings.Join([]string{
+		"from:a@example.com",
+		"to:b@example.com",
+		"cc:c@example.com",
+		"date:Mon, 1 Sep 2026 10:00:00 +0000",
+		"subject:Quarterly numbers",
+		"text:Revenue grew.",
+		"text_html:",
+		"",
+	}, "\n")
+
+	for i := 0; i < 20; i++ {
+		p := NewEmailParser()
+		p.ConfigureFromSetup(map[string]any{"output_format": "text"})
+		result := p.ParseWithResult(t.Context(), "order.eml", []byte(raw))
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if result.Text != want {
+			t.Fatalf("parse %d: text output\n got: %q\nwant: %q", i, result.Text, want)
+		}
+	}
+}
+
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
@@ -1465,6 +1503,7 @@ func TestHTMLBodyToText(t *testing.T) {
 		{"layout table cells", `<table><tr><td>a</td><td>b</td></tr></table>`, "a\nb"},
 		{"multi-row layout table stays line-separated", `<p>intro</p><table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table><p>outro</p>`, "intro\na\nb\nc\noutro"},
 		{"inline tags stay on one line", `<p>Hello <b>world</b></p>`, "Hello world"},
+		{"definition list and rule", `<div>A<dl><dt>Term</dt><dd>Def</dd></dl>B<hr>C</div>`, "A\nTerm\nDef\nB\nC"},
 		{"br forces a break", `one<br>two`, "one\ntwo"},
 		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
 	}

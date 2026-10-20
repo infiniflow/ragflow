@@ -707,9 +707,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
       mineruFormulaEnable: 'Formula recognition',
       mineruFormulaEnableTip:
-        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+        'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
       mineruTableEnable: 'Table recognition',
-      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruTableEnableTip:
+        'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
@@ -2774,7 +2775,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       imageOcr: 'OCR',
       imageOcrTip:
-        'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+        'Extract text from uploaded images with local OCR or the selected PaddleOCR model. Vision enhancement adds descriptions independently of this switch.',
+      imageOcrModel: 'OCR model',
+      imageOcrLocal: 'DeepDoc',
+      imageOcrModelTip:
+        'Choose DeepDoc for local OCR, or an added PaddleOCR or PaddleOCR.local model. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrModelsError:
+        'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
+      imageOcrNoModels:
+        'No PaddleOCR models added. Use DeepDoc for local OCR, or add a PaddleOCR model in model settings.',
       imageTextSourceRequired:
         'Images need a text source: keep OCR or vision enhancement on.',
       visionEnhancementPromptTip:

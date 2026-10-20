@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -125,7 +124,7 @@ func extractJSONTags(v any) map[string]struct{} {
 func isExtractorComponent(cpnID, componentName string) bool {
 	lowerName := strings.ToLower(componentName)
 	lowerID := strings.ToLower(cpnID)
-	return lowerName == "extractor" ||
+	return lowerName == strings.ToLower(schema.ComponentNameExtractor) ||
 		strings.HasPrefix(lowerID, "extractor:") ||
 		strings.HasPrefix(lowerID, "extractor_")
 }
@@ -149,7 +148,7 @@ func IsParserComponentID(cpnID string) bool {
 // isParserComponent returns true if the component name or component ID
 // indicates a Parser component.
 func isParserComponent(cpnID, componentName string) bool {
-	return strings.EqualFold(componentName, "parser") || IsParserComponentID(cpnID)
+	return strings.EqualFold(componentName, schema.ComponentNameParser) || IsParserComponentID(cpnID)
 }
 
 // NormalizeParserConfigSetups lifts legacy nested Parser "setups" entries in
@@ -440,59 +439,4 @@ func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map
 func IsChunkerComponent(componentID string) bool {
 	lowerID := strings.ToLower(componentID)
 	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
-}
-
-// ResolveComponentParamsDefaults takes DSL JSON bytes and returns the
-// component params defaults as an entity.JSONMap {cpnID: {param: value}}.
-// This is a pure function — callers must load the DSL themselves.
-func ResolveComponentParamsDefaults(dslJSON []byte) (entity.JSONMap, error) {
-	cp, err := ComponentParamsDefaults(dslJSON)
-	if err != nil {
-		return nil, err
-	}
-	out := make(entity.JSONMap, len(cp))
-	for k, v := range cp {
-		out[k] = v
-	}
-	return out, nil
-}
-
-// ResolveComponentParamsDefaultsFromIDs loads the DSL for the target pipeline
-// (builtin via parserID or custom canvas via pipelineID) and returns the
-// component params defaults. It is a convenience wrapper around
-// LoadPipelineDSL + ResolveComponentParamsDefaults; use the two-step form
-// when you already have the DSL bytes.
-//
-// Deprecated: prefer loading the DSL yourself and calling
-// ResolveComponentParamsDefaults directly, to keep DAO dependencies
-// out of the pipeline package.
-func ResolveComponentParamsDefaultsFromIDs(parserID string, pipelineID *string) (entity.JSONMap, error) {
-	isCanvas := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
-	var dslJSON []byte
-	var err error
-	if isCanvas {
-		return nil, fmt.Errorf("ResolveComponentParamsDefaultsFromIDs: cannot load canvas DSL without DAO; " +
-			"load the DSL via service.LoadPipelineDSL first")
-	}
-	registry, regErr := DefaultRegistry()
-	if regErr != nil {
-		return nil, fmt.Errorf("builtin registry: %w", regErr)
-	}
-	if !registry.IsValid(parserID) {
-		return nil, fmt.Errorf("unknown builtin parser_id: %q", parserID)
-	}
-	dslStr, dslErr := LoadBuiltinDSL(parserID)
-	if dslErr != nil {
-		return nil, fmt.Errorf("load builtin DSL: %w", dslErr)
-	}
-	dslJSON = []byte(dslStr)
-	cp, err := ComponentParamsDefaults(dslJSON)
-	if err != nil {
-		return nil, err
-	}
-	out := make(entity.JSONMap, len(cp))
-	for k, v := range cp {
-		out[k] = v
-	}
-	return out, nil
 }
