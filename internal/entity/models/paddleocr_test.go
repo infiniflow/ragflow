@@ -487,6 +487,44 @@ func TestPaddleOCRResultPageIdentity(t *testing.T) {
 	}
 }
 
+func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		blocks   string
+		wantText string
+		wantBox  string
+	}{
+		{"no blocks", `[]`, "page fallback", "[]"},
+		{"empty blocks", `[{"block_content":"  "}]`, "page fallback", "[]"},
+		{"markdown image", `[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
+		{"html image", `[{"block_content":"<div><img src=\"a.png\"></div>"}]`, "page fallback", "[]"},
+		{"text among images", `[{"block_content":"![figure](a.png)"},{"block_content":"positioned text","block_bbox":[10,20,30,40]}]`, "![figure](a.png)\npositioned text", "[10 20 30 40]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"result":{"layoutParsingResults":[{"markdown":{"text":"page fallback"},"prunedResult":{"page_index":2,"parsing_res_list":` + tc.blocks + `}}]}}`
+			response, err := parsePaddleOCRResultBody([]byte(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			page := response.Pages[0]
+			var texts []string
+			var box []float64
+			for _, block := range page.Blocks {
+				if strings.TrimSpace(block.Text) != "" {
+					texts = append(texts, block.Text)
+					box = block.BBox
+				}
+			}
+			if page.Index != 2 || strings.Join(texts, "\n") != tc.wantText || fmt.Sprint(box) != tc.wantBox {
+				t.Fatalf("page=%+v", page)
+			}
+			if response.Text == nil || *response.Text != "page fallback" {
+				t.Fatalf("API text changed: %+v", response.Text)
+			}
+		})
+	}
+}
+
 func TestPaddleOCRRejectsMalformedJSONL(t *testing.T) {
 	body := `{"result":{"ocrResults":[{"prunedResult":{"rec_texts":["first"]}}]}}
 {"result": corrupted

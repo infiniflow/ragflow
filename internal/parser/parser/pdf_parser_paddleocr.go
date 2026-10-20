@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"regexp"
 	"strings"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
-
-var paddleOCRImageMarkup = regexp.MustCompile(`(?is)!\[[^\]]*\]\([^)]*\)|<div[^>]*>\s*<img[^>]*>\s*</div>|<img[^>]*>`)
 
 // PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
 // emits the structured items consumed by the existing PDF chunk pipeline.
@@ -44,7 +42,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
 			}
-			content := strings.TrimSpace(paddleOCRImageMarkup.ReplaceAllString(block.Text, ""))
+			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
 			if content == "" {
 				continue
 			}

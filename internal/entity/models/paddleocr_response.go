@@ -7,6 +7,8 @@ import (
 	"io"
 	"math"
 	"strings"
+
+	"ragflow/internal/utility"
 )
 
 type paddleOCREntry struct {
@@ -145,7 +147,14 @@ func paddleOCRPages(result paddleOCRResult, nextPage int) []OCRPage {
 			}
 		}
 		page.Blocks = pruned.blocks()
-		if len(page.Blocks) == 0 && strings.TrimSpace(markdown) != "" {
+		hasText := false
+		for _, block := range page.Blocks {
+			if strings.TrimSpace(utility.StripMarkdownImages(block.Text)) != "" {
+				hasText = true
+				break
+			}
+		}
+		if !hasText && strings.TrimSpace(markdown) != "" {
 			page.Blocks = []OCRBlock{{Text: markdown}}
 		}
 		pages = append(pages, page)
