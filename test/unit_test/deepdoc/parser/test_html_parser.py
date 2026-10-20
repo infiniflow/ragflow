@@ -47,15 +47,9 @@ _MOCK_MODULES = [
     "deepdoc.vision",
     "infinity",
     "infinity.rag_tokenizer",
+    "rag",
+    "rag.nlp",
 ]
-for _m in _MOCK_MODULES:
-    if _m not in sys.modules:
-        sys.modules[_m] = mock.MagicMock()
-
-if "rag" not in sys.modules:
-    sys.modules["rag"] = mock.MagicMock()
-if "rag.nlp" not in sys.modules:
-    sys.modules["rag.nlp"] = mock.MagicMock()
 
 
 def _find_project_root(marker="pyproject.toml"):
@@ -74,8 +68,11 @@ _html_spec = importlib.util.spec_from_file_location(
     os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "html_parser.py"),
 )
 _html_mod = importlib.util.module_from_spec(_html_spec)
-sys.modules["deepdoc.parser.html_parser"] = _html_mod
-_html_spec.loader.exec_module(_html_mod)
+# patch.dict removes the stubs again after the load, and the loaded module
+# stays out of sys.modules. Test files that pytest imports later in the same
+# process then get the real modules, not these stubs or this copy.
+with mock.patch.dict(sys.modules, {m: mock.MagicMock() for m in _MOCK_MODULES if m not in sys.modules}):
+    _html_spec.loader.exec_module(_html_mod)
 
 RAGFlowHtmlParser = _html_mod.RAGFlowHtmlParser
 
