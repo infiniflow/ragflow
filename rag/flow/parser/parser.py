@@ -1192,6 +1192,8 @@ class Parser(ProcessBase):
                 txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
             else:
                 txt = cv_model.describe(img_binary.read())
+            if "**ERROR**" in txt:
+                raise RuntimeError(txt)
 
         json_result = [
             {
@@ -1240,6 +1242,8 @@ class Parser(ProcessBase):
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
+        if "**ERROR**" in txt:
+            raise RuntimeError(txt)
 
         self.set_output("text", txt)
 
