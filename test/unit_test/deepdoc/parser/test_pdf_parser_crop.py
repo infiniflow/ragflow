@@ -166,7 +166,7 @@ def test_negative_last_bottom_does_not_swap_into_a_fake_page(parser_module, capl
 
     _close(positions, [(0, 10, 30, 10, 35)])
     assert image.getpixel((0, 4 + 6)) == (255, 0, 0)
-    assert (0, 255, 0) not in image.getdata()
+    assert all(image.getpixel((x, y)) != (0, 255, 0) for x in range(image.width) for y in range(image.height))
     assert "empty_after_clamp" in caplog.text
 
 
@@ -179,7 +179,7 @@ def test_negative_last_bottom_context_comes_from_real_body_end(parser_module):
     _close(positions, [(0, 10, 40, 20, 30)])
     assert image.getpixel((0, 0)) == (127, 127, 127)
     assert image.getpixel((0, 14 + 6)) == (255, 255, 255)
-    assert (0, 0, 255) not in image.getdata()
+    assert all(image.getpixel((x, y)) != (0, 0, 255) for x in range(image.width) for y in range(image.height))
     assert image.size == (30, 14 + 6 + 10 + 6 + 14 + 6)
 
 
