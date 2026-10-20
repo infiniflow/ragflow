@@ -145,15 +145,15 @@ func TestGeneralChunkerPDFAndMarkdownCustomMediaContextDropsMarker(t *testing.T)
 
 func TestGeneralChunkerMarkdownPunctuationPreservesMediaBoundaries(t *testing.T) {
 	for _, tc := range []struct {
-		name, docType, ckType, first, media string
+		name, docType, layout, first, media string
 		contextSize                         int
 		want                                []string
 	}{
 		{"heading and table", "table", "heading", "标题。还有标题！", "<table>A</table>", 512,
 			[]string{"标题。还有标题！\n<table>A</table>后文。还有一句。", "后文。还有一句。"}},
-		{"image attachment", "image", "text", "前文。还有一句。", "图注。", 0,
+		{"image attachment", "image", "", "前文。还有一句。", "图注。", 0,
 			[]string{"前文。还有一句。\n图注。\n后文。还有一句。"}},
-		{"standalone image", "image", "text", "前文。还有一句。", "图注。", 512,
+		{"standalone image", "image", "", "前文。还有一句。", "图注。", 512,
 			[]string{"前文。还有一句。", "前文。还有一句。图注。后文。还有一句。", "后文。还有一句。"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -164,10 +164,14 @@ func TestGeneralChunkerMarkdownPunctuationPreservesMediaBoundaries(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
+			first := map[string]any{"text": tc.first, "doc_type_kwd": "text"}
+			if tc.layout != "" {
+				first["layout"] = tc.layout
+			}
 			out, err := c.Invoke(t.Context(), nil, map[string]any{
 				"name": "document.md", "file_type": "md", "output_format": "json",
 				"json": []map[string]any{
-					{"text": tc.first, "doc_type_kwd": "text", "ck_type": tc.ckType},
+					first,
 					{"text": tc.media, "doc_type_kwd": tc.docType, "img_id": "media-id"},
 					{"text": "后文。还有一句。", "doc_type_kwd": "text"},
 				},

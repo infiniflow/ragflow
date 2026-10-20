@@ -228,7 +228,7 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("JSON item = %#v; want a table item", res.JSON[0])
 	}
 }

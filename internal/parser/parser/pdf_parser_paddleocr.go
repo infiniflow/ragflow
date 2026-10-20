@@ -67,13 +67,17 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 					if strings.TrimSpace(text.Text) == "" {
 						continue
 					}
-					if isTitle && text.CKType == "text" {
+					layout, _ := text.Extra["layout"].(string)
+					if isTitle && layout != "heading" && layout != "list" && layout != "code" {
 						prefix := "## "
 						if label == "doc_title" {
 							prefix = "# "
 						}
 						text.Text = prefix + text.Text
-						text.CKType = "heading"
+						if text.Extra == nil {
+							text.Extra = map[string]any{}
+						}
+						text.Extra["layout"] = "heading"
 						item = text
 					}
 				}
@@ -82,7 +86,10 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 				fields["page_number"] = page.Index + 1
 				fields["_preserve_order"] = true
 				if isTitle {
-					fields["layout"] = "title"
+					// The asserted-title marker the Title chunker reads without
+					// the notTitle heuristic guard. PDF model labels that merely
+					// look title-like stay on "title".
+					fields["layout"] = "heading"
 				} else if label != "" {
 					fields["layout"] = label
 				}

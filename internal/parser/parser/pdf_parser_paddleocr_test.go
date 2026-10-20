@@ -100,12 +100,12 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ label, text, want, ckType string }{
+	for _, tc := range []struct{ label, text, want, layout string }{
 		{"doc_title", "Document title", "# Document title", "heading"},
 		{"paragraph_title", "Section title", "## Section title", "heading"},
 		{"doc_title", "### Existing title", "### Existing title", "heading"},
-		{"figure_title", "Figure caption", "Figure caption", "text"},
-		{"table_title", "Table caption", "Table caption", "text"},
+		{"figure_title", "Figure caption", "Figure caption", "caption"},
+		{"table_title", "Table caption", "Table caption", "caption"},
 	} {
 		t.Run(tc.label+tc.text, func(t *testing.T) {
 			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: tc.label}}}}}
@@ -114,7 +114,7 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 				t.Fatal(result.Err)
 			}
 			item := result.JSON[0].ToMap()
-			if item["ck_type"] != tc.ckType || item["text"] != tc.want {
+			if item["layout"] != tc.layout || item["text"] != tc.want {
 				t.Fatalf("title semantics: %v", item)
 			}
 			formatted := pdfItemsToResult("title.pdf", ItemsToMaps(result.JSON), "markdown", 1)

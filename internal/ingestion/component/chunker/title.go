@@ -337,7 +337,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = lvl
 			continue
 		}
-		if rec.ckType == "heading" {
+		if isHeadingLayout(rec.layout) {
 			out[i] = fallbackLevel
 			continue
 		}
@@ -640,7 +640,6 @@ type lineRecord struct {
 	imgID         *string
 	image         string
 	layout        string
-	ckType        string
 	pdfPositions  json.RawMessage
 	positions     json.RawMessage
 	preserveOrder bool
