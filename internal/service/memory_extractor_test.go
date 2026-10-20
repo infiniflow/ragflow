@@ -106,7 +106,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 		MessageType: "fact",
 		Content:     "likes coffee",
 		ValidAt:     "2026-08-20T10:05:00+08:00",
-	}}, now)
+	}}, now, nil)
 	withLLMTime := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := withLLMTime["valid_at"]; got != "2026-08-20 10:05:00" {
 		t.Fatalf("valid_at = %v, want LLM wall clock %q", got, "2026-08-20 10:05:00")
@@ -115,7 +115,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	materialized = materializeMemoryExtraction(t.Context(), []extractedMemory{{
 		MessageType: "fact",
 		Content:     "likes coffee",
-	}}, now)
+	}}, now, nil)
 	fallbackOnly := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
@@ -125,7 +125,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 		MessageType: "fact",
 		Content:     "likes coffee",
 		InvalidAt:   "   ",
-	}}, now)
+	}}, now, nil)
 	blankInvalidAt := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := blankInvalidAt["invalid_at"]; got != nil {
 		t.Fatalf("invalid_at = %#v, want nil for whitespace-only input", got)
@@ -154,7 +154,7 @@ func TestMaterializeMemoryExtractionInvalidAtStaysValidWhenUnparseable(t *testin
 				MessageType: "fact",
 				Content:     "likes coffee",
 				InvalidAt:   test.invalidAt,
-			}}, now)
+			}}, now, nil)
 			got := buildExtractedMessage(42, "mem-1", msg, materialized[0])["invalid_at"]
 			if got != test.want {
 				t.Fatalf("invalid_at = %#v, want %#v", got, test.want)

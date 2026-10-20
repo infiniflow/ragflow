@@ -266,8 +266,8 @@ func TestBuildMemoryTaskRecordsShape(t *testing.T) {
 // be added when the project's Redis client lands.)
 func TestGenerateRawMessageID_Unique(t *testing.T) {
 	ctx := t.Context()
-	a := generateRawMessageID(ctx)
-	b := generateRawMessageID(ctx)
+	a := generateRawMessageID(ctx, nil)
+	b := generateRawMessageID(ctx, nil)
 	if a == b {
 		// Allow a 1-second tie when the clock hasn't ticked.
 		// GenerateRawMessageID uses Unix seconds; two calls

@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/kvrocks"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
@@ -284,24 +285,40 @@ func generateOutputFormat(typesToExtract []string) string {
 // MemoryService handles business logic for memory operations
 // It provides methods for creating, updating, deleting, and querying memories
 type MemoryService struct {
-	memoryDAO *dao.MemoryDAO
-	db        *gorm.DB
-	docEngine engine.DocEngine
+	memoryDAO     *dao.MemoryDAO
+	db            *gorm.DB
+	docEngine     engine.DocEngine
+	kvrocksClient *kvrocks.Client
+}
+
+// MemoryServiceOption configures a MemoryService at construction time.
+type MemoryServiceOption func(*MemoryService)
+
+// WithMemoryKvrocks binds the kvrocks client used to mint raw-message ids for
+// the transient MemoryMessageService the MemoryService constructs. It keeps the
+// kvrocks dependency explicit rather than read from a package global.
+func WithMemoryKvrocks(kv *kvrocks.Client) MemoryServiceOption {
+	return func(s *MemoryService) { s.kvrocksClient = kv }
 }
 
 // NewMemoryService creates a new MemoryService instance. db and eng are the
 // process-wide relational handle and doc engine; they are resolved once at the
 // server assembly point and injected here rather than read from the package
-// globals (arch_test.go guards that rule).
+// globals (arch_test.go guards that rule). kv is optional and defaults to nil,
+// in which case raw-message ids fall back to wall-clock values.
 //
 // Returns:
 //   - *MemoryService: Initialized service instance with DAO
-func NewMemoryService(db *gorm.DB, eng engine.DocEngine) *MemoryService {
-	return &MemoryService{
+func NewMemoryService(db *gorm.DB, eng engine.DocEngine, opts ...MemoryServiceOption) *MemoryService {
+	s := &MemoryService{
 		memoryDAO: dao.NewMemoryDAO(),
 		db:        db,
 		docEngine: eng,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // CreateMemoryRequest defines the request structure for creating a memory

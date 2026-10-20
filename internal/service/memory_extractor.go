@@ -45,6 +45,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 
@@ -436,7 +437,7 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 		common.Warn(fmt.Sprintf("memory: chat model call failed while extracting task %s: %v", task.TaskID, err))
 		return []extractedMemory{}, nil
 	}
-	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow())
+	materialized := materializeMemoryExtraction(ctx, extracted, memoryNow(), s.kvrocksClient)
 	return materialized, nil
 }
 
@@ -539,11 +540,13 @@ func memoryLLMError(answer string) string {
 }
 
 // materializeMemoryExtraction assigns stable message ids and timestamp
-// fallbacks before the extraction checkpoint is persisted.
-func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemory, now time.Time) []extractedMemory {
+// fallbacks before the extraction checkpoint is persisted. kv is the kvrocks
+// client used to mint raw-message ids; a nil client falls back to wall-clock
+// ids.
+func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemory, now time.Time, kv *kvrocks.Client) []extractedMemory {
 	materialized := make([]extractedMemory, len(extracted))
 	for i, item := range extracted {
-		item.MessageID = generateRawMessageID(ctx)
+		item.MessageID = generateRawMessageID(ctx, kv)
 		item.ValidAt = formatMemoryTime(item.ValidAt, now)
 		// An invalid_at the model made up normalizes to "", which persists as
 		// nil and leaves the memory valid (Python stores nothing via
