@@ -229,42 +229,116 @@ func dedupeStrings(values []string) []string {
 //	from_type_kwd    the class at the assertion's from side
 //	to_type_kwd      the class at the assertion's to side
 //
-// It also pins the row kinds. A constraint on a class means compiled entity
-// rows, a constraint on a property or an endpoint means compiled assertions —
-// without that, `prop_kwd` would also match hypernode rows (a hypernode carries
-// its leaf attribute in the same column) and the reader would get retrieval
-// units that are not the thing they asked for.
+// The clauses are grouped per ROW KIND and OR-ed, because the columns live on
+// different rows: an entity row carries entity_type_kwd and no prop_kwd, an
+// assertion row carries prop_kwd/from_type_kwd/to_type_kwd and no
+// entity_type_kwd. Emitted as one flat map — which the engines AND — a request
+// naming both a class and a property matched nothing at all: entity rows failed
+// the property clause, assertion rows failed the class clause, and the caller got
+// `no_match` plus a second, unnarrowed search. Grouping keeps each kind's clauses
+// in their own branch, which is what "these classes OR assertions using this
+// property" was always meant to say.
+//
+// Each branch also pins its own row kind. A constraint on a class means compiled
+// entity rows, a constraint on a property or an endpoint means compiled
+// assertions — without that, `prop_kwd` would also match hypernode rows (a
+// hypernode carries its leaf attribute in the same column) and the reader would
+// get retrieval units that are not the thing they asked for.
 func OntologyStructureFilter(declared declaredOntology, c OntologyStructureConstraints) map[string]interface{} {
 	if c.IsZero() {
 		return nil
 	}
 	children := declaredChildren(declared)
-	filter := make(map[string]interface{}, 5)
-	kinds := map[string]bool{}
 
+	entity := map[string]interface{}{}
 	if types := dedupeStrings(c.EntityTypes); len(types) > 0 {
-		filter["entity_type_kwd"] = expandDeclaredClasses(types, children)
-		kinds["entity"] = true
+		entity["entity_type_kwd"] = expandDeclaredClasses(types, children)
+		entity["knowledge_graph_kwd"] = []string{"entity"}
 	}
+	assertions := map[string]interface{}{}
 	if properties := dedupeStrings(c.Properties); len(properties) > 0 {
-		filter["prop_kwd"] = properties
-		kinds["relation"] = true
+		assertions["prop_kwd"] = properties
 	}
 	if from := dedupeStrings(c.FromTypes); len(from) > 0 {
-		filter["from_type_kwd"] = expandDeclaredClasses(from, children)
-		kinds["relation"] = true
+		assertions["from_type_kwd"] = expandDeclaredClasses(from, children)
 	}
 	if to := dedupeStrings(c.ToTypes); len(to) > 0 {
-		filter["to_type_kwd"] = expandDeclaredClasses(to, children)
-		kinds["relation"] = true
+		assertions["to_type_kwd"] = expandDeclaredClasses(to, children)
 	}
-	if len(kinds) > 0 {
-		ordered := make([]string, 0, len(kinds))
-		for kind := range kinds {
-			ordered = append(ordered, kind)
+	if len(assertions) > 0 {
+		assertions["knowledge_graph_kwd"] = []string{"relation"}
+	}
+
+	switch {
+	case len(entity) > 0 && len(assertions) > 0:
+		return map[string]interface{}{"or": []interface{}{entity, assertions}}
+	case len(entity) > 0:
+		return entity
+	default:
+		return assertions
+	}
+}
+
+// ontologyConstraintLadder orders the relaxations tried when a constraint set
+// matches nothing: the endpoint classes go first (a caller rarely means them
+// exactly), then either half of a class+property request on its own, then no
+// narrowing at all.
+//
+// The order is by decreasing information: each step drops the clause most likely
+// to be an over-specification, and keeps the ones the question's own words
+// justified. Dropping everything at once — the previous behaviour — turned a
+// partially wrong request into a schema-free search even when the class half
+// would have answered it.
+func ontologyConstraintLadder(c OntologyStructureConstraints) []OntologyStructureConstraints {
+	steps := make([]OntologyStructureConstraints, 0, 4)
+	add := func(step OntologyStructureConstraints) {
+		if step.IsZero() {
+			return
 		}
-		sort.Strings(ordered)
-		filter["knowledge_graph_kwd"] = ordered
+		for _, seen := range steps {
+			if !ontologyConstraintsDiffer(seen, step) {
+				return
+			}
+		}
+		steps = append(steps, step)
 	}
-	return filter
+	add(c)
+	if len(c.FromTypes) > 0 || len(c.ToTypes) > 0 {
+		add(OntologyStructureConstraints{EntityTypes: c.EntityTypes, Properties: c.Properties})
+	}
+	if len(c.EntityTypes) > 0 && len(c.Properties) > 0 {
+		// Each step is a strict subset of the one before it, including the
+		// endpoint clauses already dropped above: a ladder that re-adds a clause
+		// is not a relaxation, and a caller reading the degrade reason could not
+		// tell which clauses were actually in force.
+		add(OntologyStructureConstraints{EntityTypes: c.EntityTypes})
+		add(OntologyStructureConstraints{Properties: c.Properties})
+	}
+	return steps
+}
+
+// ontologyConstraintsDiffer reports whether two constraint sets ask for
+// different narrowing, ignoring order and repetition.
+func ontologyConstraintsDiffer(a, b OntologyStructureConstraints) bool {
+	return !ontologySameStringSet(a.EntityTypes, b.EntityTypes) ||
+		!ontologySameStringSet(a.Properties, b.Properties) ||
+		!ontologySameStringSet(a.FromTypes, b.FromTypes) ||
+		!ontologySameStringSet(a.ToTypes, b.ToTypes)
+}
+
+func ontologySameStringSet(a, b []string) bool {
+	left, right := dedupeStrings(a), dedupeStrings(b)
+	if len(left) != len(right) {
+		return false
+	}
+	left = append([]string(nil), left...)
+	right = append([]string(nil), right...)
+	sort.Strings(left)
+	sort.Strings(right)
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }

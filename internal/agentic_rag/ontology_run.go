@@ -260,6 +260,69 @@ const ontologyDigestMaxAssertions = 12
 // ontologyDigestMaxVocabulary bounds the vocabulary line the same way.
 const ontologyDigestMaxVocabulary = 40
 
+// selectOntologyAssertions picks the assertions the instruction shows, taking one
+// per subject in turn until the budget is spent.
+//
+// A plain prefix would let one entity's attribute list fill the whole budget: the
+// rows arrive ranked by similarity, and a single long entity description scores
+// highly against many questions. Round-robin keeps the budget spread across the
+// subjects the search actually found, which is what makes an enumeration question
+// ("which works…") answerable from the twelve rows shown instead of needing a
+// follow-up call to see the rest.
+//
+// The order inside each subject is preserved, and the subjects keep the order of
+// their first appearance, so the selection is reproducible for a given page.
+func selectOntologyAssertions(assertions []OntologyAssertion, limit int) []OntologyAssertion {
+	if limit <= 0 || len(assertions) <= limit {
+		return assertions
+	}
+	groups := make([][]OntologyAssertion, 0, limit)
+	index := make(map[string]int, limit)
+	for _, assertion := range assertions {
+		key := ontologyAssertionSubject(assertion)
+		at, ok := index[key]
+		if !ok {
+			at = len(groups)
+			index[key] = at
+			groups = append(groups, nil)
+		}
+		groups[at] = append(groups[at], assertion)
+	}
+	out := make([]OntologyAssertion, 0, limit)
+	for round := 0; len(out) < limit; round++ {
+		added := false
+		for _, group := range groups {
+			if round >= len(group) {
+				continue
+			}
+			out = append(out, group[round])
+			added = true
+			if len(out) == limit {
+				return out
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return out
+}
+
+// ontologyAssertionSubject is the entity an assertion is *about*: the entity
+// itself, or the assertion's from-side. Two assertions sharing it are the same
+// subject's facts and should not both crowd out a different subject.
+func ontologyAssertionSubject(assertion OntologyAssertion) string {
+	if strings.EqualFold(assertion.Kind, "relation") {
+		if from := strings.TrimSpace(assertion.From); from != "" {
+			return "from:" + strings.ToLower(from)
+		}
+	}
+	if name := strings.TrimSpace(assertion.Name); name != "" {
+		return "entity:" + strings.ToLower(name)
+	}
+	return "kind:" + assertion.Kind
+}
+
 func ontologyDigestBlock(mode ontologyMode, digest *OntologyDigest, reg *EvidenceRegistry) string {
 	var b strings.Builder
 	b.WriteString("## Declared knowledge (ontology)\n")
@@ -331,10 +394,7 @@ func ontologyDigestBlock(mode ontologyMode, digest *OntologyDigest, reg *Evidenc
 		b.WriteString("- No assertion in the knowledge scope matches this question.\n")
 	} else {
 		b.WriteString("\n### Assertions already retrieved\n")
-		shown := digest.Assertions
-		if len(shown) > ontologyDigestMaxAssertions {
-			shown = shown[:ontologyDigestMaxAssertions]
-		}
+		shown := selectOntologyAssertions(digest.Assertions, ontologyDigestMaxAssertions)
 		for i, a := range shown {
 			b.WriteString(renderOntologyAssertion(i+1, a, reg))
 		}

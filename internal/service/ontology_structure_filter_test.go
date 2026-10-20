@@ -33,6 +33,11 @@ func TestOntologyStructureFilterExpandsDeclaredDescendants(t *testing.T) {
 // A constraint on a property or an endpoint means compiled assertions; without
 // pinning the row kind, `prop_kwd` would also match hypernode rows, which carry
 // a leaf attribute in the same column.
+//
+// A request that names BOTH a class and a property has to become two branches,
+// not one map: entity_type_kwd lives on entity rows and prop_kwd on assertion
+// rows, so a single AND-ed map matched nothing at all (measured: `no_match` plus
+// a second, unnarrowed search). Each branch carries its own kind pin.
 func TestOntologyStructureFilterPinsRowKinds(t *testing.T) {
 	declared := parseDeclaredOntology(ontologyTestConfig(
 		[]map[string]interface{}{{"type": "person"}, {"type": "organization"}},
@@ -44,11 +49,67 @@ func TestOntologyStructureFilterPinsRowKinds(t *testing.T) {
 		Properties:  []string{"member_of"},
 	})
 
-	if kinds, _ := filter["knowledge_graph_kwd"].([]string); len(kinds) != 2 || kinds[0] != "entity" || kinds[1] != "relation" {
-		t.Fatalf("knowledge_graph_kwd = %#v, want both kinds", filter["knowledge_graph_kwd"])
+	if _, flat := filter["entity_type_kwd"]; flat {
+		t.Fatalf("filter = %#v, want the class clause inside its own branch", filter)
 	}
-	if props, _ := filter["prop_kwd"].([]string); len(props) != 1 || props[0] != "member_of" {
-		t.Fatalf("prop_kwd = %#v, want [member_of]", filter["prop_kwd"])
+	branches, ok := filter["or"].([]interface{})
+	if !ok || len(branches) != 2 {
+		t.Fatalf("filter = %#v, want two OR-ed row-kind branches", filter)
+	}
+	entity, ok := branches[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("entity branch = %#v", branches[0])
+	}
+	if kinds, _ := entity["knowledge_graph_kwd"].([]string); len(kinds) != 1 || kinds[0] != "entity" {
+		t.Fatalf("entity branch kind pin = %#v, want [entity]", entity["knowledge_graph_kwd"])
+	}
+	if classes, _ := entity["entity_type_kwd"].([]string); len(classes) != 1 || classes[0] != "person" {
+		t.Fatalf("entity_type_kwd = %#v, want [person]", entity["entity_type_kwd"])
+	}
+	if _, leaked := entity["prop_kwd"]; leaked {
+		t.Fatal("the property clause leaked into the entity branch; the two can never match one row")
+	}
+
+	assertions, ok := branches[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("assertion branch = %#v", branches[1])
+	}
+	if kinds, _ := assertions["knowledge_graph_kwd"].([]string); len(kinds) != 1 || kinds[0] != "relation" {
+		t.Fatalf("assertion branch kind pin = %#v, want [relation]", assertions["knowledge_graph_kwd"])
+	}
+	if props, _ := assertions["prop_kwd"].([]string); len(props) != 1 || props[0] != "member_of" {
+		t.Fatalf("prop_kwd = %#v, want [member_of]", assertions["prop_kwd"])
+	}
+}
+
+// A constraint set that is guaranteed to match nothing is relaxed one clause at a
+// time, endpoint classes first, and the ladder never repeats a step.
+func TestOntologyConstraintLadderRelaxesOneClauseAtATime(t *testing.T) {
+	steps := ontologyConstraintLadder(OntologyStructureConstraints{
+		EntityTypes: []string{"person"},
+		Properties:  []string{"member_of"},
+		FromTypes:   []string{"person"},
+		ToTypes:     []string{"organization"},
+	})
+	if len(steps) != 4 {
+		t.Fatalf("steps = %#v, want full, no-endpoints, class-only, property-only", steps)
+	}
+	if ontologyConstraintsDiffer(steps[0], OntologyStructureConstraints{
+		EntityTypes: []string{"person"}, Properties: []string{"member_of"},
+		FromTypes: []string{"person"}, ToTypes: []string{"organization"},
+	}) {
+		t.Fatal("the first step must be the request as asked")
+	}
+	if ontologyConstraintsDiffer(steps[1], OntologyStructureConstraints{
+		EntityTypes: []string{"person"}, Properties: []string{"member_of"},
+	}) {
+		t.Fatalf("second step = %#v, want the endpoint clauses dropped", steps[1])
+	}
+	if ontologyConstraintsDiffer(steps[2], OntologyStructureConstraints{EntityTypes: []string{"person"}}) {
+		t.Fatalf("third step = %#v, want the class half on its own", steps[2])
+	}
+	if ontologyConstraintsDiffer(steps[3], OntologyStructureConstraints{Properties: []string{"member_of"}}) {
+		t.Fatalf("fourth step = %#v, want the property half on its own", steps[3])
 	}
 }
 

@@ -414,8 +414,6 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		instruction = ontologyInstruction(tmpl.Content, mode, digest, registry)
 	}
 
-	// With no explicit tools, use the requested template. The config reloads
-	// when its mtime changes so operators can change the tool list and prompt.
 	// Template tools plus the injected compiled-knowledge set (toolsForRun owns
 	// both decisions and their logging). The knowledge-layer tool is added here
 	// because it is a property of this run's ontology mode, not of the template.
