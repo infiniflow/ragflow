@@ -1072,7 +1072,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			common.ResponseWithCodeData(c, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 	mapped := make([]map[string]interface{}, len(data))
@@ -1083,7 +1083,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		common.ResponseWithCodeData(c, common.CodeServerError, mapped, strings.Join(errMsgs, "\n"))
 		return
 	}
-	common.SuccessNoMessage(c, mapped)
+	common.SuccessWithData(c, mapped, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1112,7 +1112,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1140,7 +1140,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
@@ -1651,7 +1651,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, data)
+	common.SuccessWithData(c, data, "success")
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
