@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import {
   initialKeywordsSimilarityWeightValue,
   initialSimilarityThresholdValue,
@@ -223,6 +224,19 @@ export const initialYouComValues = {
       value: [],
       type: 'Array<Object>',
     },
+  },
+};
+
+export const initialFXMacroDataValues = {
+  operation: 'release_calendar',
+  arguments: { currency: 'usd' },
+  timeout: 30,
+  use_credentials: false,
+  outputs: {
+    formalized_content: { value: '', type: 'string' },
+    json: { value: [], type: 'Array<Object>' },
+    response: { value: {}, type: 'Object' },
+    source_url: { value: '', type: 'string' },
   },
 };
 
@@ -872,6 +886,7 @@ export const RestrictedUpstreamMap = {
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
+  [Operator.FXMacroData]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -933,6 +948,7 @@ export const NodeMap = {
   [Operator.SofyaSearch]: 'ragNode',
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',
+  [Operator.FXMacroData]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',

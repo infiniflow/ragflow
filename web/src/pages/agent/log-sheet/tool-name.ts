@@ -1,8 +1,13 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import { Operator } from '@/constants/agent';
 
 export function getToolOperatorName(toolName?: string | null) {
   if (!toolName) {
     return '';
+  }
+
+  if (toolName.startsWith('fxmacrodata_') || toolName === Operator.FXMacroData) {
+    return Operator.FXMacroData;
   }
 
   const normalizedName = toolName.replaceAll('_', '').toLowerCase();

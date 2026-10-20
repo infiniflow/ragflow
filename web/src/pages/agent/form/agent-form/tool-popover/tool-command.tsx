@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Command,
@@ -35,6 +36,7 @@ const Menus = [
       Operator.SofyaSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,
+      Operator.FXMacroData,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,

@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 import {
   TimelineContent,
   TimelineHeader,
@@ -127,7 +128,7 @@ const ToolTimelineItem = ({
                     <OperatorIcon
                       className="size-4"
                       name={
-                        (SVGIconMap[toolName as IToolIcon]
+                        (toolName === Operator.FXMacroData || SVGIconMap[toolName as IToolIcon]
                           ? toolName
                           : 'Agent') as Operator
                       }

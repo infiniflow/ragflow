@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -87,6 +88,7 @@ export const SVGIconMap = {
   [Operator.Crawler]: 'crawler',
 };
 export const LucideIconMap = {
+  [Operator.FXMacroData]: Globe,
   [Operator.DataOperations]: FileCode,
   [Operator.Loop]: InfinityIcon,
   [Operator.ExitLoop]: LogOut,
