@@ -584,6 +584,16 @@ func (s *Service) ShowUserPermission(ctx context.Context, email string) (map[str
 	return result, nil
 }
 
+// ListUserDatasets requires the enterprise edition.
+func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[string]interface{}, error) {
+	return nil, errors.New("listing user datasets is only available in the enterprise edition")
+}
+
+// ListUserAgents requires the enterprise edition.
+func (s *Service) ListUserAgents(ctx context.Context, email, canvasCategory string, page, pageSize int) ([]map[string]interface{}, int64, error) {
+	return nil, 0, errors.New("listing user agents is only available in the enterprise edition")
+}
+
 // ListUserChats show user chats for enterprise edition
 func (s *Service) ListUserChats(ctx context.Context, email string) ([]map[string]interface{}, error) {
 	// Query user by email

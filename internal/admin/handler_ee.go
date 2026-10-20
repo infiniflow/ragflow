@@ -1101,6 +1101,16 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 	common.SuccessWithData(c, permissions, "")
 }
 
+// ListUserDatasets requires the enterprise edition.
+func (h *Handler) ListUserDatasets(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, "listing user datasets is only available in the enterprise edition")
+}
+
+// ListUserAgents requires the enterprise edition.
+func (h *Handler) ListUserAgents(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, "listing user agents is only available in the enterprise edition")
+}
+
 // ListUserChats handle show user chats
 func (h *Handler) ListUserChats(c *gin.Context) {
 	username, err := getUserName(c)

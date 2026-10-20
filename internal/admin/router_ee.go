@@ -91,6 +91,8 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/users/:username/index", r.handler.ShowUserIndex)
 	protected.PUT("/users/:username/role", r.handler.UpdateUserRole)
 	protected.GET("/users/:username/permission", r.handler.ShowUserPermission)
+	protected.GET("/users/:username/datasets", r.handler.ListUserDatasets)
+	protected.GET("/users/:username/agents", r.handler.ListUserAgents)
 	protected.GET("/users/:username/chats", r.handler.ListUserChats)
 	protected.GET("/users/:username/searches", r.handler.ListUserSearches)
 	protected.GET("/users/:username/models", r.handler.ListUserModels)
