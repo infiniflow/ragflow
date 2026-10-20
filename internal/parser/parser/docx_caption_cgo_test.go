@@ -42,32 +42,39 @@ func docxCaptionZip(t *testing.T, parts map[string]string) []byte {
 	return buf.Bytes()
 }
 
-// docxCaptionDocumentXML is a body with a Heading1 paragraph, a
-// Caption-styled paragraph and a one-row table, in that order.
-const docxCaptionDocumentXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-  <w:body>
-    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>设备台账</w:t></w:r></w:p>
-    <w:p><w:pPr><w:pStyle w:val="Caption"/></w:pPr><w:r><w:t>设备流转明细</w:t></w:r></w:p>
-    <w:tbl>
-      <w:tr>
-        <w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc>
-        <w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc>
-      </w:tr>
-    </w:tbl>
-  </w:body>
-</w:document>`
-
 // docxCaptionStylesXML defines the built-in Heading1 and Caption styles.
 // office_oxide resolves heading levels through the style sheet, so a
 // document without it degrades headings to plain paragraphs.
 const docxCaptionStylesXML = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
   <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>
   <w:style w:type="paragraph" w:styleId="Caption"><w:name w:val="caption"/></w:style>
 </w:styles>`
 
-func docxCaptionTestDOCX(t *testing.T) []byte {
+// docxCaptionBody wraps the given <w:body> children in a document.
+func docxCaptionBody(inner string) string {
+	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>` + inner + `
+  </w:body>
+</w:document>`
+}
+
+func docxCaptionPara(styleID, text string) string {
+	return `<w:p><w:pPr><w:pStyle w:val="` + styleID + `"/></w:pPr><w:r><w:t>` + text + `</w:t></w:r></w:p>`
+}
+
+func docxCaptionTable() string {
+	return `<w:tbl>
+  <w:tr>
+    <w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc>
+    <w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc>
+  </w:tr>
+</w:tbl>`
+}
+
+func docxCaptionTestDOCX(t *testing.T, bodyInner string) []byte {
 	t.Helper()
 	return docxCaptionZip(t, map[string]string{
 		"[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -86,34 +93,39 @@ func docxCaptionTestDOCX(t *testing.T) []byte {
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
 </Relationships>`,
 		"word/styles.xml":   docxCaptionStylesXML,
-		"word/document.xml": docxCaptionDocumentXML,
+		"word/document.xml": docxCaptionBody(bodyInner),
 	})
 }
 
-// TestDOCXParser_TableCaptionFromHeading_EndToEnd runs a real .docx
-// through the native office_oxide extraction and asserts the table chunk
-// carries the heading-location caption, rendered into the table HTML the
-// chunker persists. This is the production path the pure-Go IR unit tests
-// cannot exercise.
-func TestDOCXParser_TableCaptionFromHeading_EndToEnd(t *testing.T) {
+// docxCaptionFindTable returns the single TableData from a parse result.
+func docxCaptionFindTable(t *testing.T, res ParseResult) *entity.TableData {
+	t.Helper()
+	for _, item := range res.JSON {
+		if ti, ok := item.(TableItem); ok && ti.Table != nil {
+			return ti.Table
+		}
+	}
+	t.Fatal("no table item in parse result")
+	return nil
+}
+
+func docxCaptionParse(t *testing.T, bodyInner string) ParseResult {
 	p := NewDOCXParser()
 	p.outputFormat = "json"
-	res := p.ParseWithResult(t.Context(), "caption.docx", docxCaptionTestDOCX(t))
+	res := p.ParseWithResult(t.Context(), "caption.docx", docxCaptionTestDOCX(t, bodyInner))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	var td *entity.TableData
-	for _, item := range res.JSON {
-		ti, ok := item.(TableItem)
-		if !ok || ti.Table == nil {
-			continue
-		}
-		td = ti.Table
-		break
-	}
-	if td == nil {
-		t.Fatal("no table item in parse result")
-	}
+	return res
+}
+
+// TestDOCXParser_TableCaptionFromHeading_EndToEnd runs a real .docx
+// (heading immediately above a table) through the native office_oxide
+// extraction and asserts the table chunk carries the heading-location
+// caption, rendered into the table HTML the chunker persists.
+func TestDOCXParser_TableCaptionFromHeading_EndToEnd(t *testing.T) {
+	res := docxCaptionParse(t, docxCaptionPara("Heading1", "设备台账")+docxCaptionTable())
+	td := docxCaptionFindTable(t, res)
 	if td.Caption != "Table Location: 设备台账" {
 		t.Errorf("table caption = %q, want %q", td.Caption, "Table Location: 设备台账")
 	}
@@ -123,36 +135,38 @@ func TestDOCXParser_TableCaptionFromHeading_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestDOCXParser_CaptionStyledParagraphStaysText_EndToEnd characterizes the
-// current office_oxide contract: paragraph style names never reach the IR
-// JSON, so a "Caption"-styled paragraph stays an ordinary text section and
-// is not attached to the following table. If office_oxide starts emitting
-// styles, this test fails and caption-style detection becomes implementable.
-func TestDOCXParser_CaptionStyledParagraphStaysText_EndToEnd(t *testing.T) {
-	p := NewDOCXParser()
-	p.outputFormat = "json"
-	res := p.ParseWithResult(t.Context(), "caption.docx", docxCaptionTestDOCX(t))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
+// TestDOCXParser_CaptionStyledParagraphBecomesTableCaption_EndToEnd pins the
+// Go-side temporary stopgap (docx_caption_scan.go): a "Caption"-styled
+// paragraph immediately above a table is attached as the table caption and is
+// NOT emitted as its own text section. (office_oxide itself never surfaces the
+// paragraph style; the Go parser recovers it by re-parsing document.xml.)
+func TestDOCXParser_CaptionStyledParagraphBecomesTableCaption_EndToEnd(t *testing.T) {
+	res := docxCaptionParse(t, docxCaptionPara("Caption", "设备流转明细")+docxCaptionTable())
+	td := docxCaptionFindTable(t, res)
+	if td.Caption != "设备流转明细" {
+		t.Errorf("table caption = %q, want %q", td.Caption, "设备流转明细")
 	}
-	var captionParagraphs, tableItems int
+	rendered := tableutil.RenderTableHTML(td)
+	if !strings.Contains(rendered, "<caption>设备流转明细</caption>") {
+		t.Errorf("rendered table HTML missing caption:\n%s", rendered)
+	}
 	for _, item := range res.JSON {
-		ti, ok := item.(TableItem)
-		if ok && ti.Table != nil {
-			tableItems++
-			if ti.Table.Caption != "" && ti.Table.Caption != "Table Location: 设备台账" {
-				t.Errorf("unexpected caption %q: office_oxide must not surface paragraph styles", ti.Table.Caption)
-			}
-			continue
-		}
-		if textItem, ok := item.(TextItem); ok && textItem.Text == "设备流转明细" {
-			captionParagraphs++
+		if ti, ok := item.(TextItem); ok && ti.Text == "设备流转明细" {
+			t.Errorf("Caption-styled paragraph must be consumed as a caption, not left as a text section")
 		}
 	}
-	if tableItems != 1 {
-		t.Fatalf("table items = %d, want 1", tableItems)
-	}
-	if captionParagraphs != 1 {
-		t.Errorf("Caption-styled paragraph sections = %d, want 1 (it must stay a text section)", captionParagraphs)
+}
+
+// TestDOCXParser_CaptionPreferredOverHeading_EndToEnd asserts that when both a
+// heading and a Caption-styled paragraph precede the table, the explicit
+// caption wins over the synthesized heading-location caption.
+func TestDOCXParser_CaptionPreferredOverHeading_EndToEnd(t *testing.T) {
+	res := docxCaptionParse(t,
+		docxCaptionPara("Heading1", "设备台账")+
+			docxCaptionPara("Caption", "设备流转明细")+
+			docxCaptionTable())
+	td := docxCaptionFindTable(t, res)
+	if td.Caption != "设备流转明细" {
+		t.Errorf("table caption = %q, want explicit caption %q", td.Caption, "设备流转明细")
 	}
 }

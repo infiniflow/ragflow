@@ -378,7 +378,32 @@ func docxHeadingLocationCaption(headings []docxHeading) string {
 // mirroring Python's Docx.__get_nearest_title. office_oxide resolves Word
 // heading styles into element type "heading" plus a level, so the outline
 // is tracked from those elements alone.
+//
+// This is the caption-only (heading hierarchy) entry point. Use
+// buildDOCXJSONSectionsWithCaptions to also attach Caption-styled paragraph
+// text (a temporary stopgap; see docx_caption_scan.go).
 func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, nil)
+}
+
+// buildDOCXJSONSectionsWithCaptions is buildDOCXJSONSections plus the
+// TEMPORARY Caption-styled-paragraph detection. tableCaptions must be aligned
+// by position with the tables in the IR (see docx_caption_scan.go).
+//
+// TEMPORARY: remove once office_oxide emits paragraph styles
+// (yfedoseev/office_oxide#455).
+func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, tableCaptions)
+}
+
+// buildDOCXJSONSectionsCore is the shared implementation of the two entry
+// points above. tableCaptions, when non-nil, supplies a descriptive caption
+// for each table indexed by reading order; an explicit caption is preferred
+// over the synthesized heading-location caption. The position alignment
+// between tableCaptions and the IR tables is approximate (document-body order
+// vs office_oxide IR order) and is a known limitation of the temporary
+// Caption-style stopgap in docx_caption_scan.go.
+func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
@@ -400,6 +425,18 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 					}
 					headings = pushDOCXHeading(headings, level, docxElementText(el, "\n"))
 				}
+				// TEMPORARY (docx_caption_scan.go): when a paragraph's text
+				// exactly matches the Caption recovered for the next table,
+				// suppress it as a standalone text section — it is attached
+				// to that table as the caption instead. The text match keeps
+				// this safe if the document scan and the IR element order
+				// ever desync: a non-matching paragraph is never dropped.
+				if tableSequence < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[tableSequence]); explicit != "" &&
+						strings.TrimSpace(docxElementText(el, " ")) == explicit {
+						continue
+					}
+				}
 				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading", budget)
 
 			case "image":
@@ -410,7 +447,16 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 				if len(el.Rows) == 0 {
 					continue
 				}
-				html := docxIRTableToHTML(el, docxHeadingLocationCaption(headings))
+				// Prefer an explicit Caption-styled paragraph (temporary
+				// stopgap, see docx_caption_scan.go) over the synthesized
+				// heading-location caption.
+				caption := docxHeadingLocationCaption(headings)
+				if idx := tableSequence - 1; idx >= 0 && idx < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[idx]); explicit != "" {
+						caption = explicit
+					}
+				}
+				html := docxIRTableToHTML(el, caption)
 				table := map[string]any{
 					"text":         html,
 					"image":        nil,

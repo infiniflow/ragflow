@@ -153,3 +153,38 @@ func TestBuildDOCXJSONSections_TableCaption_Empty(t *testing.T) {
 		t.Errorf("empty IR should yield no sections, got %d", len(sections))
 	}
 }
+
+// TEMPORARY Caption-style detection (docx_caption_scan.go): an explicit
+// caption supplied for the table overrides the synthesized heading-location
+// caption.
+func TestBuildDOCXJSONSections_TableCaption_ExplicitPreferredOverLocation(t *testing.T) {
+	ir := docxCaptionTableIR(
+		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
+		docxCaptionTableBody,
+	)
+	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
+		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
+	}
+}
+
+// An explicit caption is attached even when the table sits under no heading.
+func TestBuildDOCXJSONSections_TableCaption_ExplicitWithNoHeading(t *testing.T) {
+	ir := docxCaptionTableIR(docxCaptionTableBody)
+	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
+		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
+	}
+}
+
+// A blank entry never overrides a valid heading-location caption.
+func TestBuildDOCXJSONSections_TableCaption_BlankDoesNotOverrideLocation(t *testing.T) {
+	ir := docxCaptionTableIR(
+		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
+		docxCaptionTableBody,
+	)
+	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{""})
+	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: 设备台账" {
+		t.Errorf("caption = %q, want %q", got, "Table Location: 设备台账")
+	}
+}
