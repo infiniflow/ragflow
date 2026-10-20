@@ -219,7 +219,7 @@ try:  # available at runtime — nltk already backs rag/nlp/synonym.py
     from nltk.stem import PorterStemmer as _PorterStemmer
 
     _porter_stem = _PorterStemmer().stem
-except Exception:  # pragma: no cover - exercised only where nltk is absent
+except Exception:  # noqa: BLE001  # pragma: no cover - exercised only where nltk is absent
     _porter_stem = None
 
 # Longest first: "nominations" must lose "ations", not just the trailing "s".
@@ -328,9 +328,7 @@ def _is_fact_dense_sentence(sent: str) -> bool:
     low = sent.lower()
     if _FACT_RE.search(sent) or _FACT_RE.search(low):
         return True
-    if _PROPER_NOUN_RE.search(sent):
-        return True
-    return False
+    return bool(_PROPER_NOUN_RE.search(sent))
 
 
 def _narrow_content(content: str, kwds: list[str]) -> str | None:
@@ -353,7 +351,16 @@ def _narrow_content(content: str, kwds: list[str]) -> str | None:
     # table), and sentence-window narrowing truncates them to a header-only snippet.
     low_content = content.lower()
     if "<table" in low_content or "<tr" in low_content or "<td" in low_content:
-        return "..." + _highlight_keywords(content, kwds) + "..."
+        # Serialize the table to Markdown before the model sees it. The format
+        # comparison over 11 serializations ranks Markdown-KV first for field
+        # lookups (key: value beats header/position alignment) and Markdown
+        # tables as the cost/accuracy compromise; raw HTML is the expensive and
+        # least readable option. The row set is not pruned — rank/order and
+        # completeness decide table answers. Falls back to the raw text when
+        # nothing renders.
+        from rag.advanced_rag.harness.tools.table_view import table_view_or_raw
+
+        return "..." + _highlight_keywords(table_view_or_raw(content), kwds) + "..."
     pipe_rows = sum(1 for line in content.splitlines() if line.count("|") >= 2)
     if pipe_rows >= 3:
         return "..." + _highlight_keywords(content, kwds) + "..."
@@ -397,7 +404,7 @@ def _highlight_keywords(text: str, kwds: list[str]) -> str:
     terms: list[str] = list(phrases)
     # Add stem-matched words NOT already inside a phrase, so "nominated" still
     # gets starred for keyword "nominations" while "Atlanta Braves" stays whole.
-    verbatim, stemmed = _keyword_forms(kwds)
+    _verbatim, stemmed = _keyword_forms(kwds)
     stem_set = {s for seq in stemmed for s in seq}
     if stem_set:
         for word in re.findall(r"[A-Za-z]+", text):

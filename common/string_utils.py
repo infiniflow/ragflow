@@ -32,18 +32,20 @@ def remove_redundant_spaces(txt: str):
         str: Text with redundant spaces removed
     """
     # First pass: Remove spaces after left-boundary characters
-    # Matches: [non-alphanumeric-and-specific-right-punctuation] + [non-space]
-    # Removes spaces after characters like '(', '<', and other non-alphanumeric chars
+    # Matches: [non-word-char-and-specific-right-punctuation] + [non-space]
+    # Removes spaces after characters like '(', '<', and other non-word chars.
+    # `\w` (not `a-z0-9`) so that non-ASCII letters count as word chars and the
+    # space between two non-Latin words is preserved.
     # Examples:
     #   "( test" → "(test"
-    txt = re.sub(r"([^a-z0-9.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
+    txt = re.sub(r"([^\w.,\)>]) +([^ ])", r"\1\2", txt, flags=re.IGNORECASE)
 
     # Second pass: Remove spaces before right-boundary characters
-    # Matches: [non-space] + [non-alphanumeric-and-specific-left-punctuation]
-    # Removes spaces before characters like non-')', non-',', non-'.', and non-alphanumeric chars
+    # Matches: [non-space] + [non-word-char-and-specific-left-punctuation]
+    # Removes spaces before characters like non-')', non-',', non-'.', and non-word chars
     # Examples:
     #   "world !" → "world!"
-    return re.sub(r"([^ ]) +([^a-z0-9.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
+    return re.sub(r"([^ ]) +([^\w.,\(<])", r"\1\2", txt, flags=re.IGNORECASE)
 
 
 def clean_markdown_block(text):
@@ -52,7 +54,7 @@ def clean_markdown_block(text):
 
     This function cleans Markdown code blocks by removing:
     - Opening ```Markdown tags (with optional whitespace and newlines)
-    - Closing ``` tags (with optional whitespace and newlines)
+    - Closing ``` tags only when an opening Markdown tag was removed
 
     Args:
         text (str): Input text that may be wrapped in Markdown code blocks
@@ -63,11 +65,12 @@ def clean_markdown_block(text):
     """
     # Remove opening ```Markdown tag with optional whitespace and newlines
     # Matches: optional whitespace + ```markdown + optional whitespace + optional newline
-    text = re.sub(r"^\s*```markdown\s*\n?", "", text)
+    text, opening_count = re.subn(r"^\s*```markdown\s*\n?", "", text)
 
     # Remove closing ``` tag with optional whitespace and newlines
     # Matches: optional newline + optional whitespace + ``` + optional whitespace at end
-    text = re.sub(r"\n?\s*```\s*$", "", text)
+    if opening_count:
+        text = re.sub(r"\n?\s*```\s*$", "", text)
 
     # Return text with surrounding whitespace removed
     return text.strip()

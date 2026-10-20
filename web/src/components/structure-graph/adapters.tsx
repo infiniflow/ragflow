@@ -165,6 +165,11 @@ function buildUniqueTreeDataItems(
 
   for (const relation of relations ?? []) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
+    // Self-referencing relation records the node as its own parent, and the
+    // cycle walk below then spins on it forever (cursor never advances).
+    // This is a backend data integrity issue but we defend against it in the
+    // frontend so the UI never hangs.
+    if (relation.from === relation.to) continue;
 
     const parent = map.get(relation.from);
     const child = map.get(relation.to);
@@ -365,6 +370,11 @@ export function adaptTimelineToX6Data(template: IStructureGraphTemplate): {
   return { nodes, edges };
 }
 
+// G6's mindmap layout requires a single root, so multi-root API data is
+// wrapped under this synthetic node. It is not an entity and carries no
+// chunk payload; clicks on it must not trigger chunk navigation/fetching.
+export const SyntheticMindMapRootId = 'mindmap-root';
+
 export function adaptMindMapToIndentedTree(
   template: IStructureGraphTemplate,
 ): TreeData {
@@ -384,7 +394,7 @@ export function adaptMindMapToIndentedTree(
   }
 
   return {
-    id: 'mindmap-root',
+    id: SyntheticMindMapRootId,
     children: g6Roots,
   };
 }

@@ -10,6 +10,7 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -24,8 +25,8 @@ import { useParams } from 'react-router';
 import { toast } from 'sonner';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DocumentType } from './constant';
-import { buildMissingModelModalContent } from './parser-model-gap-content';
-import { useParserModelValidation } from './use-parser-model-validation';
+import { buildParserGapModalContent } from './parser-gap-content';
+import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
 
 export function useBulkOperateDataset({
@@ -46,9 +47,9 @@ export function useBulkOperateDataset({
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
   const { visible, showModal, hideModal } = useSetModalState();
-  const { findFilesMissingModels, goToDatasetConfiguration } =
-    useParserModelValidation();
+  const { findDocumentParseGaps } = useParserGapValidation();
   const { knowledgeBase } = useKnowledgeBaseContext();
+  const isGo = useIsGoBackend();
 
   const chunkNum = useMemo(() => {
     if (!documents.length) {
@@ -73,15 +74,14 @@ export function useBulkOperateDataset({
         return;
       }
 
-      // Starting a parse requires the models of each file type to be
-      // configured; cancelling is always allowed.
+      // Starting a parse requires each file type to be supported by the
+      // Parser operator its document actually runs with; cancelling is
+      // always allowed.
       if (run === 1) {
         const selectedDocuments = documents.filter((x) =>
           nonVirtualKeys.includes(x.id),
         );
-        const gaps = findFilesMissingModels(
-          selectedDocuments.map((x) => x.name),
-        );
+        const gaps = findDocumentParseGaps(selectedDocuments);
         if (gaps.length > 0) {
           hideModal();
           const failingNames = new Set(gaps.map((gap) => gap.name));
@@ -92,15 +92,13 @@ export function useBulkOperateDataset({
           if (validIds.length === 0) {
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
-              content: buildMissingModelModalContent(
-                t,
-                gaps,
-                'knowledgeDetails.parseBlockedHint',
-              ),
-              okText: t('knowledgeDetails.goToConfiguration'),
-              cancelText: t('common.cancel'),
+              content: buildParserGapModalContent(t, gaps, {
+                missingModel: 'knowledgeDetails.addModelToParseHint',
+                unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+              }),
+              showCancel: false,
+              okText: t('common.cancel'),
               closable: false,
-              onOk: goToDatasetConfiguration,
             });
             return;
           }
@@ -109,11 +107,10 @@ export function useBulkOperateDataset({
             title: t('knowledgeDetails.parseBlockedPartialTitle'),
             content: (
               <div className="space-y-2">
-                {buildMissingModelModalContent(
-                  t,
-                  gaps,
-                  'knowledgeDetails.parseBlockedHint',
-                )}
+                {buildParserGapModalContent(t, gaps, {
+                  missingModel: 'knowledgeDetails.addModelToParseHint',
+                  unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+                })}
                 <p>
                   {t('knowledgeDetails.parseValidFilesNote', {
                     count: validIds.length,
@@ -145,8 +142,7 @@ export function useBulkOperateDataset({
       selectedRowKeys,
       hideModal,
       t,
-      findFilesMissingModels,
-      goToDatasetConfiguration,
+      findDocumentParseGaps,
     ],
   );
 
@@ -159,8 +155,10 @@ export function useBulkOperateDataset({
 
   // The confirmation only offers real choices when the selection has existing
   // chunks to drop or auto-metadata to re-apply; otherwise run straight away.
+  // Go re-ingests in place server-side, so the dialog is Python-only.
   const needsRunConfirm =
-    chunkNum > 0 || Boolean(knowledgeBase?.parser_config?.enable_metadata);
+    !isGo &&
+    (chunkNum > 0 || Boolean(knowledgeBase?.parser_config?.enable_metadata));
 
   const handleRunMenuClick = useCallback(() => {
     if (needsRunConfirm) {
@@ -209,18 +207,6 @@ export function useBulkOperateDataset({
 
   const list = [
     {
-      id: 'enabled',
-      label: t('knowledgeDetails.enabled'),
-      icon: <LucideToggleRight />,
-      onClick: handleEnableClick,
-    },
-    {
-      id: 'disabled',
-      label: t('knowledgeDetails.disabled'),
-      icon: <LucideToggleLeft />,
-      onClick: handleDisableClick,
-    },
-    {
       id: 'run',
       label: t('knowledgeDetails.run'),
       icon: <LucidePlayCircle />,
@@ -232,6 +218,19 @@ export function useBulkOperateDataset({
       icon: <LucideCircleX />,
       onClick: handleCancelClick,
     },
+    {
+      id: 'enabled',
+      label: t('knowledgeDetails.enabled'),
+      icon: <LucideToggleRight />,
+      onClick: handleEnableClick,
+    },
+    {
+      id: 'disabled',
+      label: t('knowledgeDetails.disabled'),
+      icon: <LucideToggleLeft />,
+      onClick: handleDisableClick,
+    },
+
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),

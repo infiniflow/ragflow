@@ -7,13 +7,7 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
 import { HeadingNode, QuoteNode } from '@lexical/rich-text';
-import {
-  $getRoot,
-  $getSelection,
-  EditorState,
-  Klass,
-  LexicalNode,
-} from 'lexical';
+import { $getRoot, EditorState, Klass, LexicalNode } from 'lexical';
 
 import { Switch } from '@/components/ui/switch';
 import {
@@ -36,6 +30,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EnterKeyPlugin } from './enter-key-plugin';
+import { insertVariableTrigger } from './insert-variable-trigger';
 import { PasteHandlerPlugin } from './paste-handler-plugin';
 import theme from './theme';
 import { VariableNode } from './variable-node';
@@ -92,19 +87,9 @@ function PromptContent({
   const [isBlur, setIsBlur] = useState(false);
   const { t } = useTranslation();
 
-  const insertTextAtCursor = useCallback(() => {
-    editor.update(() => {
-      const selection = $getSelection();
-
-      if (selection !== null) {
-        selection.insertText(' /');
-      }
-    });
-  }, [editor]);
-
   const handleVariableIconClick = useCallback(() => {
-    insertTextAtCursor();
-  }, [insertTextAtCursor]);
+    insertVariableTrigger(editor);
+  }, [editor]);
 
   const handleBlur = useCallback(() => {
     setIsBlur(true);

@@ -44,28 +44,6 @@ GO_ONLY_SKIPS = {
         "test_patch_task_rejects_unsupported_action",
         "test_cancel_missing_task_sets_cancel_contract",
     },
-    "Go validation or response contract does not match the established API contract": {
-        "test_dataset_update_parser_config_valid_matrix_contract",
-        "test_dataset_update_parser_config_invalid_contract",
-        # Updating with `{"parser_config": {}}` / `None` is a valid no-op in Go (handled by
-        # ParserConfigProvided). But the final GET asserts the stored parser_config equals Python's
-        # DEFAULT_PARSER_CONFIG, which embeds a CI-specific tenant `llm_id` and a richer `graphrag` /
-        # `parent_child` structure than Go's common.GetParserConfig produces. Exact equality is a
-        # Python/CI-specific contract, not a meaningful Go behavior difference.
-        "test_dataset_update_parser_config_defaults_contract",
-        # Go CreateDataset does not accept parser_config in the request body.
-        "test_dataset_create_parser_config_different_chunk_methods_contract",
-        "test_dataset_create_parser_config_missing_raptor_and_graphrag",
-        "test_dataset_create_parser_config_bugfix_contract",
-        "test_dataset_create_parser_config_invalid_contract",
-        "test_dataset_create_parser_config_defaults_and_extra_fields_contract",
-        # Empty path (e.g. /chats//sessions) triggers a 405/404 framework
-        # response in Go rather than the Python contract's code-100 envelope.
-        "test_session_create_validation_and_deleted_chat_contract",
-        "test_session_update_requires_auth_and_invalid_target_contract",
-        # Go response data omits the parser_config key that the contract asserts.
-        "test_documents_update_parser_config_contract",
-    },
     "Go ingestion pipeline does not complete document parsing within the test timeout": {
         # Chunk add requires an embedding model call; document update/delete
         # touches ES/Infinity indices that are only created during parsing.

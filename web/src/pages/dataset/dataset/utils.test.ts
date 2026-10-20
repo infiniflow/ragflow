@@ -1,11 +1,19 @@
-import { FileType, initialParserValues } from '@/pages/agent/constant/pipeline';
-import { IngestionTaskStatus, RunningStatus } from './constant';
+import { FileType } from '@/constants/file';
 import {
-  findFilesMissingParserModels,
-  findMissingParserModel,
+  IngestionTaskStatus,
+  ParserModelKind,
+  ParserGapReason,
+  RunningStatus,
+} from './constant';
+import {
+  findDocumentsParserGaps,
+  findFilesParserGaps,
+  findParserGap,
   getDocumentRunningStatus,
-  getEffectiveParserSetups,
+  getDocumentProgressMessage,
   getFileTypeByExtension,
+  getSavedParserSetups,
+  hasUnsupportedTypeGap,
   ingestionStatusToRunningStatus,
   isDocumentProcessing,
   isDocumentStopping,
@@ -28,6 +36,54 @@ describe('isDocumentStopping', () => {
       isDocumentStopping({ ingestion_status: IngestionTaskStatus.RUNNING }),
     ).toBe(false);
     expect(isDocumentStopping({ ingestion_status: undefined })).toBe(false);
+  });
+});
+
+describe('getDocumentProgressMessage', () => {
+  afterEach(() => {
+    mockIsGoBackend = false;
+  });
+
+  it('reads the latest real ingestion event on Go', () => {
+    mockIsGoBackend = true;
+
+    expect(
+      getDocumentProgressMessage({
+        progress_msg: 'stale legacy text',
+        latest_ingestion_event: {
+          id: 42,
+          ts: '2026-01-01T00:00:00Z',
+          event_type: 1,
+          component: '',
+          phase: 0,
+          message: 'Indexing 4/10',
+        },
+      }),
+    ).toBe('Indexing 4/10');
+  });
+
+  it('keeps the Python progress field unchanged', () => {
+    mockIsGoBackend = false;
+
+    expect(
+      getDocumentProgressMessage({
+        progress_msg: 'Parsing chunks',
+        latest_ingestion_event: {
+          id: 42,
+          ts: '2026-01-01T00:00:00Z',
+          event_type: 1,
+          component: '',
+          phase: 0,
+          message: 'Go-only event',
+        },
+      }),
+    ).toBe('Parsing chunks');
+  });
+
+  it('returns a placeholder when the selected source has no message', () => {
+    mockIsGoBackend = true;
+
+    expect(getDocumentProgressMessage({ progress_msg: '' })).toBe('-');
   });
 });
 
@@ -175,95 +231,141 @@ describe('getFileTypeByExtension', () => {
   });
 });
 
-// Minimal structural stand-in for IDataset in these tests. It is declared
-// locally (instead of importing the interface) because the esbuild-jest
-// babel hoisting pipeline cannot elide imported bindings used only in type
-// positions.
-type DatasetWithParserConfig = { parser_config: any };
+// Saved setups shaped like a pipeline that declares pdf/image plus audio
+// (model missing) and video (model configured).
+const SavedSetups = [
+  { fileFormat: FileType.PDF, parse_method: 'DeepDOC' },
+  { fileFormat: FileType.Image, parse_method: 'ocr' },
+  { fileFormat: FileType.Audio, vlm: { llm_id: '' } },
+  { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
+] as Record<string, any>[];
 
-const DefaultSetups = initialParserValues.setups as Record<string, any>[];
-
-describe('findMissingParserModel', () => {
-  it('passes audio when the setup carries a model', () => {
-    const setups = [
-      { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },
-    ];
-    expect(findMissingParserModel(FileType.Audio, setups)).toBeNull();
+describe('findParserGap', () => {
+  it('flags a file type missing from the saved setups as unsupported', () => {
+    expect(findParserGap(FileType.Docx, SavedSetups)).toEqual({
+      reason: ParserGapReason.UnsupportedType,
+      fileType: FileType.Docx,
+    });
   });
 
-  it('flags audio when the setup has no model, ignoring the tenant default', () => {
-    expect(findMissingParserModel(FileType.Audio, DefaultSetups)).toEqual({
+  it('flags audio/video without a declared family as unsupported, not missing-model', () => {
+    const setups = [{ fileFormat: FileType.PDF }];
+    expect(findParserGap(FileType.Audio, setups)).toEqual({
+      reason: ParserGapReason.UnsupportedType,
       fileType: FileType.Audio,
-      modelKind: 'asr',
+    });
+    expect(findParserGap(FileType.Video, setups)).toEqual({
+      reason: ParserGapReason.UnsupportedType,
+      fileType: FileType.Video,
+    });
+  });
+
+  it('flags declared audio without a model as a missing asr model', () => {
+    expect(findParserGap(FileType.Audio, SavedSetups)).toEqual({
+      reason: ParserGapReason.MissingModel,
+      fileType: FileType.Audio,
+      modelKind: ParserModelKind.Asr,
+    });
+  });
+
+  it('flags declared video without a model as a missing vision model', () => {
+    const setups = [{ fileFormat: FileType.Video, vlm: { llm_id: '' } }];
+    expect(findParserGap(FileType.Video, setups)).toEqual({
+      reason: ParserGapReason.MissingModel,
+      fileType: FileType.Video,
+      modelKind: ParserModelKind.Vision,
     });
   });
 
   it('passes video when the setup carries a model', () => {
-    const setups = [
-      { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
-    ];
-    expect(findMissingParserModel(FileType.Video, setups)).toBeNull();
+    expect(findParserGap(FileType.Video, SavedSetups)).toBeNull();
   });
 
-  it('flags video when the setup has no model', () => {
-    expect(findMissingParserModel(FileType.Video, DefaultSetups)).toEqual({
-      fileType: FileType.Video,
-      modelKind: 'vision',
-    });
+  it('passes image with an ocr-only setup — no model required', () => {
+    expect(findParserGap(FileType.Image, SavedSetups)).toBeNull();
   });
 
-  it('never flags image — ocr-only parsing needs no model', () => {
-    // The image parser always runs OCR; the vision model (picked as
-    // parse_method) is an optional supplement, so neither ocr nor a model
-    // id constitutes a gap.
-    expect(findMissingParserModel(FileType.Image, DefaultSetups)).toBeNull();
-    expect(
-      findMissingParserModel(FileType.Image, [
-        { fileFormat: FileType.Image, parse_method: 'gpt-4o@OpenAI' },
-      ]),
-    ).toBeNull();
-  });
-
-  it('ignores file types without model requirements', () => {
-    expect(findMissingParserModel(FileType.PDF, DefaultSetups)).toBeNull();
-    expect(findMissingParserModel(undefined, DefaultSetups)).toBeNull();
+  it('passes supported non-media types and unknown file types', () => {
+    expect(findParserGap(FileType.PDF, SavedSetups)).toBeNull();
+    expect(findParserGap(undefined, SavedSetups)).toBeNull();
   });
 });
 
-describe('findFilesMissingParserModels', () => {
-  it('returns a gap per file that lacks its required model', () => {
-    const gaps = findFilesMissingParserModels(
-      ['song.mp3', 'notes.txt', 'photo.jpg'],
-      DefaultSetups,
+describe('findFilesParserGaps', () => {
+  it('returns a gap per failing file, mixing both reasons', () => {
+    const gaps = findFilesParserGaps(
+      ['song.mp3', 'notes.docx', 'photo.jpg', 'movie.mp4'],
+      SavedSetups,
     );
     expect(gaps).toEqual([
-      { name: 'song.mp3', fileType: FileType.Audio, modelKind: 'asr' },
+      {
+        name: 'song.mp3',
+        reason: ParserGapReason.MissingModel,
+        fileType: FileType.Audio,
+        modelKind: ParserModelKind.Asr,
+      },
+      {
+        name: 'notes.docx',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.Docx,
+      },
     ]);
   });
 });
 
-describe('getEffectiveParserSetups', () => {
-  it('falls back to the default setups without a saved parser config', () => {
-    const setups = getEffectiveParserSetups(null);
-    expect(setups.map((x) => x.fileFormat)).toEqual(
-      initialParserValues.setups.map((x) => x.fileFormat),
-    );
+describe('hasUnsupportedTypeGap', () => {
+  it('detects unsupported-type gaps among mixed gaps', () => {
+    expect(
+      hasUnsupportedTypeGap([
+        {
+          reason: ParserGapReason.MissingModel,
+          fileType: FileType.Audio,
+          modelKind: ParserModelKind.Asr,
+        },
+        { reason: ParserGapReason.UnsupportedType, fileType: FileType.Image },
+      ]),
+    ).toBe(true);
+    expect(
+      hasUnsupportedTypeGap([
+        {
+          reason: ParserGapReason.MissingModel,
+          fileType: FileType.Audio,
+          modelKind: ParserModelKind.Asr,
+        },
+      ]),
+    ).toBe(false);
+    expect(hasUnsupportedTypeGap([])).toBe(false);
+  });
+});
+
+describe('getSavedParserSetups', () => {
+  it('returns null without a saved parser config', () => {
+    expect(getSavedParserSetups(null)).toBeNull();
+    expect(
+      getSavedParserSetups({
+        parser_config: {},
+      }),
+    ).toBeNull();
   });
 
-  it('applies saved overrides keyed by file format', () => {
+  it('returns null for legacy flat-shape configs without a Parser entry', () => {
+    const knowledgeBase = {
+      parser_config: { chunk_token_num: 128, delimiter: '\n' },
+    };
+    expect(getSavedParserSetups(knowledgeBase)).toBeNull();
+  });
+
+  it('returns only the saved Parser setups, without merging defaults', () => {
     const knowledgeBase = {
       parser_config: {
         'Parser:1': {
-          audio: { vlm: { llm_id: 'whisper@OpenAI' } },
+          pdf: { parse_method: 'DeepDOC' },
+          image: { parse_method: 'ocr' },
         },
       },
-    } as unknown as DatasetWithParserConfig;
-    const setups = getEffectiveParserSetups(knowledgeBase);
-    const audio = setups.find((x) => x.fileFormat === FileType.Audio);
-    expect(audio?.vlm?.llm_id).toBe('whisper@OpenAI');
-    // Untouched types keep their defaults
-    const image = setups.find((x) => x.fileFormat === FileType.Image);
-    expect(image?.parse_method).toBe('ocr');
+    };
+    const setups = getSavedParserSetups(knowledgeBase);
+    expect(setups?.map((x) => x.fileFormat).sort()).toEqual(['image', 'pdf']);
   });
 
   it('ignores non-parser operator entries', () => {
@@ -271,8 +373,53 @@ describe('getEffectiveParserSetups', () => {
       parser_config: {
         'TokenChunker:1': { chunk_token_size: 128 },
       },
-    } as unknown as DatasetWithParserConfig;
-    const setups = getEffectiveParserSetups(knowledgeBase);
-    expect(setups).toHaveLength(initialParserValues.setups.length);
+    };
+    expect(getSavedParserSetups(knowledgeBase)).toBeNull();
+  });
+});
+
+describe('findDocumentsParserGaps', () => {
+  // A document overridden to a general-like parser: its row parser_config
+  // declares pdf even though the dataset-level fallback does not.
+  const OverriddenDoc = {
+    name: 'civil-code.pdf',
+    parser_config: {
+      'Parser:1': { pdf: { parse_method: 'DeepDOC' } },
+    },
+  };
+
+  it('validates against the document row config when present', () => {
+    expect(findDocumentsParserGaps([OverriddenDoc], null)).toEqual([]);
+  });
+
+  it('falls back to the dataset-level setups for rows without a Parser entry', () => {
+    const legacyRow = { name: 'song.mp3', parser_config: {} };
+    expect(findDocumentsParserGaps([legacyRow], SavedSetups)).toEqual([
+      {
+        name: 'song.mp3',
+        reason: ParserGapReason.MissingModel,
+        fileType: FileType.Audio,
+        modelKind: ParserModelKind.Asr,
+      },
+    ]);
+    // No fallback either: nothing can be determined, so nothing is flagged.
+    expect(findDocumentsParserGaps([legacyRow], null)).toEqual([]);
+  });
+
+  it('evaluates each document against its own config in a mixed batch', () => {
+    const inheritedRow = { name: 'photo.jpg', parser_config: undefined };
+    const gaps = findDocumentsParserGaps(
+      [OverriddenDoc, inheritedRow],
+      // Dataset-level config declares only audio: the overridden pdf passes
+      // while the inherited jpg is flagged.
+      [{ fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } }],
+    );
+    expect(gaps).toEqual([
+      {
+        name: 'photo.jpg',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.Image,
+      },
+    ]);
   });
 });

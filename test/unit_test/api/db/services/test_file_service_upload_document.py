@@ -247,6 +247,48 @@ def test_upload_document_reclaims_document_stranded_by_deleted_kb(monkeypatch):
     assert storage.written[("kb-target", "collision.txt")] == b"payload"
 
 
+@pytest.mark.p2
+def test_upload_document_stops_remaining_files_when_cancelled(monkeypatch):
+    kb = _target_kb()
+    existing_doc = SimpleNamespace(
+        id="doc-1",
+        kb_id="kb-other",
+        location="old-location.txt",
+        content_hash="old-hash",
+        to_dict=lambda: {"id": "doc-1"},
+    )
+    reads = []
+
+    class _CountedFile(_DummyUploadFile):
+        def read(self):
+            reads.append(self.id)
+            return super().read()
+
+    _stub_folder_lookups(monkeypatch)
+    monkeypatch.setattr(file_service_module.DocumentService, "get_by_id", lambda _doc_id: (True, existing_doc))
+    monkeypatch.setattr(
+        file_service_module.KnowledgebaseService,
+        "get_or_none",
+        classmethod(lambda cls, **_kwargs: SimpleNamespace(id="kb-other")),
+    )
+
+    cancel = types.SimpleNamespace(is_set=lambda: True)
+    err, files = _unwrapped_upload_document()(
+        FileService,
+        kb,
+        [
+            _CountedFile(filename="one.txt", doc_id="doc-1", blob=b"one"),
+            _CountedFile(filename="two.txt", doc_id="doc-2", blob=b"two"),
+        ],
+        "user-1",
+        should_cancel=cancel,
+    )
+
+    assert err == []
+    assert files == []
+    assert reads == []
+
+
 # ---------------------------------------------------------------------------
 # Helpers shared by TestValidateUrlForCrawl
 # ---------------------------------------------------------------------------

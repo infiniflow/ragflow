@@ -1,4 +1,3 @@
-import sonnerMessage from '@/components/ui/message';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useCreateAgentSession,
@@ -116,7 +115,6 @@ export const useSendSessionMessage = () => {
         }, 100);
       } catch (error) {
         isCreatingSession.current = false;
-        sonnerMessage.error('Failed to create session');
         console.error('Failed to create session:', error);
         return;
       }

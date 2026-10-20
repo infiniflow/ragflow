@@ -116,6 +116,7 @@ export function ParseDropdownButton({
 export function ParsingStatusCell({
   record,
   showLog,
+  showChangeParserModal,
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
@@ -133,7 +134,7 @@ export function ParsingStatusCell({
     visible: reparseDialogVisible,
     showModal: showReparseDialogModal,
     hideModal: hideReparseDialogModal,
-  } = useHandleRunDocumentByIds(id);
+  } = useHandleRunDocumentByIds(id, showChangeParserModal);
   const isGo = useIsGoBackend();
   const isRunning = isDocumentProcessing(record);
   const isQueued = effectiveRun === RunningStatus.QUEUED;
@@ -149,10 +150,13 @@ export function ParsingStatusCell({
 
   // The confirmation only offers real choices when there are existing chunks to
   // drop or auto-metadata to re-apply. Otherwise, and always when cancelling a
-  // run, the action fires straight away.
+  // run, the action fires straight away. Go always drops existing chunks
+  // server-side, so its dialog shows the delete notice locked on and only the
+  // auto-metadata choice is Python-only.
   const needsParseConfirm =
     !isRunning &&
-    (!isZeroChunk || Boolean(record?.parser_config?.enable_metadata));
+    (!isZeroChunk ||
+      (!isGo && Boolean(record?.parser_config?.enable_metadata)));
 
   const handleParseClick = () => {
     if (needsParseConfirm) {
@@ -277,6 +281,7 @@ export function ParsingStatusCell({
       {reparseDialogVisible && (
         <ReparseDialog
           enable_metadata={record?.parser_config?.enable_metadata}
+          forceDelete={isGo}
           handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_count}
           visible={reparseDialogVisible}

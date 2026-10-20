@@ -13,7 +13,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { ProgrammingLanguage } from '@/constants/agent';
 import { ICodeForm } from '@/interfaces/database/agent';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -103,7 +103,7 @@ function CodeForm({ node }: INextOperatorForm) {
                         render={({ field }) => (
                           <FormItem>
                             <FormControl>
-                              <RAGFlowSelect
+                              <SelectWithSearch
                                 {...field}
                                 onChange={(val) => {
                                   field.onChange(val);
@@ -184,11 +184,11 @@ function CodeForm({ node }: INextOperatorForm) {
                   <FormItem className="flex-1">
                     <FormLabel>Type</FormLabel>
                     <FormControl>
-                      <RAGFlowSelect
+                      <SelectWithSearch
                         placeholder={t('common.pleaseSelect')}
                         options={TypeOptions}
                         {...field}
-                      ></RAGFlowSelect>
+                      ></SelectWithSearch>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

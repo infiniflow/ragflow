@@ -1,4 +1,5 @@
 import LLMLabel from '@/components/llm-select/llm-label';
+import { ModelTypeMap } from '@/components/model-tree-select';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -17,10 +18,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import {
+  useCompilationTemplateGroupOptions,
+  useCompilationTemplateGroupValidIds,
+} from '@/hooks/use-compilation-template-group-request';
+import { useModelValidIds } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
-import { parseModelValue } from '@/utils/llm-util';
-import { PropsWithChildren, useMemo } from 'react';
+import { TriangleAlert } from 'lucide-react';
+import { PropsWithChildren } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
 
 export function CardWithForm() {
@@ -83,33 +89,76 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
 
 export function LLMLabelCard({ llmId }: { llmId?: string }) {
   const ownerTenantId = useOwnerTenantId();
-  const { data: allAddedModels } = useFetchAllAddedModels(
-    undefined,
+  const { t } = useTranslation();
+  // Validity is checked against the canvas owner's models: a shared canvas
+  // runs with the owner's models, while an imported dsl.json makes the
+  // importer the owner — anything else is flagged. Gated on isFetched so a
+  // slow list never flashes a false error state. The display name likewise
+  // resolves through the owner's list.
+  const { validIds, isFetched } = useModelValidIds(
+    ModelTypeMap.llm_id,
     ownerTenantId,
   );
 
-  const isValidLlm = useMemo(() => {
-    if (!llmId) return false;
-
-    const parsed = parseModelValue(llmId);
-    if (parsed) {
-      return allAddedModels.some(
-        (m) =>
-          m.name === parsed.model_name &&
-          m.instance_name === parsed.model_instance &&
-          m.provider_name === parsed.model_provider,
-      );
-    }
-
-    // value is a plain model_id rather than the composite string
-    return allAddedModels.some((m) => m.model_id === llmId);
-  }, [allAddedModels, llmId]);
+  const isUnavailable = !!llmId && isFetched && !validIds.has(llmId);
+  // An empty model keeps the historical red state; a loading list shows nothing.
+  const isInvalid = llmId ? isUnavailable : true;
 
   return (
     <LabelCard
-      className={isValidLlm ? '' : 'bg-state-error-5 border-state-error border'}
+      className={isInvalid ? 'bg-state-error-5 border-state-error border' : ''}
+      title={isUnavailable ? t('common.modelUnavailable') : undefined}
     >
-      <LLMLabel value={llmId} ownerTenantId={ownerTenantId}></LLMLabel>
+      <span className="flex items-center gap-1.5">
+        {isUnavailable && (
+          <TriangleAlert className="size-4 shrink-0 text-state-error" />
+        )}
+        <LLMLabel value={llmId} ownerTenantId={ownerTenantId}></LLMLabel>
+      </span>
+    </LabelCard>
+  );
+}
+
+export function CompilationTemplateLabelCard({
+  groupId,
+}: {
+  groupId?: string;
+}) {
+  const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
+  const { options } = useCompilationTemplateGroupOptions(ownerTenantId);
+  // Validity is checked against the canvas owner's groups: a shared canvas
+  // runs with the owner's groups, while an imported dsl.json makes the
+  // importer the owner — anything else is flagged. Gated on isFetched so a
+  // slow list never flashes a false error state.
+  const { validIds, isFetched } =
+    useCompilationTemplateGroupValidIds(ownerTenantId);
+
+  const isUnavailable = !!groupId && isFetched && !validIds.has(groupId);
+  const groupName =
+    options.find((option) => option.value === groupId)?.label ?? groupId;
+
+  return (
+    <LabelCard
+      className={cn(
+        'text-text-primary flex justify-between flex-col gap-1',
+        isUnavailable && 'bg-state-error-5 border-state-error border',
+      )}
+      title={
+        isUnavailable
+          ? t('knowledgeConfiguration.compilationTemplateUnavailable')
+          : undefined
+      }
+    >
+      <span className="text-text-secondary">
+        {t('knowledgeConfiguration.compilationTemplate')}
+      </span>
+      <span className="flex items-center gap-1.5">
+        {isUnavailable && (
+          <TriangleAlert className="size-4 shrink-0 text-state-error" />
+        )}
+        <span className="truncate">{groupName}</span>
+      </span>
     </LabelCard>
   );
 }

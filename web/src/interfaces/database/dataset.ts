@@ -3,6 +3,7 @@
 
 import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { DataSourceKey } from '@/pages/user-setting/data-source/constant';
+import { IngestionEventItem } from './ingestion';
 
 export interface IConnector {
   id: string;
@@ -133,6 +134,7 @@ export interface IKnowledgeFile {
   process_duration: number;
   progress: number; // parsing process
   progress_msg: string; // parsing log
+  latest_ingestion_event?: IngestionEventItem | null;
   // Python backend only. The Go backend removed this field and reports
   // parsing state exclusively through ingestion_status.
   run?: RunningStatus; // parsing status

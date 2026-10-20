@@ -40,12 +40,17 @@ jest.mock('@/hooks/use-document-request', () => ({
 
 jest.mock('@/services/knowledge-service', () => ({
   listDataPipelineLogDocument: jest.fn(),
+  listIngestionMessages: jest.fn(),
 }));
 
-import { listDataPipelineLogDocument } from '@/services/knowledge-service';
+import {
+  listDataPipelineLogDocument,
+  listIngestionMessages,
+} from '@/services/knowledge-service';
 import { useShowLog } from './hooks';
 
 const mockList = jest.mocked(listDataPipelineLogDocument);
+const mockMessages = jest.mocked(listIngestionMessages);
 
 function makeDoc(overrides: Partial<Doc> = {}): Doc {
   return {
@@ -92,16 +97,14 @@ describe('useShowLog — Python backend is unaffected by the early-log fallback'
     expect(mockList).not.toHaveBeenCalled();
   });
 
-  it('leaves an empty progress_msg empty, exactly as before', () => {
+  it('uses a placeholder for an empty progress message', () => {
     mockIsGo = false;
     const doc = makeDoc({ run: RunningStatus.UNSTART, progress_msg: '' });
 
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
-    // details is the document's own progress_msg, verbatim (the legacy "-"
-    // placeholder only applies when there is no source document at all).
-    expect(result.current.logInfo.details).toBe(doc.progress_msg);
+    expect(result.current.logInfo.details).toBe('-');
     expect(mockList).not.toHaveBeenCalled();
   });
 
@@ -116,14 +119,121 @@ describe('useShowLog — Python backend is unaffected by the early-log fallback'
 });
 
 describe('useShowLog — Go backend early-log fallback', () => {
-  it('shows the queued message from the early pipeline log row', async () => {
+  it('performs one finishing poll after terminal before stopping', async () => {
+    mockIsGo = true;
+    jest.useFakeTimers();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: { logs: [{ id: 'run-1', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 1,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    try {
+      const { result } = renderLogs([
+        makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED }),
+      ]);
+      act(() =>
+        result.current.showLog(
+          makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED }),
+        ),
+      );
+      await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        jest.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+      await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(2));
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('exposes a previous-page loader for historical event scrolling', async () => {
     mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: {
+        data: { logs: [{ id: 'run-1', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
         data: {
-          logs: [{ document_id: 'doc-1', progress_msg: 'Task is queued...' }],
-          total: 1,
+          run_count: 1,
+          items: [
+            {
+              id: 20,
+              ts: '2026-01-01T00:00:00Z',
+              event_type: 1,
+              component: '',
+              phase: 0,
+              message: 'latest',
+            },
+          ],
+          oldest_id: 20,
+          newest_id: 20,
+          has_more_before: true,
+          has_more_after: false,
+          terminal: false,
+        },
+      },
+    } as any);
+
+    const { result } = renderLogs([
+      makeDoc({ ingestion_status: IngestionTaskStatus.RUNNING }),
+    ]);
+    act(() =>
+      result.current.showLog(
+        makeDoc({ ingestion_status: IngestionTaskStatus.RUNNING }),
+      ),
+    );
+    await waitFor(() => expect(mockMessages).toHaveBeenCalledTimes(1));
+    expect(result.current.logInfo.loadPreviousEvents).toEqual(
+      expect.any(Function),
+    );
+    expect(result.current.logInfo.hasPreviousEvents).toBe(true);
+  });
+
+  it('loads messages by the exact pipeline log identity', async () => {
+    mockIsGo = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: { logs: [{ id: 'run-2', document_id: 'doc-1' }], total: 1 },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 2,
+          items: [
+            {
+              id: 12,
+              ts: '2026-01-01T00:00:00Z',
+              event_type: 1,
+              component: '',
+              phase: 0,
+              message: 'Task is queued...',
+            },
+          ],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: false,
         },
       },
     } as any);
@@ -133,12 +243,119 @@ describe('useShowLog — Go backend early-log fallback', () => {
     act(() => result.current.showLog(doc));
 
     await waitFor(() =>
-      expect(result.current.logInfo.details).toBe('Task is queued...'),
+      expect(
+        result.current.logInfo.events?.map(
+          (event: { message: string }) => event.message,
+        ),
+      ).toEqual(['Task is queued...']),
     );
-    expect(result.current.logInfo.status).toBe(RunningStatus.QUEUED);
+    expect(mockList).toHaveBeenCalledWith(
+      'kb-1',
+      expect.objectContaining({
+        document_id: 'doc-1',
+        log_type: 'file',
+        orderby: 'create_time',
+        desc: true,
+        page_size: 1,
+      }),
+    );
+    expect(mockMessages).toHaveBeenCalledWith('kb-1', 'run-2', {
+      limit: 200,
+    });
+  });
+
+  it('shows the Python pipeline log progress field on Go', async () => {
+    mockIsGo = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: {
+          logs: [
+            {
+              id: 'python-run',
+              document_id: 'doc-1',
+              progress_msg: 'Python parse completed',
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
+    const { result } = renderLogs([doc]);
+    act(() => result.current.showLog(doc));
+
+    await waitFor(() =>
+      expect(mockMessages).toHaveBeenCalledWith('kb-1', 'python-run', {
+        limit: 200,
+      }),
+    );
+    expect(result.current.logInfo.details).toBe('Python parse completed');
+    expect(result.current.logInfo.events).toBeUndefined();
+    expect(result.current.logInfo.status).toBe(RunningStatus.DONE);
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
       expect.objectContaining({ log_type: 'file' }),
+    );
+  });
+
+  it('prefers the selected log event over its stored progress message', async () => {
+    mockIsGo = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: {
+          logs: [
+            {
+              id: 'run-1',
+              document_id: 'doc-1',
+              progress_msg: 'old snapshot',
+              latest_ingestion_event: {
+                id: 7,
+                ts: '2026-01-01T00:00:00Z',
+                event_type: 3,
+                component: '',
+                phase: 0,
+                message: 'latest run event',
+              },
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
+    const { result } = renderLogs([doc]);
+    act(() => result.current.showLog(doc));
+
+    await waitFor(() =>
+      expect(result.current.logInfo.details).toBe('latest run event'),
     );
   });
 
@@ -164,11 +381,11 @@ describe('useShowLog — Go backend early-log fallback', () => {
     // The name search would return other documents' rows and could push this
     // document's queued row past the first page.
     expect(mockList.mock.calls[0][1]).not.toHaveProperty('keywords');
-    // No row came back, so the document's own (empty) progress_msg stands.
-    expect(result.current.logInfo.details).toBe('');
+    // No run row means there is no current event to display.
+    expect(result.current.logInfo.details).toBe('-');
   });
 
-  it('does not query once the document is running', () => {
+  it('uses the current log identity even when the document is running', async () => {
     mockIsGo = true;
     const doc = makeDoc({
       ingestion_status: IngestionTaskStatus.RUNNING,
@@ -179,7 +396,7 @@ describe('useShowLog — Go backend early-log fallback', () => {
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
-    expect(result.current.logInfo.details).toBe('Indexing done');
-    expect(mockList).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(result.current.logInfo.details).toBe('-');
   });
 });

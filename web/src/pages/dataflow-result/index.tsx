@@ -8,7 +8,6 @@ import {
   useGetChunkHighlights,
   useGetPipelineResultSearchParams,
   useHandleChunkCardClick,
-  useRerunDataflow,
   useSummaryInfo,
   useTimelineDataFlow,
 } from './hooks';
@@ -20,7 +19,6 @@ import { TimelineNode } from '@/components/originui/timeline';
 import { PageHeader } from '@/components/page-header';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
-import { Modal } from '@/components/ui/modal/modal';
 import { AgentCategory, AgentQuery } from '@/constants/agent';
 import { Images } from '@/constants/common';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
@@ -110,56 +108,8 @@ const DataflowResult = () => {
     return 'unknown';
   }, [documentExtension, documentInfo?.name, documentInfo?.type, isAgent]);
 
-  const {
-    handleReRunFunc,
-    isChange,
-    setIsChange,
-    loading: reRunLoading,
-  } = useRerunDataflow({
-    data: dataset,
-  });
-
-  const handleStepChange = (id: number | string, step: TimelineNode) => {
-    if (isChange) {
-      Modal.show({
-        visible: true,
-        className: '!w-[560px]',
-        title: t('dataflowParser.changeStepModalTitle'),
-        children: (
-          <div
-            className="text-sm text-text-secondary"
-            dangerouslySetInnerHTML={{
-              __html: t('dataflowParser.changeStepModalContent', {
-                step: step?.title,
-              }),
-            }}
-          ></div>
-        ),
-        onVisibleChange: () => {
-          Modal.destroy();
-        },
-        footer: (
-          <div className="flex justify-end gap-2">
-            <Button variant={'outline'} onClick={() => Modal.destroy()}>
-              {t('dataflowParser.changeStepModalCancelText')}
-            </Button>
-            <Button
-              variant={'secondary'}
-              className="!bg-state-error text-text-primary"
-              onClick={() => {
-                Modal.destroy();
-                setActiveStepId(id);
-                setIsChange(false);
-              }}
-            >
-              {t('dataflowParser.changeStepModalConfirmText')}
-            </Button>
-          </div>
-        ),
-      });
-    } else {
-      setActiveStepId(id);
-    }
+  const handleStepChange = (id: number | string) => {
+    setActiveStepId(id);
   };
 
   const { type } = useGetKnowledgeSearchParams();
@@ -232,9 +182,6 @@ const DataflowResult = () => {
               currentTimeNode?.type === TimelineNodeType.contextGenerator) && (
               <ParserContainer
                 isReadonly={isReadOnly}
-                isChange={isChange}
-                reRunLoading={reRunLoading}
-                setIsChange={setIsChange}
                 step={currentTimeNode as TimelineNode}
                 data={
                   currentTimeNode.detail as {
@@ -244,7 +191,6 @@ const DataflowResult = () => {
                 }
                 summaryInfo={summaryInfo}
                 clickChunk={handleChunkCardClick}
-                reRunFunc={handleReRunFunc}
               />
             )}
             {/* )} */}

@@ -119,3 +119,182 @@ describe('Sitemap data source', () => {
     expect(batchSize?.validation?.min).toBe(1);
   });
 });
+
+describe.each([
+  ['MySQL', DataSourceKey.MYSQL],
+  ['PostgreSQL', DataSourceKey.POSTGRESQL],
+])('%s data source', (_label, key) => {
+  it('exposes a bounded batch size for large table syncs', () => {
+    const fields = getDataSourceFieldsWithExtras(translate, key) as Array<{
+      name: string;
+      validation?: { min?: number };
+    }>;
+    const batchSize = fields.find((f) => f.name === 'config.batch_size');
+
+    expect(batchSize?.validation?.min).toBe(1);
+    expect(DataSourceFormDefaultValues[key].config).toMatchObject({
+      batch_size: 2,
+    });
+  });
+});
+
+describe('Azure DevOps data source', () => {
+  it('registers its catalog entry and defaults', () => {
+    const info = generateDataSourceInfo(translate)[DataSourceKey.AZURE_DEVOPS];
+    const defaults = DataSourceFormDefaultValues[DataSourceKey.AZURE_DEVOPS];
+
+    expect(info.name).toBe('Azure DevOps');
+    expect(info.description).toBe('setting.azure_devopsDescription');
+    expect(defaults).toMatchObject({
+      name: '',
+      source: DataSourceKey.AZURE_DEVOPS,
+      config: {
+        base_url: '',
+        organization: '',
+        index_mode: 'organization',
+        projects: '',
+        repositories: '',
+        content_types: 'both',
+        credentials: { azure_devops_pat: '' },
+      },
+    });
+  });
+
+  it('validates organization requires collection path when empty', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const orgField = fields.find((f) => f.name === 'config.organization');
+    expect(orgField).toBeDefined();
+    const validate = orgField!.customValidate!;
+
+    // Valid when organization is explicitly provided
+    expect(validate('contoso', { config: { base_url: '' } })).toBe(true);
+    expect(
+      validate('contoso', { config: { base_url: 'https://dev.azure.com' } }),
+    ).toBe(true);
+
+    // Valid when base_url includes collection path
+    expect(
+      validate('', {
+        config: {
+          base_url: 'http://tfs.corp.local:8080/tfs/DefaultCollection',
+        },
+      }),
+    ).toBe(true);
+    expect(
+      validate('', {
+        config: { base_url: 'https://dev.azure.com/myorg' },
+      }),
+    ).toBe(true);
+
+    // Invalid when both are empty
+    expect(validate('', { config: { base_url: '' } })).toBe(
+      'setting.dataSourceValidationFieldRequired',
+    );
+
+    // Invalid when base_url is root-only
+    expect(
+      validate('', { config: { base_url: 'https://dev.azure.com' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      validate('', { config: { base_url: 'https://dev.azure.com/' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+    expect(
+      validate('', { config: { base_url: 'http://tfs.corp.local:8080' } }),
+    ).toBe('setting.dataSourceValidationFieldRequired');
+  });
+
+  it('validates base_url rejects malformed URLs and URLs with query or fragment', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const baseUrlField = fields.find((f) => f.name === 'config.base_url');
+    expect(baseUrlField).toBeDefined();
+    const validate = baseUrlField!.customValidate!;
+
+    expect(validate('')).toBe(true);
+    expect(validate('https://dev.azure.com')).toBe(true);
+    expect(validate('http://tfs.corp.local:8080/tfs')).toBe(true);
+
+    // Invalid scheme
+    expect(validate('ftp://dev.azure.com')).toBe(
+      'setting.azureDevOpsBaseUrlTip',
+    );
+
+    // Triple-slash input parses to host=DefaultCollection per WHATWG URL
+    // semantics, so it is accepted as a (single-label) host.
+    expect(validate('https:///DefaultCollection')).toBe(true);
+
+    // Query or fragment
+    expect(validate('https://dev.azure.com/myorg?test=1')).toBe(
+      'setting.azureDevOpsBaseUrlTip',
+    );
+    expect(validate('https://dev.azure.com/myorg#frag')).toBe(
+      'setting.azureDevOpsBaseUrlTip',
+    );
+
+    // Credentials
+    expect(validate('https://user:pass@dev.azure.com')).toBe(
+      'setting.azureDevOpsPatTip',
+    );
+  });
+
+  it('validates organization rejects query and fragment URLs', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.AZURE_DEVOPS,
+    ) as Array<{
+      name: string;
+      customValidate?: (val: string, formValues?: any) => boolean | string;
+    }>;
+    const orgField = fields.find((f) => f.name === 'config.organization');
+    expect(orgField).toBeDefined();
+    const validate = orgField!.customValidate!;
+
+    expect(validate('myorg?test=1', { config: { base_url: '' } })).toBe(
+      'setting.azureDevOpsOrganizationTip',
+    );
+    expect(validate('myorg#frag', { config: { base_url: '' } })).toBe(
+      'setting.azureDevOpsOrganizationTip',
+    );
+    // Triple-slash input parses to host=DefaultCollection per WHATWG URL
+    // semantics, so it is accepted as a (single-label) host.
+    expect(
+      validate('https:///DefaultCollection', { config: { base_url: '' } }),
+    ).toBe(true);
+    expect(
+      validate('https://user:pass@dev.azure.com/myorg', {
+        config: { base_url: '' },
+      }),
+    ).toBe('setting.azureDevOpsPatTip');
+  });
+});
+
+describe.each([
+  ['MySQL', DataSourceKey.MYSQL],
+  ['PostgreSQL', DataSourceKey.POSTGRESQL],
+])('%s data source', (_label, key) => {
+  it('exposes a bounded batch size for large table syncs', () => {
+    const fields = getDataSourceFieldsWithExtras(translate, key) as Array<{
+      name: string;
+      validation?: { min?: number };
+    }>;
+    const batchSize = fields.find((f) => f.name === 'config.batch_size');
+
+    expect(batchSize?.validation?.min).toBe(1);
+    // Python backend (the default in the test environment) keeps the
+    // conservative per-batch default.
+    expect(DataSourceFormDefaultValues[key].config).toMatchObject({
+      batch_size: 2,
+    });
+  });
+});

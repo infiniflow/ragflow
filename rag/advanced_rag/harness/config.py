@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 _ALL_TOOLS = (
     "retrieve",
     "search_chunks",
+    "metadata_search",
     "list_chunks",
     "navigate_tree",
     "navigate_structure",

@@ -1,6 +1,6 @@
+import { FileType } from '@/constants/file';
 import { cloneDeep } from 'lodash';
 import {
-  FileType,
   FileTypeDefaultModelFieldMap,
   initialParserValues,
 } from '../../constant/pipeline';

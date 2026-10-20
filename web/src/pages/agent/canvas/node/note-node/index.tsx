@@ -66,13 +66,13 @@ function NoteNode({
       showCopy={false}
     >
       <NodeWrapper
-        className="p-0  w-full h-full flex flex-col bg-bg-component border border-state-warning rounded-lg shadow-md pb-1"
+        className="p-0  w-full h-full flex flex-col bg-bg-component border border-accent-primary rounded-lg shadow-md pb-1"
         selected={selected}
       >
         <NodeResizeControl minWidth={190} minHeight={128} style={controlStyle}>
           <ResizeIcon />
         </NodeResizeControl>
-        <section className="px-2 py-1 flex gap-2 items-center note-drag-handle rounded-t border-t-2 border-state-warning">
+        <section className="px-2 py-1 flex gap-2 items-center note-drag-handle rounded-t border-t-2 border-accent-primary">
           <NotebookPen className="size-4" />
           <Form {...nameForm}>
             <form onSubmit={nameForm.handleSubmit(() => {})} className="flex-1">

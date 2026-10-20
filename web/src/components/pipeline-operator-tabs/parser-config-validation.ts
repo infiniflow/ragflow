@@ -46,6 +46,7 @@ function getOperatorFormSchema(operatorType: Operator, t: TFunction) {
     case Operator.GeneralChunker:
       return TokenChunkerFormSchema;
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return TitleChunkerFormSchema;
     case Operator.Extractor:
       return ExtractorFormSchema;
@@ -67,6 +68,7 @@ function getOperatorInitialValues(operatorType: Operator) {
     case Operator.GeneralChunker:
       return initialGeneralChunkerValues;
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return initialTitleChunkerValues;
     case Operator.Extractor:
       return initialGoExtractorValues;

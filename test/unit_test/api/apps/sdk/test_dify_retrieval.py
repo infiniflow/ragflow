@@ -113,6 +113,7 @@ def _load_dify_retrieval(
     request_args=None,
     kg_content="",
     meta_filter_ids=None,
+    doc_metadata=None,
 ):
     """Load dify_retrieval_api.py with minimum stubs to exercise the retrieval handler."""
 
@@ -142,14 +143,20 @@ def _load_dify_retrieval(
         monkeypatch,
         "api.db.services.document_service",
         DocumentService=SimpleNamespace(
-            get_by_id=lambda _id: (True, SimpleNamespace(id=_id, meta_fields={})),
-            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id, meta_fields={}) for doc_id in ids],
+            get_by_id=lambda _id: (True, SimpleNamespace(id=_id)),
+            get_by_ids=lambda ids, cols=None: [SimpleNamespace(id=doc_id) for doc_id in ids],
         ),
     )
+    # Keyed by doc_id, and the same dict object is handed back on every lookup,
+    # which is what DocMetadataService.get_metadata_for_documents does.
+    doc_metadata = doc_metadata or {}
     _stub(
         monkeypatch,
         "api.db.services.doc_metadata_service",
-        DocMetadataService=SimpleNamespace(get_flatted_meta_by_kbs=lambda _ids: {}),
+        DocMetadataService=SimpleNamespace(
+            get_flatted_meta_by_kbs=lambda _ids: {},
+            get_metadata_for_documents=lambda ids, kb_id: {i: doc_metadata[i] for i in ids if i in doc_metadata},
+        ),
     )
 
     acc_fn = accessible if callable(accessible) else (lambda *_a, **_k: accessible)
@@ -625,6 +632,49 @@ class TestDifyRetrievalRetrievalBehavior:
         assert record["title"] == "doc.txt"
         assert record["metadata"]["doc_id"] == "d1"
         assert record["metadata"]["document_id"] == "d1"
+
+    @pytest.mark.p1
+    def test_records_carry_the_document_metadata(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=[{"doc_id": "d1", "content_with_weight": "hello world", "similarity": 0.8, "docnm_kwd": "doc.txt"}],
+            doc_metadata={"d1": {"author": "kb-owner", "year": "2025"}},
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        metadata = result["records"][0]["metadata"]
+        assert metadata["author"] == "kb-owner"
+        assert metadata["year"] == "2025"
+        assert metadata["doc_id"] == "d1"
+        assert metadata["document_id"] == "d1"
+
+    @pytest.mark.p1
+    def test_chunks_of_one_document_get_separate_metadata_dicts(self, monkeypatch):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello"},
+            tenant_id="tenant-owner",
+            chunks=[
+                {"doc_id": "d1", "content_with_weight": "first", "similarity": 0.8, "docnm_kwd": "doc.txt"},
+                {"doc_id": "d1", "content_with_weight": "second", "similarity": 0.7, "docnm_kwd": "doc.txt"},
+            ],
+            doc_metadata={"d1": {"author": "kb-owner"}},
+        )
+
+        result = asyncio.run(module.retrieval())
+
+        first, second = result["records"]
+        assert first["metadata"] is not second["metadata"]
+        assert first["metadata"] == second["metadata"] == {"author": "kb-owner", "doc_id": "d1", "document_id": "d1"}
 
     @pytest.mark.p1
     def test_no_chunks_returns_empty_records(self, monkeypatch):

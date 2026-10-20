@@ -6,11 +6,11 @@ import {
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
+import { FileType } from '@/constants/file';
 import { upperCase, upperFirst } from 'lodash';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
 import {
-  FileType,
   OutputFormatMap,
   SpreadsheetOutputFormat,
 } from '../../constant/pipeline';

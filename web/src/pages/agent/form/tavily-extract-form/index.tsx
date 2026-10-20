@@ -7,7 +7,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
@@ -82,7 +82,7 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.extractDepth')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     placeholder="shadcn"
                     {...field}
                     options={buildOptions(TavilyExtractDepth, t, 'flow')}
@@ -99,7 +99,7 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.format')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     placeholder="shadcn"
                     {...field}
                     options={buildOptions(TavilyExtractFormat)}

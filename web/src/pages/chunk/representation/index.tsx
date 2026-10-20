@@ -3,6 +3,7 @@ import { ExpandableSearchInput } from '@/components/expandable-search-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SkeletonCard } from '@/components/skeleton-card';
 import { Button } from '@/components/ui/button';
+import { CompilationTemplateKind } from '@/constants/compilation';
 import {
   useDeleteDocumentStructureGraph,
   useFetchDocumentClaims,
@@ -83,6 +84,17 @@ function Representation({
   const handleCloseClaims = useCallback(() => setClaimsLeaf(null), []);
   const handleCloseEvidence = useCallback(() => setEvidenceDetail(null), []);
 
+  // The claims / evidence panels only make sense for compilation templates
+  // that actually produce claim rows. Right now that's page_index (titles
+  // + claim/fact/conclusion entities with gate-verified evidence) and tree
+  // (RAPTOR leaf clusters with harvested claims). Other templates
+  // (knowledge_graph, mind_map, timeline, wiki, session_graph,
+  // session_essence, empty) emit no claim rows at all, so opening the
+  // panel for them would only ever show the empty state.
+  const supportsClaims =
+    selectedTemplate?.kind === CompilationTemplateKind.PageIndex ||
+    selectedTemplate?.kind === CompilationTemplateKind.Tree;
+
   // Wait for the fetch to settle before committing to either panel. While it
   // is in flight, publish the claims panel in its loading state so the middle
   // column is stable and honest — publishing the node-detail panel during the
@@ -94,6 +106,10 @@ function Representation({
   const hasClaims = claimsSettled && (claimsData?.claims?.length ?? 0) > 0;
 
   useEffect(() => {
+    if (!supportsClaims) {
+      onClaimsPanelChange?.(null);
+      return;
+    }
     if (claimsLeaf && !claimsSettled) {
       onClaimsPanelChange?.({
         clusterName: claimsLeaf.name,
@@ -136,9 +152,14 @@ function Representation({
     hasClaims,
     handleCloseClaims,
     onClaimsPanelChange,
+    supportsClaims,
   ]);
 
   useEffect(() => {
+    if (!supportsClaims) {
+      onEvidencePanelChange?.(null);
+      return;
+    }
     onEvidencePanelChange?.(
       claimsSettled && !hasClaims && evidenceDetail
         ? {
@@ -156,25 +177,31 @@ function Representation({
     handleCloseEvidence,
     hasClaims,
     onEvidencePanelChange,
+    supportsClaims,
   ]);
 
   const handleNodeClickWithClaims = useCallback(
     (node: ClickableNode) => {
-      // Any node can own claims — a page_index heading covers the chunks of its
-      // whole section, so the claims belonging to it are the ones sourced from
-      // those chunks. Nothing here keys off ``badge``: the structure compiler
-      // never writes ``claim_count``, so gating on it kept the panel shut for
-      // every node. Whether the panel actually opens is decided by the fetch
-      // below, once we know the node has claims.
-      setClaimsLeaf(node);
-      // The node-detail panel is ONLY for nodes carrying gate-verified quotes
-      // (page_index fact/conclusion rows). A description alone would make
-      // every tree node fall back to it when no claims exist -- an
-      // unexplained block of compiled summary text in the claims slot.
-      setEvidenceDetail(node.evidence?.length ? node : null);
+      // Skip the claims / evidence panel state for templates that have no
+      // claim rows: setting the leaf would fire a guaranteed-empty fetch.
+      // Chunk-list filtering still runs through ``handleNodeClick`` below.
+      if (supportsClaims) {
+        // Any node can own claims — a page_index heading covers the chunks of its
+        // whole section, so the claims belonging to it are the ones sourced from
+        // those chunks. Nothing here keys off ``badge``: the structure compiler
+        // never writes ``claim_count``, so gating on it kept the panel shut for
+        // every node. Whether the panel actually opens is decided by the fetch
+        // below, once we know the node has claims.
+        setClaimsLeaf(node);
+        // The node-detail panel is ONLY for nodes carrying gate-verified quotes
+        // (page_index fact/conclusion rows). A description alone would make
+        // every tree node fall back to it when no claims exist -- an
+        // unexplained block of compiled summary text in the claims slot.
+        setEvidenceDetail(node.evidence?.length ? node : null);
+      }
       handleNodeClick(node);
     },
-    [handleNodeClick],
+    [handleNodeClick, supportsClaims],
   );
 
   const handleDelete = useCallback(async () => {

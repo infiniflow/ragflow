@@ -1,9 +1,0 @@
-{
-  "name": "Azure-OpenAI",
-  "url_suffix": {
-    "chat": "chat/completions",
-    "embedding": "embeddings",
-    "models": "deployments"
-  },
-  "class": "gpt"
-}

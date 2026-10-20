@@ -1,6 +1,6 @@
+import { FileType } from '@/constants/file';
 import i18n from '@/locales/config';
 import { z } from 'zod';
-import { FileType } from '../../constant/pipeline';
 
 export const SetupSchema = z
   .object({

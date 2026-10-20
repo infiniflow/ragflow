@@ -23,28 +23,7 @@ book/law documents. The `"table of contents"` alternative was additionally dead
 because the `re.sub` strips the spaces the pattern expected.
 """
 
-import sys
-import types
-
 import pytest
-
-
-def _stub(name, **attrs):
-    mod = types.ModuleType(name)
-    for key, value in attrs.items():
-        setattr(mod, key, value)
-    sys.modules.setdefault(name, mod)
-    return mod
-
-
-# Stub heavy module-level imports so rag.nlp can be imported in isolation.
-_stub("common.token_utils", num_tokens_from_string=lambda *a, **k: 0)
-_stub("roman_numbers")
-_stub("word2number", w2n=types.SimpleNamespace())
-_stub("cn2an", cn2an=lambda *a, **k: 0)
-_pil = _stub("PIL")
-_pil.Image = _stub("PIL.Image")
-_stub("chardet")
 
 from rag.nlp import remove_contents_table
 
