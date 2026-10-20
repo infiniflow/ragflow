@@ -12,27 +12,10 @@
 //	See the License for the specific language governing permissions and
 //	limitations under the License.
 //
-// ManualChunker is the Go port of Python's `manual` doc-type chunk method
-// (rag/app/manual.py). Like GroupTitleChunker it merges adjacent text records
-// into heading-bounded groups, but it first re-sorts the records into physical
-// reading order before grouping.
-//
-// Why the resort matters: for multi-column / manually-laid-out PDFs the parser
-// emits records in READING order (column-by-column), so a naive grouping
-// interleaves the left column's later content with the right column's earlier
-// content. ManualChunker re-orders records by (page, top, left) — mirroring
-// Python's
-//
-//	sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))
-//
-// so grouping then follows the true top-down, left-to-right layout.
-//
-// Crucially, docx (and any coordinate-free payload) emits records in
-// document-logical order with NO positions — exactly as Python's manual docx
-// branch, which performs no resort. When no record carries coordinates,
-// ManualChunker skips the sort entirely and reuses the identical grouping
-// pipeline as GroupTitleChunker, so its output is bit-for-bit equal (locked by
-// TestManualChunker_NoPositionsEqualsGroupChunker). No parser change is needed.
+// ManualChunker groups adjacent records by heading after sorting PDF records
+// by page, top and left. Records with parser-established order or without
+// coordinates retain their input positions. Geometry is the ordering fallback
+// when the producer has not declared an authoritative reading sequence.
 package chunker
 
 import (
@@ -139,9 +122,9 @@ func hasPdfPositions(records []lineRecord) bool {
 
 // sortRecordsByPosition re-orders records into physical reading order
 // (page, then top, then left) using a stable sort, so records that share a
-// key keep their original relative order. Records without coordinates act as
-// immovable barriers: they keep their original relative order and are never
-// compared against positioned records.
+// key keep their original relative order. Records with explicit parser order
+// or without coordinates act as immovable barriers: they retain their input
+// positions and are never compared against positioned records.
 //
 // The slice is split into maximal contiguous runs of positioned records and
 // each run is sorted independently. This is required because a single
@@ -166,7 +149,7 @@ func sortRecordsByPosition(records []lineRecord) {
 		runStart = -1
 	}
 	for i := 0; i <= len(records); i++ {
-		positioned := i < len(records)
+		positioned := i < len(records) && !records[i].preserveOrder
 		if positioned {
 			_, positioned = firstPositionRow(records[i])
 		}

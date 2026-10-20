@@ -29,8 +29,13 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	kvrocks "ragflow/internal/engine/kvrocks"
+	ingestioncore "ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 	"ragflow/internal/server/config"
@@ -149,7 +154,20 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), []string{"pdf", "docx", "txt"})
+	ingestorDeps := &ingestioncore.Deps{
+		Engine: engine.Get(),
+		DB:     dao.DB,
+		MQ:     engine.GetMessageQueueEngine(),
+		KV:     kvrocks.Get(),
+	}
+	// Fail fast at the assembly point: a misconfigured ingestor (missing doc
+	// engine, database, or message queue) must never reach Start as a "healthy"
+	// service that silently cannot consume.
+	if err = ingestorDeps.Validate(); err != nil {
+		common.Error("Invalid ingestor dependencies", err)
+		return fmt.Errorf("ingestor dependencies invalid: %w", err)
+	}
+	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), []string{"pdf", "docx", "txt"}, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -173,7 +191,13 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
-	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()))))
+	// Bind the relational handle and document engine into the production
+	// embedder and knowledge-compiler resolvers. The task package is the
+	// composition root for ingestion runs; it reads these from the explicit
+	// bindings rather than the package globals.
+	task.InitEmbedderResolver(dao.DB)
+	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Start returns immediately (it launches the owned consume/compile
 	// goroutines and joins them via Stop); a provisioning failure here must

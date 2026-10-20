@@ -292,9 +292,8 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 }
 
 // sortPDFUnits orders each contiguous positioned run by physical reading
-// order. Coordinate-free units are barriers: they stay at their parser
-// positions and preserve their relative order instead of being moved to the
-// end of the document.
+// order. Units with explicit parser order or without coordinates are barriers:
+// they stay at their parser positions and preserve their relative order.
 func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	type positionedUnit struct {
 		unit       schema.ChunkDoc
@@ -304,7 +303,7 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	ordered := make([]positionedUnit, 0, len(units))
 	for _, unit := range units {
 		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
-		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok})
+		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok && !unit.PreserveOrder})
 	}
 	runStart := -1
 	flush := func(end int) {

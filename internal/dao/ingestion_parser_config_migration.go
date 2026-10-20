@@ -602,10 +602,18 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 				row.retire("layout_recognize", "the targeted pipeline has no PDF file family")
 				return nil
 			}
-			// These OCR selectors cannot be resolved by the Go ingestion dispatcher.
-			// Preserve them by stopping rather than sending them to generic VLM chat.
 			switch ingestionModelReferenceEngine(trimmed) {
-			case "mistral ocr", "somark", "opendataloader", "paddleocr":
+			case "paddleocr":
+				// The runtime PaddleOCR branch matches the provider spelling and
+				// resolves the tenant's PaddleOCR OCR model; the composite's model
+				// and instance segments are not dispatch selectors there. Store the
+				// engine name that branch reads instead of failing the migration.
+				writes.setSetup(target.parserNode, "pdf", "parse_method", "paddleocr")
+				return nil
+			case "mistral ocr", "somark", "opendataloader":
+				// These OCR selectors cannot be resolved by the Go ingestion
+				// dispatcher. Preserve them by stopping rather than sending them to
+				// generic VLM chat.
 				return fmt.Errorf("layout_recognize %q has no supported Go model-reference dispatch", trimmed)
 			}
 			// Keep supported OCR and VLM model references whole.

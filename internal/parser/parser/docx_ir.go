@@ -334,6 +334,16 @@ func docxElementText(el docxIRElement, cellSep string) string {
 	}
 }
 
+// docxIRTableCols returns the number of cells in a table's first row, used
+// to decide whether two adjacent table elements are fragments of one logical
+// table. It returns 0 for an empty table.
+func docxIRTableCols(el docxIRElement) int {
+	if len(el.Rows) == 0 {
+		return 0
+	}
+	return len(el.Rows[0].Cells)
+}
+
 // docxHeading is one entry of the heading outline stack.
 type docxHeading struct {
 	level int
@@ -414,8 +424,60 @@ func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, table
 	var sections []map[string]any
 	tableSequence := 0
 	var headings []docxHeading
-	for _, sec := range ir.Sections {
-		for _, el := range sec.Elements {
+	for si := range ir.Sections {
+		sec := &ir.Sections[si]
+		for ei := 0; ei < len(sec.Elements); ei++ {
+			el := sec.Elements[ei]
+			// TEMPORARY: this merge is a stopgap. Revisit it once office_oxide
+			// populates `TableRow.is_header` for .doc tables (upstream issue
+			// yfedoseev/office_oxide#456) — at that point prefer rejoining via
+			// the real `is_header` flag and drop the structural proxy below.
+			//
+			// office_oxide splits a .doc table whose first row is a styled
+			// header/title row into a 1-row "header" table immediately
+			// followed by the body table (the legacy binary .doc format
+			// stores such a table as two separate Table objects with a blank
+			// paragraph between them; walk_paragraphs flushes a new Element::Table
+			// at every non-fInTable paragraph, and emit_prose drops the blank
+			// one, so the two tables end up adjacent in the IR). Rejoin a
+			// 1-row table fragment with the adjacent following table when their
+			// first rows carry the same column count, so one logical table is
+			// emitted as a single item instead of a header chunk + body chunk
+			// (each would otherwise carry the same caption).
+			//
+			// Why a structural proxy instead of the row's `is_header` flag:
+			// office_oxide's IR DOES carry `TableRow.is_header`, but the .doc
+			// converter (convert_doc.rs) never populates it — every .doc row
+			// arrives with is_header=false, verified on the real document that
+			// triggered this bug. Only the .docx converter sets it, and .docx
+			// never splits. So `is_header` is a dead signal for .doc and cannot
+			// be used to confirm the leading fragment is a header or that the
+			// following table lacks one. The 1-row gate is the strongest
+			// available proxy: a 1-row table adjacent to a same-width table is
+			// overwhelmingly a header fragment, because a genuinely standalone
+			// 1-row table immediately followed by another table (with only a
+			// blank paragraph between) is rare.
+			//
+			// Regression guards baked into the merge condition:
+			//   - leading fragment is exactly 1 row: two genuinely separate
+			//     MULTI-row tables (same width, blank paragraph between) are
+			//     never merged.
+			//   - same first-row column count: differently-shaped tables stay
+			//     separate.
+			//   - adjacency (no element between): any heading/paragraph/image
+			//     in between keeps the two tables distinct.
+			if el.Type == "table" && len(el.Rows) == 1 && ei+1 < len(sec.Elements) {
+				if nxt := sec.Elements[ei+1]; nxt.Type == "table" &&
+					docxIRTableCols(el) > 0 && docxIRTableCols(el) == docxIRTableCols(nxt) {
+					merged := nxt
+					rows := make([]docxIRRow, 0, len(nxt.Rows)+len(el.Rows))
+					rows = append(rows, el.Rows...)
+					rows = append(rows, nxt.Rows...)
+					merged.Rows = rows
+					el = merged
+					ei++ // fold the following table into this one; skip it
+				}
+			}
 			switch el.Type {
 			case "paragraph", "heading":
 				if el.Type == "heading" {

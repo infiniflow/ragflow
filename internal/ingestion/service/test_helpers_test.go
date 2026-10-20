@@ -5,7 +5,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,9 +16,12 @@
 
 package service
 
-// ──────────────────────────────────────────────────────────
-// Ingestor Test Helpers
-// ──────────────────────────────────────────────────────────
+import (
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/ingestion"
+)
 
 // NewTestIngestor creates a new Ingestor for testing with default values.
 func NewTestIngestor() *Ingestor {
@@ -30,9 +33,18 @@ func NewTestIngestor() *Ingestor {
 // IngestorOption configures a test Ingestor.
 type IngestorOption func(*Ingestor)
 
+// newUnitIngestor builds a unit-test Ingestor. The dependency bundle reads the
+// process-wide handles the surrounding test swaps in (dao.DB via
+// testutil.ReplaceDBForTest, the message queue via engine.SetMessageQueueEngine),
+// so real values flow into the ingestor while nil values exercise the
+// nil-dependency guards. Engine stays nil: executor tests stub the index writer
+// or assert the downstream no-engine failure.
 func newUnitIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
-	ingestor := NewIngestor(name, maxConcurrency, supportedTypes)
-	return ingestor
+	return NewIngestor(name, maxConcurrency, supportedTypes, &ingestion.Deps{
+		DB: dao.DB,
+		MQ: engine.GetMessageQueueEngine(),
+		KV: kvrocks.Get(),
+	})
 }
 
 // SetupTestIngestor creates a new test Ingestor with the given options.

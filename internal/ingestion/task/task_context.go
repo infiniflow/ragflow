@@ -24,6 +24,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TaskKind discriminates which execution path a queued TaskContext takes.
@@ -111,8 +113,10 @@ func (c *TaskContext) ID() string {
 
 // LoadFromIngestionTask loads the full task context from an IngestionTask.
 // It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
-func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionTask) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, ingestionTask.DocumentID)
+// db is the relational handle from the ingestion dependency bundle; callers
+// pass it explicitly so the loader never reaches for the process-wide global.
+func LoadFromIngestionTask(ctx context.Context, db *gorm.DB, ingestionTask *entity.IngestionTask) (*TaskContext, error) {
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, ingestionTask.DocumentID)
 	if err != nil {
 		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
 	}
@@ -120,12 +124,12 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, doc.KbID)
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
 	}
 
-	tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, kb.TenantID)
 	if err != nil || tenant == nil {
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}

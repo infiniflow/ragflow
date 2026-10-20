@@ -108,7 +108,7 @@ func ResolveDocumentStorage(ctx context.Context, db *gorm.DB, docID string) (*Do
 	return ref, nil
 }
 
-func resolveDocumentName(ctx context.Context, docID string) (string, error) {
+func resolveDocumentName(ctx context.Context, db *gorm.DB, docID string) (string, error) {
 	if ResolveDocumentStorageOverride != nil {
 		ref, err := ResolveDocumentStorageOverride(docID)
 		if err != nil {
@@ -118,7 +118,7 @@ func resolveDocumentName(ctx context.Context, docID string) (string, error) {
 			return ref.Name, nil
 		}
 	}
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		return "", err
 	}

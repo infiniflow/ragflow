@@ -447,11 +447,6 @@ func TestPDFParser_ValidateParseMethod(t *testing.T) {
 		t.Fatalf("default validateParseMethod: %v", err)
 	}
 
-	p.ConfigureFromSetup(map[string]any{"parse_method": "PaddleOCR"})
-	if err := p.validateParseMethod(); err != nil {
-		t.Fatalf("validateParseMethod(PaddleOCR): %v", err)
-	}
-
 	p.ConfigureFromSetup(map[string]any{"parse_method": "tenant@provider@SoMark"})
 	if err := p.validateParseMethod(); err != nil {
 		t.Fatalf("validateParseMethod(tenant@provider@SoMark): %v", err)
@@ -550,28 +545,11 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 	}
 }
 
-// TestPDFParseMethodTablesAgree pins the relationship between the two
-// vocabulary tables in pdf_parser_common.go: every canonical token a
-// spelling maps to must be executable by PDFParser, and every executable
-// token must be reachable from some spelling. The only intended divergences
-// are:
-//
-//   - "" (the unset sentinel) is accepted by the parser as the default
-//     method but has no spelling, so IsPDFParseMethod("") stays false;
-//   - "monkeyocrv2" is dispatched by the ingestion vision dispatcher
-//     before PDFParser runs, so it is a recognized method without being
-//     executable by the parser switch itself.
-//
-// Any other difference means one table was updated without the other: a
-// spelling whose canonical token is not executable dies in
-// validateParseMethod, and an executable token without a spelling is
-// misclassified as a VLM model name by Check and the dispatcher (the
-// "Plain Text" bug class).
+// TestPDFParseMethodTablesAgree verifies executable parser methods and
+// dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
-	const (
-		unsetSentinel     = ""
-		dispatcherHandled = "monkeyocrv2"
-	)
+	const unsetSentinel = ""
+	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {
@@ -579,12 +557,12 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 			continue
 		}
 		reachable[canonical] = true
-		if canonical == dispatcherHandled {
+		if dispatcherHandled[canonical] {
 			continue
 		}
 		if _, ok := supportedPDFParseMethods[canonical]; !ok {
-			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like %q",
-				spelling, canonical, canonical, dispatcherHandled)
+			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like PaddleOCR",
+				spelling, canonical, canonical)
 		}
 	}
 	for supported := range supportedPDFParseMethods {
@@ -593,8 +571,10 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 		}
 		t.Errorf("supportedPDFParseMethods contains %q that no spelling maps to; without a spelling, Check() and the vision dispatcher route it to the VLM path", supported)
 	}
-	if !IsPDFParseMethod(dispatcherHandled) {
-		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
+	for method := range dispatcherHandled {
+		if !IsPDFParseMethod(method) {
+			t.Errorf("dispatcher-handled method %q must remain recognized", method)
+		}
 	}
 }
 
@@ -875,5 +855,14 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+}
+
+func TestPDFParserPaddleOCRRequiresTenantDispatch(t *testing.T) {
+	p := NewPDFParser()
+	p.ConfigureFromSetup(map[string]any{"parse_method": "paddleocr"})
+	result := p.ParseWithResult(t.Context(), "document.pdf", []byte("%PDF-1.4"))
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "unsupported PDF parse_method") {
+		t.Fatalf("standalone parser must not submit OCR jobs: %v", result.Err)
 	}
 }

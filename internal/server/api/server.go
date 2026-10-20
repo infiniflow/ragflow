@@ -55,6 +55,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
+	"ragflow/internal/ingestion/task"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
@@ -124,7 +125,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
-	memoryService := service.NewMemoryService()
+	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()))
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
@@ -133,6 +134,14 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
 	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
+	// Bind the relational handle and document engine into the production
+	// embedder and knowledge-compiler resolvers. The API process shares the
+	// task-package composition root with the ingestor: without these, the
+	// embedder resolver would read a nil db and fail at run time when the API
+	// process runs ingestion runs (e.g. in a combined --api --ingestor deploy
+	// where the ingestor bindings do not apply).
+	task.InitEmbedderResolver(dao.DB)
+	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
