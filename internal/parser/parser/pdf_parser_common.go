@@ -343,10 +343,18 @@ func normalizePDFParseMethod(raw string) string {
 
 func (p *PDFParser) validateParseMethod() error {
 	method := normalizePDFParseMethod(p.ParseMethod)
+	// A method backed by a registered external analyzer factory (see
+	// RegisterAnalyzerFactory) is a supported method even though it is not in
+	// the built-in whitelist — it is routed to the DeepDoc dispatch path, which
+	// selects the external factory. Without this, a registered method would be
+	// rejected here before dispatch ever ran.
+	if _, ok := analyzerFactories[method]; ok {
+		return nil
+	}
 	if _, ok := supportedPDFParseMethods[method]; ok {
 		return nil
 	}
-	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer)", p.ParseMethod)
+	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer — methods backed by a registered external analyzer factory are supported)", p.ParseMethod)
 }
 
 // ParseWithResult parses a PDF into a ParseResult, dispatching on the
