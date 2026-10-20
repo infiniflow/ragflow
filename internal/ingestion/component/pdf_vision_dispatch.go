@@ -60,6 +60,9 @@ var (
 	pdfVisionChatInvoker   = defaultPDFVisionChatInvoker
 )
 
+// maybeDispatchPDFVision handles selected tenant PDF/OCR parsers before generic
+// VLM parsing. A handled result, including an error, must not fall back to the
+// ordinary PDF parser.
 func maybeDispatchPDFVision(
 	ctx context.Context,
 	db *gorm.DB,
@@ -81,6 +84,10 @@ func maybeDispatchPDFVision(
 	layout := getStringOr(setup, "layout_recognizer", "")
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+
+	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
+		return result, true, err
+	}
 
 	monkeySelector := layout
 	if strings.TrimSpace(monkeySelector) == "" {

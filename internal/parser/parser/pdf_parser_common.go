@@ -70,6 +70,10 @@ type PDFParser struct {
 	EnableMultiColumn  bool
 	OutputFormat       string
 	ParseMethod        string
+	// UseTenantModelConfig disables global endpoint/credential/option fallback
+	// for explicitly resolved SoMark/OpenDataLoader instances. Runtime-only;
+	// ConfigureFromSetup does not accept this flag from persisted settings.
+	UseTenantModelConfig bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
 	// the filetype setup map. DeepDOC reads it through its ParserConfig, and
