@@ -27,7 +27,7 @@ from api.utils.api_utils import (
     get_json_result,
     get_result,
 )
-from common.constants import RetCode
+from common.constants import FileSource, RetCode
 from api.utils.validation_utils import (
     CreateFolderReq,
     DeleteFileReq,
@@ -288,9 +288,12 @@ async def download(tenant_id: str = None, file_id: str = None):
             return get_error_data_result(message=result)
 
         file = result
-        blob = await thread_pool_exec(settings.STORAGE_IMPL.get, file.parent_id, file.location)
+        b, n = file.parent_id, file.location
+        if file.source_type == FileSource.KNOWLEDGEBASE:
+            b, n = await thread_pool_exec(File2DocumentService.get_storage_address, file_id=file_id)
+        blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         if not blob:
-            b, n = File2DocumentService.get_storage_address(file_id=file_id)
+            b, n = await thread_pool_exec(File2DocumentService.get_storage_address, file_id=file_id)
             blob = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
         if not blob:
             logging.warning(
