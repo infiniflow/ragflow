@@ -19,17 +19,38 @@ package service
 
 import (
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/engine"
 )
+
+// stubEngine embeds engine.DocEngine so it satisfies the interface at compile
+// time (its methods delegate to the embedded nil value); only the methods the
+// test observes are overridden. It exists purely to give the wiring test a
+// comparable, non-nil engine value to assert propagation with.
+type stubEngine struct{ engine.DocEngine }
+
+func (stubEngine) GetType() string { return "stub" }
 
 // TestNewKnowledgeCompileConsumerWiresStorage guards the production assembly:
 // the dataset-level compile consumer MUST be built with WithStorage so its
 // reader/writer/contribution store are engine-backed. A regression that drops
-// WithStorage would silently disable every production merge; this catches it.
+// WithStorage — or threads the wrong/nil engine or db through it — would
+// silently disable every production merge; this catches it by asserting the
+// exact deps the ingestor provides actually reach the consumer's reader/writer.
 func TestNewKnowledgeCompileConsumerWiresStorage(t *testing.T) {
 	ingestor := newUnitIngestor("test-kc-wiring", 1, nil)
-	// Provide the deps the production path threads through WithStorage.
-	ingestor.deps.Engine = nil // value irrelevant: the flag is what we assert
-	ingestor.deps.DB = nil
+	// Provide the deps the production path threads through WithStorage and
+	// assert they propagate verbatim to the consumer (not just the flag).
+	eng := stubEngine{}
+	db, err := gorm.Open(sqlite.Open("file:test-kc-wiring?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ingestor.deps.Engine = eng
+	ingestor.deps.DB = db
 
 	consumer := ingestor.newKnowledgeCompileConsumer()
 	if consumer == nil {
@@ -37,5 +58,11 @@ func TestNewKnowledgeCompileConsumerWiresStorage(t *testing.T) {
 	}
 	if !consumer.IsStorageConfigured() {
 		t.Fatal("production consumer must be storage-configured (WithStorage applied)")
+	}
+	if consumer.StorageEngine() != eng {
+		t.Fatal("WithStorage did not propagate the ingestor's engine to the consumer reader/writer")
+	}
+	if consumer.StorageDB() != db {
+		t.Fatal("WithStorage did not propagate the ingestor's db to the consumer")
 	}
 }

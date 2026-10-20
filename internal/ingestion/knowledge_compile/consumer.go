@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
@@ -83,6 +84,11 @@ type Consumer struct {
 	// package-level kcDB global.
 	db *gorm.DB
 
+	// docEngine is the injected doc engine (wired by WithStorage). It is kept on
+	// the Consumer (mirroring db) so the assembly point can assert the exact
+	// engine reached the reader/writer, not just that WithStorage ran.
+	docEngine engine.DocEngine
+
 	// docLister enumerates every doc id in a KB so a rewrite can republish them.
 	docLister func(ctx context.Context, tenant, kb string) ([]string, error)
 }
@@ -134,6 +140,21 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 // assembly point assert wiring before any batch is processed.
 func (c *Consumer) IsStorageConfigured() bool {
 	return c.storageConfigured
+}
+
+// StorageEngine returns the doc engine injected via WithStorage. It is exposed
+// so the assembly point can assert the exact engine the ingestor threads
+// through (not a zero value) actually reached the reader/writer — IsStorageConfigured
+// alone only reports that WithStorage ran, not that the deps propagated.
+func (c *Consumer) StorageEngine() engine.DocEngine {
+	return c.docEngine
+}
+
+// StorageDB returns the database handle injected via WithStorage. See
+// StorageEngine for why the injected value (not just the configured flag) is
+// observable.
+func (c *Consumer) StorageDB() *gorm.DB {
+	return c.db
 }
 
 // Run is one owned worker loop (Option E §11.5/§11.7): it wakes on NATS notify
