@@ -1989,7 +1989,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       dataManipulation: 'Manipolazione dati',
       flow: 'Flusso',
       dialog: 'Dialogo',
-      cite: 'Cita',
+      cite: 'Mostra citazioni',
       citeTip: 'citeTip',
       name: 'Nome',
       nameMessage: 'Inserisci nome',

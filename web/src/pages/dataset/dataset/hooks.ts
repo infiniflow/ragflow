@@ -6,6 +6,7 @@ import { useIsGoBackend } from '@/utils/backend-variant';
 import { formatDate, formatSecondsToHumanReadable } from '@/utils/date';
 import { formatBytes } from '@/utils/file-util';
 import { useQuery } from '@tanstack/react-query';
+import { RunningStatus } from '@/constants/knowledge';
 import { useCallback, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { listDataPipelineLogDocument } from '@/services/knowledge-service';
@@ -29,13 +30,32 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const datasetId = knowledgeId || routeId;
   const isGoBackend = useIsGoBackend();
 
+  const isTerminal = (doc?: IDocumentInfo) => {
+    const status = doc && getDocumentRunningStatus(doc);
+    return (
+      status === RunningStatus.DONE ||
+      status === RunningStatus.FAIL ||
+      status === RunningStatus.CANCEL
+    );
+  };
+
   // When the modal is visible, poll the document directly by ID so progress_msg
   // updates (e.g. "Indexing done") are captured even if the parent list no longer
   // polls (isLoop became false before the final message) or the record fell off
-  // the current paginated page.
+  // the current paginated page. Stop polling once the run reaches a terminal
+  // status, otherwise the modal keeps requesting forever.
   const { documents: liveDocs } = useFetchDocumentsByIds(
     record?.id ? [record.id] : [],
-    { enabled: visible, refetchInterval: PollIntervalMs },
+    {
+      enabled: visible,
+      refetchInterval: (query) => {
+        const doc =
+          query.state.data?.docs[0] ??
+          documents.find((item: IDocumentInfo) => item.id === record?.id) ??
+          record;
+        return isTerminal(doc) ? false : PollIntervalMs;
+      },
+    },
   );
   const liveDoc = liveDocs?.[0];
   const sourceDoc =
@@ -48,7 +68,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const { data: documentLog } = useQuery<IFileLogList>({
     queryKey: DocumentLogKeys.queued(datasetId, sourceDoc?.id),
     enabled: visible && isGoBackend && !!datasetId && !!sourceDoc?.id,
-    refetchInterval: PollIntervalMs,
+    refetchInterval: isTerminal(sourceDoc) ? false : PollIntervalMs,
     queryFn: async () => {
       const { data: res = {} } = await listDataPipelineLogDocument(
         datasetId || '',
@@ -59,7 +79,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
           // share a name.
           document_id: sourceDoc?.id,
           log_type: 'file',
-          orderby: 'run_count',
+          orderby: 'create_time',
           desc: true,
           page_size: 1,
         },
@@ -68,6 +88,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     },
   });
   const logID = documentLog?.logs[0]?.id;
+  const selectedLog = documentLog?.logs[0];
   const {
     data: messages,
     fetchPreviousPage,
@@ -81,18 +102,21 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
 
   const logInfo = useMemo(() => {
     const source = sourceDoc;
+    const details = source
+      ? messages?.items.length
+        ? ''
+        : selectedLog?.latest_ingestion_event?.message ||
+          selectedLog?.progress_msg ||
+          getDocumentProgressMessage({
+            ...source,
+            latest_ingestion_event:
+              latestEvent ?? source.latest_ingestion_event,
+          })
+      : '-';
     let log: ILogInfo = {
       taskId: source?.id,
       fileName: source?.name || '-',
-      details: source
-        ? messages?.items.length
-          ? ''
-          : getDocumentProgressMessage({
-              ...source,
-              latest_ingestion_event:
-                latestEvent ?? source.latest_ingestion_event,
-            })
-        : '-',
+      details,
     };
     if (source) {
       log = {
@@ -107,14 +131,8 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         // Go derives status from ingestion_status (queued included);
         // Python reads the legacy run field.
         status: getDocumentRunningStatus(source),
-        details: messages?.items.length
-          ? ''
-          : getDocumentProgressMessage({
-              ...source,
-              latest_ingestion_event:
-                latestEvent ?? source.latest_ingestion_event,
-            }),
-        events: messages?.items,
+        details,
+        events: messages?.items.length ? messages.items : undefined,
         loadPreviousEvents: hasPreviousPage
           ? () => fetchPreviousPage()
           : undefined,
@@ -125,6 +143,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
     return log;
   }, [
     sourceDoc,
+    selectedLog,
     latestEvent,
     messages,
     fetchPreviousPage,

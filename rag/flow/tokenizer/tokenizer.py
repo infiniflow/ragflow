@@ -18,20 +18,20 @@ import re
 
 import numpy as np
 
-from common.constants import LLMType
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, resolve_model_config
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
+from common import settings
+from common.chunk_order import assign_chunk_order
 from common.connection_utils import timeout
+from common.constants import LLMType
+from common.misc_utils import thread_pool_exec
+from common.token_utils import truncate
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import finalize_pdf_chunk
 from rag.flow.tokenizer.schema import TokenizerFromUpstream
-from rag.svr.task_executor_limiter import embed_limiter
 from rag.nlp import rag_tokenizer
-from common import settings
-from common.token_utils import truncate
-
-from common.misc_utils import thread_pool_exec
+from rag.svr.task_executor_limiter import embed_limiter
 
 
 class TokenizerParam(ProcessParamBase):
@@ -132,7 +132,7 @@ class Tokenizer(ProcessBase):
 
             from_upstream = TokenizerFromUpstream.model_validate(kwargs)
         except Exception as e:
-            self.set_output("_ERROR", f"Input error: {str(e)}")
+            self.set_output("_ERROR", f"Input error: {e!s}")
             return
 
         self.set_output("output_format", "chunks")
@@ -143,7 +143,6 @@ class Tokenizer(ProcessBase):
             if from_upstream.output_format == "chunks":
                 chunks = from_upstream.chunks or []
                 for i, ck in enumerate(chunks):
-                    ck["chunk_order_int"] = i
                     ck["title_tks"] = rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", from_upstream.name))
                     ck["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(ck["title_tks"])
                     if ck.get("questions"):
@@ -204,6 +203,9 @@ class Tokenizer(ProcessBase):
             self.set_output("embedding_token_consumption", token_count)
 
             self.callback(1.0, "Finish embedding.")
+
+        # Every branch above must leave a reading-order index behind.
+        assign_chunk_order(chunks)
 
         chunks = [finalize_pdf_chunk(ck) for ck in chunks]
 

@@ -257,7 +257,7 @@ export const useSendAgentMessage = ({
   isShared?: boolean;
   refetch?: () => void;
   isTaskMode?: boolean;
-  releaseMode?: string | null;
+  releaseMode?: boolean | null;
   /**
    * Session the page is currently displaying. When provided, streamed
    * frames that belong to another session are not written into the

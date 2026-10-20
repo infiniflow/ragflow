@@ -17,6 +17,7 @@
 import copy
 import logging
 import re
+from html import escape as html_escape
 from io import BytesIO
 
 from docx import Document
@@ -134,7 +135,8 @@ class Docx(DocxParser):
                         else:
                             break
                     i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))

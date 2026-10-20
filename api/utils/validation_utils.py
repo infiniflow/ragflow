@@ -30,7 +30,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.utils.pagination_utils import REST_API_MAX_IDS, validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
 
 
@@ -990,7 +990,7 @@ class BaseListReq(BaseModel):
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
 
-    ids: Annotated[list[str] | None, Field(default=None, max_length=REST_API_MAX_IDS)]
+    ids: Annotated[list[str] | None, Field(default=None)]
     include_parsing_status: Annotated[bool, Field(default=False)]
     keywords: Annotated[str, Field(default="")]
     owner_ids: Annotated[list[str], Field(default_factory=list)]

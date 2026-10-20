@@ -57,10 +57,6 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 - `KIBANA_PORT`
   The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
-- `KIBANA_USER`
-  The username for Kibana. Defaults to `rag_flow`.
-- `KIBANA_PASSWORD`
-  The password for Kibana. Defaults to `infini_rag_flow`.
 
 ### Resource Management
 

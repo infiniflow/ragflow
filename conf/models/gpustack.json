@@ -1,9 +1,0 @@
-{
-  "name": "GPUStack",
-  "url_suffix": {
-    "chat": "v1/chat/completions",
-    "models": "v1/models",
-    "embedding": "v1-openai/embeddings"
-  },
-  "class": "local"
-}

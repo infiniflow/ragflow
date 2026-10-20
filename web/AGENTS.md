@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with the RAGFlow frontend (`web/`).
 
@@ -24,6 +24,16 @@ npm run test       # Jest tests
 ```
 
 ## Development Conventions
+
+### Pre-commit Format Validation (Mandatory)
+
+Frontend code changes **must pass the lefthook format checks before every commit**. Do not rely on CI (`web-oxfmt` / `web-oxlint` jobs) to catch formatting after pushing.
+
+- Before staging or committing changed `.ts`/`.tsx`/`.js`/etc. files, run the formatter and linter locally:
+  - `npx oxfmt <changed files>` (or `npm run format`) to auto-fix formatting
+  - `npx oxlint` (or `npm run lint`) for lint issues
+- Verify with `npx oxfmt --check <changed files>` before `git commit`.
+- Let the lefthook pre-commit hook run to completion and fix everything it reports; never bypass hooks with `--no-verify`.
 
 ### Test File Placement
 

@@ -15,10 +15,14 @@
 #
 
 import logging
+import lzma
 import warnings
 import zipfile
+import zlib
 from io import BytesIO
 from xml.etree import ElementTree
+
+from bs4 import ParserRejectedMarkup
 
 from .html_parser import RAGFlowHtmlParser
 
@@ -37,6 +41,13 @@ class RAGFlowEpubParser:
     and delegating to RAGFlowHtmlParser for chunking."""
 
     def __call__(self, fnm, binary=None, chunk_token_num=512):
+        """Return the text sections of every readable content item, in spine order.
+
+        An item that cannot be read or parsed is skipped with a warning. Raises
+        ValueError for an empty payload, and when items failed and no other item
+        could be parsed. An item that parses to no text (an image-only chapter)
+        still counts as read.
+        """
         if binary is not None:
             if not binary:
                 logger.warning(
@@ -51,16 +62,21 @@ class RAGFlowEpubParser:
         try:
             content_items = self._get_spine_items(zf)
             all_sections = []
+            failures = []
+            parsed = 0
             html_parser = RAGFlowHtmlParser()
 
             for item_path in content_items:
                 try:
                     html_bytes = zf.read(item_path)
-                except (KeyError, RuntimeError, zipfile.BadZipFile, NotImplementedError, EOFError) as e:
+                except (KeyError, RuntimeError, zipfile.BadZipFile, NotImplementedError, EOFError, zlib.error, OSError, lzma.LZMAError) as e:
                     # A spine item can be missing, encrypted, damaged, or stored with a
-                    # compression method zipfile does not implement. Only that chapter is
-                    # unreadable; the rest of the book still parses.
+                    # compression method zipfile does not implement. A damaged item fails
+                    # its CRC check or, before that, its decompressor, which raises its own
+                    # error: zlib.error for Deflate, OSError for bzip2, LZMAError for LZMA.
+                    # Only that chapter is unreadable; the rest of the book still parses.
                     logger.warning("Skipping unreadable EPUB content item '%s': %s", item_path, e)
+                    failures.append(f"{item_path}: {e}")
                     continue
                 if not html_bytes:
                     logger.debug("Skipping empty EPUB content item: %s", item_path)
@@ -69,13 +85,19 @@ class RAGFlowEpubParser:
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=UserWarning)
                         sections = html_parser(item_path, binary=html_bytes, chunk_token_num=chunk_token_num)
-                except Exception as e:
-                    # decode_text refuses a weak codec guess, and a chapter can be
-                    # mislabelled XHTML. Same reasoning as above.
+                except (ValueError, ParserRejectedMarkup, RecursionError) as e:
+                    # decode_text refuses a weak codec guess (UnicodeError is a ValueError),
+                    # a numeric character reference past 4300 digits fails int(), html.parser
+                    # rejects some malformed markup, and the HTML walker recurses once per
+                    # element. Same reasoning as above; any other error is a bug and propagates.
                     logger.warning("Skipping EPUB content item '%s' that failed to parse: %s", item_path, e)
+                    failures.append(f"{item_path}: {e}")
                     continue
+                parsed += 1
                 all_sections.extend(sections)
 
+            if failures and not parsed:
+                raise ValueError(f"No readable content in EPUB: {len(failures)} of {len(content_items)} content items could not be read or parsed ({failures[0]})")
             return all_sections
         finally:
             zf.close()

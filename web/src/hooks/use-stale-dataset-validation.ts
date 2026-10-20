@@ -27,15 +27,22 @@ import { useStaleDatasetIds } from './use-knowledge-request';
  * persisted ids are looked up: ids picked from the dataset select are valid
  * by construction, while a persisted id may reference a dataset that has
  * since been deleted or emptied of chunks — those stale ids are flagged here.
+ * `ownerTenantId` scopes the lookup to the canvas owner's tenant when viewing
+ * a shared canvas.
  */
 export function useStaleDatasetFormSchema<T extends z.ZodTypeAny>(
   schema: T,
   persistedDatasetIds?: string[],
-  fieldName = 'dataset_ids',
+  {
+    fieldName = 'dataset_ids',
+    ownerTenantId,
+  }: { fieldName?: string; ownerTenantId?: string } = {},
 ) {
   const { t } = useTranslation();
-  const { staleDatasetIds, settled: datasetsFetched } =
-    useStaleDatasetIds(persistedDatasetIds);
+  const { staleDatasetIds, settled: datasetsFetched } = useStaleDatasetIds(
+    persistedDatasetIds,
+    ownerTenantId,
+  );
 
   const formSchema = useMemo(() => {
     const path = fieldName.split('.');

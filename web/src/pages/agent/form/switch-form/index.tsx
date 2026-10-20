@@ -11,7 +11,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { SwitchLogicOperator } from '@/constants/agent';
+import { CanvasSwitchOperators, SwitchLogicOperator } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { cn } from '@/lib/utils';
@@ -142,7 +142,9 @@ function ConditionCards({
 }: ConditionCardsProps) {
   const form = useFormContext();
 
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const name = `${parentName}.${ItemKey}`;
 
@@ -246,7 +248,9 @@ function ConditionCards({
 function SwitchForm({ node }: IOperatorForm) {
   const { t } = useTranslation();
   const values = useValues(node);
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const FormSchema = z.object({
     conditions: z.array(
