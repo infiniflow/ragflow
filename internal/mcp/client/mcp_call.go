@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"ragflow/internal/utility"
 	"time"
 )
@@ -88,6 +89,13 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {
 		return nil, headerErr
+	}
+	// The private-host allowlist also permits http:// endpoints; never send
+	// configured credential headers in cleartext.
+	if len(headers) > 0 {
+		if u, perr := url.Parse(opts.URL); perr == nil && u.Scheme == "http" {
+			return nil, errors.New("MCP refuses to send credential headers over cleartext http")
+		}
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()

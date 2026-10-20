@@ -125,7 +125,8 @@ func TestCallTool_StreamableHTTP(t *testing.T) {
 		defer mu.Unlock()
 		requestOrder = append(requestOrder, method)
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS server: CallTool refuses to send credential headers over http.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("Authorization=%q, want rendered header", got)
 		}
