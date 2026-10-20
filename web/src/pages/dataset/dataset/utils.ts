@@ -321,7 +321,12 @@ export function pickBySwitchFate<T>(
   if (unsupported.length === 0) {
     return options.missingModel;
   }
-  const switchable = unsupported.filter((gap) => gap.autoSwitchTarget !== null);
+  // Video uploads switch to picture but stay unparsable, so they are not
+  // counted as switchable: counting them would promise an automatic switch
+  // that cannot make the file parsable.
+  const switchable = unsupported.filter(
+    (gap) => gap.autoSwitchTarget !== null && gap.fileType !== FileType.Video,
+  );
   if (switchable.length === 0) {
     return options.manualSwitch;
   }
@@ -437,6 +442,20 @@ export function findDocumentsParserGaps(
 ): FileParserGap[] {
   return documents.flatMap((doc) => {
     const config = getSavedParserConfig(doc) ?? fallbackConfig;
-    return config ? findFilesParserGaps([doc.name], config) : [];
+    if (!config) {
+      // Video is never parsable regardless of configuration, so it stays
+      // blocked even when type support cannot be determined for other files.
+      const fileType = getFileTypeByExtension(getExtension(doc.name));
+      return fileType === FileType.Video
+        ? [
+            {
+              reason: ParserGapReason.UnsupportedType,
+              fileType,
+              name: doc.name,
+            },
+          ]
+        : [];
+    }
+    return findFilesParserGaps([doc.name], config);
   });
 }

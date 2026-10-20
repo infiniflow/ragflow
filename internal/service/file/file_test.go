@@ -265,6 +265,25 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 	}
 }
 
+func TestFileService_ParseAgentUploads_RejectsVideoWithImageMime(t *testing.T) {
+	ctx := t.Context()
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put(ctx, "user-1-downloads", "video-id", []byte("mp4-bytes")); err != nil {
+		t.Fatalf("put video: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+		{"id": "video-id", "name": "clip.mp4", "mime_type": "image/png", "created_by": "user-1"},
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "video content is not supported") {
+		t.Fatalf("error = %v, want video rejection even with an image MIME type", err)
+	}
+}
+
 func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
 	ctx := t.Context()
 	memory := storage.NewMemoryStorage()

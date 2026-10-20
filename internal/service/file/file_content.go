@@ -190,6 +190,14 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 			return nil, fmt.Errorf("file %q: upload is empty", name)
 		}
 
+		// Reject video filenames before the MIME-based image branch: a
+		// mislabeled video (e.g. clip.mp4 declaring image/png) would otherwise
+		// be inlined as a bogus image data URI without ever reaching the
+		// parser-level video check.
+		if utility.IsVideoFilename(name) {
+			return nil, fmt.Errorf("file %q: video content is not supported", name)
+		}
+
 		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 		if strings.HasPrefix(mediaType, "image/") {
 			contents = append(contents, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))

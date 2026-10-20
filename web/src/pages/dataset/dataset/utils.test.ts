@@ -422,6 +422,22 @@ describe('pickBySwitchFate', () => {
       pickBySwitchFate([unsupportedGap(null), missingModelGap], Options),
     ).toBe('manual');
   });
+
+  it('does not count video as switchable even though it targets picture', () => {
+    // Video uploads switch to picture but stay unparsable, so a batch of a
+    // video plus a non-switchable file must read as manual, not mixed; a
+    // video plus an auto-switchable file reads as mixed, not auto.
+    const videoGap: UploadFileParserGap = {
+      name: 'clip.mov',
+      reason: ParserGapReason.UnsupportedType,
+      fileType: FileType.Video,
+      autoSwitchTarget: 'picture',
+    };
+    expect(pickBySwitchFate([videoGap], Options)).toBe('manual');
+    expect(
+      pickBySwitchFate([videoGap, unsupportedGap('general')], Options),
+    ).toBe('mixed');
+  });
 });
 
 describe('getSavedParserConfig', () => {
@@ -520,8 +536,18 @@ describe('findDocumentsParserGaps', () => {
         modelKind: ParserModelKind.Asr,
       },
     ]);
-    // No fallback either: nothing can be determined, so nothing is flagged.
+    // No fallback either: nothing can be determined for other types, so
+    // nothing is flagged — except video, which is never parsable.
     expect(findDocumentsParserGaps([legacyRow], null)).toEqual([]);
+    expect(
+      findDocumentsParserGaps([{ name: 'clip.mov', parser_config: {} }], null),
+    ).toEqual([
+      {
+        name: 'clip.mov',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.Video,
+      },
+    ]);
   });
 
   it('evaluates each document against its own config in a mixed batch', () => {
