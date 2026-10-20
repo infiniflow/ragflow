@@ -203,9 +203,17 @@ func TestRC2DataMigration_RollsBackWhenMarkerWriteFails(t *testing.T) {
 		t.Fatalf("failed to seed target tenant model: %v", err)
 	}
 
+	backfillObserved := false
 	if err := db.Callback().Create().Before("gorm:create").Register("test:fail_rc2_migration_marker", func(tx *gorm.DB) {
 		setting, ok := tx.Statement.Dest.(*entity.SystemSettings)
 		if ok && setting.Name == migrationDBVersionMarker && setting.Value == rc2MigrationTargetVersion {
+			var backfilled entity.TenantModel
+			if err := tx.Session(&gorm.Session{NewDB: true}).Where("id = ?", targetModel.ID).Take(&backfilled).Error; err == nil {
+				var extra map[string]any
+				if err := json.Unmarshal([]byte(backfilled.Extra), &extra); err == nil {
+					_, backfillObserved = extra["max_tokens"]
+				}
+			}
 			tx.AddError(errors.New("injected migration marker write failure"))
 		}
 	}); err != nil {
@@ -214,6 +222,9 @@ func TestRC2DataMigration_RollsBackWhenMarkerWriteFails(t *testing.T) {
 
 	if err := migrateRC2Data(ctx, db); err == nil {
 		t.Fatal("expected migrateRC2Data to fail when writing the rc2 marker")
+	}
+	if !backfillObserved {
+		t.Fatal("expected tenant model backfill to complete before injected marker failure")
 	}
 
 	var checkKB entity.Knowledgebase
