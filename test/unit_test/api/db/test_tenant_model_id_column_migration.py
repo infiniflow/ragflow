@@ -106,6 +106,30 @@ def test_migrate_tenant_model_id_column_types_converts_postgres_integer(monkeypa
     assert "::text" not in sql
 
 
+def test_migrate_tenant_model_id_column_types_skips_gaussdb(monkeypatch):
+    # GaussDB intentionally does not run the tenant_model_id_migration backfill,
+    # so converting the columns here would clear every legacy id to NULL with
+    # nothing to restore them. Leave GaussDB untouched.
+    def fail(*_args, **_kwargs):
+        raise AssertionError("GaussDB must be left to the dedicated upgrade path")
+
+    class FakeDB:
+        table_exists = staticmethod(fail)
+        execute_sql = staticmethod(fail)
+
+    class Migrator:
+        def alter_column_type(self, *_args):
+            fail()
+
+    monkeypatch.setattr(settings, "DATABASE_TYPE", "gaussdb")
+    monkeypatch.setattr(db_models, "DB", FakeDB)
+    monkeypatch.setattr(db_models, "_get_column_data_type", fail)
+    monkeypatch.setattr(db_models, "alter_db_add_column", fail)
+    monkeypatch.setattr(db_models, "migrate", fail)
+
+    db_models.migrate_tenant_model_id_column_types(Migrator())
+
+
 def test_migrate_tenant_model_id_column_types_converts_mysql_integer(monkeypatch):
     altered = []
     queries = []

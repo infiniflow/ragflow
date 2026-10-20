@@ -2007,7 +2007,7 @@ _INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "medi
 
 
 def _get_column_data_type(table_name: str, column_name: str) -> str | None:
-    if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+    if settings.DATABASE_TYPE.upper() == "POSTGRES":
         cursor = DB.execute_sql(
             """
             SELECT data_type
@@ -2042,19 +2042,30 @@ def migrate_tenant_model_id_column_types(migrator):
     this helper is a no-op when columns are already ``varchar`` — it only
     converts if the script did not run or did not finish.
 
-    It does not backfill ``tenant_model.id`` values. Postgres/GaussDB still run
+    It does not backfill ``tenant_model.id`` values. Postgres still runs
     ``migrate_postgres_family_model_provider_tables()`` later for seeding,
     ``model_type`` merge, and id backfill.
 
     There is no matching in-place ALTER for ``tenant_model.model_type`` on any
     dialect: converting that column before ``tenant_model_seeding`` /
-    ``model_type_merge`` would skip those stages. Postgres/GaussDB also run
+    ``model_type_merge`` would skip those stages. Postgres also runs
     ``migrate_postgres_family_model_provider_tables()`` for seeding, merge, and
     backfill. MySQL/OceanBase non-Docker deployments that skip
     ``run_migrations.sh`` get only this ``tenant_*_id`` fallback — they must run
     ``mysql_migration.py`` manually or #18755 (``model_type`` bitmask merge) can
     persist.
+
+    GaussDB is skipped: its integer values are only useful together with the
+    ``tenant_model_id_migration`` backfill, and GaussDB intentionally does not
+    run that path (see ``migrate_postgres_family_model_provider_tables``).
+    Converting here alone would clear every legacy id to NULL with nothing to
+    restore it, so GaussDB keeps its current columns until the dedicated
+    GaussDB upgrade path lands.
     """
+    if is_gaussdb_compatible_database():
+        logging.info("Skipping tenant_*_id type migration on GaussDB; use the GaussDB upgrade path")
+        return
+
     target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
 
     for table_name, column_name in TENANT_MODEL_ID_COLUMNS:
@@ -2082,7 +2093,7 @@ def migrate_tenant_model_id_column_types(migrator):
             alter_db_add_column(migrator, table_name, column_name, target_field)
             continue
 
-        mysql_family = settings.DATABASE_TYPE.upper() not in {"POSTGRES"} and not is_gaussdb_compatible_database()
+        mysql_family = settings.DATABASE_TYPE.upper() != "POSTGRES"
         leftover_sql = f"UPDATE `{table_name}` SET `{column_name}` = NULL WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
 
         if col_type not in _INTEGER_COLUMN_TYPES:
@@ -2101,7 +2112,7 @@ def migrate_tenant_model_id_column_types(migrator):
             continue
 
         try:
-            if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+            if settings.DATABASE_TYPE.upper() == "POSTGRES":
                 # Legacy integers were tenant_llm row ids, never 32-char tenant_model.id
                 # values. Cast them away rather than leaving strings such as "42".
                 DB.execute_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE varchar(32) USING CAST(NULL AS varchar(32))')
