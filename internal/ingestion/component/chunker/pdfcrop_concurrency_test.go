@@ -4,6 +4,8 @@ package chunker
 
 import (
 	"context"
+	"fmt"
+	"image"
 	"strings"
 	"testing"
 
@@ -55,5 +57,41 @@ func TestCropImageChunks_ConcurrentPageCacheReuse(t *testing.T) {
 		if !strings.HasPrefix(ck.Image, "data:image/png;base64,") {
 			t.Errorf("chunk %d: image not cropped: %q", i, ck.Image)
 		}
+	}
+}
+
+// panicPageEngine renders page index 0 normally and panics on every other
+// page, standing in for a native render that blows up on one bad page.
+type panicPageEngine struct{ mockCropEngine }
+
+func (panicPageEngine) RenderPageImage(pageNum int, _ float64) (image.Image, error) {
+	if pageNum != 0 {
+		panic(fmt.Sprintf("render of page %d blew up", pageNum))
+	}
+	return image.NewRGBA(image.Rect(0, 0, 1000, 1000)), nil
+}
+
+// TestCropImageChunks_PanicFailsOnlyThatChunk guards the production crash
+// where a render panic inside a crop goroutine killed the ingestor process:
+// the panic must cost only the affected chunk its preview.
+func TestCropImageChunks_PanicFailsOnlyThatChunk(t *testing.T) {
+	t.Setenv("RAGFLOW_CROP_CONCURRENCY", "4")
+	good := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	bad := jsonPositions(t, []float64{2, 10, 100, 10, 100})
+	chunks := []schema.ChunkDoc{
+		{CKType: "image", Text: "ok", PDFPositions: good},
+		{CKType: "image", Text: "boom", PDFPositions: bad},
+		{CKType: "table", Text: "ok too", PDFPositions: good},
+	}
+
+	out := cropImageChunks(context.Background(), panicPageEngine{}, chunks)
+
+	for _, i := range []int{0, 2} {
+		if !strings.HasPrefix(out[i].Image, "data:image/png;base64,") {
+			t.Errorf("chunk %d: image = %q, want a cropped preview", i, out[i].Image)
+		}
+	}
+	if out[1].Image != "" {
+		t.Errorf("chunk 1: image = %q, want none after the render panic", out[1].Image)
 	}
 }
