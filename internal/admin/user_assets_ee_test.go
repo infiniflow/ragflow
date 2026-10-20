@@ -28,7 +28,7 @@ func TestUserAssetRoutesAreUnavailable(t *testing.T) {
 	engine := gin.New()
 	NewRouter(&Handler{}).Setup(engine)
 
-	for _, resource := range []string{"agents"} {
+	for _, resource := range []string{"agents", "datasets"} {
 		t.Run(resource, func(t *testing.T) {
 			response := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users/user%40example.com/"+resource, nil)

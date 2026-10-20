@@ -21,14 +21,10 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"sort"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-
-	"gorm.io/gorm"
 )
 
 func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
@@ -585,62 +581,6 @@ func (s *Service) ShowUserPermission(ctx context.Context, email string) (map[str
 		"error":    "'show user permission' is not supported",
 	}
 
-	return result, nil
-}
-
-// ListUserDatasets show user datasets for enterprise edition
-func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: user.ID}, permission.ScopeQuery{
-		Kind: permission.ResourceKindDataset, Operation: permission.OperationRead,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve user dataset permissions: %w", err)
-	}
-
-	var datasets []*entity.Knowledgebase
-	if scope.Mode == permission.ScopeIDs {
-		datasets, err = s.kbDAO.GetByIDs(ctx, dao.DB, scope.ResourceIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user datasets: %w", err)
-		}
-		sort.SliceStable(datasets, func(i, j int) bool {
-			if datasets[i].CreateTime == nil {
-				return datasets[j].CreateTime != nil
-			}
-			if datasets[j].CreateTime == nil {
-				return false
-			}
-			return *datasets[i].CreateTime < *datasets[j].CreateTime
-		})
-	}
-
-	result := make([]map[string]interface{}, 0, len(datasets))
-	for _, dataset := range datasets {
-		status := ""
-		if dataset.Status != nil {
-			status = *dataset.Status
-		}
-		result = append(result, map[string]interface{}{
-			"name":        dataset.Name,
-			"avatar":      dataset.Avatar,
-			"language":    dataset.Language,
-			"permission":  dataset.Permission,
-			"doc_num":     dataset.DocNum,
-			"token_num":   dataset.TokenNum,
-			"chunk_num":   dataset.ChunkNum,
-			"status":      status,
-			"create_date": dataset.CreateDate,
-			"update_date": dataset.UpdateDate,
-		})
-	}
 	return result, nil
 }
 
