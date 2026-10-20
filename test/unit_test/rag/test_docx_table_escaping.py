@@ -23,6 +23,7 @@ company name -- was written into the table as markup.
 """
 
 import importlib.util
+import re
 import sys
 import types
 from io import BytesIO
@@ -223,3 +224,37 @@ def test_a_plain_table_is_unchanged(chunkers):
 
     assert "<td>Item</td>" in tables[0]
     assert "<td>Fee</td>" in tables[0]
+
+
+def _table_html(chunkers, name, binary):
+    if name == "naive":
+        return next(table for _text, _image, table in chunkers.naive()("table.docx", binary) if table)
+    if name == "laws":
+        chunk = next(chunk for chunk in chunkers.laws()("table.docx", binary) if "<table>" in chunk)
+        return chunk[chunk.index("<table>") :]
+    _items, tbls = getattr(chunkers, name)()("table.docx", binary)
+    return tbls[0][0][1]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("name", ["laws", "qa", "manual", "naive"])
+def test_docx_table_merges_only_adjacent_equal_cells(chunkers, name):
+    """Only a run of equal cells gets a colspan, so A, B, A keeps B."""
+    from docx import Document
+
+    rows = [["A", "B", "A"], ["", "X", ""], ["Merged", "Merged", "Other"]]
+    doc = Document()
+    doc.add_heading("Heading", level=1)
+    table = doc.add_table(rows=len(rows), cols=3)
+    for r, row in enumerate(rows):
+        for c, text in enumerate(row):
+            table.cell(r, c).text = text
+    buf = BytesIO()
+    doc.save(buf)
+
+    html = _table_html(chunkers, name, buf.getvalue())
+    cells = [[(text, int(span or 1)) for span, text in re.findall(r"<td(?: colspan='(\d+)')?>(.*?)</td>", tr)] for tr in re.findall(r"<tr>(.*?)</tr>", html)]
+
+    assert cells[0] == [("A", 1), ("B", 1), ("A", 1)]
+    assert cells[2] == [("Merged", 2), ("Other", 1)]
+    assert [sum(span for _text, span in row) for row in cells] == [3, 3, 3]
