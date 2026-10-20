@@ -279,7 +279,7 @@ def test_table_transformer_maps_tsr_crop_coordinates_to_page_coordinates(monkeyp
             "text": "A1",
             "layout_type": "table",
             "layoutno": "table-0",
-            "page_number": page_index,
+            "page_number": page_index + 1,
             "x0": 105,
             "x1": 145,
             "top": page_offset + 210,
@@ -289,7 +289,7 @@ def test_table_transformer_maps_tsr_crop_coordinates_to_page_coordinates(monkeyp
             "text": "B2",
             "layout_type": "table",
             "layoutno": "table-0",
-            "page_number": page_index,
+            "page_number": page_index + 1,
             "x0": 170,
             "x1": 215,
             "top": page_offset + 240,
@@ -307,18 +307,24 @@ def test_table_transformer_maps_tsr_crop_coordinates_to_page_coordinates(monkeyp
 
 @pytest.mark.p1
 @pytest.mark.parametrize("angle", [90, 180, 270])
-def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeypatch, angle):
+@pytest.mark.parametrize(("page_index", "page_from", "zoom"), [(0, 0, 1), (0, 7, 3), (1, 0, 1), (1, 7, 3)])
+def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeypatch, angle, page_index, page_from, zoom):
+    from PIL import Image
+
     module = _load_pdf_parser(monkeypatch)
     parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
-    parser.page_from = 0
-    parser.page_cum_height = [0]
-    parser.page_images = [_FakeImage()]
-    parser.page_layout = [[{"type": "table", "x0": 100, "top": 200, "x1": 220, "bottom": 270}]]
-    parser.tbl_det = _FakeTableDetector(zoom=1, angle=angle)
-    parser.ocr = _FakeOcr(angle)
+    parser.page_from = page_from
+    parser.page_cum_height = [400 * i for i in range(page_index + 2)]
+    offset = parser.page_cum_height[page_index]
+    parser.page_images = [Image.new("RGB", (300 * zoom, 400 * zoom), "white") for _ in range(page_index + 1)]
+    parser.page_layout = [[] for _ in parser.page_images]
+    parser.page_layout[page_index] = [{"type": "table", "x0": 100, "top": 200, "x1": 220, "bottom": 270}]
+    parser.tbl_det = _FakeTableDetector(zoom=zoom, angle=angle)
+    original_ocr = _FakeOcr(angle)
+    parser.ocr = lambda img: [([(x * zoom, y * zoom) for x, y in points], result) for points, result in original_ocr(img)]
     parser._evaluate_table_orientation = lambda table_img: (
         angle,
-        _FakeImage(table_img.size[1], table_img.size[0]) if angle in (90, 270) else _FakeImage(*table_img.size),
+        table_img.rotate(-angle, expand=True),
         {},
     )
     parser.boxes = [
@@ -326,32 +332,39 @@ def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeyp
             "text": "old A1",
             "layout_type": "table",
             "layoutno": "table-0",
-            "page_number": 0,
+            "page_number": page_index + 1,
             "x0": 105,
             "x1": 145,
-            "top": 210,
-            "bottom": 225,
+            "top": offset + 210,
+            "bottom": offset + 225,
         },
         {
             "text": "old B2",
             "layout_type": "table",
             "layoutno": "table-0",
-            "page_number": 0,
+            "page_number": page_index + 1,
             "x0": 170,
             "x1": 215,
-            "top": 240,
-            "bottom": 255,
+            "top": offset + 240,
+            "bottom": offset + 255,
         },
     ]
 
-    parser._table_transformer_job(ZM=1, auto_rotate=True)
+    parser._table_transformer_job(ZM=zoom, auto_rotate=True)
 
     assert [box["text"] for box in parser.boxes] == ["A1", "B2"]
     assert [box["layoutno"] for box in parser.boxes] == ["table-0", "table-0"]
     assert [box["R"] for box in parser.boxes] == [0, 1]
-    assert [box["R_top"] for box in parser.boxes] == [210, 240]
+    assert [box["R_top"] for box in parser.boxes] == [offset + 210, offset + 240]
     assert [box["C"] for box in parser.boxes] == [0, 1]
     assert [box["C_left"] for box in parser.boxes] == [105, 170]
+    assert [box["page_number"] for box in parser.boxes] == [page_index + 1, page_index + 1]
+    assert parser.get_position(parser.boxes[0], zoom) == [(page_index + 1, 105, 145, 210, 225)]
+    tag = parser._line_tag(parser.boxes[0], zoom)
+    assert parser.extract_positions(tag) == [([page_index], 105, 145, 210, 225)]
+    image, positions = parser.crop(tag, ZM=zoom, need_position=True)
+    assert image is not None
+    assert positions == [(page_index + page_from, 105, 145, 210, 225)]
 
 
 @pytest.mark.p1
@@ -407,3 +420,77 @@ def test_extract_positions_accepts_negative_coordinates_with_page_range(monkeypa
     parser = module.RAGFlowPdfParser
     tag = "@@3-4\t1.5\t2.5\t-0.5\t3.5##"
     assert parser.extract_positions(tag) == [([2, 3], 1.5, 2.5, -0.5, 3.5)]
+
+
+@pytest.mark.parametrize("ocr_kind", ["outside", "low_confidence", "empty", "valid_clipped", "nonfinite"])
+def test_rotated_ocr_clamps_to_page_and_restores_if_no_valid_replacement(monkeypatch, ocr_kind):
+    import numpy as np
+    from PIL import Image
+
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    parser.page_from = 7
+    parser.page_cum_height = np.array([0, 100])
+    parser.page_images = [Image.new("RGB", (100, 100), "white")]
+    parser.table_rotations = {0: {"best_angle": 180}}
+    parser.rotated_table_imgs = {0: Image.new("RGB", (120, 120), "white")}
+    original = {"text": "original", "page_number": 1, "layout_type": "table", "x0": 10, "x1": 30, "top": 10, "bottom": 30}
+    parser.boxes = [original.copy()]
+    if ocr_kind == "outside":
+        results = [(_bbox_points((200, 200, 220, 220)), ("outside", 0.99))]
+    elif ocr_kind == "low_confidence":
+        results = [(_bbox_points((10, 10, 30, 30)), ("low confidence", 0.1))]
+    elif ocr_kind == "empty":
+        results = []
+    elif ocr_kind == "nonfinite":
+        results = [(_bbox_points((float("nan"), 0, 30, 30)), ("invalid", 0.99))]
+    else:
+        results = [(_bbox_points((0, 0, 120, 120)), ("clipped", 0.99))]
+    parser.ocr = lambda _image: results
+    layouts = [{"table_index": 0, "page": 0, "layout": {"x0": 0, "x1": 100, "top": 0, "bottom": 100}, "layoutno": "table-0", "coords": (-10, -10, 110, 110)}]
+
+    parser._ocr_rotated_tables(1, layouts, [], [0, 1])
+
+    if ocr_kind == "valid_clipped":
+        assert len(parser.boxes) == 1
+        assert parser.boxes[0]["text"] == "clipped"
+        assert parser.get_position(parser.boxes[0], 1) == [(1, 0, 100, 0, 100)]
+    else:
+        assert parser.boxes == [original]
+
+
+def test_orientation_confidence_gate_is_retained(monkeypatch):
+    from PIL import Image
+
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    scores = iter([0.8, 0.99, 0.1, 0.1])
+    parser.ocr = lambda _image: [(_bbox_points((1, 1, 2, 2)), ("text", next(scores)))]
+    page = Image.new("RGB", (50, 80), "white")
+    angle, image, _scores = parser._evaluate_table_orientation(page)
+    assert angle == 0
+    assert image is page
+
+
+def test_structured_boxes_keep_each_page_position_before_global_offset(monkeypatch):
+    import numpy as np
+    from PIL import Image
+
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    parser.page_from = 7
+    parser.page_images = [Image.new("RGB", (100, 100), "white"), Image.new("RGB", (80, 150), "white")]
+    parser.page_cum_height = np.array([0, 100, 250])
+    parser.boxes = [{"text": "cross page", "page_number": 1, "x0": 10, "x1": 90, "top": 90, "bottom": 120}]
+    for name in ("_layouts_rec", "_table_transformer_job", "_text_merge", "_concat_downward", "_naive_vertical_merge"):
+        monkeypatch.setattr(parser, name, lambda *_args: None)
+    monkeypatch.setattr(parser, "_extract_table_figure", lambda *_args: ([], []))
+
+    boxes = parser._parse_loaded_window_into_bboxes(zoomin=1)
+
+    assert boxes[0]["positions"] == [[1, 10, 90, 90, 100], [2, 10, 80, 0, 20]]
+    assert boxes[0]["image"] is not None
+    assert parser.extract_positions(boxes[0]["position_tag"]) == [([0], 10, 90, 90, 100), ([1], 10, 80, 0, 20)]
+    external = parser._to_global_boxes(boxes)
+    assert external[0]["page_number"] == 8
+    assert external[0]["positions"] == [[8, 10, 90, 90, 100], [9, 10, 80, 0, 20]]
