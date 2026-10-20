@@ -16,7 +16,11 @@ function formatFilterValue(value: unknown) {
   return JSON.stringify(value);
 }
 
-function MetadataFilterEntry({ diagnostic }: { diagnostic: IMetadataFilterDiagnostic }) {
+function MetadataFilterEntry({
+  diagnostic,
+}: {
+  diagnostic: IMetadataFilterDiagnostic;
+}) {
   const { t } = useTranslation();
   const statusKey = FilterStatusKeys[diagnostic.status];
   const status = statusKey ? t(statusKey) : diagnostic.status;
@@ -31,7 +35,8 @@ function MetadataFilterEntry({ diagnostic }: { diagnostic: IMetadataFilterDiagno
         <ul className="list-disc pl-5 text-text-primary">
           {diagnostic.conditions.map((condition, index) => (
             <li key={`${condition.key}-${condition.op}-${index}`}>
-              {condition.key} {condition.op} {formatFilterValue(condition.value)}
+              {condition.key} {condition.op}{' '}
+              {formatFilterValue(condition.value)}
             </li>
           ))}
         </ul>
