@@ -624,7 +624,12 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 }
 
 func reportParserWarnings(ctx context.Context, warnings []string) {
+	seen := make(map[string]struct{}, len(warnings))
 	for _, warning := range warnings {
+		if _, exists := seen[warning]; exists {
+			continue
+		}
+		seen[warning] = struct{}{}
 		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
 	}
 }

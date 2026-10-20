@@ -124,8 +124,27 @@ type TTSResponse struct {
 	MediaType string `json:"media_type,omitempty"`
 }
 
+// OCRPage retains the source image dimensions and reading-order blocks.
+// Index is the zero-based source PDF page index, including blank pages.
+type OCRPage struct {
+	Index  int        `json:"index"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+	Blocks []OCRBlock `json:"blocks"`
+}
+
+// OCRBlock carries a layout region in source-image pixels. BBox is either
+// [left, top, right, bottom] or a flattened polygon; an absent box is unlocated.
+type OCRBlock struct {
+	Text  string    `json:"text"`
+	Label string    `json:"label,omitempty"`
+	BBox  []float64 `json:"bbox,omitempty"`
+}
+
 type OCRFileResponse struct {
-	Text *string `json:"text"`
+	Text     *string   `json:"text"`
+	Pages    []OCRPage `json:"-"`
+	Warnings []string  `json:"-"`
 }
 
 type ListModelResponse struct {

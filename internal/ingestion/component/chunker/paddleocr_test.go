@@ -1,0 +1,148 @@
+package chunker
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/parser/parser"
+	"ragflow/internal/tokenizer"
+)
+
+func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
+	previous := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	tokenizer.SetEngineType("infinity")
+	t.Cleanup(func() { tokenizer.SetEngineType("") })
+	body, err := os.ReadFile("../../../entity/models/testdata/paddleocr_layout.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("../../../parser/parser/testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	defer server.Close()
+	driver := models.NewPaddleOCRLocalModel(nil, models.URLSuffix{OCR: "layout-parsing"})
+	model := "PaddleOCR-VL-1.6"
+	response, err := driver.OCRFile(t.Context(), &model, data, nil, &models.APIConfig{BaseURL: &server.URL}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := parser.PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	parsed := map[string]any{"name": "sample.pdf", "file_type": "pdf", "output_format": "json", "json": result.JSON, "file": result.File}
+	general, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512, "table_context_size": 32})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunked, err := general.Invoke(t.Context(), nil, parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := component.NewTokenizerComponent(map[string]any{"search_method": []any{"full_text"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunked["name"] = "sample.pdf"
+	output, err := tok.Invoke(t.Context(), nil, chunked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := output["chunks"].([]map[string]any)
+	if len(chunks) == 0 {
+		t.Fatal("no chunks")
+	}
+	if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-id", "sample.pdf", time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	tables := 0
+	for _, ck := range chunks {
+		positions, ok := ck["position_int"].([][]int)
+		if !ok || len(positions) == 0 {
+			t.Fatalf("chunk missing indexed positions: %v", ck)
+		}
+		if !reflect.DeepEqual(ck["page_num_int"], []int{1}) && ck["doc_type_kwd"] == "table" {
+			t.Fatalf("table pages=%v", ck["page_num_int"])
+		}
+		for _, box := range positions {
+			if box[0] != 1 || box[2] <= box[1] || box[4] <= box[3] {
+				t.Fatalf("bad position=%v", box)
+			}
+		}
+		if ck["doc_type_kwd"] == "table" {
+			tables++
+		}
+	}
+	if tables != 2 {
+		t.Fatalf("table chunks=%d; want two tables", tables)
+	}
+}
+
+func TestPaddleOCRChunkersPreserveColumnReadingOrder(t *testing.T) {
+	data, err := os.ReadFile("../../../parser/parser/testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Text: "LeftFirst", BBox: []float64{10, 10, 400, 60}},
+		{Text: "LeftSecond", BBox: []float64{10, 200, 400, 260}},
+		{Text: "RightFirst", BBox: []float64{600, 10, 1000, 60}},
+		{Text: "RightSecond", BBox: []float64{600, 200, 1000, 260}},
+	}}}}
+	result := parser.PaddleOCRPDFResult(t.Context(), "columns.pdf", data, response)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	for _, name := range []string{"general", "manual"} {
+		t.Run(name, func(t *testing.T) {
+			var output map[string]any
+			var err error
+			input := map[string]any{"name": "columns.pdf", "file_type": "pdf", "output_format": "json", "json": result.JSON, "file": result.File}
+			if name == "general" {
+				c, e := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+				if e != nil {
+					t.Fatal(e)
+				}
+				output, err = c.Invoke(t.Context(), nil, input)
+			} else {
+				c, e := NewManualChunker(map[string]any{"levels": [][]string{{`^# `}}})
+				if e != nil {
+					t.Fatal(e)
+				}
+				output, err = c.Invoke(t.Context(), nil, input)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var texts []string
+			for _, chunk := range outputChunks(t, output) {
+				texts = append(texts, chunk["text"].(string))
+			}
+			text := strings.Join(texts, "\n")
+			previous := -1
+			for _, word := range []string{"LeftFirst", "LeftSecond", "RightFirst", "RightSecond"} {
+				index := strings.Index(text, word)
+				if index <= previous {
+					t.Fatalf("reading order lost: %q", text)
+				}
+				previous = index
+			}
+		})
+	}
+}

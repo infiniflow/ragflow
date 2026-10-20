@@ -131,6 +131,8 @@ type ChunkDoc struct {
 	Positions     json.RawMessage `json:"positions,omitempty"`
 	Sheet         string          `json:"sheet,omitempty"`
 	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	// PreserveOrder keeps parser-established reading order despite PDF coordinates.
+	PreserveOrder bool `json:"_preserve_order,omitempty"`
 	// TableData is the structured table contract. When a chunk carries it
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
@@ -159,7 +161,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index", "table",
+		"sheet", "sheet_index", "table", "_preserve_order",
 	} {
 		delete(raw, key)
 	}
