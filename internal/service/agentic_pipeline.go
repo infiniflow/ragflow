@@ -44,6 +44,18 @@ const agenticRunTimeout = 15 * time.Minute
 // operator who removed or renamed the template.
 const defaultAgenticTemplateID = "smart-reasoning"
 
+func resolveChatAgenticTemplate(chat *entity.Chat, kwargs map[string]interface{}) (agentic_rag.Template, error) {
+	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		mode = defaultAgenticTemplateID
+	}
+	override, err := agentic_rag.ParseOverride(chat.PromptConfig["agentic_rag"])
+	if err != nil {
+		return agentic_rag.Template{}, err
+	}
+	return agentic_rag.ResolveTemplate(mode, override)
+}
+
 // agenticRag drives ONE conversation turn through the smart-reasoning agent
 // (internal/agentic_rag): an eino-ADK ReAct explorer whose toolset is the
 // corpus itself (grep / lexical / semantic locate, list_chunks deep read).
@@ -65,6 +77,10 @@ func (s *ChatPipelineService) agenticRag(
 	kwargs map[string]interface{},
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
+	tmpl, err := resolveChatAgenticTemplate(chat, kwargs)
+	if err != nil {
+		return nil, err
+	}
 	out := make(chan AsyncChatResult, 16)
 	// Wire the document-metadata resolver the metadata_search tool needs. The
 	// eino agentic_rag package must not import service (service imports it), so
@@ -82,10 +98,7 @@ func (s *ChatPipelineService) agenticRag(
 	//
 	// AsyncChat only dispatches here with a non-empty KB scope, so the
 	// citation lookup below is always kb_id-bounded.
-	mode, _ := kwargs["agent_mode"].(string)
-	if mode == "" {
-		mode = defaultAgenticTemplateID
-	}
+	mode := tmpl.ID
 
 	go func() {
 		defer close(out)
@@ -156,7 +169,7 @@ func (s *ChatPipelineService) agenticRag(
 		// like the regular AsyncChat path does, then let the template pin its
 		// sampling when it declares one (smart-reasoning pins 0.5).
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if temp := agentic_rag.TemplateTemperature(mode); temp != nil {
+		if temp := tmpl.Temperature; temp != nil {
 			pinned := *chatCfg
 			pinned.Temperature = temp
 			chatCfg = &pinned
@@ -196,6 +209,7 @@ func (s *ChatPipelineService) agenticRag(
 			SynthModel:      synth,
 			Messages:        agentMessages,
 			TemplateID:      mode,
+			Template:        &tmpl,
 			TenantID:        chat.TenantID,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
