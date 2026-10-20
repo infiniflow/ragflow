@@ -55,8 +55,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/ingestion/task"
+	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )

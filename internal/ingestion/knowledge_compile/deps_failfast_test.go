@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"gorm.io/gorm"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -175,6 +176,19 @@ func TestWithStorageConfiguresReaderWriter(t *testing.T) {
 	consumer := NewConsumer(NewFakeScheduler(), WithStorage(&fakeEngine{engineType: "infinity"}, nil))
 	if !consumer.IsStorageConfigured() {
 		t.Fatal("WithStorage must report IsStorageConfigured() == true")
+	}
+}
+
+// TestWithStorageInjectsDatabaseHandle pins the contract that WithStorage wires
+// the database handle into the consumer, so the storage-backed paths (doc
+// enumeration, dataset compile log) read from the injected db rather than a
+// package-level global installed by Provision. This decouples the consumer from
+// Provision's call ordering and from the knowledge_compile-specific global kcDB.
+func TestWithStorageInjectsDatabaseHandle(t *testing.T) {
+	db := &gorm.DB{}
+	consumer := NewConsumer(NewFakeScheduler(), WithStorage(&fakeEngine{engineType: "infinity"}, db))
+	if consumer.db != db {
+		t.Fatalf("WithStorage did not inject the database handle: got %v, want %v", consumer.db, db)
 	}
 }
 

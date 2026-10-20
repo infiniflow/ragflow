@@ -44,11 +44,6 @@ import (
 // that never happened.
 var errEngineNotConfigured = errors.New("knowledge_compile: doc engine is not configured; wire ingestion.Deps.Engine at the server assembly point")
 
-// kcDB is the package-level MySQL handle installed by Provision. It backs the
-// doc enumeration used by RebuildDataset; it is nil (and docLister returns no
-// docs) when the scheduler was provisioned without a DB.
-var kcDB *gorm.DB
-
 // Consumer is the dataset-level post-processing worker (§11.5). Multiple
 // instances compete on the MySQL scheduling rows; each KB is processed by at
 // most one instance at a time via the per-KB claim (so the same KB is handled
@@ -80,6 +75,13 @@ type Consumer struct {
 
 	// rebuildPause suppresses local claims while this consumer rebuilds a dataset.
 	rebuildPause map[string]bool
+
+	// db is the injected MySQL handle (wired by WithStorage). It backs the doc
+	// enumeration used by RebuildDataset and the dataset compile log. A consumer
+	// assembled without WithStorage has a nil db and its storage paths no-op,
+	// which decouples the consumer from Provision's call ordering and from the
+	// package-level kcDB global.
+	db *gorm.DB
 
 	// docLister enumerates every doc id in a KB so a rewrite can republish them.
 	docLister func(ctx context.Context, tenant, kb string) ([]string, error)
@@ -114,7 +116,11 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 		mergeThreshold: 0.85,
 		tombs:          map[string]map[string]uint64{},
 		rebuildPause:   map[string]bool{},
-		docLister:      defaultDocLister,
+	}
+	// docLister reads the injected db at call time (see defaultDocLister), so it
+	// reflects whatever WithStorage configured after construction.
+	c.docLister = func(ctx context.Context, tenant, kb string) ([]string, error) {
+		return c.defaultDocLister(ctx, tenant, kb)
 	}
 	for _, o := range opts {
 		o(c)
@@ -200,7 +206,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 		return
 	}
 	logTaskTypes := taskTypesForEntries(cr.Entries)
-	if err := startDatasetCompileLog(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries); err != nil {
+	if err := c.startDatasetCompileLog(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries); err != nil {
 		common.Warn("knowledge_compile: failed to create dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
@@ -242,7 +248,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	case <-ctx.Done():
 		close(stopHb)
 		<-done
-		if err := finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation stopped during shutdown", -1); err != nil {
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation stopped during shutdown", -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -250,7 +256,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	case <-hbFailed:
 		close(stopHb)
 		<-done
-		if err := finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation lease was lost and will be retried", -1); err != nil {
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation lease was lost and will be retried", -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -274,7 +280,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 			common.Warn("knowledge_compile: failed to record error_msg",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
-		if err := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, batchErr.Error(), -1); err != nil {
+		if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, batchErr.Error(), -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -283,13 +289,13 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
 		common.Warn("knowledge_compile: ack failed",
 			zap.String("dataset_id", datasetID), zap.Error(err))
-		if logErr := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, "Failed to acknowledge completed knowledge compilation: "+err.Error(), -1); logErr != nil {
+		if logErr := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, "Failed to acknowledge completed knowledge compilation: "+err.Error(), -1); logErr != nil {
 			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(logErr))
 		}
 		return
 	}
-	if err := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
+	if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
 		common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
@@ -302,7 +308,7 @@ func (c *Consumer) reportProgress(ctx context.Context, tenant, datasetID, token 
 			zap.String("phase", phase),
 			zap.Error(err))
 	}
-	if err := updateDatasetCompileLog(ctx, token, taskTypes, progress, message); err != nil {
+	if err := c.updateDatasetCompileLog(ctx, token, taskTypes, progress, message); err != nil {
 		common.Warn("knowledge_compile: failed to update dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.String("phase", phase), zap.Error(err))
 	}
@@ -439,12 +445,13 @@ func (c *Consumer) RebuildDataset(ctx context.Context, tenant, kb, mode string) 
 }
 
 // defaultDocLister enumerates every doc id in a KB via the Document DAO. When
-// no DB was provisioned it returns no docs (a rewrite becomes a no-op clean).
-func defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) {
-	if kcDB == nil {
+// no DB was provisioned (nil c.db) it returns no docs (a rewrite becomes a
+// no-op clean). The handle comes from WithStorage, not the package global kcDB.
+func (c *Consumer) defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) {
+	if c.db == nil {
 		return nil, nil
 	}
-	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, kcDB, dao.DocumentListOptions{KbID: kb})
+	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, c.db, dao.DocumentListOptions{KbID: kb})
 }
 
 // recoverDocTypes reconstructs the compile-type and frontend task-type sets a

@@ -21,8 +21,8 @@ import (
 	"ragflow/internal/common"
 	"testing"
 
-	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/entity/models"
+	componentpkg "ragflow/internal/ingestion/component"
 )
 
 func makeEmbeddingModelForResolver() *models.EmbeddingModel {

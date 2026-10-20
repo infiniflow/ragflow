@@ -85,9 +85,10 @@ func WithWriter(w Writer) Option { return func(c *Consumer) { c.writer = w } }
 // overrides.
 func WithStorage(eng engine.DocEngine, db *gorm.DB) Option {
 	return func(c *Consumer) {
-		c.reader = engineReader{eng: eng}
+		c.reader = engineReader{eng: eng, db: db}
 		c.writer = engineWriter{eng: eng, db: db, commitService: file.NewFileCommitService()}
 		c.contributions = newWikiContributionStore(eng)
+		c.db = db
 		c.storageConfigured = true
 	}
 }
@@ -157,7 +158,6 @@ func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	if db == nil {
 		return nil
 	}
-	kcDB = db
 	s := newScheduler(db, mq, generateHolder(), 2*time.Minute)
 	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
 	// startup indefinitely. The caller's ctx is also honoured (cancelled on

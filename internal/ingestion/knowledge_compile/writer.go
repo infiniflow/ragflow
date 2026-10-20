@@ -1450,7 +1450,7 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 		return nil, errEngineNotConfigured
 	}
 	eng := w.eng
-	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, w.db, kb)
 	if err != nil {
 		return nil, fmt.Errorf("load enabled Wiki documents for graph: %w", err)
 	}

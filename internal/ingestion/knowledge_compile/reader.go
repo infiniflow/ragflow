@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // Reader finds the compiled products needed for incremental dedup without
@@ -78,12 +80,12 @@ type documentWikiPageReader interface {
 //
 // The bool reports whether the database is configured. Offline/unit readers do
 // not have document status available and retain the previous engine-only behavior.
-func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, error) {
-	if kcDB == nil {
+func enabledDocumentIDs(ctx context.Context, db *gorm.DB, datasetID string) ([]string, bool, error) {
+	if db == nil {
 		return nil, false, nil
 	}
 	var ids []string
-	err := kcDB.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Model(&entity.Document{}).
 		Where("kb_id = ? AND (status IS NULL OR status <> ?)", datasetID, "0").
 		Pluck("id", &ids).Error
@@ -97,6 +99,10 @@ func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, 
 // an engine fails fast instead of silently reporting "no products".
 type engineReader struct {
 	eng engine.DocEngine
+	// db is the injected MySQL handle backing enabledDocumentIDs. It is wired by
+	// WithStorage; a zero-value reader has a nil db and enabledDocumentIDs
+	// reports "status unavailable" (the previous engine-only behavior).
+	db *gorm.DB
 }
 
 // compiledSelectFields are the columns needed to reconstruct a Product. Every
@@ -278,7 +284,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	if len(slugs) == 0 {
 		return nil, nil
 	}
-	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, r.db, kb)
 	if err != nil {
 		return nil, fmt.Errorf("load enabled Wiki documents: %w", err)
 	}
