@@ -22,7 +22,7 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 		want     string
 	}{
 		{"image routes to picture", utility.FileTypeVISUAL, "photo.jpg", "picture"},
-		{"video routes to picture", utility.FileTypeVISUAL, "clip.mp4", "picture"},
+		{"video has no dedicated parser", utility.FileTypeVIDEO, "clip.mp4", ""},
 		{"audio routes to audio", utility.FileTypeAURAL, "talk.mp3", "audio"},
 		{"pptx routes to presentation", utility.FileTypeDOC, "deck.pptx", "presentation"},
 		{"legacy ppt routes to presentation", utility.FileTypeDOC, "deck.ppt", "presentation"},
@@ -341,10 +341,19 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			name:         "an unmappable visual extension still reaches picture",
 			kbParser:     "general",
 			kbConfig:     generalParserConfig(),
-			filename:     "clip.rm",
+			filename:     "scan.wmf",
 			filetype:     utility.FileTypeVISUAL,
 			wantParserID: "picture",
-			wantFamilyIn: "video",
+			wantFamilyIn: "image",
+		},
+		{
+			name:               "a video extension keeps the dataset selection",
+			kbParser:           "general",
+			kbConfig:           generalParserConfig(),
+			filename:           "clip.rm",
+			filetype:           utility.FileTypeVIDEO,
+			wantParserID:       "general",
+			wantBaseConfigKept: true,
 		},
 		{
 			name:         "an unmappable audio extension still reaches audio",
@@ -378,10 +387,10 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			kbParser:     "presentation",
 			kbPipelineID: &canvasID,
 			kbConfig:     presentationParserConfig(),
-			filename:     "clip.rm",
+			filename:     "scan.tga",
 			filetype:     utility.FileTypeVISUAL,
 			wantParserID: "picture",
-			wantFamilyIn: "video",
+			wantFamilyIn: "image",
 		},
 	}
 
@@ -624,6 +633,71 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 		t.Fatalf("canvas txt pipeline_id = %q, want none", pipelineID)
 	}
 	parserFamilySetup(t, got[1], "text&code")
+}
+
+// TestUploadLocalDocuments_KeepsSelectionForVideoFiles pins the temporary video
+// block policy: upload stays allowed, but video files keep the dataset
+// selection instead of switching to picture, so they are reported as
+// unsupported by their own type and parse-click blocks.
+func TestUploadLocalDocuments_KeepsSelectionForVideoFiles(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	if err := dao.DB.Create(&entity.Tenant{
+		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
+	}).Error; err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+
+	kb := &entity.Knowledgebase{
+		ID:           "kb-video-block",
+		TenantID:     "tenant-1",
+		Name:         "kb-video-block",
+		CreatedBy:    "user-1",
+		ParserID:     "naive",
+		ParserConfig: presentationParserConfig(),
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	ctx := t.Context()
+	svc := testDocumentService(t)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "clip.mov", []byte("mov-bytes")),
+		makeTestFileHeader(t, "file", "movie.mp4", []byte("mp4-bytes")),
+		makeTestFileHeader(t, "file", "legacy.rmvb", []byte("rmvb-bytes")),
+		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
+	}, "", nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 4 {
+		t.Fatalf("uploaded docs = %d, want 4", len(got))
+	}
+	for _, doc := range got[:3] {
+		if parserID, _ := doc["parser_id"].(string); parserID != "naive" {
+			t.Fatalf("%v parser_id = %q, want dataset selection naive", doc["name"], parserID)
+		}
+		// Video has its own upload category, so the row does not carry the
+		// "visual" type whose update path only accepts the picture parser.
+		if docType, _ := doc["type"].(string); docType != string(utility.FileTypeVIDEO) {
+			t.Fatalf("%v type = %q, want %q", doc["name"], docType, utility.FileTypeVIDEO)
+		}
+		cfg, ok := doc["parser_config"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
+		}
+		if _, ok := cfg["Parser:HipSignsRhyme"]; !ok {
+			t.Fatalf("%v parser_config = %#v, want the dataset config untouched", doc["name"], cfg)
+		}
+	}
 }
 
 // TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily covers the connector

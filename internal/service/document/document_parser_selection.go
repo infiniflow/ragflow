@@ -24,9 +24,10 @@ const generalParserID = "general"
 // dedicatedDocumentParserID returns the pipeline that owns a document of the
 // given file type, or "" when no pipeline owns it and the dataset's selection
 // governs the file. Mirrors Python's FileService.get_parser
-// (api/db/services/file_service.py:734-743): images and video are parsed by the
-// picture pipeline, audio by audio, presentations by presentation and mail by
-// email.
+// (api/db/services/file_service.py:734-743): images are parsed by the picture
+// pipeline, audio by audio, presentations by presentation and mail by email.
+// Video has no owning pipeline: no parser implements video analysis, so video
+// documents keep the dataset selection (see resolveDocumentParser).
 func dedicatedDocumentParserID(filetype utility.FileType, filename string) string {
 	switch filetype {
 	case utility.FileTypeVISUAL:
@@ -143,19 +144,33 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // The dataset's selection governs every file family its config declares; a file
 // the selection does not declare is handed to the pipeline that owns its family
 // (picture / audio / presentation / email), and failing that to the catch-all
-// general pipeline, with the config reseeded from that template. A family the
-// pipeline vocabulary cannot name cannot be judged against a declaration: the
-// owning pipeline still takes the file, and with no owner (rtf, wps, ...) the
-// dataset's choice is honored. The row then matches the pipeline that actually
-// runs it: document parser_config drives both the parser-gap validation and the
-// runtime override params, and a row left on a parser that cannot run its file
-// is reported as unsupported by its own type. An unchanged parser keeps its
-// config, and on a DSL failure the selection and config are kept: a registry
-// lookup must not fail an upload, and a half-switched row (new parser, old
-// config) is the inconsistent state this function exists to avoid.
+// general pipeline, with the config reseeded from that template. Video is the
+// exception: parsing is not implemented yet, so video files keep the dataset
+// selection (upload stays allowed) and are reported as unsupported at
+// parse-click time. A family the pipeline vocabulary cannot name cannot be
+// judged against a declaration: the owning pipeline still takes the file, and
+// with no owner (rtf, wps, ...) the dataset's choice is honored. The row then
+// matches the pipeline that actually runs it: document parser_config drives
+// both the parser-gap validation and the runtime override params, and a row
+// left on a parser that cannot run its file is reported as unsupported by its
+// own type. An unchanged parser keeps its config, and on a DSL failure the
+// selection and config are kept: a registry lookup must not fail an upload,
+// and a half-switched row (new parser, old config) is the inconsistent state
+// this function exists to avoid.
 func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap) (*service.ParserSelection, entity.JSONMap) {
 	selection := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	family := componentpkg.ParserFileFamily(utility.GetFileExtension(filename))
+	// Video uploads are accepted but no parser implements video analysis, so
+	// the dataset selection is kept instead of switching the row to a pipeline
+	// that would fail at parse time. Parse-click validation reports the file as
+	// unsupported; upload stays allowed.
+	if family == "video" {
+		common.Debug("document: video upload keeps the dataset selection",
+			zap.String("filename", filename),
+			zap.String("parser_id", selection.ParserID),
+			zap.String("pipeline_id", selection.PipelineID))
+		return selection, base
+	}
 	if family != "" && selectionGovernsFamily(ctx, selection, kb.ParserConfig, family) {
 		return selection, base
 	}

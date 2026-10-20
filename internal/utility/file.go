@@ -52,7 +52,32 @@ const (
 
 var (
 	filenameLenLimit = 255
+
+	// videoExtensions is the single source of truth for video containers.
+	// Upload admission (FilenameType), runtime dispatch (GetFileType) and the
+	// ingestion parser-family mapping all read this set, so an extension can no
+	// longer be accepted by one path and rejected (or routed to picture) by
+	// another.
+	videoExtensions = map[string]struct{}{
+		"mp4": {}, "avi": {}, "mkv": {}, "mov": {}, "webm": {}, "flv": {},
+		"mpeg": {}, "mpg": {}, "wmv": {}, "3gp": {}, "3gpp": {},
+		"rm": {}, "rmvb": {}, "asf": {}, "dat": {}, "asx": {}, "wvx": {},
+		"mpe": {}, "mpa": {},
+	}
 )
+
+// IsVideoExtension reports whether ext (with or without a leading dot,
+// case-insensitive) is a video container.
+func IsVideoExtension(ext string) bool {
+	normalized := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+	_, ok := videoExtensions[normalized]
+	return ok
+}
+
+// IsVideoFilename reports whether filename has a video extension.
+func IsVideoFilename(filename string) bool {
+	return IsVideoExtension(filepath.Ext(filename))
+}
 
 func init() {
 }
@@ -79,6 +104,10 @@ func GetFileType(filename string) FileType {
 		suffix = strings.ToLower(ext[1:])
 	} else {
 		suffix = strings.ToLower(ext)
+	}
+
+	if IsVideoExtension(suffix) {
+		return FileTypeVIDEO
 	}
 
 	switch suffix {
@@ -114,9 +143,6 @@ func GetFileType(filename string) FileType {
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
 		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
 		return FileTypeAURAL
-	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
-		"mpg", "wmv", "3gp", "3gpp":
-		return FileTypeVIDEO
 	case "png", "jpg", "jpeg", "gif", "bmp":
 		return FileTypeVISUAL
 	case "tiff", "tif", "webp", "svg", "ico":
@@ -135,6 +161,13 @@ func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Video has its own upload category: it is accepted at upload but no parser
+	// implements video analysis, so it must not be conflated with images (which
+	// the picture pipeline owns).
+	if IsVideoFilename(normalized) {
+		return FileTypeVIDEO
 	}
 
 	if matched, _ := regexp.MatchString(`.*\.pdf$`, normalized); matched {
@@ -165,8 +198,6 @@ func FilenameType(filename string) FileType {
 	visualExtensions := []string{
 		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
 		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
-		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
-		"mpa", "mp4", "mkv",
 	}
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {

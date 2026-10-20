@@ -139,6 +139,13 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 
 		ft := utility.FilenameType(name)
+		if ft == utility.FileTypeVIDEO {
+			// Uploads accept video, but no parser implements video analysis.
+			// Report that instead of inlining the container as a bogus image
+			// data URI (the old visual classification) or dumping raw bytes.
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n(video content is not supported)\n", name))
+			continue
+		}
 		if ft == utility.FileTypeVISUAL {
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 			if mediaType == "" {
@@ -201,6 +208,9 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 func parseAgentUploadContent(ctx context.Context, filename string, data []byte, layoutRecognize string) (string, error) {
 	content := string(data)
 	fileType := utility.GetFileType(filename)
+	if fileType == utility.FileTypeVIDEO {
+		return "", fmt.Errorf("video content is not supported")
+	}
 	if fileType != utility.FileTypeOTHER {
 		fp, err := parser.GetParser(fileType)
 		if err != nil {

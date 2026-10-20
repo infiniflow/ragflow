@@ -37,3 +37,57 @@ func TestFilenameTypeBMP(t *testing.T) {
 		}
 	}
 }
+
+// TestFilenameTypeVideo covers the video/visual split: video has its own
+// upload category, so it is accepted at upload without being routed as an
+// image. Every extension in the shared video set must classify as video.
+func TestFilenameTypeVideo(t *testing.T) {
+	cases := []struct {
+		name string
+		want FileType
+	}{
+		{"clip.mp4", FileTypeVIDEO},
+		{"clip.mov", FileTypeVIDEO},
+		{"CLIP.MOV", FileTypeVIDEO},
+		{"clip.mkv", FileTypeVIDEO},
+		{"clip.webm", FileTypeVIDEO},
+		{"clip.flv", FileTypeVIDEO},
+		{"clip.wmv", FileTypeVIDEO},
+		{"clip.mpeg", FileTypeVIDEO},
+		{"clip.mpg", FileTypeVIDEO},
+		{"clip.3gp", FileTypeVIDEO},
+		{"clip.3gpp", FileTypeVIDEO},
+		{"clip.rm", FileTypeVIDEO},
+		{"clip.rmvb", FileTypeVIDEO},
+		{"clip.asf", FileTypeVIDEO},
+		{"clip.dat", FileTypeVIDEO},
+		{"clip.asx", FileTypeVIDEO},
+		{"clip.wvx", FileTypeVIDEO},
+		{"clip.mpe", FileTypeVIDEO},
+		{"clip.mpa", FileTypeVIDEO},
+		{"photo.jpg", FileTypeVISUAL},
+	}
+	for _, tc := range cases {
+		if got := FilenameType(tc.name); got != tc.want {
+			t.Fatalf("FilenameType(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestIsVideoExtension pins the shared predicate that upload admission, runtime
+// dispatch and the parser-family mapping read.
+func TestIsVideoExtension(t *testing.T) {
+	for _, ext := range []string{"mp4", ".MOV", "rmvb", "3gpp"} {
+		if !IsVideoExtension(ext) {
+			t.Fatalf("IsVideoExtension(%q) = false, want true", ext)
+		}
+	}
+	for _, ext := range []string{"", "jpg", "pdf", "mp4x"} {
+		if IsVideoExtension(ext) {
+			t.Fatalf("IsVideoExtension(%q) = true, want false", ext)
+		}
+	}
+	if !IsVideoFilename("path/to/CLIP.MOV") {
+		t.Fatal("IsVideoFilename(\"path/to/CLIP.MOV\") = false, want true")
+	}
+}

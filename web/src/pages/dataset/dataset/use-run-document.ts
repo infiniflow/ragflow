@@ -1,4 +1,5 @@
 import { Modal } from '@/components/ui/modal/modal';
+import { FileType } from '@/constants/file';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRunDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -35,6 +36,11 @@ export const useHandleRunDocumentByIds = (
       const gaps = findDocumentParseGaps([record]);
       if (gaps.length > 0) {
         hideModal();
+        // Video has no parser that can process it, so offering "reselect parse
+        // method" would send the user into a dialog that cannot fix anything.
+        // Acknowledge instead; the change-parser route stays for the other
+        // gap kinds.
+        const videoOnly = gaps.every((gap) => gap.fileType === FileType.Video);
         Modal.error({
           title: t('knowledgeDetails.parseBlockedTitle'),
           content: buildParserGapModalContent(t, gaps, {
@@ -42,16 +48,17 @@ export const useHandleRunDocumentByIds = (
             unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
           }),
           okText: t(
-            pickByGapKind(gaps, {
-              missingModel: 'knowledgeDetails.goAddModel',
-              unsupportedType: 'knowledgeDetails.reselectParser',
-            }),
+            videoOnly
+              ? 'common.ok'
+              : pickByGapKind(gaps, {
+                  missingModel: 'knowledgeDetails.goAddModel',
+                  unsupportedType: 'knowledgeDetails.reselectParser',
+                }),
           ),
           cancelText: t('common.cancel'),
+          showCancel: !videoOnly,
           closable: false,
-          onOk: () => {
-            showChangeParserModal(record);
-          },
+          onOk: videoOnly ? undefined : () => showChangeParserModal(record),
         });
         return;
       }
