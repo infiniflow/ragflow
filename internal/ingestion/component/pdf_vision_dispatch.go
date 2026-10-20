@@ -476,6 +476,33 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
+type mineruExtractionOptions struct {
+	formulaEnable bool
+	tableEnable   bool
+}
+
+// readMinerUExtractionOptions keeps defaults and validation identical for
+// component construction and dispatch. Only absence means "enabled".
+func readMinerUExtractionOptions(setup schema.ParserSetup) (mineruExtractionOptions, error) {
+	options := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
+	for _, field := range []struct {
+		key   string
+		value *bool
+	}{
+		{"mineru_formula_enable", &options.formulaEnable},
+		{"mineru_table_enable", &options.tableEnable},
+	} {
+		if raw, exists := setup[field.key]; exists {
+			value, ok := raw.(bool)
+			if !ok {
+				return options, fmt.Errorf("pdf.%s must be a boolean", field.key)
+			}
+			*field.value = value
+		}
+	}
+	return options, nil
+}
+
 // dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
 // MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
 // stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
@@ -488,6 +515,10 @@ func dispatchMinerUPDF(
 	setup schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
+	extraction, err := readMinerUExtractionOptions(setup)
+	if err != nil {
+		return parser.ParseResult{}, err
+	}
 	driver, _, apiConfig, err := resolveMinerUModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU model: %w", err)
@@ -533,6 +564,11 @@ func dispatchMinerUPDF(
 	}
 
 	if v1 {
+		// V1's strict CreateJobRequest has no extraction switches. Reject
+		// unsupported choices before creating an upload or parse job.
+		if !extraction.formulaEnable || !extraction.tableEnable {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
+		}
 		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, 0)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
@@ -557,7 +593,7 @@ func dispatchMinerUPDF(
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -714,7 +750,7 @@ func mineruAPIParseMethod(raw string) string {
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
+func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -737,8 +773,8 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 	_ = writer.WriteField("return_images", "true")
 	_ = writer.WriteField("return_middle_json", "true")
 	_ = writer.WriteField("return_model_output", "true")
-	_ = writer.WriteField("formula_enable", "true")
-	_ = writer.WriteField("table_enable", "true")
+	_ = writer.WriteField("formula_enable", strconv.FormatBool(extraction.formulaEnable))
+	_ = writer.WriteField("table_enable", strconv.FormatBool(extraction.tableEnable))
 	if strings.TrimSpace(serverURL) != "" {
 		_ = writer.WriteField("server_url", strings.TrimRight(strings.TrimSpace(serverURL), "/"))
 	}
