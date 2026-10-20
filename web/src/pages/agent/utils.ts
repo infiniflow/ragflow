@@ -192,6 +192,15 @@ function buildScoredSwitch(edges: Edge[], nodes: Node[], nodeId: string) {
     params.escalate_to = escalateEnabled
       ? filterTargetsBySourceHandleId(subEdges, ScoredSwitchEscalateHandleId)
       : [];
+    params.field_to =
+      params.field_mode === true
+        ? filterTargetsBySourceHandleId(subEdges, NodeHandleId.End)
+        : [];
+    if (Array.isArray(params.tasks)) {
+      params.tasks = params.tasks.map((task: Record<string, unknown>) =>
+        omit(task, '_key'),
+      );
+    }
   }
   return omit(params, 'items');
 }

@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { BlurTextarea } from '@/components/ui/textarea';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Plus, Trash2 } from 'lucide-react';
+import { useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { v4 as uuid } from 'uuid';
 import { ScoredSwitchTask, ScoredSwitchTaskType } from './tasks-editor';
@@ -95,21 +96,34 @@ export function ScoredSwitchFields({
     taskError && !Array.isArray(taskError) && typeof taskError.message === 'string'
       ? taskError.message
       : '';
-  if (enabled.length === 0) {
-    return null;
-  }
 
   const write = (next: ScoredSwitchTask[]) => {
     form.setValue('tasks', next, { shouldDirty: true, shouldValidate: true });
   };
 
-  const patch = (id: string, change: Partial<ScoredSwitchTask>) => {
-    write(tasks.map((item) => (item.id === id ? { ...item, ...change } : item)));
+  useEffect(() => {
+    if (!tasks.some((task) => !task._key)) {
+      return;
+    }
+    write(tasks.map((task) => (task._key ? task : { ...task, _key: uuid() })));
+  }, [tasks]);
+
+  if (enabled.length === 0) {
+    return null;
+  }
+
+  const patch = (key: string, change: Partial<ScoredSwitchTask>) => {
+    write(
+      tasks.map((item) =>
+        item._key === key ? { ...item, ...change } : item,
+      ),
+    );
   };
 
   const add = (type: FieldType) => {
     const suffix = uuid().replace(/-/g, '').slice(0, 8);
     const task: ScoredSwitchTask = {
+      _key: uuid(),
       id: `${type}_${suffix}`,
       type: type as ScoredSwitchTaskType,
       instructions: '',
@@ -125,7 +139,7 @@ export function ScoredSwitchFields({
     <div className="space-y-3">
       {visible.map((task) => (
         <div
-          key={task.id}
+          key={task._key ?? task.id}
           className="space-y-2 rounded-md border border-border-button p-3"
         >
           <div className="flex items-center justify-between gap-3">
@@ -136,7 +150,9 @@ export function ScoredSwitchFields({
               type="button"
               variant="ghost"
               className="h-8 px-2 text-state-error"
-              onClick={() => write(tasks.filter((item) => item.id !== task.id))}
+              onClick={() =>
+                write(tasks.filter((item) => item._key !== task._key))
+              }
             >
               <Trash2 className="size-4" />
             </Button>
@@ -144,13 +160,13 @@ export function ScoredSwitchFields({
           <Input
             value={task.id}
             placeholder={t('scoredSwitchFieldName')}
-            onChange={(event) => patch(task.id, { id: event.target.value })}
+            onChange={(event) => patch(task._key ?? task.id, { id: event.target.value })}
           />
           <BlurTextarea
             rows={2}
             value={task.instructions}
             placeholder={t('scoredSwitchQuestionInstructions')}
-            onChange={(value) => patch(task.id, { instructions: value ?? '' })}
+            onChange={(value) => patch(task._key ?? task.id, { instructions: value ?? '' })}
           />
           {(task.type === 'number' || task.type === 'duration') && (
             <div className="grid grid-cols-2 gap-2">
@@ -158,12 +174,12 @@ export function ScoredSwitchFields({
                 <Input
                   value={task.unit ?? ''}
                   placeholder={t('scoredSwitchFieldUnit')}
-                  onChange={(event) => patch(task.id, { unit: event.target.value })}
+                  onChange={(event) => patch(task._key ?? task.id, { unit: event.target.value })}
                 />
               ) : (
                 <Select
                   value={task.unit || 'seconds'}
-                  onValueChange={(unit) => patch(task.id, { unit })}
+                  onValueChange={(unit) => patch(task._key ?? task.id, { unit })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -184,7 +200,7 @@ export function ScoredSwitchFields({
                 value={task.decimals ?? ''}
                 placeholder={t('scoredSwitchFieldDecimals')}
                 onChange={(event) =>
-                  patch(task.id, {
+                  patch(task._key ?? task.id, {
                     decimals:
                       event.target.value === ''
                         ? ''
@@ -199,14 +215,14 @@ export function ScoredSwitchFields({
               {t('scoredSwitchFieldInteger')}
               <Switch
                 checked={task.integer === true}
-                onCheckedChange={(integer) => patch(task.id, { integer })}
+                onCheckedChange={(integer) => patch(task._key ?? task.id, { integer })}
               />
             </label>
           )}
           {task.type === 'list' && (
             <Select
               value={task.items || 'text'}
-              onValueChange={(items) => patch(task.id, { items })}
+              onValueChange={(items) => patch(task._key ?? task.id, { items })}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -223,21 +239,21 @@ export function ScoredSwitchFields({
               <Input
                 value={task.min ?? ''}
                 placeholder={t('scoredSwitchFieldMin')}
-                onChange={(event) => patch(task.id, { min: event.target.value })}
+                onChange={(event) => patch(task._key ?? task.id, { min: event.target.value })}
               />
               <Input
                 value={task.max ?? ''}
                 placeholder={t('scoredSwitchFieldMax')}
-                onChange={(event) => patch(task.id, { max: event.target.value })}
+                onChange={(event) => patch(task._key ?? task.id, { max: event.target.value })}
               />
               <Input
                 value={task.step ?? ''}
                 placeholder={t('scoredSwitchFieldStep')}
-                onChange={(event) => patch(task.id, { step: event.target.value })}
+                onChange={(event) => patch(task._key ?? task.id, { step: event.target.value })}
               />
               <Select
                 value={task.scale || 'linear'}
-                onValueChange={(scale) => patch(task.id, { scale })}
+                onValueChange={(scale) => patch(task._key ?? task.id, { scale })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -258,7 +274,7 @@ export function ScoredSwitchFields({
                 value={task.horizon ?? ''}
                 placeholder={t('scoredSwitchFieldHorizon')}
                 onChange={(event) =>
-                  patch(task.id, {
+                  patch(task._key ?? task.id, {
                     horizon:
                       event.target.value === ''
                         ? ''
@@ -268,7 +284,7 @@ export function ScoredSwitchFields({
               />
               <Select
                 value={task.interval || 'day'}
-                onValueChange={(interval) => patch(task.id, { interval })}
+                onValueChange={(interval) => patch(task._key ?? task.id, { interval })}
               >
                 <SelectTrigger>
                   <SelectValue />

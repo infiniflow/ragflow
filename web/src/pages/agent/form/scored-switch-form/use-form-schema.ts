@@ -72,6 +72,7 @@ export function useCreateScoredSwitchFormSchema() {
       tasks: z
         .array(
           z.object({
+            _key: z.string().optional(),
             id: z.string(),
             type: z.enum([
               'noul',
@@ -127,6 +128,7 @@ export function useCreateScoredSwitchFormSchema() {
         });
       }
       const tasks = value.tasks ?? [];
+      const seenFieldNames = new Set<string>();
       if (fieldMode && !tasks.some((task) => fieldTypes.has(task.type))) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -159,7 +161,18 @@ export function useCreateScoredSwitchFormSchema() {
         if (!fieldMode || !fieldTypes.has(task.type)) {
           return;
         }
-        if (!fieldNamePattern.test(task.id.trim())) {
+        const fieldName = task.id.trim();
+        if (fieldName && seenFieldNames.has(fieldName)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: t('flow.nameRepeatedMsg'),
+            path: ['tasks', index, 'id'],
+          });
+        }
+        if (fieldName) {
+          seenFieldNames.add(fieldName);
+        }
+        if (!fieldNamePattern.test(fieldName)) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: t('flow.scoredSwitchFieldNameInvalid'),

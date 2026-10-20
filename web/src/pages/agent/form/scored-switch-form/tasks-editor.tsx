@@ -21,6 +21,7 @@ export type ScoredSwitchTaskType =
   | 'forecast';
 
 export type ScoredSwitchTask = {
+  _key?: string;
   id: string;
   type: ScoredSwitchTaskType;
   instructions: string;

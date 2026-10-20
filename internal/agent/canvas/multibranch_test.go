@@ -145,6 +145,25 @@ func TestMakeSwitchBranchCondition_MultiTargetList(t *testing.T) {
 	}
 }
 
+func TestScoredSwitchEmptyNextUsesEveryDownstream(t *testing.T) {
+	cond := makeBranchCondition(map[string]bool{"a": true, "b": true}, true)
+	got, err := cond(t.Context(), map[string]any{"_next": []any{}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 2 || !got["a"] || !got["b"] {
+		t.Fatalf("scored switch empty next = %v", got)
+	}
+	plain := makeSwitchBranchCondition(map[string]bool{"a": true, "b": true})
+	got, err = plain(t.Context(), map[string]any{"_next": []any{}})
+	if err != nil {
+		t.Fatalf("cond: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("switch empty next = %v, want no successor", got)
+	}
+}
+
 // TestMakeSwitchBranchCondition_EmptyList: a _next of []any{} is
 // treated as no branch chosen.
 func TestMakeSwitchBranchCondition_EmptyList(t *testing.T) {

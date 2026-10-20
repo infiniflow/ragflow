@@ -1,4 +1,4 @@
-import { Operator } from '../../constant';
+import { NodeHandleId, Operator } from '../../constant';
 import { ScoredSwitchEscalateHandleId } from '../../scored-switch';
 import { buildDslComponentsByGraph } from '../../utils';
 
@@ -78,5 +78,30 @@ describe('buildDslComponentsByGraph ScoredSwitch params', () => {
     const params = components[nodeId].obj.params;
     expect(params.escalate_enabled).toBe(false);
     expect(params.escalate_to).toEqual([]);
+  });
+
+  it('keeps the field-mode downstream and drops the internal row key', () => {
+    const node = scoredSwitchNode(true);
+    node.data.form.field_mode = true;
+    node.data.form.tasks = [
+      { _key: 'row-1', id: 'invoice_number', type: 'text', instructions: '' },
+    ];
+    const components = buildDslComponentsByGraph(
+      [node],
+      [
+        {
+          source: nodeId,
+          target: 'Message:next',
+          sourceHandle: NodeHandleId.End,
+        },
+      ] as any,
+      {},
+    ) as any;
+    const params = components[nodeId].obj.params;
+    expect(params.field_to).toEqual(['Message:next']);
+    expect(params.tasks).toEqual([
+      { id: 'invoice_number', type: 'text', instructions: '' },
+    ]);
+    expect(components[nodeId].downstream).toContain('Message:next');
   });
 });

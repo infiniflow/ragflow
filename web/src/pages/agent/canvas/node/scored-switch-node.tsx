@@ -5,6 +5,7 @@ import NodeHeader from './node-header';
 import { NodeWrapper } from './node-wrapper';
 import { ToolBar } from './toolbar';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { NodeHandleId } from '@/pages/agent/constant';
 import {
   ScoredSwitchEscalateHandleId,
   showsScoredSwitchEscalateHandle,
@@ -75,8 +76,11 @@ function InnerScoredSwitchNode({
         }
       });
       deleteEdges(id, ScoredSwitchEscalateHandleId);
-    } else if (!showEscalate) {
-      deleteEdges(id, ScoredSwitchEscalateHandleId);
+    } else {
+      deleteEdges(id, NodeHandleId.End);
+      if (!showEscalate) {
+        deleteEdges(id, ScoredSwitchEscalateHandleId);
+      }
     }
     updateNodeInternals(id);
   }, [deleteEdges, fieldMode, id, items, showEscalate, updateNodeInternals]);
@@ -104,6 +108,22 @@ function InnerScoredSwitchNode({
               ></CommonHandle>
             </div>
           ))}
+          {fieldMode && (
+            <div>
+              <div className="bg-bg-card rounded-sm p-1 truncate text-text-secondary">
+                {t('common.next')}
+              </div>
+              <CommonHandle
+                id={NodeHandleId.End}
+                type="source"
+                position={Position.Right}
+                isConnectable
+                style={{ ...RightHandleStyle, top: 86 }}
+                nodeId={id}
+                isConnectableEnd={false}
+              ></CommonHandle>
+            </div>
+          )}
           {showEscalate && (
             <div>
               <div className="bg-bg-card rounded-sm p-1 truncate text-text-secondary">

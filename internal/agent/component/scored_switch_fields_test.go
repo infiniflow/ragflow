@@ -205,6 +205,28 @@ func TestQuestionsModeDoesNotSendFields(t *testing.T) {
 	}
 }
 
+func TestFieldsRoutesConnectedDownstream(t *testing.T) {
+	poster := &scriptPoster{body: []byte(documentedFieldsResponse)}
+	c := newTestSwitch(scoredSwitchParam{
+		Query:   "Invoice",
+		Tasks:   []scoringTask{{ID: "invoice_number", Type: "text"}},
+		FieldTo: []string{"Message:next"},
+	}, poster)
+	caps := allFieldCaps()
+	c.caps = &caps
+	out, err := c.Invoke(t.Context(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := out["_next"].([]any)
+	if len(next) != 1 || next[0] != "Message:next" {
+		t.Fatalf("next = %#v", out["_next"])
+	}
+	if out["selected_handle"] != "end" {
+		t.Fatalf("handle = %#v", out["selected_handle"])
+	}
+}
+
 func TestFieldsRejectsEmptyStateAndTooManyImages(t *testing.T) {
 	_, err := buildFieldsCall(scoringCallInput{Model: "clairic", BaseURL: "https://example.test/run"})
 	if err == nil || !strings.Contains(err.Error(), "state") {

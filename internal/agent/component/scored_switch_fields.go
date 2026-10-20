@@ -67,10 +67,10 @@ func (c *ScoredSwitchComponent) invokeFields(ctx context.Context, p scoredSwitch
 		"scores":          map[string]float64{},
 		"margin":          0.0,
 		"escalated":       false,
-		"selected_handle": "",
+		"selected_handle": "end",
 		"raw":             truncateUTF8(body, rawPayloadLimit),
 		"answers":         answers,
-		"_next":           []any{},
+		"_next":           stringListToAny(p.FieldTo),
 	}
 	if usage := parseScoringUsage(body); usage != nil {
 		out["usage"] = usage

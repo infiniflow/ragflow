@@ -50,6 +50,7 @@ type scoredSwitchParam struct {
 	EscalateEnabled  *bool
 	Options          []scoredOption
 	EscalateTo       []string
+	FieldTo          []string
 	Tasks            []scoringTask
 	ReferenceDate    string
 	IncludeQuantiles *bool
@@ -313,6 +314,7 @@ func mergeScoredSwitchParam(base scoredSwitchParam, inputs map[string]any) (scor
 	p := base
 	p.Options = append([]scoredOption(nil), base.Options...)
 	p.EscalateTo = append([]string(nil), base.EscalateTo...)
+	p.FieldTo = append([]string(nil), base.FieldTo...)
 	p.Tasks = append([]scoringTask(nil), base.Tasks...)
 	if v, ok := stringFrom(inputs, "model_id"); ok && strings.TrimSpace(v) != "" {
 		p.ModelID = v
@@ -386,6 +388,9 @@ func mergeScoredSwitchParam(base scoredSwitchParam, inputs map[string]any) (scor
 	}
 	if _, ok := inputs["escalate_to"]; ok {
 		p.EscalateTo = stringListFrom(inputs["escalate_to"])
+	}
+	if _, ok := inputs["field_to"]; ok {
+		p.FieldTo = stringListFrom(inputs["field_to"])
 	}
 	return p, nil
 }
@@ -580,6 +585,7 @@ func init() {
 			p.Options = opts
 		}
 		p.EscalateTo = stringListFrom(params["escalate_to"])
+		p.FieldTo = stringListFrom(params["field_to"])
 		if raw, ok := params["tasks"]; ok {
 			tasks, err := parseScoringTasks(raw)
 			if err != nil {
