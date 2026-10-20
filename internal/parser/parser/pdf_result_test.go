@@ -160,6 +160,53 @@ func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 	}
 }
 
+func TestPDFNormalizeResultKeepsPositionedUnstructuredTables(t *testing.T) {
+	for _, flatten := range []bool{false, true} {
+		p := NewPDFParser()
+		p.FlattenMediaToText = flatten
+		result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
+			"doc_type_kwd": "table", "ck_type": "table", "text": "Recognized table without cells",
+			"positions": [][]any{{2, 10, 30, 20, 40}},
+		}})})
+		if result.Err != nil || len(result.JSON) != 1 {
+			t.Fatalf("unexpected result: %+v", result)
+		}
+		item := result.JSON[0].ToMap()
+		want := "table"
+		if flatten {
+			want = "text"
+		}
+		if item["doc_type_kwd"] != want || item["text"] != "Recognized table without cells" {
+			t.Fatalf("flatten=%v: table media identity or text lost: %#v", flatten, item)
+		}
+		if _, ok := ExtractPDFPositions(item); !ok {
+			t.Fatalf("flatten=%v: table crop region lost: %#v", flatten, item)
+		}
+	}
+}
+
+func TestPDFNormalizeResultRecoversUnclosedTableCells(t *testing.T) {
+	for _, markup := range []string{
+		"<table><tr><td>Cell value</td></tr>",
+		"<table><tr><td>Cell value",
+	} {
+		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
+			"doc_type_kwd": "table", "text": markup,
+		}})})
+		if result.Err != nil || len(result.JSON) != 1 {
+			t.Fatalf("unexpected result: %+v", result)
+		}
+		item := result.JSON[0].ToMap()
+		table, _ := item["table"].(*entity.TableData)
+		if table == nil || len(table.CellTexts()) != 1 || len(table.CellTexts()[0]) != 1 || table.CellTexts()[0][0] != "Cell value" {
+			t.Fatalf("unclosed markup lost recoverable cells: %#v", item)
+		}
+		if text, _ := item["text"].(string); text != "" {
+			t.Fatalf("recovered table still carries raw HTML: %q", text)
+		}
+	}
+}
+
 func TestPDFParserSoMarkFlattensStructuredMedia(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

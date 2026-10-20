@@ -81,7 +81,7 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 				normalizedTable.Page = page
 				fields["table"] = &normalizedTable
 			}
-		} else if fields["doc_type_kwd"] == "table" {
+		} else if fields["doc_type_kwd"] == "table" && len(positions) == 0 {
 			if text, _ := fields["text"].(string); text != "" {
 				fields["doc_type_kwd"] = "text"
 			}
@@ -203,6 +203,9 @@ func splitPDFTable(text string) (string, string) {
 	for {
 		kind := z.Next()
 		if kind == html.ErrorToken {
+			if depth > 0 {
+				return text, ""
+			}
 			return "", text
 		}
 		offset += len(z.Raw())
