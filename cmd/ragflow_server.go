@@ -503,7 +503,7 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(ctx, cancel, serverName); err != nil {
+	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
