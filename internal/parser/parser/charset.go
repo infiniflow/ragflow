@@ -246,7 +246,40 @@ var utf8BOM = []byte("\ufeff")
 // It returns the decoded UTF-8 bytes and the canonical encoding label used.
 func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
 	decoded, label := decodeToUTF8(data, hint)
+	decoded, label = preferWindows1252(data, decoded, label)
 	return bytes.TrimPrefix(decoded, utf8BOM), label
+}
+
+// preferWindows1252 re-reads as Windows-1252 a payload that was read as
+// ISO-8859-1 and holds bytes 0x80-0x9F. ISO-8859-1 maps those bytes to C1
+// control characters, but text with them is in practice Windows-1252, where
+// they are the curly quotes, dashes and euro sign; the HTML prescan already
+// reads a declared iso-8859-1 that way, as WHATWG specifies. Any other byte
+// decodes the same in both, so ISO-8859-1 text keeps its label. A byte that
+// Windows-1252 leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) keeps the
+// ISO-8859-1 reading.
+func preferWindows1252(data, decoded []byte, label string) ([]byte, string) {
+	switch canonicalCharsetLabel(label) {
+	case "iso88591", "latin1":
+	default:
+		return decoded, label
+	}
+	if !hasC1Byte(data) {
+		return decoded, label
+	}
+	if text, err := decodeTransform(data, charmap.Windows1252.NewDecoder()); err == nil {
+		return []byte(text), "windows-1252"
+	}
+	return decoded, label
+}
+
+func hasC1Byte(data []byte) bool {
+	for _, b := range data {
+		if b >= 0x80 && b <= 0x9f {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeToUTF8(data []byte, hint string) ([]byte, string) {
