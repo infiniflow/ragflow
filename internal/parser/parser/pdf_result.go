@@ -11,6 +11,7 @@ import (
 
 	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
@@ -219,8 +220,17 @@ func parsePDFMarkdown(ctx context.Context, filename, markdown string) ParseResul
 
 // validPDFPositions validates canonical 1-based PDF positions without changing
 // page identity or units. Invalid regions must never reach the cropper.
-// Zero-area or inverted boxes are dropped; the caller logs the dropped count so
-// the loss is observable instead of silent.
+//
+// Two position shapes are accepted:
+//   - a matrix of 5-tuples ([][]any, []any of rows, [][]float64), the canonical
+//     form every producer but TCADP emits;
+//   - one flat 5-tuple ([]float64), the legacy TCADP wire form.
+//
+// A page-only tuple — a page number with all-zero geometry — is valid: it
+// carries page identity for the indexer but no crop region, so the crop
+// consumers skip it (see HasPDFCropRegion). A box with real coordinates that is
+// zero-area or inverted is invalid and is dropped; the caller logs the dropped
+// count so the loss is observable instead of silent.
 func validPDFPositions(raw any) [][]any {
 	var rows []any
 	switch v := raw.(type) {
@@ -234,6 +244,9 @@ func validPDFPositions(raw any) [][]any {
 		for _, row := range v {
 			rows = append(rows, row)
 		}
+	case []float64:
+		// Legacy single-tuple wire form (TCADP): one candidate row.
+		rows = append(rows, v)
 	}
 	var result [][]any
 	for _, rawRow := range rows {
@@ -259,12 +272,62 @@ func validPDFPositions(raw any) [][]any {
 			values[i] = v
 		}
 		page := values[0]
-		if !valid || page < 1 || page >= float64(^uint(0)>>1) || math.Trunc(page) != page || values[2] <= values[1] || values[4] <= values[3] {
+		if !valid || page < 1 || page >= float64(^uint(0)>>1) || math.Trunc(page) != page {
+			continue
+		}
+		if !pdfPositionIsUsable(values) {
 			continue
 		}
 		result = append(result, []any{int(page), values[1], values[2], values[3], values[4]})
 	}
 	return result
+}
+
+// pdfPositionIsPageOnly reports whether a position carries page identity only:
+// a page number with all-zero geometry and therefore no crop region.
+func pdfPositionIsPageOnly(values [5]float64) bool {
+	return values[1] == 0 && values[2] == 0 && values[3] == 0 && values[4] == 0
+}
+
+// pdfPositionIsUsable reports whether a position may be kept. A page-only
+// tuple carries page identity and is kept; every other box must have a
+// positive width and height, so a zero-area or inverted region is dropped.
+func pdfPositionIsUsable(values [5]float64) bool {
+	if pdfPositionIsPageOnly(values) {
+		return true
+	}
+	return values[2] > values[1] && values[4] > values[3]
+}
+
+// pdfPositionHasRegion reports whether a position carries a usable crop region.
+// A page-only tuple carries page identity only, so it is not a region.
+func pdfPositionHasRegion(values [5]float64) bool {
+	if pdfPositionIsPageOnly(values) {
+		return false
+	}
+	return values[2] > values[1] && values[4] > values[3]
+}
+
+// HasPDFCropRegion reports whether the item carries at least one PDF crop
+// region, i.e. a position with a positive-area box. A page-only position
+// carries page identity but no region, so it must not trigger a crop.
+//
+// The crop consumers (the VLM vision path and the chunker) consult this
+// predicate so a page-only position never reaches the cropper, while the
+// indexer still receives the page identity through the positions matrix. The
+// geometry is decoded exactly as the cropper decodes it, so the two agree on
+// what a usable region is.
+func HasPDFCropRegion(item map[string]any) bool {
+	matrix, ok := ExtractPDFPositions(item)
+	if !ok {
+		return false
+	}
+	for _, pos := range util.PositionsFromMatrix(matrix) {
+		if pos.Right > pos.Left && pos.Bottom > pos.Top {
+			return true
+		}
+	}
+	return false
 }
 
 // countPDFPositionRows counts candidate position rows before validation so the

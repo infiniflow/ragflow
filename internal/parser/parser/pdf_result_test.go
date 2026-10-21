@@ -24,14 +24,18 @@ func TestPDFNormalizeResultPositionsAndMetadata(t *testing.T) {
 	}
 	item := result.JSON[0].ToMap()
 	positions, ok := ExtractPDFPositions(item)
-	if !ok || len(positions) != 1 || positions[0][0] != 2 || item["doc_type_kwd"] != "text" {
+	if !ok || len(positions) != 2 || positions[0][0] != 2 || item["doc_type_kwd"] != "text" {
 		t.Fatalf("positions/type = %#v", item)
+	}
+	// The NaN row is dropped; the page-only row survives as page identity.
+	if positions[1][0] != 4 {
+		t.Fatalf("page-only position lost: %#v", positions)
 	}
 	if len(result.JSON) != 2 || result.JSON[1].ToMap()["page_number"] != 4 {
 		t.Fatalf("blank page lost: %#v", result.JSON)
 	}
-	if _, ok := ExtractPDFPositions(result.JSON[1].ToMap()); ok {
-		t.Fatal("zero rectangle exposed for cropping")
+	if !HasPDFCropRegion(item) {
+		t.Fatal("real crop region dropped")
 	}
 	if result.File["parse_method"] != "selected-model" || result.File["page_count"] != 20 || len(result.Warnings) != 1 {
 		t.Fatalf("metadata lost: %+v", result)
@@ -99,7 +103,12 @@ func TestPDFNormalizeResultKeepsTCADPPageWithoutCrop(t *testing.T) {
 	if item["page_number"] != 7 {
 		t.Fatalf("page identity lost: %#v", item)
 	}
-	if _, ok := ExtractPDFPositions(item); ok {
+	// The page-only tuple survives as page identity but is not a crop region.
+	positions, ok := ExtractPDFPositions(item)
+	if !ok || len(positions) != 1 || positions[0][0] != 7 {
+		t.Fatalf("page-only position lost: %#v", item)
+	}
+	if HasPDFCropRegion(item) {
 		t.Fatalf("unknown region exposed for cropping: %#v", item)
 	}
 }
@@ -386,6 +395,56 @@ func TestPDFNormalizeResultIsIdempotent(t *testing.T) {
 				t.Fatalf("flatten=%v: item %d text changed %q -> %q", flatten, i, ta, tb)
 			}
 		}
+	}
+}
+
+// TestPDFNormalizeResultKeepsTCADPPageOnlyPosition covers the TCADP wire
+// form: a flat []float64 page-only tuple. Normalization must keep the page
+// identity (the indexer derives page_num_int from positions) while the tuple
+// stays out of the crop path.
+func TestPDFNormalizeResultKeepsTCADPPageOnlyPosition(t *testing.T) {
+	items := tcadpAnyToItems(map[string]any{"type": "text", "content": "page text", "page_num": 7})
+	if len(items) != 1 {
+		t.Fatalf("items = %#v", items)
+	}
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems(items)})
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	if item["page_number"] != 7 {
+		t.Fatalf("page identity lost: %#v", item)
+	}
+	positions, ok := ExtractPDFPositions(item)
+	if !ok || len(positions) != 1 {
+		t.Fatalf("page-only position dropped: %#v", item)
+	}
+	if positions[0][0] != 7 {
+		t.Fatalf("page-only position lost its page: %#v", positions)
+	}
+	if HasPDFCropRegion(item) {
+		t.Fatalf("page-only position exposed as a crop region: %#v", item)
+	}
+}
+
+func TestValidPDFPositionsAcceptsFlatTupleAndDropsBadBoxes(t *testing.T) {
+	flat := validPDFPositions([]float64{7, 0, 0, 0, 0})
+	if len(flat) != 1 || flat[0][0] != 7 {
+		t.Fatalf("flat tuple dropped: %#v", flat)
+	}
+	if HasPDFCropRegion(map[string]any{"positions": flat}) {
+		t.Fatal("page-only tuple exposed as a crop region")
+	}
+	degenerate := validPDFPositions([][]any{{1, 10, 10, 5, 5}})
+	if len(degenerate) != 0 {
+		t.Fatalf("zero-area box kept: %#v", degenerate)
+	}
+	region := validPDFPositions([][]any{{1, 10, 30, 5, 25}})
+	if len(region) != 1 {
+		t.Fatalf("valid region dropped: %#v", region)
+	}
+	if !HasPDFCropRegion(map[string]any{"positions": region}) {
+		t.Fatal("valid region not exposed as a crop region")
 	}
 }
 

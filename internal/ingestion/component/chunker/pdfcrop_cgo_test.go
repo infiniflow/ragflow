@@ -95,6 +95,12 @@ func TestNeedsCrop(t *testing.T) {
 		// general/token paths where CKType is set.
 		{"doc image without positions", schema.ChunkDoc{DocType: "image"}, false},
 		{"doc unknown type", schema.ChunkDoc{DocType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
+
+		// --- Page-only positions (TCADP wire form) carry page identity but
+		// no crop region, so they must not trigger a crop.
+		{"page-only image position", schema.ChunkDoc{CKType: "image", PDFPositions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
+		{"page-only text position", schema.ChunkDoc{CKType: "text", Positions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
+		{"zero-area box with coordinates", schema.ChunkDoc{CKType: "image", PDFPositions: jsonPositions(t, []float64{3, 10, 10, 5, 5})}, false},
 	}
 	for _, tc := range cases {
 		if got := needsCrop(tc.ck); got != tc.want {

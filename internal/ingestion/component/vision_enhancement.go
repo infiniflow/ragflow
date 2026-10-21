@@ -217,7 +217,9 @@ func maybeDispatchVisionEnhancement(
 		}
 		kd, _ := m["doc_type_kwd"].(string)
 		if kd == "image" || kd == "table" {
-			if _, ok := parser.ExtractPDFPositions(m); ok {
+			// A page-only position carries no crop region, so it must not
+			// reach the cropper.
+			if parser.HasPDFCropRegion(m) {
 				items = append(items, i)
 			}
 		}

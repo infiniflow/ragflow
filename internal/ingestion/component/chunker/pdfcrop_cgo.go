@@ -290,10 +290,21 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch cropChunkType(ck) {
 	case "image", "table", "text":
-		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
+		return hasCropRegion(ck)
 	default:
 		return false
 	}
+}
+
+// hasCropRegion reports whether the chunk carries a position with a
+// positive-area box. A page-only position (page number, no geometry) carries
+// page identity for the indexer but no region, so it must not trigger a crop.
+func hasCropRegion(ck schema.ChunkDoc) bool {
+	row, ok := firstPositionRow(lineRecord{pdfPositions: ck.PDFPositions, positions: ck.Positions})
+	if !ok {
+		return false
+	}
+	return row[2] > row[1] && row[4] > row[3]
 }
 
 func cropChunkType(ck schema.ChunkDoc) string {
