@@ -3,7 +3,8 @@
   "url_suffix": {
     "chat": "v1/chat/completions",
     "models": "v1/models",
-    "embedding": "v1-openai/embeddings"
+    "embedding": "v1-openai/embeddings",
+    "rerank": "v1/rerank"
   },
   "url_hint": "http://host.docker.internal:80",
   "class": "local"

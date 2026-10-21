@@ -280,8 +280,128 @@ func (g *GPUStackModel) Embed(
 	return embeddings, nil
 }
 
+// gpustackRerankRequest is the body GPUStack's v1/rerank route accepts
+// (gpustack/routes/rerank.py RerankRequest); return_documents defaults to true
+// and the echoed document text is ignored on parse.
+type gpustackRerankRequest struct {
+	Model     string   `json:"model"`
+	Query     string   `json:"query"`
+	Documents []string `json:"documents"`
+	TopN      int      `json:"top_n"`
+}
+
+// gpustackRerankResponse is the JSON body returned by GPUStack's v1/rerank
+// endpoint (gpustack/routes/rerank.py RerankResponse); per-result `document`
+// echo is ignored.
+type gpustackRerankResponse struct {
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	// GPUStack reports the backend's token usage alongside the scores.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// Rerank scores documents against the query via GPUStack's v1/rerank endpoint,
+// which proxies to the serving backend (vLLM, ...). Python ragflow had this as
+// GPUStackRerank; the Go rewrite stubbed it out with "no such method" even
+// though llm_factories.json still advertises TEXT RE-RANK for GPUStack.
 func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	documents := request.Documents
+	if len(documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if g.baseModel.URLSuffix.Rerank == "" {
+		return nil, fmt.Errorf("gpustack: rerank URL suffix is not configured")
+	}
+
+	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Rerank)
+
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+
+	reqBody := gpustackRerankRequest{
+		Model:     *modelName,
+		Query:     request.Query,
+		Documents: documents,
+		TopN:      topN,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	resp, err := g.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gpustack rerank API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var parsed gpustackRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	seen := make([]bool, len(documents))
+	for _, item := range parsed.Results {
+		if item.Index < 0 || item.Index >= len(documents) {
+			return nil, fmt.Errorf("gpustack: rerank index %d out of range for %d inputs", item.Index, len(documents))
+		}
+		if seen[item.Index] {
+			return nil, fmt.Errorf("gpustack: duplicate rerank index %d in response", item.Index)
+		}
+		seen[item.Index] = true
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          item.Index,
+			RelevanceScore: item.RelevanceScore,
+		})
+	}
+
+	// Report the provider's token usage, mirroring this driver's Embed and the
+	// vLLM driver's Rerank, so rerank calls are counted instead of reporting 0.
+	recordResponseUsage(modelUsage, "", &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "rerank")
+
+	return &rerankResponse, nil
 }
 
 func (g *GPUStackModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
