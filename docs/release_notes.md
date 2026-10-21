@@ -1263,7 +1263,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_and_migration/upgrading.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
 :::
 
 ### API changes
@@ -1341,13 +1341,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
+- [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx)
 
 ## v0.11.0
 

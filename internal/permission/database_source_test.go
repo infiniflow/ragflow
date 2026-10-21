@@ -97,6 +97,69 @@ func TestDatabaseCheckerAuthorizesDatasetFromPersistedRows(t *testing.T) {
 	}
 }
 
+func TestDatabaseCheckerValidatesTenantRoleIDsAndLegacyMembershipRoles(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate membership table: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE role (id INTEGER PRIMARY KEY, tenant_id TEXT NOT NULL)").Error; err != nil {
+		t.Fatalf("create tenant role table: %v", err)
+	}
+	if err := db.Exec("INSERT INTO role (id, tenant_id) VALUES (17, 'tenant-1')").Error; err != nil {
+		t.Fatalf("create tenant role: %v", err)
+	}
+	if !tenantRoleMembershipEnabled(db) {
+		t.Skip("Tenant feature roles are not enabled")
+	}
+
+	valid := string(entity.StatusValid)
+	memberships := []entity.UserTenant{
+		{ID: "role-member", UserID: "role-user", TenantID: "tenant-1", Role: "17", Status: &valid},
+		{ID: "wrong-tenant-role", UserID: "foreign-role-user", TenantID: "tenant-2", Role: "17", Status: &valid},
+		{ID: "unknown-role", UserID: "unknown-role-user", TenantID: "tenant-1", Role: "not-a-role", Status: &valid},
+		{ID: "admin", UserID: "admin-user", TenantID: "tenant-1", Role: string(RoleAdmin), Status: &valid},
+		{ID: "normal", UserID: "normal-user", TenantID: "tenant-1", Role: string(RoleNormal), Status: &valid},
+		{ID: "invite", UserID: "invite-user", TenantID: "tenant-1", Role: string(RoleInvite), Status: &valid},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	checker := NewDatabaseChecker(db)
+	if err := checker.CheckTenant(t.Context(), Subject{UserID: "role-user"}, "tenant-1", TenantMember); err != nil {
+		t.Fatalf("valid Tenant role ID should be normalized to an ordinary member: %v", err)
+	}
+	for _, test := range []struct {
+		userID   string
+		tenantID string
+	}{
+		{userID: "foreign-role-user", tenantID: "tenant-2"},
+		{userID: "unknown-role-user", tenantID: "tenant-1"},
+		{userID: "invite-user", tenantID: "tenant-1"},
+	} {
+		if err := checker.CheckTenant(t.Context(), Subject{UserID: test.userID}, test.tenantID, TenantMember); !errors.Is(err, ErrMembershipNotFound) {
+			t.Errorf("CheckTenant(%q) error = %v, want %v", test.userID, err, ErrMembershipNotFound)
+		}
+	}
+	if err := checker.CheckTenant(t.Context(), Subject{UserID: "admin-user"}, "tenant-1", TenantNormalMember); !errors.Is(err, ErrMembershipNotFound) {
+		t.Errorf("admin CheckTenant(normal member) error = %v, want %v", err, ErrMembershipNotFound)
+	}
+	if err := checker.CheckTenant(t.Context(), Subject{UserID: "normal-user"}, "tenant-1", TenantNormalMember); err != nil {
+		t.Errorf("normal member CheckTenant(normal member) error = %v, want nil", err)
+	}
+
+	tenantIDs, err := (&databaseSource{db: db}).activeTenantIDsForUser(t.Context(), "role-user")
+	if err != nil {
+		t.Fatalf("load member Tenant IDs: %v", err)
+	}
+	if len(tenantIDs) != 1 || tenantIDs[0] != "tenant-1" {
+		t.Fatalf("activeTenantIDsForUser() = %v, want [tenant-1]", tenantIDs)
+	}
+}
+
 func TestDatabaseCheckerRejectsPrivateDatasetForOtherTenantMember(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

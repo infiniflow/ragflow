@@ -143,6 +143,28 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+// TestRetrievalToolDisablesDenseFallback pins the agentic/human split for the
+// retrieval tool itself. An agent reads these chunks as evidence, so there is
+// no dense-only rescue: it would hand the model rows the query's own words
+// never matched. Only human-facing retrieval keeps that rescue on.
+func TestRetrievalToolDisablesDenseFallback(t *testing.T) {
+	prev := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	t.Cleanup(func() { SetRetrievalService(prev) })
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewRetrievalTool().InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("the agent retrieval tool must disable the dense fallback")
+	}
+}
+
 func TestAgenticSearchExcludesCompiledResults(t *testing.T) {
 	previous := GetRetrievalService()
 	service := &capturingRetrievalService{}

@@ -267,6 +267,9 @@ func (c *ParserComponent) Check() error {
 		if pm, _ := pdf["parse_method"].(string); pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
+		if _, err := readMinerUExtractionOptions(pdf); err != nil {
+			return err
+		}
 	}
 	// The whole image contract keys off whether ocr_enabled is present, so a
 	// value of the wrong type must not quietly read as "absent" and fall back to
@@ -621,7 +624,12 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 }
 
 func reportParserWarnings(ctx context.Context, warnings []string) {
+	seen := make(map[string]struct{}, len(warnings))
 	for _, warning := range warnings {
+		if _, exists := seen[warning]; exists {
+			continue
+		}
+		seen[warning] = struct{}{}
 		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
 	}
 }

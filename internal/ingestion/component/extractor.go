@@ -1652,9 +1652,6 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if fn := getExtractorContextLengthOverride(); fn != nil {
 		return fn(ctx, llmID)
 	}
-	if db == nil {
-		db = dao.DB
-	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return 0

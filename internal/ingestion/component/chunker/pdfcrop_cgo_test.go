@@ -72,29 +72,28 @@ func TestNeedsCrop(t *testing.T) {
 		ck   schema.ChunkDoc
 		want bool
 	}{
-		// --- CKType set (general / token paths): unchanged behavior ---
-		{"image with positions", schema.ChunkDoc{CKType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		{"table with positions", schema.ChunkDoc{CKType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		{"text with positions", schema.ChunkDoc{CKType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		{"image without positions", schema.ChunkDoc{CKType: "image"}, false},
-		{"heading excluded via CKType", schema.ChunkDoc{CKType: "heading", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
-		{"unknown type via CKType", schema.ChunkDoc{CKType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
+		// Content type comes from doc_type_kwd.
+		{"image with positions", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"table with positions", schema.ChunkDoc{DocType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"text with positions", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"image without positions", schema.ChunkDoc{DocType: "image"}, false},
+		{"image with heading layout still crops", schema.ChunkDoc{DocType: "image", Layout: "heading", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"heading text previews like text", schema.ChunkDoc{Layout: "heading", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		// A non-media model layout (equation) is not structural, so it falls
+		// back to its content type and is previewed as text.
+		{"equation layout falls back to text", schema.ChunkDoc{Layout: "equation", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 
-		// --- CKType empty: fall back to DocType (group / hierarchy paths,
-		// whose parser output carries no ck_type). This is the fix for the
-		// bug where figure/image/table in group/hierarchy were never cropped.
+		// Group/Hierarchy forward parser output whose content type is already
+		// on doc_type_kwd; no block-kind derivation is involved.
 		{"doc image fallback", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc table fallback", schema.ChunkDoc{DocType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc text fallback", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		// Heading-tagged blocks carry doc_type_kwd "text" but
-		// must NOT be previewed when CKType is empty — only a plain text body
-		// chunk legitimately has CKType empty AND should be previewed. Since
-		// group/hierarchy cannot distinguish heading from body at this layer,
-		// aligning with Python (which previews every text region) we still crop
-		// doc_type_kwd=="text"; the heading-collision guard lives in the
-		// general/token paths where CKType is set.
+		// Headings are text chunks and are previewed too, matching Python's
+		// restore_pdf_text_previews.
 		{"doc image without positions", schema.ChunkDoc{DocType: "image"}, false},
-		{"doc unknown type", schema.ChunkDoc{DocType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
+		// Unknown doc_type values normalize to text (itemDocType), matching
+		// every other content-type dispatch.
+		{"unknown doc type normalizes to text", schema.ChunkDoc{DocType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 	}
 	for _, tc := range cases {
 		if got := needsCrop(tc.ck); got != tc.want {
@@ -110,17 +109,17 @@ func TestCropImageChunks_CropsImageTableAndText(t *testing.T) {
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 
 	chunks := []schema.ChunkDoc{
-		{CKType: "image", Text: "img", PDFPositions: pos},
-		{CKType: "table", Text: "tbl", PDFPositions: pos},
-		{CKType: "text", PDFPositions: pos},                           // restored preview (Chunker-1.3)
-		{CKType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
+		{DocType: "image", Text: "img", PDFPositions: pos},
+		{DocType: "table", Text: "tbl", PDFPositions: pos},
+		{PDFPositions: pos}, // restored preview (Chunker-1.3)
+		{DocType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	if len(out) != len(chunks) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(chunks))
 	}
 	for i, ck := range out {
-		switch ck.CKType {
+		switch itemDocType(ck) {
 		case "text":
 			// Chunker-1.3: text chunks with PDF positions get a rendered
 			// preview, mirroring Python restore_pdf_text_previews.
@@ -148,10 +147,9 @@ func TestCropImageChunks_CropsImageTableAndText(t *testing.T) {
 // img_id upload is owned by imageUploadDecorator (image_upload.go) and is
 // not asserted here.
 // TestCropImageChunks_DocTypeFallbackCropsImageTableText covers the
-// group/hierarchy regression fix: those chunkers forward parser output that
-// carries doc_type_kwd but no ck_type. needsCrop must fall back to DocType so
-// image/table/text regions are still cropped on demand (the bug was that they
-// were silently skipped because ck_type was empty).
+// group/hierarchy path: those chunkers forward parser output whose content
+// type is already on doc_type_kwd. needsCrop reads DocType so image/table/text
+// regions are cropped on demand.
 func TestCropImageChunks_DocTypeFallbackCropsImageTableText(t *testing.T) {
 	ctx := context.Background()
 	eng := assertZeroPageEngine{}
@@ -160,11 +158,11 @@ func TestCropImageChunks_DocTypeFallbackCropsImageTableText(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{DocType: "image", Text: "img", PDFPositions: pos},
 		{DocType: "table", Text: "tbl", PDFPositions: pos},
-		// A plain text body chunk from group/hierarchy has CKType empty and
-		// doc_type_kwd "text"; the DocType fallback must crop its preview,
-		// mirroring Python restore_pdf_text_previews. (Real group/hierarchy
-		// headings are also doc_type_kwd "text" with empty CKType and are
-		// intentionally previewed too — full alignment with Python.)
+		// A plain text body chunk from group/hierarchy has no block-kind
+		// marker and doc_type_kwd "text"; DocType drives its preview,
+		// mirroring Python restore_pdf_text_previews. Real group/hierarchy
+		// headings are also doc_type_kwd "text" and are intentionally
+		// previewed too — full alignment with Python.
 		{DocType: "text", PDFPositions: pos},
 		{DocType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
 	}
@@ -193,31 +191,12 @@ func TestCropImageChunks_DocTypeFallbackCropsImageTableText(t *testing.T) {
 	}
 }
 
-// TestCropImageChunks_HeadingExcludedByCKType verifies that the general/token
-// path still excludes headings: a chunk with CKType "heading" is never
-// previewed even when it carries positions — the CKType branch takes priority
-// over the DocType fallback.
-func TestCropImageChunks_HeadingExcludedByCKType(t *testing.T) {
-	ctx := context.Background()
-	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
-	chunks := []schema.ChunkDoc{
-		{CKType: "heading", DocType: "text", PDFPositions: pos},
-	}
-	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
-	if len(out) != 1 {
-		t.Fatalf("len(out) = %d, want 1", len(out))
-	}
-	if out[0].Image != "" {
-		t.Errorf("heading chunk: image = %q, want no preview (CKType takes priority)", out[0].Image)
-	}
-}
-
 func TestRestorePDFTextPreview(t *testing.T) {
 	ctx := context.Background()
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 
-	withPos := schema.ChunkDoc{CKType: "text", PDFPositions: pos}
-	withoutPos := schema.ChunkDoc{CKType: "text", Text: "plain text, no coordinates"}
+	withPos := schema.ChunkDoc{PDFPositions: pos}
+	withoutPos := schema.ChunkDoc{Text: "plain text, no coordinates"}
 
 	out := cropImageChunks(ctx, mockCropEngine{}, []schema.ChunkDoc{withPos, withoutPos})
 	if len(out) != 2 {
@@ -235,8 +214,8 @@ func TestCropImageChunks_NilEnginePassesThrough(t *testing.T) {
 	ctx := context.Background()
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	chunks := []schema.ChunkDoc{
-		{CKType: "image", PDFPositions: pos},
-		{CKType: "table", PDFPositions: pos},
+		{DocType: "image", PDFPositions: pos},
+		{DocType: "table", PDFPositions: pos},
 	}
 	out := cropImageChunks(ctx, nil, chunks)
 	if len(out) != 2 {
@@ -254,7 +233,7 @@ func TestCropImageChunks_RenderFailureSkipsChunk(t *testing.T) {
 	// mockCropEngine renders a real image, so a non-empty crop is expected.
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	chunks := []schema.ChunkDoc{
-		{CKType: "image", Text: "cap", PDFPositions: pos},
+		{DocType: "image", Text: "cap", PDFPositions: pos},
 	}
 	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
 	if len(out) != 1 {
@@ -316,9 +295,9 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	chunks := []schema.ChunkDoc{
-		{CKType: "image", Text: "img-chunk", PDFPositions: pos},
-		{CKType: "table", Text: "tbl-chunk", PDFPositions: pos},
-		{CKType: "text", Text: "txt-chunk", PDFPositions: pos},
+		{DocType: "image", Text: "img-chunk", PDFPositions: pos},
+		{DocType: "table", Text: "tbl-chunk", PDFPositions: pos},
+		{Text: "txt-chunk", PDFPositions: pos},
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	if len(out) != len(chunks) {
@@ -327,10 +306,10 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 
 	for i, ck := range out {
 		if ck.ImgID == "" {
-			t.Errorf("chunk %d (%s): ImgID empty, want uploaded id", i, ck.CKType)
+			t.Errorf("chunk %d (%s): ImgID empty, want uploaded id", i, itemDocType(ck))
 		}
 		if ck.Image != "" {
-			t.Errorf("chunk %d (%s): Image = %q, want cleared after upload", i, ck.CKType, ck.Image)
+			t.Errorf("chunk %d (%s): Image = %q, want cleared after upload", i, itemDocType(ck), ck.Image)
 		}
 	}
 	if len(rec.calls) != len(chunks) {
@@ -376,7 +355,7 @@ func TestCropImageChunks_NoUploadWhenKBAbsent(t *testing.T) {
 
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
-	chunks := []schema.ChunkDoc{{CKType: "image", Text: "img", PDFPositions: pos}}
+	chunks := []schema.ChunkDoc{{DocType: "image", Text: "img", PDFPositions: pos}}
 	out := cropImageChunks(ctx, eng, chunks)
 
 	if len(rec.calls) != 0 {
@@ -404,7 +383,7 @@ func TestCropImageChunks_UploadFailureFallsThroughToBatchPass(t *testing.T) {
 
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
-	chunks := []schema.ChunkDoc{{CKType: "image", Text: "img-chunk", PDFPositions: pos}}
+	chunks := []schema.ChunkDoc{{DocType: "image", Text: "img-chunk", PDFPositions: pos}}
 	out := cropImageChunks(ctx, eng, chunks)
 
 	if out[0].ImgID != "" {
@@ -436,7 +415,7 @@ func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
 	// ContextAbove is folded into the body by materializeMediaContext, so the
 	// finalized text differs from the raw Text.
 	chunks := []schema.ChunkDoc{
-		{CKType: "image", Text: "body", ContextAbove: "ABOVE ", PDFPositions: pos},
+		{DocType: "image", Text: "body", ContextAbove: "ABOVE ", PDFPositions: pos},
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 
@@ -486,11 +465,11 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	emptyMedia := []schema.ChunkDoc{
-		{CKType: "image", PDFPositions: pos},                                     // no text
-		{CKType: "table", PDFPositions: pos},                                     // no text
-		{CKType: "image", Text: "@@1\t2##", PDFPositions: pos},                   // position tag only, no body
-		{CKType: "table", ContextAbove: "", ContextBelow: "", PDFPositions: pos}, // explicit empty
-		{DocType: "image", PDFPositions: pos},                                    // doc-type fallback, no text
+		{DocType: "image", PDFPositions: pos},                                     // no text
+		{DocType: "table", PDFPositions: pos},                                     // no text
+		{DocType: "image", Text: "@@1\t2##", PDFPositions: pos},                   // position tag only, no body
+		{DocType: "table", ContextAbove: "", ContextBelow: "", PDFPositions: pos}, // explicit empty
+		{DocType: "image", PDFPositions: pos},                                     // doc-type fallback, no text
 	}
 	out := cropImageChunks(ctx, eng, emptyMedia)
 	if len(out) != len(emptyMedia) {
@@ -510,7 +489,7 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 
 	// Sanity: a captioned media chunk is still cropped and uploaded.
 	captioned := []schema.ChunkDoc{
-		{CKType: "image", Text: "a real figure caption", PDFPositions: pos},
+		{DocType: "image", Text: "a real figure caption", PDFPositions: pos},
 	}
 	out2 := cropImageChunks(ctx, eng, captioned)
 	if len(out2) != 1 {
@@ -555,7 +534,7 @@ func TestCropImageChunks_StreamingUploadUsesCanonicalID(t *testing.T) {
 	// Text carries a parser position tag (@@x\t y##) AND a caption, no media
 	// context — materializeMediaContext short-circuits, so the tag-stripped
 	// canonical text is "fig caption".
-	in := schema.ChunkDoc{CKType: "image", Text: "fig caption@@1\t2##", PDFPositions: pos}
+	in := schema.ChunkDoc{DocType: "image", Text: "fig caption@@1\t2##", PDFPositions: pos}
 	out := cropImageChunks(ctx, eng, []schema.ChunkDoc{in})
 
 	if len(out) != 1 {
