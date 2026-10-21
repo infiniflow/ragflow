@@ -328,6 +328,72 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 }
 
+// MinerU normalizes content_list bbox to 0..1000 against the page's point
+// size (pipeline _build_bbox / vlm mkcontent), so raw pass-through makes
+// highlights drift ~1.7x on A4. With middle.json in the zip the boxes must
+// come back as PDF points: bbox/1000 * page_size.
+func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("output/doc/content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Scaled","page_idx":0,"bbox":[100,200,600,400]}
+	]`))
+	mid, err := zw.Create("output/doc/middle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = mid.Write([]byte(`{"pdf_info":[
+		{"page_idx":0,"page_size":[500,1000],"preproc_blocks":[]},
+		{"page_idx":1,"page_size":[400,800],"preproc_blocks":[]}
+	]}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes())
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1", len(items))
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
+	}
+	row := pos[0]
+	if page, _ := row[0].(int); page != 1 {
+		t.Fatalf("page = %#v, want 1", row[0])
+	}
+	// page 0 is 500x1000pt: x*0.5, y*1.0 — exact in float64.
+	want := []float64{50, 300, 200, 400} // left, right, top, bottom
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := row[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, row[key], want[i], row)
+		}
+	}
+}
+
+// Without middle.json there is no trustworthy page size, so boxes keep the
+// pre-existing passthrough behavior (a known degraded mode, not a failure).
+func TestMinerUBBoxPositionWithoutPageSizesIsPassthrough(t *testing.T) {
+	pos := mineruBBoxPosition(2, []any{188, 142, 875, 393}, nil)
+	if pos == nil {
+		t.Fatal("expected a position, got nil")
+	}
+	if page, _ := pos[0].(int); page != 3 {
+		t.Fatalf("page = %#v, want 3", pos[0])
+	}
+	if left, _ := pos[1].(float64); left != 188 {
+		t.Fatalf("left = %#v, want 188 (unchanged)", pos[1])
+	}
+}
+
 func TestDispatchMinerUPDFRequiresBaseURL(t *testing.T) {
 	t.Setenv("MINERU_APISERVER", "")
 	orig := resolveMinerUModelForDispatch
