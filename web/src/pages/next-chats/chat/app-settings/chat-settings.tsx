@@ -3,27 +3,35 @@ import { Form } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
+import {
+  AgenticRagKeys,
+  useFetchChat,
+  useUpdateChat,
+} from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
 } from '@/hooks/use-stale-dataset-validation';
+import { ThinkingMode, useThinkingLevel } from '@/hooks/use-thinking-level';
+import { IAgenticRagSettings } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
+import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
@@ -34,13 +42,15 @@ type ChatSettingsProps = { hasSingleChatBox: boolean };
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const { data } = useFetchChat();
 
-  const chatSettingSchema = useChatSettingSchema();
+  const mode = useThinkingLevel();
+  const chatSettingSchema = useChatSettingSchema(mode);
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     chatSettingSchema,
     data?.dataset_ids,
   );
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
+  const queryClient = useQueryClient();
   const { id } = useParams();
   const { t } = useTranslation();
 
@@ -107,6 +117,24 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       };
     }
 
+    // Naive mode leaves the agentic override untouched (it round-trips
+    // through the hidden field); agentic mode collapses blank/default content
+    // to null so the chat follows the shipped template again.
+    const agenticRag =
+      mode === ThinkingMode.Agentic
+        ? resolveAgenticRagSubmitValue(
+            values.prompt_config?.agentic_rag,
+            queryClient.getQueryData<IAgenticRagSettings>(
+              AgenticRagKeys.config(id),
+            )?.defaults?.content,
+          )
+        : values.prompt_config?.agentic_rag;
+
+    nextValues.prompt_config = {
+      ...nextValues.prompt_config,
+      agentic_rag: agenticRag,
+    };
+
     updateChat({
       chatId: id!,
       params: {
@@ -151,6 +179,16 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   }, [data, form]);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
+
+  // Re-validate when the naive/agentic mode flips so errors raised under the
+  // other mode's rules (e.g. an empty system prompt in naive mode) clear
+  // immediately instead of lingering until the next field change.
+  const prevModeRef = useRef(mode);
+  useEffect(() => {
+    if (prevModeRef.current === mode) return;
+    prevModeRef.current = mode;
+    form.trigger();
+  }, [mode, form]);
 
   return (
     <>

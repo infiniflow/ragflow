@@ -12,12 +12,20 @@ import {
 import { topnSchema } from '@/components/top-n-item';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
+import { ThinkingMode } from '@/hooks/use-thinking-level';
+import { useMemo } from 'react';
 import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
-export function useChatSettingSchema() {
-  const { t } = useTranslate('chat');
+// Pure builder so the schema can be unit-tested without rendering a form.
+// Fields hidden in the current mode stay declared (their values round-trip
+// through saves); only the validation rules are mode-conditional.
+export function buildChatSettingFormSchema(
+  mode: ThinkingMode,
+  t: (key: string) => string,
+) {
+  const isAgentic = mode === ThinkingMode.Agentic;
 
   const promptConfigSchema = z.object({
     quote: z.boolean(),
@@ -25,12 +33,16 @@ export function useChatSettingSchema() {
     tts: z.boolean(),
     empty_response: z.string().optional(),
     prologue: z.string().optional(),
-    system: z.string().min(1, { message: t('systemMessage') }),
+    system: isAgentic
+      ? z.string()
+      : z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
     parameters: z
       .array(
         z.object({
-          key: z.string().min(1, { message: t('variableKeyMessage') }),
+          key: isAgentic
+            ? z.string()
+            : z.string().min(1, { message: t('variableKeyMessage') }),
           optional: z.boolean(),
         }),
       )
@@ -62,6 +74,19 @@ export function useChatSettingSchema() {
       .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
+    // The per-chat agentic template override lives here; without this
+    // declaration zod strips the key at parse time and the full-replace PUT
+    // would silently delete a saved override on every settings save.
+    agentic_rag: z
+      .object({
+        content: z
+          .string()
+          .max(32768, { message: t('agenticTemplateTooLong') })
+          .optional(),
+        tools: z.array(z.string()).optional(),
+      })
+      .nullable()
+      .optional(),
   });
 
   const formSchema = z
@@ -84,12 +109,16 @@ export function useChatSettingSchema() {
       ...MetadataFilterSchema,
     })
     .superRefine((value, ctx) => {
-      for (const issue of chatPromptKbIssues(value, t)) {
-        ctx.addIssue({
-          code: ZodIssueCode.custom,
-          path: issue.path,
-          message: issue.message,
-        });
+      // The knowledge-placeholder and empty-response rules only apply to
+      // fields shown in naive mode; agentic runs its own template instead.
+      if (!isAgentic) {
+        for (const issue of chatPromptKbIssues(value, t)) {
+          ctx.addIssue({
+            code: ZodIssueCode.custom,
+            path: issue.path,
+            message: issue.message,
+          });
+        }
       }
 
       // A keyed provider selected without its key fails SILENTLY at runtime —
@@ -107,4 +136,13 @@ export function useChatSettingSchema() {
     });
 
   return formSchema;
+}
+
+export function useChatSettingSchema(mode: ThinkingMode) {
+  const { t } = useTranslate('chat');
+
+  return useMemo(
+    () => buildChatSettingFormSchema(mode, (key: string) => t(key)),
+    [mode, t],
+  );
 }
