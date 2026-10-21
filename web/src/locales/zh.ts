@@ -372,6 +372,12 @@ export default {
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
       fileTypeUnsupportedManualSwitch:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
+      fileTypeVideoUnsupported:
+        '{{name}}（{{fileType}}）：视频文件暂不支持解析',
+      videoUnsupportedAfterUploadHint:
+        '可继续上传，但视频文件暂不支持解析，上传后不会被处理。',
+      videoUnsupportedParseHint:
+        '视频文件暂不支持解析，请删除该文件或转换为受支持的格式。',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       manualSwitchAfterUploadHint:
