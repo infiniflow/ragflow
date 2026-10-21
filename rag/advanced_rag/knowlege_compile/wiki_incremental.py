@@ -3545,7 +3545,7 @@ async def wiki_compile_incremental(
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
+    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "pages_skipped": [], "errors": []}
 
     def _progress(msg: str):
         if callback:
@@ -3995,6 +3995,23 @@ async def wiki_compile_incremental(
     return summary
 
 
+def _wiki_refine_failure_entity_names(entry: dict, pid: str) -> list[str]:
+    """Entity names to record for a failed REFINE of one page delta.
+
+    ``existing_page`` is an explicit ``None`` for pages this run creates, so
+    ``dict.get(key, {})`` cannot fall back for it; the title is used instead.
+    """
+    existing = entry.get("existing_page") or {}
+    names = existing.get("entity_names_kwd")
+    if isinstance(names, str):
+        names = [names]
+    elif isinstance(names, (list, tuple, set)):
+        names = [str(name) for name in names if str(name).strip()]
+    else:
+        names = []
+    return names or [entry.get("page_title") or pid]
+
+
 async def _wiki_mode_a_run(
     *,
     deltas: list[dict],
@@ -4020,7 +4037,7 @@ async def _wiki_mode_a_run(
         canonical_claims: Canonical name → claims, for enriching page evidence.
         doc_to_entities: doc_id → [canonical names] for doc_page_source.
     """
-    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
+    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "pages_skipped": [], "errors": []}
 
     def _progress(msg: str):
         if callback:
@@ -4203,7 +4220,21 @@ async def _wiki_mode_a_run(
                     topic_pool_lock=topic_pool_lock,
                 )
                 if result is None:
-                    raise RuntimeError(f"REFINE returned no page content for {pid}")
+                    # The writer had nothing to say about this entity (empty or
+                    # header-only response). One unwritable page must not fail
+                    # the whole compilation: keep it out of ``errors`` so the run
+                    # still commits its state, and record it so a later run
+                    # reconsiders this page.
+                    logging.warning("wiki A: REFINE produced no content for %s; skipping", pid)
+                    summary["pages_skipped"].append(pid)
+                    await _wiki_record_refine_failure(
+                        tenant_id,
+                        kb_id,
+                        pid,
+                        _wiki_refine_failure_entity_names(entry, pid),
+                        error="empty page content",
+                    )
+                    return
                 await _wiki_clear_refine_failure(tenant_id, kb_id, pid)
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
@@ -4220,7 +4251,7 @@ async def _wiki_mode_a_run(
                     tenant_id,
                     kb_id,
                     pid,
-                    entry.get("existing_page", {}).get("entity_names_kwd") or [entry.get("page_title", pid)],
+                    _wiki_refine_failure_entity_names(entry, pid),
                     error=str(exc),
                 )
                 summary["errors"].append(f"REFINE_FAILED:{pid}")
@@ -4252,7 +4283,9 @@ async def _wiki_mode_a_run(
         except Exception:
             logging.exception("wiki A: doc_page_source update failed for doc %s", did)
 
-    _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}")
+    skipped = len(summary.get("pages_skipped") or [])
+    suffix = f" ({skipped} skipped)" if skipped else ""
+    _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}{suffix}")
     return summary
 
 
@@ -4332,7 +4365,7 @@ async def _wiki_mode_b_run(
 ) -> dict:
     """Mode B: Page Router + per-page REFINE."""
 
-    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
+    summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "pages_skipped": [], "errors": []}
 
     def _progress(msg: str):
         if callback:
@@ -4615,7 +4648,9 @@ async def _wiki_mode_b_run(
         except Exception:
             logging.exception("wiki B: doc_page_source update failed for doc %s", did)
 
-    _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}")
+    skipped = len(summary.get("pages_skipped") or [])
+    suffix = f" ({skipped} skipped)" if skipped else ""
+    _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}{suffix}")
     return summary
 
 

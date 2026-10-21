@@ -33,7 +33,6 @@ from rag.advanced_rag.knowlege_compile.structure import (
     CONCEPT_MIN_SOURCES,
 )
 
-
 # ---- Test helpers ----------------------------------------------------------
 
 
@@ -133,19 +132,18 @@ async def test_chat_mdl_ask_returns_normal_response():
 async def test_refine_page_does_not_persist_model_error_response():
     doc_store = make_doc_store()
 
-    with patch("common.settings.docStoreConn", doc_store):
-        with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
-            await _wiki._wiki_refine_page(
-                mode="generate",
-                page_id="entity/Apple",
-                page_title="Apple",
-                existing_page=None,
-                chat_mdl=MockChatModel("**ERROR**: ERROR_MAX_RETRIES - upstream unavailable"),
-                embd_mdl=MockEmbeddingModel(),
-                tenant_id="t1",
-                kb_id="kb1",
-                page_version=0,
-            )
+    with patch("common.settings.docStoreConn", doc_store), pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+        await _wiki._wiki_refine_page(
+            mode="generate",
+            page_id="entity/Apple",
+            page_title="Apple",
+            existing_page=None,
+            chat_mdl=MockChatModel("**ERROR**: ERROR_MAX_RETRIES - upstream unavailable"),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            page_version=0,
+        )
 
     doc_store.insert.assert_not_called()
     doc_store.update.assert_not_called()
@@ -2484,3 +2482,29 @@ async def test_page_writer_prefers_structured_http_status(status, retryable, pag
             await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
         assert model.async_chat.await_count == 1
         page_writer_retry.assert_not_awaited()
+
+
+def test_refine_failure_entity_names_handles_new_page_entry():
+    """`existing_page` is an explicit None for pages the run creates.
+
+    Regression: the REFINE failure handler read
+    ``entry.get("existing_page", {}).get("entity_names_kwd")``, which raises
+    ``AttributeError: 'NoneType' object has no attribute 'get'`` and aborted the
+    whole build after a single page-level failure.
+    """
+    entry = {"existing_page": None, "page_title": "《水浒传》一百单八将"}
+    assert _wiki._wiki_refine_failure_entity_names(entry, "entity/朱富") == ["《水浒传》一百单八将"]
+
+
+def test_refine_failure_entity_names_prefers_existing_page_names():
+    entry = {"existing_page": {"entity_names_kwd": ["李逵", "戴宗"]}, "page_title": "unused"}
+    assert _wiki._wiki_refine_failure_entity_names(entry, "entity/x") == ["李逵", "戴宗"]
+
+
+def test_refine_failure_entity_names_normalizes_scalar_value():
+    entry = {"existing_page": {"entity_names_kwd": "李逵"}}
+    assert _wiki._wiki_refine_failure_entity_names(entry, "entity/x") == ["李逵"]
+
+
+def test_refine_failure_entity_names_falls_back_to_page_id():
+    assert _wiki._wiki_refine_failure_entity_names({}, "entity/x") == ["entity/x"]

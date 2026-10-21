@@ -32,10 +32,11 @@ The fix extracts the error-message logic into
 distinct messages based on whether enabled documents are present.
 """
 
+import asyncio
 import importlib.util
 import os
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 
 # ---- Stub heavy dependencies that the wiki generator imports at module
@@ -49,6 +50,12 @@ def _stub_module(name, **attrs):
 
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".."))
+
+
+async def _await_inline(fn, *args, **kwargs):
+    """Stand-in for ``thread_pool_exec``: run inline, return awaitably."""
+    return fn(*args, **kwargs)
+
 
 _STUB_NAMES = (
     "common",
@@ -97,7 +104,7 @@ def _load_wiki_generator(monkeypatch):
         "common.settings",
         docStoreConn=ModuleType("common.settings.docStoreConn"),
     )
-    _stub_module("common.misc_utils", thread_pool_exec=lambda fn, *args, **kwargs: fn(*args, **kwargs))
+    _stub_module("common.misc_utils", thread_pool_exec=_await_inline)
     # Project-level stubs so ``from api.... import …`` resolves.
     _stub_module("api")
     _stub_module("api.db")
@@ -133,7 +140,11 @@ def _load_wiki_generator(monkeypatch):
         wiki_plan_from_reduction=lambda *_args, **_kwargs: [],
         wiki_refine_from_plan=lambda *_args, **_kwargs: [],
     )
-    _stub_module("rag.nlp", search=ModuleType("rag.nlp.search"))
+    _stub_module(
+        "rag.nlp",
+        search=ModuleType("rag.nlp.search"),
+    )
+    sys.modules["rag.nlp"].search.index_name = lambda tenant_id: f"ragflow_{tenant_id}"
     _stub_module("rag.utils")
     _stub_module("rag.utils.es_connection")
     _stub_module("rag.utils.infinity_conn")
@@ -210,3 +221,111 @@ def test_wiki_empty_eligible_message_handles_none(monkeypatch):
     module = _load_wiki_generator(monkeypatch)
     msg = module._wiki_empty_eligible_message(None)
     assert msg == "No enabled documents are configured for wiki compilation."
+
+
+# ---------------------------------------------------------------------------
+# wiki_mode_meta column upgrades: an Infinity table created before
+# ``mode_kwd`` / ``embedding_model_kwd`` existed fails both read and write.
+# ---------------------------------------------------------------------------
+
+
+class _RecordingConn:
+    """Minimal doc-store stand-in recording the calls that matter here."""
+
+    def __init__(self, *, ensure: bool = True, search_error: Exception | None = None):
+        self.calls = []
+        self._search_error = search_error
+        if ensure:
+
+            def _ensure(index, kb_id, column_defs):
+                self.calls.append(("ensure_columns", index, kb_id, dict(column_defs)))
+
+            self.ensure_columns = _ensure
+
+    def index_exist(self, index, kb_id):
+        return True
+
+    def insert(self, rows, index, kb_id):
+        self.calls.append(("insert", index, kb_id, rows))
+
+    def search(self, *args, **kwargs):
+        self.calls.append(("search", args))
+        if self._search_error is not None:
+            raise self._search_error
+        return {}
+
+    def get_fields(self, res, fields):
+        return {}
+
+
+def _patch_wiki_module(monkeypatch, module, conn):
+    monkeypatch.setattr(module, "settings", SimpleNamespace(docStoreConn=conn))
+    monkeypatch.setattr(module, "_WIKI_MODE_COLUMNS_ENSURED", set())
+    base = ModuleType("common.doc_store.doc_store_base")
+    base.OrderByExpr = type("OrderByExpr", (), {})
+    monkeypatch.setitem(sys.modules, "common.doc_store", ModuleType("common.doc_store"))
+    monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", base)
+
+
+def test_wiki_save_mode_ensures_columns_before_insert(monkeypatch):
+    """The two mode columns are added before the meta row is written."""
+    module = _load_wiki_generator(monkeypatch)
+    conn = _RecordingConn()
+    _patch_wiki_module(monkeypatch, module, conn)
+
+    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "entity", "openai:embd:m1"))
+
+    kinds = [call[0] for call in conn.calls]
+    assert kinds == ["ensure_columns", "insert"]
+    _, index, kb_id, column_defs = conn.calls[0]
+    assert (index, kb_id) == ("ragflow_tenant_1", "kb_1")
+    assert set(column_defs) == {"mode_kwd", "embedding_model_kwd"}
+    row = conn.calls[1][3][0]
+    assert row["mode_kwd"] == "entity"
+    assert row["embedding_model_kwd"] == "openai:embd:m1"
+
+
+def test_wiki_save_mode_upgrades_each_table_once(monkeypatch):
+    """Later saves reuse the already-upgraded table instead of re-issuing DDL."""
+    module = _load_wiki_generator(monkeypatch)
+    conn = _RecordingConn()
+    _patch_wiki_module(monkeypatch, module, conn)
+
+    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "entity"))
+    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "topic"))
+
+    assert [call[0] for call in conn.calls].count("ensure_columns") == 1
+    assert [call[0] for call in conn.calls].count("insert") == 2
+
+
+def test_wiki_load_mode_ensures_columns_before_reading(monkeypatch):
+    """The read path upgrades the table too: otherwise it hits a missing column
+    and silently reports "never built", forcing a full rebuild every run."""
+    module = _load_wiki_generator(monkeypatch)
+    conn = _RecordingConn()
+    _patch_wiki_module(monkeypatch, module, conn)
+
+    assert asyncio.run(module._wiki_load_mode("tenant_1", "kb_1")) is None
+    assert [call[0] for call in conn.calls] == ["ensure_columns", "search"]
+
+
+def test_wiki_load_mode_survives_search_failure(monkeypatch):
+    """A failing read degrades to "unknown mode", it never aborts the build."""
+    module = _load_wiki_generator(monkeypatch)
+    conn = _RecordingConn(search_error=RuntimeError("column not found"))
+    _patch_wiki_module(monkeypatch, module, conn)
+
+    assert asyncio.run(module._wiki_load_mode("tenant_1", "kb_1")) is None
+
+
+def test_wiki_ensure_mode_columns_skips_engines_without_helper(monkeypatch):
+    """Engines without ``ensure_columns`` (ES/OpenSearch/...) use dynamic
+    mappings, so the upgrade is a no-op rather than an error."""
+    module = _load_wiki_generator(monkeypatch)
+    conn = _RecordingConn(ensure=False)
+    _patch_wiki_module(monkeypatch, module, conn)
+
+    asyncio.run(module._wiki_ensure_mode_columns("kb_1", "ragflow_tenant_1"))
+
+    assert conn.calls == []
+    assert ("ragflow_tenant_1", "kb_1") in module._WIKI_MODE_COLUMNS_ENSURED
