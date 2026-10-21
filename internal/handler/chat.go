@@ -399,6 +399,10 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"update_date":                chat.UpdateDate,
 		"tenant_llm_id":              chat.TenantLLMID,
 		"tenant_rerank_id":           chat.TenantRerankID,
+		// The per-chat decision model override. Without it the settings form
+		// resets to empty after saving and the field looks unset.
+		"decision_id":        chat.DecisionID,
+		"tenant_decision_id": chat.TenantDecisionID,
 	}
 
 	// Return success response

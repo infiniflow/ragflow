@@ -64,7 +64,7 @@ func TestDelimiterLossless_BoundaryReconstruction(t *testing.T) {
 // adjacent child rather than dropped, so the child texts still reconstruct "A\n\nB".
 func TestSplitByChildrenKeepsWhitespaceOnlyPiece(t *testing.T) {
 	pat := compileDelimPattern([]string{"\n"})
-	doc := schema.ChunkDoc{Text: "A\n\nB", DocType: "text", CKType: "text"}
+	doc := schema.ChunkDoc{Text: "A\n\nB", DocType: "text"}
 	out := splitByChildren([]schema.ChunkDoc{doc}, pat, true)
 	var got strings.Builder
 	for _, c := range out {
@@ -80,7 +80,7 @@ func TestSplitByChildrenKeepsWhitespaceOnlyPiece(t *testing.T) {
 // text-children split helper.
 func TestApplyChildrenDelimTextKeepsWhitespaceOnlyPiece(t *testing.T) {
 	pat := compileDelimPattern([]string{"\n"})
-	doc := schema.ChunkDoc{Text: "A\n\nB", CKType: "text"}
+	doc := schema.ChunkDoc{Text: "A\n\nB"}
 	out := applyChildrenDelimText([]schema.ChunkDoc{doc}, pat, true)
 	var got strings.Builder
 	for _, c := range out {

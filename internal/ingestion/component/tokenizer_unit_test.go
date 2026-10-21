@@ -436,7 +436,7 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	pos := json.RawMessage(`[[1,10,20,30,40],[2,15,25,35,45]]`)
 	chunks := []schema.ChunkDoc{
-		{Text: "PDF paragraph", DocType: "text", CKType: "text",
+		{Text: "PDF paragraph", DocType: "text",
 			Positions: pos, PDFPositions: pos},
 	}
 	maps := schema.ChunkDocsToMaps(chunks)

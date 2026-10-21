@@ -386,27 +386,26 @@ func markdownTableCells(line string) []string {
 //
 // Tables: a GFM/HTML table is rendered inline as a single <table> HTML
 // block by renderMarkdownTablesInlineText and kept as one HTML block.
-// It is emitted as ONE structured item (doc_type_kwd:"table",
-// ck_type:"table") in its original document position — there is no
+// It is emitted as ONE structured item (doc_type_kwd:"table")
+// in its original document position — there is no
 // duplicate doc_type_kwd:"text" copy. The downstream chunker consumes
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
-// (<div>, <style>, …) are emitted as ordinary text with no ck_type.
+// (<div>, <style>, …) are emitted as ordinary text with no layout.
 func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
 	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
-		var ckType string
+		var layout string
 		var docTypeKwd string
 		var txt string
 
 		switch n := child.(type) {
 		case *ast.Heading:
 			txt = headingText(n)
-			ckType = "heading"
+			layout = "heading"
 			docTypeKwd = "text"
 		case *ast.Paragraph:
 			txt = leafText(n)
-			ckType = "text"
 			docTypeKwd = "text"
 		case *ast.List:
 			// Python's _markdown keeps one item per list entry, marker included
@@ -420,21 +419,21 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				*out = append(*out, map[string]any{
 					"text":         entry,
 					"doc_type_kwd": "text",
-					"ck_type":      "list",
+					"layout":       "list",
 				})
 			}
 			continue
 		case *ast.CodeBlock:
 			txt = leafText(n)
-			ckType = "code"
+			layout = "code"
 			docTypeKwd = "text"
 		case *ast.HTMLBlock:
 			// An HTML block is either an inlined table (kept as a single
 			// HTML block thanks to the blank lines renderMarkdownTablesInline
 			// wraps around it) or a plain HTML block such as <div>/<style>.
 			// Only a table is emitted as a structured table item; everything
-			// else is treated as ordinary text (no ck_type). We emit exactly
-			// ONE item (doc_type_kwd:"table"/ck_type:"table") in document
+			// else is treated as ordinary text (no layout). We emit exactly
+			// ONE item (doc_type_kwd:"table") in document
 			// order — no duplicate doc_type_kwd:"text" copy — so the table is
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
@@ -447,13 +446,12 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				td, _ := tableutil.ParseTableHTML(txt)
 				table := map[string]any{
 					"doc_type_kwd": "table",
-					"ck_type":      "table",
 					"table":        td,
 				}
 				*out = append(*out, table)
 				continue
 			}
-			// Non-table HTML block: ordinary text, no ck_type.
+			// Non-table HTML block: ordinary text, no layout.
 			docTypeKwd = "text"
 		default:
 			txt = leafText(n)
@@ -467,8 +465,8 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			"text":         txt,
 			"doc_type_kwd": docTypeKwd,
 		}
-		if ckType != "" {
-			item["ck_type"] = ckType
+		if layout != "" {
+			item["layout"] = layout
 		}
 
 		// Resolve Markdown images from the AST node of THIS block only, so
@@ -719,7 +717,7 @@ func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
 
 // headingText returns a canonical ATX heading (marker plus inline text).
 // Keeping the marker in the parser payload preserves the Markdown structure
-// for GeneralChunker and downstream LLM prompts; ck_type alone does not carry
+// for GeneralChunker and downstream LLM prompts; layout alone does not carry
 // the heading level.
 func headingText(h *ast.Heading) string {
 	var buf bytes.Buffer

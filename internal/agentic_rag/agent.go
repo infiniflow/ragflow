@@ -126,6 +126,20 @@ type Input struct {
 // on repeated identical searches.
 const defaultMaxIterations = 120
 
+// agenticMaxIterations resolves the loop cap: an explicit request wins, then
+// RAGFLOW_AGENTIC_MAX_ITERATIONS, then the default. Clamped at 1 — zero would
+// mean "never loop", turning every run into an immediate failure.
+func agenticMaxIterations(explicit int) int {
+	if explicit > 0 {
+		return explicit
+	}
+	n := envIntDefault(common.EnvAgenticMaxIterations, defaultMaxIterations)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
 var errNilModel = errors.New("agentic_rag: model is required")
 
 // runSeq issues a unique key for each Run that carries no ConversationKey, so a
@@ -327,6 +341,13 @@ func Run(ctx context.Context, in Input) (string, error) {
 		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
 	}
 	ctx = WithConversationKey(ctx, convKey)
+
+	// Identity the judge is chosen for: the decision model is configured per chat
+	// and per tenant in the UI, so the filter has to know which run it is
+	// serving. The generated key above is a per-turn placeholder and must not be
+	// used here — a run with no real chat id falls back to the tenant default,
+	// exactly as a chat that never overrode it does.
+	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey)
 	if generatedKey {
 		// The generated key belongs to this turn alone: no later run reuses it,
 		// so release its availability marks on the way out instead of leaking
@@ -360,10 +381,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 		return "", err
 	}
 
-	maxIter := in.MaxIterations
-	if maxIter <= 0 {
-		maxIter = defaultMaxIterations
-	}
+	maxIter := agenticMaxIterations(in.MaxIterations)
 
 	// ONE claim recall per turn, BEFORE the loop, consumed as a control signal
 	// rather than as prompt text.
@@ -475,6 +493,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 				// are concurrency-safe: they keep no shared mutable state across
 				// calls (run_javascript creates a fresh goja VM per invocation).
 				ExecuteSequentially: false,
+				// A tool that is not registered is not a reason to abort the run.
+				//
+				// web_search is only registered when the conversation enabled
+				// internet, but the shared prompt mentions it, so the model
+				// sometimes calls it anyway. Without this handler eino raises
+				// "tool web_search not found in toolsNode indexes" and the whole
+				// turn dies — the question then scores zero even though the
+				// corpus tools were working. Answering with a tool result lets
+				// the model switch legs and keep reading.
+				UnknownToolsHandler: unknownToolResult,
 			},
 		},
 	}
@@ -624,7 +652,30 @@ func consumeAgentEvents(
 	live := func(content, reasoning string) {
 		emit(ctx, onDelta, "", content+reasoning)
 	}
+	// chargeSpent bills the run's budget for the tokens spent since the last
+	// call, counted from the same RunUsage the final SSE reports — so the
+	// ceiling and the number the client sees are one quantity.
+	//
+	// It lives here because the streaming path cannot charge itself:
+	// HandleStreamingResponse takes no context, so only non-streaming calls
+	// reach ChargeTokens. In a ReAct run almost every turn after the first
+	// streams (only the tool-bound turn goes through Generate), which left a
+	// budgeted run free to spend millions against a 500k ceiling — measured:
+	// 1.82M prompt tokens on one question, budget never fired.
+	chargeSpent := func() {
+		_, _, total, _ := tokenizer.GetRunUsage(ctx).Snapshot()
+		// Non-streaming turns have ALREADY charged the budget from the API's
+		// own usage, so bill only the shortfall between that counter and this
+		// one: whichever is ahead wins and no turn is charged twice.
+		if delta := int64(total) - common.TokenBudgetUsed(ctx); delta > 0 {
+			common.ChargeTokens(ctx, int(delta))
+		}
+	}
 	for {
+		// Bill the previous turn before waiting on the next one, so an
+		// over-budget run stops at the turn boundary rather than after the
+		// next full response.
+		chargeSpent()
 		ev, ok := iter.Next()
 		if !ok {
 			break
@@ -804,7 +855,13 @@ const finalizeTimeout = 90 * time.Second
 // call. Tool outputs accumulate 4KB each; without a cap a long investigation
 // turns the prompt into a mega-message that makes thinking models deliberate
 // for minutes and blow the client timeout (observed: exactly 300s on q55).
-const finalizeEvidenceMaxRunes = 16000
+//
+// It is deliberately larger than the truncation the run itself used: when the
+// token ceiling fires, this block is the ONLY thing the synthesis call can
+// answer from, so cutting it short is what makes a capped run answer worse than
+// an uncapped one. 40k runes stays inside the 90s synthesis budget measured on
+// this corpus.
+const finalizeEvidenceMaxRunes = 40000
 
 // claimAnswerTimeout bounds the sufficient-claims answer. It is a single
 // non-streaming call over evidence that was already retrieved, so it needs a
@@ -955,12 +1012,7 @@ func finalizeAnswer(
 	if ev := strings.TrimSpace(evidence); ev != "" {
 		fmt.Fprintf(body, "Evidence gathered during the search:\n%s\n\n", truncateRunes(ev, finalizeEvidenceMaxRunes))
 	}
-	body.WriteString("You have reached the end of your investigation. Based strictly on the evidence " +
-		"above, produce your best final answer to the original question now, as plain text. " +
-		"Reply with the final answer ONLY — no reasoning process, no plan, no narration. " +
-		"If the exact data is not available, use the closest available figure, state the " +
-		"assumption explicitly, and still provide the computed answer. Do not request any tools " +
-		"and do not hedge with \"I would need\" or \"I could not find\".")
+	body.WriteString(finalizeInstruction)
 
 	finalMessages := append([]*schema.Message(nil), messages...)
 	finalMessages = append(finalMessages, &schema.Message{
@@ -974,8 +1026,50 @@ func finalizeAnswer(
 	if resp == nil || resp.Content == "" {
 		return "", errors.New("agentic_rag: finalizeAnswer produced empty output")
 	}
-	return strings.TrimSpace(resp.Content), nil
+	out := strings.TrimSpace(resp.Content)
+	// A forced answer is still an answer: a bare "1" is not one.
+	//
+	// The ceiling ends a run mid-investigation, and a model told to reply with
+	// "the final answer ONLY" will happily emit the number and nothing else —
+	// which is indistinguishable, to the reader, from a broken run. One retry
+	// asking for the full answer is cheaper than shipping the digit.
+	if len([]rune(out)) < finalizeMinAnswerRunes {
+		retry := append([]*schema.Message(nil), finalMessages...)
+		retry = append(retry, &schema.Message{
+			Role: schema.User,
+			Content: fmt.Sprintf("Your reply (%q) is not an acceptable answer: it is too short to be useful. "+
+				"Answer the question in full sentences, naming the entities and the figures the evidence "+
+				"supports, and cite the chunk handles ([ID:n]) you relied on.", out),
+		})
+		if again, rerr := m.Generate(ctx, retry); rerr == nil && again != nil {
+			if longer := strings.TrimSpace(again.Content); len([]rune(longer)) > len([]rune(out)) {
+				out = longer
+			}
+		}
+	}
+	return out, nil
 }
+
+// finalizeInstruction is what the synthesis call is asked to do. It no longer
+// says "final answer ONLY": that phrasing produced bare numbers on capped runs
+// (measured: a 1-byte "1"), and the point of the fallback is a usable answer,
+// not the shortest one.
+const finalizeInstruction = "You have reached the end of your investigation. Based strictly on the evidence " +
+	"above, produce your final answer to the original question now, as plain text. " +
+	"Give a complete answer: state the result, then the facts from the evidence that support it, " +
+	"with the [ID:n] handles you relied on. Do NOT reply with a bare number or a single word — " +
+	"if the question asks how many, give the count AND what it counts. " +
+	"If the exact data is not available, use the closest available figure, state the assumption " +
+	"explicitly, and still provide the computed answer. Do not request any tools and do not hedge " +
+	"with \"I would need\" or \"I could not find\"."
+
+// finalizeMinAnswerRunes is the length below which a forced answer is treated as
+// a non-answer and retried once.
+//
+// It is deliberately short: the case it exists for is a bare figure ("1"), and
+// a threshold high enough to catch a real sentence would retry answers that are
+// terse but complete, doubling the synthesis cost of every capped run.
+const finalizeMinAnswerRunes = 12
 
 // lastUserQuestion returns the content of the last user message, used as the
 // question for the final-answer fallback and for per-question usage logs.
@@ -1003,4 +1097,18 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(r[:max]) + "..."
+}
+
+// unknownToolResult answers a call to a tool this run never registered.
+//
+// The capability set is built per conversation on purpose: advertising a tool
+// the run cannot execute is worse than not advertising it at all. But the
+// prompt is shared, and it names tools a deployment may not supply — web_search
+// with internet off is the common case — so the model occasionally calls one.
+// eino's default is to raise "tool X not found in toolsNode indexes" and abort
+// the turn, which turns a recoverable detour into a zero-scored run. Answering
+// with an ordinary tool result lets the model drop that leg and keep reading.
+func unknownToolResult(_ context.Context, name, _ string) (string, error) {
+	return fmt.Sprintf("Tool %q is not available in this conversation: it is not registered, "+
+		"so calling it again fails the same way. Continue with the tools in your tool list.", name), nil
 }

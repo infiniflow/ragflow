@@ -136,7 +136,7 @@ func TestTitleFamilyRendersStructuredTableAtomic(t *testing.T) {
 			if _, ok := ck["table"]; ok {
 				t.Errorf("structured TableData must not leak onto the chunk: %#v", ck["table"])
 			}
-			if got := ck["_pdf_positions"]; !reflect.DeepEqual(got, [][]float64{{1, 10, 200, 10, 40}}) {
+			if got := ck["_pdf_positions"]; !reflect.DeepEqual(got, [][]any{{float64(1), float64(10), float64(200), float64(10), float64(40)}}) {
 				t.Errorf("_pdf_positions = %#v, want the source matrix", got)
 			}
 			for _, other := range chunks {
@@ -345,7 +345,10 @@ func TestTitleFamilyPreservesSheetIdentity(t *testing.T) {
 	if _, ok := ck["_pdf_positions"]; ok {
 		t.Errorf("spreadsheet selections leaked into _pdf_positions: %#v", ck["_pdf_positions"])
 	}
-	if got := ck["positions"]; !reflect.DeepEqual(got, [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}}) {
+	if got := ck["positions"]; !reflect.DeepEqual(got, [][]any{
+		{float64(1), float64(1), float64(1), float64(1), float64(2)},
+		{float64(1), float64(2), float64(2), float64(1), float64(2)},
+	}) {
 		t.Errorf("positions = %#v, want the source matrix", got)
 	}
 }

@@ -190,8 +190,15 @@ export const useListModelsPicker = ({
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
         const res = await listProviderModels({
           provider_name: llmFactory,
-          api_key: viewMode ? '' : ((verifyArgs as any).apiKey ?? ''),
-          base_url: viewMode ? '' : ((verifyArgs as any).baseUrl ?? ''),
+          // Trimmed before sending: a key copied out of a console commonly
+          // carries a trailing newline, and the upstream reports that as an
+          // invalid key rather than as a whitespace problem.
+          api_key: viewMode
+            ? ''
+            : String((verifyArgs as any).apiKey ?? '').trim(),
+          base_url: viewMode
+            ? ''
+            : String((verifyArgs as any).baseUrl ?? '').trim(),
           region: (verifyArgs as any).region,
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
           ...(viewMode && initialValues?.instance_name

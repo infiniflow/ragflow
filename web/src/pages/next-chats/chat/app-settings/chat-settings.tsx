@@ -140,6 +140,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           'tenant_id',
           'tenant_llm_id',
           'tenant_rerank_id',
+          'tenant_decision_id',
           'created_by',
           'create_time',
           'create_date',
