@@ -229,7 +229,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
           pages: number[][];
         }
       > = {
-        output_format: cur.output_format,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 

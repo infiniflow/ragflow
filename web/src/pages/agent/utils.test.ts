@@ -216,7 +216,7 @@ describe('transformParserParams vision settings', () => {
   it('writes the image OCR switch without retired vision fields', () => {
     // The saved shape is the contract the Go parser reads, so pin it: the
     // switch out, and the retired per-family keys never written back.
-    const result = transformParserParams({
+    const result: Record<string, any> = transformParserParams({
       enable_vision_enhancement: false,
       vlm: { llm_id: '', system_prompt: '' },
       setups: [
@@ -235,6 +235,9 @@ describe('transformParserParams vision settings', () => {
     expect(result.image).not.toHaveProperty('parse_method');
     expect(result.image).not.toHaveProperty('lang');
     expect(result.image).not.toHaveProperty('system_prompt');
+    // output_format is retired: the Go Parser normalizes every family to
+    // JSON, so a stored legacy value must never be written back.
+    expect(result.image).not.toHaveProperty('output_format');
   });
 });
 
