@@ -463,18 +463,21 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, raw, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
+	result, raw, size, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
 	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
+	if size != len("fakeimage") {
+		t.Errorf("size = %d, want %d", size, len("fakeimage"))
+	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
+	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -493,12 +496,15 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	encoded, result, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
+	encoded, result, size, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
 	if encoded != "" || string(result) != "fake-png-bytes" {
 		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+	if size != len("fake-png-bytes") {
+		t.Errorf("size = %d, want %d", size, len("fake-png-bytes"))
 	}
 }
 

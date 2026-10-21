@@ -24,6 +24,7 @@ import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import {
+  getDocumentParserLabel,
   getDocumentRunningStatus,
   isDocumentProcessing,
   isDocumentStopping,
@@ -71,7 +72,7 @@ export function ParseDropdownButton({
   record: IDocumentInfo;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
-  const { pipeline_id, pipeline_name, chunk_method } = record;
+  const parserLabel = getDocumentParserLabel(record);
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
@@ -83,22 +84,12 @@ export function ParseDropdownButton({
         <div>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="static" size="auto" className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
+              <Button variant="static" size="auto">
+                {parserLabel}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
-              </p>
+              <p>{parserLabel}</p>
             </TooltipContent>
           </Tooltip>
         </div>
@@ -272,7 +263,6 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          forceDelete
           handleOperationIconClick={handleOperationIconClick}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}

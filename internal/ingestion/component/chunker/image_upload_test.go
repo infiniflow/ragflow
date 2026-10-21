@@ -17,6 +17,7 @@
 package chunker
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	parserlib "ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -39,6 +41,63 @@ const (
 
 // pngBase64 is a tiny 1x1 PNG payload (raw base64, no data-URL prefix).
 const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
+	want, err := base64.StdEncoding.DecodeString(pngBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"html", "markdown"} {
+		t.Run(format, func(t *testing.T) {
+			// The same PNG with its optional base64 padding omitted.
+			uri := "data:image/png;base64," + pngBase64[:len(pngBase64)-2]
+			var parsed parserlib.ParseResult
+			if format == "html" {
+				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", []byte(`<img alt="caption" src="`+uri+`">`))
+			} else {
+				p, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parsed = p.ParseWithResult(t.Context(), "image.md", []byte("![caption]("+uri+")"))
+			}
+			if parsed.Err != nil {
+				t.Fatal(parsed.Err)
+			}
+			var uploaded []byte
+			prev := ChunkImageUploader
+			ChunkImageUploader = func(_ context.Context, kbID, chunkID string, data []byte) (string, error) {
+				uploaded = append([]byte(nil), data...)
+				return kbID + "-" + chunkID, nil
+			}
+			t.Cleanup(func() { ChunkImageUploader = prev })
+			comp, err := NewOneChunker(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+				"name": "image." + format, "kb_id": testKBID, "doc_id": testDocID,
+				"output_format": "json", "json": parsed.JSON,
+			})
+			if err != nil {
+				t.Fatalf("parser image failed at chunk upload: %v", err)
+			}
+			if !bytes.Equal(uploaded, want) {
+				t.Fatalf("uploaded bytes differ from original PNG: got %d bytes, want %d", len(uploaded), len(want))
+			}
+			chunks, ok := out["chunks"].([]map[string]any)
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected one chunk, got %#v", out)
+			}
+			if chunks[0]["img_id"] != testKBID+"-"+common.ChunkID(testDocID, "caption") {
+				t.Errorf("unexpected image reference: %v", chunks[0]["img_id"])
+			}
+			if _, ok := chunks[0]["image"]; ok {
+				t.Error("raw image retained after upload")
+			}
+		})
+	}
+}
 
 // TestUploadOneImage_UploadsBytes pins the pure upload contract: it receives
 // already-decoded bytes (not the raw chunk image field) plus the chunkID, and
