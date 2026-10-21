@@ -176,6 +176,29 @@ func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
 // TestTitleKeepsHTMLParagraphAtomic pins the line-split gate: a paragraph
 // layout keeps a multi-line block as one record, so an inner line that looks
 // like a heading cannot create a spurious section.
+func TestMarkdownImageHeadingFoldsIntoPreviousChunk(t *testing.T) {
+	c, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "t.md", "file_type": "md", "output_format": "json",
+		"json": []map[string]any{
+			{"text": "intro", "doc_type_kwd": "text"},
+			// An image-only heading: markdown labels it as an image but keeps
+			// the heading layout. Base folded it into the preceding chunk.
+			{"text": "##", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA", "layout": "heading"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("GeneralChunker.Invoke: %v", err)
+	}
+	if chunks := outputChunks(t, out); len(chunks) != 1 {
+		t.Fatalf("image-only heading must fold into the preceding chunk: got %d chunks, want 1", len(chunks))
+	}
+}
+
 func TestTitleKeepsHTMLParagraphAtomic(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {

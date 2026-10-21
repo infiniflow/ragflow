@@ -755,6 +755,12 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 			unit.Text = strings.TrimSpace(unit.Text)
 		}
 		unit.DocType = itemDocType(unit)
+		// Media units are content attachments, not block-kind boundaries.
+		// Base normalized their CKType to DocType here, so an image-only
+		// heading folded into the preceding chunk; preserve that behavior.
+		if unit.DocType == "table" || unit.DocType == "image" {
+			clearStructuralLayout(&unit)
+		}
 		shortHeading := isShortMarkdownHeading(unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))

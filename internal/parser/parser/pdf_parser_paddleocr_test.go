@@ -125,21 +125,24 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 	}
 }
 
-func TestPaddleOCRNonTitleBlocksPreserveMarkdownLayout(t *testing.T) {
+func TestPaddleOCRBlocksPreserveMarkdownLayout(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tc := range []struct{ name, text, wantLayout string }{
-		{"heading", "# Section", "heading"},
-		{"code", "```\ncode line\n```", "code"},
-		{"list", "- item one", "list"},
+	for _, tc := range []struct{ name, label, text, wantLayout string }{
+		{"text heading", "text", "# Section", "heading"},
+		{"text code", "text", "```\ncode line\n```", "code"},
+		{"text list", "text", "- item one", "list"},
+		{"title heading", "paragraph_title", "# Section", "heading"},
+		{"title code", "paragraph_title", "```\ncode line\n```", "code"},
+		{"title list", "paragraph_title", "- item one", "list"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			// The layout model labelled the block "text", but the Markdown
-			// normalization already asserted a structural block kind. The OCR
-			// label must not overwrite it.
-			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: "text"}}}}}
+			// The layout model label is coarser than the Markdown
+			// normalization. It must not overwrite a structural block kind,
+			// including inside a title-labelled block.
+			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: tc.label}}}}}
 			result := PaddleOCRPDFResult(t.Context(), "layout.pdf", data, response)
 			if result.Err != nil {
 				t.Fatal(result.Err)
@@ -150,6 +153,9 @@ func TestPaddleOCRNonTitleBlocksPreserveMarkdownLayout(t *testing.T) {
 			item := result.JSON[0].ToMap()
 			if item["layout"] != tc.wantLayout {
 				t.Fatalf("layout = %v, want %q (markdown structural layout must win over the OCR label): %v", item["layout"], tc.wantLayout, item)
+			}
+			if text, _ := item["text"].(string); strings.HasPrefix(text, "## ") {
+				t.Errorf("structural item must not be promoted with a heading prefix: %q", text)
 			}
 		})
 	}
