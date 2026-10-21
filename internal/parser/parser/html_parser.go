@@ -19,9 +19,7 @@ package parser
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -371,14 +369,15 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			if !usableHTMLImageSource(src) {
+			normalized, ok := normalizeHTMLImageSource(src)
+			if !ok {
 				if isHTMLDataImageSource(src) {
 					state.skippedInlineImages++
 				}
 				return
 			}
 			flushLeafText(w, out, layout, trim)
-			appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
+			appendHTMLImageItem(out, state, normalized, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
@@ -474,14 +473,15 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				if !usableHTMLImageSource(src) {
+				normalized, ok := normalizeHTMLImageSource(src)
+				if !ok {
 					if isHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
 					}
 				} else {
 					images = append(images, htmlTableImage{
-						src:    src,
+						src:    normalized,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -512,9 +512,6 @@ func removeHTMLImageSource(n *html.Node) {
 }
 
 func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
-	if comma := strings.IndexByte(src, ','); comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
-		src = strings.ToLower(src[:comma]) + src[comma:]
-	}
 	state.mediaOrder++
 	item := map[string]any{
 		"text":         strings.TrimSpace(alt),
@@ -530,84 +527,26 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 	*out = append(*out, item)
 }
 
-func usableHTMLImageSource(src string) bool {
+func normalizeHTMLImageSource(src string) (string, bool) {
 	src = strings.TrimSpace(src)
 	if !isHTMLDataImageSource(src) {
-		return false
+		return "", false
 	}
 	separator := strings.IndexByte(src, ',')
 	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return false
+		return "", false
 	}
-	return validBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+	payload, _, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+	if !ok {
+		return "", false
+	}
+	return strings.ToLower(src[:separator+1]) + payload, true
 }
 
 func isHTMLDataImageSource(src string) bool {
 	const dataPrefix = "data:image/"
 	src = strings.TrimSpace(src)
 	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
-}
-
-func validBase64ImagePayload(payload string, maxDecodedBytes int) bool {
-	if maxDecodedBytes < 0 {
-		return false
-	}
-	maxEncodedBytes := base64.StdEncoding.EncodedLen(maxDecodedBytes)
-	encodedBytes := 0
-	for i := 0; i < len(payload); i++ {
-		if payload[i] == '\r' || payload[i] == '\n' {
-			continue
-		}
-		encodedBytes++
-		if encodedBytes > maxEncodedBytes {
-			return false
-		}
-	}
-	if encodedBytes == 0 {
-		return false
-	}
-	decodedSize, ok := base64DecodedSize(payload, encodedBytes)
-	if !ok || decodedSize > int64(maxDecodedBytes) {
-		return false
-	}
-
-	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
-		decoder := base64.NewDecoder(encoding, strings.NewReader(payload))
-		decodedBytes, err := io.CopyN(io.Discard, decoder, int64(maxDecodedBytes)+1)
-		if decodedBytes > int64(maxDecodedBytes) {
-			return false
-		}
-		if err == io.EOF {
-			return decodedBytes > 0
-		}
-	}
-	return false
-}
-
-func base64DecodedSize(payload string, encodedBytes int) (int64, bool) {
-	padding := 0
-	sawPadding := false
-	for i := 0; i < len(payload); i++ {
-		if payload[i] == '\r' || payload[i] == '\n' {
-			continue
-		}
-		if payload[i] == '=' {
-			sawPadding = true
-			padding++
-			if padding > 2 {
-				return 0, false
-			}
-			continue
-		}
-		if sawPadding {
-			return 0, false
-		}
-	}
-	if encodedBytes%4 == 1 || (padding > 0 && encodedBytes%4 != 0) {
-		return 0, false
-	}
-	decodedSize := int64(encodedBytes/4)*3 + int64(encodedBytes%4)*3/4 - int64(padding)
-	return decodedSize, decodedSize >= 0
 }
 
 func htmlAttribute(n *html.Node, key string) string {

@@ -173,7 +173,7 @@ The defaults are appropriate for an initial test:
 | **Max Artifacts** | `20` | Maximum number of files collected from the execution's `artifacts/` directory. |
 | **Max Artifact Bytes** | `10485760` | Maximum size of one artifact file. |
 
-Select **Test connection**. Confirm that the result shows `PASSED`, then select **Save**. If the test returns `knownhosts: key is unknown`, see [Why does SSH return `knownhosts: key is unknown`?](../../sandbox/faq.md#why-does-ssh-return-knownhosts-key-is-unknown).
+Select **Test connection**. Confirm that the result shows `PASSED`, then select **Save**. If the test returns `knownhosts: key is unknown`, see [Why does SSH return `knownhosts: key is unknown`?](./faq.md#why-does-ssh-return-knownhosts-key-is-unknown).
 
 ## Configure Aliyun Code Interpreter
 
@@ -273,4 +273,4 @@ This verifies the complete path from RAGFlow to the selected provider. **Test co
 
 When replacing a provider that is already in use, also test representative existing Agents. Confirm that their required packages, outbound network access, execution time, and artifact handling work in the new environment.
 
-If the test fails, see the [Code Execution Sandbox FAQ](../../sandbox/faq.md). For SSH, also verify the host key, authentication method, remote workspace permissions, and runtime paths. For cloud providers, verify credentials, region availability, account quota, and outbound network access from the RAGFlow server.
+If the test fails, see the [Code Execution Sandbox FAQ](./faq.md). For SSH, also verify the host key, authentication method, remote workspace permissions, and runtime paths. For cloud providers, verify credentials, region availability, account quota, and outbound network access from the RAGFlow server.

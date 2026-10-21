@@ -77,7 +77,8 @@ func (t TableItem) ToMap() map[string]any {
 }
 
 // ImageItem is an embedded image. Text is the alt text, Image the data
-// URL/base64 payload (possibly empty when omitted).
+// URL/base64 payload (possibly empty when omitted). Parsers emit standard
+// base64 with padding and no CR/LF in the payload.
 type ImageItem struct {
 	Text      string
 	Image     string
