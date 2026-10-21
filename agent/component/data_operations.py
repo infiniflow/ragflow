@@ -71,10 +71,7 @@ class DataOperations(ComponentBase, ABC):
             if not producer_id:
                 continue
             if producer_id not in upstream:
-                raise ValueError(
-                    f"[DataOperations] query reference '{raw}' requires an explicit canvas edge "
-                    f"from '{producer_id}' to '{self._id}'; disconnected parameter references are not allowed."
-                )
+                raise ValueError(f"[DataOperations] query reference '{raw}' requires an explicit canvas edge from '{producer_id}' to '{self._id}'; disconnected parameter references are not allowed.")
 
     def get_dependency_ids(self) -> list[str]:
         # Scheduler readiness stays on explicit canvas edges (plus any declared
