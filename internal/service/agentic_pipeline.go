@@ -146,11 +146,23 @@ func (s *ChatPipelineService) agenticRag(
 			runState.Sys["tenant_id"] = chat.TenantID
 		}
 		runCtx = runtime.WithState(runCtx, runState)
+		// A result is abandoned only when the CALLER is gone. runCtx is not the
+		// delivery signal: the token budget cancels it precisely so that the
+		// terminating fallback can answer from the evidence already gathered, so
+		// treating that cancellation as "nobody is listening" dropped the very
+		// answer the run had just built and shipped an empty reply. Delivery is
+		// tried first and unconditionally, because out is buffered and the
+		// consumer always drains it.
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
 				return true
-			case <-runCtx.Done():
+			default:
+			}
+			select {
+			case out <- result:
+				return true
+			case <-ctx.Done():
 				return false
 			}
 		}
