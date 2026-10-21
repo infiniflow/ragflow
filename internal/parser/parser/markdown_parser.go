@@ -791,6 +791,11 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 	switch t := n.(type) {
 	case *ast.Text:
 		buf.Write(t.Literal)
+	case *ast.Hardbreak:
+		// A hard line break (two trailing spaces or a backslash) is a node of its own with no
+		// literal. Writing nothing glued the words on either side ("line oneline two"); a
+		// newline keeps them apart, as a soft break already does inside its Text literal.
+		buf.WriteByte('\n')
 	case *ast.Code:
 		buf.Write(t.Literal)
 	case *ast.CodeBlock:
