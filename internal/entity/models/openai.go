@@ -36,6 +36,9 @@ import (
 // OpenAIModel implements ModelDriver for OpenAI (GPT models).
 type OpenAIModel struct {
 	baseModel BaseModel
+	// skipTTSVoiceValidation delegates voice selection and validation to the
+	// model backend when this driver is reused by a local provider.
+	skipTTSVoiceValidation bool
 }
 
 // NewOpenAIModel creates a new OpenAI model instance.
@@ -572,7 +575,7 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	o.baseModel.applyAuth(req, apiConfig)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req, responseFormat, nil
 }
@@ -615,13 +618,15 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 		}
 	}
 
-	voice, ok := reqBody["voice"]
-	if !ok || voice == nil {
-		return nil, "", fmt.Errorf("voice is required")
-	}
-	voiceString, ok := voice.(string)
-	if !ok || strings.TrimSpace(voiceString) == "" {
-		return nil, "", fmt.Errorf("voice is required")
+	if !o.skipTTSVoiceValidation {
+		voice, ok := reqBody["voice"]
+		if !ok || voice == nil {
+			return nil, "", fmt.Errorf("voice is required")
+		}
+		voiceString, ok := voice.(string)
+		if !ok || strings.TrimSpace(voiceString) == "" {
+			return nil, "", fmt.Errorf("voice is required")
+		}
 	}
 
 	streamFormat := ""
@@ -640,7 +645,7 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	o.baseModel.applyAuth(req, apiConfig)
 	return req, streamFormat, nil
 }
 
