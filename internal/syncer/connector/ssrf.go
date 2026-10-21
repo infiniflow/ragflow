@@ -27,9 +27,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
+	"os"
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // connectorAssertURLSafe is the SSRF guard shared by all connectors. It is an
@@ -208,6 +210,76 @@ func validateConnectorURL(rawURL string) error {
 		}
 	}
 	if _, _, err := assertConnectorURLSafe(rawURL); err != nil {
+		return &ConnectorValidationError{Message: err.Error()}
+	}
+	return nil
+}
+
+// assertWebDAVURLSafe permits an operator-listed private WebDAV destination.
+// Each entry binds one exact hostname to one CIDR, for example
+// "webdav=172.18.0.0/16". Every resolved address must belong to that range;
+// connectorRequest pins the selected address and repeats this check on every
+// redirect. Other URL connectors continue to use the strict guard.
+func assertWebDAVURLSafe(rawURL string) (string, net.IP, error) {
+	host, ip, strictErr := assertConnectorURLSafe(rawURL)
+	if strictErr == nil {
+		return host, ip, nil
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || (strings.ToLower(parsed.Scheme) != "http" && strings.ToLower(parsed.Scheme) != "https") || parsed.Hostname() == "" {
+		return "", nil, strictErr
+	}
+	host = strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	var allowed []*net.IPNet
+	for _, entry := range strings.Split(os.Getenv("RAGFLOW_WEBDAV_PRIVATE_HOSTS"), ",") {
+		name, cidr, ok := strings.Cut(strings.TrimSpace(entry), "=")
+		if !ok || strings.TrimSuffix(strings.ToLower(strings.TrimSpace(name)), ".") != host {
+			continue
+		}
+		_, network, parseErr := net.ParseCIDR(strings.TrimSpace(cidr))
+		if parseErr == nil {
+			allowed = append(allowed, network)
+		}
+	}
+	if len(allowed) == 0 {
+		return "", nil, strictErr
+	}
+	var addresses []string
+	if literal := net.ParseIP(host); literal != nil {
+		addresses = []string{literal.String()}
+	} else {
+		addresses, err = common.LookupHost(host)
+		if err != nil || len(addresses) == 0 {
+			return "", nil, strictErr
+		}
+	}
+	for _, address := range addresses {
+		resolved := net.ParseIP(address)
+		if resolved == nil || (!resolved.IsPrivate() && !resolved.IsLoopback()) {
+			return "", nil, strictErr
+		}
+		withinAllowedNetwork := false
+		for _, network := range allowed {
+			if network.Contains(resolved) {
+				withinAllowedNetwork = true
+				break
+			}
+		}
+		if !withinAllowedNetwork {
+			return "", nil, strictErr
+		}
+		if ip == nil {
+			ip = resolved
+		}
+	}
+	return parsed.Hostname(), ip, nil
+}
+
+func validateWebDAVURL(rawURL string) error {
+	if strings.TrimSpace(os.Getenv("RAGFLOW_WEBDAV_PRIVATE_HOSTS")) == "" {
+		return validateConnectorURL(rawURL)
+	}
+	if _, _, err := assertWebDAVURLSafe(rawURL); err != nil {
 		return &ConnectorValidationError{Message: err.Error()}
 	}
 	return nil
