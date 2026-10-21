@@ -86,7 +86,8 @@ func (t TableItem) ToMap() map[string]any {
 }
 
 // ImageItem is an embedded image. Text is the alt text, Image the data
-// URL/base64 payload (possibly empty when omitted). CKType carries the legacy
+// URL/base64 payload (possibly empty when omitted). Parsers emit standard
+// base64 with padding and no CR/LF in the payload. CKType carries the legacy
 // ck_type discriminator ("image" for xlsx/pptx/html/markdown, empty for docx);
 // it is omitted from ToMap when empty.
 type ImageItem struct {

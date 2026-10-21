@@ -494,8 +494,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 					}
 					size := len(raw)
 					if raw == nil {
-						encodedBytes := len(encoded) - strings.Count(encoded, "\r") - strings.Count(encoded, "\n")
-						decodedSize, ok := base64DecodedSize(encoded, encodedBytes)
+						decodedSize, ok := base64DecodedSize(encoded, len(encoded))
 						if !ok {
 							unresolvedImages++
 							break
@@ -573,8 +572,8 @@ func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw 
 		if idx < 0 {
 			return "", nil, false
 		}
-		encoded = imageURL[idx+len("base64,"):]
-		if !validBase64ImagePayload(encoded, MaxImagePayloadBytes) {
+		encoded, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		if !ok {
 			return "", nil, false
 		}
 		return encoded, nil, true
