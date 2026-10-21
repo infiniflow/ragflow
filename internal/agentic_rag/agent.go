@@ -493,6 +493,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 				// are concurrency-safe: they keep no shared mutable state across
 				// calls (run_javascript creates a fresh goja VM per invocation).
 				ExecuteSequentially: false,
+				// A tool that is not registered is not a reason to abort the run.
+				//
+				// web_search is only registered when the conversation enabled
+				// internet, but the shared prompt mentions it, so the model
+				// sometimes calls it anyway. Without this handler eino raises
+				// "tool web_search not found in toolsNode indexes" and the whole
+				// turn dies — the question then scores zero even though the
+				// corpus tools were working. Answering with a tool result lets
+				// the model switch legs and keep reading.
+				UnknownToolsHandler: unknownToolResult,
 			},
 		},
 	}
@@ -1087,4 +1097,18 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(r[:max]) + "..."
+}
+
+// unknownToolResult answers a call to a tool this run never registered.
+//
+// The capability set is built per conversation on purpose: advertising a tool
+// the run cannot execute is worse than not advertising it at all. But the
+// prompt is shared, and it names tools a deployment may not supply — web_search
+// with internet off is the common case — so the model occasionally calls one.
+// eino's default is to raise "tool X not found in toolsNode indexes" and abort
+// the turn, which turns a recoverable detour into a zero-scored run. Answering
+// with an ordinary tool result lets the model drop that leg and keep reading.
+func unknownToolResult(_ context.Context, name, _ string) (string, error) {
+	return fmt.Sprintf("Tool %q is not available in this conversation: it is not registered, "+
+		"so calling it again fails the same way. Continue with the tools in your tool list.", name), nil
 }
