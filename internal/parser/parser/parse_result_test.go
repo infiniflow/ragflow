@@ -23,7 +23,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
+func TestNewTableDataJSONItem_IncludesDocType(t *testing.T) {
 	td := &entity.TableData{
 		Grid:       [][]entity.TableCell{{{Text: "col"}}, {{Text: "value"}}},
 		HeaderRows: 1,
@@ -34,9 +34,6 @@ func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
 
 	if got, want := m[DocTypeKey], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
-	}
-	if got, want := m["ck_type"], DocTypeTable; got != want {
-		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
 	}
 	got, ok := m["table"].(*entity.TableData)
 	if !ok {
@@ -175,8 +172,8 @@ func TestMarkdownParser_ParseWithResult(t *testing.T) {
 	if txt, _ := heading["text"].(string); !strings.Contains(txt, "Title") {
 		t.Errorf("JSON[0].text = %q, want contains 'Title'", txt)
 	}
-	if got, _ := heading["ck_type"].(string); got != "heading" {
-		t.Errorf("JSON[0].ck_type = %q, want heading", got)
+	if got, _ := heading["layout"].(string); got != "heading" {
+		t.Errorf("JSON[0].layout = %q, want heading", got)
 	}
 	for i, it := range ItemsToMaps(res.JSON) {
 		if _, ok := it["doc_type_kwd"]; !ok {

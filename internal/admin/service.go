@@ -789,6 +789,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	for _, serverStatus := range serverList {
 		now := time.Now()
 		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")

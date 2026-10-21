@@ -444,12 +444,12 @@ func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
 	}
 }
 
-// TestHierarchyTitleChunker_CKTypeHeadingFallback verifies that
-// records with ck_type "heading" (from office_oxide DOCX parsing)
+// TestHierarchyTitleChunker_LayoutHeadingFallback verifies that
+// records with layout "heading" (from office_oxide DOCX parsing)
 // are treated as heading nodes in the tree, even when their text
 // doesn't match any regex pattern. Without the fix, such records
 // are treated as body text — all content merges into one chunk.
-func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
+func TestHierarchyTitleChunker_LayoutHeadingFallback(t *testing.T) {
 	c, err := NewHierarchyTitleChunker(map[string]any{
 		"hierarchy": 2,
 		"levels":    [][]string{{`^# `}, {`^## `}},
@@ -458,11 +458,11 @@ func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
 		t.Fatalf("NewHierarchyTitleChunker: %v", err)
 	}
 	items := []map[string]any{
-		{"text": "Introduction", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Introduction", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Intro body.", "doc_type_kwd": "text"},
-		{"text": "Background", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Background", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Background body.", "doc_type_kwd": "text"},
-		{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Conclusion", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Final words.", "doc_type_kwd": "text"},
 	}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -479,7 +479,7 @@ func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
 	// Without the fix: 1 chunk (all text merged as body under root).
 	// With the fix: 3 chunks (one per heading + its body).
 	if len(chunks) != 3 {
-		t.Fatalf("len(chunks) = %d, want 3 (3 ck_type=headings should produce 3 chunks)", len(chunks))
+		t.Fatalf("len(chunks) = %d, want 3 (3 layout=headings should produce 3 chunks)", len(chunks))
 	}
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)

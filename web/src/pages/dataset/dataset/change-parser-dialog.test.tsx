@@ -3,6 +3,7 @@ import { ChangeParserDialog } from './change-parser-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 
 const mockSave = jest.fn().mockResolvedValue(0);
+const mockRun = jest.fn().mockResolvedValue(0);
 const mockDsl = {
   graph: {
     nodes: [
@@ -40,6 +41,7 @@ jest.mock('@/hooks/use-agent-request', () => ({
   }),
 }));
 jest.mock('@/hooks/use-document-request', () => ({
+  useRunDocument: () => ({ runDocumentByIds: mockRun, loading: false }),
   useSetDocumentPipelineParser: () => ({
     setDocumentPipelineParser: mockSave,
     loading: false,
@@ -93,12 +95,19 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-function Harness({ builtin = false }: { builtin?: boolean }) {
+function Harness({
+  builtin = false,
+  chunkCount = 0,
+}: {
+  builtin?: boolean;
+  chunkCount?: number;
+}) {
   const state = useChangeDocumentParser();
   const openDialog = () => {
     state.showChangeParserModal({
       id: 'document',
       dataset_id: 'dataset',
+      chunk_count: chunkCount,
       chunk_method: builtin ? 'general' : '',
       pipeline_id: builtin ? '' : 'pipeline',
       parser_config: builtin
@@ -128,8 +137,58 @@ function Harness({ builtin = false }: { builtin?: boolean }) {
 }
 
 beforeEach(() => {
-  mockSave.mockClear();
+  mockSave.mockReset().mockResolvedValue(0);
+  mockRun.mockReset().mockResolvedValue(0);
   mockCustomDsl = mockDsl;
+});
+
+it('keeps existing chunks when re-parsing is declined after saving', async () => {
+  render(<Harness builtin chunkCount={5} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  expect(
+    await screen.findByText('knowledgeDetails.parserConfigReparseTip'),
+  ).toBeInTheDocument();
+  expect(mockSave).toHaveBeenCalledTimes(1);
+  expect(mockRun).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'common.no' }));
+  await waitFor(() =>
+    expect(
+      screen.queryByText('knowledgeDetails.parserConfigReparseTip'),
+    ).not.toBeInTheDocument(),
+  );
+  expect(mockRun).not.toHaveBeenCalled();
+});
+
+it('re-parses with the saved document settings only after confirmation', async () => {
+  render(<Harness chunkCount={5} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  const confirm = await screen.findByRole('button', { name: 'common.yes' });
+  expect(mockSave).toHaveBeenCalledTimes(1);
+  expect(mockRun).not.toHaveBeenCalled();
+  fireEvent.click(confirm);
+  await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(1));
+  expect(mockRun).toHaveBeenCalledWith({
+    documentIds: ['document'],
+    run: 1,
+    option: { delete: true, apply_kb: false },
+  });
+});
+
+it('does not offer re-parsing when saving fails', async () => {
+  mockSave.mockResolvedValueOnce(102);
+  render(<Harness builtin chunkCount={5} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+  expect(
+    screen.queryByText('knowledgeDetails.parserConfigReparseTip'),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole('button', { name: 'common.save' }),
+  ).toBeInTheDocument();
+  expect(mockRun).not.toHaveBeenCalled();
 });
 
 it('saves the built-in parser', async () => {
@@ -144,6 +203,10 @@ it('saves the built-in parser', async () => {
       parse_type: 1,
     }),
   );
+  expect(
+    screen.queryByText('knowledgeDetails.parserConfigReparseTip'),
+  ).not.toBeInTheDocument();
+  expect(mockRun).not.toHaveBeenCalled();
 });
 
 it('saves after switching from a built-in parser to a pipeline', async () => {

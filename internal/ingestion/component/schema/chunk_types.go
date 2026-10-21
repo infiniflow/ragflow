@@ -106,7 +106,6 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 type ChunkDoc struct {
 	Text          string          `json:"text,omitempty"`
 	DocType       string          `json:"doc_type_kwd,omitempty"`
-	CKType        string          `json:"ck_type,omitempty"`
 	TKNums        *int            `json:"tk_nums,omitempty"`
 	Mom           string          `json:"mom,omitempty"`
 	ImgID         string          `json:"img_id,omitempty"`
@@ -156,6 +155,8 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	// tagger emits tag_feas and the vocabulary comes from a tag source file,
 	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
 	// cannot fall through to Extra and be re-emitted by MarshalJSON.
+	// ck_type is a retired parser key: it has no field, but must stay in this
+	// list so an old payload cannot leak it back through Extra.
 	for _, key := range []string{
 		"text", "doc_type_kwd", "mom", "img_id",
 		"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
@@ -184,6 +185,10 @@ func (d ChunkDoc) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	for k, v := range d.Extra {
+		// ck_type is retired; a stray Extra key must not resurrect it.
+		if k == "ck_type" {
+			continue
+		}
 		if _, exists := raw[k]; !exists {
 			raw[k] = v
 		}
@@ -294,6 +299,9 @@ func (d ChunkDoc) ToMap() map[string]any {
 		return map[string]any{}
 	}
 	for k, raw := range d.Extra {
+		if k == "ck_type" {
+			continue
+		}
 		out[k] = decodeExtraValue(raw)
 	}
 	// Every pre-index chunk has one canonical text field. Keep the key even

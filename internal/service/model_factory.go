@@ -528,6 +528,8 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
 		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
+	case entity.ModelTypeDecision:
+		return ptrStringValue(tenant.DecisionID), ptrStringValue(tenant.TenantDecisionID)
 	default:
 		return "", ""
 	}
@@ -1078,7 +1080,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 }
 
 func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
-	modelTypes := make([]entity.ModelType, 0, 7)
+	modelTypes := make([]entity.ModelType, 0, 8)
 	for _, candidate := range []entity.ModelType{
 		entity.ModelTypeChat,
 		entity.ModelTypeEmbedding,
@@ -1087,6 +1089,7 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		entity.ModelTypeRerank,
 		entity.ModelTypeTTS,
 		entity.ModelTypeOCR,
+		entity.ModelTypeDecision,
 	} {
 		if modelType.Has(candidate) {
 			modelTypes = append(modelTypes, candidate)

@@ -246,7 +246,7 @@ func invokeChunker(t *testing.T, tc parityCase) []map[string]any {
 //
 // Deriving both sets per case rather than hardcoding an ignore list matters:
 // the Go-only field set is not constant across components (TokenChunker emits
-// ck_type/tk_nums/id, TitleChunker emits only id), so a fixed list would both
+// tk_nums/id, TitleChunker emits only id), so a fixed list would both
 // over- and under-match.
 func compareChunks(t *testing.T, want, got []map[string]any, allowedExtra map[string]string) {
 	t.Helper()
@@ -392,9 +392,9 @@ func extraFieldsToStrip(rules []diffRule) map[string]bool {
 // used for go_snapshot files. Go's json encoder sorts map keys, so two runs
 // with equal content produce byte-identical output.
 //
-// The Go-only decorative fields declared in known_diffs.json (id, ck_type,
+// The Go-only decorative fields declared in known_diffs.json (id,
 // tk_nums) are stripped first: `id` is non-deterministic (derived from a
-// per-run doc id), and `ck_type`/`tk_nums` are Go-internal metadata already
+// per-run doc id), and `tk_nums` are Go-internal metadata already
 // covered by the extra_fields allow-list. Snapshotting them would make the
 // ratchet non-reproducible across runs, defeating its purpose.
 func serializeChunks(caseID string, chunks []map[string]any, strip map[string]bool) string {

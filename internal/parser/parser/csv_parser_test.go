@@ -27,8 +27,8 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
 	}
 	item := res.JSON[0].ToMap()
-	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
-		t.Fatalf("item types = %v/%v, want table/table", item["ck_type"], item["doc_type_kwd"])
+	if item["doc_type_kwd"] != "table" {
+		t.Fatalf("item doc_type_kwd = %v, want table", item["doc_type_kwd"])
 	}
 	wantText := "<table><caption>Data</caption>\n" +
 		"<tr><th>Name</th><th>Age</th><th>City</th></tr>\n" +
@@ -91,7 +91,7 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
-	if len(res.JSON) != 1 || res.JSON[0].ToMap()["ck_type"] != "table" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("items = %#v, want one table item", res.JSON)
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -117,8 +117,8 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" {
-		t.Fatalf("ck_type = %v, want table", res.JSON[0].ToMap()["ck_type"])
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Fatalf("doc_type_kwd = %v, want table", res.JSON[0].ToMap()["doc_type_kwd"])
 	}
 	if positions := res.JSON[0].ToMap()["positions"].([][]float64); len(positions) != 2 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))

@@ -97,8 +97,8 @@ func TestTokenChunkerPreservesSpreadsheetSegmentBoundaries(t *testing.T) {
 		t.Fatalf("segment chunks = %#v", chunks)
 	}
 	for i, chunk := range chunks {
-		if chunk["ck_type"] != "table" {
-			t.Errorf("chunk[%d] ck_type = %v, want table", i, chunk["ck_type"])
+		if chunk["doc_type_kwd"] != "table" {
+			t.Errorf("chunk[%d] doc_type_kwd = %v, want table", i, chunk["doc_type_kwd"])
 		}
 	}
 }
@@ -405,9 +405,8 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 		if got != wantTypes[i] {
 			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
 		}
-		ckType, _ := ch["ck_type"].(string)
-		if ckType != wantTypes[i] {
-			t.Errorf("chunk %d: ck_type = %q, want %q (derived from doc_type_kwd)", i, ckType, wantTypes[i])
+		if _, ok := ch["ck_type"]; ok {
+			t.Errorf("chunk %d must not emit the retired ck_type: %+v", i, ch)
 		}
 	}
 	// The two text segments on either side of the table/image must remain
@@ -473,7 +472,7 @@ func TestTokenChunkerMediaContextSpansUpstreamItems(t *testing.T) {
 			chunks := outputChunks(t, out)
 			var media map[string]any
 			for _, ck := range chunks {
-				if ck["ck_type"] == tc.mediaType {
+				if ck["doc_type_kwd"] == tc.mediaType {
 					media = ck
 					break
 				}
@@ -548,7 +547,7 @@ func TestTokenChunkerDelimiterWindowUsesChildTokenCounts(t *testing.T) {
 	}
 	var media map[string]any
 	for _, ck := range outputChunks(t, out) {
-		if ck["ck_type"] == "table" {
+		if ck["doc_type_kwd"] == "table" {
 			media = ck
 		}
 	}
@@ -569,7 +568,6 @@ func TestMaterializeMediaContextKeepsTokenCountInSync(t *testing.T) {
 	ck := schema.ChunkDoc{
 		Text:         body,
 		DocType:      "table",
-		CKType:       "table",
 		TKNums:       intPtr(tokenizeStr(body)),
 		ContextAbove: "above",
 		ContextBelow: "below",
@@ -611,7 +609,7 @@ func TestTokenChunkerWindowTruncatesOnSentenceBoundary(t *testing.T) {
 	}
 	var media map[string]any
 	for _, ck := range outputChunks(t, out) {
-		if ck["ck_type"] == "table" {
+		if ck["doc_type_kwd"] == "table" {
 			media = ck
 		}
 	}
@@ -712,8 +710,8 @@ func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
 	}
-	if got := chunks[0]["ck_type"]; got != "table" {
-		t.Errorf("ck_type = %v, want table", got)
+	if got := chunks[0]["doc_type_kwd"]; got != "table" {
+		t.Errorf("doc_type_kwd = %v, want table", got)
 	}
 	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
 		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
@@ -1103,7 +1101,6 @@ func TestSplitByChildrenRecomputesTokenCounts(t *testing.T) {
 	children := splitByChildren([]schema.ChunkDoc{{
 		Text:    parentText,
 		DocType: "text",
-		CKType:  "text",
 		TKNums:  intPtr(tokenizeStr(parentText)),
 	}}, regexp.MustCompile(`\. `), true)
 
@@ -1125,7 +1122,6 @@ func TestApplyChildrenDelimText_RecomputesTokenCounts(t *testing.T) {
 	out := applyChildrenDelimText([]schema.ChunkDoc{{
 		Text:    parentText,
 		DocType: "text",
-		CKType:  "text",
 		TKNums:  intPtr(tokenizeStr(parentText)),
 	}}, regexp.MustCompile(`\. `), true)
 
