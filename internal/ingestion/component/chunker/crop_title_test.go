@@ -24,11 +24,10 @@ import (
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
 // produced by the Title/Group/Hierarchy chunkers must be cropped on demand
 // (mirroring the TokenChunker JSON path). The chunk shape mirrors the real
-// Group/Hierarchy output: it carries doc_type_kwd + positions but NO ck_type
-// (buildChunksFromRecordGroups never sets ck_type). cropTitleChunks must
-// derive ck_type from doc_type_kwd so needsCrop (pdfcrop_cgo.go:151) fires.
+// Group/Hierarchy output: it carries doc_type_kwd + positions and no
+// block-kind field. cropImageChunks derives the crop type from doc_type_kwd.
 // A text chunk with positions gets a rendered preview; a chunk without
-// positions is left untouched; and the derived ck_type must not leak into
+// positions is left untouched; and the retired ck_type must not appear in
 // the returned chunk shape.
 func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	ctx := context.Background()
@@ -50,7 +49,7 @@ func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 		t.Errorf("chunk without positions should not be cropped, got %v", got[1]["image"])
 	}
 	if _, ok := got[0]["ck_type"]; ok {
-		t.Errorf("derived ck_type must not leak into output chunk: %v", got[0])
+		t.Errorf("retired ck_type must not appear in output chunk: %v", got[0])
 	}
 }
 

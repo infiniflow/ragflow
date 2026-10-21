@@ -372,6 +372,12 @@ export default {
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
       fileTypeUnsupportedManualSwitch:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
+      fileTypeVideoUnsupported:
+        '{{name}}（{{fileType}}）：视频文件暂不支持解析',
+      videoUnsupportedAfterUploadHint:
+        '可继续上传，但视频文件暂不支持解析，上传后不会被处理。',
+      videoUnsupportedParseHint:
+        '视频文件暂不支持解析，请删除该文件或转换为受支持的格式。',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       manualSwitchAfterUploadHint:
@@ -432,6 +438,8 @@ export default {
       applyAutoMetadataSettings: '应用全局自动元数据设置',
       parseFileTip: '您确定要解析吗？',
       clearChunksReparseTip: '您确定要清空分块重新解析吗？',
+      parserConfigReparseTip:
+        '现有分块由之前的解析设置生成。是否清空现有分块，并使用已保存的设置重新解析此文档？',
       parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
@@ -1030,6 +1038,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       model: '模型',
       modelTip: '大语言聊天模型',
+      tokensSpent:
+        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+      turnElapsed: '耗时 {{seconds}}s',
+      decisionModel: '决策模型',
+      decisionModelTip:
+        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
@@ -1070,6 +1084,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
+      naiveSettings: 'Naive 设置',
+      agenticSettings: 'Agentic 设置',
+      agenticTemplate: 'Agentic 模板',
+      agenticTemplateTip:
+        'Agentic RAG 运行时使用的系统模板。编辑后为当前助手覆盖默认模板，可一键重置恢复。',
+      agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
+      resetToDefault: '重置为默认',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1798,6 +1819,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       models: '模型',
       chatModel: 'LLM',
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
+      decisionModel: '决策模型',
+      decisionModelTip:
+        '用于判断检索到的片段是否值得展示给聊天模型。留空则不启用该判定。',
       ttsModel: 'TTS',
       ttsModelTip:
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',

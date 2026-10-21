@@ -133,8 +133,8 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 				if len(items) != 2 {
 					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
 				}
-				if got := items[0]["ck_type"]; got != "heading" {
-					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
+				if got := items[0]["layout"]; got != "heading" {
+					t.Errorf("markdown item[0].layout = %v, want heading", got)
 				}
 				if got := items[0]["text"]; got != "# Title" {
 					t.Errorf("markdown item[0].text = %v, want # Title", got)

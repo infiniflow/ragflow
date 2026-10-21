@@ -114,7 +114,7 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 // tableItems returns the per-row records, preferring JSONResult and
 // falling back to Chunks. Each table row becomes exactly one chunk; every
 // other payload record passes through as one chunk — including pre-upgrade
-// row-IR records (ck_type: table_row/table_header with cells), which hold no
+// pre-upgrade row-IR records, which hold no
 // markup and therefore keep no per-row positions; documents from before this
 // wire must be re-parsed rather than re-chunked.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {

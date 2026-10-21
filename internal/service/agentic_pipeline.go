@@ -68,6 +68,10 @@ func resolveChatAgenticTemplate(chat *entity.Chat, kwargs map[string]interface{}
 // StartToThink/EndToThink, and exactly one Final result carrying the answer
 // with its reference payload built from the answer's own chunk_id citations
 // (see buildAgenticReference).
+// defaultAgenticTokenBudget is the per-run token ceiling. It bounds the cost of
+// a runaway search; 0 disables the ceiling.
+const defaultAgenticTokenBudget = 500_000
+
 func (s *ChatPipelineService) agenticRag(
 	ctx context.Context,
 	userID string,
@@ -110,6 +114,18 @@ func (s *ChatPipelineService) agenticRag(
 		// those handles against the same numbering.
 		registry := agentic_rag.NewEvidenceRegistry()
 		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
+		// The turn's question, published on the run context because the
+		// sufficiency filter needs it per passage while the retrieval tools are
+		// never given it.
+		query := lastUserQuestion(messages)
+		runCtx = agentic_rag.WithQuery(runCtx, query)
+		// The run's token ceiling. Exceeding it cancels this run and the
+		// terminating fallback answers from the evidence already gathered, so a
+		// runaway search costs a bounded amount instead of an unbounded one.
+		if limit := common.GetEnvInt(common.EnvAgenticTokenBudget, defaultAgenticTokenBudget); limit > 0 {
+			runCtx = common.WithTokenBudget(runCtx, int64(limit))
+			defer common.LogTokenBudget(runCtx)
+		}
 		// Per-turn token accounting. Every LLM call inside the run records its
 		// usage into this sink (models.EinoChatModel does it for both the
 		// non-streaming and streaming paths), which is the only place the cost of
@@ -290,6 +306,12 @@ func (s *ChatPipelineService) agenticRag(
 		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
+		// What the turn cost, on the wire for the same reason the log line
+		// exists: nothing else tells the client. The chat page renders it under
+		// the answer, and a caller comparing runs reads it instead of grepping
+		// the server log.
+		promptTokens, completionTokens, totalTokens, _ := tokenizer.GetRunUsage(runCtx).Snapshot()
+
 		// Persist the same thinking and final answer the stream renders, with
 		// the final answer's citation handles compacted against its reference.
 		emitResult(AsyncChatResult{
@@ -297,6 +319,12 @@ func (s *ChatPipelineService) agenticRag(
 			Reference:             reference,
 			Final:                 true,
 			AnswerIsAuthoritative: true,
+			Usage: &ChatTurnUsage{
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      totalTokens,
+			},
+			ElapsedMs: float64(time.Since(turnStarted).Milliseconds()),
 		})
 	}()
 

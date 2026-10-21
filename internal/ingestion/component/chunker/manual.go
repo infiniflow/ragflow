@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -167,11 +168,12 @@ func sortRecordsByPosition(records []lineRecord) {
 // [page,left,right,top,bottom] of a record's coordinate matrix, or
 // (nil, false) when the record carries no usable coordinates. It reads the
 // structured `_pdf_positions` key first and falls back to the legacy
-// `positions` key. It uses the same decodePositionRows shape handling as
-// mergePositionMatrix, so a list page cell participates in ordering; a list
-// page is ordered by its first page. A flat sequence whose length is not a
-// multiple of five has ambiguous tuple boundaries, so it reports unpositioned
-// instead of sorting by the wrong keys.
+// `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
+// len(row) >= 5 here.
+//
+// The matrix is decoded through parser.PDFPositionRowsFromJSON, so the matrix
+// form and the legacy flat 5-tuple are both understood and the chunker shares
+// one position decoder with the parser boundary and the crop path.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -182,52 +184,11 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	var nested [][]any
-	if err := json.Unmarshal(raw, &nested); err == nil {
-		if len(nested) == 0 || len(nested[0]) < 5 {
-			return nil, false
-		}
-		return firstRowValues(nested[0])
-	}
-	var flat []any
-	if err := json.Unmarshal(raw, &flat); err != nil || len(flat) < 5 || len(flat)%5 != 0 {
+	rows := parser.PDFPositionRowsFromJSON(raw)
+	if len(rows) == 0 {
 		return nil, false
 	}
-	return firstRowValues(flat[:5])
-}
-
-// firstRowValues decodes one 5-tuple [page,left,right,top,bottom] for
-// ordering; a list page cell is ordered by its first page.
-func firstRowValues(row []any) ([]float64, bool) {
-	if len(row) < 5 {
-		return nil, false
-	}
-	page, ok := positionPageValue(row[0])
-	if !ok {
-		return nil, false
-	}
-	values := make([]float64, 5)
-	values[0] = page
-	for i := 1; i < 5; i++ {
-		value, ok := positionRowNumber(row[i])
-		if !ok {
-			return nil, false
-		}
-		values[i] = value
-	}
-	return values, true
-}
-
-// positionPageValue decodes a page cell for ordering: a scalar number or a
-// list whose first entry is numeric.
-func positionPageValue(raw any) (float64, bool) {
-	if value, ok := positionRowNumber(raw); ok {
-		return value, true
-	}
-	if pages, ok := raw.([]any); ok && len(pages) > 0 {
-		return positionPageValue(pages[0])
-	}
-	return 0, false
+	return rows[0], true
 }
 
 // init registers ManualChunker under CategoryIngestion.

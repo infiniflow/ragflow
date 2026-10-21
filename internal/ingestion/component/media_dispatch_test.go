@@ -1101,3 +1101,35 @@ func picturePNG(t *testing.T) []byte {
 	}
 	return data.Bytes()
 }
+
+// TestMaybeDispatchVideoRejectsExplicitly pins the runtime backstop behind the
+// frontend parse block: a video file whose setups declare the video family
+// gets an explicit "not yet supported" error (not a silent fallback), while
+// configs without a video family fall through to the generic dispatch path.
+func TestMaybeDispatchVideoRejectsExplicitly(t *testing.T) {
+	ctx := t.Context()
+	inputs := map[string]any{"tenant_id": "t1"}
+
+	// Main path: standard component defaults declare the video family, so the
+	// branch handles the file and fails loudly.
+	_, handled, err := maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, defaultSetups())
+	if !handled {
+		t.Fatal("maybeDispatchVideo did not handle a video file with a video setup")
+	}
+	if err == nil || !strings.Contains(err.Error(), "not yet supported") {
+		t.Fatalf("video error = %v, want explicit not-yet-supported", err)
+	}
+
+	// Without a video family the branch stays out of the way; the generic
+	// dispatch path (GetParser "unsupported file type") answers instead.
+	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, map[string]schema.ParserSetup{})
+	if handled || err != nil {
+		t.Fatalf("handled = %v, err = %v, want pass-through without a video setup", handled, err)
+	}
+
+	// Non-video files never enter the video branch.
+	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVISUAL, "photo.jpg", []byte("jpeg-bytes"), inputs, defaultSetups())
+	if handled || err != nil {
+		t.Fatalf("handled = %v, err = %v, want pass-through for images", handled, err)
+	}
+}

@@ -14,12 +14,16 @@ const ErrorIndicatorSelector =
 export function useRevealSubmitErrors() {
   const [modelSettingOpen, setModelSettingOpen] = useState(false);
   const [advancedSettingOpen, setAdvancedSettingOpen] = useState(false);
+  const [naiveSettingOpen, setNaiveSettingOpen] = useState(false);
+  const [agenticSettingOpen, setAgenticSettingOpen] = useState(false);
   const [invalidSubmitSignal, setInvalidSubmitSignal] = useState(0);
   const formContainerRef = useRef<HTMLFormElement>(null);
 
   const handleInvalidSubmit = useCallback(() => {
     setModelSettingOpen(true);
     setAdvancedSettingOpen(true);
+    setNaiveSettingOpen(true);
+    setAgenticSettingOpen(true);
     setInvalidSubmitSignal((signal) => signal + 1);
   }, []);
 
@@ -44,5 +48,9 @@ export function useRevealSubmitErrors() {
     onModelSettingOpenChange: setModelSettingOpen,
     advancedSettingOpen,
     onAdvancedSettingOpenChange: setAdvancedSettingOpen,
+    naiveSettingOpen,
+    onNaiveSettingOpenChange: setNaiveSettingOpen,
+    agenticSettingOpen,
+    onAgenticSettingOpenChange: setAgenticSettingOpen,
   };
 }

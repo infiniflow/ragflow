@@ -266,7 +266,6 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			media := cloneChunkDoc(unit)
 			media.Text = normalizeGeneralNewlines(media.Text)
 			media.DocType = itemDocType(media)
-			media.CKType = media.DocType
 			chunks = append(chunks, media)
 		}
 	}
@@ -491,7 +490,6 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 			flush()
 			media := cloneChunkDoc(unit)
 			media.DocType = itemDocType(media)
-			media.CKType = media.DocType
 			grouped = append(grouped, media)
 			continue
 		}
@@ -500,7 +498,7 @@ func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []st
 		}
 		text := cloneChunkDoc(unit)
 		text.DocType = "text"
-		text.CKType = "text"
+		clearStructuralLayout(&text)
 		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
 			sawBoundary = true
 			flush()
@@ -742,7 +740,7 @@ type markdownSplit struct {
 }
 
 // splitMarkdownUnits expands only text units while retaining the semantic
-// parser type on every piece. Markdown heading detection depends on ck_type,
+// parser type on every piece. Markdown heading detection depends on layout,
 // so the generic splitter's type normalization cannot be used here.
 func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) markdownSplit {
 	result := markdownSplit{
@@ -753,12 +751,15 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
-		if !keepDelimiter || unit.CKType == "heading" {
+		if !keepDelimiter || isHeadingLayout(unit.Layout) {
 			unit.Text = strings.TrimSpace(unit.Text)
 		}
 		unit.DocType = itemDocType(unit)
+		// Media units are content attachments, not block-kind boundaries.
+		// Base normalized their CKType to DocType here, so an image-only
+		// heading folded into the preceding chunk; preserve that behavior.
 		if unit.DocType == "table" || unit.DocType == "image" {
-			unit.CKType = unit.DocType
+			clearStructuralLayout(&unit)
 		}
 		shortHeading := isShortMarkdownHeading(unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
@@ -838,7 +839,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			joinSep = "\n"
 		}
 		if itemDocType(unit) == "table" {
-			if current >= 0 && merged[current].CKType == "heading" && previousShortHeading {
+			if current >= 0 && isHeadingLayout(merged[current].Layout) && previousShortHeading {
 				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
 				if !imagesOK {
 					merged = append(merged, cloneChunkDoc(unit))
@@ -859,7 +860,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 				mergeGeneralMetadata(&table, heading)
 				table.Image = mergedImage
 				table.DocType = "table"
-				table.CKType = "table"
 				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
 				merged[current] = table
 				current = -1
@@ -879,9 +879,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			}
 			standalone := cloneChunkDoc(unit)
 			standalone.DocType = "image"
-			if standalone.CKType == "" {
-				standalone.CKType = "image"
-			}
 			standalone.TKNums = intPtr(generalUnitTokens(standalone))
 			merged = append(merged, standalone)
 			continue
@@ -889,9 +886,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 
 		unit = cloneChunkDoc(unit)
 		unit.DocType = "text"
-		if unit.CKType == "" {
-			unit.CKType = "text"
-		}
 		unit.TKNums = intPtr(generalUnitTokens(unit))
 		if current < 0 {
 			merged = append(merged, unit)
@@ -902,13 +896,13 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 
 		previous := &merged[current]
 		unitTokens := generalUnitTokens(unit)
-		if startsBlock && unit.CKType == "heading" && previous.CKType != "heading" {
+		if startsBlock && isHeadingLayout(unit.Layout) && !isHeadingLayout(previous.Layout) {
 			merged = append(merged, unit)
 			current = len(merged) - 1
 			currentTokens = unitTokens
 			continue
 		}
-		forceMerge := previous.CKType == "heading" && previousShortHeading
+		forceMerge := isHeadingLayout(previous.Layout) && previousShortHeading
 		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
 		if !imagesOK {
 			merged = append(merged, unit)
@@ -940,8 +934,8 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 		mergeGeneralChunk(previous, unit, joinSep)
 		previous.Image = mergedImage
 		previous.DocType = "text"
-		if startsBlock || unit.CKType != "heading" {
-			previous.CKType = "text"
+		if startsBlock || !isHeadingLayout(unit.Layout) {
+			clearStructuralLayout(previous)
 		}
 		currentTokens = projected
 		previous.TKNums = intPtr(currentTokens)
@@ -950,7 +944,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 }
 
 func isShortMarkdownHeading(unit schema.ChunkDoc) bool {
-	if unit.CKType != "heading" {
+	if !isHeadingLayout(unit.Layout) {
 		return false
 	}
 	return tokenizeStr(markdownHeadingContent(unit.Text)) < 50
@@ -1190,7 +1184,7 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 
 		count := generalUnitTokens(unit)
 		unit.DocType = "text"
-		unit.CKType = "text"
+		clearStructuralLayout(&unit)
 		unit.TKNums = intPtr(count)
 		if count > target {
 			merged = append(merged, cloneChunkDoc(unit))
@@ -1335,7 +1329,7 @@ func splitGeneralUnitsPreservingRecordPrefix(units []schema.ChunkDoc, pattern *r
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
-		unit.CKType = unit.DocType
+		clearStructuralLayout(&unit)
 		prefix, rest := peelLeadingRecordPrefix(unit.Text, recordPrefixes)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(rest) {
 			unit.Text = prefix + rest
@@ -1387,7 +1381,7 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDeli
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
-		unit.CKType = unit.DocType
+		clearStructuralLayout(&unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)
