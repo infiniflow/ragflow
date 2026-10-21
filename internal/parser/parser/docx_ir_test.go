@@ -29,7 +29,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 
 	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	want := []map[string]any{
-		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Title", "image": nil, "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		// The table sits under heading "Title", so it carries the

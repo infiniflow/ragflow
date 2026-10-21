@@ -664,9 +664,9 @@ func TestProcessChunkPositions_ChunkerRoundTrip(t *testing.T) {
 	// normalizes it to [][]float64 at the chunker boundary too, so the parser
 	// container type never reaches the indexer.
 	pdfItem := parser.ImageItem{
-		Text:   "fig",
-		Image:  "",
-		CKType: "image",
+		Text:  "fig",
+		Image: "",
+
 		Positions: parser.Positions{
 			parser.AbsoluteBox{PageNumber: 1, Left: 100, Right: 50, Top: 200, Bottom: 150},
 		},

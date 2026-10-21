@@ -115,7 +115,6 @@ func emitOne(text, docType string) map[string]any {
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
-		CKType:  docType,
 	}})
 }
 
@@ -145,7 +144,6 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			// Strip parser coordinate tags (see emitOne).
 			Text:         removeTag(text),
 			DocType:      docType,
-			CKType:       docType,
 			Image:        it.Image,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
@@ -170,7 +168,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	if strings.TrimSpace(merged) == "" && img == "" {
 		return emptyOutputs()
 	}
-	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	out := schema.ChunkDoc{Text: merged, DocType: "text"}
 	// Multi-item merge produces a single text-only chunk mirroring Python
 	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would
