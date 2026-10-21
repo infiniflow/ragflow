@@ -1114,7 +1114,6 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	}
 
 	// Execute delete by query with refresh=true
-	// Refresh after deletion so follow-up reads see the removal.
 	refreshTrue := true
 	req := esapi.DeleteByQueryRequest{
 		Index:   []string{fullIndexName},
