@@ -1672,7 +1672,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type"), RelationType: relType}
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
@@ -1690,7 +1690,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)
