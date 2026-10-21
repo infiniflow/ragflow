@@ -40,10 +40,12 @@ from rag.flow.parser.pdf_chunk_metadata import (
     restore_pdf_text_previews,
 )
 from rag.nlp import not_bullet, not_title
+from rag.nlp.delim import normalize_text_newlines
 
 logger = logging.getLogger(__name__)
 
 BODY_LEVEL = sys.maxsize - 1
+_HEADING_LAYOUT_RE = re.compile(r"(section|title|head)", re.IGNORECASE)
 
 
 class TitleChunkerParam(ProcessParamBase):
@@ -259,7 +261,7 @@ class BaseTitleChunker(ABC):
             payload = self.from_upstream.html_result or ""
 
         if payload is not None:
-            lines = payload.split("\n")
+            lines = normalize_text_newlines(payload).split("\n")
             input_line_count = len(lines)
             # Plain text: full whitespace strip + drop blank lines. Markdown &
             # HTML: keep original spacing, drop only pure blank lines.
@@ -280,17 +282,45 @@ class BaseTitleChunker(ABC):
                 "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
                 PDF_POSITIONS_KEY: extract_pdf_positions(item),
             }
-            # An explicit layout heading can wrap across lines. Keep that
-            # block intact, as well as atomic tables/images. Other text blocks
-            # may contain several headings and body paragraphs merged by the
-            # parser; resolve their levels line by line, just like text input.
-            if record["doc_type_kwd"] != "text" or re.search(r"(section|title|head)", record["layout"], re.IGNORECASE):
+            # Positioned blocks retain their parser boundaries so PDF outline
+            # coverage and layout-based heading detection remain stable.
+            # Media references and explicit layout headings also stay intact.
+            if (
+                record["doc_type_kwd"] != "text"
+                or record[PDF_POSITIONS_KEY]
+                or item.get("bbox")
+                or record["img_id"]
+                or item.get("image")
+                or str(item.get("layout_type") or "").lower() in {"figure", "table"}
+                or _HEADING_LAYOUT_RE.search(record["layout"])
+                or not record["text"].strip()
+            ):
                 records.append(record)
                 continue
-            for line in record["text"].splitlines():
+            text = normalize_text_newlines(record["text"])
+            if self._contains_structured_text(text):
+                records.append(record)
+                continue
+            # Only coordinate-free ordinary text needs headings recovered from
+            # within a merged Parser record, as in plain-text input.
+            for line in text.split("\n"):
                 if line.strip():
-                    records.append({**record, "text": line, PDF_POSITIONS_KEY: deepcopy(record[PDF_POSITIONS_KEY])})
+                    records.append({**record, "text": line})
         return records
+
+    @staticmethod
+    def _contains_structured_text(text):
+        """Keep flattened tables and fenced code intact during title detection."""
+        if re.search(r"<table(?:\s|>)|^[ \t]*(?:`{3,}|~{3,})", text, re.IGNORECASE | re.MULTILINE):
+            return True
+        lines = text.split("\n")
+        for index in range(1, len(lines)):
+            if not lines[index - 1].lstrip().startswith("|"):
+                continue
+            cells = lines[index].strip().strip("|").split("|")
+            if all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells):
+                return True
+        return False
 
     def extract_outlines(self):
         """Extract PDF bookmarks/outlines used for outline-based leveling."""
@@ -342,7 +372,7 @@ class BaseTitleChunker(ABC):
     @staticmethod
     def match_layout_level(text, layout, fallback_level):
         """Treat layout-tagged title-like lines as ``fallback_level``."""
-        if re.search(r"(section|title|head)", layout, re.IGNORECASE) and not not_title(text.split("@")[0].strip()):
+        if _HEADING_LAYOUT_RE.search(layout) and not not_title(text.split("@")[0].strip()):
             return fallback_level
         return BODY_LEVEL
 

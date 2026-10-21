@@ -32,7 +32,7 @@ which also fakes ``num_tokens_from_string``).
 
 @contextmanager
 def _load_title_chunker_with_stubs():
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[5]
     original_modules = {}
 
     def _install(name: str, module: types.ModuleType):
@@ -75,6 +75,7 @@ def _load_title_chunker_with_stubs():
         _install("common.token_utils", common_token_utils)
 
         rag_nlp = types.ModuleType("rag.nlp")
+        rag_nlp.__path__ = [str(root / "rag" / "nlp")]
         rag_nlp.naive_merge = lambda *args, **kwargs: []
         rag_nlp.not_bullet = lambda text: False
         rag_nlp.not_title = lambda text: True
@@ -194,6 +195,9 @@ def _real_extract_pdf_positions(item):
     if isinstance(positions, list):
         return [list(p) for p in positions]
     positions = item.get("positions")
+    if isinstance(positions, list):
+        return [list(p) for p in positions]
+    positions = item.get("position_int")
     if isinstance(positions, list):
         return [list(p) for p in positions]
     return []
@@ -560,7 +564,7 @@ def test_hard_split_lossless_with_real_truncate():
     # character dropped at the split boundary).
     import importlib.util
 
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[5]
     spec = importlib.util.spec_from_file_location("ragflow_real_token_utils", str(root / "common" / "token_utils.py"))
     real_token_utils = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(real_token_utils)
@@ -663,7 +667,7 @@ def test_hierarchy_split_heading_keeps_pdf_positions():
 
 
 def test_hierarchy_split_repeats_heading_with_real_tokenizer():
-    spec = importlib.util.spec_from_file_location("real_title_token_utils", Path(__file__).resolve().parents[3] / "common/token_utils.py")
+    spec = importlib.util.spec_from_file_location("real_title_token_utils", Path(__file__).resolve().parents[5] / "common/token_utils.py")
     token_utils = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(token_utils)
     heading = "第一编 总则\n"
@@ -739,14 +743,78 @@ def test_multiline_records_separate_headings_from_body(output_format, method, in
     assert chunks[-1]["text"] == expected_last
 
 
-def test_multiline_records_preserve_positions_on_each_section():
+def test_positioned_multiline_record_preserves_outline_levels():
     positions = [[1, 10, 200, 50, 80]]
-    items = [{"text": "第一章 总则\n章一正文。\n第二章 自然人\n章二正文。", "positions": positions}]
-    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+章"]], hierarchy="1", faithful_positions=True)
-    assert [chunk["text"] for chunk in chunks] == ["第一章 总则\n章一正文。\n", "第二章 自然人\n章二正文。\n"]
-    assert all(chunk["position_int"] == positions for chunk in chunks)
-    chunks[0]["position_int"][0][0] = 999
-    assert chunks[1]["position_int"] == positions
+    body = "\n".join(f"body paragraph {index}" for index in range(70))
+    items = [{"text": "Chapter Title", "positions": positions}, {"text": body, "positions": positions}]
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _group_module):
+        common_module.extract_pdf_positions = _real_extract_pdf_positions
+        param = common_module.TitleChunkerParam()
+        param.method = "hierarchy"
+        param.hierarchy = "1"
+        process = common_module.ProcessBase(None, "title", param)
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream(items))
+        chunker.extract_outlines = lambda: [("Chapter Title", 0, 0)]
+        records = chunker.extract_line_records()
+        resolved = chunker.resolve_levels(records)
+    assert resolved["source"] == "outline"
+    assert resolved["levels"] == [1, common_module.BODY_LEVEL]
+    assert records[1]["text"] == body
+    assert all(record[common_module.PDF_POSITIONS_KEY] == positions for record in records)
+
+
+@pytest.mark.parametrize("method", ["hierarchy", "group"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "```python\n# Code comment\nprint(1)\n```",
+        "~~~python\n# Code comment\nprint(1)\n~~~",
+        "| Name | Value |\n| --- | --- |\n# Cell content\n| a | b |",
+        "<TABLE>\n# Cell content\n<tr><td>a</td></tr>\n</TABLE>",
+    ],
+)
+def test_structured_text_does_not_create_internal_headings(method, text):
+    chunks = _run(method, _json_upstream([{"text": "# Real heading"}, {"text": text}]), levels=[[r"^# "]], hierarchy="1", chunk_token_cap=0)
+    assert [chunk["text"] for chunk in chunks] == ["# Real heading\n" + text + "\n"]
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"positions": [[1, 10, 200, 50, 80]]},
+        {"position_int": [[1, 10, 200, 50, 80]]},
+        {"bbox": [10, 50, 200, 80]},
+        {"img_id": "image-reference"},
+        {"image": "image-payload"},
+        {"layout_type": "table"},
+        {"layout_type": "figure"},
+    ],
+)
+def test_position_or_media_bound_text_is_not_split(metadata):
+    text = "# Part one\nfirst body\n# Part two\nsecond body"
+    chunks = _run("hierarchy", _json_upstream([{"text": text, **metadata}]), levels=[[r"^# "]], hierarchy="1", chunk_token_cap=0, faithful_positions=True)
+    assert [chunk["text"] for chunk in chunks] == [text + "\n"]
+
+
+@pytest.mark.parametrize("output_format", ["text", "json"])
+def test_line_endings_are_normalized_without_splitting_page_breaks(output_format):
+    text = "# One\r\nfirst\fbody\r# Two\nsecond"
+    upstream = _json_upstream([{"text": text}])
+    if output_format == "text":
+        upstream.output_format = "text"
+        upstream.text_result = text
+    chunks = _run("hierarchy", upstream, levels=[[r"^# "]], hierarchy="1", chunk_token_cap=0)
+    assert [chunk["text"] for chunk in chunks] == ["# One\nfirst\fbody\n", "# Two\nsecond\n"]
+
+
+def test_empty_image_reference_is_retained():
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _group_module):
+        param = common_module.TitleChunkerParam()
+        process = common_module.ProcessBase(None, "title", param)
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream([{"text": "", "img_id": "image-reference"}]))
+        records = chunker.extract_line_records()
+    assert len(records) == 1
+    assert records[0]["img_id"] == "image-reference"
 
 
 def test_layout_heading_keeps_wrapped_title_but_body_lines_are_not_headings():
@@ -773,16 +841,28 @@ def test_layout_heading_keeps_wrapped_title_but_body_lines_are_not_headings():
 @pytest.mark.parametrize("method", ["hierarchy", "group"])
 def test_txt_parser_json_preserves_sections_and_body(method, parser_cap):
     from common import token_utils
-    from deepdoc.parser.txt_parser import RAGFlowTxtParser
-    from rag.nlp import not_bullet
+    from rag.nlp import MergeStrategy, merge_paragraphs, not_bullet
+
+    # Load the TXT modules without deepdoc.parser's eager PDF imports: the
+    # unit-test conftest deliberately provides only a minimal PDF parser.
+    root = Path(__file__).resolve().parents[5]
+    utils_spec = importlib.util.spec_from_file_location("title_test_parser_utils", root / "deepdoc/parser/utils.py")
+    parser_utils = importlib.util.module_from_spec(utils_spec)
+    utils_spec.loader.exec_module(parser_utils)
 
     headings = ["第一编 总则", "第一章 基本规定", "第二章 自然人"]
     first_body = "".join(f"本条规定编号{i}的民事权利义务。" for i in range(80))
     second_body = "后章正文。"
     text = "\n".join([*headings[:2], first_body, headings[2], second_body])
-    sections = RAGFlowTxtParser.parser_txt(text, parser_cap, keep_delimiters=True)
-    items = [{"text": section[0], "doc_type_kwd": "text"} for section in sections]
     with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, group_module):
+        sys.modules["rag.nlp"].MergeStrategy = MergeStrategy
+        sys.modules["rag.nlp"].merge_paragraphs = merge_paragraphs
+        sys.modules["deepdoc.parser.utils"].get_text = parser_utils.get_text
+        txt_spec = importlib.util.spec_from_file_location("title_test_txt_parser", root / "deepdoc/parser/txt_parser.py")
+        txt_parser = importlib.util.module_from_spec(txt_spec)
+        txt_spec.loader.exec_module(txt_parser)
+        sections = txt_parser.RAGFlowTxtParser.parser_txt(text, parser_cap, keep_delimiters=True)
+        items = [{"text": section[0], "doc_type_kwd": "text"} for section in sections]
         common_module.num_tokens_from_string = token_utils.num_tokens_from_string
         common_module.truncate = token_utils.truncate
         common_module.not_bullet = not_bullet
