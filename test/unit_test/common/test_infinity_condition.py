@@ -411,6 +411,15 @@ class TestOtherConditionBranches:
     def test_compile_kwd_only_empty_nested_lists_yields_no_predicate(self):
         assert _translate({"compile_kwd": [[]]}, {}) == "1=1"
 
+    def test_compile_kwd_mixed_nested_and_scalar_values_are_all_kept(self):
+        """Flattening must not drop scalar entries sitting next to a re-wrapped
+        one: ``[["wiki_map"], "wiki_page"]`` has to match both, or a delete
+        filter silently leaves the second value's rows behind."""
+        result = _translate({"compile_kwd": [["wiki_map"], "wiki_page"]}, {})
+        assert "compile_kwd='wiki_map'" in result
+        assert "compile_kwd='wiki_page'" in result
+        assert " or " in result
+
     def test_compile_kwd_deeply_nested_value_is_rejected(self):
         """Flattening covers one level of re-wrapping. Anything deeper would
         interpolate as ``compile_kwd=['tree']`` and then get dropped, so the
@@ -422,6 +431,19 @@ class TestOtherConditionBranches:
         """``get_fields`` fills absent columns with ``None``: a missing value,
         not a malformed one, so it must not raise."""
         assert _translate({"compile_kwd": [None]}, {}) == "1=1"
+
+    def test_keyword_column_mixed_nested_and_scalar_values_are_all_kept(self):
+        """Multi-valued ``*_kwd`` columns hit the ``field_keyword`` branch, which
+        used to interpolate the nested container as ``'['root']'``. It must now
+        unwrap one level and keep the scalar entries next to it."""
+        result = _translate({"name_kwd": [["root"], "leaf"]}, {})
+        assert "filter_fulltext('name_kwd', 'root')" in result
+        assert "filter_fulltext('name_kwd', 'leaf')" in result
+        assert " or " in result
+
+    def test_keyword_column_deeply_nested_value_is_rejected(self):
+        with pytest.raises(ValueError):
+            _translate({"name_kwd": [[["root"]]]}, {})
 
 
 class TestDeleteSafety:

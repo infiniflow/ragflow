@@ -166,6 +166,25 @@ def _retry_on_meta_contention(
     raise last_exc
 
 
+def _flatten_filter_values(values: list) -> list:
+    """Unwrap containers inside a filter value list, keeping scalar entries.
+
+    A caller may re-wrap a ``*_kwd`` value that ``get_fields`` already returned
+    as a list. Interpolating the nested container emits ``k=['x']``, which
+    Infinity rejects with 3030 — and dropping the entry silently would leave
+    rows behind on delete.
+    """
+    if not any(isinstance(item, (list, tuple, set)) for item in values):
+        return values
+    flattened = []
+    for item in values:
+        if isinstance(item, (list, tuple, set)):
+            flattened.extend(item)
+        else:
+            flattened.append(item)
+    return flattened
+
+
 class InfinityConnectionBase(DocStoreConnection):
     def __init__(self, mapping_file_name: str = "infinity_mapping.json", logger_name: str = "ragflow.infinity_conn", table_name_prefix: str = "ragflow_"):
         from common.doc_store.infinity_conn_pool import INFINITY_CONN
@@ -395,11 +414,7 @@ class InfinityConnectionBase(DocStoreConnection):
                     raise ValueError(f"No valid delete predicate could be generated for column '{k}'")
             elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
                 values = v if isinstance(v, list) else [v]
-                # A caller may re-wrap a value that ``get_fields`` already
-                # returned as a list; interpolating the nested container emits
-                # ``k=['x']``, which Infinity rejects with 3030.
-                if any(isinstance(item, (list, tuple, set)) for item in values):
-                    values = [it for item in values if isinstance(item, (list, tuple, set)) for it in item]
+                values = _flatten_filter_values(values)
                 exact_conditions = []
                 for item in values:
                     if isinstance(item, str):
@@ -419,9 +434,14 @@ class InfinityConnectionBase(DocStoreConnection):
             elif self.field_keyword(k):
                 if isinstance(v, list):
                     inCond = list()
-                    for item in v:
+                    for item in _flatten_filter_values(v):
                         if isinstance(item, str):
                             item = item.replace("'", "''")
+                        elif isinstance(item, (list, tuple, set)):
+                            # Unwrapping covers one level of re-wrapping; a deeper
+                            # one would interpolate as `'['x']'` inside the
+                            # fulltext call and silently stop matching.
+                            raise ValueError(f"Cannot build {k} filter from value {item!r}")
                         inCond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{item}')")
                     if inCond:
                         strInCond = " or ".join(inCond)
