@@ -19,9 +19,9 @@ package entity
 // TenantModelProvider tenant model provider table
 type TenantModelProvider struct {
 	ID           string `gorm:"column:id;primaryKey;size:32" json:"id"`
-	UserID       string `gorm:"column:user_id;size:32;index" json:"user_id"`
-	ProviderName string `gorm:"column:provider_name;size:128;not null;index:idx_tenant_provider_unique,unique" json:"provider_name"`
-	TenantID     string `gorm:"column:tenant_id;size:32;not null;index;index:idx_tenant_provider_unique,unique" json:"tenant_id"`
+	UserID       string `gorm:"column:user_id;size:32;index;index:idx_tenant_provider_user_unique,unique,priority:3" json:"user_id"`
+	ProviderName string `gorm:"column:provider_name;size:128;not null;index:idx_tenant_provider_user_unique,unique,priority:1" json:"provider_name"`
+	TenantID     string `gorm:"column:tenant_id;size:32;not null;index;index:idx_tenant_provider_user_unique,unique,priority:2" json:"tenant_id"`
 	BaseModel
 }
 

@@ -235,12 +235,16 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	}
 
 	db := dao.GetDB()
+	tenantDAO := dao.NewTenantDAO()
 	if err = db.Transaction(func(tx *gorm.DB) error {
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
+		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
+			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+		}
 
-		if err = tx.Create(tenant).Error; err != nil {
+		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
 
