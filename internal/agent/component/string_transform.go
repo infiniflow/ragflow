@@ -310,11 +310,30 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.CanvasState, inputs map[string]any) map[string]any {
 	delimiter := s.param.Delimiters[0]
 
-	// List values are joined with the first delimiter, as Python's merge did.
-	// In both passes they are swapped for markers and the joined text goes in
-	// at the end, so list items are never resolved as refs or placeholders.
-	var lists []string
-	script := runtime.VarRefPattern.ReplaceAllStringFunc(s.param.Script, func(match string) string {
+	// Input values and list values are swapped for markers and their text
+	// goes in at the end, so the shared resolver can neither consume nor
+	// rescan them: its gonja path (taken for any "|") only sees canvas state
+	// and would render input placeholders empty. Lists are joined with the
+	// first delimiter, as Python's merge did.
+	var texts []string
+	deferText := func(text string) string {
+		texts = append(texts, text)
+		return textMarker(len(texts) - 1)
+	}
+
+	// {{name}} placeholders supplied in inputs take precedence, as in Python.
+	script := placeholderPattern.ReplaceAllStringFunc(s.param.Script, func(match string) string {
+		v, ok := inputs[placeholderPattern.FindStringSubmatch(match)[1]]
+		if !ok {
+			return match
+		}
+		text, isList := joinList(v, delimiter)
+		if !isList {
+			text = fmt.Sprintf("%v", v)
+		}
+		return deferText(text)
+	})
+	script = runtime.VarRefPattern.ReplaceAllStringFunc(script, func(match string) string {
 		sub := runtime.VarRefPattern.FindStringSubmatch(match)
 		if len(sub) < 2 {
 			return match
@@ -327,8 +346,7 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		if !ok {
 			return match
 		}
-		lists = append(lists, joined)
-		return listMarker(len(lists) - 1)
+		return deferText(joined)
 	})
 
 	// First pass: state-level template resolution for any runtime ref
@@ -338,7 +356,7 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		script = resolved
 	}
 
-	// Second pass: {{name}} placeholders → values from inputs, then state.
+	// Second pass: remaining {{name}} placeholders → values from inputs, then state.
 	for _, n := range extractPlaceholders(script) {
 		placeholder := "{{" + n + "}}"
 		var value any
@@ -351,14 +369,13 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		}
 		text := fmt.Sprintf("%v", value)
 		if joined, ok := joinList(value, delimiter); ok {
-			lists = append(lists, joined)
-			text = listMarker(len(lists) - 1)
+			text = deferText(joined)
 		}
 		script = strings.ReplaceAll(script, placeholder, text)
 	}
 
-	for i, joined := range lists {
-		script = strings.ReplaceAll(script, listMarker(i), joined)
+	for i, text := range texts {
+		script = strings.ReplaceAll(script, textMarker(i), text)
 	}
 	return map[string]any{"result": script}
 }
@@ -379,10 +396,10 @@ func joinList(v any, delimiter string) (string, bool) {
 	return "", false
 }
 
-// listMarker stands in for the i-th joined list while the merge script is
+// textMarker stands in for the i-th deferred text while the merge script is
 // resolved. U+E000 is a private-use rune, so a marker matches neither a ref,
 // a {{name}} placeholder nor Jinja syntax.
-func listMarker(i int) string {
+func textMarker(i int) string {
 	return fmt.Sprintf("\uE000%d\uE000", i)
 }
 

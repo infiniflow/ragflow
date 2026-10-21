@@ -375,6 +375,26 @@ func TestStringTransform_MergeListPlaceholderItemsAreNotResolved(t *testing.T) {
 	}
 }
 
+// TestStringTransform_MergeInputsSurviveJinjaPath: a "|" sends the first pass
+// through gonja, which only sees canvas state; {{name}} placeholders supplied
+// in inputs must still be substituted.
+func TestStringTransform_MergeInputsSurviveJinjaPath(t *testing.T) {
+	for _, tc := range []struct{ name, script, want string }{
+		{"double-brace list ref", "{{st_0@result}} | {{suffix}}", "a,b | X"},
+		{"single-brace list ref", "{st_0@result} | {{suffix}}", "a,b | X"},
+		{"spaces in placeholder", "{{ suffix }}", "X"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := canvas.NewCanvasState("run-16", "task-16")
+			state.Outputs["st_0"] = map[string]any{"result": []any{"a", "b"}}
+			got := runMerge(t, state, ",", tc.script, map[string]any{"suffix": "X"})
+			if got != tc.want {
+				t.Errorf("merge: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestStringTransform_SplitThenMerge: a split result merged with another
 // delimiter.
 func TestStringTransform_SplitThenMerge(t *testing.T) {
