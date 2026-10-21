@@ -125,6 +125,36 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 	}
 }
 
+func TestPaddleOCRNonTitleBlocksPreserveMarkdownLayout(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, text, wantLayout string }{
+		{"heading", "# Section", "heading"},
+		{"code", "```\ncode line\n```", "code"},
+		{"list", "- item one", "list"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// The layout model labelled the block "text", but the Markdown
+			// normalization already asserted a structural block kind. The OCR
+			// label must not overwrite it.
+			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: "text"}}}}}
+			result := PaddleOCRPDFResult(t.Context(), "layout.pdf", data, response)
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			if len(result.JSON) == 0 {
+				t.Fatal("no items emitted")
+			}
+			item := result.JSON[0].ToMap()
+			if item["layout"] != tc.wantLayout {
+				t.Fatalf("layout = %v, want %q (markdown structural layout must win over the OCR label): %v", item["layout"], tc.wantLayout, item)
+			}
+		})
+	}
+}
+
 func TestPaddleOCRPDFResultRejectsRenderedEmptyText(t *testing.T) {
 	for _, label := range []string{"text", "doc_title", "paragraph_title"} {
 		t.Run(label, func(t *testing.T) {

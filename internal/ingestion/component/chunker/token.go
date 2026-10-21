@@ -290,15 +290,35 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 // empty chunk list — leaves chunks unchanged (best-effort, matching the
 // on-demand PDF crop contract used by the TokenChunker path).
 func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
-	if engine == nil || len(chunks) == 0 {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	if engine == nil {
+		normalizeTitleChunkMaps(chunks)
 		return chunks
 	}
 	docs, _, err := schema.ChunkDocsFromAny(chunks)
 	if err != nil || len(docs) == 0 {
+		normalizeTitleChunkMaps(chunks)
 		return chunks
 	}
 	cropped := cropImageChunks(ctx, engine, docs)
+	for i := range cropped {
+		clearStructuralLayout(&cropped[i])
+	}
 	return schema.ChunkDocsToMaps(cropped)
+}
+
+// normalizeTitleChunkMaps keeps the Title-family output shape independent of
+// whether a PDF engine is available: retired ck_type and chunker-internal
+// structural layout never leave the component.
+func normalizeTitleChunkMaps(chunks []map[string]any) {
+	for _, chunk := range chunks {
+		delete(chunk, "ck_type")
+		if layout, _ := chunk["layout"].(string); isStructuralLayout(layout) {
+			delete(chunk, "layout")
+		}
+	}
 }
 
 // invokeTextPayload handles plain-text input (output_format in

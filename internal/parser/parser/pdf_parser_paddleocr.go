@@ -13,6 +13,18 @@ import (
 
 // PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
 // emits the structured items consumed by the existing PDF chunk pipeline.
+// isStructuralOCRTextLayout reports whether an item already carries a
+// structural block kind produced by markdown normalization. Those values are
+// finer than an OCR block label and must win over it.
+func isStructuralOCRTextLayout(fields map[string]any) bool {
+	layout, _ := fields["layout"].(string)
+	switch layout {
+	case "heading", "paragraph", "list", "code", "quote":
+		return true
+	}
+	return false
+}
+
 func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -63,6 +75,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 				label = "caption"
 			}
 			for _, item := range parsed.JSON {
+				_, isTextItem := item.(TextItem)
 				if text, ok := item.(TextItem); ok {
 					if strings.TrimSpace(text.Text) == "" {
 						continue
@@ -85,13 +98,18 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 				// Page identity is retained even when the block has no usable geometry.
 				fields["page_number"] = page.Index + 1
 				fields["_preserve_order"] = true
-				if isTitle {
+				// Markdown normalization already asserted a structural layout
+				// (heading/list/code). The OCR block label is coarser and must
+				// not overwrite it; only fill an absent layout.
+				if isTitle && isTextItem && !isStructuralOCRTextLayout(fields) {
 					// The asserted-title marker the Title chunker reads without
 					// the notTitle heuristic guard. PDF model labels that merely
 					// look title-like stay on "title".
 					fields["layout"] = "heading"
 				} else if label != "" {
-					fields["layout"] = label
+					if existing, _ := fields["layout"].(string); existing == "" {
+						fields["layout"] = label
+					}
 				}
 				if len(position) > 0 {
 					matrix := [][]any{position}

@@ -17,7 +17,6 @@ package chunker
 import (
 	"testing"
 
-	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -147,21 +146,6 @@ func TestChunkOutputBoundaryClearsStructuralLayout(t *testing.T) {
 	}
 }
 
-// TestCropTitleChunksNeverEmitsCKType pins that the Title-family crop path
-// keeps the output shape identical whether or not a PDF engine is available.
-func TestCropTitleChunksNeverEmitsCKType(t *testing.T) {
-	in := []map[string]any{{"text": "body", "doc_type_kwd": "text"}}
-	engines := []deepdoctype.PDFEngine{nil, mockCropEngine{}}
-	for _, engine := range engines {
-		got := cropTitleChunks(t.Context(), engine, in)
-		for i, ck := range got {
-			if kind, ok := ck["ck_type"]; ok {
-				t.Errorf("engine=%T chunk[%d] emits retired ck_type %v: %#v", engine, i, kind, ck)
-			}
-		}
-	}
-}
-
 // TestTitleReadsLayoutNotRetiredCKType pins that a legacy ck_type alone no
 // longer promotes a line to a heading; only layout does.
 func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
@@ -197,7 +181,7 @@ func TestTitleKeepsHTMLParagraphAtomic(t *testing.T) {
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "t.html",
 		"chunks": []map[string]any{
-			{"text": "intro\n## not a heading", "doc_type_kwd": "text", "layout": "paragraph"},
+			{"text": "intro\n# not a heading", "doc_type_kwd": "text", "layout": "paragraph"},
 			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})

@@ -77,6 +77,7 @@ func TestNeedsCrop(t *testing.T) {
 		{"table with positions", schema.ChunkDoc{DocType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"text with positions", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"image without positions", schema.ChunkDoc{DocType: "image"}, false},
+		{"image with heading layout still crops", schema.ChunkDoc{DocType: "image", Layout: "heading", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"heading excluded by layout", schema.ChunkDoc{Layout: "heading", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
 		// A non-media model layout (equation) is not structural, so it falls
 		// back to its content type and is previewed as text.

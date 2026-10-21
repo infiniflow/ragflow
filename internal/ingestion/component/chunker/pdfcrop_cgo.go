@@ -293,8 +293,13 @@ func needsCrop(ck schema.ChunkDoc) bool {
 }
 
 func cropChunkType(ck schema.ChunkDoc) string {
+	// Content type wins: a media block is cropped even if a parser or OCR
+	// label also attached a structural layout to it.
+	if typ := itemDocType(ck); typ != "text" {
+		return typ
+	}
 	if isStructuralLayout(ck.Layout) {
 		return ck.Layout
 	}
-	return itemDocType(ck)
+	return "text"
 }

@@ -337,6 +337,8 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = lvl
 			continue
 		}
+		// Only the asserted "heading" marker bypasses the notTitle guard;
+		// model heuristics use "title" and go through matchLayoutLevel below.
 		if isHeadingLayout(rec.layout) {
 			out[i] = fallbackLevel
 			continue
