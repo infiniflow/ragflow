@@ -18,6 +18,8 @@ package dao
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -25,6 +27,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm/clause"
 )
 
 const rc2MigrationTargetVersion = "v1.0.0-rc2"
@@ -34,22 +38,22 @@ const rc2MigrationTargetVersion = "v1.0.0-rc2"
 // database transaction and version gate, ensuring the completion marker is only
 // persisted once all steps have succeeded.
 func migrateRC2Data(ctx context.Context, db *gorm.DB) error {
-	version, err := GetDatabaseMigrationVersion(ctx, db)
-	if err != nil {
-		return fmt.Errorf("read database migration version: %w", err)
-	}
-	if shouldSkipMigration(version, rc2MigrationTargetVersion) {
-		common.Info("RC2 data already migrated, skipping",
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		version, err := getDatabaseMigrationVersionForUpdate(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("read database migration version: %w", err)
+		}
+		if shouldSkipMigration(version, rc2MigrationTargetVersion) {
+			common.Info("RC2 data already migrated, skipping",
+				zap.String("current_version", version),
+				zap.String("target_version", rc2MigrationTargetVersion))
+			return nil
+		}
+
+		common.Info("Running rc2 data migration",
 			zap.String("current_version", version),
 			zap.String("target_version", rc2MigrationTargetVersion))
-		return nil
-	}
 
-	common.Info("Running rc2 data migration",
-		zap.String("current_version", version),
-		zap.String("target_version", rc2MigrationTargetVersion))
-
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// 1. Ingestion parser configs conversion (knowledgebase and document)
 		if err := runIngestionParserConfigMigration(ctx, tx); err != nil {
 			return err
@@ -74,6 +78,25 @@ func migrateRC2Data(ctx context.Context, db *gorm.DB) error {
 		common.Info("RC2 data migration completed", zap.String("version", rc2MigrationTargetVersion))
 		return nil
 	})
+}
+
+func getDatabaseMigrationVersionForUpdate(ctx context.Context, db *gorm.DB) (string, error) {
+	scoped := db.WithContext(ctx)
+	if !scoped.Migrator().HasTable("system_settings") {
+		common.Info("Table 'system_settings' does not exist, migration version marker is unavailable")
+		return "", nil
+	}
+
+	var setting entity.SystemSettings
+	err := scoped.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("name = ?", migrationDBVersionMarker).Take(&setting).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return setting.Value, nil
 }
 
 func runIngestionParserConfigMigration(ctx context.Context, db *gorm.DB) error {
