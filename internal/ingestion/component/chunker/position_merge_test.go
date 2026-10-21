@@ -134,6 +134,72 @@ func TestPositionOrderingAcceptsListPages(t *testing.T) {
 	}
 }
 
+// TestMergePositionMatrixGroupsFlatMultiTuples pins the flat multi-tuple
+// handling: a flat array carrying several 5-tuples (TCADP/external form) must
+// be grouped by five instead of treated as one row, so no tuple is dropped
+// and distinct sources sharing a first tuple are not deduplicated into one.
+func TestMergePositionMatrixGroupsFlatMultiTuples(t *testing.T) {
+	src := json.RawMessage(`[1,10,100,20,80,2,30,120,40,90]`)
+	got := mergePositionMatrix(src)
+	if len(got) != 2 {
+		t.Fatalf("mergePositionMatrix flat multi-tuple = %#v, want 2 rows", got)
+	}
+	first, err := json.Marshal(got[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	second, err := json.Marshal(got[1])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(first) != `[1,10,100,20,80]` || string(second) != `[2,30,120,40,90]` {
+		t.Fatalf("mergePositionMatrix = %s %s, want [1,10,100,20,80] [2,30,120,40,90]", first, second)
+	}
+
+	a := json.RawMessage(`[1,10,100,20,80,2,30,120,40,90]`)
+	b := json.RawMessage(`[1,10,100,20,80,3,30,120,40,90]`)
+	got = mergePositionMatrix(a, b)
+	if len(got) != 3 {
+		t.Fatalf("mergePositionMatrix distinct flat sources = %#v, want 3 rows", got)
+	}
+}
+
+// TestPositionOrderingAcceptsFlatMultiTuples pins that a flat multi-tuple
+// record participates in physical-order sorting by its first tuple, while a
+// malformed flat sequence (ambiguous boundaries) reports unpositioned instead
+// of sorting by the wrong keys.
+func TestPositionOrderingAcceptsFlatMultiTuples(t *testing.T) {
+	multi := json.RawMessage(`[2,30,120,40,90,1,10,100,20,80]`)
+	single := json.RawMessage(`[[1,10,100,10,100]]`)
+
+	if row, ok := firstPositionRow(lineRecord{pdfPositions: multi}); !ok || row[0] != 2 || row[3] != 40 {
+		t.Fatalf("firstPositionRow flat multi-tuple = %v, %v; want page 2 top 40", row, ok)
+	}
+
+	recs := []lineRecord{
+		{text: "multi", pdfPositions: multi},
+		{text: "single", pdfPositions: single},
+	}
+	sortRecordsByPosition(recs)
+	if recs[0].text != "single" || recs[1].text != "multi" {
+		t.Fatalf("sorted records = %q, %q; want single, multi", recs[0].text, recs[1].text)
+	}
+
+	units := []schema.ChunkDoc{
+		{Text: "multi", PDFPositions: multi},
+		{Text: "single", PDFPositions: single},
+	}
+	sorted := sortPDFUnits(units)
+	if sorted[0].Text != "single" || sorted[1].Text != "multi" {
+		t.Fatalf("sortPDFUnits = %q, %q; want single, multi", sorted[0].Text, sorted[1].Text)
+	}
+
+	malformed := json.RawMessage(`[1,10,100,20,80,2,30]`)
+	if _, ok := firstPositionRow(lineRecord{pdfPositions: malformed}); ok {
+		t.Fatal("firstPositionRow malformed flat = ok, want false for ambiguous boundaries")
+	}
+}
+
 // TestTitleFamilyKeepsListPagePositions is the end-to-end guard: an image
 // record whose page cell is a list must keep its coordinates on the emitted
 // chunk, matching General's pass-through behavior.

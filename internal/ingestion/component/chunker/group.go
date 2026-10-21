@@ -459,9 +459,15 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]any {
 	return out
 }
 
-// decodePositionRows accepts both the nested matrix form and a single flat
-// 5-tuple. JSON-decoded numbers are float64, and a page cell may itself be a
-// list, so the rows stay []any rather than being coerced to [][]float64.
+// decodePositionRows accepts the nested matrix form, a single flat 5-tuple,
+// and a flat sequence of multiple 5-tuples (TCADP/external producers emit a
+// flat array). JSON-decoded numbers are float64, and a page cell may itself
+// be a list, so the rows stay []any rather than being coerced to [][]float64.
+//
+// A flat sequence whose length is a multiple of five is grouped by five so
+// every tuple survives; a flat length that is not a multiple of five has
+// ambiguous tuple boundaries and is preserved verbatim as one row so the
+// first tuple still reaches cropping (sorting abstains via firstPositionRow).
 func decodePositionRows(src json.RawMessage) ([][]any, bool) {
 	if len(src) == 0 {
 		return nil, false
@@ -470,11 +476,18 @@ func decodePositionRows(src json.RawMessage) ([][]any, bool) {
 	if err := json.Unmarshal(src, &rows); err == nil {
 		return rows, true
 	}
-	var row []any
-	if err := json.Unmarshal(src, &row); err == nil && len(row) >= 5 {
-		return [][]any{row}, true
+	var flat []any
+	if err := json.Unmarshal(src, &flat); err != nil || len(flat) < 5 {
+		return nil, false
 	}
-	return nil, false
+	if len(flat)%5 != 0 {
+		return [][]any{flat}, true
+	}
+	grouped := make([][]any, 0, len(flat)/5)
+	for i := 0; i < len(flat); i += 5 {
+		grouped = append(grouped, flat[i:i+5])
+	}
+	return grouped, true
 }
 
 // positionRowLess orders rows by (first page, top, left), matching

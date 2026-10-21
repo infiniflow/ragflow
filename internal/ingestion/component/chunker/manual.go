@@ -169,7 +169,9 @@ func sortRecordsByPosition(records []lineRecord) {
 // structured `_pdf_positions` key first and falls back to the legacy
 // `positions` key. It uses the same decodePositionRows shape handling as
 // mergePositionMatrix, so a list page cell participates in ordering; a list
-// page is ordered by its first page.
+// page is ordered by its first page. A flat sequence whose length is not a
+// multiple of five has ambiguous tuple boundaries, so it reports unpositioned
+// instead of sorting by the wrong keys.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -180,11 +182,26 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	rows, ok := decodePositionRows(raw)
-	if !ok || len(rows) == 0 || len(rows[0]) < 5 {
+	var nested [][]any
+	if err := json.Unmarshal(raw, &nested); err == nil {
+		if len(nested) == 0 || len(nested[0]) < 5 {
+			return nil, false
+		}
+		return firstRowValues(nested[0])
+	}
+	var flat []any
+	if err := json.Unmarshal(raw, &flat); err != nil || len(flat) < 5 || len(flat)%5 != 0 {
 		return nil, false
 	}
-	row := rows[0]
+	return firstRowValues(flat[:5])
+}
+
+// firstRowValues decodes one 5-tuple [page,left,right,top,bottom] for
+// ordering; a list page cell is ordered by its first page.
+func firstRowValues(row []any) ([]float64, bool) {
+	if len(row) < 5 {
+		return nil, false
+	}
 	page, ok := positionPageValue(row[0])
 	if !ok {
 		return nil, false
