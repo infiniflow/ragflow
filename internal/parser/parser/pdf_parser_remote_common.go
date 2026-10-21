@@ -48,14 +48,10 @@ func pdfItemsToResult(filename string, items []map[string]any, outputFormat stri
 	pageCount = normalizePDFPageCount(pageCount, items)
 	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
 	case "", "json":
-		docs := make([]DocItem, 0, len(items))
-		for _, item := range items {
-			docs = appendPDFItem(docs, item)
-		}
 		return ParseResult{
 			OutputFormat: "json",
 			File:         pdfFileMeta(filename, pageCount),
-			JSON:         docs,
+			JSON:         MapsToItems(items),
 		}
 	case "markdown":
 		var b strings.Builder

@@ -111,27 +111,39 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 	return result
 }
 
-// appendPDFItem keeps table descriptions in separate text items. Chunkers
-// materialize the table body only when its own text field is empty.
+// appendPDFItem emits adjacent tables separately and keeps their descriptions
+// in text items. Chunkers materialize a table only when its text field is empty.
 func appendPDFItem(items []DocItem, fields map[string]any) []DocItem {
-	table, _ := fields["table"].(*entity.TableData)
-	text, _ := fields["text"].(string)
-	if fields["doc_type_kwd"] != "table" || table == nil || text == "" {
-		return append(items, DocItemFromMap(fields))
-	}
-	fields = maps.Clone(fields)
-	delete(fields, "text")
-	items = append(items, DocItemFromMap(fields))
-	if strings.TrimSpace(text) == "" {
-		return items
-	}
-	note := TextItem{Text: text, Extra: map[string]any{"layout": "text"}}
-	for _, key := range []string{"page_number", "_preserve_order"} {
-		if value, ok := fields[key]; ok {
-			note.Extra[key] = value
+	for {
+		table, _ := fields["table"].(*entity.TableData)
+		text, _ := fields["text"].(string)
+		if fields["doc_type_kwd"] != "table" || table == nil || text == "" {
+			return append(items, DocItemFromMap(fields))
 		}
+		fields = maps.Clone(fields)
+		delete(fields, "text")
+		items = append(items, DocItemFromMap(fields))
+		if strings.TrimSpace(text) == "" {
+			return items
+		}
+		if isTableHTML(text) {
+			next := maps.Clone(fields)
+			delete(next, "table")
+			next["text"] = text
+			projectPDFTable(next)
+			if table, _ := next["table"].(*entity.TableData); table != nil {
+				fields = next
+				continue
+			}
+		}
+		note := TextItem{Text: text, Extra: map[string]any{"layout": "text"}}
+		for _, key := range []string{"page_number", "_preserve_order"} {
+			if value, ok := fields[key]; ok {
+				note.Extra[key] = value
+			}
+		}
+		return append(items, note)
 	}
-	return append(items, note)
 }
 
 func parsePDFMarkdown(ctx context.Context, filename, markdown string) ParseResult {

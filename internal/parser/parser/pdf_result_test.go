@@ -3,6 +3,7 @@ package parser
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -260,6 +261,7 @@ func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
 			t.Fatal(result.Err)
 		}
 		if format == "json" {
+			result = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", result)
 			if len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != nil || result.JSON[1].ToMap()["text"] != "Footnote" || result.JSON[1].ToMap()["page_number"] != 3 {
 				t.Fatalf("table description not separated: %#v", result.JSON)
 			}
@@ -275,7 +277,7 @@ func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
 func TestPDFWhitespaceTableDescriptionCannotHideCells(t *testing.T) {
 	item := map[string]any{"table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, "doc_type_kwd": "table", "text": " \n "}
 	results := []ParseResult{
-		pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 1),
+		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 1)),
 		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{item})}),
 	}
 	for _, result := range results {
@@ -284,6 +286,68 @@ func TestPDFWhitespaceTableDescriptionCannotHideCells(t *testing.T) {
 		}
 		if text, _ := result.JSON[0].ToMap()["text"].(string); text != "" {
 			t.Fatalf("whitespace still suppresses table materialization: %q", text)
+		}
+	}
+}
+
+func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
+	const markup = "<table><tr><td>First cell</td></tr></table>\n<table><tr><td>Second cell</td></tr></table>\nFootnote"
+	for _, projected := range []bool{false, true} {
+		for _, flatten := range []bool{false, true} {
+			name := fmt.Sprintf("projected=%v/flatten=%v", projected, flatten)
+			t.Run(name, func(t *testing.T) {
+				item := map[string]any{
+					"doc_type_kwd": "table", "text": markup, "page_number": 3,
+					"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
+				}
+				if projected {
+					projectPDFTable(item)
+				}
+				originalText := item["text"]
+				p := NewPDFParser()
+				p.FlattenMediaToText = flatten
+				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+				if result.Err != nil {
+					t.Fatal(result.Err)
+				}
+				if flatten {
+					var text string
+					for _, doc := range result.JSON {
+						fields := doc.ToMap()
+						if fields["doc_type_kwd"] != "text" || fields["table"] != nil {
+							t.Fatalf("media not flattened: %#v", fields)
+						}
+						value, _ := fields["text"].(string)
+						text += value
+					}
+					for _, want := range []string{"First cell", "Second cell", "Footnote"} {
+						if strings.Count(text, want) != 1 {
+							t.Fatalf("want %q exactly once in %q", want, text)
+						}
+					}
+				} else {
+					if len(result.JSON) != 3 {
+						t.Fatalf("want two tables and a footnote, got %#v", result.JSON)
+					}
+					for i, want := range []string{"First cell", "Second cell"} {
+						fields := result.JSON[i].ToMap()
+						table, _ := fields["table"].(*entity.TableData)
+						if table == nil || table.Page != 3 || len(table.Grid) != 1 || len(table.Grid[0]) != 1 || table.Grid[0][0].Text != want || fields["text"] != nil {
+							t.Fatalf("table %d lost cells or metadata: %#v", i, fields)
+						}
+						if _, ok := ExtractPDFPositions(fields); !ok {
+							t.Fatalf("table %d lost crop positions", i)
+						}
+					}
+					note := result.JSON[2].ToMap()
+					if note["text"] != "Footnote" || note["doc_type_kwd"] != "text" || note["page_number"] != 3 || note["_preserve_order"] != true {
+						t.Fatalf("footnote lost text or metadata: %#v", note)
+					}
+				}
+				if item["text"] != originalText {
+					t.Fatal("source item mutated")
+				}
+			})
 		}
 	}
 }
