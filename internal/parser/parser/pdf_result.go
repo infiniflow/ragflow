@@ -10,8 +10,8 @@ import (
 	"golang.org/x/net/html"
 
 	"ragflow/internal/common"
-	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
