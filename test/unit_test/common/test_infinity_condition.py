@@ -392,6 +392,37 @@ class TestOtherConditionBranches:
         result = _translate({"kb_id": "kb-1"}, {"kb_id": ("Varchar", "")})
         assert result == "kb_id='kb-1'"
 
+    def test_compile_kwd_nested_list_is_flattened(self):
+        """A re-wrapped row value arrives as ``[["tree"]]``; interpolating it
+        emits ``compile_kwd=['tree']``, which Infinity rejects with 3030."""
+        result = _translate({"compile_kwd": [["tree"]]}, {})
+        assert result == "(compile_kwd='tree')"
+
+    def test_compile_kwd_nested_lists_are_flattened_to_or(self):
+        result = _translate({"compile_kwd": [["tree"], ["page_index"]]}, {})
+        assert "compile_kwd='tree'" in result
+        assert "compile_kwd='page_index'" in result
+        assert " or " in result
+
+    def test_parent_kwd_tuple_and_set_items_are_flattened(self):
+        assert _translate({"parent_kwd": [("root",)]}, {}) == "(parent_kwd='root')"
+        assert _translate({"parent_kwd": [{"root"}]}, {}) == "(parent_kwd='root')"
+
+    def test_compile_kwd_only_empty_nested_lists_yields_no_predicate(self):
+        assert _translate({"compile_kwd": [[]]}, {}) == "1=1"
+
+    def test_compile_kwd_deeply_nested_value_is_rejected(self):
+        """Flattening covers one level of re-wrapping. Anything deeper would
+        interpolate as ``compile_kwd=['tree']`` and then get dropped, so the
+        translator fails instead of emitting a missing predicate."""
+        with pytest.raises(ValueError):
+            _translate({"compile_kwd": [[["tree"]]]}, {})
+
+    def test_compile_kwd_absent_value_is_skipped(self):
+        """``get_fields`` fills absent columns with ``None``: a missing value,
+        not a malformed one, so it must not raise."""
+        assert _translate({"compile_kwd": [None]}, {}) == "1=1"
+
 
 class TestDeleteSafety:
     """``delete()`` must abort and raise ValueError if a non-empty condition generates
@@ -431,9 +462,8 @@ class TestDeleteSafety:
         db.get_table.return_value = table
         inf_conn.get_database.return_value = db
 
-        with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"):
-            with pytest.raises(ValueError, match="Cannot build delete predicate"):
-                inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
+        with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"), pytest.raises(ValueError, match="Cannot build delete predicate"):
+            inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
 
         table.delete.assert_not_called()
 

@@ -61,7 +61,7 @@ from api.utils.reference_metadata_utils import (
 )
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
-from common.doc_store.doc_store_base import OrderByExpr
+from common.doc_store.doc_store_base import OrderByExpr, field_scalar
 from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from common.metadata_utils import apply_meta_data_filter, convert_conditions, filter_doc_ids_by_metadata
 from common.misc_utils import thread_pool_exec
@@ -839,8 +839,8 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         template, or legacy compile_kwd) WITHOUT ``knowledge_graph_kwd``.
         """
         tid = _row_template_id(row)
-        compile_kwd_val = row.get("compile_kwd") or ""
-        kind_val = row.get("compilation_template_kind_kwd") or compile_kwd_val
+        compile_kwd_val = field_scalar(row.get("compile_kwd"))
+        kind_val = field_scalar(row.get("compilation_template_kind_kwd")) or compile_kwd_val
         if tid:
             bucket_id = tid
             row_kind_norm = _compilation_template_kind(kind_val)

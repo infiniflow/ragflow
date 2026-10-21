@@ -21,7 +21,8 @@ import random
 import re
 import time
 from abc import abstractmethod
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import infinity
 import pandas as pd
@@ -394,13 +395,25 @@ class InfinityConnectionBase(DocStoreConnection):
                     raise ValueError(f"No valid delete predicate could be generated for column '{k}'")
             elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
                 values = v if isinstance(v, list) else [v]
+                # A caller may re-wrap a value that ``get_fields`` already
+                # returned as a list; interpolating the nested container emits
+                # ``k=['x']``, which Infinity rejects with 3030.
+                if any(isinstance(item, (list, tuple, set)) for item in values):
+                    values = [it for item in values if isinstance(item, (list, tuple, set)) for it in item]
                 exact_conditions = []
                 for item in values:
                     if isinstance(item, str):
                         item = item.replace("'", "''")
                         exact_conditions.append(f"{k}='{item}'")
-                    else:
+                    elif isinstance(item, (int, float)) and not isinstance(item, bool):
                         exact_conditions.append(f"{k}={item}")
+                    elif item is not None:
+                        # A caller fed us a value that `get_fields` already
+                        # returned as a list. Interpolating the container
+                        # emits `k=['x']`, which Infinity rejects with 3030
+                        # ("array not found") — and silently dropping it would
+                        # generate a missing predicate instead. Fail loudly.
+                        raise ValueError(f"Cannot build {k} predicate from value {item!r}")
                 if exact_conditions:
                     cond.append("(" + " or ".join(exact_conditions) + ")")
             elif self.field_keyword(k):
@@ -440,7 +453,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 escaped_v = v.replace("'", "''")
                 cond.append(f"{k}='{escaped_v}'")
             else:
-                cond.append(f"{k}={str(v)}")
+                cond.append(f"{k}={v!s}")
         return " AND ".join(cond) if cond else "1=1"
 
     @staticmethod
@@ -701,7 +714,7 @@ class InfinityConnectionBase(DocStoreConnection):
             _ = db_instance.get_table(table_name)
             return True
         except Exception as e:
-            self.logger.warning(f"INFINITY indexExist {str(e)}")
+            self.logger.warning(f"INFINITY indexExist {e!s}")
             return False
         finally:
             self.connPool.release_conn(inf_conn)

@@ -34,6 +34,7 @@ from typing import Any
 
 import xxhash
 
+from common.doc_store.doc_store_base import field_scalar
 from common.misc_utils import thread_pool_exec
 from rag.utils.redis_conn import RedisDistributedLock
 
@@ -1217,8 +1218,8 @@ async def _maybe_split_cluster(
     if not children:
         return
 
-    nav_cluster_kids = [c for c in children.values() if c.get("type_kwd") == "nav_cluster"]
-    nav_doc_kids = [c for c in children.values() if c.get("type_kwd") == "nav_doc"]
+    nav_cluster_kids = [c for c in children.values() if field_scalar(c.get("type_kwd")) == "nav_cluster"]
+    nav_doc_kids = [c for c in children.values() if field_scalar(c.get("type_kwd")) == "nav_doc"]
 
     should_split = len(nav_cluster_kids) + len(nav_doc_kids) > _MAX_FANOUT or len(nav_doc_kids) > _MAX_DOCS_PER_CLUSTER
     if not should_split:

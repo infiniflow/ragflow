@@ -30,6 +30,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+import common.doc_store.doc_store_base as _real_doc_store_base
+
 
 class _DummyManager:
     def route(self, *_args, **_kwargs):
@@ -77,6 +79,9 @@ def _load_module(monkeypatch, request_payload):
 
     def _stub(name, **attrs):
         mod = ModuleType(name)
+        if name == "common.doc_store.doc_store_base":
+            # Seed from the real module so newly added helpers stay importable.
+            mod.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
         for key, value in attrs.items():
             setattr(mod, key, value)
         monkeypatch.setitem(sys.modules, name, mod)

@@ -27,6 +27,7 @@ from cn2an import cn2an
 from PIL import Image
 from word2number import w2n
 
+from common.doc_store.doc_store_base import field_scalar
 from common.token_utils import num_tokens_from_string
 
 # Re-exported below for backwards compatibility; the canonical parser lives
@@ -594,7 +595,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         return chunks
 
     def is_image_chunk(ck):
-        if ck.get("doc_type_kwd") == "image":
+        if field_scalar(ck.get("doc_type_kwd")) == "image":
             return True
 
         text_val = ck.get("content_with_weight") if isinstance(ck.get("content_with_weight"), str) else ck.get("text")
@@ -602,7 +603,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         return bool(ck.get("image")) and not has_text
 
     def is_table_chunk(ck):
-        return ck.get("doc_type_kwd") == "table"
+        return field_scalar(ck.get("doc_type_kwd")) == "table"
 
     def is_text_chunk(ck):
         return not is_image_chunk(ck) and not is_table_chunk(ck)
@@ -2122,15 +2123,7 @@ class Node:
         # texts[0] is this node's own heading and texts[1:] is any overflow body merged
         # onto it; split only the body and repeat the heading path on every piece so a
         # continuation chunk never loses the title.
-        elif not child and (1 <= level <= self.depth):
-            _emit(titles + texts[:1], texts[1:])
-
-        # A node with children can still carry body text of its own, accumulated
-        # before its first child appeared. Emit that overflow as its own
-        # budgeted chunk under this node's title path, same as a leaf's own
-        # body, instead of folding it unsplit into path_titles for every
-        # descendant chunk (which duplicated it, uncapped, into every split).
-        elif child and (1 <= level <= self.depth) and len(texts) > 1:
+        elif not child and (1 <= level <= self.depth) or child and (1 <= level <= self.depth) and len(texts) > 1:
             _emit(titles + texts[:1], texts[1:])
 
         # Recurse into children with the updated title path
