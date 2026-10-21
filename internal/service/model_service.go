@@ -595,27 +595,29 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 			extraFields[k] = v
 		}
 	}
-	extraBytes, err := json.Marshal(extraFields)
-	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %w", err)
-	}
-
-	modelID := common.GenerateToken()
-	tenantModel := &entity.TenantModel{
-		ID:         modelID,
-		ModelName:  model.ModelName,
-		ModelType:  int(combinedType),
-		ProviderID: provider.ID,
-		InstanceID: instance.ID,
-		Status:     "active",
-		Extra:      string(extraBytes),
-	}
-
-	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
+	if err = m.createModelRecord(ctx, dao.DB, provider.ID, instance.ID, model.ModelName, combinedType, "active", extraFields); err != nil {
 		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
+}
+
+func (m *ModelProviderService) createModelRecord(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string, modelType entity.ModelType, status string, extra map[string]interface{}) error {
+	extraBytes, err := json.Marshal(extra)
+	if err != nil {
+		return fmt.Errorf("fail to marshal model extra: %w", err)
+	}
+
+	model := &entity.TenantModel{
+		ID:         common.GenerateToken(),
+		ModelName:  modelName,
+		ModelType:  int(modelType),
+		ProviderID: providerID,
+		InstanceID: instanceID,
+		Status:     status,
+		Extra:      string(extraBytes),
+	}
+	return m.modelDAO.Create(ctx, db, model)
 }
 
 func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {

@@ -372,6 +372,12 @@ export default {
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
       fileTypeUnsupportedManualSwitch:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
+      fileTypeVideoUnsupported:
+        '{{name}}（{{fileType}}）：视频文件暂不支持解析',
+      videoUnsupportedAfterUploadHint:
+        '可继续上传，但视频文件暂不支持解析，上传后不会被处理。',
+      videoUnsupportedParseHint:
+        '视频文件暂不支持解析，请删除该文件或转换为受支持的格式。',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       manualSwitchAfterUploadHint:
@@ -2488,7 +2494,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
       categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
-      rewriteQuestionDescription: `此组件用于细化用户的提问。通常，当用户的原始提问无法从知识库中检索到相关信息时，此组件可帮助您将问题更改为更符合知识库表达方式的适当问题。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
       keywordDescription: `该组件用于从用户的问题中提取关键词。Top N 指定需要提取的关键词数量。`,
@@ -2504,7 +2509,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answer: '对话',
       categorize: '问题分类',
       relevant: '是否相关',
-      rewriteQuestion: '问题优化',
       begin: '开始',
       message: '回复消息',
       blank: '空',
@@ -3107,8 +3111,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',
       checklistEmpty: '未发现问题',
-      checklistTitle: '请先解决以下问题再运行或发布',
-      checklistResolveBefore: '请先解决检查清单中的问题',
+      checklistTitle: '以下问题可能影响运行或发布',
       issueNotConnected: '该步骤未与任何算子连接',
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',

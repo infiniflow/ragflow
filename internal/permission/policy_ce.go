@@ -184,6 +184,12 @@ func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query
 	if err := source.validateDatasetTenants(ctx, subject.UserID); err != nil {
 		return QueryScope{}, true, err
 	}
+	// Enterprise tenant roles are stored as numeric IDs. The generic SQL fast
+	// path cannot resolve those IDs safely, so let the normal resource checks
+	// evaluate candidate IDs through databaseSource.GetMembership instead.
+	if tenantRoleMembershipEnabled(source.db) {
+		return QueryScope{}, false, nil
+	}
 
 	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
 		db := source.db.WithContext(ctx)

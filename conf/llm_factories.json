@@ -3492,6 +3492,14 @@
             "url": "https://api.trustedrouter.com/v1"
         },
         {
+            "name": "AI Stupid Level",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://aistupidlevel.info/v1"
+        },
+        {
             "name": "Demon Route",
             "logo": "",
             "tags": "LLM",

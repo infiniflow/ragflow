@@ -826,53 +826,35 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if err != nil {
 				return nil, fmt.Errorf("search failed: %w", err)
 			}
-			// If result is empty, retry with relaxed conditions
+			// If the result is empty, retry with relaxed conditions. Every leg
+			// keeps at least one MATCH expression: without one Infinity cannot
+			// project a score (error 3013) and every similarity reads back as
+			// 0.0, the "all scores collapsed" signature of infinity#3523.
+			//
+			// No filter-only fallback, deliberately, even for a document scope:
+			// unscored rows carry no relevance and were fed to an LLM as context.
+			// Callers that want a document's chunks use ChunkService.List.
 			if engineResult.Total == 0 {
-				_, hasDocIDFilter := filters["doc_id"]
 				if req.VectorOnly || matchText == nil {
 					if *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty initial search")
-						matchDense = cloneDenseExpr(denseTemplate)
-						matchDense.ExtraOptions["similarity"] = 0.17
-						searchRequest.MatchExprs = []any{matchDense}
-						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						engineResult, err = s.searchDenseOnly(ctx, searchRequest, denseTemplate)
 						if err != nil {
 							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
 						}
 					}
-				} else if hasDocIDFilter {
-					// When a doc_id filter is present (e.g. from metadata filter like era=960)
-					// and the hybrid search returns no results, fall back to a filter-only
-					// search (no text match, no vector match). This ensures that when a
-					// metadata filter restricts the search to a specific set of documents
-					// that happen to have no relevant content for the query, we still
-					// return those documents' chunks (ordered by the request's sort/order).
-					//
-					// Example: searching "打虎" with metadata filter era≠960 limits the
-					// search to Three Kingdoms documents (era=220). Since "打虎" only
-					// appears in Water Margin (era=960), the hybrid search returns 0
-					// results. This fallback returns all chunks from Three Kingdoms
-					// documents instead of returning an empty result.
-					searchRequest.SelectFields = src
-					searchRequest.MatchExprs = []interface{}{}
-					searchRequest.RankFeature = nil
-
-					engineResult, err = s.docEngine.Search(ctx, searchRequest)
-					if err != nil {
-						return nil, fmt.Errorf("search retry failed: %w", err)
-					}
 				} else {
-					// No doc_id filter — retry with lower min_match (0.1 vs default 0.3)
-					// and lower vector similarity threshold (0.17 vs default 0.1-0.2).
-					// This provides a second chance for queries that were too strict
-					// on the first attempt.
-					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1), req.Language)
+					// Retry with lower min_match (0.1 vs default 0.3) and lower
+					// vector similarity threshold (0.17 vs default 0.1-0.2).
+					// This provides a second chance for queries that were too
+					// strict on the first attempt.
+					relaxedText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1), req.Language)
 					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
-					if req.VectorOnly || matchText == nil {
+					if relaxedText == nil {
 						searchRequest.MatchExprs = []interface{}{matchDense}
 					} else {
-						searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+						searchRequest.MatchExprs = []interface{}{relaxedText, matchDense, fusionExpr}
 					}
 					searchRequest.RankFeature = req.RankFeature
 
@@ -881,12 +863,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 						return nil, fmt.Errorf("search retry failed: %w", err)
 					}
 					// Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
-					if engineResult.Total == 0 && matchText != nil && *req.AllowDenseFallback {
+					if engineResult.Total == 0 && relaxedText != nil && *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty hybrid retries")
-						matchDense = cloneDenseExpr(denseTemplate)
-						matchDense.ExtraOptions["similarity"] = 0.17
-						searchRequest.MatchExprs = []any{matchDense}
-						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						engineResult, err = s.searchDenseOnly(ctx, searchRequest, denseTemplate)
 						if err != nil {
 							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
 						}
@@ -984,6 +963,16 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		Aggregation: aggregation,
 		IndexNames:  searchRequest.IndexNames,
 	}, nil
+}
+
+// searchDenseOnly re-runs the request with the dense leg alone and the vector
+// floor dropped to 0.17. Unlike a filter-only query, a lone MATCH VECTOR still
+// projects a score.
+func (s *RetrievalService) searchDenseOnly(ctx context.Context, searchRequest *types.SearchRequest, denseTemplate *types.MatchDenseExpr) (*types.SearchResult, error) {
+	matchDense := cloneDenseExpr(denseTemplate)
+	matchDense.ExtraOptions["similarity"] = 0.17
+	searchRequest.MatchExprs = []any{matchDense}
+	return s.docEngine.Search(ctx, searchRequest)
 }
 
 func cloneDenseExpr(source *types.MatchDenseExpr) *types.MatchDenseExpr {
@@ -1306,6 +1295,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		Keywords:    result.Keywords,
 		Aggregation: result.Aggregation,
 		Options:     result.Options,
+		IndexNames:  result.IndexNames,
 	}, nil
 }
 

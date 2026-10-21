@@ -19,12 +19,9 @@ func mustPanic(t *testing.T, name string, f func()) {
 	f()
 }
 
-// Built-in methods that are dispatched by an internal engine (every switch case
-// in ParseWithResult except the fall-through to DeepDoc) cannot be overridden by
-// an external factory — the switch intercepts them before resolution runs, so a
-// factory registered for them would be silently ignored. RegisterAnalyzerFactory
-// must reject such registrations instead of letting them fail silently.
-func TestRegisterAnalyzerFactory_RejectsBuiltinEngineMethods(t *testing.T) {
+// Built-in engine methods and tenant-dispatched PaddleOCR cannot be overridden
+// by an external analyzer factory.
+func TestRegisterAnalyzerFactory_RejectsBuiltinAndTenantDispatchedMethods(t *testing.T) {
 	for _, m := range []string{"plain_text", "mineru", "paddleocr", "docling", "opendataloader", "somark", "tcadp"} {
 		mm := m
 		mustPanic(t, mm, func() {

@@ -34,7 +34,9 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	// chunk-level aggregation.
 	loader := d.tagVocabularyLoader
 	if loader == nil {
-		loader = component.TagVocabularyFromTagFileID
+		loader = func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+			return component.TagVocabularyFromTagFileID(ctx, dao.DB, tagFileID, ownerTenantID)
+		}
 	}
 	merged := make(map[string]int)
 	// The handler accepts repeated IDs, and distinct raw IDs can normalize to

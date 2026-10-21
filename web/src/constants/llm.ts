@@ -108,12 +108,14 @@ export enum LLMFactory {
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
+  RadeonCloud = 'Radeon Cloud',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
   Opper = 'Opper',
   DemonRoute = 'Demon Route',
   TrustedRouter = 'TrustedRouter',
   EmpirioLabs = 'EmpirioLabs AI',
+  AIStupidLevel = 'AI Stupid Level',
 }
 
 // Please lowercase the file name
@@ -204,12 +206,14 @@ export const IconMap = {
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
   [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.RadeonCloud]: 'radeon-cloud',
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
   [LLMFactory.Opper]: 'opper',
   [LLMFactory.TrustedRouter]: 'trustedrouter',
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
+  [LLMFactory.AIStupidLevel]: 'aistupidlevel',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -242,6 +246,7 @@ export const APIMapUrl = {
   [LLMFactory.TrustedRouter]: 'https://trustedrouter.com/keys',
   [LLMFactory.EmpirioLabs]:
     'https://platform.empiriolabs.ai/dashboard/api-keys',
+  [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

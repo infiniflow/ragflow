@@ -233,6 +233,40 @@ func TestFileService_GetFileContents_ImageAttachmentAsDataURI(t *testing.T) {
 	}
 }
 
+// Video attachments are accepted but unparsable: GetFileContents reports a
+// fixed notice as the file's text (so the model sees why there is no content)
+// instead of inlining the container as a bogus image or failing the batch.
+// A mixed batch keeps the valid attachments alongside the notice.
+func TestFileService_GetFileContents_VideoAttachmentReportsNotice(t *testing.T) {
+	memory := storage.NewMemoryStorage()
+	ctx := t.Context()
+	if err := memory.Put(ctx, "user-1-downloads", "vid-1", []byte("mp4-bytes")); err != nil {
+		t.Fatalf("put video: %v", err)
+	}
+	if err := memory.Put(ctx, "user-1-downloads", "img-1", []byte("jpeg-bytes")); err != nil {
+		t.Fatalf("put image: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	svc := testFileService()
+	texts, images, err := svc.GetFileContents(ctx, "user-1", []map[string]interface{}{
+		{"id": "vid-1", "name": "clip.mp4", "mime_type": "video/mp4", "created_by": "user-1"},
+		{"id": "img-1", "name": "photo.jpeg", "mime_type": "image/jpeg", "created_by": "user-1"},
+	})
+	if err != nil {
+		t.Fatalf("GetFileContents failed: %v", err)
+	}
+	if len(texts) != 1 || !strings.Contains(texts[0], "clip.mp4") || !strings.Contains(texts[0], "video content is not supported") {
+		t.Fatalf("video notice = %v, want one text entry naming the file as unsupported", texts)
+	}
+	if len(images) != 1 {
+		t.Fatalf("expected the valid image to survive alongside the notice, got %v", images)
+	}
+}
+
 func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
 	ctx := t.Context()
 	memory := storage.NewMemoryStorage()
@@ -262,6 +296,25 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 	}
 	if contents[1] != "data:image/png;base64,cG5n" {
 		t.Fatalf("unexpected image content: %q", contents[1])
+	}
+}
+
+func TestFileService_ParseAgentUploads_RejectsVideoWithImageMime(t *testing.T) {
+	ctx := t.Context()
+	memory := storage.NewMemoryStorage()
+	if err := memory.Put(ctx, "user-1-downloads", "video-id", []byte("mp4-bytes")); err != nil {
+		t.Fatalf("put video: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(memory)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+		{"id": "video-id", "name": "clip.mp4", "mime_type": "image/png", "created_by": "user-1"},
+	}, "")
+	if err == nil || !strings.Contains(err.Error(), "video content is not supported") {
+		t.Fatalf("error = %v, want video rejection even with an image MIME type", err)
 	}
 }
 

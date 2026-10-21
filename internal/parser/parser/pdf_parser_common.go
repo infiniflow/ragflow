@@ -45,14 +45,12 @@ var ErrPDFEngineUnavailable = errors.New("parser: PDF backend unavailable in thi
 
 // supportedPDFParseMethods is the set of canonical tokens PDFParser can
 // execute; see pdfParseMethodSpellings for the accepted spellings and
-// TestPDFParseMethodTablesAgree for the two intentional divergences
-// ("" sentinel, dispatcher-handled monkeyocrv2).
+// TestPDFParseMethodTablesAgree for dispatcher-handled methods.
 var supportedPDFParseMethods = map[string]struct{}{
 	"":               {},
 	"deepdoc":        {},
 	"plain_text":     {},
 	"mineru":         {},
-	"paddleocr":      {},
 	"docling":        {},
 	"opendataloader": {},
 	"somark":         {},
@@ -60,7 +58,7 @@ var supportedPDFParseMethods = map[string]struct{}{
 }
 
 type PDFParser struct {
-	ParserType string // DeepDoc, PaddleOCR, MinerU
+	ParserType string // DeepDoc, MinerU
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
@@ -89,9 +87,6 @@ type PDFParser struct {
 	MinerUBackend                     string
 	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
-	PaddleOCRBaseURL                  string
-	PaddleOCRAPIKey                   string
-	PaddleOCRAlgorithm                string
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
 	DoclingDoOCR                      *bool
@@ -130,7 +125,6 @@ func NewPDFParser() *PDFParser {
 		OutputFormat:                   "json",
 		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		PaddleOCRAlgorithm:             "PaddleOCR-VL",
 		OpenDataLoaderTimeout:          600,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
@@ -188,15 +182,6 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
-	}
-	if v, ok := setup["paddleocr_base_url"].(string); ok && v != "" {
-		p.PaddleOCRBaseURL = v
-	}
-	if v, ok := setup["paddleocr_api_key"].(string); ok {
-		p.PaddleOCRAPIKey = v
-	}
-	if v, ok := setup["paddleocr_algorithm"].(string); ok && v != "" {
-		p.PaddleOCRAlgorithm = v
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
 		p.DoclingServerURL = v
@@ -358,7 +343,7 @@ func (p *PDFParser) validateParseMethod() error {
 	if _, ok := supportedPDFParseMethods[method]; ok {
 		return nil
 	}
-	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer — methods backed by a registered external analyzer factory are supported)", p.ParseMethod)
+	return fmt.Errorf("parser: unsupported PDF parse_method %q (standalone PDFParser supports: deepdoc, plain_text, mineru, docling, opendataloader, somark, tcadp; methods backed by a registered external analyzer factory are supported; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the parser layer)", p.ParseMethod)
 }
 
 // ParseWithResult parses a PDF into a ParseResult, dispatching on the
@@ -384,8 +369,6 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 		return pdfItemsToResult(filename, items, p.OutputFormat, pageCount)
 	case "mineru":
 		return parsePDFWithMinerU(ctx, filename, data, p)
-	case "paddleocr":
-		return parsePDFWithPaddleOCR(ctx, filename, data, p)
 	case "docling":
 		return parsePDFWithDocling(ctx, filename, data, p)
 	case "opendataloader":
@@ -481,10 +464,11 @@ var analyzerFactories = map[string]func(baseURL string) (deepdoctype.DocAnalyzer
 // deepdoctype.SetNativeDocAnalyzerFactory, but for out-of-process backends
 // selected per parse method.
 //
-// Two registrations are rejected (panic) because they would fail silently:
+// Reserved registrations are rejected (panic):
 //   - a built-in method that ParseWithResult dispatches to an internal engine
 //     (every switch case other than the fall-through to DeepDoc) — the switch
 //     intercepts it before resolution runs, so the factory would never be used;
+//   - "paddleocr" — this method requires tenant model dispatch;
 //   - the empty (default) method — routing it externally would hijack every
 //     caller that omits parse_method and divert the default in-process path.
 //
@@ -498,8 +482,8 @@ func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdo
 		panic("parser: RegisterAnalyzerFactory: cannot register an external analyzer for the empty (default) parse method; use an explicit method name")
 	}
 	if m != "deepdoc" {
-		if _, builtin := supportedPDFParseMethods[m]; builtin {
-			panic(fmt.Sprintf("parser: RegisterAnalyzerFactory: cannot register an external analyzer for built-in method %q; it is dispatched to an internal engine and the factory would be ignored", m))
+		if _, builtin := supportedPDFParseMethods[m]; builtin || m == "paddleocr" {
+			panic(fmt.Sprintf("parser: RegisterAnalyzerFactory: cannot register an external analyzer for reserved method %q; it requires a built-in parser or tenant model dispatch", m))
 		}
 	}
 	analyzerFactories[m] = factory

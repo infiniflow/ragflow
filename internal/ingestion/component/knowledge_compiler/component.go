@@ -6,7 +6,6 @@ package knowledge_compiler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -447,17 +446,6 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 		compileKWD := enginetypes.CanonicalCompilationKind(kindOrVariant(p))
 		if err := doc.SetExtraValue("compile_kwd", compileKWD); err != nil {
 			return nil, err
-		}
-		if p.Variant == common.VariantStructure {
-			if inferred := metaString(p.Meta, "compile_kwd"); inferred != "" {
-				extra, err := json.Marshal(map[string]string{"compile_type": inferred})
-				if err != nil {
-					return nil, err
-				}
-				if err := doc.SetExtraValue("extra", string(extra)); err != nil {
-					return nil, err
-				}
-			}
 		}
 		// scope_kwd marks doc/dataset-level rows (B8/O1=B). A doc-level compiled
 		// product is always a per-document (scope="doc") input to the dataset-level
