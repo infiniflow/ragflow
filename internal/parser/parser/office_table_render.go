@@ -203,7 +203,7 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			grid = append(grid, cells)
 		}
 		td := &entity.TableData{Grid: grid, HeaderRows: 1, Caption: sheet}
-		ti := NewTableDataJSONItem(td, sheet, matrix).(TableItem)
+		ti := NewTableDataJSONItem(td, sheet, SpreadsheetPositions(matrix)).(TableItem)
 		ti.Extra = map[string]any{"sheet_index": sheetIndex}
 		return ti.ToMap()
 	}

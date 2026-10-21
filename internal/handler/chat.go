@@ -405,6 +405,29 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+// GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
+func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)
+	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, settings, "success")
+}
+
 // UpdateChat updates a chat by ID using REST PUT semantics.
 func (h *ChatHandler) UpdateChat(c *gin.Context) {
 	h.updateChatByMethod(c, false)

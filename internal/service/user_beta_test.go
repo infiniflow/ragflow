@@ -33,14 +33,14 @@ func setupUserBetaServiceDB(t *testing.T) {
 	pushServiceDB(t, db)
 }
 
-func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
+func TestUserServiceResolveBetaAPIToken(t *testing.T) {
 	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	accessToken := "access-token"
 	status := "1"
 	if err := dao.DB.Create(&entity.User{
-		ID:              "tenant-1",
+		ID:              "user-1",
 		Email:           "tenant@example.com",
 		Nickname:        "Tenant",
 		AccessToken:     &accessToken,
@@ -51,36 +51,59 @@ func TestUserServiceGetUserByBetaAPIToken(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "membership-1",
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+		Role:     "normal",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create membership: %v", err)
+	}
 
 	beta := "beta-token"
+	userID := "user-1"
 	if err := dao.DB.Create(&entity.APIToken{
 		TenantID: "tenant-1",
+		UserID:   &userID,
 		Token:    "token-1",
 		Beta:     &beta,
 	}).Error; err != nil {
 		t.Fatalf("failed to create api token: %v", err)
 	}
+	expectedTenantID, err := resolveUserAuthTenant(ctx, &entity.User{ID: "user-1"}, "tenant-1")
+	if err != nil {
+		t.Fatalf("resolveUserAuthTenant() failed: %v", err)
+	}
 
 	svc := NewUserService()
 	for _, auth := range []string{"Bearer " + beta, beta, "Bearer    " + beta} {
-		user, code, err := svc.GetUserByBetaAPIToken(ctx, auth)
+		identity, code, err := svc.ResolveBetaAPIToken(ctx, auth)
 		if err != nil {
-			t.Fatalf("GetUserByBetaAPIToken(%q) failed: %v", auth, err)
+			t.Fatalf("ResolveBetaAPIToken(%q) failed: %v", auth, err)
 		}
 		if code != common.CodeSuccess {
 			t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
 		}
-		if user == nil || user.ID != "tenant-1" {
-			t.Fatalf("user = %+v, want tenant-1", user)
+		if identity == nil || identity.User == nil || identity.User.ID != "user-1" || identity.TenantID != expectedTenantID || identity.APIToken == nil || identity.APIToken.TenantID != expectedTenantID {
+			t.Fatalf("identity = %+v, want user-1 with tenant context %q", identity, expectedTenantID)
 		}
+	}
+
+	identity, code, err := svc.ResolveAPIToken(ctx, "Bearer token-1")
+	if err != nil {
+		t.Fatalf("ResolveAPIToken() failed: %v", err)
+	}
+	if code != common.CodeSuccess || identity.User.ID != "user-1" || identity.TenantID != expectedTenantID || identity.APIToken == nil || identity.APIToken.TenantID != expectedTenantID {
+		t.Fatalf("ResolveAPIToken() = %+v, %v; want user-1 with tenant context %q", identity, code, expectedTenantID)
 	}
 }
 
-func TestUserServiceGetUserByBetaAPITokenRejectsInvalidToken(t *testing.T) {
+func TestUserServiceResolveBetaAPITokenRejectsInvalidToken(t *testing.T) {
 	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
-	_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, "Bearer missing")
+	_, code, err := NewUserService().ResolveBetaAPIToken(ctx, "Bearer missing")
 	if err == nil {
 		t.Fatal("expected error for invalid beta token")
 	}
@@ -89,12 +112,12 @@ func TestUserServiceGetUserByBetaAPITokenRejectsInvalidToken(t *testing.T) {
 	}
 }
 
-func TestUserServiceGetUserByBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testing.T) {
+func TestUserServiceResolveBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testing.T) {
 	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	for _, auth := range []string{"Bearer ", "   ", "\t"} {
-		_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, auth)
+		_, code, err := NewUserService().ResolveBetaAPIToken(ctx, auth)
 		if err == nil {
 			t.Fatalf("expected error for auth %q", auth)
 		}
@@ -104,14 +127,14 @@ func TestUserServiceGetUserByBetaAPITokenRejectsEmptyOrWhitespaceToken(t *testin
 	}
 }
 
-func TestUserServiceGetUserByBetaAPITokenRejectsUserWithEmptyAccessToken(t *testing.T) {
+func TestUserServiceResolveBetaAPITokenRejectsUserWithEmptyAccessToken(t *testing.T) {
 	ctx := t.Context()
 	setupUserBetaServiceDB(t)
 
 	status := "1"
 	emptyToken := ""
 	if err := dao.DB.Create(&entity.User{
-		ID:              "tenant-1",
+		ID:              "user-1",
 		Email:           "tenant@example.com",
 		Nickname:        "Tenant",
 		AccessToken:     &emptyToken,
@@ -122,17 +145,28 @@ func TestUserServiceGetUserByBetaAPITokenRejectsUserWithEmptyAccessToken(t *test
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:       "membership-1",
+		UserID:   "user-1",
+		TenantID: "tenant-1",
+		Role:     "normal",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create membership: %v", err)
+	}
 
 	beta := "beta-token"
+	userID := "user-1"
 	if err := dao.DB.Create(&entity.APIToken{
 		TenantID: "tenant-1",
+		UserID:   &userID,
 		Token:    "token-1",
 		Beta:     &beta,
 	}).Error; err != nil {
 		t.Fatalf("failed to create api token: %v", err)
 	}
 
-	_, code, err := NewUserService().GetUserByBetaAPIToken(ctx, "Bearer "+beta)
+	_, code, err := NewUserService().ResolveBetaAPIToken(ctx, "Bearer "+beta)
 	if err == nil {
 		t.Fatal("expected error for empty access token")
 	}

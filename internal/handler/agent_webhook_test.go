@@ -157,6 +157,30 @@ func errBody(t *testing.T, body []byte) (int, string) {
 
 // ---------- Phase 1: canvas loading / DataFlow rejection ----------
 
+// TestWebhookHeaderSchemaAcceptsMixedCase verifies real request parsing and schema validation before dispatch.
+func TestWebhookHeaderSchemaAcceptsMixedCase(t *testing.T) {
+	for _, path := range []string{"/api/v1/agents/c1/webhook", "/api/v1/agents/c1/webhook/test"} {
+		t.Run(path, func(t *testing.T) {
+			cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+				"execution_mode": "Streaming",
+				"schema": map[string]any{"headers": map[string]any{
+					"properties": map[string]any{"x-request-id": map[string]any{"type": "string"}},
+					"required":   []string{"x-request-id"},
+				}},
+			})
+			loader := &fakeCanvasLoader{canvas: cv}
+			h := &AgentHandler{loader: loader}
+			h.webhookTraceAppender = func(context.Context, string, time.Time, canvas.RunEvent) {}
+			c, w := webhookCtx("POST", path, `{}`, "application/json")
+			c.Request.Header.Set("X-Request-ID", "request-123")
+			h.Webhook(c)
+			if w.Code != http.StatusOK || loader.runCalls.Load() != 1 || !strings.Contains(w.Body.String(), `"success":true`) {
+				t.Fatalf("status=%d runs=%d response=%s", w.Code, loader.runCalls.Load(), w.Body.String())
+			}
+		})
+	}
+}
+
 // TestWebhook_RejectsUnknownCanvas pins the 102 "Canvas not found."
 // envelope when LoadCanvasByID returns ErrUserCanvasNotFound. This is
 // the deliberate divergence from mapAgentError (which would surface 103).

@@ -44,14 +44,15 @@ import {
   currentReg,
   decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
-  findCitationChunk,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
   unescapeAngleBrackets,
 } from '@/utils/chat';
+import type { CitationKey } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
@@ -73,6 +74,11 @@ import styles from './index.module.less';
 
 const getChunkKey = (match: string) => parseCitationIndex(match);
 
+// react-string-replace hands the callback the LAST capture group, not the
+// full match — citationMarkerReg groups only the id, so replacing with it
+// would strip the brackets. This group wraps the whole marker, letting an
+// unresolved marker be returned unchanged.
+const WholeMarkerReg = /(\[(?:ID:)?[0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+\])/g;
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
@@ -279,9 +285,10 @@ function MarkdownContent({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number, chunkKey: number | string) => {
-      const chunks = reference?.chunks ?? {};
-      const chunkItem = findCitationChunk(chunks, chunkKey, chunkIndex);
+    (chunkKey: CitationKey) => {
+      // The marker itself selects the chunk: a numeric key indexes the
+      // payload, an agent [ID:<chunkId>] key matches the chunk's own id.
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -307,7 +314,7 @@ function MarkdownContent({
   );
 
   const renderPopoverContent = useCallback(
-    (chunkIndex: number, chunkKey: number | string) => {
+    (chunkKey: CitationKey) => {
       const {
         documentUrl,
         fileThumbnail,
@@ -316,10 +323,16 @@ function MarkdownContent({
         chunkItem,
         documentId,
         document,
-      } = getReferenceInfo(chunkIndex, chunkKey);
+      } = getReferenceInfo(chunkKey);
+
+      // The citation chip already gates on the chunk being found; this narrows
+      // chunkItem for the handlers below.
+      if (!chunkItem) {
+        return null;
+      }
 
       return (
-        <div key={chunkItem?.id} className="flex gap-2">
+        <div key={chunkItem.id} className="flex gap-2">
           {imageId && (
             <HoverCard>
               <HoverCardTrigger>
@@ -346,7 +359,7 @@ function MarkdownContent({
               className={classNames(styles.chunkContentText, 'w-full')}
               dir="auto"
             ></div>
-            {documentId && chunkItem && (
+            {documentId && (
               <div className="flex gap-1">
                 {fileThumbnail ? (
                   <AuthenticatedImg
@@ -383,13 +396,24 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      // Assign each unique citation marker a stable display number based on
-      // its first occurrence, so the same ID always renders as the same [N]
-      // chip. The chunk itself is resolved by its citation id.
+      // Chip numbers follow each unique marker's first occurrence, so the
+      // same citation always renders as the same [N] chip. That numbering is
+      // display-only: the chunk behind a marker is resolved from the marker
+      // itself (position for numeric markers, chunk id for agent
+      // [ID:<chunkId>] markers), never from the display position — the
+      // payload ships in retrieval order, which is unrelated to the order
+      // the answer cites passages in.
       const keyToDisplay = buildCitationDisplayMap(text);
-      const replacedText = reactStringReplace(text, currentReg, (match) => {
+      const replacedText = reactStringReplace(text, WholeMarkerReg, (match) => {
         const chunkKey = getChunkKey(match);
         const displayIndex = keyToDisplay.get(chunkKey) ?? 0;
+        const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
+        // The reference lands at message_end, after the answer stream, so an
+        // unresolved marker keeps its chip while loading. Afterwards it
+        // stays as literal text rather than pointing at the wrong chunk.
+        if (!chunkItem && !loading) {
+          return match;
+        }
 
         return (
           <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
@@ -398,16 +422,18 @@ function MarkdownContent({
                 [{displayIndex + 1}]
               </bdi>
             </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(displayIndex, chunkKey)}
-            </HoverCardContent>
+            {chunkItem && (
+              <HoverCardContent className="max-w-3xl">
+                {renderPopoverContent(chunkKey)}
+              </HoverCardContent>
+            )}
           </HoverCard>
         );
       });
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [loading, reference?.chunks, renderPopoverContent],
   );
 
   const dir = getDirAttribute(content?.replace(currentReg, ''));

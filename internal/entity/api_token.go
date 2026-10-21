@@ -19,6 +19,7 @@ package entity
 // APIToken API token model
 type APIToken struct {
 	TenantID string  `gorm:"column:tenant_id;size:32;not null;primaryKey" json:"tenant_id"`
+	UserID   *string `gorm:"column:user_id;size:32" json:"user_id,omitempty"`
 	Token    string  `gorm:"column:token;size:255;not null;primaryKey" json:"token"`
 	DialogID *string `gorm:"column:dialog_id;size:32;index" json:"dialog_id,omitempty"`
 	Source   *string `gorm:"column:source;size:16;index" json:"source,omitempty"`

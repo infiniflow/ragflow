@@ -34,7 +34,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -136,7 +138,7 @@ func isJSONL(text string) bool {
 // parseJSONArray unmarshals a JSON array and emits one item per element.
 func parseJSONArray(text string) []map[string]any {
 	var arr []any
-	if err := json.Unmarshal([]byte(text), &arr); err != nil {
+	if err := unmarshalJSON([]byte(text), &arr); err != nil {
 		// Fallback: emit as plain text.
 		return []map[string]any{{"text": text, "doc_type_kwd": "text"}}
 	}
@@ -152,7 +154,7 @@ func parseJSONArray(text string) []map[string]any {
 			})
 		} else {
 			// Re-marshal non-string elements.
-			b, err := json.Marshal(elem)
+			b, err := marshalJSON(elem)
 			if err != nil {
 				items = append(items, map[string]any{
 					"text":         fmt.Sprintf("%v", elem),
@@ -172,10 +174,10 @@ func parseJSONArray(text string) []map[string]any {
 // parseSingleJSONObject unmarshals a single JSON object and emits one item.
 func parseSingleJSONObject(text string) []map[string]any {
 	var obj map[string]any
-	if err := json.Unmarshal([]byte(text), &obj); err != nil {
+	if err := unmarshalJSON([]byte(text), &obj); err != nil {
 		return []map[string]any{{"text": text, "doc_type_kwd": "text"}}
 	}
-	b, err := json.Marshal(obj)
+	b, err := marshalJSON(obj)
 	if err != nil {
 		return []map[string]any{{"text": fmt.Sprintf("%v", obj), "doc_type_kwd": "text"}}
 	}
@@ -195,10 +197,10 @@ func parseJSONLines(text string) []map[string]any {
 		}
 		// Each line should be a JSON object.
 		var obj map[string]any
-		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		if err := unmarshalJSON([]byte(line), &obj); err != nil {
 			// Also try as a string or other standalone value.
 			var val any
-			if err2 := json.Unmarshal([]byte(line), &val); err2 != nil {
+			if err2 := unmarshalJSON([]byte(line), &val); err2 != nil {
 				// Unparseable line — skip, matching Python behaviour.
 				continue
 			} else {
@@ -208,7 +210,7 @@ func parseJSONLines(text string) []map[string]any {
 						"doc_type_kwd": "text",
 					})
 				} else {
-					b, _ := json.Marshal(val)
+					b, _ := marshalJSON(val)
 					items = append(items, map[string]any{
 						"text":         string(b),
 						"doc_type_kwd": "text",
@@ -217,7 +219,7 @@ func parseJSONLines(text string) []map[string]any {
 			}
 			continue
 		}
-		b, err := json.Marshal(obj)
+		b, err := marshalJSON(obj)
 		if err != nil {
 			continue
 		}
@@ -227,4 +229,33 @@ func parseJSONLines(text string) []map[string]any {
 		})
 	}
 	return items
+}
+
+// unmarshalJSON is json.Unmarshal with each number kept as written, as a
+// json.Number. Decoded into a float64, an id above 2^53 changed digits
+// (12345678901234567890 became 12345678901234567000) and 1.50 became 1.5.
+// Data after the value is an error, as it is for json.Unmarshal.
+func unmarshalJSON(data []byte, v any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(v); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return errors.New("json: data after the top-level value")
+	}
+	return nil
+}
+
+// marshalJSON is json.Marshal without HTML escaping. json.Marshal writes
+// <, > and & as \u003c, \u003e and \u0026, which is meant for embedding in
+// HTML and garbles the text a chunk is searched and read as.
+func marshalJSON(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n")), nil
 }

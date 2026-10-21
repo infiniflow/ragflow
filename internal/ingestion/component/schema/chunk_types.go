@@ -131,6 +131,9 @@ type ChunkDoc struct {
 	Positions     json.RawMessage `json:"positions,omitempty"`
 	Sheet         string          `json:"sheet,omitempty"`
 	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	// PreserveOrder declares the input sequence authoritative; geometry sorting
+	// must retain it. PaddleOCR sets this for its ordered layout blocks.
+	PreserveOrder bool `json:"_preserve_order,omitempty"`
 	// TableData is the structured table contract. When a chunk carries it
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
@@ -159,7 +162,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index", "table",
+		"sheet", "sheet_index", "table", "_preserve_order",
 	} {
 		delete(raw, key)
 	}
@@ -242,10 +245,11 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 }
 
 // ChunkDocsFromDocItem converts a parser-produced []DocItem directly into a
-// typed chunk slice, without routing through DocItem.ToMap. It reads the
-// typed fields of each item and feeds the canonical wire map to ChunkDocFromMap,
-// so the resulting []ChunkDoc is identical to what the historical
-// ChunkDocsFromAny([]DocItem) path produced (which round-tripped via ToMap).
+// typed chunk slice by projecting each item through its canonical DocItem.ToMap
+// wire shape and decoding the result via ChunkDocFromMap (see chunkDocFromDocItem).
+// The resulting []ChunkDoc is therefore identical to what the historical
+// ChunkDocsFromAny([]DocItem) path produced, which round-tripped through the same
+// ToMap projection.
 // This is the consumer-side entry the chunker uses once parsers emit DocItems
 // directly; other callers that still pass []map[string]any / []any / []ChunkDoc
 // keep using ChunkDocsFromAny.

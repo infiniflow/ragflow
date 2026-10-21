@@ -142,14 +142,14 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("set pipeline_id: %v", err)
 	}
 
-	tc, err := LoadFromIngestionTask(context.Background(), task)
+	tc, err := LoadFromIngestionTask(context.Background(), dao.DB, task)
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
-	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0)
+	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

@@ -3239,8 +3239,6 @@ commandLoop:
 }
 
 // LIST USER 'user@example.com' INGESTION TASKS;
-// LIST USER 'user@example.com' DATASETS;
-// LIST USER 'user@example.com' AGENTS;
 // LIST USER 'user@example.com' CHATS;
 // LIST USER 'user@example.com' SEARCHES;
 // LIST USER 'user@example.com' MODELS; // all added models
@@ -3262,11 +3260,9 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	case TokenIngestion:
 		return p.parseAdminListUserIngestionTasks(userName)
 	case TokenDatasets:
-		p.nextToken()
-		cmd = NewCommand("admin_list_user_datasets")
+		return p.parseAdminListUserDatasetsEE(userName)
 	case TokenAgents:
-		p.nextToken()
-		cmd = NewCommand("admin_list_user_agents")
+		return p.parseAdminListUserAgentsEE(userName)
 	case TokenChats:
 		p.nextToken()
 		cmd = NewCommand("admin_list_user_chats")

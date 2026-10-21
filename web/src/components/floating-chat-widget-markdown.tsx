@@ -25,12 +25,12 @@ import {
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,
-  findCitationChunk,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
   showImage,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
@@ -145,12 +145,7 @@ const FloatingChatWidgetMarkdown = ({
 
   const getReferenceInfo = useCallback(
     (chunkKey: number | string) => {
-      const position = typeof chunkKey === 'number' ? chunkKey : -1;
-      const chunkItem = findCitationChunk(
-        reference?.chunks,
-        chunkKey,
-        position,
-      );
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs

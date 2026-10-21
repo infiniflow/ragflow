@@ -39,7 +39,7 @@
 //     fallback_level = len(selected_group) + 1. Strategy (1) —
 //     PDF-outline detection — is also ported: newLevelContext
 //     (title.go) reads the Parser-supplied file.outline via
-//     outlineFromInputs / resolveOutlineLevels / outlineSimilarity
+//     outlineFromUpstream / resolveOutlineLevels / outlineSimilarity
 //     (port of common.py:_outline_similarity) before falling back to
 //     the regex/layout branch, wired into group.go / hierarchy.go
 //     (Chunker omission 1.5, Gap C closed).
@@ -557,27 +557,27 @@ func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels 
 	return levels, max(1, maxLevel), true
 }
 
-// outlineFromInputs reads the parser-supplied PDF outline from the upstream
-// file metadata (file.outline, written by the ingestion PDF parser's
-// outlinesToFileMeta) and normalizes it into the chunker's outlineEntry
-// shape. Returns nil when no outline is present, so callers fall back to
-// frequency-based title detection. Numbers are coerced from int/float64
-// because the runtime may hand the chunker a JSON-decoded payload.
-func outlineFromInputs(inputs map[string]any) []outlineEntry {
-	file, _ := inputs["file"].(map[string]any)
-	if file == nil {
+// outlineFromUpstream reads the parser-supplied PDF outline from the decoded
+// upstream file metadata (file.outline, written by the ingestion PDF parser's
+// outlinesToFileMeta and kept verbatim in ChunkerFileMeta.Extra) and normalizes
+// it into the chunker's outlineEntry shape. Returns nil when no outline is
+// present, so callers fall back to frequency-based title detection. Numbers
+// are coerced from int/float64 because the runtime may hand the chunker a
+// JSON-decoded payload.
+func outlineFromUpstream(upstream schema.ChunkerFromUpstream) []outlineEntry {
+	if upstream.File == nil {
 		return nil
 	}
-	raw, _ := file["outline"].([]any)
-	if len(raw) == 0 {
+	raw, ok := upstream.File.Extra["outline"]
+	if !ok || len(raw) == 0 {
 		return nil
 	}
-	out := make([]outlineEntry, 0, len(raw))
-	for _, item := range raw {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	out := make([]outlineEntry, 0, len(items))
+	for _, m := range items {
 		title, _ := m["title"].(string)
 		if title == "" {
 			continue
@@ -635,14 +635,18 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text         string
-	docType      string
-	imgID        *string
-	layout       string
-	ckType       string
-	pdfPositions json.RawMessage
-	positions    json.RawMessage
-	parentMeta   map[string]any
+	text          string
+	docType       string
+	imgID         *string
+	image         string
+	layout        string
+	ckType        string
+	pdfPositions  json.RawMessage
+	positions     json.RawMessage
+	preserveOrder bool
+	sheet         string
+	sheetIndex    *int
+	parentMeta    map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }
@@ -773,9 +777,9 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	switch c.param.Method {
 	case "hierarchy":
-		return invokeHierarchy(ctx, db, inputs, &c.param)
+		return invokeHierarchy(ctx, db, withName(inputs, name), &c.param)
 	case "group":
-		return invokeGroup(ctx, db, inputs, &c.param)
+		return invokeGroup(ctx, db, withName(inputs, name), &c.param)
 	default:
 		return map[string]any{
 			"output_format": "chunks",

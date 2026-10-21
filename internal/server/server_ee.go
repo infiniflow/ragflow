@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"errors"
+	"ragflow/internal/common"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -37,7 +38,7 @@ func newEEServer() *EEServer {
 	return &EEServer{}
 }
 
-func StartServer(ctx context.Context, cancel context.CancelFunc, serverName string) error {
+func StartServer(ctx context.Context, cancel context.CancelFunc, serverName string, serverType common.ServerType) error {
 	if serverEE == nil {
 		return errors.New("server EE is nil")
 	}

@@ -204,6 +204,14 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
+/**
+ * Serializes parser form values into per-file-family API parameters.
+ * Normalizes global vision settings while preserving explicit PDF MinerU
+ * controls (including false) and the independent image OCR switch/model ID.
+ *
+ * @param params - Parser form values, including setups and global vision options.
+ * @returns File-family parameters alongside normalized global vision settings.
+ */
 export function transformParserParams(params: ParserFormSchemaType) {
   // Save global vision options from the normalized form alongside the
   // per-family setups, including nodes whose form has not been opened.
@@ -230,6 +238,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            mineru_parse_method: cur.mineru_parse_method,
+            mineru_lang: cur.mineru_lang,
+            mineru_formula_enable: cur.mineru_formula_enable,
+            mineru_table_enable: cur.mineru_table_enable,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
@@ -271,6 +283,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             ocr_enabled: cur.ocr_enabled,
+            ocr_model_id: cur.ocr_model_id,
           };
           break;
         case FileType.Email:

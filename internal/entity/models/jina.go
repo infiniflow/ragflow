@@ -710,3 +710,7 @@ func (j *JinaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 func (j *JinaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }
+
+func (j *JinaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", j.Name())
+}

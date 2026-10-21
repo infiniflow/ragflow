@@ -9,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -20,9 +21,9 @@ func TestMarkWikiDocumentDirtyDebouncesAndMergesChunks(t *testing.T) {
 	if err := db.AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
 		t.Fatalf("migrate dirty table: %v", err)
 	}
-	previousDB := kcDB
-	kcDB = db
-	t.Cleanup(func() { kcDB = previousDB })
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
 
 	if err := MarkWikiDocumentDirty(t.Context(), "tenant", "dataset", "document", []string{"chunk-b", "chunk-a"}); err != nil {
 		t.Fatalf("first dirty mark: %v", err)
@@ -62,9 +63,9 @@ func TestWikiDirtyRevisionPreventsDroppingConcurrentMutation(t *testing.T) {
 	if err := db.AutoMigrate(&entity.WikiDocumentDirty{}); err != nil {
 		t.Fatalf("migrate dirty table: %v", err)
 	}
-	previousDB := kcDB
-	kcDB = db
-	t.Cleanup(func() { kcDB = previousDB })
+	previousDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previousDB })
 
 	if err := MarkWikiDocumentDirty(t.Context(), "tenant", "dataset", "document", []string{"chunk-a"}); err != nil {
 		t.Fatalf("dirty mark: %v", err)
