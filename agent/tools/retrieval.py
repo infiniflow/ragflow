@@ -15,6 +15,7 @@
 #
 import asyncio
 import json
+import logging
 import os
 import re
 from abc import ABC
@@ -34,6 +35,8 @@ from common.metadata_utils import apply_meta_data_filter
 from rag.app.tag import label_question
 from rag.prompts.generator import cross_languages, kb_prompt, memory_prompt
 
+logger = logging.getLogger(__name__)
+
 
 def _shared_embedding_id(records, mismatch_message: str):
     """Return a stored embedding id when records share one resolved model.
@@ -46,6 +49,14 @@ def _shared_embedding_id(records, mismatch_message: str):
     """
     err = validate_dataset_embedding_models(records)
     if err:
+        logger.warning(
+            "Retrieval embedding validation failed: message=%s detail=%s kb_ids=%s dataset_ids=%s embd_ids=%s",
+            mismatch_message,
+            err,
+            [getattr(rec, "id", None) for rec in records],
+            [getattr(rec, "dataset_id", None) or getattr(rec, "id", None) for rec in records],
+            [getattr(rec, "embd_id", None) for rec in records],
+        )
         raise Exception(mismatch_message)
     return next((rec.embd_id for rec in records if rec.embd_id), None)
 
