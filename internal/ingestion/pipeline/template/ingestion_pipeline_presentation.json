@@ -55,7 +55,6 @@
                         },
                         "pdf": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -66,7 +65,6 @@
                             "vlm": {}
                         },
                         "slides": {
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -234,7 +232,6 @@
                                 {
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -243,7 +240,6 @@
                                 },
                                 {
                                     "fileFormat": "slides",
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
