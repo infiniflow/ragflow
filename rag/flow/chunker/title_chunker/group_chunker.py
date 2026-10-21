@@ -99,4 +99,4 @@ class GroupTitleChunker(BaseTitleChunker):
 
             last_sid = sec_id
 
-        return self.build_chunks_from_record_groups(record_groups)
+        return self.build_chunks_from_record_groups([(records, []) for records in record_groups])

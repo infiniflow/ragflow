@@ -50,28 +50,30 @@ class _ChunkNode:
 
     def get_paths(self, depth, include_heading_content):
         chunk_paths = []
-        self._dfs(chunk_paths, [], depth, include_heading_content)
+        self._dfs(chunk_paths, [], [], depth, include_heading_content)
         return chunk_paths
 
-    def _dfs(self, chunk_paths, titles, depth, include_heading_content):
+    def _dfs(self, chunk_paths, context, headings, depth, include_heading_content):
         if self.level == 0 and self.body_indexes:
-            chunk_paths.append(titles + self.body_indexes)
+            chunk_paths.append((self.body_indexes, []))
+
+        path_headings = headings + self.title_indexes if 1 <= self.level <= depth else headings
 
         if include_heading_content:
-            path_titles = titles + self.title_indexes if 1 <= self.level <= depth else titles
+            path_records = context + self.title_indexes if 1 <= self.level <= depth else context
 
             if self.body_indexes and 1 <= self.level <= depth:
-                chunk_paths.append(path_titles + self.body_indexes)
+                chunk_paths.append((path_records + self.body_indexes, path_headings))
             elif not self.children and 1 <= self.level <= depth:
-                chunk_paths.append(path_titles)
+                chunk_paths.append((path_records, path_headings))
         else:
-            path_titles = titles + self.title_indexes + self.body_indexes if 1 <= self.level <= depth else titles
+            path_records = context + self.title_indexes + self.body_indexes if 1 <= self.level <= depth else context
 
             if not self.children and 1 <= self.level <= depth:
-                chunk_paths.append(path_titles)
+                chunk_paths.append((path_records, path_headings))
 
         for child in self.children:
-            child._dfs(chunk_paths, path_titles, depth, include_heading_content)
+            child._dfs(chunk_paths, path_records, path_headings, depth, include_heading_content)
 
 
 class HierarchyTitleChunker(BaseTitleChunker):
@@ -91,18 +93,12 @@ class HierarchyTitleChunker(BaseTitleChunker):
 
             target_level = resolve_target_level(text_levels, self.param.hierarchy)
             if target_level is None:
-                record_groups.append(text_records.copy())
+                record_groups.append((text_records.copy(), []))
             else:
                 root = _ChunkNode(0)
                 root.build_tree(list(zip(text_levels, range(len(text_records)))), target_level)
-                record_groups.extend(
-                    [text_records[index] for index in path]
-                    for path in root.get_paths(
-                        target_level,
-                        self.param.include_heading_content,
-                    )
-                    if path
-                )
+                for path, headings in root.get_paths(target_level, self.param.include_heading_content):
+                    record_groups.append(([text_records[index] for index in path], [text_records[index] for index in headings]))
             text_records.clear()
             text_levels.clear()
 
@@ -113,7 +109,7 @@ class HierarchyTitleChunker(BaseTitleChunker):
                 continue
 
             flush_text_records()
-            record_groups.append([record])
+            record_groups.append(([record], []))
 
         flush_text_records()
         return self.build_chunks_from_record_groups(record_groups)

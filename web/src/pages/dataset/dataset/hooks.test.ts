@@ -254,7 +254,7 @@ describe('useShowLog — Go backend early-log fallback', () => {
       expect.objectContaining({
         document_id: 'doc-1',
         log_type: 'file',
-        orderby: 'run_count',
+        orderby: 'create_time',
         desc: true,
         page_size: 1,
       }),
@@ -264,28 +264,98 @@ describe('useShowLog — Go backend early-log fallback', () => {
     });
   });
 
-  it('does not read the old pipeline log progress field on Go', async () => {
+  it('shows the Python pipeline log progress field on Go', async () => {
     mockIsGo = true;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     mockList.mockResolvedValue({
       data: {
         data: {
-          logs: [{ document_id: 'doc-1', progress_msg: 'Task is queued...' }],
+          logs: [
+            {
+              id: 'python-run',
+              document_id: 'doc-1',
+              progress_msg: 'Python parse completed',
+            },
+          ],
           total: 1,
         },
       },
     } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
 
-    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.CREATED });
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
     const { result } = renderLogs([doc]);
     act(() => result.current.showLog(doc));
 
-    await waitFor(() => expect(mockList).toHaveBeenCalled());
-    expect(result.current.logInfo.details).toBe('-');
-    expect(result.current.logInfo.status).toBe(RunningStatus.QUEUED);
+    await waitFor(() =>
+      expect(mockMessages).toHaveBeenCalledWith('kb-1', 'python-run', {
+        limit: 200,
+      }),
+    );
+    expect(result.current.logInfo.details).toBe('Python parse completed');
+    expect(result.current.logInfo.events).toBeUndefined();
+    expect(result.current.logInfo.status).toBe(RunningStatus.DONE);
     expect(mockList).toHaveBeenCalledWith(
       'kb-1',
       expect.objectContaining({ log_type: 'file' }),
+    );
+  });
+
+  it('prefers the selected log event over its stored progress message', async () => {
+    mockIsGo = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockList.mockResolvedValue({
+      data: {
+        data: {
+          logs: [
+            {
+              id: 'run-1',
+              document_id: 'doc-1',
+              progress_msg: 'old snapshot',
+              latest_ingestion_event: {
+                id: 7,
+                ts: '2026-01-01T00:00:00Z',
+                event_type: 3,
+                component: '',
+                phase: 0,
+                message: 'latest run event',
+              },
+            },
+          ],
+          total: 1,
+        },
+      },
+    } as any);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mockMessages.mockResolvedValue({
+      data: {
+        data: {
+          run_count: 0,
+          items: [],
+          has_more_before: false,
+          has_more_after: false,
+          terminal: true,
+        },
+      },
+    } as any);
+
+    const doc = makeDoc({ ingestion_status: IngestionTaskStatus.COMPLETED });
+    const { result } = renderLogs([doc]);
+    act(() => result.current.showLog(doc));
+
+    await waitFor(() =>
+      expect(result.current.logInfo.details).toBe('latest run event'),
     );
   });
 

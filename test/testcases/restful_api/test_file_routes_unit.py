@@ -134,7 +134,7 @@ def _load_file_api_module(monkeypatch):
     file_api_service_mod.move_files = _move_files
     file_api_service_mod.get_file_content = lambda _tenant_id, _file_id: (
         True,
-        SimpleNamespace(parent_id="bucket1", location="path1", name="doc.txt", type="doc"),
+        SimpleNamespace(parent_id="bucket1", location="path1", name="doc.txt", type="doc", source_type=""),
     )
     file_api_service_mod.get_parent_folder = lambda _file_id, user_id=None: (True, {"parent_folder": {"id": "parent1"}})
     file_api_service_mod.get_all_parent_folders = lambda _file_id, user_id=None: (True, {"parent_folders": [{"id": "root"}]})
@@ -322,19 +322,23 @@ def test_rename_via_move_route(monkeypatch):
 
 
 @pytest.mark.p2
-def test_download_falls_back_to_document_storage(monkeypatch):
+@pytest.mark.parametrize("source_type, expected_address", [("", ("bucket1", "path1")), ("knowledgebase", ("bucket2", "path2"))])
+def test_download_uses_source_storage(monkeypatch, source_type, expected_address):
     module = _load_file_api_module(monkeypatch)
+    _, file = module.file_api_service.get_file_content("tenant1", "file1")
+    file.source_type = source_type
+    monkeypatch.setattr(module.file_api_service, "get_file_content", lambda _tenant_id, _file_id: (True, file))
     storage_calls = []
 
     def _get(bucket, location):
         storage_calls.append((bucket, location))
-        return b"" if len(storage_calls) == 1 else b"fallback-blob"
+        return b"file-blob"
 
     monkeypatch.setattr(module.settings, "STORAGE_IMPL", SimpleNamespace(get=_get))
     res = _run(module.download("tenant1", "file1"))
 
-    assert storage_calls == [("bucket1", "path1"), ("bucket2", "path2")]
-    assert res.data == b"fallback-blob"
+    assert storage_calls == [expected_address]
+    assert res.data == b"file-blob"
     assert res.headers["content_type"] == "text/plain"
     assert res.headers["ext"] == "txt"
     assert res.headers["filename"] == "doc.txt"

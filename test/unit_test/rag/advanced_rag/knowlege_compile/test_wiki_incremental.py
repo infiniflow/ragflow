@@ -8,8 +8,9 @@ import asyncio
 import importlib.util
 import json
 import os
+import re
 import sys
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -2122,3 +2123,364 @@ def test_contextual_hints_accepts_native_string_relations():
 
     assert "[[entity/Beta]] — related" in hints
     assert "[[concept/Gamma]] — related" in hints
+
+
+@pytest.fixture
+def page_writer_retry(monkeypatch):
+    """Keep recovery tests deterministic without waiting on the wall clock."""
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRIES", 2, raising=False)
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_BASE_DELAY", 30, raising=False)
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_MAX_DELAY", 120, raising=False)
+    if hasattr(_wiki, "random"):
+        monkeypatch.setattr(_wiki.random, "uniform", lambda low, high: high)
+    sleep = AsyncMock()
+    monkeypatch.setattr(_wiki.asyncio, "sleep", sleep)
+    return sleep
+
+
+@pytest.mark.parametrize("failure", ["ERROR_MAX_RETRIES - Error code: 429 - 您已达到总请求数限制", "ERROR_QUOTA - Error code: 429 - per-minute quota exceeded"])
+@pytest.mark.parametrize("mode", ["generate", "modify", "re-synthesize"])
+async def test_refine_recovers_exhausted_llm_call_without_duplicate_writes(mode, failure, page_writer_retry, monkeypatch):
+    """A healthy page stays single-shot while only the throttled page retries."""
+    store = make_doc_store()
+    commit_module = ModuleType("api.db.services.file_commit_service")
+    commit_module.FileCommitService = MagicMock()
+    monkeypatch.setitem(sys.modules, "api.db.services.file_commit_service", commit_module)
+    tokenizer = MagicMock()
+    tokenizer.tokenize.side_effect = lambda text: text
+    tokenizer.fine_grained_tokenize.side_effect = lambda text: text
+    monkeypatch.setattr(sys.modules["rag.nlp"], "rag_tokenizer", tokenizer, raising=False)
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    healthy = MockChatModel("SUMMARY: Healthy\nTOPIC: General\nHealthy page.")
+    healthy.async_chat = AsyncMock(return_value=healthy._canned)
+    limited = MockChatModel()
+    limited.async_chat = AsyncMock(side_effect=[f"**ERROR**: {failure}", "SUMMARY: Recovered\nTOPIC: General\nRecovered page."])
+
+    async def refine(page_id, model):
+        """Run the real page-refinement path with the selected writing mode."""
+        return await _wiki._wiki_refine_page(
+            mode=mode,
+            page_id=page_id,
+            page_title=page_id,
+            existing_page=None if mode == "generate" else {"md_with_weight": "Previous page."},
+            claims=[],
+            source_chunks=[],
+            additions=[],
+            retractions=[],
+            available_pages=[],
+            chat_mdl=model,
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t",
+            kb_id="kb",
+            page_version=0 if mode == "generate" else 4,
+            page_embedding=np.ones(8),
+        )
+
+    healthy_page, recovered_page = await asyncio.gather(refine("entity/healthy", healthy), refine("entity/limited", limited))
+
+    assert healthy.async_chat.await_count == 1
+    assert limited.async_chat.await_count == 2
+    assert page_writer_retry.await_args.args == (37.5,)
+    assert store.insert.call_count == 2
+    assert commit_module.FileCommitService.record_page_edit.call_count == 2
+    assert healthy_page["page_version_int"] == recovered_page["page_version_int"] == (1 if mode == "generate" else 5)
+    assert "**ERROR**" not in recovered_page["md_with_weight"]
+
+
+@pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError(), RuntimeError("**ERROR**: ERROR_TIMEOUT - timed out"), RuntimeError("**ERROR**: ERROR_MAX_RETRIES - Error code: 503")])
+async def test_page_writer_recovers_transient_exception(failure, page_writer_retry, monkeypatch):
+    """Recover explicit transient exceptions after a bounded cooldown."""
+    ask = AsyncMock(side_effect=[failure, "Recovered"])
+    monkeypatch.setattr(_wiki, "_chat_mdl_ask", ask)
+    assert await _wiki._wiki_ask_page_writer(None, "system", "user", page_id="page") == "Recovered"
+    assert ask.await_count == 2
+    page_writer_retry.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "**ERROR**: ERROR_AUTHENTICATION - 401",
+        "**ERROR**: ERROR_INVALID_REQUEST - 400",
+        "**ERROR**: ERROR_QUOTA - 429 insufficient_quota",
+        "429 billing limit reached",
+        "429 账户额度不足",
+        "**ERROR**: ERROR_CONTENT_FILTER",
+        "**ERROR**: ERROR_MODEL",
+        "**ERROR**: ERROR_MAX_RETRIES - unknown failure",
+        "JSON parse failed",
+        "HTTP 401 rate limit",
+    ],
+)
+async def test_page_writer_does_not_retry_permanent_or_unknown_errors(error, page_writer_retry):
+    """Fail permanent and unclassified LLM errors without additional requests."""
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=RuntimeError(error))
+    with pytest.raises(RuntimeError, match=re.escape(error)):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+async def test_page_writer_exhaustion_is_bounded_and_does_not_persist(page_writer_retry, monkeypatch):
+    """Exhausted recovery leaves storage untouched and raises the final error."""
+    store = make_doc_store()
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    model = MockChatModel("**ERROR**: ERROR_MAX_RETRIES - 429 too many requests")
+    model.async_chat = AsyncMock(return_value=model._canned)
+    with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+        await _wiki._wiki_refine_page(mode="generate", page_id="page", page_title="page", existing_page=None, chat_mdl=model, embd_mdl=MockEmbeddingModel(), tenant_id="t", kb_id="kb", page_version=0)
+    assert model.async_chat.await_count == 3
+    assert [call.args[0] for call in page_writer_retry.await_args_list] == [37.5, 75]
+    store.insert.assert_not_called()
+    store.update.assert_not_called()
+
+
+async def test_page_writer_recovery_can_be_disabled(page_writer_retry, monkeypatch):
+    """A zero attempt limit preserves the single-call failure behavior."""
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRIES", 0)
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=TimeoutError())
+    with pytest.raises(TimeoutError):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("retry_after, expected_delay, calls", [("90", 90, 2), ("invalid", 37.5, 2), ("600", None, 1)])
+async def test_page_writer_respects_retry_after_without_unbounded_wait(retry_after, expected_delay, calls, page_writer_retry):
+    """Honor reset delays within the cap and reject longer waits."""
+    error = RuntimeError("429 rate limit")
+    error.status_code = 429
+    error.response = SimpleNamespace(headers={"Retry-After": retry_after})
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+    if expected_delay is None:
+        with pytest.raises(RuntimeError, match="429"):
+            await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+        page_writer_retry.assert_not_awaited()
+    else:
+        assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+        page_writer_retry.assert_awaited_once_with(expected_delay)
+    assert model.async_chat.await_count == calls
+
+
+async def test_page_writer_cancellation_interrupts_recovery(page_writer_retry):
+    """Cancellation during the cooldown prevents further LLM attempts."""
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=TimeoutError())
+    page_writer_retry.side_effect = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+
+
+async def test_page_writer_does_not_retry_persistence_errors(page_writer_retry, monkeypatch):
+    """Even a transient-looking storage error must not replay the LLM or writes."""
+    store = make_doc_store()
+    store.insert.side_effect = RuntimeError("503 storage unavailable")
+    monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
+    model = MockChatModel("SUMMARY: Page\nTOPIC: General\nPage content.")
+    model.async_chat = AsyncMock(return_value=model._canned)
+    tokenizer = MagicMock()
+    tokenizer.tokenize.side_effect = lambda text: text
+    tokenizer.fine_grained_tokenize.side_effect = lambda text: text
+    monkeypatch.setattr(sys.modules["rag.nlp"], "rag_tokenizer", tokenizer, raising=False)
+    with pytest.raises(RuntimeError, match="503 storage"):
+        await _wiki._wiki_refine_page(
+            mode="generate", page_id="page", page_title="page", existing_page=None, chat_mdl=model, embd_mdl=MockEmbeddingModel(), tenant_id="t", kb_id="kb", page_version=0, page_embedding=np.ones(8)
+        )
+    assert model.async_chat.await_count == 1
+    store.insert.assert_called_once()
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-10", "bad date"])
+def test_page_writer_ignores_invalid_retry_after(value):
+    """Invalid and non-finite reset values fall back to normal backoff."""
+    error = RuntimeError("429")
+    error.response = SimpleNamespace(headers={"Retry-After": value})
+    assert _wiki._wiki_retry_after(error) == 0
+
+
+def test_page_writer_parses_http_date_retry_after():
+    """Parse the HTTP-date form of the server reset time."""
+    from datetime import UTC, datetime, timedelta
+    from email.utils import format_datetime
+
+    error = RuntimeError("429")
+    error.response = SimpleNamespace(headers={"Retry-After": format_datetime(datetime.now(UTC) + timedelta(seconds=90), usegmt=True)})
+    assert 88 <= _wiki._wiki_retry_after(error) <= 90
+
+
+@pytest.mark.parametrize("base_delay,max_delay", [(0, 0), (0, 120), (30, 0)])
+async def test_page_writer_zero_delay_disables_recovery(base_delay, max_delay, page_writer_retry, monkeypatch):
+    """A zero delay bound never permits an immediate retry burst."""
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_BASE_DELAY", base_delay)
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_MAX_DELAY", max_delay)
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=TimeoutError())
+    with pytest.raises(TimeoutError):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("typed_status", [True, False])
+async def test_page_writer_recovers_529_overload(typed_status, page_writer_retry):
+    """Recover both typed HTTP overload errors and flattened provider responses."""
+    error = RuntimeError("HTTP 529 overloaded_error")
+    if typed_status:
+        error.status_code = 529
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    assert model.async_chat.await_count == 2
+    page_writer_retry.assert_awaited_once()
+
+
+@pytest.mark.parametrize("header_name", ["retry-after", "RETRY-AFTER", "ReTrY-AfTeR"])
+async def test_page_writer_honors_case_insensitive_retry_after(header_name, page_writer_retry):
+    """Plain dictionary headers still honor the server's full reset delay."""
+    error = RuntimeError("429 rate limit")
+    error.response = SimpleNamespace(headers={header_name: "120"})
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    page_writer_retry.assert_awaited_once_with(120)
+    assert model.async_chat.await_count == 2
+
+
+@pytest.mark.parametrize("status_source", ["exception", "response"])
+@pytest.mark.parametrize("retry_after, expected_delay", [("90", 90), (None, 37.5)])
+async def test_page_writer_recovers_temporary_quota_limits(status_source, retry_after, expected_delay, page_writer_retry):
+    """Quota wording must not mask a preserved HTTP 429 or its reset delay."""
+    error = RuntimeError("Request quota exceeded")
+    error.response = SimpleNamespace(headers={} if retry_after is None else {"Retry-After": retry_after})
+    if status_source == "exception":
+        error.status_code = 429
+    else:
+        error.response.status_code = 429
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    assert model.async_chat.await_count == 2
+    page_writer_retry.assert_awaited_once_with(expected_delay)
+
+
+@pytest.mark.parametrize(
+    "detail",
+    [
+        "Error code: 429 - per-minute quota exceeded",
+        "HTTP/1.1 429 - request quota exceeded",
+        "HTTP status 429 - request quota exceeded",
+        "status=429 - request quota exceeded",
+        "{'status_code': 429, 'message': 'quota exceeded'}",
+        "{'error': {'code': 'rate_limit_exceeded', 'message': 'quota exceeded'}}",
+        "HTTP 503 - capacity temporarily unavailable",
+        "HTTP 429 - credit request quota per minute exceeded",
+        "HTTP 429 - balance of request quota exhausted for this minute",
+        "HTTP 429 - 每分钟请求额度已用尽",
+    ],
+)
+async def test_page_writer_recovers_flattened_temporary_quota_errors(detail, page_writer_retry):
+    """Client-generated ERROR_QUOTA is not proof of a permanent provider error."""
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[f"**ERROR**: ERROR_QUOTA - {detail}", "Recovered"])
+
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    assert model.async_chat.await_count == 2
+    page_writer_retry.assert_awaited_once_with(37.5)
+
+
+@pytest.mark.parametrize(
+    "message, fields",
+    [
+        ("insufficient_quota", {}),
+        ("billing limit reached", {}),
+        ("insufficient credit", {}),
+        ("credit balance is too low", {}),
+        ("账户余额不足", {}),
+        ("账户额度不足", {}),
+        ("账户欠费", {}),
+        ("Request rejected", {"code": "insufficient_quota"}),
+        ("Request rejected", {"body": {"error": {"code": "insufficient_quota"}}}),
+        ("Request rejected", {"body": {"type": "insufficient_quota"}}),
+        ("invalid_api_key", {}),
+        ("invalid_request_error", {}),
+    ],
+)
+async def test_page_writer_rejects_permanent_quota_even_with_retry_after(message, fields, page_writer_retry):
+    """Explicit permanent details override a 429 and a valid reset header."""
+    error = RuntimeError(message)
+    error.status_code = 429
+    error.response = SimpleNamespace(headers={"Retry-After": "90"})
+    for name, value in fields.items():
+        setattr(error, name, value)
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Unexpected retry"])
+
+    with pytest.raises(RuntimeError, match=re.escape(message)):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("message", ["quota exceeded", "**ERROR**: ERROR_QUOTA - quota exceeded", "**ERROR**: ERROR_QUOTA - capacity exceeded"])
+async def test_page_writer_rejects_ambiguous_quota_errors(message, page_writer_retry):
+    """A broad quota label or Retry-After alone does not establish transience."""
+    error = RuntimeError(message)
+    error.response = SimpleNamespace(headers={"Retry-After": "90"})
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Unexpected retry"])
+
+    with pytest.raises(RuntimeError, match=re.escape(message)):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "detail, retryable",
+    [
+        ("request count 429 exceeded", False),
+        ("503 requests consumed", False),
+        ("quota: 429 requests", False),
+        ("request count 400; rate limit reached", True),
+        ("request quota 400 exceeded; Error code: 429", True),
+    ],
+)
+async def test_page_writer_does_not_treat_request_counts_as_http_status(detail, retryable, page_writer_retry):
+    """Only explicit HTTP status formats may override the remaining evidence."""
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[f"**ERROR**: ERROR_MAX_RETRIES - {detail}", "Recovered"])
+
+    if retryable:
+        assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+        assert model.async_chat.await_count == 2
+        page_writer_retry.assert_awaited_once_with(37.5)
+    else:
+        with pytest.raises(RuntimeError, match="Wiki LLM call failed"):
+            await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+        assert model.async_chat.await_count == 1
+        page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("status, retryable", [(429, True), (401, False)])
+async def test_page_writer_prefers_structured_http_status(status, retryable, page_writer_retry):
+    """An actual response status takes precedence over status-like message text."""
+    error = RuntimeError(f"HTTP {401 if retryable else 429} - rate limit")
+    error.status_code = status
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+
+    if retryable:
+        assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+        assert model.async_chat.await_count == 2
+        page_writer_retry.assert_awaited_once_with(37.5)
+    else:
+        with pytest.raises(RuntimeError):
+            await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+        assert model.async_chat.await_count == 1
+        page_writer_retry.assert_not_awaited()

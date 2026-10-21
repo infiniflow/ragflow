@@ -22,16 +22,16 @@ import time
 from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
-from rag.nlp import rag_tokenizer, query
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
-from common.string_utils import remove_redundant_spaces
-from common.float_utils import get_float
-from common.constants import PAGERANK_FLD, TAG_FLD
-from common.tag_feature_utils import parse_tag_features
-from common import settings
 
+from common import settings
+from common.constants import PAGERANK_FLD, TAG_FLD
+from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, OrderByExpr
+from common.float_utils import get_float
 from common.misc_utils import thread_pool_exec
+from common.string_utils import remove_redundant_spaces
+from common.tag_feature_utils import parse_tag_features
+from rag.nlp import query, rag_tokenizer
 
 
 def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
@@ -294,7 +294,7 @@ class Dealer:
                 orderBy.desc("create_timestamp_flt")
             res = self.dataStore.search(src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
             total = self.dataStore.get_total(res)
-            logging.debug("Dealer.search TOTAL: {}".format(total))
+            logging.debug(f"Dealer.search TOTAL: {total}")
         else:
             highlightFields = []
             matchText, keywords = self.qryr.question(qst, min_match=(0.3 if min_match else 0))
@@ -302,7 +302,7 @@ class Dealer:
                 matchExprs = [matchText] if matchText else []
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
+                logging.debug(f"Dealer.search TOTAL: {total}")
             else:
                 dense_template = await self.get_vector(qst, emb_mdl, top_k=knn_top_k, num_candidates=knn_num_candidates, similarity=req.get("similarity", 0.1))
                 matchDense = copy.deepcopy(dense_template)
@@ -313,7 +313,7 @@ class Dealer:
                 # citations (see Dealer.fetch_chunk_vectors). OceanBase
                 # still relies on local rerank against chunk vectors, so
                 # keep pulling them for that backend.
-                if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
+                if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB or settings.DOC_ENGINE_VASTBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 if settings.DOC_ENGINE_INFINITY:
@@ -333,7 +333,7 @@ class Dealer:
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
                 total = self.dataStore.get_total(res)
-                logging.debug("Dealer.search TOTAL: {}".format(total))
+                logging.debug(f"Dealer.search TOTAL: {total}")
 
                 # If result is empty, try again with lower min_match or, for
                 # dense-only queries, a lower vector threshold.
@@ -357,9 +357,6 @@ class Dealer:
                                 rank_feature=rank_feature,
                             )
                             total = self.dataStore.get_total(res)
-                    elif filters.get("doc_id"):
-                        res = await thread_pool_exec(self.dataStore.search, src, [], filters, [], orderBy, offset, limit, idx_names, kb_ids)
-                        total = self.dataStore.get_total(res)
                     else:
                         matchText, _ = self.qryr.question(qst, min_match=(0.1 if min_match else 0))
                         matchDense = copy.deepcopy(dense_template)
@@ -397,7 +394,7 @@ class Dealer:
                                 rank_feature=rank_feature,
                             )
                             total = self.dataStore.get_total(res)
-                    logging.debug("Dealer.search 2 TOTAL: {}".format(total))
+                    logging.debug(f"Dealer.search 2 TOTAL: {total}")
 
             for k in keywords:
                 kwds.add(k)
@@ -455,7 +452,7 @@ class Dealer:
                 continue
             idx.append(i)
             pieces_.append(t)
-        logging.debug("{} => {}".format(answer, pieces_))
+        logging.debug(f"{answer} => {pieces_}")
         if not pieces_:
             return answer, set([])
 
@@ -463,18 +460,18 @@ class Dealer:
         for i in range(len(chunk_v)):
             if len(ans_v[0]) != len(chunk_v[i]):
                 chunk_v[i] = [0.0] * len(ans_v[0])
-                logging.warning("The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[i])))
+                logging.warning(f"The dimension of query and chunk do not match: {len(ans_v[0])} vs. {len(chunk_v[i])}")
 
-        assert len(ans_v[0]) == len(chunk_v[0]), "The dimension of query and chunk do not match: {} vs. {}".format(len(ans_v[0]), len(chunk_v[0]))
+        assert len(ans_v[0]) == len(chunk_v[0]), f"The dimension of query and chunk do not match: {len(ans_v[0])} vs. {len(chunk_v[0])}"
 
         chunks_tks = [rag_tokenizer.tokenize(self.qryr.rmWWW(ck)).split() for ck in chunks]
         cites = {}
         thr = 0.63
         while thr > 0.3 and len(cites.keys()) == 0 and pieces_ and chunks_tks:
             for i, a in enumerate(pieces_):
-                sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i], chunk_v, rag_tokenizer.tokenize(self.qryr.rmWWW(pieces_[i])).split(), chunks_tks, tkweight, vtweight)
+                sim, tksim, vtsim = self.qryr.hybrid_similarity(ans_v[i], chunk_v, rag_tokenizer.tokenize(self.qryr.rmWWW(a)).split(), chunks_tks, tkweight, vtweight)
                 mx = np.max(sim) * 0.99
-                logging.debug("{} SIM: {}".format(pieces_[i], mx))
+                logging.debug(f"{a} SIM: {mx}")
                 if mx < thr:
                     continue
                 cites[idx[i]] = list(set([str(ii) for ii in range(len(chunk_v)) if sim[ii] > mx]))[:4]
@@ -806,8 +803,8 @@ class Dealer:
                 sim = [s if s is not None else 0.0 for s in sim]
                 tsim = sim
                 vsim = sim
-            elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
-                # OceanBase still returns chunk vectors in the result; use
+            elif settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB or settings.DOC_ENGINE_VASTBASE:
+                # OceanBase/Vastbase return chunk vectors in the result; use
                 # the historical local rerank that depends on them.
                 sim, tsim, vsim = self.rerank(
                     sres,
@@ -958,6 +955,9 @@ class Dealer:
 
         orderBy = OrderByExpr()
         if sort_by_position:
+            # Same reading order as the chunk list: the position columns tie for
+            # rows that carry no position data, which is what this column fixes.
+            orderBy.asc("chunk_order_int")
             orderBy.asc("page_num_int")
             orderBy.asc("position_int")
             orderBy.asc("top_int")
@@ -1033,7 +1033,11 @@ class Dealer:
             doc_id2kb_id[ck["doc_id"]] = ck["kb_id"]
         doc_id = sorted(ranks.items(), key=lambda x: x[1] * -1.0)[0][0]
         kb_ids = [doc_id2kb_id[doc_id]]
-        es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [], OrderByExpr(), 0, 128, idx_nms, kb_ids)
+        # A document parsed in several page ranges carries one TOC row per task;
+        # read them in range order so the concatenated TOC stays ordered.
+        orderBy = OrderByExpr()
+        orderBy.asc("chunk_order_int")
+        es_res = self.dataStore.search(["content_with_weight"], [], {"doc_id": doc_id, "toc_kwd": "toc"}, [], orderBy, 0, 128, idx_nms, kb_ids)
         toc = []
         dict_chunks = self.dataStore.get_fields(es_res, ["content_with_weight"])
         for _, doc in dict_chunks.items():

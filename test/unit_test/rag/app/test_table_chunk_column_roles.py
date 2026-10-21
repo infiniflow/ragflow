@@ -409,3 +409,32 @@ def test_chunk_keeps_unconvertible_cell_in_content(table_module, mock_update_kb:
     assert chunks[2]["amount_long"] == 300
     assert chunks[1].get("amount_long") != "N/A"
     assert "- amount: N/A" in chunks[1]["content_with_weight"]
+
+
+@pytest.mark.parametrize("delimiter", [";", "\t", "|"])
+def test_chunk_reads_the_separator_a_csv_was_written_with(table_module, mock_update_kb: MagicMock, delimiter):
+    table_module.chunk(
+        FILENAME,
+        binary=TEST_CSV.replace(b",", delimiter.encode()),
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+    )
+    args, _ = mock_update_kb.call_args
+    assert args[1]["table_column_names"] == ["row_id", "title", "content", "country", "category"]
+
+
+def test_chunk_uses_an_explicit_delimiter_over_detection(table_module, mock_update_kb: MagicMock):
+    # Detection picks ";" here, which lines up on every row too.
+    table_module.chunk(
+        FILENAME,
+        binary=b"a|b;c\n1|2;3\n4|5;6\n",
+        callback=_noop_callback,
+        kb_id=KB_ID,
+        parser_config={},
+        lang="Chinese",
+        delimiter="|",
+    )
+    args, _ = mock_update_kb.call_args
+    assert args[1]["table_column_names"] == ["a", "b;c"]

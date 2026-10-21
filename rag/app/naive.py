@@ -19,6 +19,7 @@ import os
 import re
 from collections.abc import Callable
 from functools import reduce
+from html import escape as html_escape
 from io import BytesIO
 from timeit import default_timer as timer
 from typing import Any
@@ -812,7 +813,7 @@ class Docx(DocxParser):
                 title = self.__get_nearest_title(table_idx, filename)
                 html = "<table>"
                 if title:
-                    html += f"<caption>Table Location: {title}</caption>"
+                    html += f"<caption>Table Location: {html_escape(title)}</caption>"
                 for r in tb.rows:
                     html += "<tr>"
                     col_idx = 0
@@ -827,7 +828,8 @@ class Docx(DocxParser):
                                 else:
                                     break
                             col_idx += 1
-                            html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                            cell = html_escape(c.text)
+                            html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                     except Exception as e:
                         logging.warning(f"Error parsing table, ignore: {e}")
                     html += "</tr>"
@@ -1142,6 +1144,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     is_markdown = False
     table_context_size = max(0, int(parser_config.get("table_context_size", 0) or 0))
     image_context_size = max(0, int(parser_config.get("image_context_size", 0) or 0))
+    overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
 
     doc = {"docnm_kwd": filename, "title_tks": rag_tokenizer.tokenize(re.sub(r"\.[a-zA-Z]+$", "", filename))}
     doc["title_sm_tks"] = rag_tokenizer.fine_grained_tokenize(doc["title_tks"])
@@ -1195,7 +1198,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         # chunks list[dict]
         # images list - index of image chunk in chunks
-        chunks, images = naive_merge_docx(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), table_context_size, image_context_size)
+        chunks, images = naive_merge_docx(
+            sections,
+            int(parser_config.get("chunk_token_num", 128)),
+            parser_config.get("delimiter", DEFAULT_DELIMITER),
+            table_context_size,
+            image_context_size,
+            overlapped_percent=overlapped_percent,
+        )
 
         vision_figure_parser_docx_wrapper_naive(
             chunks=chunks,
@@ -1435,8 +1445,6 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         raise NotImplementedError("file type not supported yet(pdf, xlsx, doc, docx, txt supported)")
 
     st = timer()
-    overlapped_percent = normalize_overlapped_percent(parser_config.get("overlapped_percent", 0))
-
     if is_markdown:
         merged_chunks = []
         merged_images = []
