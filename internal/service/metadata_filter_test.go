@@ -17,13 +17,18 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 func TestRenderMetaFilterTemplate(t *testing.T) {
@@ -147,9 +152,9 @@ func TestApplyMetaDataFilterManualNotInArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No dataset IDs means the request uses the in-memory filter.
-	got, empty := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, []string{"doc1", "doc3"}, nil)
-	if !slices.Equal(got, []string{"doc3"}) || empty {
-		t.Errorf("ApplyMetaDataFilter() = (%v, %v), want ([doc3], false)", got, empty)
+	got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, []string{"doc1", "doc3"}, nil)
+	if !slices.Equal(got, []string{"doc3"}) {
+		t.Errorf("ApplyMetaDataFilter() = %v, want [doc3]", got)
 	}
 }
 
@@ -584,5 +589,260 @@ func TestCompareValuesDirectly(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("compareValues(%q, %q, %q) = %v, want %v", tt.v1, tt.v2, tt.op, got, tt.want)
 		}
+	}
+}
+
+// ApplyMetaDataFilter's outcomes must stay distinguishable: "the metadata could
+// not narrow the search" (nil) is not the same answer as "no document matches"
+// (["-999"]), because the returned slice is applied as a hard document scope.
+func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
+	base := []string{"doc-1", "doc-2"}
+	metas := common.MetaData{"author": {"Zhang San": {"doc-1"}, "Li Si": {"doc-3"}}}
+
+	// The generator answering with no conditions is the common case: the
+	// question names no metadata. That does not mean "no such document".
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method+" without generated conditions returns no scope", func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"author"}
+			}
+
+			got := ApplyMetaDataFilter(t.Context(), filter, metas, "who wrote it?", chatModel, base, nil)
+
+			if driver.calls != 1 {
+				t.Fatalf("model calls: got %d, want 1", driver.calls)
+			}
+			if got != nil {
+				t.Fatalf("got %v, want nil so the caller keeps its own document scope", got)
+			}
+		})
+	}
+
+	// A generated filter is applied as a hard scope, and an empty result cannot
+	// tell "outside this scope" from a wrong or invented value, so it leaves
+	// the caller's scope unnarrowed rather than matching nothing.
+	for _, tc := range []struct {
+		name   string
+		answer string
+		want   []string
+	}{
+		{
+			name:   "generated conditions selecting only documents outside the scope return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Li Si"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting nothing return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Wang Wu"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting documents in the scope return them",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Zhang San"}], "logic": "and"}`,
+			want:   []string{"doc-1"},
+		},
+	} {
+		t.Run("auto "+tc.name, func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			driver.answer = tc.answer
+
+			got := ApplyMetaDataFilter(t.Context(), map[string]interface{}{"method": "auto"}, metas, "who wrote it?", chatModel, base, nil)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("manual conditions matching nothing return the sentinel", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "nobody"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != NoMatchDocIDSentinel {
+			t.Fatalf("got %v, want [%s]: the user asked for these exact conditions", got, NoMatchDocIDSentinel)
+		}
+	})
+
+	t.Run("manual conditions that match return their documents", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "Zhang San"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != "doc-1" {
+			t.Fatalf("got %v, want [doc-1]", got)
+		}
+	})
+}
+
+// capturingFilterDriver records the system prompt gen_meta_filter sends and
+// answers with answer, or an empty filter when it is unset, so a test can
+// assert what the model was shown and choose what it generates.
+type capturingFilterDriver struct {
+	*modelModule.DummyModel
+	calls  int
+	system string
+	answer string
+}
+
+func (d *capturingFilterDriver) ChatWithMessages(
+	_ context.Context,
+	_ string,
+	messages []modelModule.Message,
+	_ *modelModule.APIConfig,
+	_ *modelModule.ChatConfig,
+	_ *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	d.calls++
+	if len(messages) > 0 {
+		if s, ok := messages[0].Content.(string); ok {
+			d.system = s
+		}
+	}
+	answer := d.answer
+	if answer == "" {
+		answer = `{"conditions": [], "logic": "and"}`
+	}
+	return &modelModule.ChatResponse{Answer: &answer}, nil
+}
+
+func newCapturingFilterModel(t *testing.T) (*modelModule.ChatModel, *capturingFilterDriver) {
+	t.Helper()
+	driver := &capturingFilterDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	name := "fake-model"
+	return &modelModule.ChatModel{ModelDriver: driver, ModelName: &name, APIConfig: &modelModule.APIConfig{}}, driver
+}
+
+// newCapturingFilterModelWithContext is newCapturingFilterModel for a model
+// whose resolved metadata declares contextLength; 0 is an unresolved window.
+func newCapturingFilterModelWithContext(t *testing.T, contextLength int) (*modelModule.ChatModel, *capturingFilterDriver) {
+	t.Helper()
+	driver := &capturingFilterDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	name := "fake-model"
+	return modelModule.NewChatModelWithInfo(driver, &name, &modelModule.APIConfig{}, &modelModule.ModelInfo{ContextLength: contextLength}), driver
+}
+
+// bigMetaData returns n distinct values under one key, which is how a real
+// high-cardinality metadata key renders into the prompt.
+func bigMetaData(n int) common.MetaData {
+	values := make(common.MetaValueDocs, n)
+	for i := range n {
+		values[fmt.Sprintf("value-%06d", i)] = []string{fmt.Sprintf("doc-%06d", i)}
+	}
+	return common.MetaData{"project": values}
+}
+
+// requireTokenCounts skips when the cl100k BPE table is absent: without it
+// NumTokensFromString returns 0, every prompt "fits", and a budget assertion
+// would be meaningless rather than wrong.
+func requireTokenCounts(t *testing.T) {
+	t.Helper()
+	if tokenizer.NumTokensFromString("hello world") == 0 {
+		t.Skip("cl100k BPE table missing; token counts are 0")
+	}
+}
+
+// The value space is the whole dataset's, so it can exceed the model's context
+// on its own. A filter picked from a value list that lost entries is applied as
+// a hard document scope, and the model cannot report that it only saw part of
+// the metadata -- so no conditions at all, and no model call.
+func TestGenMetaFilter_RefusesAnOversizedValueSpace(t *testing.T) {
+	requireTokenCounts(t)
+	chatModel, driver := newCapturingFilterModelWithContext(t, 256)
+
+	result, err := GenMetaFilter(t.Context(), chatModel, bigMetaData(2000), "which project?", nil)
+	if err != nil {
+		t.Fatalf("GenMetaFilter: %v", err)
+	}
+	if len(result.Conditions) != 0 || result.Logic != "and" {
+		t.Errorf("result: got %+v, want no conditions with logic and", result)
+	}
+	if driver.calls != 0 {
+		t.Errorf("the model was called %d times with a prompt that does not fit its context", driver.calls)
+	}
+}
+
+// A value space that fits is sent untouched.
+func TestGenMetaFilter_SendsAValueSpaceThatFits(t *testing.T) {
+	requireTokenCounts(t)
+	chatModel, driver := newCapturingFilterModelWithContext(t, 128000)
+
+	metas := common.MetaData{"project": {"alpha": {"doc-1"}, "beta": {"doc-2"}}}
+	if _, err := GenMetaFilter(t.Context(), chatModel, metas, "which project?", nil); err != nil {
+		t.Fatalf("GenMetaFilter: %v", err)
+	}
+	if driver.calls != 1 {
+		t.Fatalf("model calls: got %d, want 1", driver.calls)
+	}
+	if !strings.Contains(driver.system, "alpha") {
+		t.Errorf("the value space did not reach the prompt: %q", driver.system)
+	}
+}
+
+// A context window that could not be resolved is 0, which must mean
+// tokenizer.Fit's 8192 default and NOT "no budget at all".
+func TestGenMetaFilter_UnresolvedContextLengthUsesTheDefaultBudget(t *testing.T) {
+	requireTokenCounts(t)
+
+	t.Run("under the default budget the prompt is sent", func(t *testing.T) {
+		chatModel, driver := newCapturingFilterModelWithContext(t, 0)
+
+		if _, err := GenMetaFilter(t.Context(), chatModel, common.MetaData{"project": {"alpha": {"doc-1"}}}, "which project?", nil); err != nil {
+			t.Fatalf("GenMetaFilter: %v", err)
+		}
+		if driver.calls != 1 {
+			t.Errorf("model calls: got %d, want 1", driver.calls)
+		}
+	})
+
+	t.Run("over the default budget the prompt is refused", func(t *testing.T) {
+		chatModel, driver := newCapturingFilterModelWithContext(t, 0)
+		metas := bigMetaData(4000)
+		if got := tokenizer.NumTokensFromString(fmt.Sprint(metas)); got <= 8192 {
+			t.Fatalf("fixture is only %d tokens; it must exceed the 8192 default to test the budget", got)
+		}
+
+		result, err := GenMetaFilter(t.Context(), chatModel, metas, "which project?", nil)
+		if err != nil {
+			t.Fatalf("GenMetaFilter: %v", err)
+		}
+		if len(result.Conditions) != 0 {
+			t.Errorf("conditions: got %+v, want none", result.Conditions)
+		}
+		if driver.calls != 0 {
+			t.Errorf("the model was called %d times past the default budget", driver.calls)
+		}
+	})
+}
+
+// At the caller, an oversized value space leaves the search unscoped instead
+// of narrowing it to nothing.
+func TestApplyMetaDataFilter_OversizedValueSpaceLeavesTheSearchUnscoped(t *testing.T) {
+	requireTokenCounts(t)
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method, func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModelWithContext(t, 256)
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"project"}
+			}
+
+			docIDs := ApplyMetaDataFilter(t.Context(), filter, bigMetaData(2000), "which project?", chatModel, []string{"doc-1"}, nil)
+
+			if driver.calls != 0 {
+				t.Errorf("the model was asked to pick from a prompt that does not fit (%d calls)", driver.calls)
+			}
+			if docIDs != nil {
+				t.Errorf("got %v, want nil so retrieval keeps its own document scope", docIDs)
+			}
+		})
 	}
 }
