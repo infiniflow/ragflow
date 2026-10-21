@@ -399,7 +399,7 @@ async def update_provider_instance(
     :param tenant_id: tenant ID
     :param provider_id_or_name: provider/factory ID or name
     :param instance_id_or_name: instance ID or name
-    :param instance_name: instance name (used as a logical identifier)
+    :param instance_name: instance name (used as a logical identifier); renames the instance and must stay unique under the provider, ignoring case
     :param api_key: API key
     :param base_url: base url
     :param region: region
@@ -435,6 +435,11 @@ async def update_provider_instance(
         instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_id_or_name)
     if not instance_obj:
         return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+
+    if instance_name:
+        duplicate_error = _duplicate_instance_name_error(provider_obj.id, instance_name, exclude_instance_id=instance_obj.id)
+        if duplicate_error:
+            return False, duplicate_error
 
     base_url = _normalize_provider_base_url(provider_name, base_url)
     api_key = _normalize_provider_api_key(provider_name, api_key)
@@ -572,6 +577,31 @@ async def update_provider_instance(
     return True, "success"
 
 
+def _duplicate_instance_name_error(provider_id: str, instance_name: str, exclude_instance_id: str = None) -> str | None:
+    """
+    Build an error message when instance_name collides with an instance of provider_id ignoring case.
+
+    :param provider_id: provider ID owning the instances
+    :param instance_name: instance name to look up
+    :param exclude_instance_id: instance ID to skip, used when renaming an instance in place
+    :return: the error message, or None when the name is still free
+    """
+    target = instance_name.strip().casefold()
+    duplicate = None
+    for instance_obj in TenantModelInstanceService.get_all_by_provider_id(provider_id):
+        if exclude_instance_id and instance_obj.id == exclude_instance_id:
+            continue
+        existing_name = instance_obj.instance_name
+        if existing_name and existing_name.strip().casefold() == target:
+            duplicate = existing_name
+            break
+    if duplicate is None:
+        return None
+    if duplicate == instance_name:
+        return f"Instance {instance_name} already exists"
+    return f"Instance {instance_name} already exists as '{duplicate}' (instance names are case-insensitive)"
+
+
 async def create_provider_instance(tenant_id: str, provider_id_or_name: str, instance_name: str, api_key: str | dict, base_url: str, region: str, model_info: list[dict] = None):
     """
     Create a provider instance.
@@ -613,6 +643,10 @@ async def create_provider_instance(tenant_id: str, provider_id_or_name: str, ins
 
     if instance_name == "default":
         return False, "Instance name cannot be 'default'"
+
+    duplicate_error = _duplicate_instance_name_error(provider_obj.id, instance_name)
+    if duplicate_error:
+        return False, duplicate_error
 
     # Check if provider exists in the system
     allowed_factories = [f["name"] for f in FACTORY_LLM_INFOS]
@@ -710,6 +744,10 @@ async def create_name_only_provider_instance(tenant_id: str, provider_name: str,
     provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_name)
     if not provider_obj:
         return False, f"Provider '{provider_name}' does not exist"
+
+    duplicate_error = _duplicate_instance_name_error(provider_obj.id, instance_name)
+    if duplicate_error:
+        return False, duplicate_error
 
     TenantModelInstanceService.create_instance(provider_id=provider_obj.id, instance_name=instance_name, api_key="", extra=json.dumps({}))
     return True, "success"
