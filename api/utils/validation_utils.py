@@ -1047,6 +1047,23 @@ class MoveFileReq(Base):
         return self
 
 
+FILE_ORDERABLE_COLUMNS = {
+    "id",
+    "parent_id",
+    "tenant_id",
+    "created_by",
+    "name",
+    "location",
+    "size",
+    "type",
+    "source_type",
+    "create_time",
+    "create_date",
+    "update_time",
+    "update_date",
+}
+
+
 class ListFileReq(BaseModel):
     """Request model for listing files."""
 
@@ -1058,6 +1075,13 @@ class ListFileReq(BaseModel):
     page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("orderby", mode="before")
+    @classmethod
+    def validate_orderby(cls, v: Any) -> Any:
+        if isinstance(v, str) and v not in FILE_ORDERABLE_COLUMNS:
+            return "create_time"
+        return v
 
     @field_validator("page_size")
     @classmethod
