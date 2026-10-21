@@ -1912,7 +1912,7 @@ class RAGFlowPdfParser:
                         "layout_type": layout_type,
                         "text": txt,
                         "image": img,
-                        "positions": [[pn + 1, int(left), int(right), int(top), int(bott)]],
+                        "positions": [[page + 1, int(x0), int(x1), int(y0), int(y1)] for page, x0, x1, y0, y1 in local_poss],
                     },
                 )
 
