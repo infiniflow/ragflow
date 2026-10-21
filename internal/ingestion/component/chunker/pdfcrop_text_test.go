@@ -42,10 +42,10 @@ func TestCropImageChunksPreservesCompleteTextLines(t *testing.T) {
 		ck       schema.ChunkDoc
 		wantRows int
 	}{
-		{"text", schema.ChunkDoc{Text: "two lines", CKType: "text", PDFPositions: pos}, 48},
+		{"text", schema.ChunkDoc{Text: "two lines", PDFPositions: pos}, 48},
 		{"text fallback", schema.ChunkDoc{Text: "two lines", DocType: "text", Positions: pos}, 48},
-		{"image", schema.ChunkDoc{Text: "figure", CKType: "image", PDFPositions: pos}, 24},
-		{"table", schema.ChunkDoc{Text: "table", CKType: "table", PDFPositions: pos}, 24},
+		{"image", schema.ChunkDoc{Text: "figure", DocType: "image", PDFPositions: pos}, 24},
+		{"table", schema.ChunkDoc{Text: "table", DocType: "table", PDFPositions: pos}, 24},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := cropImageChunks(t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{tc.ck})
@@ -83,7 +83,7 @@ func TestCropImageChunksKeepsSeparateMediaBoxes(t *testing.T) {
 			pos := jsonPositions(t,
 				[]float64{1, 10, 60, 112.0 / 3, 162.0 / 3},
 				[]float64{1, 10, 60, 162.0 / 3, 212.0 / 3})
-			out := cropImageChunks(t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{{Text: typ, CKType: typ, PDFPositions: pos}})
+			out := cropImageChunks(t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{{Text: typ, DocType: typ, PDFPositions: pos}})
 			img, err := util.DecodeBase64PNG(strings.TrimPrefix(out[0].Image, "data:image/png;base64,"))
 			if err != nil {
 				t.Fatal(err)

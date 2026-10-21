@@ -776,8 +776,12 @@ var chatPersistedFields = map[string]struct{}{
 	"do_refer":                 {},
 	"rerank_id":                {},
 	"tenant_rerank_id":         {},
-	"kb_ids":                   {},
-	"status":                   {},
+	// The per-chat decision model override. Both the value the caller chose and
+	// the row id it resolved to are persisted; only the first is read back.
+	"decision_id":        {},
+	"tenant_decision_id": {},
+	"kb_ids":             {},
+	"status":             {},
 }
 
 var chatReadonlyFields = map[string]struct{}{
@@ -858,6 +862,22 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		}
 		if tenantLLMID != "" {
 			req["tenant_llm_id"] = tenantLLMID
+		}
+	}
+
+	if value, ok := req["decision_id"]; ok {
+		decisionID := fmt.Sprint(value)
+		if decisionID == "" {
+			// Clearing the override is meaningful: it falls back to the tenant
+			// default rather than disabling the gate for this chat.
+			req["tenant_decision_id"] = nil
+		} else {
+			modelFactory := NewModelFactory()
+			target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: userID}, entity.ModelTypeDecision, decisionID)
+			if err != nil {
+				return nil, fmt.Errorf("`decision_id` %s doesn't exist", decisionID)
+			}
+			req["tenant_decision_id"] = target.ID
 		}
 	}
 
@@ -1130,6 +1150,8 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 		"do_refer":                   chat.DoRefer,
 		"rerank_id":                  chat.RerankID,
 		"tenant_rerank_id":           chat.TenantRerankID,
+		"decision_id":                chat.DecisionID,
+		"tenant_decision_id":         chat.TenantDecisionID,
 		"dataset_ids":                datasetIDs,
 		"kb_names":                   kbNames,
 		"status":                     chat.Status,

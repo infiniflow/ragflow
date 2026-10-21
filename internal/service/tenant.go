@@ -386,6 +386,11 @@ func tenantDefaultModelFields(modelType string) (string, string, entity.ModelTyp
 		return "tts_id", "tenant_tts_id", entity.ModelTypeTTS, nil
 	case "ocr":
 		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
+	case "decision":
+		// The decision model is its own type rather than a chat model: it is
+		// spoken to in the System One protocol (one request, several questions)
+		// and is chosen independently of the answering model.
+		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -423,6 +428,11 @@ func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string
 		modelID = *tenant.TTSID
 	case entity.ModelTypeOCR:
 		modelID = *tenant.OCRID
+	case entity.ModelTypeDecision:
+		// Unset is a normal state: the decision gate is optional.
+		if tenant.DecisionID != nil {
+			modelID = *tenant.DecisionID
+		}
 	default:
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}
@@ -620,6 +630,20 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 				ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
 				ModelType:     "tts",
 				Enable:        defaultTTSModelEnable,
+			})
+		}
+	}
+
+	if ownedTenant.DecisionID != nil && *ownedTenant.DecisionID != "" {
+		defaultDecisionModelProvider, defaultDecisionModelInstance, defaultDecisionModelName, defaultDecisionModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, *ownedTenant.DecisionID, "decision")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultDecisionModelProvider,
+				ModelInstance: defaultDecisionModelInstance,
+				ModelName:     defaultDecisionModelName,
+				ModelID:       ptrStringValue(ownedTenant.TenantDecisionID),
+				ModelType:     "decision",
+				Enable:        defaultDecisionModelEnable,
 			})
 		}
 	}

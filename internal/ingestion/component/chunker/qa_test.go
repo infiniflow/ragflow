@@ -197,7 +197,6 @@ func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
 		"json": []map[string]any{{
 			"text":         "<table><tr><td>question</td><td></td><td>unexpected</td></tr></table>",
 			"doc_type_kwd": "table",
-			"ck_type":      "table",
 		}},
 	}
 	out, err := comp.Invoke(t.Context(), nil, inputs)

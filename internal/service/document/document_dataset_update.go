@@ -154,7 +154,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	// object. sel is the request selection (nil when the whole selection block
 	// was omitted); current is the dataset's persisted selection. Resolve applies
 	// PATCH semantics: an omitted block inherits the current mode. Both the
-	// parser_config cleaning and the reparse targeting derive from this single
+	// parser_config cleaning and the parser selection derive from this single
 	// resolution so they can never disagree.
 	sel, selErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
 	if selErr != nil {
@@ -205,41 +205,36 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	// Apply parser_id / pipeline_id changes. parse_type is validated earlier
-	// (in validateDatasetDocumentUpdate); reparse only fires when parse_type
-	// explicitly selects a mode. The mode direction comes from the same
-	// isPipeline resolution above.
-	var reparseParserID, reparsePipelineID *string
+	// Save the selection without changing existing parse results. Cleanup is
+	// owned by the explicit reparse request.
+	parserUpdates := map[string]interface{}{}
 	if req.ParseType != nil {
 		switch {
 		case !isPipeline: // BuiltIn
 			if present["parser_id"] && req.ParserID != nil {
 				if p := strings.TrimSpace(*req.ParserID); p != "" {
-					reparseParserID = &p
+					parserUpdates["parser_id"] = p
 				}
 			}
 			// Drop any prior canvas so the worker falls back to the builtin template.
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["pipeline_id"] = ""
 		case isPipeline: // Pipeline
 			if present["pipeline_id"] && req.PipelineID != nil {
-				reparsePipelineID = req.PipelineID
+				parserUpdates["pipeline_id"] = *req.PipelineID
 			}
 		}
 	} else if present["chunk_method"] && req.ChunkMethod != nil {
 		// chunk_method is the public alias for a direct parser change; it does
 		// not require parse_type (mirrors Python's update_chunk_method).
 		if p := strings.TrimSpace(*req.ChunkMethod); !strings.EqualFold(p, doc.ParserID) {
-			reparseParserID = &p
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["parser_id"] = p
+			parserUpdates["pipeline_id"] = ""
 		} else if doc.PipelineID != nil && *doc.PipelineID != "" {
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["pipeline_id"] = ""
 		}
 	}
-	if reparseParserID != nil || reparsePipelineID != nil {
-		if err = s.resetDocumentForReparse(ctx, doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
+	if len(parserUpdates) > 0 {
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, parserUpdates); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}

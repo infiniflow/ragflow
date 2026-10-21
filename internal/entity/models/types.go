@@ -237,14 +237,17 @@ type ModelList struct {
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat          string `json:"chat"`
-	AsyncChat     string `json:"async_chat"`
-	AsyncResult   string `json:"async_result"`
-	Embedding     string `json:"embedding"`
-	Rerank        string `json:"rerank"`
-	TTS           string `json:"tts"`
-	ASR           string `json:"asr"`
-	OCR           string `json:"ocr"`
+	Chat        string `json:"chat"`
+	AsyncChat   string `json:"async_chat"`
+	AsyncResult string `json:"async_result"`
+	Embedding   string `json:"embedding"`
+	Rerank      string `json:"rerank"`
+	TTS         string `json:"tts"`
+	ASR         string `json:"asr"`
+	OCR         string `json:"ocr"`
+	// Decision is the TypeSafe System One path: a separate endpoint from chat
+	// because it takes one request carrying many questions, not a message list.
+	Decision      string `json:"decision"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
 	Balance       string `json:"balance"`

@@ -19,7 +19,7 @@
 // that did not previously satisfy ParseResultProducer:
 //
 //   - HTMLParser — block-level walker that emits the python-compatible
-//     {text, doc_type_kwd, ck_type} shape.
+//     {text, doc_type_kwd, layout} shape.
 //   - TextParser — normalized one-unit output for the text&code family
 //     (.txt / .py / .js / .java / .c / .cpp / .h / .php / .go / .ts
 //     / .sh / .cs / .kt / .sql).
@@ -135,7 +135,7 @@ func TestTextParser_ParseWithResult_GBK(t *testing.T) {
 
 // TestHTMLParser_ParseWithResult_BlockSplit pins the HTML walker.
 // Three block elements (heading, paragraph, list) yield three
-// items with the python-compatible ck_type vocabulary.
+// items with the structural layout vocabulary.
 func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	ctx := t.Context()
 	p := NewHTMLParser()
@@ -154,20 +154,20 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (h1, p, ul)", len(res.JSON))
 	}
-	if got, want := res.JSON[0].ToMap()["ck_type"], "heading"; got != want {
-		t.Errorf("JSON[0].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[0].ToMap()["layout"], "heading"; got != want {
+		t.Errorf("JSON[0].layout = %v, want %v", got, want)
 	}
 	if got, want := res.JSON[0].ToMap()["text"], "Title"; got != want {
 		t.Errorf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1].ToMap()["ck_type"], "paragraph"; got != want {
-		t.Errorf("JSON[1].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[1].ToMap()["layout"], "paragraph"; got != want {
+		t.Errorf("JSON[1].layout = %v, want %v", got, want)
 	}
 	if got, want := res.JSON[1].ToMap()["text"], "First paragraph."; got != want {
 		t.Errorf("JSON[1].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2].ToMap()["ck_type"], "list"; got != want {
-		t.Errorf("JSON[2].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[2].ToMap()["layout"], "list"; got != want {
+		t.Errorf("JSON[2].layout = %v, want %v", got, want)
 	}
 	if got, want := res.JSON[2].ToMap()["text"], "Item one"; got != want {
 		t.Errorf("JSON[2].text = %v, want %v", got, want)
@@ -195,7 +195,7 @@ Tail text
 	}
 	want := []struct {
 		text   string
-		ckType string
+		layout string
 	}{
 		{"Intro text", "text"},
 		{"Title", "heading"},
@@ -213,8 +213,8 @@ Tail text
 		if got := res.JSON[i].ToMap()["doc_type_kwd"]; got != "text" {
 			t.Errorf("JSON[%d].doc_type_kwd = %v, want text", i, got)
 		}
-		if got := res.JSON[i].ToMap()["ck_type"]; got != w.ckType {
-			t.Errorf("JSON[%d].ck_type = %v, want %v", i, got, w.ckType)
+		if got := res.JSON[i].ToMap()["layout"]; got != w.layout {
+			t.Errorf("JSON[%d].layout = %v, want %v", i, got, w.layout)
 		}
 	}
 }

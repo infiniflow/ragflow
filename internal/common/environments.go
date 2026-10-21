@@ -27,6 +27,22 @@ func GetEnv(key string) string {
 	return os.Getenv(key)
 }
 
+// GetEnvInt reads a whole-number setting, falling back to def when the variable
+// is unset or not a number. A typo degrades to the default rather than to zero:
+// zero is a meaningful value for several of these knobs (a disabled ceiling), so
+// treating a malformed value as zero would silently turn a limit off.
+func GetEnvInt(key string, def int) int {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
 func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
@@ -291,6 +307,131 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+
+	// Typed-decision model. Unset RAGFLOW_DECISION_DIR leaves the feature off:
+	// every caller degrades to unfiltered behaviour, so a deployment without the
+	// model directory is indistinguishable from one that never had the feature.
+	EnvDecisionDir            = "RAGFLOW_DECISION_DIR"
+	EnvDecisionSegmentTokens  = "RAGFLOW_DECISION_SEGMENT_TOKENS"
+	EnvDecisionMaxSegments    = "RAGFLOW_DECISION_MAX_SEGMENTS"
+	EnvDecisionMinProbability = "RAGFLOW_DECISION_HEAD_MIN_PROB"
+	EnvDecisionBudgetMS       = "RAGFLOW_DECISION_HEAD_BUDGET_MS"
+	// EnvDecisionHeadURL points at a local decision-head inference sidecar. Set it
+	// when the graph runs
+	// out of process; the ONNX Runtime linked into this binary is an ORT-format
+	// minimal build that cannot load the exported .onnx at all.
+	EnvDecisionHeadURL = "RAGFLOW_DECISION_HEAD_URL"
+	// Which model-visible exits the sufficiency filter runs on. Deep read is the
+	// original (and default) target; the snippet exit is opt-in because dropping
+	// a locate hit costs the model an anchor it may have needed to deep-read at
+	// all. Both default to their historical behaviour so a deployment that sets
+	// only RAGFLOW_DECISION_DIR keeps filtering deep reads and nothing else.
+	EnvDecisionFilterDeepRead = "RAGFLOW_DECISION_FILTER_DEEP_READ"
+	EnvDecisionFilterSnippet  = "RAGFLOW_DECISION_FILTER_SNIPPET"
+	// EnvDecisionSnippetTools replaces the snippet filter's TOOL scope (comma
+	// separated). Unset means the corpus-passage locate tools only;
+	// search_metadata is never in scope because it returns no passages.
+	EnvDecisionSnippetTools = "RAGFLOW_DECISION_FILTER_SNIPPET_TOOLS"
+	// EnvDecisionWholeChunk switches the filter's judging window from judged
+	// sub-segments to the whole passage, truncated at EnvDecisionWholeChunkTokens.
+	// Off by default: the window is a calibration choice, so a deployment that
+	// only sets RAGFLOW_DECISION_DIR keeps the window it was measured with.
+	EnvDecisionWholeChunk       = "RAGFLOW_DECISION_WHOLE_CHUNK"
+	EnvDecisionWholeChunkTokens = "RAGFLOW_DECISION_WHOLE_CHUNK_TOKENS"
+	// EnvDecisionQuestionStyle selects what the filter ASKS the model: the contract's
+	// trained sufficiency phrasing ("sufficiency", default) or the relevance
+	// phrasing ("relevance"). The relevance set is out of the checkpoint's
+	// training distribution, so it is an experiment knob, not a quality setting.
+	EnvDecisionQuestionStyle = "RAGFLOW_DECISION_QUESTION_STYLE"
+
+	// EnvDecisionKeepTopN exempts the first N passages of every result set from the
+	// filter, so the model only shortens the TAIL of a ranking instead of
+	// gating each passage on its own. 0 keeps the all-or-nothing behaviour.
+	EnvDecisionKeepTopN = "RAGFLOW_DECISION_KEEP_TOP_N"
+	// The decision-model backend. It replaces the local decision head with the
+	// hosted decision API the head was distilled from, which is judged on the
+	// SAME question shape (noul) and measured on the same 68 labelled passages:
+	// relevance@0.15 gives precision 0.80 / recall 0.71 against the head's
+	// 0.62 / 0.36, and unlike the head it reacts to a passage that says what is
+	// missing (0.01 vs 0.94). See plans/20261016-decision-model-judge-task.md §9.
+	//
+	// EnvDecisionBackend selects the judge: "decision-api" replaces the head
+	// everywhere the filter asks for a verdict. Empty keeps the default wording.
+	EnvDecisionBackend = "RAGFLOW_DECISION_BACKEND"
+	// EnvDecisionURL is the /v1/systemone endpoint.
+	EnvDecisionURL = "RAGFLOW_DECISION_URL"
+	// EnvDecisionKey is the API key, sent as "Authorization: Bearer <key>".
+	EnvDecisionKey = "RAGFLOW_DECISION_KEY"
+	// EnvDecisionModel is the model name the endpoint expects.
+	EnvDecisionModel = "RAGFLOW_DECISION_MODEL"
+	// EnvDecisionMinProb is the P(relevant) at or above which a passage is
+	// kept. The default is the point measured on the labelled set, not a round
+	// number: the API is deterministic (five identical calls returned the same
+	// value to three decimals), so a fitted threshold is a stable one.
+	EnvDecisionMinProb = "RAGFLOW_DECISION_MIN_PROB"
+	// EnvDecisionMaxChars caps the passage text sent for judgement. The
+	// calibration judged passages at 6000 characters.
+	EnvDecisionMaxChars = "RAGFLOW_DECISION_MAX_CHARS"
+	// EnvDecisionTimeoutMS bounds one judgement. On timeout the passage is
+	// KEPT, like every other degraded path: a filter that cannot run must not
+	// cost the caller its evidence.
+	EnvDecisionTimeoutMS = "RAGFLOW_DECISION_TIMEOUT_MS"
+	// EnvDecisionSnippetText selects what the locate exit judges: the chunk
+	// BODY (default) or the rendered "snippet" window. The body is the unit the
+	// threshold was fitted on and the unit the deep-read exit already uses; the
+	// window is what the model is served, but for a truncated grep hit it is one
+	// paragraph and for a BM25 preview hit it is the chunk's opening, so judging
+	// it asks about an excerpt that may not hold the evidence.
+	EnvDecisionSnippetText = "RAGFLOW_DECISION_SNIPPET_TEXT"
+	// EnvDecisionConcurrency bounds how many judgements of one result set may be
+	// in flight at once. The verdicts are independent — each one asks about a
+	// different passage — so the only reason to serialise them is the upstream's
+	// rate limit, and serialising them costs the whole sum of their latencies in
+	// wall time. Set to 1 to get the old strictly-serial behaviour.
+	EnvDecisionConcurrency = "RAGFLOW_DECISION_CONCURRENCY"
+	// EnvDecisionBatch is how many passages go into ONE request. The endpoint
+	// caps a request at 16 questions and each passage spends one question per
+	// phrasing, so the effective value is min(this, 16/phrasings). Batching is
+	// what the endpoint offers — one request answering several passages — not
+	// client-side concurrency.
+	EnvDecisionBatch = "RAGFLOW_DECISION_BATCH"
+	// EnvDecisionPhrasings is how many wordings of the same relevance question
+	// are asked per passage and averaged. Four is the calibrated setting and
+	// what the 0.15 threshold was fitted on; lowering it admits phrasing noise
+	// into the decision and requires re-fitting the threshold.
+	EnvDecisionPhrasings = "RAGFLOW_DECISION_PHRASINGS"
+	// EnvDecisionBreakerFailures is how many judgements may fail in a row before
+	// the gate is switched OFF for a cooldown. A failed judgement keeps its
+	// passage, so an unreachable judge cannot cost evidence — it costs the
+	// timeout per passage, and a run that keeps paying it is the ungated
+	// baseline with a much longer wall. 0 or 1 opens on the first failure.
+	EnvDecisionBreakerFailures = "RAGFLOW_DECISION_BREAKER_FAILURES"
+	// EnvDecisionBreakerCooldownMS is how long the gate stays off before one
+	// probe is let through. A probe that succeeds closes the breaker; one that
+	// fails re-opens it and restarts the cooldown.
+	EnvDecisionBreakerCooldownMS = "RAGFLOW_DECISION_BREAKER_COOLDOWN_MS"
+	// EnvAgenticServeOnce makes a passage's BODY reach the model once per run:
+	// a later fetch of the same text emits the passage's identity and handle
+	// only. Off by default — the model must be able to tell a stub from a loss.
+	EnvAgenticServeOnce = "RAGFLOW_AGENTIC_SERVE_ONCE"
+	// EnvAgenticMaxIterations caps the ReAct loop per run. The compiled default
+	// is 120, which no measured run ever reached (the worst observed was 30
+	// turns), so it never bounded anything: measured questions spread from 3 to
+	// 30 turns and the tail dominates the run's tokens. Reaching the cap is not
+	// an error — the run falls back to synthesizing an answer from the evidence
+	// already gathered — so lowering it truncates a still-productive search and
+	// trades answer quality for a bounded tail. 0 keeps the compiled default.
+	EnvAgenticMaxIterations = "RAGFLOW_AGENTIC_MAX_ITERATIONS"
+	// EnvAgenticTokenBudget is the per-run token ceiling: once a run's model
+	// calls have spent this many tokens, the run stops and answers from the
+	// evidence it already has. 0 disables it.
+	//
+	// The default is 500k because that is the gap the measurements show: across
+	// the recorded runs an ordinary question spends 84-229k, while a runaway one
+	// spends 1.4-2.2M for the same single answer. 500k sits above every ordinary
+	// question and below every runaway one, so it bounds the tail without
+	// touching the body of the distribution.
+	EnvAgenticTokenBudget = "RAGFLOW_AGENTIC_TOKEN_BUDGET"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the
