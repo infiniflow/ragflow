@@ -244,7 +244,7 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	}
 	opaqueMap := map[string]any{"foo": "bar", "nested": map[string]any{"a": 1}}
 
-	// PDF crop positions arrive as [][]any (normalizePDFPositions), not
+	// PDF crop positions arrive as [][]any (normalizeDeepDocPositions), not
 	// [][]float64; the typed conversion must preserve them verbatim. Regression
 	// guard for the positions-dropping bug caught during review.
 	imageMapAny := map[string]any{
