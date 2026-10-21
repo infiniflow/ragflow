@@ -20,6 +20,15 @@ describe('resolveAgenticRagSubmitValue', () => {
     ).toBeNull();
   });
 
+  it('preserves a tools override when content matches the server default', () => {
+    expect(
+      resolveAgenticRagSubmitValue(
+        { content: DefaultContent, tools: ['grep_chunks', 'list_chunks'] },
+        DefaultContent,
+      ),
+    ).toEqual({ tools: ['grep_chunks', 'list_chunks'] });
+  });
+
   it('keeps the content when the default is unknown (query never ran)', () => {
     expect(
       resolveAgenticRagSubmitValue({ content: DefaultContent }, undefined),

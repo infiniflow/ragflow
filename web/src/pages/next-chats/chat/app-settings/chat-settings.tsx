@@ -13,7 +13,6 @@ import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
 } from '@/hooks/use-stale-dataset-validation';
-import { ThinkingMode, useThinkingLevel } from '@/hooks/use-thinking-level';
 import { IAgenticRagSettings } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import {
@@ -24,7 +23,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -42,8 +41,7 @@ type ChatSettingsProps = { hasSingleChatBox: boolean };
 export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const { data } = useFetchChat();
 
-  const mode = useThinkingLevel();
-  const chatSettingSchema = useChatSettingSchema(mode);
+  const chatSettingSchema = useChatSettingSchema();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     chatSettingSchema,
     data?.dataset_ids,
@@ -64,6 +62,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     onModelSettingOpenChange,
     advancedSettingOpen,
     onAdvancedSettingOpenChange,
+    naiveSettingOpen,
+    onNaiveSettingOpenChange,
+    agenticSettingOpen,
+    onAgenticSettingOpenChange,
   } = useRevealSubmitErrors();
 
   type FormSchemaType = z.infer<typeof formSchema>;
@@ -117,18 +119,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       };
     }
 
-    // Naive mode leaves the agentic override untouched (it round-trips
-    // through the hidden field); agentic mode collapses blank/default content
-    // to null so the chat follows the shipped template again.
-    const agenticRag =
-      mode === ThinkingMode.Agentic
-        ? resolveAgenticRagSubmitValue(
-            values.prompt_config?.agentic_rag,
-            queryClient.getQueryData<IAgenticRagSettings>(
-              AgenticRagKeys.config(id),
-            )?.defaults?.content,
-          )
-        : values.prompt_config?.agentic_rag;
+    // Keep the override in sync with the shipped default on every save while
+    // preserving a custom content or complete tools override.
+    const agenticRag = resolveAgenticRagSubmitValue(
+      values.prompt_config?.agentic_rag,
+      queryClient.getQueryData<IAgenticRagSettings>(AgenticRagKeys.config(id))
+        ?.defaults?.content,
+    );
 
     nextValues.prompt_config = {
       ...nextValues.prompt_config,
@@ -179,16 +176,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   }, [data, form]);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
-
-  // Re-validate when the naive/agentic mode flips so errors raised under the
-  // other mode's rules (e.g. an empty system prompt in naive mode) clear
-  // immediately instead of lingering until the next field change.
-  const prevModeRef = useRef(mode);
-  useEffect(() => {
-    if (prevModeRef.current === mode) return;
-    prevModeRef.current = mode;
-    form.trigger();
-  }, [mode, form]);
 
   return (
     <>
@@ -245,8 +232,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
                       onCollapseOpenChange={onModelSettingOpenChange}
                     ></ChatBasicSetting>
                     <ChatPromptEngine
-                      collapseOpen={advancedSettingOpen}
-                      onCollapseOpenChange={onAdvancedSettingOpenChange}
+                      advancedSettingOpen={advancedSettingOpen}
+                      onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
+                      naiveSettingOpen={naiveSettingOpen}
+                      onNaiveSettingOpenChange={onNaiveSettingOpenChange}
+                      agenticSettingOpen={agenticSettingOpen}
+                      onAgenticSettingOpenChange={onAgenticSettingOpenChange}
                     ></ChatPromptEngine>
                   </section>
                 </ScrollArea>

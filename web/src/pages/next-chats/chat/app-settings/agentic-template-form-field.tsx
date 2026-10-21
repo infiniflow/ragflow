@@ -9,26 +9,25 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { useFetchAgenticRagConfig } from '@/hooks/use-chat-request';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
 
 interface AgenticTemplateFormFieldProps {
   name: string;
+  config?: {
+    defaults: { content: string };
+    override?: { content?: string } | null;
+  };
 }
 
 export function AgenticTemplateFormField({
   name,
+  config,
 }: AgenticTemplateFormFieldProps) {
   const { t } = useTranslation();
   const { control, setValue } = useFormContext();
-  const { id } = useParams();
-  // Mount-gated: this component only renders when the settings panel is open
-  // in agentic mode, which is exactly when the config is needed.
-  const { data: config } = useFetchAgenticRagConfig(id);
 
   const value = useWatch({ control, name });
   const defaultContent = config?.defaults.content;

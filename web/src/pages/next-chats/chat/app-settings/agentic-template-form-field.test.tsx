@@ -6,17 +6,10 @@ import { AgenticTemplateFormField } from './agentic-template-form-field';
 
 const DefaultTemplate = 'default template';
 const FieldName = 'prompt_config.agentic_rag.content';
-
-const mockUseFetchAgenticRagConfig = jest.fn();
-
-jest.mock('@/hooks/use-chat-request', () => ({
-  useFetchAgenticRagConfig: (...args: unknown[]) =>
-    mockUseFetchAgenticRagConfig(...args),
-}));
-
-jest.mock('react-router', () => ({
-  useParams: () => ({ id: 'chat-1' }),
-}));
+const Config = {
+  defaults: { content: DefaultTemplate },
+  override: null,
+};
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -32,22 +25,13 @@ function Harness({
   return (
     <TooltipProvider>
       <Form {...form}>
-        <AgenticTemplateFormField name={FieldName} />
+        <AgenticTemplateFormField name={FieldName} config={Config} />
       </Form>
     </TooltipProvider>
   );
 }
 
 describe('AgenticTemplateFormField', () => {
-  beforeEach(() => {
-    mockUseFetchAgenticRagConfig.mockReturnValue({
-      data: {
-        defaults: { content: DefaultTemplate },
-        override: null,
-      },
-    });
-  });
-
   it('fills the shipped template only when the field has no value', async () => {
     render(<Harness defaultValues={{ prompt_config: {} }} />);
 
@@ -66,6 +50,22 @@ describe('AgenticTemplateFormField', () => {
     );
 
     expect(screen.getByRole('textbox')).toHaveValue('');
+  });
+
+  it('resets custom content to the shipped template', () => {
+    render(
+      <Harness
+        defaultValues={{
+          prompt_config: { agentic_rag: { content: 'custom template' } },
+        }}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat.resetToDefault' }),
+    );
+
+    expect(screen.getByRole('textbox')).toHaveValue(DefaultTemplate);
   });
 
   it('keeps the field empty after the autofilled template is cleared', async () => {

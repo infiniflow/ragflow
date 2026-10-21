@@ -17,28 +17,39 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { WebSearchFormField } from '@/components/web-search-form-field';
-import { ThinkingMode, useThinkingLevel } from '@/hooks/use-thinking-level';
+import { useFetchAgenticRagConfig } from '@/hooks/use-chat-request';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { AgenticTemplateFormField } from './agentic-template-form-field';
 import { DynamicVariableForm } from './dynamic-variable';
 
 interface ChatPromptEngineProps {
   prefix?: string;
-  collapseOpen?: boolean;
-  onCollapseOpenChange?: (open: boolean) => void;
+  advancedSettingOpen?: boolean;
+  onAdvancedSettingOpenChange?: (open: boolean) => void;
+  naiveSettingOpen?: boolean;
+  onNaiveSettingOpenChange?: (open: boolean) => void;
+  agenticSettingOpen?: boolean;
+  onAgenticSettingOpenChange?: (open: boolean) => void;
 }
 
 export function ChatPromptEngine({
   prefix = '',
-  collapseOpen,
-  onCollapseOpenChange,
+  advancedSettingOpen,
+  onAdvancedSettingOpenChange,
+  naiveSettingOpen,
+  onNaiveSettingOpenChange,
+  agenticSettingOpen,
+  onAgenticSettingOpenChange,
 }: ChatPromptEngineProps) {
   const { t } = useTranslation();
   const form = useFormContext();
-  const mode = useThinkingLevel();
+  const { id } = useParams();
+  // Keep the default config available even when the advanced panel is collapsed.
+  const { data: agenticConfig } = useFetchAgenticRagConfig(id);
   const systemPromptValue = form.watch(
     prefixName(prefix, 'prompt_config.system'),
   );
@@ -46,11 +57,12 @@ export function ChatPromptEngine({
   const emptyResponseValue = form.watch(
     prefixName(prefix, 'prompt_config.empty_response'),
   );
+
   return (
     <Collapse
       title={t('flow.advancedSettings')}
-      open={collapseOpen}
-      onOpenChange={onCollapseOpenChange}
+      open={advancedSettingOpen}
+      onOpenChange={onAdvancedSettingOpenChange}
     >
       <div className="space-y-8">
         <SwitchFormField
@@ -66,8 +78,12 @@ export function ChatPromptEngine({
         <WebSearchFormField prefix={prefix} />
         <MetadataFilter></MetadataFilter>
 
-        {mode === ThinkingMode.Naive && (
-          <>
+        <Collapse
+          title={t('chat.naiveSettings')}
+          open={naiveSettingOpen}
+          onOpenChange={onNaiveSettingOpenChange}
+        >
+          <div className="space-y-8">
             <FormField
               control={form.control}
               name={prefixName(prefix, 'prompt_config.empty_response')}
@@ -136,14 +152,19 @@ export function ChatPromptEngine({
             <DynamicVariableForm
               name={prefixName(prefix, 'prompt_config.parameters')}
             ></DynamicVariableForm>
-          </>
-        )}
+          </div>
+        </Collapse>
 
-        {mode === ThinkingMode.Agentic && (
+        <Collapse
+          title={t('chat.agenticSettings')}
+          open={agenticSettingOpen}
+          onOpenChange={onAgenticSettingOpenChange}
+        >
           <AgenticTemplateFormField
             name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
+            config={agenticConfig}
           />
-        )}
+        </Collapse>
       </div>
     </Collapse>
   );

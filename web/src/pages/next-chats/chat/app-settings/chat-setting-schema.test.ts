@@ -1,5 +1,4 @@
 import { WebSearchProvider } from '@/constants/chat';
-import { ThinkingMode } from '@/hooks/use-thinking-level';
 import { buildChatSettingFormSchema } from './use-chat-setting-schema';
 
 const t = (key: string) => key;
@@ -23,12 +22,11 @@ const BaseValues = {
   meta_data_filter: { method: 'disabled', manual: [] },
 };
 
-function parseInMode(
-  mode: ThinkingMode,
+function parseSettings(
   promptConfig: Record<string, unknown> = {},
   overrides: Record<string, unknown> = {},
 ) {
-  const schema = buildChatSettingFormSchema(mode, t);
+  const schema = buildChatSettingFormSchema(t);
   return schema.safeParse({
     ...BaseValues,
     ...overrides,
@@ -37,8 +35,8 @@ function parseInMode(
 }
 
 describe('buildChatSettingFormSchema', () => {
-  it('rejects a blank system prompt in naive mode', () => {
-    const result = parseInMode(ThinkingMode.Naive, { system: '' });
+  it('rejects a blank system prompt', () => {
+    const result = parseSettings({ system: '' });
     expect(result.success).toBe(false);
     expect(result.error?.issues).toContainEqual(
       expect.objectContaining({
@@ -48,18 +46,8 @@ describe('buildChatSettingFormSchema', () => {
     );
   });
 
-  it('accepts a blank system prompt in agentic mode even with datasets selected', () => {
-    const result = parseInMode(
-      ThinkingMode.Agentic,
-      { system: '' },
-      { dataset_ids: ['kb1'] },
-    );
-    expect(result.success).toBe(true);
-  });
-
-  it('still flags a system prompt missing {knowledge} in naive mode', () => {
-    const result = parseInMode(
-      ThinkingMode.Naive,
+  it('flags a system prompt missing {knowledge} when datasets are selected', () => {
+    const result = parseSettings(
       { system: 'answer the question' },
       { dataset_ids: ['kb1'] },
     );
@@ -72,15 +60,11 @@ describe('buildChatSettingFormSchema', () => {
     );
   });
 
-  it('relaxes the variable key rule in agentic mode only', () => {
+  it('rejects blank variable keys', () => {
     const parameters = [{ key: '', optional: true }];
-    expect(parseInMode(ThinkingMode.Agentic, { parameters }).success).toBe(
-      true,
-    );
-
-    const naiveResult = parseInMode(ThinkingMode.Naive, { parameters });
-    expect(naiveResult.success).toBe(false);
-    expect(naiveResult.error?.issues).toContainEqual(
+    const result = parseSettings({ parameters });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(
       expect.objectContaining({
         path: ['prompt_config', 'parameters', 0, 'key'],
         message: 'variableKeyMessage',
@@ -88,36 +72,31 @@ describe('buildChatSettingFormSchema', () => {
     );
   });
 
-  it.each([ThinkingMode.Naive, ThinkingMode.Agentic])(
-    'requires the web search API key in %s mode',
-    (mode) => {
-      const result = parseInMode(mode, {
-        web_search_provider: WebSearchProvider.Tavily,
-      });
-      expect(result.success).toBe(false);
-      expect(result.error?.issues).toContainEqual(
-        expect.objectContaining({
-          path: ['prompt_config', 'tavily_api_key'],
-          message: 'webSearchApiKeyRequired',
-        }),
-      );
-    },
-  );
+  it('requires the web search API key', () => {
+    const result = parseSettings({
+      web_search_provider: WebSearchProvider.Tavily,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toContainEqual(
+      expect.objectContaining({
+        path: ['prompt_config', 'tavily_api_key'],
+        message: 'webSearchApiKeyRequired',
+      }),
+    );
+  });
 
   it('keeps agentic_rag through parsing instead of stripping it', () => {
     const agenticRag = {
       content: 'custom template',
       tools: ['grep_chunks', 'list_chunks'],
     };
-    const result = parseInMode(ThinkingMode.Agentic, {
-      agentic_rag: agenticRag,
-    });
+    const result = parseSettings({ agentic_rag: agenticRag });
     expect(result.success).toBe(true);
     expect(result.data?.prompt_config.agentic_rag).toEqual(agenticRag);
   });
 
   it('rejects agentic templates longer than 32768 characters', () => {
-    const result = parseInMode(ThinkingMode.Agentic, {
+    const result = parseSettings({
       agentic_rag: { content: 'x'.repeat(32769) },
     });
     expect(result.success).toBe(false);

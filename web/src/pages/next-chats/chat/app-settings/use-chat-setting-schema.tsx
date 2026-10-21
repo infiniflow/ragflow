@@ -12,37 +12,27 @@ import {
 import { topnSchema } from '@/components/top-n-item';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
-import { ThinkingMode } from '@/hooks/use-thinking-level';
 import { useMemo } from 'react';
 import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
 // Pure builder so the schema can be unit-tested without rendering a form.
-// Fields hidden in the current mode stay declared (their values round-trip
-// through saves); only the validation rules are mode-conditional.
-export function buildChatSettingFormSchema(
-  mode: ThinkingMode,
-  t: (key: string) => string,
-) {
-  const isAgentic = mode === ThinkingMode.Agentic;
-
+// All settings remain in one schema because both naive and agentic fields are
+// available in the settings form at the same time.
+export function buildChatSettingFormSchema(t: (key: string) => string) {
   const promptConfigSchema = z.object({
     quote: z.boolean(),
     keyword: z.boolean(),
     tts: z.boolean(),
     empty_response: z.string().optional(),
     prologue: z.string().optional(),
-    system: isAgentic
-      ? z.string()
-      : z.string().min(1, { message: t('systemMessage') }),
+    system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
     parameters: z
       .array(
         z.object({
-          key: isAgentic
-            ? z.string()
-            : z.string().min(1, { message: t('variableKeyMessage') }),
+          key: z.string().min(1, { message: t('variableKeyMessage') }),
           optional: z.boolean(),
         }),
       )
@@ -109,16 +99,12 @@ export function buildChatSettingFormSchema(
       ...MetadataFilterSchema,
     })
     .superRefine((value, ctx) => {
-      // The knowledge-placeholder and empty-response rules only apply to
-      // fields shown in naive mode; agentic runs its own template instead.
-      if (!isAgentic) {
-        for (const issue of chatPromptKbIssues(value, t)) {
-          ctx.addIssue({
-            code: ZodIssueCode.custom,
-            path: issue.path,
-            message: issue.message,
-          });
-        }
+      for (const issue of chatPromptKbIssues(value, t)) {
+        ctx.addIssue({
+          code: ZodIssueCode.custom,
+          path: issue.path,
+          message: issue.message,
+        });
       }
 
       // A keyed provider selected without its key fails SILENTLY at runtime —
@@ -138,11 +124,11 @@ export function buildChatSettingFormSchema(
   return formSchema;
 }
 
-export function useChatSettingSchema(mode: ThinkingMode) {
+export function useChatSettingSchema() {
   const { t } = useTranslate('chat');
 
   return useMemo(
-    () => buildChatSettingFormSchema(mode, (key: string) => t(key)),
-    [mode, t],
+    () => buildChatSettingFormSchema((key: string) => t(key)),
+    [t],
   );
 }
