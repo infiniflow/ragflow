@@ -228,7 +228,7 @@ func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 
 func TestDocxIRTableToHTML_Empty(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{}}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	if html != "<table></table>" {
 		t.Errorf("empty table html = %q, want %q", html, "<table></table>")
 	}
@@ -246,7 +246,7 @@ func TestDocxIRTableToHTML_Single(t *testing.T) {
 			}},
 		}},
 	}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	want := "<table><tr><td>hello</td></tr></table>"
 	if html != want {
 		t.Errorf("single cell html = %q, want %q", html, want)
@@ -269,7 +269,7 @@ func TestDocxIRTableToHTML_MultiRowCol(t *testing.T) {
 			{Cells: []docxIRCell{cell("A2"), cell("B2")}},
 		},
 	}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	want := "<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>"
 	if html != want {
 		t.Errorf("multi cell html = %q, want %q", html, want)

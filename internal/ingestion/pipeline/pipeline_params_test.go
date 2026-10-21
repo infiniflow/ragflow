@@ -519,51 +519,51 @@ func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
 	}
 }
 
-// --- ResolveComponentParamsDefaults ---
+// --- ComponentParamsDefaults ---
 
-func TestResolveComponentParamsDefaults_Basic(t *testing.T) {
+func TestComponentParamsDefaults_Basic(t *testing.T) {
 	dslJSON := generalDSL(t)
-	result, err := ResolveComponentParamsDefaults(dslJSON)
+	result, err := ComponentParamsDefaults(dslJSON)
 	if err != nil {
-		t.Fatalf("ResolveComponentParamsDefaults: %v", err)
+		t.Fatalf("ComponentParamsDefaults: %v", err)
 	}
 	if len(result) == 0 {
 		t.Fatal("expected non-empty result")
 	}
 	// outputs should be stripped.
-	parser := result["Parser:HipSignsRhyme"].(map[string]any)
+	parser := result["Parser:HipSignsRhyme"]
 	if _, ok := parser["outputs"]; ok {
 		t.Error("expected outputs to be stripped")
 	}
 	if _, ok := parser["pdf"]; !ok {
 		t.Error("expected pdf to be present")
 	}
-	chunker := result["Chunker:LegalReadersDecide"].(map[string]any)
+	chunker := result["Chunker:LegalReadersDecide"]
 	if chunker["chunk_size"] != float64(512) {
 		t.Errorf("expected chunk_size=512, got %v", chunker["chunk_size"])
 	}
 }
 
-func TestResolveComponentParamsDefaults_InvalidJSON(t *testing.T) {
-	_, err := ResolveComponentParamsDefaults([]byte("not json"))
+func TestComponentParamsDefaults_InvalidJSON(t *testing.T) {
+	_, err := ComponentParamsDefaults([]byte("not json"))
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
 }
 
-func TestResolveComponentParamsDefaults_ResultIsMutable(t *testing.T) {
-	// Verify the returned map is a copy, not a reference to internal state.
+func TestComponentParamsDefaults_ResultIsMutable(t *testing.T) {
+	// Verify the returned map is a deep copy, not a reference to shared state.
 	dslJSON := generalDSL(t)
-	result, err := ResolveComponentParamsDefaults(dslJSON)
+	result, err := ComponentParamsDefaults(dslJSON)
 	if err != nil {
-		t.Fatalf("ResolveComponentParamsDefaults: %v", err)
+		t.Fatalf("ComponentParamsDefaults: %v", err)
 	}
 	// Mutate the result.
-	parser := result["Parser:HipSignsRhyme"].(map[string]any)
+	parser := result["Parser:HipSignsRhyme"]
 	delete(parser, "pdf")
 	// Re-read: the second call should return a fresh copy unaffected by the mutation.
-	result2, _ := ResolveComponentParamsDefaults(dslJSON)
-	parser2 := result2["Parser:HipSignsRhyme"].(map[string]any)
+	result2, _ := ComponentParamsDefaults(dslJSON)
+	parser2 := result2["Parser:HipSignsRhyme"]
 	if _, ok := parser2["pdf"]; !ok {
 		t.Error("expected result to be independent copy (pdf preserved)")
 	}

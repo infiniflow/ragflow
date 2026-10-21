@@ -54,13 +54,13 @@ const oauthAuthCookie = "ragflow_auth"
 
 // setOAuthAuthCookie writes the signed access token so the SPA can pick it
 // up after the redirect. Not HttpOnly so the SPA can copy it into its
-// Authorization header on subsequent fetches. Lifetime mirrors the
-// access-token TTL used by the rest of the app.
+// Authorization header on subsequent fetches. The server checks the token
+// signature and expiry on each request.
 func setOAuthAuthCookie(c *gin.Context, token string) {
 	// the SPA's bootstrap credential after the OAuth redirect. The
 	// SPA reads it via document.cookie and copies it into the
 	// Authorization header. Setting HttpOnly would break the login
-	// flow. The token is short-lived (7 days) and signed with itsdangerous.
+	// flow. The API validates the token signature and expiry on each request.
 	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthAuthCookie,
@@ -103,7 +103,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
@@ -167,7 +167,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 	operationLog.UserID = user.ID
 
-	// Sign the access_token using itsdangerous (compatible with Python)
+	// Sign the access token with the active tenant context.
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
@@ -177,7 +177,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		operationLog.ErrorCode = uint16(common.CodeServerError)
@@ -264,7 +264,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		operationLog.ErrorCode = uint16(common.CodeServerError)
@@ -357,7 +357,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 
 	// Get user by access token
-	user, code, err := h.userService.GetUserByToken(ctx, token)
+	identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
@@ -366,6 +366,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
+	user := identity.User
 	operationLog.UserID = user.ID
 
 	// Logout user
@@ -717,7 +718,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return

@@ -3,47 +3,142 @@ package parser
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/common"
+	"math"
 	"strings"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
-func parsePDFWithPaddleOCR(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
-	if len(data) == 0 {
-		return emptyPDFResult(filename)
+// PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
+// emits the structured items consumed by the existing PDF chunk pipeline.
+func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
 	}
-	baseURL := strings.TrimSpace(parser.PaddleOCRBaseURL)
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRBaseUrl))
+	if response == nil || len(response.Pages) == 0 {
+		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned no page blocks")}
 	}
-	if baseURL == "" {
-		baseURL = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAPIURL))
+	sizes, pageCount, geometryErr := paddleOCRPageSizes(ctx, data, response.Pages)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
 	}
-	if baseURL == "" {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR requires paddleocr_base_url or PADDLEOCR_BASE_URL")}
+	result := ParseResult{OutputFormat: "json", Warnings: append([]string(nil), response.Warnings...)}
+	hasPageCount := pageCount > 0
+	if geometryErr != nil {
+		result.Warnings = append(result.Warnings, "PaddleOCR PDF geometry unavailable: "+geometryErr.Error())
 	}
-	apiKey := strings.TrimSpace(parser.PaddleOCRAPIKey)
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAccessToken))
-	}
-	algorithm := strings.TrimSpace(parser.PaddleOCRAlgorithm)
-	if algorithm == "" {
-		algorithm = strings.TrimSpace(common.GetEnv(common.EnvPaddleOCRAlgorithm))
-	}
-	if algorithm == "" {
-		algorithm = "PaddleOCR-VL"
-	}
-
-	// The async Job API, exactly like Python's PaddleOCRParser.parse_pdf():
-	// submit {base}/api/v2/ocr/jobs, poll until done, download the JSONL
-	// results. No synchronous local driver is involved here.
-	client := newPaddleOCRClient(baseURL, apiKey, algorithm)
-	text, err := client.ParsePDF(data, filename)
+	markdown, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR ParsePDF: %w", err)}
+		return ParseResult{Err: err}
 	}
-	pageCount := 1
-	if strings.TrimSpace(text) == "" {
-		pageCount = 0
+	markdown.FetchRemoteImages = false
+	for _, page := range response.Pages {
+		if !hasPageCount && page.Index+1 > pageCount {
+			pageCount = page.Index + 1
+		}
+		size := sizes[page.Index]
+		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("PaddleOCR page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", page.Index+1, page.Width, page.Height, size[0], size[1]))
+			size = [2]float64{}
+		}
+		for _, block := range page.Blocks {
+			if err := ctx.Err(); err != nil {
+				return ParseResult{Err: err}
+			}
+			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+			if content == "" {
+				continue
+			}
+			parsed := markdown.ParseWithResult(ctx, filename, []byte(content+"\n\n"))
+			if parsed.Err != nil {
+				return parsed
+			}
+			result.Warnings = append(result.Warnings, parsed.Warnings...)
+			position := paddleOCRBlockPosition(page, block.BBox, size)
+			label := strings.ToLower(strings.TrimSpace(block.Label))
+			isTitle := label == "doc_title" || label == "paragraph_title"
+			if label == "figure_title" || label == "table_title" {
+				label = "caption"
+			}
+			for _, item := range parsed.JSON {
+				if text, ok := item.(TextItem); ok {
+					if strings.TrimSpace(text.Text) == "" {
+						continue
+					}
+					if isTitle && text.CKType == "text" {
+						prefix := "## "
+						if label == "doc_title" {
+							prefix = "# "
+						}
+						text.Text = prefix + text.Text
+						text.CKType = "heading"
+						item = text
+					}
+				}
+				fields := item.ToMap()
+				// Page identity is retained even when the block has no usable geometry.
+				fields["page_number"] = page.Index + 1
+				fields["_preserve_order"] = true
+				if isTitle {
+					fields["layout"] = "title"
+				} else if label != "" {
+					fields["layout"] = label
+				}
+				if len(position) > 0 {
+					matrix := [][]any{position}
+					fields["positions"], fields["_pdf_positions"] = matrix, matrix
+				}
+				if table, ok := fields["table"].(*entity.TableData); ok && table != nil {
+					table.Page = page.Index + 1
+				}
+				result.JSON = append(result.JSON, DocItemFromMap(fields))
+			}
+		}
 	}
-	return parseMinerUMarkdownResult(ctx, filename, text, parser.OutputFormat, pageCount)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
+	if len(result.JSON) == 0 {
+		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned empty text")}
+	}
+	result.File = pdfFileMeta(filename, pageCount)
+	return result
+}
+
+func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {
+	if page.Index < 0 || !paddleOCRPositive(page.Width) || !paddleOCRPositive(page.Height) || !paddleOCRPositive(size[0]) || !paddleOCRPositive(size[1]) {
+		return nil
+	}
+	if !paddleOCRAspectRatioMatches(page, size) || len(bbox) != 4 {
+		return nil
+	}
+	for _, v := range bbox {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil
+		}
+	}
+	left, top, right, bottom := bbox[0], bbox[1], bbox[2], bbox[3]
+	if right <= left || bottom <= top {
+		return nil
+	}
+	left = math.Max(0, math.Min(size[0], left*size[0]/page.Width))
+	right = math.Max(0, math.Min(size[0], right*size[0]/page.Width))
+	top = math.Max(0, math.Min(size[1], top*size[1]/page.Height))
+	bottom = math.Max(0, math.Min(size[1], bottom*size[1]/page.Height))
+	if right <= left || bottom <= top {
+		return nil
+	}
+	return []any{page.Index + 1, left, right, top, bottom}
+}
+
+// Allow 2% variation for renderer pixel rounding, but reject anisotropic scaling.
+func paddleOCRAspectRatioMatches(page models.OCRPage, size [2]float64) bool {
+	xScale, yScale := size[0]/page.Width, size[1]/page.Height
+	return math.Max(xScale, yScale) <= 1.02*math.Min(xScale, yScale)
+}
+
+func paddleOCRPositive(value float64) bool {
+	return value > 0 && !math.IsInf(value, 0) && !math.IsNaN(value)
 }

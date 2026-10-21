@@ -414,7 +414,9 @@ check_onnxruntime_deps() {
         return 1
     fi
 
-    # Pinned sha256 of the published onnxruntime-v${ort_version} archive.
+    # Pinned sha256 of the published onnxruntime archive (currently the
+    # onnxruntime-v1.29.0-patch2 re-issue, which re-adds Clip@13 to the minimal
+    # operator set — see tools/scripts/download_dev_deps.py ORT_RELEASE_TAG).
     #
     # Upstream does not re-issue this archive, so we pin the digest here and
     # verify the LOCAL copy against it — no network access at build time. This
@@ -436,13 +438,13 @@ check_onnxruntime_deps() {
     local expected=""
     case "$asset" in
         onnxruntime-v*-linux-x86_64.zip)
-            expected="439308c93822d26cf04341cab3e77c595bbe88a12b54043210d14a0ca5574bd1" ;;
+            expected="1d41cc9c2a174200e90fd622e8b0f95e6531426bc9c23cfb5a4b92001c274da1" ;;
         onnxruntime-v*-linux-aarch64.zip)
-            expected="59a30fc0754d2b3dafb2761f208610e9be962f6370a0e1223fbca39440fa02a0" ;;
+            expected="712b65d37d7cf4bf1d41aff0763a084020c0e36a09073170bbaf61c018246a83" ;;
         onnxruntime-v*-osx-arm64.zip)
-            expected="e80f81e61750f7cfde8bada1f2175c5218d9d910a5ec61bc70dba4a1f7c950eb" ;;
+            expected="f0bebbb13901196757820164fe4ae936149e42021ff40c6450822bd6cd6e958a" ;;
         onnxruntime-v*-osx-universal.zip)
-            expected="29e9ceeaa84eba4734bbc8b7a8473487e1deb8010a2b6bc1b1cd695a4d87e7f3" ;;
+            expected="8c1bfab88e17de325376e7e5c2cbe163e5df48af362083912fdbac042f9c80da" ;;
     esac
     if [ -z "$expected" ]; then
         echo "  (no pinned digest for ${asset}; skipping sha256 check)"

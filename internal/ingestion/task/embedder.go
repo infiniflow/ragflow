@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +40,8 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 type embedder struct {
@@ -138,11 +141,11 @@ func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.E
 
 	var lastErr error
 	for _, limit := range overLimitLadder(limiter.Limit(maxTokens)) {
-		candidate := trimAll(texts, limiter, maxTokens, limit)
+		candidate, own := trimAll(texts, limiter.Counter(), limit)
 		embeds, usage, err := e.embedWithRetry(ctx, candidate)
 		if err == nil {
-			e.recordUsage(cal, calKey, limiter, candidate, usage)
-			return distributeTokenCount(embeds, usage, candidate, limiter), nil
+			e.recordUsage(cal, calKey, own, usage)
+			return distributeTokenCount(embeds, usage, own), nil
 		}
 		if !isOverLimitErr(err) {
 			return nil, err
@@ -153,7 +156,7 @@ func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.E
 		// input's own count: a batch total is expected to exceed the window and
 		// would imply a ratio below 1, i.e. teach us nothing.
 		if cal != nil {
-			cal.ObserveOverLimit(calKey, ownTokenMax(candidate, limiter), maxTokens)
+			cal.ObserveOverLimit(calKey, slices.Max(own), maxTokens)
 		}
 		common.Warn("embedding input over the model limit; shrinking and retrying",
 			zap.String("model", derefString(e.model.ModelName)),
@@ -208,38 +211,18 @@ func overLimitLadderToFloor(budget int) []int { return tokenizer.OverLimitLadder
 // input genuinely broken rather than merely long.
 const overLimitFloorTokens = tokenizer.OverLimitFloorTokens
 
-// trimAll re-trims every text to `limit` tokens. Texts handed in by the caller
-// are already trimmed to the full budget, and trimming a prefix again just makes
-// it shorter, so this needs no access to the untrimmed input.
-func trimAll(texts []string, limiter tokenizer.Limiter, maxTokens, limit int) []string {
+// trimAll re-trims every text to `limit` tokens and reports each trimmed
+// text's token count. Counting once here lets the distribute, calibration and
+// over-limit paths reuse the numbers instead of re-counting the same batch.
+func trimAll(texts []string, counter tokenizer.Counter, limit int) ([]string, []int) {
 	out := make([]string, len(texts))
+	own := make([]int, len(texts))
 	for i, t := range texts {
-		out[i] = limiter.Counter().TrimToLimit(t, limit)
+		trimmed := counter.TrimToLimit(t, limit)
+		out[i] = trimmed
+		own[i] = counter.Count(trimmed)
 	}
-	return out
-}
-
-// ownTokenTotal estimates what the batch costs in our own counter, used for the
-// usage-based calibration.
-func ownTokenTotal(texts []string, limiter tokenizer.Limiter) int {
-	total := 0
-	for _, t := range texts {
-		total += limiter.Counter().Count(t)
-	}
-	return total
-}
-
-// ownTokenMax is the largest single input's cost in our own counter. The
-// provider's window bounds each input individually, so this - not the batch
-// total - is what an over-limit rejection tells us about.
-func ownTokenMax(texts []string, limiter tokenizer.Limiter) int {
-	max := 0
-	for _, t := range texts {
-		if n := limiter.Counter().Count(t); n > max {
-			max = n
-		}
-	}
-	return max
+	return out, own
 }
 
 // embedWithRetry performs one embedding call, retrying rate limits exactly as
@@ -289,16 +272,14 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 }
 
 // distributeTokenCount attaches a token count to every input. Providers report
-// usage per request, so the total is spread over the inputs in proportion to our
-// own counts of exactly the texts we sent; the rounding remainder goes to the
-// largest input so the sum matches the provider's number.
-func distributeTokenCount(embeds []models.EmbeddingData, usageTotal int, texts []string, limiter tokenizer.Limiter) []componentpkg.EmbeddingResult {
+// usage per request, so the total is spread over the inputs in proportion to
+// our own counts of exactly the texts we sent (own, from trimAll); the rounding
+// remainder goes to the largest input so the sum matches the provider's number.
+func distributeTokenCount(embeds []models.EmbeddingData, usageTotal int, own []int) []componentpkg.EmbeddingResult {
 	vecs := make([]componentpkg.EmbeddingResult, len(embeds))
-	own := make([]int, len(texts))
 	total := 0
-	for i, t := range texts {
-		own[i] = limiter.Counter().Count(t)
-		total += own[i]
+	for _, n := range own {
+		total += n
 	}
 	if usageTotal <= 0 || total <= 0 {
 		// No usage reported by the provider: fall back to our own count rather
@@ -332,17 +313,20 @@ func distributeTokenCount(embeds []models.EmbeddingData, usageTotal int, texts [
 	return vecs
 }
 
-// recordUsage feeds the calibration: the provider's total for this batch against
-// our own count of the same texts.
-func (e *embedder) recordUsage(cal *tokenizer.Calibration, key string, limiter tokenizer.Limiter, texts []string, usageTotal int) {
+// recordUsage feeds the calibration: the provider's total for this batch
+// against our own count of the same texts (own, from trimAll).
+func (e *embedder) recordUsage(cal *tokenizer.Calibration, key string, own []int, usageTotal int) {
 	if cal == nil || usageTotal <= 0 {
 		return
 	}
-	own := ownTokenTotal(texts, limiter)
-	if own <= 0 {
+	total := 0
+	for _, n := range own {
+		total += n
+	}
+	if total <= 0 {
 		return
 	}
-	cal.ObserveUsage(key, own, usageTotal)
+	cal.ObserveUsage(key, total, usageTotal)
 }
 
 // encodeIsolating is the last resort: it embeds inputs one at a time so a single
@@ -352,6 +336,7 @@ func (e *embedder) recordUsage(cal *tokenizer.Calibration, key string, limiter t
 func (e *embedder) encodeIsolating(ctx context.Context, texts []string, limiter tokenizer.Limiter, maxTokens int) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, len(texts))
 	cal, calKey := limiter.Calibration()
+	counter := limiter.Counter()
 	var lastErr error
 	for i, text := range texts {
 		if err := ctx.Err(); err != nil {
@@ -359,11 +344,13 @@ func (e *embedder) encodeIsolating(ctx context.Context, texts []string, limiter 
 		}
 		embedded := false
 		for _, limit := range overLimitLadderToFloor(limiter.Limit(maxTokens)) {
-			candidate := []string{limiter.Counter().TrimToLimit(text, limit)}
+			trimmed := counter.TrimToLimit(text, limit)
+			own := counter.Count(trimmed)
+			candidate := []string{trimmed}
 			embeds, usage, err := e.embedWithRetry(ctx, candidate)
 			if err == nil {
-				e.recordUsage(cal, calKey, limiter, candidate, usage)
-				out[i] = distributeTokenCount(embeds, usage, candidate, limiter)[0]
+				e.recordUsage(cal, calKey, []int{own}, usage)
+				out[i] = distributeTokenCount(embeds, usage, []int{own})[0]
 				embedded = true
 				break
 			}
@@ -371,7 +358,7 @@ func (e *embedder) encodeIsolating(ctx context.Context, texts []string, limiter 
 				return nil, err
 			}
 			if cal != nil {
-				cal.ObserveOverLimit(calKey, limiter.Counter().Count(candidate[0]), maxTokens)
+				cal.ObserveOverLimit(calKey, own, maxTokens)
 			}
 			lastErr = err
 		}
@@ -681,6 +668,24 @@ func newEmbedderResolver(
 	}
 }
 
+// embedderResolverDB is the relational handle the production embedder resolver
+// uses to read a knowledgebase's configured embedding model id. It is bound once
+// at the server assembly point via InitEmbedderResolver; a nil value makes the
+// resolver return an error at call time instead of silently reading zero rows.
+// It replaces the previous process-wide dao.DB lookup so the task package (the
+// composition root for ingestion runs) no longer reaches the global directly
+// (arch_test.go guards that rule).
+var embedderResolverDB *gorm.DB
+
+// InitEmbedderResolver binds the relational handle used by the production
+// embedder resolver. The task package is the composition root for ingestion
+// runs; the server assembly point passes the process-wide db here rather than
+// letting the resolver read dao.DB. Call it once during server startup, before
+// any ingestion run.
+func InitEmbedderResolver(db *gorm.DB) {
+	embedderResolverDB = db
+}
+
 // init wires the production embedder resolver into the component package. The
 // component package must not import internal/service (dependency direction),
 // so the concrete resolver is injected here - the task package is the
@@ -689,7 +694,10 @@ func init() {
 	modelFactory := service.NewModelFactory()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
-			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
+			if embedderResolverDB == nil {
+				return "", fmt.Errorf("embedder: resolver not initialized; call task.InitEmbedderResolver(dao.DB) at server startup")
+			}
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, embedderResolverDB, kbID)
 			if err != nil {
 				return "", err
 			}

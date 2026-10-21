@@ -3921,3 +3921,17 @@ func (c *CLI) APIShowConcurrencyCommand(commandCount int, cmd *Command) (Respons
 
 	return HandleCommonDataResponse(resp, "get concurrency")
 }
+
+func (c *CLI) APIShowQuotaCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/quota", httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get quota: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get quota")
+}
