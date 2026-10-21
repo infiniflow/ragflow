@@ -72,7 +72,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if strings.TrimSpace(content) != "" {
 		pageCount = 1
 	}
-	return parseMinerUMarkdownResult(ctx, filename, content, parser.OutputFormat, pageCount)
+	return pdfMarkdownToResult(ctx, filename, content, parser.OutputFormat, pageCount)
 }
 
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
@@ -100,27 +100,5 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 			return "", lastErr
 		}
 		time.Sleep(minerUPollInterval)
-	}
-}
-
-func parseMinerUMarkdownResult(ctx context.Context, filename, markdown, outputFormat string, pageCount int) ParseResult {
-	fileMeta := pdfFileMeta(filename, pageCount)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		mp, _ := NewMarkdownParser(GoMarkdown)
-		res := mp.ParseWithResult(ctx, filename, []byte(markdown))
-		if res.Err != nil {
-			return res
-		}
-		res.File = fileMeta
-		return res
-	case "markdown":
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     markdown,
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
 	}
 }

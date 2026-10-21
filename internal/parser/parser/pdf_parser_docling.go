@@ -235,13 +235,13 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	}
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, outputFormat, len(docs)), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
 			return doclingTextsToResult(filename, []string{txt}, outputFormat, len(docs)), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, outputFormat, len(docs)), true
 		}
 	}
 	return ParseResult{}, false

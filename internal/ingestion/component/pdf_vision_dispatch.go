@@ -24,6 +24,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
@@ -79,15 +80,37 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
+	tenantID := getStringOr(inputs, "tenant_id", "")
+	// The tenant-selected parser and the built-in backends share one
+	// normalization boundary so a future normalization fix cannot miss one
+	// of the two paths. ParseWithResult already normalizes JSON internally,
+	// but markdown stays unconverted there; running it through the same
+	// NormalizeResult keeps markdown→JSON conversion in the parser package
+	// and makes the call idempotent for already-normalized JSON.
+	flatten, _ := setup["flatten_media_to_text"].(bool)
+	normalize := func(result parser.ParseResult) parser.ParseResult {
+		pdf := parser.PDFParser{FlattenMediaToText: flatten}
+		return pdf.NormalizeResult(ctx, filename, result)
+	}
+	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
+		if err != nil {
+			return result, true, err
+		}
+		result = normalize(result)
+		return result, true, result.Err
+	}
+	result, handled, err := dispatchPDFBackend(ctx, db, filename, binary, tenantID, setup)
+	if err != nil || !handled {
+		return result, handled, err
+	}
+	result = normalize(result)
+	return result, true, result.Err
+}
 
+func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
-	tenantID := getStringOr(inputs, "tenant_id", "")
 	layoutLower := strings.ToLower(strings.TrimSpace(layout))
-
-	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
-		return result, true, err
-	}
 
 	monkeySelector := layout
 	if strings.TrimSpace(monkeySelector) == "" {
@@ -254,6 +277,10 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 }
 
 func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
+	// Fallback markdown→JSON converter for non-PDF families via
+	// buildParserOutputs/normalizeParserJSON. PDF dispatch results are
+	// normalized earlier by PDFParser.NormalizeResult (parser.parsePDFMarkdown),
+	// so this stays as the final safety net rather than a second PDF boundary.
 	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
 	if err != nil {
 		warnParserNormalizationFallback(filename, "markdown", err)
@@ -276,8 +303,7 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []pa
 }
 
 func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
-	// Keep the backend's Markdown intact here. buildParserOutputs is the
-	// single normalization boundary for all non-JSON parser responses.
+	// The PDF dispatch boundary converts backend Markdown before enhancement.
 	return parser.ParseResult{
 		OutputFormat: "markdown",
 		Markdown:     md,
@@ -922,6 +948,14 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 		"doc_type_kwd": docType,
 		"layout":       layout,
 	}
+	// MinerU folds its own VLM description into text for image/chart items.
+	// Mark them so the shared vision enhancement skips them instead of
+	// appending a second model description.
+	if typ == "image" || typ == "chart" {
+		if desc, _ := item["vlm_description"].(string); strings.TrimSpace(desc) != "" {
+			jsonItem[backendDescribedKey] = true
+		}
+	}
 	if imageURI != "" {
 		jsonItem["image"] = imageURI
 	}
@@ -930,6 +964,20 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 		jsonItem["positions"] = positions
 		if page, ok := positions[0][0].(int); ok {
 			jsonItem["page_number"] = page
+		}
+	}
+	if typ == "table" {
+		body, _ := item["table_body"].(string)
+		if table, err := tableutil.ParseTableHTML(body); err == nil && table != nil && len(table.Grid) > 0 {
+			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
+			if caption != "" && caption != table.Caption {
+				table.Caption = strings.TrimSpace(table.Caption + "\n" + caption)
+			}
+			if page, ok := jsonItem["page_number"].(int); ok {
+				table.Page = page
+			}
+			jsonItem["table"] = table
+			jsonItem["text"] = strings.Join(stringSlice(item["table_footnote"]), "\n")
 		}
 	}
 	return jsonItem

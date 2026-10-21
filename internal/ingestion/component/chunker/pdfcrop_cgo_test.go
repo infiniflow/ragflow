@@ -66,6 +66,16 @@ func jsonPositions(t *testing.T, rows ...[]float64) json.RawMessage {
 	return b
 }
 
+// jsonFlatPosition encodes one position row in the legacy flat wire form.
+func jsonFlatPosition(t *testing.T, row []float64) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal flat position: %v", err)
+	}
+	return b
+}
+
 func TestNeedsCrop(t *testing.T) {
 	cases := []struct {
 		name string
@@ -94,6 +104,19 @@ func TestNeedsCrop(t *testing.T) {
 		// Unknown doc_type values normalize to text (itemDocType), matching
 		// every other content-type dispatch.
 		{"unknown doc type normalizes to text", schema.ChunkDoc{DocType: "equation", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+
+		// --- Page-only positions (TCADP wire form) carry page identity but
+		// no crop region, so they must not trigger a crop.
+		{"page-only image position", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
+		{"page-only text position", schema.ChunkDoc{DocType: "text", Positions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
+		{"zero-area box with coordinates", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 10, 10, 5, 5})}, false},
+
+		// --- A page-only row must not hide a real region in a later row:
+		// mergePositionMatrix sorts page-only rows first.
+		{"page-only row before a real region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 0, 0, 0, 0}, []float64{2, 10, 100, 10, 100})}, true},
+		{"real region before a page-only row", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100}, []float64{2, 0, 0, 0, 0})}, true},
+		{"flat legacy position with a region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonFlatPosition(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"flat legacy page-only position", schema.ChunkDoc{DocType: "image", PDFPositions: jsonFlatPosition(t, []float64{1, 0, 0, 0, 0})}, false},
 	}
 	for _, tc := range cases {
 		if got := needsCrop(tc.ck); got != tc.want {
