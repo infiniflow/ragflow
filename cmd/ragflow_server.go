@@ -549,11 +549,6 @@ func main() {
 		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
-	err = server.InitVariables(kvrocks.Get())
-	if err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
 	// Billing owns the plan catalogue and the points/quota state machine.
 	// It needs the database, cache and MQ to be ready, and only the API server
 	// serves billing routes.
