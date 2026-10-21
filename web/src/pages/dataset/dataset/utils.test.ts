@@ -162,10 +162,6 @@ describe('getFileTypeByExtension', () => {
 });
 
 // Saved config shaped like a pipeline that declares pdf/image plus audio
-// (ASR model missing) and video, with the Parser-level vision enhancement
-// enabled and its model configured — the current contract, where media
-// families other than audio carry no model of their own.
-// Saved config shaped like a pipeline that declares pdf/image plus audio
 // (ASR model missing) and video. Video needs no model: parsing it is
 // unsupported regardless of the configured vision enhancement.
 const SavedConfig: SavedParserConfig = {

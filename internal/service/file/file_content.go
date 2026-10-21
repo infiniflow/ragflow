@@ -216,9 +216,6 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 func parseAgentUploadContent(ctx context.Context, filename string, data []byte, layoutRecognize string) (string, error) {
 	content := string(data)
 	fileType := utility.GetFileType(filename)
-	if fileType == utility.FileTypeVIDEO {
-		return "", fmt.Errorf("video content is not supported")
-	}
 	if fileType != utility.FileTypeOTHER {
 		fp, err := parser.GetParser(fileType)
 		if err != nil {

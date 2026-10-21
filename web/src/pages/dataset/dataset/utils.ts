@@ -209,10 +209,11 @@ const GeneralFamilyFileTypes = new Set<FileType>([
   FileType.Docx,
 ]);
 
-// Image extensions admitted as visual at upload (mirrors the visual bucket in
-// utility.FilenameType). Video is not listed here: it takes the explicit
-// Video branch in builtinParserSwitchTarget below, which keeps the picture
-// switch the backend performs.
+// Extension sets mirror the backend upload buckets (utility.FilenameType):
+// the visual bucket admits image containers plus every video container in the
+// shared backend set, so video keeps the picture switch the backend performs.
+// Parsability is judged separately: pickBySwitchFate excludes video from the
+// switchable count because no parser implements video analysis.
 const VisualSwitchSuffixes = new Set([
   'jpg',
   'jpeg',
@@ -239,6 +240,26 @@ const VisualSwitchSuffixes = new Set([
   'apng',
   'icon',
   'ico',
+  // Video containers (mirrors utility.videoExtensions).
+  'mp4',
+  'avi',
+  'mkv',
+  'mov',
+  'webm',
+  'flv',
+  'mpeg',
+  'mpg',
+  'wmv',
+  '3gp',
+  '3gpp',
+  'rm',
+  'rmvb',
+  'asf',
+  'dat',
+  'asx',
+  'wvx',
+  'mpe',
+  'mpa',
 ]);
 
 const AuralSwitchSuffixes = new Set([
@@ -267,12 +288,11 @@ export function builtinParserSwitchTarget(
   fileType: FileType | undefined,
 ): BuiltinSwitchTarget | null {
   // Video uploads are accepted (visual bucket) but unsupported for parsing (no
-  // parser implements video analysis). Report them as unsupported and keep the
-  // picture switch the backend performs: the row is still unparsable, so the
-  // user is warned at upload and blocked at parse-click.
-  if (fileType === FileType.Video) {
-    return 'picture';
-  }
+  // parser implements video analysis). The picture switch below mirrors what
+  // the backend performs; the row is still unparsable, so the user is warned
+  // at upload and blocked at parse-click. pickBySwitchFate separately excludes
+  // video from the switchable count so mixed batches never promise an
+  // automatic switch that cannot make the file parsable.
   const suffix = getExtension(name);
   if (VisualSwitchSuffixes.has(suffix)) {
     return 'picture';
