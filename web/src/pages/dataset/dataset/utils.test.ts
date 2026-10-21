@@ -143,6 +143,16 @@ describe('getFileTypeByExtension', () => {
     expect(getFileTypeByExtension('pdf')).toBe(FileType.PDF);
   });
 
+  it('ignores surrounding whitespace like the backend does', () => {
+    // getExtension trims (mirroring utility.normalizeFilename); without it a
+    // name like 'clip.mov ' maps to nothing and skips both the upload warning
+    // and the parse block while the backend still admits it as visual.
+    expect(getFileTypeByExtension(getExtension('clip.mov '))).toBe(
+      FileType.Video,
+    );
+    expect(switchTarget('clip.mov ')).toBe('picture');
+  });
+
   it('returns undefined for unknown extensions', () => {
     expect(getFileTypeByExtension('xyz')).toBeUndefined();
     expect(getFileTypeByExtension('')).toBeUndefined();
