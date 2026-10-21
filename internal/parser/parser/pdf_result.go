@@ -221,10 +221,9 @@ func parsePDFMarkdown(ctx context.Context, filename, markdown string) ParseResul
 // validPDFPositions validates canonical 1-based PDF positions without changing
 // page identity or units. Invalid regions must never reach the cropper.
 //
-// Two position shapes are accepted:
-//   - a matrix of 5-tuples ([][]any, []any of rows, [][]float64), the canonical
-//     form every producer but TCADP emits;
-//   - one flat 5-tuple ([]float64), the legacy TCADP wire form.
+// Every wire shape is decoded through PDFPositionRows: a matrix of 5-tuples
+// ([][]any, []any of rows, [][]float64) and the legacy flat 5-tuple
+// ([]float64) some engines still emit.
 //
 // A page-only tuple — a page number with all-zero geometry — is valid: it
 // carries page identity for the indexer but no crop region, so the crop
@@ -232,35 +231,8 @@ func parsePDFMarkdown(ctx context.Context, filename, markdown string) ParseResul
 // zero-area or inverted is invalid and is dropped; the caller logs the dropped
 // count so the loss is observable instead of silent.
 func validPDFPositions(raw any) [][]any {
-	var rows []any
-	switch v := raw.(type) {
-	case [][]any:
-		for _, row := range v {
-			rows = append(rows, row)
-		}
-	case []any:
-		rows = v
-	case [][]float64:
-		for _, row := range v {
-			rows = append(rows, row)
-		}
-	case []float64:
-		// Legacy single-tuple wire form (TCADP): one candidate row.
-		rows = append(rows, v)
-	}
 	var result [][]any
-	for _, rawRow := range rows {
-		row, ok := rawRow.([]any)
-		if values, floats := rawRow.([]float64); floats {
-			row = make([]any, len(values))
-			for i, v := range values {
-				row[i] = v
-			}
-			ok = true
-		}
-		if !ok || len(row) != 5 {
-			continue
-		}
+	for _, row := range PDFPositionRows(raw) {
 		var values [5]float64
 		valid := true
 		for i, value := range row {
@@ -331,25 +303,10 @@ func HasPDFCropRegion(item map[string]any) bool {
 }
 
 // countPDFPositionRows counts candidate position rows before validation so the
-// caller can report how many were dropped. It mirrors validPDFPositions'
-// container handling without any value checks.
+// caller can report how many were dropped. It uses the same decoder as
+// validPDFPositions, so the count matches the rows validation sees.
 func countPDFPositionRows(raw any) int {
-	switch v := raw.(type) {
-	case [][]any:
-		return len(v)
-	case []any:
-		return len(v)
-	case [][]float64:
-		return len(v)
-	case []float64:
-		// A single flat 5-tuple is one candidate row for the legacy wire form.
-		if len(v) == 0 {
-			return 0
-		}
-		return 1
-	default:
-		return 0
-	}
+	return len(PDFPositionRows(raw))
 }
 
 // splitPDFTable separates the leading table from any following description.

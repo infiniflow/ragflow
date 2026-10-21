@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -169,6 +170,10 @@ func sortRecordsByPosition(records []lineRecord) {
 // structured `_pdf_positions` key first and falls back to the legacy
 // `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
 // len(row) >= 5 here.
+//
+// The matrix is decoded through parser.PDFPositionRowsFromJSON, so the matrix
+// form and the legacy flat 5-tuple are both understood and the chunker shares
+// one position decoder with the parser boundary and the crop path.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -179,15 +184,11 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	var mat [][]float64
-	if err := json.Unmarshal(raw, &mat); err != nil || len(mat) == 0 {
+	rows := parser.PDFPositionRowsFromJSON(raw)
+	if len(rows) == 0 {
 		return nil, false
 	}
-	row := mat[0]
-	if len(row) < 5 {
-		return nil, false
-	}
-	return row, true
+	return rows[0], true
 }
 
 // init registers ManualChunker under CategoryIngestion.

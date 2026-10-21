@@ -448,6 +448,28 @@ func TestValidPDFPositionsAcceptsFlatTupleAndDropsBadBoxes(t *testing.T) {
 	}
 }
 
+// TestHasPDFCropRegionReadsEveryRowAndShape covers the crop-region contract:
+// every row of the matrix counts, and the legacy flat tuple is understood.
+func TestHasPDFCropRegionReadsEveryRowAndShape(t *testing.T) {
+	cases := []struct {
+		name string
+		item map[string]any
+		want bool
+	}{
+		{"page-only row before a real region", map[string]any{"positions": [][]any{{1, 0, 0, 0, 0}, {2, 10, 100, 10, 100}}}, true},
+		{"real region before a page-only row", map[string]any{"positions": [][]any{{1, 10, 100, 10, 100}, {2, 0, 0, 0, 0}}}, true},
+		{"only page-only rows", map[string]any{"positions": [][]any{{1, 0, 0, 0, 0}}}, false},
+		{"flat tuple with a region", map[string]any{"positions": []float64{1, 10, 100, 10, 100}}, true},
+		{"flat page-only tuple", map[string]any{"positions": []float64{1, 0, 0, 0, 0}}, false},
+		{"no positions", map[string]any{"positions": []any{}}, false},
+	}
+	for _, tc := range cases {
+		if got := HasPDFCropRegion(tc.item); got != tc.want {
+			t.Errorf("%s: HasPDFCropRegion = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestCountPDFPositionRows(t *testing.T) {
 	if got := countPDFPositionRows(nil); got != 0 {
 		t.Fatalf("nil = %d, want 0", got)

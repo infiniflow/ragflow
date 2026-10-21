@@ -973,11 +973,10 @@ func numericAny(raw any) (float64, bool) {
 }
 
 // ExtractPDFPositions is the single source of truth for "does this parsed item
-// carry a usable PDF crop region". It returns the non-empty positions matrix
-// (under the canonical _pdf_positions key or the legacy positions key),
-// accepting either the typed [][]any form produced in-process or the
-// JSON-decoded []any form whose elements are themselves []any rows. The bool
-// reports whether a usable matrix was present.
+// carry PDF positions". It returns the position rows (under the canonical
+// _pdf_positions key or the legacy positions key), decoded through
+// PDFPositionRows so every wire shape is understood. The bool reports whether
+// any row was present.
 //
 // The parser (doc-type classification in normalizePDFDocType) and the on-demand
 // croppers (VLM vision_enhancement and the chunker) MUST agree on this
@@ -987,25 +986,8 @@ func numericAny(raw any) (float64, bool) {
 // which escaped the figure-caption → image normalization and the crop path.
 func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
 	for _, key := range []string{"_pdf_positions", "positions"} {
-		switch v := item[key].(type) {
-		case [][]any:
-			if len(v) > 0 {
-				return v, true
-			}
-		case []any:
-			out := make([][]any, 0, len(v))
-			ok := true
-			for _, row := range v {
-				r, rOK := row.([]any)
-				if !rOK {
-					ok = false
-					break
-				}
-				out = append(out, r)
-			}
-			if ok && len(out) > 0 {
-				return out, true
-			}
+		if rows := PDFPositionRows(item[key]); len(rows) > 0 {
+			return rows, true
 		}
 	}
 	return nil, false

@@ -30,6 +30,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -299,12 +300,22 @@ func needsCrop(ck schema.ChunkDoc) bool {
 // hasCropRegion reports whether the chunk carries a position with a
 // positive-area box. A page-only position (page number, no geometry) carries
 // page identity for the indexer but no region, so it must not trigger a crop.
+//
+// Every row of the matrix is inspected: mergePositionMatrix sorts page-only
+// rows first, so a page-only first row must not hide a real region in a later
+// row. The matrix is read exactly as the crop path reads it (the canonical
+// _pdf_positions first, the legacy positions key as fallback).
 func hasCropRegion(ck schema.ChunkDoc) bool {
-	row, ok := firstPositionRow(lineRecord{pdfPositions: ck.PDFPositions, positions: ck.Positions})
-	if !ok {
-		return false
+	raw := ck.PDFPositions
+	if len(raw) == 0 {
+		raw = ck.Positions
 	}
-	return row[2] > row[1] && row[4] > row[3]
+	for _, row := range parser.PDFPositionRowsFromJSON(raw) {
+		if row[2] > row[1] && row[4] > row[3] {
+			return true
+		}
+	}
+	return false
 }
 
 func cropChunkType(ck schema.ChunkDoc) string {
