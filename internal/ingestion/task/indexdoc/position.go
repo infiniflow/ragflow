@@ -34,6 +34,46 @@ func positionsToIntMatrix(positions []float64) [][]int {
 	return matrix
 }
 
+// positionRowsFromAny normalizes the generic []any shape produced by
+// ChunkDoc.ToMap (JSON decoding into `any`) into [][]any. It accepts either a
+// list of rows (each []any/[]float64) or a single flat 5-tuple. The flat-row
+// check looks at element 1: a list of rows has another row there, while a flat
+// row has a numeric coordinate.
+func positionRowsFromAny(v []any) ([][]any, bool) {
+	if len(v) == 0 {
+		return nil, false
+	}
+	if len(v) >= 5 {
+		if _, ok := positionNumber(v[1]); ok {
+			return [][]any{v}, true
+		}
+	}
+	rows := make([][]any, 0, len(v))
+	for _, e := range v {
+		row, ok := positionRowFromAny(e)
+		if !ok {
+			return nil, false
+		}
+		rows = append(rows, row)
+	}
+	return rows, len(rows) > 0
+}
+
+func positionRowFromAny(e any) ([]any, bool) {
+	switch row := e.(type) {
+	case []any:
+		return row, true
+	case []float64:
+		out := make([]any, len(row))
+		for i, value := range row {
+			out[i] = value
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
 // flattenMixedPositions expands a [][]any position matrix into the flat
 // [page,left,right,top,bottom,...] form addPDFPositions expects. This is the
 // shape left by the title-family merge when a page cell is a list (or rows are
