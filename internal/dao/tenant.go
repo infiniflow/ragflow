@@ -102,7 +102,12 @@ func (dao *TenantDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*ent
 
 // Create creates a new tenant
 func (dao *TenantDAO) Create(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
-	return db.WithContext(ctx).Create(tenant).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := initializeTenantDefaultRoleEE(ctx, tx, tenant); err != nil {
+			return err
+		}
+		return tx.Create(tenant).Error
+	})
 }
 
 // GetAllIDs returns the IDs of all active tenants.

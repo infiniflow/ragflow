@@ -20,9 +20,6 @@ interface PublishConfirmDialogProps {
   agentDetail: IFlow;
   loading: boolean;
   onPublish: () => void;
-  // Returning true blocks the dialog from opening (e.g. unresolved canvas
-  // checklist issues) — the caller is responsible for the user-facing notice.
-  onBeforeOpen?: () => boolean;
 }
 
 function AssociatedDataset({
@@ -66,7 +63,6 @@ export function PublishConfirmDialog({
   agentDetail,
   loading,
   onPublish,
-  onBeforeOpen,
 }: PublishConfirmDialogProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -89,14 +85,9 @@ export function PublishConfirmDialog({
     setOpen(false);
   }, [onPublish]);
 
-  // A plain button instead of DialogTrigger: Radix opens the dialog on click
-  // regardless of preventDefault, so the guard has to own `setOpen`.
   const handleTriggerClick = useCallback(() => {
-    if (onBeforeOpen?.()) {
-      return;
-    }
     setOpen(true);
-  }, [onBeforeOpen]);
+  }, []);
 
   if (isPipeline) {
     return null;

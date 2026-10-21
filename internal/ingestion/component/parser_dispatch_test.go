@@ -419,35 +419,6 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	}
 }
 
-func TestDefaultSetups_DOCX_OutputFormatJSON(t *testing.T) {
-	setups := defaultSetups()
-	docx, ok := setups["docx"]
-	if !ok {
-		t.Fatal("defaultSetups: docx key missing")
-	}
-	got, ok := docx["output_format"].(string)
-	if !ok {
-		t.Fatal("defaultSetups: docx.output_format missing or not a string")
-	}
-	if got != "json" {
-		t.Errorf("docx.output_format = %q, want %q", got, "json")
-	}
-}
-func TestDefaultSetups_Audio_OutputFormatJSON(t *testing.T) {
-	setups := defaultSetups()
-	audio, ok := setups["audio"]
-	if !ok {
-		t.Fatal("defaultSetups: audio key missing")
-	}
-	got, ok := audio["output_format"].(string)
-	if !ok {
-		t.Fatal("defaultSetups: audio.output_format missing or not a string")
-	}
-	if got != "json" {
-		t.Errorf("audio.output_format = %q, want %q", got, "json")
-	}
-}
-
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	setups := defaultSetups()
 	got := &captureSetupConfigurer{}
@@ -2191,6 +2162,9 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 // neither of which existed in defaultSetups.
 func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
 	setups := defaultSetups()
+	// The component normalizes output_format onto every family before the
+	// dispatch layer sees the setups, so mirror that here.
+	normalizeParserOutputFormats(setups)
 
 	t.Run("visual resolves to image setup", func(t *testing.T) {
 		got := &captureSetupConfigurer{}

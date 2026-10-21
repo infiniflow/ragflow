@@ -38,7 +38,7 @@ func seedStoredMistralOCRProvider(t *testing.T, db *gorm.DB) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "user-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: mistralOCRStoredKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	}
@@ -148,7 +148,7 @@ func TestListProvidersOfTenantSkipsStoredMistralOCRProvider(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
-	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"}).Error; err != nil {
+	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
 

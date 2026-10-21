@@ -28,8 +28,10 @@ export const useSelectDerivedSessionList = () => {
       source: '',
       user_id: '',
       dsl: '',
-      reference: {},
+      reference: [],
       is_new: true,
+      name: '',
+      version_title: '',
     };
 
     setList([tempSession, ...sessions]);

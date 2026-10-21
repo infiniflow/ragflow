@@ -13,6 +13,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -208,7 +209,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 
 	// A dataset whose tenant does not own the file must be denied, and must not
 	// get the bytes.
-	vocab, err := TagVocabularyFromTagFileID(t.Context(), fileID, attackerTenant)
+	vocab, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, attackerTenant)
 	if err == nil {
 		t.Fatalf("IDOR: foreign tenant read the tag source file, vocab=%v", vocab)
 	}
@@ -217,12 +218,12 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	}
 
 	// An empty owner tenant fails closed as well.
-	if _, err := TagVocabularyFromTagFileID(t.Context(), fileID, ""); err == nil {
+	if _, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ""); err == nil {
 		t.Fatal("empty owner tenant must fail closed")
 	}
 
 	// The owning tenant still gets the vocabulary.
-	vocab, err = TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	vocab, err = TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("owner tenant load failed: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	// file's ParentID is never compared against the referencing dataset), so any
 	// number of datasets in ownerTenant can point at this same tag source file —
 	// each passes its own dataset tenant (kb.TenantID) here.
-	shared, err := TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	shared, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("a second dataset in the same tenant must resolve the shared file: %v", err)
 	}
