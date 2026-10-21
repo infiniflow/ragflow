@@ -71,7 +71,9 @@
                             ],
                             "suffix": [
                                 "pptx",
-                                "ppt"
+                                "ppt",
+                                "dps",
+                                "dpt"
                             ]
                         }
                     }
