@@ -309,7 +309,8 @@ def test_from_page_offsets_crop_positions(qa_module):
         _box("offset answer", 1, 10, 40, 44, 50, layout_type="text"),
         _box("2. next offset?", 1, 10, 40, 70, 76),
     ]
-    tables = [_table("OFFSET-TABLE", 0, 10, 40, 54, 58)]
+    # cropout exports global zero-based pages, not window-local pages.
+    tables = [_table("OFFSET-TABLE", 4, 10, 40, 54, 58)]
     prepared = _PreparedPdf(qa_module.Pdf, boxes, tables, pages, page_from=4)
 
     qai_list, _tables = prepared(zoomin=3, from_page=4)
@@ -318,10 +319,13 @@ def test_from_page_offsets_crop_positions(qa_module):
     assert qai_list[0][3][0][0] == 4
     assert "OFFSET-TABLE" in qai_list[0][1]
     assert "OFFSET-TABLE" not in qai_list[1][1]
+    assert all(pos[0] == 4 for pos in qai_list[0][3])
+    assert returned_table_pages(tables) == [4]
 
 
 def test_get_tbls_info_reads_table_position_not_text(qa_module):
     parser = qa_module.Pdf.__new__(qa_module.Pdf)
+    parser.page_from = 0
     tables = [_table("body", 6, 1.25, 8.75, 3.5, 9.5)]
 
     pn, left, right, top, bottom, tag, text = parser.get_tbls_info(tables, 0)
@@ -329,6 +333,86 @@ def test_get_tbls_info_reads_table_position_not_text(qa_module):
     assert (pn, left, right, top, bottom, text) == (7, 1.25, 8.75, 3.5, 9.5, "body")
     assert tag == "@@7\t1.2\t8.8\t3.5\t9.5##"
     assert parser.get_tbls_info(tables, 1)[0] == 1
+
+
+def returned_table_pages(tables):
+    return [pos[0] for _content, positions in tables for pos in positions]
+
+
+@pytest.mark.parametrize("page_from", [0, 4, 7])
+@pytest.mark.parametrize("local_page", [0, 1])
+def test_global_table_pages_are_localized_for_association_and_crop(qa_module, page_from, local_page):
+    pages = [_page(300, 300, "white"), _page(300, 300, "white")]
+    origin = local_page * 100
+    boxes = [
+        _box("cover note", local_page + 1, 10, 40, origin, origin + 6, layout_type="text"),
+        _box("1. first question?", local_page + 1, 10, 40, origin + 20, origin + 28),
+        _box("first answer", local_page + 1, 10, 40, origin + 32, origin + 40, layout_type="text"),
+        _box("2. second question?", local_page + 1, 10, 40, origin + 70, origin + 78),
+    ]
+    global_page = page_from + local_page
+    tables = [_table("GLOBAL-TABLE", global_page, 12, 38, 50, 58)]
+    prepared = _PreparedPdf(qa_module.Pdf, boxes, tables, pages, page_from=page_from)
+
+    result, returned_tables = prepared(zoomin=3)
+
+    assert result[0][1] == "first question?first answerGLOBAL-TABLE"
+    assert "GLOBAL-TABLE" not in result[1][1]
+    assert result[0][3]
+    assert all(pos[0] == global_page for pos in result[0][3])
+    assert (global_page, 12, 38, 50, 58) in result[0][3]
+    assert returned_tables == tables
+    assert returned_table_pages(returned_tables) == [global_page]
+
+
+@pytest.mark.parametrize("page_from", [0, 4, 7])
+def test_table_info_generates_local_tag_without_changing_global_input(qa_module, page_from):
+    parser = qa_module.Pdf.__new__(qa_module.Pdf)
+    parser.page_from = page_from
+    tables = [_table("body", page_from + 1, 10, 30, 40, 50)]
+
+    pn, _left, _right, _top, _bottom, tag, text = parser.get_tbls_info(tables, 0)
+
+    assert pn == 2
+    assert tag == "@@2\t10.0\t30.0\t40.0\t50.0##"
+    assert text == "body"
+    assert returned_table_pages(tables) == [page_from + 1]
+
+
+@pytest.mark.parametrize("page_from", [0, 4, 7])
+def test_real_table_cropout_global_positions_feed_qa_local_tags(qa_module, monkeypatch, page_from):
+    parser = qa_module.Pdf.__new__(qa_module.Pdf)
+    pages = [_page(300, 300, "white")]
+    table_box = _box("REAL-TABLE", 1, 12, 38, 50, 58, layout_type="table")
+    table_box["layoutno"] = "table-0"
+    parser.boxes = [
+        _preamble(),
+        _box("1. question?", 1, 10, 40, 20, 28),
+        _box("answer", 1, 10, 40, 32, 40, layout_type="text"),
+        table_box,
+        _box("2. next?", 1, 10, 40, 70, 78),
+    ]
+    parser.page_layout = [[{"type": "table", "x0": 12, "x1": 38, "top": 50, "bottom": 58}]]
+    parser.is_english = True
+    parser.tbl_det = types.SimpleNamespace(construct_table=lambda *_args, **_kwargs: ["REAL-TABLE"])
+    parser.__images__ = lambda _filename, _zoom, offset, *_args: _install_pages(parser, pages, offset, [100])
+    parser._layouts_rec = lambda *_args, **_kwargs: None
+    parser._table_transformer_job = lambda *_args: None
+    parser._text_merge = lambda: None
+    # Only recognition decisions are controlled; extraction's cropout, position
+    # offset, QA table/tag conversion, association and final crop all run for real.
+    vision = sys.modules["deepdoc.vision"]
+    monkeypatch.setattr(vision, "Recognizer", types.SimpleNamespace(sort_Y_firstly=lambda rows, *_args: rows, find_overlapped=lambda *_args, **_kwargs: 0))
+    extraction = parser._extract_table_figure.__func__
+    monkeypatch.setitem(extraction.__globals__, "Recognizer", vision.Recognizer)
+
+    result, tables = parser("qa.pdf", from_page=page_from, zoomin=3, callback=lambda *_args, **_kwargs: None)
+
+    assert result[0][1] == "question?answerREAL-TABLE"
+    assert "REAL-TABLE" not in result[1][1]
+    assert returned_table_pages(tables) == [page_from]
+    assert (page_from, 12, 38, 50, 58) in result[0][3]
+    assert all(pos[0] == page_from for pos in result[0][3])
 
 
 def test_empty_question_and_answer_defer_table_until_next_positioned_row(qa_module):
