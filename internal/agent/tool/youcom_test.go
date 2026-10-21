@@ -23,6 +23,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // youComTestServer records the last request and answers with the given status
@@ -220,5 +222,37 @@ func TestYouCom_ComponentOutputsAndReferences(t *testing.T) {
 	form := tool.ComponentSpec().InputForm
 	if _, ok := form["query"]; !ok {
 		t.Errorf("InputForm missing query: %#v", form)
+	}
+}
+
+// TestYouCom_ReferencesDistinguishSameContentFromDifferentURLs guards the
+// citation path: identical snippets served from different URLs must keep
+// distinct ids instead of collapsing into one reference.
+func TestYouCom_ReferencesDistinguishSameContentFromDifferentURLs(t *testing.T) {
+	t.Parallel()
+	tool := NewYouComTool()
+	content := "identical snippet text"
+	envelope := map[string]any{
+		"results": []any{
+			map[string]any{"title": "First", "url": "https://first.example/page", "content": content},
+			map[string]any{"title": "Second", "url": "https://second.example/page", "content": content},
+		},
+	}
+
+	chunks, docAggs := tool.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 2 || len(docAggs) != 2 {
+		t.Fatalf("references = %d chunks / %d docAggs, want 2/2", len(chunks), len(docAggs))
+	}
+	if chunks[0]["id"] == chunks[1]["id"] {
+		t.Fatalf("both chunks share display id %v", chunks[0]["id"])
+	}
+	if chunks[0]["document_id"] == chunks[1]["document_id"] {
+		t.Fatalf("both chunks share document id %v", chunks[0]["document_id"])
+	}
+
+	state := runtime.NewCanvasState("run-youcom", "task-youcom")
+	state.SetRetrievalReferences(chunks, docAggs)
+	if got := state.GetRetrievalChunks(); len(got) != 2 {
+		t.Fatalf("retrieval chunks = %d, want 2 (distinct URLs must survive dedupe)", len(got))
 	}
 }

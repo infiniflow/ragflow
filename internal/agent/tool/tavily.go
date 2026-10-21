@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -440,10 +437,9 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(tavilyHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(tavilyHashInt(documentID, 500), 10)
 		title := tavilyText(item["title"])
 		resultURL := tavilyText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		score := item["score"]
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
@@ -501,12 +497,6 @@ func tavilyText(value any) string {
 
 func tavilyPromptField(value any) string {
 	return tavilyNewlinePattern.ReplaceAllString(tavilyText(value), " ")
-}
-
-func tavilyHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateTavilyRunes(value string, limit int) string {
