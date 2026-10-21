@@ -6,6 +6,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildParserGapModalContent } from './parser-gap-content';
+import { ParserGapReason } from './constant';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { pickByGapKind } from './utils';
@@ -39,8 +40,15 @@ export const useHandleRunDocumentByIds = (
         // Video has no parser that can process it, so offering "reselect parse
         // method" would send the user into a dialog that cannot fix anything.
         // Acknowledge instead; the change-parser route stays for the other
-        // gap kinds.
-        const videoOnly = gaps.every((gap) => gap.fileType === FileType.Video);
+        // gap kinds. The reason check keeps this narrow: a future gap kind on
+        // a parseable file must keep the actionable dialog.
+        const videoOnly =
+          gaps.length > 0 &&
+          gaps.every(
+            (gap) =>
+              gap.fileType === FileType.Video &&
+              gap.reason === ParserGapReason.UnsupportedType,
+          );
         Modal.error({
           title: t('knowledgeDetails.parseBlockedTitle'),
           content: buildParserGapModalContent(t, gaps, {

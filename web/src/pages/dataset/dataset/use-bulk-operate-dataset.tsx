@@ -22,7 +22,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { DocumentType } from './constant';
+import { DocumentType, ParserGapReason } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
@@ -75,10 +75,16 @@ export function useBulkOperateDataset({
           if (validIds.length === 0) {
             // Pure-video selections have no parser that can process them, so
             // offering anything that implies a fix would mislead. Acknowledge
-            // instead, mirroring the single-document run path.
-            const videoOnly = gaps.every(
-              (gap) => gap.fileType === FileType.Video,
-            );
+            // instead, mirroring the single-document run path. The reason
+            // check keeps this narrow: a future gap kind on a parseable file
+            // must keep the actionable dialog.
+            const videoOnly =
+              gaps.length > 0 &&
+              gaps.every(
+                (gap) =>
+                  gap.fileType === FileType.Video &&
+                  gap.reason === ParserGapReason.UnsupportedType,
+              );
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
               content: buildParserGapModalContent(t, gaps, {

@@ -151,6 +151,8 @@ describe('getFileTypeByExtension', () => {
       FileType.Video,
     );
     expect(switchTarget('clip.mov ')).toBe('picture');
+    // The trim is shared: other consumers resolve trailing-space names too.
+    expect(getExtension('report.pdf ')).toBe('pdf');
   });
 
   it('returns undefined for unknown extensions', () => {
