@@ -28,7 +28,7 @@ import (
 
 func TestRenderMetaFilterTemplate(t *testing.T) {
 	t.Chdir(t.TempDir())
-	prompt, err := renderMetaFilterTemplate("2026-10-13", `{"author":["Alice"]}`, "Find Alice's documents", "")
+	prompt, err := renderMetaFilterTemplate("2026-10-13", `{"author":["Alice"]}`, "Find Alice's documents", "", "")
 	if err != nil {
 		t.Fatalf("renderMetaFilterTemplate: %v", err)
 	}
