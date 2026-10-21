@@ -44,6 +44,7 @@ import {
   currentReg,
   decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
+  findCitationChunk,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
@@ -278,12 +279,9 @@ function MarkdownContent({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
+    (chunkIndex: number, chunkKey: number | string) => {
       const chunks = reference?.chunks ?? {};
-      // Agent reference.chunks is a Record keyed by the original citation ID
-      // (e.g. "3092e7ae6831b877"); the caller maps those IDs to a positional
-      // display index, so look up the N-th entry by insertion order.
-      const chunkItem = Object.values(chunks)[chunkIndex];
+      const chunkItem = findCitationChunk(chunks, chunkKey, chunkIndex);
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -309,7 +307,7 @@ function MarkdownContent({
   );
 
   const renderPopoverContent = useCallback(
-    (chunkIndex: number) => {
+    (chunkIndex: number, chunkKey: number | string) => {
       const {
         documentUrl,
         fileThumbnail,
@@ -318,7 +316,7 @@ function MarkdownContent({
         chunkItem,
         documentId,
         document,
-      } = getReferenceInfo(chunkIndex);
+      } = getReferenceInfo(chunkIndex, chunkKey);
 
       return (
         <div key={chunkItem?.id} className="flex gap-2">
@@ -348,7 +346,7 @@ function MarkdownContent({
               className={classNames(styles.chunkContentText, 'w-full')}
               dir="auto"
             ></div>
-            {documentId && (
+            {documentId && chunkItem && (
               <div className="flex gap-1">
                 {fileThumbnail ? (
                   <AuthenticatedImg
@@ -387,8 +385,7 @@ function MarkdownContent({
     (text: string) => {
       // Assign each unique citation marker a stable display number based on
       // its first occurrence, so the same ID always renders as the same [N]
-      // chip. The actual chunk lookup uses that index against the positional
-      // order of IReferenceObject.chunks (see getReferenceInfo).
+      // chip. The chunk itself is resolved by its citation id.
       const keyToDisplay = buildCitationDisplayMap(text);
       const replacedText = reactStringReplace(text, currentReg, (match) => {
         const chunkKey = getChunkKey(match);
@@ -402,7 +399,7 @@ function MarkdownContent({
               </bdi>
             </HoverCardTrigger>
             <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(displayIndex)}
+              {renderPopoverContent(displayIndex, chunkKey)}
             </HoverCardContent>
           </HoverCard>
         );

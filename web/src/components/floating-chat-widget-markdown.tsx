@@ -25,6 +25,7 @@ import {
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
   currentReg,
+  findCitationChunk,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
@@ -62,8 +63,7 @@ import { Button } from './ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) =>
-  parseCitationIndex(match.replace(/\[|\]/g, ''));
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const FloatingChatWidgetMarkdown = ({
   reference,
@@ -144,13 +144,13 @@ const FloatingChatWidgetMarkdown = ({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      let chunkItem = reference?.chunks?.[chunkIndex];
-      if (!chunkItem) {
-        chunkItem = reference?.chunks?.find(
-          (x: any) => x?.chunk_id === chunkIndex,
-        ) as IReferenceChunk;
-      }
+    (chunkKey: number | string) => {
+      const position = typeof chunkKey === 'number' ? chunkKey : -1;
+      const chunkItem = findCitationChunk(
+        reference?.chunks,
+        chunkKey,
+        position,
+      );
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs
@@ -179,8 +179,8 @@ const FloatingChatWidgetMarkdown = ({
   );
 
   const getPopoverContent = useCallback(
-    (chunkIndex: number) => {
-      const info = getReferenceInfo(chunkIndex);
+    (chunkKey: number | string) => {
+      const info = getReferenceInfo(chunkKey);
 
       if (!info) {
         return (
@@ -281,8 +281,8 @@ const FloatingChatWidgetMarkdown = ({
   const renderReference = useCallback(
     (text: string) => {
       return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match) as number;
-        const info = getReferenceInfo(chunkIndex);
+        const chunkKey = getChunkKey(match);
+        const info = getReferenceInfo(chunkKey);
 
         if (!info) {
           return (
@@ -327,7 +327,7 @@ const FloatingChatWidgetMarkdown = ({
                 collisionPadding={8}
                 className="max-h-[var(--radix-hover-card-content-available-height)]"
               >
-                {getPopoverContent(chunkIndex)}
+                {getPopoverContent(chunkKey)}
               </HoverCardContent>
             </HoverCardPrimitive.Portal>
           </HoverCard>

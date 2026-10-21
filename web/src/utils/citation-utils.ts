@@ -37,6 +37,9 @@ export const parseCitationIndex = (value: string): CitationKey => {
   );
   if (markerMatch) {
     const captured = markerMatch[1];
+    // Explicit [ID:...] markers are opaque chunk ids, including all-digit
+    // hexadecimal ids that would lose leading zeros or precision as numbers.
+    if (/^\s*\[?ID:/i.test(normalized)) return captured;
     return /^\d+$/.test(captured) ? Number(captured) : captured;
   }
   if (/^\d+$/.test(normalized)) return Number(normalized);
@@ -48,7 +51,7 @@ export const citationMarkerReg =
 
 // Map each unique citation marker ([n] or [ID:<chunkId>]) to its stable
 // 0-based display position by first occurrence. The chip renders position + 1
-// and the chunk is looked up positionally via Object.values(chunks)[position].
+// and the chunk is resolved from the marker key (see findCitationChunk).
 // Works for both plain chat (numeric markers) and agents ([ID:<chunkId>]).
 export const buildCitationDisplayMap = (
   content: string,
@@ -64,4 +67,23 @@ export const buildCitationDisplayMap = (
     }
   }
   return map;
+};
+
+// findCitationChunk resolves a citation marker to its reference chunk. Agent
+// markers carry chunk ids ("[ID:9ac9b07178c3951a]"), so match by id; fall
+// back to the marker's position for references keyed by display index.
+export const findCitationChunk = <T extends { id?: string | number }>(
+  chunks: T[] | Record<string, T> | undefined,
+  key: CitationKey,
+  position: number,
+): T | undefined => {
+  if (!chunks) return undefined;
+  if (!Array.isArray(chunks)) {
+    const direct = chunks[String(key)];
+    if (direct) return direct;
+  }
+  const list = Array.isArray(chunks) ? chunks : Object.values(chunks);
+  return (
+    list.find((chunk) => String(chunk?.id) === String(key)) ?? list[position]
+  );
 };
