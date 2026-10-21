@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // TestMergePositionMatrixAcceptsPageLists pins the Title-family parity fix:
@@ -94,6 +96,41 @@ func TestTitleFamilyAcceptsFlatRowPositions(t *testing.T) {
 	}
 	if string(raw) != `[[1,10,100,10,100]]` {
 		t.Errorf("positions = %s, want [[1,10,100,10,100]]", raw)
+	}
+}
+
+// TestPositionOrderingAcceptsListPages pins the ordering paths to the same
+// shape handling as the merge: a list page cell must be seen as positioned,
+// otherwise Manual/General leave records in parser order.
+func TestPositionOrderingAcceptsListPages(t *testing.T) {
+	first := json.RawMessage(`[[[1],10,100,100,200]]`)  // top 100
+	second := json.RawMessage(`[[[1],10,100,300,400]]`) // top 300
+
+	recs := []lineRecord{
+		{text: "second", pdfPositions: second},
+		{text: "first", pdfPositions: first},
+	}
+	if !hasPdfPositions(recs) {
+		t.Fatal("hasPdfPositions = false for list-page positions")
+	}
+	if row, ok := firstPositionRow(recs[0]); !ok || row[0] != 1 || row[3] != 300 {
+		t.Fatalf("firstPositionRow = %v, %v; want page 1 top 300", row, ok)
+	}
+	sortRecordsByPosition(recs)
+	if recs[0].text != "first" || recs[1].text != "second" {
+		t.Fatalf("sorted records = %q, %q; want first, second", recs[0].text, recs[1].text)
+	}
+
+	units := []schema.ChunkDoc{
+		{Text: "second", PDFPositions: second},
+		{Text: "first", PDFPositions: first},
+	}
+	if !hasPDFPositions(units) {
+		t.Fatal("hasPDFPositions = false for list-page positions")
+	}
+	sorted := sortPDFUnits(units)
+	if sorted[0].Text != "first" || sorted[1].Text != "second" {
+		t.Fatalf("sortPDFUnits = %q, %q; want first, second", sorted[0].Text, sorted[1].Text)
 	}
 }
 

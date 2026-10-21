@@ -167,8 +167,9 @@ func sortRecordsByPosition(records []lineRecord) {
 // [page,left,right,top,bottom] of a record's coordinate matrix, or
 // (nil, false) when the record carries no usable coordinates. It reads the
 // structured `_pdf_positions` key first and falls back to the legacy
-// `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
-// len(row) >= 5 here.
+// `positions` key. It uses the same decodePositionRows shape handling as
+// mergePositionMatrix, so a list page cell participates in ordering; a list
+// page is ordered by its first page.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -179,15 +180,37 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	var mat [][]float64
-	if err := json.Unmarshal(raw, &mat); err != nil || len(mat) == 0 {
+	rows, ok := decodePositionRows(raw)
+	if !ok || len(rows) == 0 || len(rows[0]) < 5 {
 		return nil, false
 	}
-	row := mat[0]
-	if len(row) < 5 {
+	row := rows[0]
+	page, ok := positionPageValue(row[0])
+	if !ok {
 		return nil, false
 	}
-	return row, true
+	values := make([]float64, 5)
+	values[0] = page
+	for i := 1; i < 5; i++ {
+		value, ok := positionRowNumber(row[i])
+		if !ok {
+			return nil, false
+		}
+		values[i] = value
+	}
+	return values, true
+}
+
+// positionPageValue decodes a page cell for ordering: a scalar number or a
+// list whose first entry is numeric.
+func positionPageValue(raw any) (float64, bool) {
+	if value, ok := positionRowNumber(raw); ok {
+		return value, true
+	}
+	if pages, ok := raw.([]any); ok && len(pages) > 0 {
+		return positionPageValue(pages[0])
+	}
+	return 0, false
 }
 
 // init registers ManualChunker under CategoryIngestion.
