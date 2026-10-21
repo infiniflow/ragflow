@@ -1113,7 +1113,20 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, fmt.Errorf("failed to marshal delete body: %w", err)
 	}
 
-	// Execute delete by query with refresh=true
+	// Bulk ingestion does not wait for refresh. Refresh before taking the delete
+	// snapshot so cleanup sees newly inserted chunks and the latest retry versions.
+	refreshReq := esapi.IndicesRefreshRequest{Index: []string{fullIndexName}}
+	refreshRes, err := refreshReq.Do(ctx, e.client)
+	if err != nil {
+		closeESBody(refreshRes)
+		return 0, fmt.Errorf("failed to refresh index before deleting chunks: %w", err)
+	}
+	closeESBody(refreshRes)
+	if refreshRes.IsError() {
+		return 0, fmt.Errorf("elasticsearch refresh before deleting chunks returned error: %s", refreshRes.Status())
+	}
+
+	// Refresh after deletion so follow-up reads see the removal.
 	refreshTrue := true
 	req := esapi.DeleteByQueryRequest{
 		Index:   []string{fullIndexName},

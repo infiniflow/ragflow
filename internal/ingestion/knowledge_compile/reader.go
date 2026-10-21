@@ -110,7 +110,7 @@ type engineReader struct {
 // unknown column); payload = content_with_weight, kind = compile_kwd.
 var compiledSelectFields = []string{
 	"id", "doc_id", "compile_kwd",
-	"available_int", "extra",
+	"available_int",
 	"content_with_weight",
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
@@ -368,20 +368,8 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 			payload = nil
 		}
 	}
-	if raw := asString(c["extra"]); raw != "" {
-		var extra map[string]any
-		if err := json.Unmarshal([]byte(raw), &extra); err != nil {
-			return kccommon.Product{}, false
-		}
-		if inferred, ok := extra["compile_type"].(string); ok {
-			meta["compile_type"] = inferred
-		}
-	}
 	if v := asString(c["compile_kwd"]); v != "" {
 		meta["compile_kwd"] = v
-		if _, ok := meta["compile_type"]; !ok && types.CanonicalCompilationKind(v) != v {
-			meta["compile_type"] = v
-		}
 	}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
 		name := v
