@@ -420,22 +420,31 @@ func pdfPosRowLess(a, b []float64) bool {
 // [page,left,right,top,bottom]; duplicates (by the first five columns)
 // are dropped and rows are sorted by (page, top, left). Returns nil when
 // no source carries any usable coordinates.
-func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
-	var out [][]float64
+//
+// The page cell may be a scalar (deepdoc's normalized form) or a list (the
+// raw layout.SectionsToJSON form); both are preserved verbatim so the
+// downstream PositionsFromMatrix can decode either. A source may also be a
+// single flat 5-tuple rather than a list of rows (TCADP and some external
+// producers emit that shape). Accepting all three keeps the Title family in
+// line with General/Token, which pass positions through without this merge.
+//
+// The concrete return type keeps the historical wire shape: an all-scalar
+// matrix is [][]float64, while a page-list matrix is [][]any. Callers only
+// JSON-marshal the result, and existing consumers/tests type-assert the
+// scalar form.
+func mergePositionMatrix(sources ...json.RawMessage) any {
+	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
-		if len(src) == 0 {
+		rows, ok := decodePositionRows(src)
+		if !ok {
 			continue
 		}
-		var mat [][]float64
-		if err := json.Unmarshal(src, &mat); err != nil {
-			continue
-		}
-		for _, row := range mat {
+		for _, row := range rows {
 			if len(row) < 5 {
 				continue
 			}
-			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			key := fmt.Sprint(row[:5])
 			if seen[key] {
 				continue
 			}
@@ -446,10 +455,96 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 	if len(out) == 0 {
 		return nil
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return pdfPosRowLess(out[i], out[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return positionRowLess(out[i], out[j])
 	})
-	return out
+	return positionMatrixWire(out)
+}
+
+// positionMatrixWire returns [][]float64 when every page cell is scalar (the
+// historical shape) and [][]any when any page cell is a list.
+func positionMatrixWire(rows [][]any) any {
+	for _, row := range rows {
+		if _, isList := row[0].([]any); isList {
+			return rows
+		}
+	}
+	scalar := make([][]float64, 0, len(rows))
+	for _, row := range rows {
+		nums := make([]float64, len(row))
+		for i := range row {
+			nums[i] = positionRowFloat(row, i)
+		}
+		scalar = append(scalar, nums)
+	}
+	return scalar
+}
+
+// decodePositionRows accepts both the nested matrix form and a single flat
+// 5-tuple. JSON-decoded numbers are float64, and a page cell may itself be a
+// list, so the rows stay []any rather than being coerced to [][]float64.
+func decodePositionRows(src json.RawMessage) ([][]any, bool) {
+	if len(src) == 0 {
+		return nil, false
+	}
+	var rows [][]any
+	if err := json.Unmarshal(src, &rows); err == nil {
+		return rows, true
+	}
+	var row []any
+	if err := json.Unmarshal(src, &row); err == nil && len(row) >= 5 {
+		return [][]any{row}, true
+	}
+	return nil, false
+}
+
+// positionRowLess orders rows by (first page, top, left), matching
+// pdfPosRowLess for scalar page numbers while tolerating a list page cell.
+func positionRowLess(a, b []any) bool {
+	ap, bp := positionRowPage(a), positionRowPage(b)
+	if ap != bp {
+		return ap < bp
+	}
+	at, bt := positionRowFloat(a, 3), positionRowFloat(b, 3)
+	if at != bt {
+		return at < bt
+	}
+	return positionRowFloat(a, 1) < positionRowFloat(b, 1)
+}
+
+// positionRowPage decodes the page cell for ordering only; the original cell
+// is kept in the emitted row. A list page uses its first entry.
+func positionRowPage(row []any) float64 {
+	if len(row) == 0 {
+		return 0
+	}
+	switch v := row[0].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case []any:
+		if len(v) == 0 {
+			return 0
+		}
+		return positionRowPage([]any{v[0]})
+	default:
+		return 0
+	}
+}
+
+func positionRowFloat(row []any, index int) float64 {
+	if index >= len(row) {
+		return 0
+	}
+	switch v := row[index].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	default:
+		return 0
+	}
 }
 
 // extractLineRecords converts the decoded upstream payload into records in the
