@@ -70,6 +70,50 @@ func TestCropTitleChunks_CropsImageWithPageList(t *testing.T) {
 	}
 }
 
+// TestCropTitleChunks_PositionOnlyImageWithRootHeading reaches the crop and
+// streaming upload after a position-only figure survives extraction. The root
+// heading supplies text before cropping; the crop path still intentionally
+// skips media whose finalized text remains empty.
+func TestCropTitleChunks_PositionOnlyImageWithRootHeading(t *testing.T) {
+	comp, err := NewGroupTitleChunker(map[string]any{
+		"levels":                [][]string{{`^# `}},
+		"root_chunk_as_heading": true,
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	chunks := titleFamilyChunks(t, comp, []map[string]any{
+		{"text": "# Figure context", "doc_type_kwd": "text"},
+		{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{1, 10, 100, 10, 100}}},
+	})
+	if len(chunks) != 1 || chunks[0]["doc_type_kwd"] != "image" {
+		t.Fatalf("chunks = %#v, want the positioned image with root heading", chunks)
+	}
+	if !strings.Contains(toString(chunks[0]["text"]), "# Figure context") {
+		t.Fatalf("root heading not applied to image: %#v", chunks[0])
+	}
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	got := cropTitleChunks(withIngestionGlobals(t, "kb1", "doc1"), mockCropEngine{}, chunks)
+	if len(got) != 1 || len(rec.calls) != 1 {
+		t.Fatalf("chunks = %d, uploads = %d, want 1 each", len(got), len(rec.calls))
+	}
+	call := rec.calls[0]
+	if call.kbID != "kb1" || call.chunkID == "" || call.dataLen == 0 {
+		t.Errorf("upload = %#v, want nonempty preview and chunk ID in kb1", call)
+	}
+	if got[0]["img_id"] != "kb1-"+call.chunkID {
+		t.Errorf("img_id = %v, want uploaded reference", got[0]["img_id"])
+	}
+	if image, _ := got[0]["image"].(string); image != "" {
+		t.Errorf("inline image retained after streaming upload")
+	}
+}
+
 // TestCropTitleChunks_NilEnginePassthrough asserts the helper is a no-op
 // when no PDF engine is available (best-effort contract).
 func TestCropTitleChunks_NilEnginePassthrough(t *testing.T) {

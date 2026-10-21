@@ -599,17 +599,20 @@ func lineRecordsFromPayload(payload *string) []lineRecord {
 
 // recordsFromStructured converts parser-shaped items into records: text items
 // keep their text, and media items — tables whose TableData has already been
-// rendered to HTML by materializeTableText, images carrying an image payload
-// or reference — pass through as single records. Only an item with none of
-// text, image and img_id is dropped.
+// rendered to HTML by materializeTableText, images carrying an image payload,
+// reference or positions for on-demand cropping — pass through as single
+// records. Only an item with no text, image, img_id or retained position rows
+// is dropped.
 func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {
 		text := itemTextOrFallback(it)
 		// A structured table arrives with Text already rendered from TableData
 		// (materializeTableText); an image item legitimately carries no text —
-		// its payload is the image field. Only a truly empty item is skipped.
-		if text == "" && it.Image == "" && it.ImgID == "" {
+		// its payload may be positions for on-demand cropping rather than inline
+		// image bytes. Only a truly empty item is skipped.
+		if text == "" && it.Image == "" && it.ImgID == "" &&
+			mergePositionMatrix(it.PDFPositions, it.Positions) == nil {
 			continue
 		}
 		dt := it.DocType
