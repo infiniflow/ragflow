@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -28,7 +29,11 @@ func pdfFileMeta(filename string, pageCount int) map[string]any {
 func markdownItemText(item map[string]any) string {
 	if dt, _ := item["doc_type_kwd"].(string); dt == "table" {
 		if td, ok := item["table"].(*entity.TableData); ok && td != nil {
-			return tableutil.RenderTableHTML(td)
+			markup := tableutil.RenderTableHTML(td)
+			if notes, _ := item["text"].(string); strings.TrimSpace(notes) != "" {
+				return strings.TrimRight(markup, "\n") + "\n\n" + notes
+			}
+			return markup
 		}
 		return ""
 	}
@@ -149,4 +154,36 @@ func rowsHaveText(rows [][]string) bool {
 		}
 	}
 	return false
+}
+
+func pdfMarkdownToResult(ctx context.Context, filename, markdown, outputFormat string, pageCount int) ParseResult {
+	fileMeta := pdfFileMeta(filename, pageCount)
+	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
+	case "", "json":
+		res := parsePDFMarkdown(ctx, filename, markdown)
+		if res.Err != nil {
+			if ctx.Err() != nil {
+				res.File = fileMeta
+				return res
+			}
+			// Same text fallback as NormalizeResult: keep the backend
+			// markdown as raw text instead of failing the task.
+			return ParseResult{
+				OutputFormat: "json",
+				File:         fileMeta,
+				Warnings:     append(res.Warnings, "markdown normalization fell back to text: "+res.Err.Error()),
+				JSON:         []DocItem{NewTextJSONItem(markdown)},
+			}
+		}
+		res.File = fileMeta
+		return res
+	case "markdown":
+		return ParseResult{
+			OutputFormat: "markdown",
+			File:         fileMeta,
+			Markdown:     markdown,
+		}
+	default:
+		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+	}
 }

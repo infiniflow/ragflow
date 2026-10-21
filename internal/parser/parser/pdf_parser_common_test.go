@@ -1,12 +1,17 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"strings"
 	"testing"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
+
+func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
+	return NewPDFParser().NormalizeResult(context.Background(), filename, pdfParseResultToJSONWithOptions(filename, parsed, pdfPostProcessOptions{}))
+}
 
 func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	parsed := &deepdoctype.ParseResult{
@@ -154,7 +159,7 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 }
 
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
-// DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
+// DeepDoc emits 0-indexed page numbers and normalizeDeepDocPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
 // not just for v<=0 — so that downstream addPDFPositions (a passthrough) and
 // PositionsFromMatrix (which subtracts 1 for the 0-indexed PDFium engine)
@@ -178,7 +183,7 @@ func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := normalizePDFPageNumber(tc.in)
+			got, ok := normalizeDeepDocPageNumber(tc.in)
 			if ok != tc.ok {
 				t.Fatalf("ok = %v, want %v", ok, tc.ok)
 			}
@@ -189,11 +194,11 @@ func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
 	}
 }
 
-func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
+func TestPDFParseResultToJSONConvertsPositiveSourcePageNumbers(t *testing.T) {
 	parsed := &deepdoctype.ParseResult{
 		Sections: []deepdoctype.Section{
 			{
-				Text:       "Already one-based",
+				Text:       "<table><tr><td>Page four</td></tr></table>",
 				LayoutType: deepdoctype.LayoutTypeTable,
 				Positions: []deepdoctype.Position{
 					{
@@ -209,7 +214,7 @@ func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
 	}
 
 	res := pdfParseResultToJSON("one-based.pdf", parsed)
-	// DeepDoc page 3 is 0-indexed (the 4th page); normalizePDFPageNumber
+	// DeepDoc page 3 is 0-indexed (the 4th page); normalizeDeepDocPageNumber
 	// converts it to 1-indexed page 4.
 	if got, want := res.JSON[0].ToMap()["page_number"], 4; got != want {
 		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
