@@ -1322,6 +1322,7 @@ func (s *ChatSessionService) ChatCompletions(
 					// through to the DAO.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+					attachTurnCost(finalLegacyAnswer, result)
 					continue
 				}
 				if result.StartToThink {
@@ -1379,6 +1380,7 @@ func (s *ChatSessionService) ChatCompletions(
 							ans["created_at"] = result.CreatedAt
 						}
 						ans["final"] = true
+						attachTurnCost(ans, result)
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
@@ -1791,6 +1793,11 @@ type sseAnswerChunk struct {
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
 	ThinkEvent   interface{}            `json:"think_event,omitempty"`
+	// What the turn cost. Only the final event carries it: a delta is partial
+	// and would need merging, and a zero total would render as "0 tokens",
+	// which reads as a measurement rather than an absence.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order:
@@ -1901,8 +1908,18 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	startToThink, _ := ans["start_to_think"].(bool)
 	endToThink, _ := ans["end_to_think"].(bool)
 
+	// These two are built from the map rather than from a struct field, so a
+	// value that is absent stays absent.
+	var usage *ChatTurnUsage
+	if u, ok := ans["usage"].(*ChatTurnUsage); ok {
+		usage = u
+	}
+	elapsedMs, _ := ans["elapsed_ms"].(float64)
+
 	chunk := sseAnswerChunk{
 		Answer:       answer,
+		Usage:        usage,
+		ElapsedMs:    elapsedMs,
 		Reference:    ref,
 		AudioBinary:  ans["audio_binary"],
 		Prompt:       prompt,
@@ -1917,6 +1934,24 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	}
 	wrapper := sseWrapper{Code: 0, Message: "success", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
+}
+
+// attachTurnCost copies a turn's cost onto an SSE payload.
+//
+// The payload is assembled field by field rather than marshalled from
+// AsyncChatResult, so a field added to the result does not reach the wire on its
+// own — it has to be copied here. Only the final event carries it; the deltas
+// are partial and would each need merging.
+func attachTurnCost(payload map[string]interface{}, result AsyncChatResult) {
+	if payload == nil {
+		return
+	}
+	if result.Usage != nil {
+		payload["usage"] = result.Usage
+	}
+	if result.ElapsedMs > 0 {
+		payload["elapsed_ms"] = result.ElapsedMs
+	}
 }
 
 func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {

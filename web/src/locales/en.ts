@@ -1146,6 +1146,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
+      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      turnElapsed: '{{seconds}}s',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -2192,6 +2197,9 @@ Example: Virtual Hosted Style`,
       models: 'Models',
       chatModel: 'LLM',
       chatModelTip: 'The default LLM for each newly created dataset.',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
         'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
