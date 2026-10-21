@@ -25,6 +25,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -250,44 +251,42 @@ func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
 	return migrateRC2Data(ctx, db)
 }
 
-
 func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
 	count := 0
 	var rows []ingestionConfigMigrationRow
 	result := db.WithContext(ctx).Model(model).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Select("id", "parser_id", "pipeline_id", "parser_config").Order("id").
 		FindInBatches(&rows, parserConfigMigrationBatchSize, func(batch *gorm.DB, _ int) error {
-			return batch.Transaction(func(tx *gorm.DB) error {
-				for _, row := range rows {
-					config, ok := parseParserConfig(row.ParserConfig)
-					if !ok {
-						// An empty or absent payload carries nothing to migrate;
-						// a malformed one is rejected so the batch rolls back
-						// with the offending row named.
-						if row.ParserConfig == nil || strings.TrimSpace(*row.ParserConfig) == "" {
-							continue
-						}
-						return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
-					}
-					extractorChanged, err := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
-					if err != nil {
-						return fmt.Errorf("row %s: %w", row.ID, err)
-					}
-					ingestionChanged, err := migrateParserChunkerTokenizerConfig(config, row.ParserID, row.PipelineID, table, row.ID)
-					if err != nil {
-						return fmt.Errorf("row %s: %w", row.ID, err)
-					}
-					if !extractorChanged && !ingestionChanged {
+			for _, row := range rows {
+				config, ok := parseParserConfig(row.ParserConfig)
+				if !ok {
+					// An empty or absent payload carries nothing to migrate;
+					// a malformed one is rejected so the batch rolls back
+					// with the offending row named.
+					if row.ParserConfig == nil || strings.TrimSpace(*row.ParserConfig) == "" {
 						continue
 					}
-					if err := tx.Model(model).Where("id = ?", row.ID).
-						Update("parser_config", entity.JSONMap(config)).Error; err != nil {
-						return fmt.Errorf("row %s: update parser_config: %w", row.ID, err)
-					}
-					count++
+					return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
 				}
-				return nil
-			})
+				extractorChanged, err := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
+				if err != nil {
+					return fmt.Errorf("row %s: %w", row.ID, err)
+				}
+				ingestionChanged, err := migrateParserChunkerTokenizerConfig(config, row.ParserID, row.PipelineID, table, row.ID)
+				if err != nil {
+					return fmt.Errorf("row %s: %w", row.ID, err)
+				}
+				if !extractorChanged && !ingestionChanged {
+					continue
+				}
+				if err := batch.Model(model).Where("id = ?", row.ID).
+					Update("parser_config", entity.JSONMap(config)).Error; err != nil {
+					return fmt.Errorf("row %s: update parser_config: %w", row.ID, err)
+				}
+				count++
+			}
+			return nil
 		})
 	return count, result.Error
 }

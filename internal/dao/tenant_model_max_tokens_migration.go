@@ -28,7 +28,7 @@ import (
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
-
+	"gorm.io/gorm/clause"
 )
 
 const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2"
@@ -67,7 +67,6 @@ func migrateTenantModelMaxTokens(ctx context.Context, db *gorm.DB) error {
 	return migrateRC2Data(ctx, db)
 }
 
-
 func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error) {
 	scoped := db.WithContext(ctx)
 	if !scoped.Migrator().HasTable("tenant_llm") {
@@ -103,9 +102,9 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 	}
 
 	var targets []tenantModelMaxTokensTarget
-	if err := scoped.Raw(`
-		SELECT id, provider_id, instance_id, model_name, model_type, extra
-		FROM tenant_model`).Scan(&targets).Error; err != nil {
+	if err := scoped.Model(&entity.TenantModel{}).
+		Select("id", "provider_id", "instance_id", "model_name", "model_type", "extra").
+		Clauses(clause.Locking{Strength: "UPDATE"}).Scan(&targets).Error; err != nil {
 		return 0, fmt.Errorf("read tenant model limits: %w", err)
 	}
 	targetsByKey := make(map[string][]tenantModelMaxTokensTarget, len(targets))
