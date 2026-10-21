@@ -1096,6 +1096,7 @@ async def run_wiki_incremental(
                 doc_id = doc["id"]
                 map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
 
+                # MAP fractions belong to one batch, not the dataset task.
                 await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1109,7 +1110,7 @@ async def run_wiki_incremental(
                     tenant_id=ctx.tenant_id,
                     kb_id=ctx.kb_id,
                     language=ctx.language,
-                    callback=lambda p, msg: progress(p, msg),
+                    callback=lambda p, msg: progress(p if p is not None and p < 0 else None, msg),
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
@@ -1208,6 +1209,7 @@ async def run_wiki_incremental(
     kb_chat_mdl = _bundle_for(kb_chat_llm_id)
 
     progress(0.65, f"Wiki {mode} incremental compilation ...")
+    # Only the task owner may report success, after graph/state persistence.
     summary = await wiki_compile_incremental(
         chat_mdl=map_llm_pool.wrap(
             kb_chat_mdl,
@@ -1224,7 +1226,7 @@ async def run_wiki_incremental(
         chunk_delta=chunk_delta,
         previous_chunk_state=previous_chunk_state,
         current_chunk_state=current_chunk_state,
-        callback=lambda p, msg: progress(p, msg),
+        callback=lambda p, msg: progress(p if p is not None and p < 0 else None, msg),
     )
 
     # 6. Materialize the canvas graph from the compiled pages. The incremental
