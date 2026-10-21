@@ -179,14 +179,8 @@ func (g *GrepAdapter) FetchChunksByID(ctx context.Context, req runtime.GrepReque
 	return g.fetchScoped(ctx, req, grepChunksSelectFields, true)
 }
 
-// fetchScoped issues one regexp-pushdown match-all query over the scoped docs,
-// narrowed by req.ChunkScope term filter when non-empty. selectFields controls
-// the ES _source payload; withFullContent=false leaves RetrievalChunk.Content
-// empty so the index pass stays lightweight. Results come back in reading
-// order (doc_id, page_num_int, chunk_order_int).
 // deepReadPathFilterSearch tags every list_chunks deep-read log line, so a run
-// can be traced to the filter-based Search rather than the former regexp
-// pushdown.
+// can be traced to the filter-based Search rather than the regexp pushdown.
 const deepReadPathFilterSearch = "filter_search"
 
 // deepReadFetchLimit is the single-page window for one deep read. A document has
@@ -195,8 +189,11 @@ const deepReadPathFilterSearch = "filter_search"
 const deepReadFetchLimit = common.MAX_RESULT_WINDOW
 
 // fetchScoped reads the chunks of one document — optionally narrowed to a set of
-// chunk ids — with a pure metadata filter. See the query construction below for
-// why it must not match on content.
+// chunk ids. It prefers the engine's regexp pushdown and degrades to a pure
+// metadata filter when the engine rejects it; see the two paths below.
+// selectFields controls the _source payload, and withFullContent=false leaves
+// RetrievalChunk.Content empty so the index pass stays lightweight. Results come
+// back in reading order (page_num_int, chunk_order_int).
 func (g *GrepAdapter) fetchScoped(
 	ctx context.Context, req runtime.GrepRequest,
 	selectFields []string, withFullContent bool,
@@ -213,19 +210,9 @@ func (g *GrepAdapter) fetchScoped(
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
-	// A PURE METADATA FILTER, with no content matching at all.
-	//
-	// Both deep-read passes only ever ask "which chunks belong to this
-	// document", and the answer used to be expressed as a match-all regexp over
-	// content_with_weight. That is bound to the field's mapping: on an index
-	// built before content_with_weight became a searchable keyword, the field is
-	// text with index:false and the engine rejects the query outright —
-	//
-	//	Cannot search on field [content_with_weight] since it is not indexed
-	//
-	// A filter query answers identically on every index generation, keeps chunks
-	// longer than a keyword's ignore_above limit visible, and works on engines
-	// that never implemented regexp pushdown.
+	// Scope filter shared by both read paths: ordinary text chunks
+	// (available_int=1, no compile_kwd), narrowed to the requested docs and/or
+	// chunk ids when the caller scoped them.
 	filter := map[string]interface{}{
 		"available_int": 1,
 		"must_not":      map[string]interface{}{"exists": "compile_kwd"},
@@ -237,6 +224,63 @@ func (g *GrepAdapter) fetchScoped(
 		filter["id"] = chunkIDs
 	}
 
+	// Both passes only ever ask "which chunks belong to this document", so the
+	// row shape is identical and only the query differs.
+	toChunks := func(raws []map[string]interface{}) []runtime.RetrievalChunk {
+		out := make([]runtime.RetrievalChunk, 0, len(raws))
+		for _, raw := range raws {
+			content := ""
+			if withFullContent {
+				content = contentWithWeightFromRaw(raw)
+				if content == "" || isGraphChunkContent(content) {
+					continue
+				}
+			}
+			out = append(out, runtime.RetrievalChunk{
+				ID:           runtime.FirstStringFromMap(raw, "id", "_id"),
+				Content:      content,
+				DocumentID:   runtime.StringFromMap(raw, "doc_id"),
+				DocumentName: runtime.StringFromMap(raw, "docnm_kwd"),
+				DatasetID:    runtime.StringFromMap(raw, "kb_id"),
+				ChunkIndex:   runtime.IntFromMap(raw, "chunk_order_int"),
+				PageNum:      runtime.IntFromMap(raw, "page_num_int"),
+			})
+		}
+		sort.SliceStable(out, func(i, j int) bool { return readingOrderLess(out[i], out[j]) })
+		return out
+	}
+
+	// Path 1: native regexp pushdown, a match-all over content_with_weight. On a
+	// current mapping the field is a searchable keyword, so this is the cheapest
+	// read: the scope filter and the reading-order sort both go to the engine.
+	if se, ok := g.docEngine.(regexpSearchable); ok {
+		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
+			TenantID:     req.TenantID,
+			KbIDs:        req.DatasetIDs,
+			Pattern:      ".*",
+			Sort:         sortExprFromFields(grepChunksSortFields),
+			SelectFields: selectFields,
+			ReturnAll:    true,
+			Filter:       filter,
+		})
+		if err == nil {
+			return toChunks(res.Chunks), nil
+		}
+		// Fall through, not fatal: the field's mapping is not guaranteed. An index
+		// built before content_with_weight became a searchable keyword has it as
+		// text with index:false, and the engine rejects the query outright —
+		//
+		//	Cannot search on field [content_with_weight] since it is not indexed
+		//
+		// — while an engine may simply not implement the pushdown.
+		common.WarnCtx(ctx, "agentic_rag: list_chunks regexp pushdown rejected, degrading to metadata filter",
+			zap.String("path", deepReadPathFilterSearch), zap.Error(err))
+	}
+
+	// Path 2: a PURE METADATA FILTER. It answers the same question on every index
+	// generation, keeps chunks longer than a keyword's ignore_above limit
+	// visible, and needs no regex support from the engine. Reading order is
+	// restored in Go by toChunks.
 	res, err := g.docEngine.Search(ectx, &enginetypes.SearchRequest{
 		IndexNames:   []string{indexNameFor(req.TenantID, "")},
 		KbIDs:        req.DatasetIDs,
@@ -248,28 +292,7 @@ func (g *GrepAdapter) fetchScoped(
 	if err != nil {
 		return nil, fmt.Errorf("list_chunks: scoped recall: %w", err)
 	}
-
-	out := make([]runtime.RetrievalChunk, 0, len(res.Chunks))
-	for _, raw := range res.Chunks {
-		content := ""
-		if withFullContent {
-			content = contentWithWeightFromRaw(raw)
-			if content == "" || isGraphChunkContent(content) {
-				continue
-			}
-		}
-		out = append(out, runtime.RetrievalChunk{
-			ID:           runtime.FirstStringFromMap(raw, "id", "_id"),
-			Content:      content,
-			DocumentID:   runtime.StringFromMap(raw, "doc_id"),
-			DocumentName: runtime.StringFromMap(raw, "docnm_kwd"),
-			DatasetID:    runtime.StringFromMap(raw, "kb_id"),
-			ChunkIndex:   runtime.IntFromMap(raw, "chunk_order_int"),
-			PageNum:      runtime.IntFromMap(raw, "page_num_int"),
-		})
-	}
-	sort.SliceStable(out, func(i, j int) bool { return readingOrderLess(out[i], out[j]) })
-	return out, nil
+	return toChunks(res.Chunks), nil
 }
 
 // Grep regex-matches chunk content within the given scope.
