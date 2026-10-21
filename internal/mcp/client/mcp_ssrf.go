@@ -18,6 +18,7 @@ package mcpclient
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
@@ -110,4 +111,30 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool
 		return "", "", err
 	}
 	return AssertMCPURLSafe(rawURL, allowPrivateHosts)
+}
+
+// restrictClientRedirects returns a copy of a caller-supplied HTTP client
+// whose redirect policy keeps credential headers on the validated origin:
+// it rejects HTTPS downgrades and any redirect target that is not the same
+// origin as the first request. The default PinnedHTTPClient applies the same
+// rules; a supplied client must not quietly bypass them.
+func restrictClientRedirects(client *http.Client, allowPrivateHosts bool) *http.Client {
+	restricted := *client
+	inner := restricted.CheckRedirect
+	restricted.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if via[0].URL.Scheme == "https" && req.URL.Scheme == "http" {
+			return fmt.Errorf("refusing HTTPS to HTTP redirect to %q", req.URL)
+		}
+		if _, _, err := AssertMCPURLSafeSameOrigin(req.URL.String(), via[0].URL.String(), allowPrivateHosts); err != nil {
+			return err
+		}
+		if inner != nil {
+			return inner(req, via)
+		}
+		return nil
+	}
+	return &restricted
 }

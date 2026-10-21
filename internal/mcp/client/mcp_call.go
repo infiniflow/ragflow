@@ -85,6 +85,8 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+	} else {
+		opts.HTTPClient = restrictClientRedirects(opts.HTTPClient, opts.AllowPrivateHosts)
 	}
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {

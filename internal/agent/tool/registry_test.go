@@ -125,8 +125,8 @@ func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name == "wikipedia_search" {
-		t.Errorf("tool name = %q, want retrieval (function_name collision must not build Wikipedia)", info.Name)
+	if info.Name != "wikipedia" {
+		t.Errorf("tool name = %q, want retrieval advertised as the DSL function_name (collision must not build Wikipedia)", info.Name)
 	}
 }
 
