@@ -499,6 +499,35 @@ func TestProcessChunkPositions_ToMapMixedMatrix(t *testing.T) {
 	}
 }
 
+// TestProcessChunkPositions_FlatMultiTuple pins the flat multi-row shape:
+// ChunkDoc.ToMap produces a flat []any of numbers, and every five-tuple must
+// reach the index fields, not just the first.
+func TestProcessChunkPositions_FlatMultiTuple(t *testing.T) {
+	raw := json.RawMessage(`[1,10,100,20,80,2,30,120,40,90]`)
+	doc := schema.ChunkDoc{
+		Text:         "two rows",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2}) {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 2 {
+		t.Fatalf("position_int = %#v, want two rows", ck["position_int"])
+	}
+	if !reflect.DeepEqual(matrix[1], []int{2, 30, 120, 40, 90}) {
+		t.Errorf("second row = %v, want [2 30 120 40 90]", matrix[1])
+	}
+}
+
 // TestProcessChunkPositions_SkipsInvalidRows pins the partial-loss guard: a
 // null row must not discard the valid rows around it.
 func TestProcessChunkPositions_SkipsInvalidRows(t *testing.T) {

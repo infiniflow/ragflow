@@ -35,26 +35,44 @@ func positionsToIntMatrix(positions []float64) [][]int {
 }
 
 // positionRowsFromAny normalizes the generic []any shape produced by
-// ChunkDoc.ToMap (JSON decoding into `any`) into [][]any. It accepts either a
-// list of rows (each []any/[]float64) or a single flat 5-tuple. The flat-row
-// check looks at element 1: a list of rows has another row there, while a flat
-// row has a numeric coordinate.
+// ChunkDoc.ToMap (JSON decoding into `any`) into [][]any. It accepts a list of
+// rows (each []any/[]float64), a single flat 5-tuple, or a flat sequence of
+// multiple 5-tuples (TCADP/external producers).
+//
+// Element 1 distinguishes the shapes: a row list has another row (or an
+// invalid entry) there, while a flat sequence has a numeric coordinate. A flat
+// sequence is then grouped by five; a length that is not a multiple of five is
+// malformed, matching positionsToIntMatrix.
 func positionRowsFromAny(v []any) ([][]any, bool) {
 	if len(v) == 0 {
 		return nil, false
 	}
-	if len(v) >= 5 {
-		if _, ok := positionNumber(v[1]); ok {
-			return [][]any{v}, true
+	if len(v) == 1 {
+		if row, ok := positionRowFromAny(v[0]); ok {
+			return [][]any{row}, true
 		}
 	}
-	rows := make([][]any, 0, len(v))
-	for _, e := range v {
-		row, ok := positionRowFromAny(e)
-		if !ok {
-			continue
+	if len(v) >= 2 {
+		_, secondIsRow := positionRowFromAny(v[1])
+		if secondIsRow || v[1] == nil {
+			_, firstIsRow := positionRowFromAny(v[0])
+			if firstIsRow || v[0] == nil {
+				rows := make([][]any, 0, len(v))
+				for _, e := range v {
+					if row, ok := positionRowFromAny(e); ok {
+						rows = append(rows, row)
+					}
+				}
+				return rows, len(rows) > 0
+			}
 		}
-		rows = append(rows, row)
+	}
+	if len(v)%5 != 0 {
+		return nil, false
+	}
+	rows := make([][]any, 0, len(v)/5)
+	for i := 0; i < len(v); i += 5 {
+		rows = append(rows, v[i:i+5])
 	}
 	return rows, len(rows) > 0
 }
