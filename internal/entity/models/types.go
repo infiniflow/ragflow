@@ -124,8 +124,30 @@ type TTSResponse struct {
 	MediaType string `json:"media_type,omitempty"`
 }
 
+// OCRPage retains the source image dimensions and reading-order blocks.
+// Index is the zero-based source PDF page index, including blank pages.
+type OCRPage struct {
+	Index  int        `json:"index"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+	Blocks []OCRBlock `json:"blocks"`
+}
+
+// OCRBlock carries a layout region in source-image pixels. BBox is
+// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
+// provider coordinates to this rectangle before returning blocks.
+type OCRBlock struct {
+	Text  string    `json:"text"`
+	Label string    `json:"label,omitempty"`
+	BBox  []float64 `json:"bbox,omitempty"`
+}
+
 type OCRFileResponse struct {
 	Text *string `json:"text"`
+	// Pages is optional structured output for internal parsing; nil means unavailable.
+	Pages []OCRPage `json:"-"`
+	// Warnings reports partial failures internally; the public response stays text-only.
+	Warnings []string `json:"-"`
 }
 
 type ListModelResponse struct {
@@ -215,14 +237,17 @@ type ModelList struct {
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat          string `json:"chat"`
-	AsyncChat     string `json:"async_chat"`
-	AsyncResult   string `json:"async_result"`
-	Embedding     string `json:"embedding"`
-	Rerank        string `json:"rerank"`
-	TTS           string `json:"tts"`
-	ASR           string `json:"asr"`
-	OCR           string `json:"ocr"`
+	Chat        string `json:"chat"`
+	AsyncChat   string `json:"async_chat"`
+	AsyncResult string `json:"async_result"`
+	Embedding   string `json:"embedding"`
+	Rerank      string `json:"rerank"`
+	TTS         string `json:"tts"`
+	ASR         string `json:"asr"`
+	OCR         string `json:"ocr"`
+	// Decision is the TypeSafe System One path: a separate endpoint from chat
+	// because it takes one request carrying many questions, not a message list.
+	Decision      string `json:"decision"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
 	Balance       string `json:"balance"`

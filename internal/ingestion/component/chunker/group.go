@@ -325,6 +325,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		if g[0].preserveOrder {
+			chunk["_preserve_order"] = true
+		}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -540,17 +543,17 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				meta[k] = json.RawMessage(v)
 			}
 			out = append(out, lineRecord{
-				text:         recordText,
-				docType:      dt,
-				imgID:        imgID,
-				image:        image,
-				layout:       it.Layout,
-				ckType:       it.CKType,
-				pdfPositions: it.PDFPositions,
-				positions:    it.Positions,
-				sheet:        it.Sheet,
-				sheetIndex:   it.SheetIndex,
-				parentMeta:   meta,
+				text:          recordText,
+				docType:       dt,
+				imgID:         imgID,
+				image:         image,
+				layout:        it.Layout,
+				pdfPositions:  it.PDFPositions,
+				positions:     it.Positions,
+				preserveOrder: it.PreserveOrder,
+				sheet:         it.Sheet,
+				sheetIndex:    it.SheetIndex,
+				parentMeta:    meta,
 			})
 		}
 		// TextParser intentionally emits one coordinate-free text item for the
@@ -558,7 +561,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		// so heading regexes can see headings after the first line. Structured
 		// media/table items and positioned text remain atomic, and the image
 		// payload stays out of per-line records so a blob is never duplicated.
-		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
+		plainText := itemDocType(it) == "text" && !isStructuralLayout(it.Layout)
 		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
 		if plainText && unpositioned && strings.Contains(text, "\n") {
 			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {

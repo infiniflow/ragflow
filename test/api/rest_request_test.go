@@ -139,6 +139,30 @@ func rawRESTRequest(t *testing.T, c *ServerTestConfig, method, path string, body
 	return readRESTResponse(t, c, method, requestURL, summary, started, resp, err)
 }
 
+// restUpload sends one multipart/form-data file plus optional text fields.
+func restUpload(t *testing.T, c *ServerTestConfig, method, path, fileField, filename string, content []byte, fields map[string]string) restResult {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for name, value := range fields {
+		if err := writer.WriteField(name, value); err != nil {
+			t.Fatalf("write multipart field %q: %v", name, err)
+		}
+	}
+	part, err := writer.CreateFormFile(fileField, filename)
+	if err != nil {
+		t.Fatalf("create multipart file field: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write multipart file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	summary := fmt.Sprintf("multipart file=%q bytes=%d", filename, len(content))
+	return rawRESTRequest(t, c, method, path, body.Bytes(), writer.FormDataContentType(), summary)
+}
+
 type documentUpload struct {
 	Name    string
 	Content []byte
@@ -286,6 +310,34 @@ func TestRESTHelperMultipartAndBinary(t *testing.T) {
 			_, _ = w.Write(files[0].Content)
 			return
 		}
+		if r.URL.Path == "/api/v1/upload" {
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse upload: %v", err)
+				return
+			}
+			defer r.MultipartForm.RemoveAll()
+			if got := r.FormValue("parent_id"); got != "root-1" {
+				t.Errorf("upload parent_id=%q", got)
+			}
+			parts := r.MultipartForm.File["file"]
+			if len(parts) != 1 || parts[0].Filename != "note.txt" {
+				t.Errorf("upload file parts=%d", len(parts))
+				return
+			}
+			f, err := parts[0].Open()
+			if err != nil {
+				t.Errorf("open upload: %v", err)
+				return
+			}
+			content, err := io.ReadAll(f)
+			f.Close()
+			if err != nil || string(content) != "hello multipart" {
+				t.Errorf("upload content=%q err=%v", content, err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"code":0,"data":{"id":"uploaded"}}`)
+			return
+		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Errorf("parse multipart: %v", err)
 			w.WriteHeader(http.StatusBadRequest)
@@ -318,6 +370,10 @@ func TestRESTHelperMultipartAndBinary(t *testing.T) {
 	r := rawRESTCall(t, c, http.MethodGet, "/documents/first", nil, "")
 	if r.Status != http.StatusOK || r.JSON != nil || !bytes.Equal(r.Body, files[0].Content) || r.Header.Get("Content-Disposition") != `attachment; filename="first.txt"` {
 		t.Fatal("binary response bytes or headers were lost")
+	}
+	r = restUpload(t, c, http.MethodPost, "/upload", "file", "note.txt", []byte("hello multipart"), map[string]string{"parent_id": "root-1"})
+	if object(t, restOK(t, r)["data"])["id"] != "uploaded" {
+		t.Fatal("multipart upload response was lost")
 	}
 }
 

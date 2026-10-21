@@ -29,10 +29,12 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 
 	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	want := []map[string]any{
-		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Title", "image": nil, "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
-		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1}},
+		// The table sits under heading "Title", so it carries the
+		// heading-location caption (mirrors Python __get_nearest_title).
+		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -41,8 +43,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 }
 
 // TestBuildDOCXJSONSections_EmptyTableSkipped verifies that a table
-// with no rows renders as "<table></table>" and is dropped by the
-// "if html == \"<table></table>\" { continue }" guard.
+// with no rows is dropped before it can become a section.
 func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	irJSON := `{"sections":[{"elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"keep"}]},
@@ -51,6 +52,123 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
 	if len(got) != 1 || got[0]["text"] != "keep" {
 		t.Fatalf("expected only the paragraph to survive, got %+v", got)
+	}
+}
+
+// TestBuildDOCXJSONSections_MergesSplitDocTable pins the fix for the
+// office_oxide .doc artifact where a table whose first row is a styled
+// header is emitted as a 1-row "header" table immediately followed by the
+// body table. The two fragments share the same column count and sit under
+// the same heading, so they must be rejoined into a single table item
+// (otherwise the chunker emits a header chunk + body chunk, each carrying
+// the same caption).
+func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
+	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
+	// header: 1 row x 3 cols; body: 2 rows x 3 cols — same width.
+	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
+		{"type":"heading","level":1,"content":[{"type":"text","text":"H"}]},
+		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
+		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
+	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
+
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	var tables []map[string]any
+	for _, it := range got {
+		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
+			tables = append(tables, it)
+		}
+	}
+	if len(tables) != 1 {
+		t.Fatalf("expected 1 merged table item, got %d: %#v", len(tables), got)
+	}
+	td, ok := tables[0]["table"].(*entity.TableData)
+	if !ok || td == nil {
+		t.Fatalf("merged table has no TableData: %#v", tables[0])
+	}
+	if len(td.Grid) != 3 {
+		t.Errorf("merged table should have 3 rows (1 header + 2 body), got %d: %#v", len(td.Grid), td.Grid)
+	}
+	if td.Caption != "Table Location: H" {
+		t.Errorf("merged table caption = %q, want %q", td.Caption, "Table Location: H")
+	}
+}
+
+// TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that
+// two adjacent tables of different column counts are NOT merged: they are
+// genuinely separate tables, not fragments of one.
+func TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate(t *testing.T) {
+	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
+	// a 1-row 3-col table followed by a 2-row 2-col table: different widths.
+	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
+		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
+		{"type":"table","rows":[{"cells":[%s,%s]},{"cells":[%s,%s]}]}
+	]}]}`, cell, cell, cell, cell, cell, cell, cell)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	var n int
+	for _, it := range got {
+		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 separate tables (different column counts), got %d: %#v", n, got)
+	}
+}
+
+// TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate is the key
+// regression guard for the 1-row merge gate: two genuinely separate multi-row
+// tables of the SAME width, stacked with only a blank paragraph between them
+// (so they are adjacent in the IR), must NOT be merged. Only a 1-row header
+// fragment is folded into the following table.
+func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) {
+	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
+	// table A: 2 rows x 3 cols; table B: 2 rows x 3 cols — same width, both
+	// multi-row, no element between. These are two distinct tables.
+	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
+		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]},
+		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
+	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	var tables []map[string]any
+	for _, it := range got {
+		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
+			tables = append(tables, it)
+		}
+	}
+	if len(tables) != 2 {
+		t.Fatalf("expected 2 separate multi-row tables, got %d: %#v", len(tables), got)
+	}
+	for i, tb := range tables {
+		td, ok := tb["table"].(*entity.TableData)
+		if !ok || td == nil {
+			t.Fatalf("table %d has no TableData: %#v", i, tb)
+		}
+		if len(td.Grid) != 2 {
+			t.Errorf("table %d should keep its 2 rows, got %d: %#v", i, len(td.Grid), td.Grid)
+		}
+	}
+}
+
+// TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit pins
+// that a 1-row header fragment is only merged when the body is the VERY NEXT
+// element. A paragraph (even blank) between them keeps them as distinct
+// tables, so the gate never reaches across intervening content.
+func TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit(t *testing.T) {
+	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
+	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
+		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
+		{"type":"paragraph","content":[{"type":"text","text":"note"}]},
+		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
+	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
+	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	var n int
+	for _, it := range got {
+		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 separate tables (paragraph between), got %d: %#v", n, got)
 	}
 }
 

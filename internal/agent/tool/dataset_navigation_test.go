@@ -207,6 +207,33 @@ func TestDatasetNavigation_DocScopeFiltersClusterFallback(t *testing.T) {
 	}
 }
 
+// TestDatasetNavigation_RecallFallbackDisablesDenseFallback pins the agentic
+// half of the split on the content-recall tier: when the nav tree routes
+// nothing the tool recalls by chunk content, and the model reads those chunks
+// as evidence, so no dense-only rescue there either.
+func TestDatasetNavigation_RecallFallbackDisablesDenseFallback(t *testing.T) {
+	fake := &navRoutingFake{}
+	prevNav := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prevNav) }()
+
+	prevSvc := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	defer func() { SetRetrievalService(prevSvc) }()
+
+	tool := NewDatasetNavigationByTree()
+	if _, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.Query == "" {
+		t.Fatal("content-recall tier was not exercised: the tool never reached the retrieval service")
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("dataset navigation is agentic and must disable the dense fallback")
+	}
+}
+
 // TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults pins that a blank
 // request value cannot DISABLE the configured default scope: [" "] has a
 // non-zero length, so it suppressed the default and then compacted to an empty

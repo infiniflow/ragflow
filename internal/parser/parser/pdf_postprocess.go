@@ -19,6 +19,10 @@ type pdfPostProcessOptions struct {
 	zoom               float64
 	enableMultiColumn  bool
 	flattenMediaToText bool
+	// parseMethod carries the PDFParser.ParseMethod so the DeepDoc analyzer can
+	// be resolved per request (in-process vs a registered external backend).
+	// Empty means the historical in-process default.
+	parseMethod string
 }
 
 func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOptions) {

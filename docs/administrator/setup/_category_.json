@@ -1,0 +1,11 @@
+{
+  "label": "Admin Setup",
+  "position": 0,
+  "link": {
+    "type": "generated-index",
+    "description": "Configure RAGFlow and set up the Admin Service."
+  },
+  "customProps": {
+    "categoryIcon": "LucideSettings"
+  }
+}

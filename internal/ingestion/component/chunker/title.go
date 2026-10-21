@@ -337,7 +337,9 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = lvl
 			continue
 		}
-		if rec.ckType == "heading" {
+		// Only the asserted "heading" marker bypasses the notTitle guard;
+		// model heuristics use "title" and go through matchLayoutLevel below.
+		if isHeadingLayout(rec.layout) {
 			out[i] = fallbackLevel
 			continue
 		}
@@ -635,17 +637,17 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text         string
-	docType      string
-	imgID        *string
-	image        string
-	layout       string
-	ckType       string
-	pdfPositions json.RawMessage
-	positions    json.RawMessage
-	sheet        string
-	sheetIndex   *int
-	parentMeta   map[string]any
+	text          string
+	docType       string
+	imgID         *string
+	image         string
+	layout        string
+	pdfPositions  json.RawMessage
+	positions     json.RawMessage
+	preserveOrder bool
+	sheet         string
+	sheetIndex    *int
+	parentMeta    map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }

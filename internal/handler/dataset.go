@@ -79,7 +79,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 
@@ -224,6 +224,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":           common.CodeSuccess,
 		"data":           data,
+		"message":        "success",
 		"total_datasets": total,
 	})
 }
@@ -276,7 +277,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetDataset handles GET /api/v1/datasets/:dataset_id.
@@ -296,7 +297,7 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // UpdateDataset Update a dataset.
@@ -467,7 +468,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
@@ -486,7 +487,7 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
@@ -511,7 +512,7 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
@@ -731,7 +732,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetKnowledgeGraph handles GET /api/v1/datasets/:dataset_id/graph.
@@ -1163,7 +1164,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.SuccessWithData(c, resp, "success")
 }
 
 // SearchDataset searches chunks within a single dataset based on a question.
@@ -1222,7 +1223,7 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.SuccessWithData(c, resp, "success")
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {

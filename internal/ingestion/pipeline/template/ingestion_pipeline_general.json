@@ -36,7 +36,6 @@
                             "llm_id": ""
                         },
                         "doc": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -46,7 +45,6 @@
                         },
                         "docx": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -56,7 +54,6 @@
                             "vlm": {}
                         },
                         "html": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -67,7 +64,6 @@
                         },
                         "markdown": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -80,7 +76,6 @@
                         },
                         "pdf": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -98,7 +93,6 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -111,7 +105,6 @@
                             "vlm": {}
                         },
                         "text&code": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -134,7 +127,6 @@
                         },
                         "image": {
                             "ocr_enabled": true,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -161,7 +153,6 @@
                                 "body",
                                 "attachments"
                             ],
-                            "output_format": "text",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -325,7 +316,6 @@
                                 {
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -335,7 +325,6 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -345,7 +334,6 @@
                                 {
                                     "fileFormat": "markdown",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ],
@@ -353,21 +341,18 @@
                                 },
                                 {
                                     "fileFormat": "text&code",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
                                 },
                                 {
                                     "fileFormat": "html",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
                                 },
                                 {
                                     "fileFormat": "doc",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
@@ -375,7 +360,6 @@
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ],
@@ -384,7 +368,6 @@
                                 {
                                     "fileFormat": "image",
                                     "ocr_enabled": true,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
@@ -401,7 +384,6 @@
                                         "body",
                                         "attachments"
                                     ],
-                                    "output_format": "text",
                                     "preprocess": [
                                         "main_content"
                                     ]
