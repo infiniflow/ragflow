@@ -198,7 +198,7 @@ var (
 	epubEntityRe = regexp.MustCompile(`&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);`)
 	epubWSRe     = regexp.MustCompile(`\s+`)
 	// Closing tags of block elements, or a void <hr>, that end a run of text.
-	epubBlockEndRe = regexp.MustCompile(`^(?:</(?:title|section|article|header|footer|aside|nav|figure|figcaption|caption|table|pre|address|dl|dt|dd|ul|ol)[\s>]|<hr[\s/>])`)
+	epubBlockEndRe = regexp.MustCompile(`^(?:</(?:title|main|section|article|header|footer|aside|nav|figure|figcaption|caption|table|pre|address|dl|dt|dd|ul|ol)[\s>]|<hr[\s/>])`)
 )
 
 // extractEPUBTextItems reads every spine item and returns one text item per
