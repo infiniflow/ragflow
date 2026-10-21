@@ -43,12 +43,12 @@ func TestMergePositionMatrixAcceptsPageLists(t *testing.T) {
 }
 
 // TestMergePositionMatrixPreservesNonNumericRows pins that a malformed row is
-// kept verbatim instead of being converted to zeros by the scalar fast path.
+// kept verbatim instead of being silently coerced to zeros.
 func TestMergePositionMatrixPreservesNonNumericRows(t *testing.T) {
 	src := json.RawMessage(`[[1,"bad",100,10,100]]`)
 	got := mergePositionMatrix(src)
-	if _, ok := got.([][]any); !ok {
-		t.Fatalf("mergePositionMatrix = %#v, want raw rows for non-numeric input", got)
+	if len(got) != 1 {
+		t.Fatalf("mergePositionMatrix = %#v, want the raw row", got)
 	}
 	raw, err := json.Marshal(got)
 	if err != nil {

@@ -422,17 +422,15 @@ func pdfPosRowLess(a, b []float64) bool {
 // no source carries any usable coordinates.
 //
 // The page cell may be a scalar (deepdoc's normalized form) or a list (the
-// raw layout.SectionsToJSON form); both are preserved verbatim so the
-// downstream PositionsFromMatrix can decode either. A source may also be a
-// single flat 5-tuple rather than a list of rows (TCADP and some external
-// producers emit that shape). Accepting all three keeps the Title family in
-// line with General/Token, which pass positions through without this merge.
+// raw layout.SectionsToJSON form, also seen in external/historical payloads);
+// both are preserved verbatim so the downstream PositionsFromMatrix can decode
+// either. A source may also be a single flat 5-tuple rather than a list of
+// rows (TCADP and some external producers emit that shape).
 //
-// The concrete return type keeps the historical wire shape: an all-scalar
-// matrix is [][]float64, while a page-list matrix is [][]any. Callers only
-// JSON-marshal the result, and existing consumers/tests type-assert the
-// scalar form.
-func mergePositionMatrix(sources ...json.RawMessage) any {
+// Rows stay []any because a page cell may itself be a list; the generic shape
+// is what ChunkDoc.ToMap emits for such a matrix, so one representation flows
+// through the chunker and the index boundary.
+func mergePositionMatrix(sources ...json.RawMessage) [][]any {
 	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
@@ -458,30 +456,7 @@ func mergePositionMatrix(sources ...json.RawMessage) any {
 	sort.SliceStable(out, func(i, j int) bool {
 		return positionRowLess(out[i], out[j])
 	})
-	return positionMatrixWire(out)
-}
-
-// positionMatrixWire returns [][]float64 only when every element of every row
-// is numeric (the historical shape). A page-list row or any non-numeric
-// element keeps the raw rows so callers can preserve the value instead of
-// silently turning it into 0.
-func positionMatrixWire(rows [][]any) any {
-	for _, row := range rows {
-		for i := range row {
-			if _, ok := positionRowNumber(row[i]); !ok {
-				return rows
-			}
-		}
-	}
-	scalar := make([][]float64, 0, len(rows))
-	for _, row := range rows {
-		nums := make([]float64, len(row))
-		for i := range row {
-			nums[i], _ = positionRowNumber(row[i])
-		}
-		scalar = append(scalar, nums)
-	}
-	return scalar
+	return out
 }
 
 // decodePositionRows accepts both the nested matrix form and a single flat
