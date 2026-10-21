@@ -388,42 +388,6 @@ func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.D
 	return result == "OK", nil
 }
 
-// GetOrCreateKey atomically retrieves an existing key or creates a new one
-// Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
-func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (string, error) {
-	if r.client == nil {
-		return "", nil
-	}
-	// First, try to get the existing key
-	existingKey, err := r.client.Get(ctx, key).Result()
-	if err == nil {
-		common.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
-		// Successfully retrieved existing key
-		return existingKey, nil
-	}
-
-	// Use SETNX to atomically set the key only if it doesn't exist
-	// SETNX returns true if the key was set, false if it already existed
-	success, err := r.client.SetNX(ctx, key, value, 0).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %w", err)
-	}
-
-	if success {
-		// This goroutine successfully set the key
-		return value, nil
-	}
-
-	// SETNX failed, meaning another goroutine set the key concurrently
-	// Retrieve and return that key
-	finalKey, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %w", err)
-	}
-
-	return finalKey, nil
-}
-
 // SAdd adds member to set
 func (r *Client) SAdd(ctx context.Context, key string, member string) bool {
 	if r.client == nil {
