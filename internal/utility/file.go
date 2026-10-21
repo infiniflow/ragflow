@@ -84,17 +84,17 @@ func GetFileType(filename string) FileType {
 	switch suffix {
 	case "pdf":
 		return FileTypePDF
-	case "xls":
+	case "xls", "et", "ett":
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
 	case "csv":
 		return FileTypeCSV
-	case "doc":
+	case "doc", "wps", "wpt":
 		return FileTypeDOC
 	case "docx":
 		return FileTypeDOCX
-	case "ppt":
+	case "ppt", "dps", "dpt":
 		return FileTypePPT
 	case "pptx":
 		return FileTypePPTX
@@ -143,7 +143,7 @@ func FilenameType(filename string) FileType {
 
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
-		"csv", "txt", "ini", "xls", "xlsx", "wps", "rtf", "hlp", "pages", "numbers", "key",
+		"csv", "txt", "ini", "xls", "xlsx", "wps", "wpt", "et", "ett", "dps", "dpt", "rtf", "hlp", "pages", "numbers", "key",
 		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}

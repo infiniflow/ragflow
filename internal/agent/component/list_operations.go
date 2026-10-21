@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -289,7 +290,14 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 		if raw == nil {
 			items = []any{}
 		} else {
-			return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+			rv := reflect.ValueOf(raw)
+			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+				return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+			}
+			items = make([]any, rv.Len())
+			for i := range items {
+				items[i] = rv.Index(i).Interface()
+			}
 		}
 	}
 	// A typed nil []any satisfies the assertion above (ok=true, items=nil)

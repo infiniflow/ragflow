@@ -95,7 +95,6 @@ type Writer interface {
 // folded descriptions and the union of source docs/chunks. It is written as a
 // scope_kwd="dataset" row. Relations carry FromEntity/ToEntity instead of Name.
 type StructureBucket struct {
-	CompileType    string
 	Name           string
 	Type           string
 	Description    string   // folded entity descriptions
@@ -569,13 +568,6 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			"source_chunk_ids":     b.SourceChunkIDs,
 			"create_time":          now.Format("2006-01-02 15:04:05"),
 			"create_timestamp_flt": float64(now.Unix()),
-		}
-		if b.CompileType != "" {
-			extra, err := json.Marshal(map[string]string{"compile_type": b.CompileType})
-			if err != nil {
-				return err
-			}
-			row["extra"] = string(extra)
 		}
 		if b.TemplateID != "" {
 			row["compilation_template_ids"] = []string{b.TemplateID}

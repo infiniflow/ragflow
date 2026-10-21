@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 6
 title: Database Change Log
 sidebar_label: Database Change Log
 slug: /database_change_log
