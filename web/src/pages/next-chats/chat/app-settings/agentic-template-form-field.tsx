@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useFetchAgenticRagConfig } from '@/hooks/use-chat-request';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useEffect } from 'react';
-import { useFormContext, useFormState, useWatch } from 'react-hook-form';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
@@ -31,15 +31,15 @@ export function AgenticTemplateFormField({
   const { data: config } = useFetchAgenticRagConfig(id);
 
   const value = useWatch({ control, name });
-  const { isDirty } = useFormState({ control, name });
   const defaultContent = config?.defaults.content;
 
   // The template arrives after the form's own reset; fill it only while the
-  // field is untouched and blank, so late data never overwrites a user edit.
+  // field has no value. An empty string is an explicit edit, and the submit
+  // path maps it back to the shipped template.
   useEffect(() => {
-    if (!config || isDirty || value?.trim()) return;
+    if (!config || value != null) return;
     setValue(name, config.override?.content ?? config.defaults.content);
-  }, [config, isDirty, value, name, setValue]);
+  }, [config, value, name, setValue]);
 
   const handleReset = () => {
     if (defaultContent === undefined) return;
