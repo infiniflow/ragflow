@@ -52,7 +52,7 @@ func positionRowsFromAny(v []any) ([][]any, bool) {
 	for _, e := range v {
 		row, ok := positionRowFromAny(e)
 		if !ok {
-			return nil, false
+			continue
 		}
 		rows = append(rows, row)
 	}
