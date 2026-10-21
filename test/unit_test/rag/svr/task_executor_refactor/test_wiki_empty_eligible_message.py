@@ -57,6 +57,21 @@ async def _await_inline(fn, *args, **kwargs):
     return fn(*args, **kwargs)
 
 
+def _run(coro):
+    """Run ``coro`` on a loop owned by this test.
+
+    ``asyncio.run`` goes through the thread's event-loop policy, which tests
+    elsewhere in the suite leave pointing at a closed loop ("Event loop is
+    closed" on CI). A private loop keeps these cases independent of collection
+    order and of whatever the previous test left behind.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
 _STUB_NAMES = (
     "common",
     "common.constants",
@@ -260,6 +275,10 @@ class _RecordingConn:
 
 def _patch_wiki_module(monkeypatch, module, conn):
     monkeypatch.setattr(module, "settings", SimpleNamespace(docStoreConn=conn))
+    # Never fall back to the real ``thread_pool_exec``: it submits to the
+    # running loop's executor, coupling these cases to loop state left behind
+    # by other tests.
+    monkeypatch.setattr(module, "thread_pool_exec", _await_inline)
     monkeypatch.setattr(module, "_WIKI_MODE_COLUMNS_ENSURED", set())
     base = ModuleType("common.doc_store.doc_store_base")
     base.OrderByExpr = type("OrderByExpr", (), {})
@@ -273,7 +292,7 @@ def test_wiki_save_mode_ensures_columns_before_insert(monkeypatch):
     conn = _RecordingConn()
     _patch_wiki_module(monkeypatch, module, conn)
 
-    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "entity", "openai:embd:m1"))
+    _run(module._wiki_save_mode("tenant_1", "kb_1", "entity", "openai:embd:m1"))
 
     kinds = [call[0] for call in conn.calls]
     assert kinds == ["ensure_columns", "insert"]
@@ -291,8 +310,8 @@ def test_wiki_save_mode_upgrades_each_table_once(monkeypatch):
     conn = _RecordingConn()
     _patch_wiki_module(monkeypatch, module, conn)
 
-    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "entity"))
-    asyncio.run(module._wiki_save_mode("tenant_1", "kb_1", "topic"))
+    _run(module._wiki_save_mode("tenant_1", "kb_1", "entity"))
+    _run(module._wiki_save_mode("tenant_1", "kb_1", "topic"))
 
     assert [call[0] for call in conn.calls].count("ensure_columns") == 1
     assert [call[0] for call in conn.calls].count("insert") == 2
@@ -305,7 +324,7 @@ def test_wiki_load_mode_ensures_columns_before_reading(monkeypatch):
     conn = _RecordingConn()
     _patch_wiki_module(monkeypatch, module, conn)
 
-    assert asyncio.run(module._wiki_load_mode("tenant_1", "kb_1")) is None
+    assert _run(module._wiki_load_mode("tenant_1", "kb_1")) is None
     assert [call[0] for call in conn.calls] == ["ensure_columns", "search"]
 
 
@@ -315,7 +334,7 @@ def test_wiki_load_mode_survives_search_failure(monkeypatch):
     conn = _RecordingConn(search_error=RuntimeError("column not found"))
     _patch_wiki_module(monkeypatch, module, conn)
 
-    assert asyncio.run(module._wiki_load_mode("tenant_1", "kb_1")) is None
+    assert _run(module._wiki_load_mode("tenant_1", "kb_1")) is None
 
 
 def test_wiki_ensure_mode_columns_skips_engines_without_helper(monkeypatch):
@@ -325,7 +344,7 @@ def test_wiki_ensure_mode_columns_skips_engines_without_helper(monkeypatch):
     conn = _RecordingConn(ensure=False)
     _patch_wiki_module(monkeypatch, module, conn)
 
-    asyncio.run(module._wiki_ensure_mode_columns("kb_1", "ragflow_tenant_1"))
+    _run(module._wiki_ensure_mode_columns("kb_1", "ragflow_tenant_1"))
 
     assert conn.calls == []
     assert ("ragflow_tenant_1", "kb_1") in module._WIKI_MODE_COLUMNS_ENSURED
