@@ -91,35 +91,37 @@ export function SingleChatBox({ conversation }: IProps) {
 
   return (
     <section className="flex flex-col h-full gap-4">
-      <div
-        ref={messageContainerRef}
-        className="relative p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
-      >
-        <div className="w-full pr-5">
-          {messages?.map((message, i) => (
-            <MessageItem
-              loading={
-                message.role === MessageType.Assistant &&
-                sendLoading &&
-                messages.length - 1 === i
-              }
-              key={buildMessageUuidWithRole(message)}
-              item={message}
-              nickname={userInfo.nickname}
-              avatar={userInfo.avatar}
-              avatarDialog={currentDialog.icon}
-              reference={messageReferences.get(message) ?? EmptyReference}
-              clickDocumentButton={clickDocumentButton}
-              index={i}
-              isLast={i === messages.length - 1}
-              removeMessageById={removeMessageById}
-              deleteDisabled={message.awaitingServerId}
-              regenerateMessage={regenerateMessage}
-              sendLoading={sendLoading}
-            />
-          ))}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={messageContainerRef}
+          className="p-5 h-full overflow-auto scrollbar-auto"
+        >
+          <div className="w-full pr-5">
+            {messages?.map((message, i) => (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  messages.length - 1 === i
+                }
+                key={buildMessageUuidWithRole(message)}
+                item={message}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={messageReferences.get(message) ?? EmptyReference}
+                clickDocumentButton={clickDocumentButton}
+                index={i}
+                isLast={i === messages.length - 1}
+                removeMessageById={removeMessageById}
+                deleteDisabled={message.awaitingServerId}
+                regenerateMessage={regenerateMessage}
+                sendLoading={sendLoading}
+              />
+            ))}
+          </div>
+          <div ref={scrollRef} />
         </div>
-        <div ref={scrollRef} />
         {!isAtBottom && (
           <Button
             variant="secondary"

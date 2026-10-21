@@ -494,7 +494,10 @@ export const useScrollToBottom = (
     const handleScroll = () => {
       const previousScrollTop = lastScrollTopRef.current;
       const { scrollTop } = container;
-      lastScrollTopRef.current = scrollTop;
+      lastScrollTopRef.current = Math.max(
+        previousScrollTop ?? scrollTop,
+        scrollTop,
+      );
 
       const nearBottom = checkIfNearBottom();
       let atBottom: boolean;
@@ -537,10 +540,13 @@ export const useScrollToBottom = (
       // Overshoot and let the browser clamp. `scrollHeight - clientHeight` is a
       // difference of two rounded values, so in Firefox — where the real maximum
       // is fractional — it can land just short of the bottom.
+      isAtBottomRef.current = true;
+      setIsAtBottom(true);
       container.scrollTo({
         top: container.scrollHeight,
         behavior: 'auto',
       });
+      lastScrollTopRef.current = container.scrollTop;
     }
   }, [containerRef]);
 
