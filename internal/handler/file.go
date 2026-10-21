@@ -46,6 +46,11 @@ func respondFileServiceError(c *gin.Context, err error) {
 	if respondPermissionErrorIf(c, err, true) {
 		return
 	}
+	var codedErr *common.CodedError
+	if errors.As(err, &codedErr) {
+		common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+		return
+	}
 	jsonInternalError(c, err)
 }
 
@@ -139,7 +144,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 // @Tags file
 // @Accept json
 // @Produce json
-// @Param file_id query string true "file ID"
+// @Param id path string true "file ID"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/parent [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
@@ -150,8 +155,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	}
 	userID := user.ID
 
-	// Get file_id from query
-	fileID := c.Query("file_id")
+	fileID := c.Param("id")
 	if fileID == "" {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
 		return

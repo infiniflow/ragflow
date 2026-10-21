@@ -127,7 +127,14 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		if irJSON == "" {
 			return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
 		}
-		sections := buildDOCXJSONSections(irJSON, budget)
+		// TEMPORARY Caption-styled-paragraph detection (office_oxide does
+		// not yet expose paragraph styles; yfedoseev/office_oxide#455).
+		// Remove once office_oxide is upgraded to emit them.
+		tableCaptions, capErr := extractDOCXTableCaptions(data)
+		if capErr != nil {
+			tableCaptions = nil
+		}
+		sections := buildDOCXJSONSectionsWithCaptions(irJSON, budget, tableCaptions)
 		if err := ctx.Err(); err != nil {
 			return ParseResult{Err: err}
 		}
@@ -151,7 +158,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{
 			OutputFormat: "json",
 			File:         fileMeta,
-			JSON:         sections,
+			JSON:         MapsToItems(sections),
 			Warnings:     budget.warnings(),
 		}
 	}

@@ -85,7 +85,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/parser/parser"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -189,15 +189,11 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	upstream, err := decodeChunkerFromUpstream(decInputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	delimPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatMarkdown:
@@ -247,7 +243,22 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
-	data, err := json.Marshal(stripChunkerRuntimeTimestamps(inputs))
+	// Fast path: the parser emits typed []parser.DocItem. Convert it to
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
+	// item's typed fields and never calls DocItem.ToMap), then let the JSON
+	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// chunker free of the historical map intermediate for the in-memory
+	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
+	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
+	inputs = stripChunkerRuntimeTimestamps(inputs)
+	if docs, ok := inputs["json"].([]parser.DocItem); ok && len(docs) > 0 {
+		conv, _, err := schema.ChunkDocsFromDocItem(docs)
+		if err != nil {
+			return out, err
+		}
+		inputs["json"] = conv
+	}
+	data, err := json.Marshal(inputs)
 	if err != nil {
 		return out, err
 	}
@@ -257,20 +268,8 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
-	// A structured table carries no markup text of its own. Derive a plain
-	// (tag-free) text from its cells so consumers that read Text — TokenChunker
-	// and the embed path — still receive a searchable body when the producer
-	// emitted only the TableData contract (decision 1-B: no HTML in Text).
-	for i := range out.JSONResult {
-		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
-			out.JSONResult[i].Text = tableutil.RenderTableText(out.JSONResult[i].TableData)
-		}
-	}
-	for i := range out.Chunks {
-		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
-			out.Chunks[i].Text = tableutil.RenderTableText(out.Chunks[i].TableData)
-		}
-	}
+	materializeTableText(out.JSONResult)
+	materializeTableText(out.Chunks)
 	return out, nil
 }
 
@@ -1827,55 +1826,6 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keep
 		}
 	}
 	return out
-}
-
-// compileChildrenPattern is the children_delimiters version of
-// compileDelimPattern. Returns nil when no delimiters exist.
-// compileChildrenPattern builds the children-split regex from a
-// `children_delimiters` list. Every non-empty entry is active (including bare
-// ones), and backtick-wrapped entries contribute their inner content — see
-// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
-// consistent with the main delimiter list (backtick stripping + rune-descending
-// order) instead of re-implementing a divergent copy.
-func compileChildrenPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterPatternList(delims, true)
-}
-
-// stringFromInputs returns the string value at the first matching key
-// in `keys`, or ("", false) when none is set.
-func stringFromInputs(inputs map[string]any, keys ...string) (string, bool) {
-	for _, k := range keys {
-		if v, ok := inputs[k].(string); ok {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-// chunksFromInputs returns the chunk list from inputs as a uniform
-// []map[string]any, or nil when absent. Both []map[string]any (the
-// JSON-decoded form) and []any (the slice-of-mixed form) are handled.
-//
-// Two upstream keys are accepted, in priority order:
-//
-//   - "chunks" — canonical post-chunker shape (chunker → chunker
-//     re-entry, test fixtures, downstream stages).
-//   - "json"   — the parser-structured-output key (Parser
-//     component emits under "json"; we accept it
-//     so a token-chunker can run directly after
-//     a parser without an intermediate reshape).
-func chunksFromInputs(inputs map[string]any) []schema.ChunkDoc {
-	for _, key := range []string{"chunks", "json"} {
-		v, ok := inputs[key]
-		if !ok {
-			continue
-		}
-		chunks, found, err := schema.ChunkDocsFromAny(v)
-		if err == nil && found {
-			return chunks
-		}
-	}
-	return nil
 }
 
 func intValue(v *int) int {

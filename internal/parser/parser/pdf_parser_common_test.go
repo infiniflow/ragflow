@@ -64,39 +64,39 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if len(res.JSON) != 2 {
 		t.Fatalf("JSON len = %d, want 2", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["layout"], "title"; got != want {
+	if got, want := res.JSON[0].ToMap()["layout"], "title"; got != want {
 		t.Fatalf("JSON[0].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["page_number"], 1; got != want {
+	if got, want := res.JSON[0].ToMap()["page_number"], 1; got != want {
 		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "text"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
-	pdfPositions, ok := res.JSON[0]["_pdf_positions"].([][]any)
+	pdfPositions, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
 	if !ok {
-		t.Fatalf("JSON[0]._pdf_positions type = %T, want [][]any", res.JSON[0]["_pdf_positions"])
+		t.Fatalf("JSON[0]._pdf_positions type = %T, want [][]any", res.JSON[0].ToMap()["_pdf_positions"])
 	}
 	if len(pdfPositions) != 1 || pdfPositions[0][0] != 1 {
 		t.Fatalf("JSON[0]._pdf_positions = %+v, want canonical 1-based positions", pdfPositions)
 	}
-	if got := res.JSON[0]["positions"]; got == nil {
+	if got := res.JSON[0].ToMap()["positions"]; got == nil {
 		t.Fatal("JSON[0].positions missing after normalization")
 	}
-	if got, want := res.JSON[1]["doc_type_kwd"], "image"; got != want {
+	if got, want := res.JSON[1].ToMap()["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("JSON[1].doc_type_kwd = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["page_number"], 2; got != want {
+	if got, want := res.JSON[1].ToMap()["page_number"], 2; got != want {
 		t.Fatalf("JSON[1].page_number = %v, want %v", got, want)
 	}
-	secondPDFPositions, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	secondPDFPositions, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
 	if !ok {
-		t.Fatalf("JSON[1]._pdf_positions type = %T, want [][]any", res.JSON[1]["_pdf_positions"])
+		t.Fatalf("JSON[1]._pdf_positions type = %T, want [][]any", res.JSON[1].ToMap()["_pdf_positions"])
 	}
 	if len(secondPDFPositions) != 1 || secondPDFPositions[0][0] != 2 {
 		t.Fatalf("JSON[1]._pdf_positions = %+v, want canonical 1-based positions (DeepDoc page 1 → 2)", secondPDFPositions)
 	}
-	if got, want := res.JSON[1]["image"], "data:image/png;base64,aGVsbG8="; got != want {
+	if got, want := res.JSON[1].ToMap()["image"], "data:image/png;base64,aGVsbG8="; got != want {
 		t.Fatalf("JSON[1].image = %v, want %v", got, want)
 	}
 }
@@ -128,7 +128,7 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if got := res.JSON[0]["doc_type_kwd"]; got != "image" {
+	if got := res.JSON[0].ToMap()["doc_type_kwd"]; got != "image" {
 		t.Fatalf("figure caption with positions doc_type_kwd = %v, want image", got)
 	}
 
@@ -148,7 +148,7 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 	if res2.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res2.Err)
 	}
-	if got := res2.JSON[0]["doc_type_kwd"]; got != "text" {
+	if got := res2.JSON[0].ToMap()["doc_type_kwd"]; got != "text" {
 		t.Fatalf("figure caption with image but no positions doc_type_kwd = %v, want text", got)
 	}
 }
@@ -211,10 +211,10 @@ func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
 	res := pdfParseResultToJSON("one-based.pdf", parsed)
 	// DeepDoc page 3 is 0-indexed (the 4th page); normalizePDFPageNumber
 	// converts it to 1-indexed page 4.
-	if got, want := res.JSON[0]["page_number"], 4; got != want {
+	if got, want := res.JSON[0].ToMap()["page_number"], 4; got != want {
 		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "table"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "table"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
 }
@@ -227,7 +227,7 @@ func TestPDFParseResultToJSON_EmptySectionsStillEmitPlaceholder(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "text"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
 }
@@ -261,13 +261,13 @@ func TestPDFParseResultToJSON_DefaultKeepsHeaderFooterLikePython(t *testing.T) {
 	// Sections are now sorted by (page, top, left). Header and Footer have
 	// no position data (page=0, top=0), Body has top=30, so the sorted order
 	// is Header/Footer (tied top=0, stable) then Body (top=30).
-	if got, want := res.JSON[0]["text"], "Header"; got != want {
+	if got, want := res.JSON[0].ToMap()["text"], "Header"; got != want {
 		t.Fatalf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["text"], "Footer"; got != want {
+	if got, want := res.JSON[1].ToMap()["text"], "Footer"; got != want {
 		t.Fatalf("JSON[1].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["text"], "Body"; got != want {
+	if got, want := res.JSON[2].ToMap()["text"], "Body"; got != want {
 		t.Fatalf("JSON[2].text = %v, want %v", got, want)
 	}
 }
@@ -447,11 +447,6 @@ func TestPDFParser_ValidateParseMethod(t *testing.T) {
 		t.Fatalf("default validateParseMethod: %v", err)
 	}
 
-	p.ConfigureFromSetup(map[string]any{"parse_method": "PaddleOCR"})
-	if err := p.validateParseMethod(); err != nil {
-		t.Fatalf("validateParseMethod(PaddleOCR): %v", err)
-	}
-
 	p.ConfigureFromSetup(map[string]any{"parse_method": "tenant@provider@SoMark"})
 	if err := p.validateParseMethod(); err != nil {
 		t.Fatalf("validateParseMethod(tenant@provider@SoMark): %v", err)
@@ -550,28 +545,11 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 	}
 }
 
-// TestPDFParseMethodTablesAgree pins the relationship between the two
-// vocabulary tables in pdf_parser_common.go: every canonical token a
-// spelling maps to must be executable by PDFParser, and every executable
-// token must be reachable from some spelling. The only intended divergences
-// are:
-//
-//   - "" (the unset sentinel) is accepted by the parser as the default
-//     method but has no spelling, so IsPDFParseMethod("") stays false;
-//   - "monkeyocrv2" is dispatched by the ingestion vision dispatcher
-//     before PDFParser runs, so it is a recognized method without being
-//     executable by the parser switch itself.
-//
-// Any other difference means one table was updated without the other: a
-// spelling whose canonical token is not executable dies in
-// validateParseMethod, and an executable token without a spelling is
-// misclassified as a VLM model name by Check and the dispatcher (the
-// "Plain Text" bug class).
+// TestPDFParseMethodTablesAgree verifies executable parser methods and
+// dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
-	const (
-		unsetSentinel     = ""
-		dispatcherHandled = "monkeyocrv2"
-	)
+	const unsetSentinel = ""
+	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {
@@ -579,12 +557,12 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 			continue
 		}
 		reachable[canonical] = true
-		if canonical == dispatcherHandled {
+		if dispatcherHandled[canonical] {
 			continue
 		}
 		if _, ok := supportedPDFParseMethods[canonical]; !ok {
-			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like %q",
-				spelling, canonical, canonical, dispatcherHandled)
+			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like PaddleOCR",
+				spelling, canonical, canonical)
 		}
 	}
 	for supported := range supportedPDFParseMethods {
@@ -593,8 +571,10 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 		}
 		t.Errorf("supportedPDFParseMethods contains %q that no spelling maps to; without a spelling, Check() and the vision dispatcher route it to the VLM path", supported)
 	}
-	if !IsPDFParseMethod(dispatcherHandled) {
-		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
+	for method := range dispatcherHandled {
+		if !IsPDFParseMethod(method) {
+			t.Errorf("dispatcher-handled method %q must remain recognized", method)
+		}
 	}
 }
 
@@ -671,25 +651,25 @@ func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 	}
 
 	// Figure must retain positions but NOT inline an image.
-	figPos, ok := res.JSON[0]["_pdf_positions"].([][]any)
+	figPos, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
 	if !ok || len(figPos) == 0 {
-		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0]["_pdf_positions"])
+		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0].ToMap()["_pdf_positions"])
 	}
-	if img, _ := res.JSON[0]["image"].(string); img != "" {
+	if img, _ := res.JSON[0].ToMap()["image"].(string); img != "" {
 		t.Fatalf("Figure should not inline image under cgo, got %q", img)
 	}
 
 	// Table likewise retains positions, no inline image.
-	tblPos, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	tblPos, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
 	if !ok || len(tblPos) == 0 {
-		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1]["_pdf_positions"])
+		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1].ToMap()["_pdf_positions"])
 	}
-	if img, _ := res.JSON[1]["image"].(string); img != "" {
+	if img, _ := res.JSON[1].ToMap()["image"].(string); img != "" {
 		t.Fatalf("Table should not inline image under cgo, got %q", img)
 	}
 
 	// Plain text: no image, positions retained.
-	if img, _ := res.JSON[2]["image"].(string); img != "" {
+	if img, _ := res.JSON[2].ToMap()["image"].(string); img != "" {
 		t.Fatalf("Text should not inline image, got %q", img)
 	}
 }
@@ -719,13 +699,13 @@ func TestPDFParseResultToJSON_FigureCaptionNoInline(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
 	}
-	if pos, ok := res.JSON[0]["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
+	if pos, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
 		t.Fatal("figure caption should retain _pdf_positions for on-demand crop")
 	}
-	if image, _ := res.JSON[0]["image"].(string); image != "" {
+	if image, _ := res.JSON[0].ToMap()["image"].(string); image != "" {
 		t.Fatalf("figure caption should not be inlined by the parser, got %q", image)
 	}
 }
@@ -875,5 +855,14 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+}
+
+func TestPDFParserPaddleOCRRequiresTenantDispatch(t *testing.T) {
+	p := NewPDFParser()
+	p.ConfigureFromSetup(map[string]any{"parse_method": "paddleocr"})
+	result := p.ParseWithResult(t.Context(), "document.pdf", []byte("%PDF-1.4"))
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "unsupported PDF parse_method") {
+		t.Fatalf("standalone parser must not submit OCR jobs: %v", result.Err)
 	}
 }

@@ -34,6 +34,7 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
 	"net/url"
 	"path"
@@ -64,7 +65,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 				"size":     0,
 				"encoding": "utf-8",
 			},
-			JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
@@ -97,7 +98,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 			"size":     len(data),
 			"encoding": detectedEnc,
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -194,7 +195,7 @@ var (
 	epubScriptRe = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
 	epubStyleRe  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 	epubTagRe    = regexp.MustCompile(`<[^>]+>`)
-	epubEntityRe = regexp.MustCompile(`&[a-zA-Z]+;`)
+	epubEntityRe = regexp.MustCompile(`&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);`)
 	epubWSRe     = regexp.MustCompile(`\s+`)
 )
 
@@ -337,6 +338,13 @@ func xmlEntityValue(entity string) string {
 	case "&hellip;":
 		return "…"
 	default:
-		return entity
+		// Numeric references (&#8217;, &#x2014;, and &#160; for a
+		// non-breaking space, which XHTML has no named entity for) and the
+		// other HTML named entities. One html cannot resolve stays as written.
+		decoded := html.UnescapeString(entity)
+		if decoded == "\u00a0" {
+			return " "
+		}
+		return decoded
 	}
 }

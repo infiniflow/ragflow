@@ -35,9 +35,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// Elasticsearch it pushes the regex down to a native `regexp` query; on engines
-// without native regex support it falls back to a broad recall + in-memory RE2
-// filter. It is stateless and safe to share across goroutines.
+// Elasticsearch it pushes the regex down to a native `regexp` query, and on
+// Infinity to a native `regex()` filter; on engines without native regex
+// support it falls back to a broad recall + in-memory RE2 filter. It is
+// stateless and safe to share across goroutines.
 type GrepAdapter struct {
 	docEngine engine.DocEngine
 }
@@ -48,7 +49,7 @@ func NewGrepAdapter(docEngine engine.DocEngine) *GrepAdapter {
 }
 
 // regexpSearchable is the narrow engine capability for native regex search.
-// *elasticsearch.Engine implements it; other engines do not.
+// *elasticsearch.Engine and *infinity.Engine implement it; other engines do not.
 type regexpSearchable interface {
 	SearchByRegexp(ctx context.Context, req *enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error)
 }
@@ -56,9 +57,10 @@ type regexpSearchable interface {
 // ListByDocIDs reads the full original chunks belonging to the given document
 // ids, skipping graph (relation/entity/location) chunks so callers get the
 // actual document text. It backs the list_chunks deep-read runtime.
-// Because content_with_weight is now a searchable keyword field, it reads the
-// docs' chunks directly via the regexp pushdown (match-all "." scoped by
-// doc_id), no longer needing a content_ltks-based general recall.
+// Because content_with_weight is now a searchable keyword field (content with a
+// sparsegram index on Infinity), it reads the docs' chunks directly via the
+// regexp pushdown (match-all "." scoped by doc_id), no longer needing a
+// content_ltks-based general recall.
 func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest) ([]runtime.RetrievalChunk, error) {
 	if g == nil || g.docEngine == nil {
 		return nil, runtime.ErrGrepServiceMissing
@@ -78,8 +80,8 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 	}
 	// Match-all on the (now keyword) content_with_weight, scoped to the docs,
 	// restricted to ordinary text chunks (available_int=1, no compile_kwd). When
-	// the caller requests a sort (e.g. reading order), push it down so ES returns
-	// the deterministic first page.
+	// the caller requests a sort (e.g. reading order), push it down so the engine
+	// returns the deterministic first page.
 	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
 		TenantID:     req.TenantID,
 		KbIDs:        req.DatasetIDs,
@@ -281,10 +283,11 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
 
-	// Path 1: native regex pushdown (Elasticsearch). With content_with_weight
-	// mapped as a searchable keyword field, ES regexp matching is the sole path;
-	// there is intentionally no in-memory RE2 fallback (a pushdown failure is a
-	// real error the caller should surface, not silently "no matches").
+	// Path 1: native regex pushdown (Elasticsearch, Infinity). With
+	// content_with_weight mapped as a searchable keyword field, native regexp
+	// matching is the sole path; there is intentionally no in-memory RE2
+	// fallback (a pushdown failure is a real error the caller should surface,
+	// not silently "no matches").
 	if se, ok := g.docEngine.(regexpSearchable); ok {
 		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
 			TenantID:     req.TenantID,
@@ -300,7 +303,7 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 		return translateGrepChunks(res.Chunks), nil
 	}
 
-	// Non-ES engines do not implement regex matching on chunk content; surface
+	// Engines without native regex support cannot match on chunk content; surface
 	// an explicit error rather than returning (empty) regex "matches".
 	return nil, runtime.ErrRegexpNotSupported
 }
@@ -399,9 +402,9 @@ func degradeGrep(
 	return nil, "", pushErr
 }
 
-// pushdownWarning keeps the original ES rejection visible whenever a fallback
-// produces results. The model must distinguish a real regexp result from a
-// result obtained after the engine rejected the requested pattern.
+// pushdownWarning keeps the original pushdown rejection visible whenever a
+// fallback produces results. The model must distinguish a real regexp result
+// from a result obtained after the engine rejected the requested pattern.
 func pushdownWarning(pushErr error, detail string) string {
 	if detail == "" {
 		detail = "the pattern was split into smaller regexp branches and the returned matches were verified with the original Go regexp"
@@ -413,7 +416,7 @@ func pushdownWarning(pushErr error, detail string) string {
 	if r := []rune(summary); len(r) > 400 {
 		summary = string(r[:400]) + "…"
 	}
-	return fmt.Sprintf("ES regexp query was rejected: %s. %s", summary, detail)
+	return fmt.Sprintf("regexp query was rejected by the engine: %s. %s", summary, detail)
 }
 
 // grepBySplitAlternation pushes each top-level alternation branch as its own
@@ -619,18 +622,25 @@ func regexpLiteralTokens(branch string) []string {
 // per-query timeout — the run-level smartReasoningTimeout in
 // internal/service/chat_pipeline.go caps the whole agent run. The only concern
 // here is a defensive one: eino's streaming ReAct can hand the tool an
-// already-canceled context right after the model emits tool_calls; deriving
-// from context.Background() in that case keeps the query alive instead of being
-// killed by that streaming artifact. Live parents are honored as-is so genuine
-// run-level cancellation still reaches the engine.
+// already-canceled context right after the model emits tool_calls; dropping
+// that parent's cancellation in that case keeps the query alive instead of
+// being killed by that streaming artifact. Live parents are honored as-is so
+// genuine run-level cancellation still reaches the engine.
+//
+// The dropped-cancellation fallback strips the DEADLINE, not the VALUES: the
+// retrieval tools authorize their datasets from the run's identity, which
+// travels in the context (state.Sys["user_id"], see
+// internal/agent/tool/retrieval_nlp.go). Rebuilding from context.Background()
+// here silently erased that identity — and with it every dataset permission
+// check — whenever the streaming artifact above fired.
 func engineCallContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx.Err() == nil {
 		return context.WithCancel(ctx)
 	}
-	return context.WithCancel(context.Background())
+	return context.WithCancel(context.WithoutCancel(ctx))
 }
 
-// translateGrepChunks converts ES regexp-search result maps into RetrievalChunk.
+// translateGrepChunks converts regexp-search result maps into RetrievalChunk.
 // regexpPushdownHint turns an engine-side regexp rejection into something the
 // caller can act on.
 //
@@ -649,8 +659,8 @@ func engineCallContext(ctx context.Context) (context.Context, context.CancelFunc
 func regexpPushdownHint(pattern string) string {
 	if m := boundedRepetitionRe.FindString(pattern); m != "" {
 		return " Retry WITHOUT the bounded repetition `" + m + "`: the engine compiles a pattern " +
-			"into an automaton with a fixed state budget (it already wraps every pattern in " +
-			"`.*(...).*`), and repetition over CJK text exhausts it. Join the terms with `.*` " +
+			"into a bounded automaton, and repetition over CJK text can exhaust it (Elasticsearch " +
+			"wraps every pattern in `.*(...).*`, which costs more states). Join the terms with `.*` " +
 			"(e.g. `关羽.*杀`) or list them as alternatives (`关羽.*杀|关公.*斩`)."
 	}
 	if backreferenceRe.MatchString(pattern) {
@@ -662,7 +672,7 @@ func regexpPushdownHint(pattern string) string {
 			"express the constraint as plain terms."
 	}
 	return " Retry with a CHEAPER pattern: literal terms joined by `.*`, at most 2-3 alternation " +
-		"branches, no bounded repetition — this pattern exceeded the engine's automaton state budget."
+		"branches, no bounded repetition — this pattern was too expensive for the engine to compile."
 }
 
 var (

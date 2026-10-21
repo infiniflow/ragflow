@@ -9,6 +9,8 @@ sidebar_custom_props: {
 
 A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
+In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
+
 ---
 
 ## ERROR CODES
@@ -2488,6 +2490,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
+  - `"knowledge_compilation_scope"`: `string`
 
 ##### Request example
 
@@ -2530,19 +2533,19 @@ curl --request POST \
 - `"dataset_ids"`: `list[string]`, *Required*
   The IDs of the datasets to search. At least one dataset ID must be provided.
 - `"retrieval_mode"`: `string`
-  可选值为 `"hybrid"`、`"vector"`、`"keyword"`，省略时使用 `"hybrid"`。该参数决定生成候选的检索路径；显式空值、空字符串、错误类型和未知值均返回参数错误。三种模式共用权限、知识库、文档、可用性和元数据过滤。相同参数也适用于 `/api/v1/datasets/search` 和 `/api/v1/datasets/{dataset_id}/search`。
+  Selects the candidate retrieval path: `"hybrid"`, `"vector"`, or `"keyword"`. Defaults to `"hybrid"` when omitted. Explicit `null`, empty strings, incorrect types, and unknown values return an argument error. All three modes share permission, dataset, document, availability, and metadata filters. This parameter is also supported by `/api/v1/datasets/search` and `/api/v1/datasets/{dataset_id}/search`.
 - `"search_id"`: `string`
-  使用已保存的搜索配置，访问该配置需要相应权限。模式优先级为：保存配置中显式设置的 `retrieval_mode` > 请求的 `retrieval_mode` > `"hybrid"`。保存配置中的非法模式返回参数错误。
+  Uses a saved search configuration, subject to access permissions. Mode precedence is: an explicitly saved `retrieval_mode` > the request's `retrieval_mode` > `"hybrid"`. Invalid modes in saved configurations return an argument error.
 - `"document_ids"`: `list[string]`
-  限定 `"dataset_ids"` 范围内的文档，默认为空列表。`"hybrid"` 和 `"vector"` 模式要求知识库使用一致的 embedding 模型；`"keyword"` 模式跳过查询 embedding 的模型依赖检查。
+  Limits the search to specific documents within `"dataset_ids"`. Defaults to an empty list. `"hybrid"` and `"vector"` require datasets to use the same embedding model; `"keyword"` skips model dependency checks for query embedding.
 - `"page"`: `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`
-  默认为 `0.2`。`"hybrid"` 保持现有相似度过滤行为；`"vector"` 在向量候选阶段应用该门槛，保留显式 `0`，零命中时保持门槛；`"keyword"` 不使用此参数过滤词法得分。
+  Defaults to `0.2`. `"hybrid"` retains existing similarity filtering. `"vector"` applies this threshold during vector candidate retrieval, preserves an explicit `0`, and keeps the threshold unchanged when there are no matches. `"keyword"` does not use this parameter to filter lexical scores.
 - `"keywords_similarity_weight"`: `float`
-  混合检索的词法权重，默认为 `0.7`，向量权重为 `1 - keywords_similarity_weight`。仅在 `"hybrid"` 下参与评分；单路模式按 `retrieval_mode` 使用对应信号。字段类型、范围和与向量权重的冲突仍会校验。
+  The lexical weight for hybrid retrieval. Defaults to `0.7`; the vector weight is `1 - keywords_similarity_weight`. This weight affects scoring only in `"hybrid"`; single-path modes use the signal selected by `retrieval_mode`. Field types, ranges, and conflicts with the vector weight are still validated.
 - `"vector_similarity_weight"`: `float`
   Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: `integer`
@@ -2555,12 +2558,15 @@ curl --request POST \
   The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
 - `"include_knowledge_compilation"`: `boolean`
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
+- `"knowledge_compilation_scope"`: `string`
+  Selects which searchable knowledge-compilation chunks to include: `"dataset"` for dataset artifacts, `"document"` for document artifacts, or `"all"` for both. Defaults to `"dataset"` when omitted, `null`, or an empty string. Ordinary source chunks remain eligible. When `"include_knowledge_compilation"` is `false`, all compiled chunks are excluded regardless of scope. Unsupported scope values and non-string values return an argument error. Intermediate wiki rows and disabled chunks remain excluded.
+  With `"document_ids"` or metadata filtering, document artifacts and source chunks are limited to the selected documents; dataset artifacts must reference a selected document in their `source_doc_ids`. This parameter is also supported by `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`.
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`
-  可选重排模型的 ID。重排处理所选模式已召回的候选，要求 `page=1`。单路模式使用归一化后的模型相关性分数和既有业务排序增强，混合模式沿用原有评分方式。
+  The ID of an optional rerank model. Reranking operates on candidates retrieved by the selected mode and requires `page=1`. Single-path modes use normalized model relevance scores plus existing business-ranking boosts; hybrid mode retains its existing scoring.
 - `"keyword"`: `boolean`
-  是否调用模型提取关键词并增强查询，默认为 `false`。该选项与 `retrieval_mode` 独立；启用时可能产生模型调用。
+  Whether to use a model to extract keywords and expand the query. Defaults to `false`. This option is independent of `retrieval_mode` and may invoke a model when enabled.
 - `"highlight"`: `boolean`
   Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
@@ -2589,29 +2595,29 @@ curl --request POST \
       - `"≤"`
     - `"value"`: `string` - The value to compare.
 
-##### 检索模式
+##### Retrieval modes
 
-| 模式 | 候选来源 | 查询 embedding | 未启用重排时的评分 |
+| Mode | Candidate source | Query embedding | Scoring without reranking |
 | --- | --- | --- | --- |
-| `hybrid` | 沿用现有混合检索路径 | 沿用现有行为 | 混合权重及现有评分规则 |
-| `vector` | 仅向量候选，保持业务范围过滤 | 需要可用的 embedding 模型 | 向量检索得分 |
-| `keyword` | 仅全文检索候选 | 0 次 | 引擎词法检索得分 |
+| `hybrid` | Existing hybrid retrieval path | Existing behavior | Hybrid weights and existing scoring rules |
+| `vector` | Vector candidates only, preserving business-scope filters | Requires an available embedding model | Vector retrieval score |
+| `keyword` | Full-text candidates only | 0 calls | Engine lexical retrieval score |
 
-两种单路模式均跳过混合融合和二次向量评分。`vector` 的候选无需匹配查询词，`keyword` 的候选由全文检索产生。`keyword` 查询经过分词仍无可检索词时返回参数错误。检索错误会返回给调用者；单路模式的空结果保持为空。
+Both single-path modes skip hybrid fusion and secondary vector scoring. `vector` candidates need not match query terms; `keyword` candidates come from full-text retrieval. A `keyword` query with no searchable terms after tokenization returns an argument error. Retrieval errors propagate to the caller, and empty results in single-path modes remain empty.
 
-单路模式未启用重排时，保留引擎返回的业务排序，`similarity` 报告引擎原始单路得分；引擎额外的业务权重可以使最终顺序与原始得分顺序不同。`keyword` 的 `term_similarity` 为词法得分、`vector_similarity` 为 `0`，`vector` 的 `vector_similarity` 为向量得分、`term_similarity` 为 `0`。单路模式启用重排后，`similarity` 为模型相关性分数加既有业务排序增强，`vector_similarity` 承载模型相关性分数，`term_similarity` 为 `0`。
+Without reranking, single-path modes preserve the engine's business ordering, and `similarity` reports the engine's raw single-path score. Additional engine-side business weights can make the final order differ from raw score order. In `keyword` mode, `term_similarity` is the lexical score and `vector_similarity` is `0`; in `vector` mode, `vector_similarity` is the vector score and `term_similarity` is `0`. With reranking, single-path modes report model relevance plus existing business-ranking boosts in `similarity`, model relevance in `vector_similarity`, and `0` in `term_similarity`.
 
-例如，分别使用以下请求体比较语义召回与技术术语召回：
+For example, compare semantic retrieval and technical-term retrieval with these request bodies:
 
 ```json
-{"question":"如何延长手机续航","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"vector"}
+{"question":"How can I extend my phone's battery life?","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"vector"}
 ```
 
 ```json
 {"question":"ERR_CONNECTION_RESET","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"keyword"}
 ```
 
-词法分数与向量分数的量纲取决于引擎，跨模式、跨引擎的分数不可直接当成统一的正确概率。查询增强 `keyword`、`cross_languages`、自动元数据提取和可选重排各自可能调用模型；关键词模式的零调用保证针对查询 embedding。
+Lexical and vector score scales depend on the engine, so scores across modes or engines cannot be treated as a common probability of correctness. Query expansion via `keyword`, `cross_languages`, automatic metadata extraction, and optional reranking may each invoke models. The zero-call guarantee in keyword mode applies specifically to query embedding.
 
 #### Response
 
@@ -3949,7 +3955,7 @@ Success without `chat_id` or `session_id`:
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "I am an assistant powered by the tenant's default chat model.",
         "reference": {},
@@ -3960,7 +3966,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -3972,7 +3978,7 @@ Streaming response example with `chat_id` and `session_id`:
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "",
         "reference": {
@@ -3990,7 +3996,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "The user just said \"hello\". I should respond warmly and ask how I can help.",
         "reference": {
@@ -4007,7 +4013,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": " Let's keep it short and friendly.",
         "reference": {
@@ -4024,7 +4030,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "",
         "reference": {
@@ -4042,7 +4048,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "Hello! 👋 Welcome!",
         "reference": {
@@ -4059,7 +4065,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -4069,7 +4075,7 @@ For `legacy: true`, the same request keeps the thinking content inside `answer` 
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\".",
         "reference": {
@@ -4086,7 +4092,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help.",
         "reference": {
@@ -4103,7 +4109,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help. Let's keep it short and friendly.</think>Hello! 👋 Welcome!",
         "reference": {
@@ -4120,7 +4126,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -5601,7 +5607,7 @@ Success:
 	"data": {
 	...your new memory here
 	},
-	"message": true
+	"message": "success"
 }
 ```
 
@@ -5727,7 +5733,7 @@ Success:
 	"data": {
 	...your updated memory here
 	},
-	"message": true
+	"message": "success"
 }
 ```
 
@@ -5825,7 +5831,7 @@ Success:
         ],
         "total_count": 4
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5901,7 +5907,7 @@ Success
         "update_time": null,
         "user_prompt": null
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5953,7 +5959,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5963,7 +5969,7 @@ Failure
 {
     "code": 404,
     "data": null,
-    "message": true
+    "message": "Resource not found"
 }
 ```
 
@@ -6082,7 +6088,7 @@ Success
         },
         "storage_type": "table"
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6225,7 +6231,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6290,7 +6296,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6387,7 +6393,7 @@ Success
         },
         ...other 2 matched messages here
     ],
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6465,7 +6471,7 @@ Success
         },
         ...other 9 messages here
     ],
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6538,7 +6544,7 @@ Success
         "valid_at": "2026-01-07 16:48:37",
         "zone_id": 0
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -8327,9 +8333,9 @@ curl --request POST \
 Success (streaming):
 
 ```text
-data: {"code": 0, "message": "", "data": {"answer": "...", "reference": {...}}}
+data: {"code": 0, "message": "success", "data": {"answer": "...", "reference": {...}}}
 
-data: {"code": 0, "message": "", "data": true}
+data: {"code": 0, "message": "success", "data": true}
 ```
 
 Failure:

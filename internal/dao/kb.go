@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"path"
 	"ragflow/internal/common"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 
 	"strconv"
@@ -99,48 +100,30 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 	return &KnowledgebaseDAO{}
 }
 
-// EmbeddingBaseName resolves a knowledge base's embedding model reference to
-// the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
-// can be selected and searched together. tenant_embd_id — or embd_id itself
-// when it stores a raw tenant_model id — is resolved through tenant_model;
-// legacy composite "model@instance@provider" values are reduced with
-// common.BaseModelName. An id that no longer resolves falls back to the
-// composite base name when embd_id holds one, otherwise to the id itself so
-// only exact matches group together.
-func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
-	raw := strings.TrimSpace(kb.EmbdID)
-	id := ""
-	if kb.TenantEmbdID != nil {
-		id = strings.TrimSpace(*kb.TenantEmbdID)
-	}
-	if id == "" && raw != "" && !strings.Contains(raw, "@") {
-		id = raw
-	}
+// EmbeddingBaseName resolves the tenant_model reference of one knowledge base
+// to the bare model name (e.g. "BAAI/bge-m3") used to decide whether datasets
+// can be selected and searched together. Which column carries the reference is
+// a business rule answered by transaction.EmbeddingModelRef; what remains here
+// is the read itself, once per call, so callers resolving a batch of datasets
+// memoize through transaction.EmbeddingBaseNameResolver. An id that no longer
+// resolves falls back to the composite base name when embd_id holds one,
+// otherwise to the id itself so only exact matches group together.
+func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) string {
+	id, raw := transaction.EmbeddingModelRef(kb)
 	if id == "" {
 		return common.BaseModelName(raw)
 	}
-	if cache != nil {
-		if cached, ok := cache[id]; ok {
-			return cached
-		}
-	}
-	base := ""
 	if db != nil {
 		if model, err := NewTenantModelDAO().GetByID(ctx, db, id); err == nil && model != nil {
-			base = strings.TrimSpace(model.ModelName)
+			if base := strings.TrimSpace(model.ModelName); base != "" {
+				return base
+			}
 		}
 	}
-	if base == "" {
-		if raw != "" && raw != id {
-			base = common.BaseModelName(raw)
-		} else {
-			base = id
-		}
+	if raw != "" && raw != id {
+		return common.BaseModelName(raw)
 	}
-	if cache != nil {
-		cache[id] = base
-	}
-	return base
+	return id
 }
 
 // Create creates a new knowledge base record
@@ -156,11 +139,6 @@ func (dao *KnowledgebaseDAO) Update(ctx context.Context, db *gorm.DB, kb *entity
 // UpdateByID updates a knowledge base by ID with the given fields
 func (dao *KnowledgebaseDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
-}
-
-// Delete soft deletes a knowledge base by setting status to invalid
-func (dao *KnowledgebaseDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Update("status", string(entity.StatusInvalid)).Error
 }
 
 // GetByID retrieves a knowledge base by ID
@@ -495,12 +473,6 @@ func (dao *KnowledgebaseDAO) GetByNameInUserTenants(ctx context.Context, db *gor
 		Order("knowledgebase.create_time ASC").
 		Find(&kbs).Error
 	return kbs, err
-}
-
-// DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
-func (dao *KnowledgebaseDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Knowledgebase{})
-	return result.RowsAffected, result.Error
 }
 
 // GetKBIDsByTenantIDSimple GetKBIDsByTenantID gets all knowledge base IDs by tenant ID

@@ -213,6 +213,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
 	}
+	dataModels = append(dataModels, permissionDataModelsEE()...)
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -226,6 +227,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		if err = migrateUserTenantDuplicates(ctx, DB); err != nil {
+			return fmt.Errorf("failed to deduplicate user_tenant memberships: %w", err)
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
@@ -233,7 +237,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-		common.Info("Database schema migrated successfully")
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -241,17 +244,22 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
-		// Drop the retired raptor and graphrag sections from the dataset parser
-		// configs. It runs after the conversation split because the two steps
-		// share one version marker: this step's version sorts above the split's
-		// v1.0.0-rc1, so marking it earlier would skip a split that has not run.
-		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
-			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
+		// Run ingestion conversion after the conversation split. It invokes the
+		// dataset cleanup last because both use the same version marker.
+		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
 		}
 
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
+		if err = migratePermissions(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate permissions: %w", err)
+		}
+		if err = migrateTenantModelProviderUserUniqueIndex(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant model provider unique index: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
@@ -262,6 +270,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
+	}
+	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
+		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
 	}
 	// Conversation lists filter by dialog and usually order by update time.
 	for _, table := range []string{"conversation", "api_4_conversation"} {

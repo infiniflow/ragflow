@@ -61,23 +61,21 @@ type ParseResult struct {
 	// echoed the requested extension.
 	File map[string]any
 
-	// JSON is the structured payload when available.
-	// Shape depends on the parser family: PDF emits
-	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
-	// optional `image` / `layout` / `positions` fields);
-	// Markdown / HTML / text emit normalized
-	// `{text, doc_type_kwd}` items; image emits an image payload and, after
-	// ingestion enhancement, its VLM description.
-	JSON []map[string]any
+	// JSON is the structured payload when available, as typed DocItems.
+	// Each item projects onto the historical wire form via DocItem.ToMap,
+	// so the external key shape (text + doc_type_kwd, optional image /
+	// layout / positions, table) is unchanged. Shape depends on the parser
+	// family: PDF emits `text` + `doc_type_kwd` items (and optional
+	// `image` / `layout` / `positions` fields); Markdown / HTML / text emit
+	// normalized `{text, doc_type_kwd}` items; image emits an image payload
+	// and, after ingestion enhancement, its VLM description.
+	JSON []DocItem
 
 	// Markdown is a backend response awaiting normalization.
 	Markdown string
 
 	// Text is a backend response awaiting normalization.
 	Text string
-
-	// HTML is a backend response awaiting normalization.
-	HTML string
 
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
@@ -104,30 +102,21 @@ const (
 	spreadsheetOutputFormat = "json"
 )
 
-// NewTextJSONItem constructs a canonical text JSON item for parser output.
-func NewTextJSONItem(text string) map[string]any {
-	return map[string]any{
-		"text":     text,
-		DocTypeKey: DocTypeText,
-	}
+// NewTextJSONItem constructs a canonical text DocItem for parser output.
+func NewTextJSONItem(text string) DocItem {
+	return TextItem{Text: text}
 }
 
-// NewTableDataJSONItem constructs a canonical structured table JSON item for
+// NewTableDataJSONItem constructs a canonical structured table DocItem for
 // parser output. It carries the parsed TableData contract (caption, header
 // rows, cell text already normalized the same way the legacy chunker
 // normalized HTML <td>/<th> text) instead of the legacy HTML markup string,
 // so the chunker reads rows directly without re-parsing any markup.
-func NewTableDataJSONItem(td *entity.TableData, sheet string, positions [][]float64) map[string]any {
-	item := map[string]any{
-		"table":    td,
-		DocTypeKey: DocTypeTable,
-		"ck_type":  DocTypeTable,
+func NewTableDataJSONItem(td *entity.TableData, sheet string, positions Positions) DocItem {
+	return TableItem{
+		Table:     td,
+		Sheet:     sheet,
+		Positions: positions,
+		CKType:    DocTypeTable,
 	}
-	if sheet != "" {
-		item["sheet"] = sheet
-	}
-	if len(positions) > 0 {
-		item["positions"] = positions
-	}
-	return item
 }

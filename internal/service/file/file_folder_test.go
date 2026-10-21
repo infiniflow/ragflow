@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -210,6 +211,65 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 	}
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
+	}
+}
+
+func TestFileService_ListFilesMissingParentReturnsNotFound(t *testing.T) {
+	setupFolderTestDB(t)
+
+	root := &entity.File{ID: "root-1", ParentID: "root-1", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder}
+	if err := dao.DB.Create(root).Error; err != nil {
+		t.Fatalf("seed root: %v", err)
+	}
+
+	svc := testFileService()
+	_, err := svc.ListFiles(context.Background(), "tenant-1", "missing-folder", 1, 10, nil, "")
+	var coded *common.CodedError
+	if !errors.As(err, &coded) || coded.Code != common.CodeNotFound {
+		t.Fatalf("ListFiles error = %v, want CodeNotFound CodedError", err)
+	}
+}
+
+func TestFileService_AncestryMissingIDReturnsNotFound(t *testing.T) {
+	setupFolderTestDB(t)
+
+	svc := testFileService()
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "missing-file"); return err },
+		"GetAllParentFolders": func() error { _, err := svc.GetAllParentFolders(ctx, "user-1", "missing-file"); return err },
+	} {
+		var coded *common.CodedError
+		if err := call(); !errors.As(err, &coded) || coded.Code != common.CodeNotFound {
+			t.Fatalf("%s error = %v, want CodeNotFound CodedError", name, err)
+		}
+	}
+}
+
+func TestFileService_DatabaseErrorIsNotReportedAsNotFound(t *testing.T) {
+	db := setupFolderTestDB(t)
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get underlying sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	svc := testFileService()
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"ListFiles":           func() error { _, err := svc.ListFiles(ctx, "tenant-1", "any", 1, 10, nil, ""); return err },
+		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "any"); return err },
+		"GetAllParentFolders": func() error { _, err := svc.GetAllParentFolders(ctx, "user-1", "any"); return err },
+	} {
+		coded := (*common.CodedError)(nil)
+		if err := call(); err == nil {
+			t.Fatalf("%s: expected a database error, got nil", name)
+		} else if errors.As(err, &coded) {
+			t.Fatalf("%s error = %v, must not be reported as CodeNotFound", name, err)
+		}
 	}
 }
 

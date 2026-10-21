@@ -102,7 +102,12 @@ func (dao *TenantDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*ent
 
 // Create creates a new tenant
 func (dao *TenantDAO) Create(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
-	return db.WithContext(ctx).Create(tenant).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := initializeTenantDefaultRoleEE(ctx, tx, tenant); err != nil {
+			return err
+		}
+		return tx.Create(tenant).Error
+	})
 }
 
 // GetAllIDs returns the IDs of all active tenants.
@@ -111,11 +116,6 @@ func (dao *TenantDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]string, err
 	err := db.WithContext(ctx).Model(&entity.Tenant{}).Where("status = ?", string(entity.StatusValid)).
 		Pluck("id", &ids).Error
 	return ids, err
-}
-
-// Delete deletes a tenant by ID (soft delete)
-func (dao *TenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Tenant{}).Where("id = ?", id).Update("status", "0").Error
 }
 
 // Update updates a tenant by ID

@@ -67,10 +67,10 @@ func SetWikiDirtyCompiler(compiler WikiDirtyCompiler) {
 // mutations merge chunk ids and postpone execution until twenty seconds after
 // the most recent successful mutation.
 func MarkWikiDocumentDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) error {
-	db := kcDB
-	if db == nil {
-		db = dao.DB
-	}
+	// The publishing path (wiki_refresh, chunk) calls this from processes that
+	// own the canonical DAO handle; it is an out-of-scope external API, so it
+	// reads the global dao.DB rather than a package-scoped kcDB.
+	db := dao.DB
 	if db == nil {
 		return fmt.Errorf("mark Wiki document dirty: database is unavailable")
 	}

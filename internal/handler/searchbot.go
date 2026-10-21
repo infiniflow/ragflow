@@ -328,7 +328,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		}
 	}
 	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 		return false
 	})
 
@@ -428,16 +428,18 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	}
 
 	userSvc := service.NewUserService()
-	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
+	identity, code, err := userSvc.ResolveBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
+	setAuthIdentity(c, identity)
+	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
 		return
 	}
-	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, identity.User.ID, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -474,7 +476,7 @@ func sseAnswer(answer string, refs interface{}, final bool) string {
 	}
 	payload := ssePayload{
 		Code:    0,
-		Message: "",
+		Message: "success",
 		Data: askSSEData{
 			Answer:    answer,
 			Reference: refs,
@@ -514,7 +516,7 @@ func sseMarker(marker string) string {
 	} else {
 		d.EndToThink = true
 	}
-	payload := ssePayload{Code: 0, Message: "", Data: d}
+	payload := ssePayload{Code: 0, Message: "success", Data: d}
 	b, _ := json.Marshal(payload)
 	return fmt.Sprintf("data: %s\n\n", string(b))
 }
@@ -558,14 +560,12 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 	}
 }
 
-// ptrFloat64 returns a pointer to a float64 value.
-func ptrFloat64(v float64) *float64 { return &v }
-
-func intPtr(v int) *int           { return &v }
-func floatPtr(v float64) *float64 { return &v }
-
 // applyRetrievalDefaults fills in default values for optional fields,
 // matching Python bot_api.py retrieval_test endpoint.
+//
+// similarity_threshold, vector_similarity_weight and top_k are left nil:
+// ChunkService.RetrievalTest resolves them against the search app's saved
+// search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
 		v := 1
@@ -575,10 +575,6 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 		v := 30
 		req.Size = &v
 	}
-	if req.TopK == nil {
-		v := 1024
-		req.TopK = &v
-	}
 	if req.UseKG == nil {
 		v := false
 		req.UseKG = &v
@@ -586,13 +582,5 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Keyword == nil {
 		v := false
 		req.Keyword = &v
-	}
-	if req.SimilarityThreshold == nil {
-		v := 0.0
-		req.SimilarityThreshold = &v
-	}
-	if req.VectorSimilarityWeight == nil {
-		v := 0.3
-		req.VectorSimilarityWeight = &v
 	}
 }

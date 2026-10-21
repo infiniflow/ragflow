@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
@@ -73,6 +74,7 @@ type PipelineExecutor struct {
 	taskCtx     *TaskContext
 	canvasID    string
 	docBulkSize int
+	deps        *ingestion.Deps
 
 	indexWriter      *chunkIndexWriter
 	deleteChunksFunc DeleteChunksFunc
@@ -106,7 +108,7 @@ func validateTaskContext(taskCtx *TaskContext) error {
 // an engine that implements it can write chunks without waiting for an index
 // refresh.
 type noRefreshChunkInserter interface {
-	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 }
 
 // insertChunksForIngestion writes non-final chunks through the engine's
@@ -116,28 +118,35 @@ type noRefreshChunkInserter interface {
 // Refreshing every batch adds unnecessary latency. The writer uses the regular
 // inserter for its final batch, so all preceding batches become searchable
 // before the document task is acknowledged and its completion event is sent.
-func insertChunksForIngestion(eng engine.DocEngine) InsertFunc {
+//
+// The first write creates the chunk store, and on Infinity that fixes the
+// fulltext analyzer, so the dataset language has to travel with it.
+func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
-			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID)
+			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
 		}
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }
 
 // insertFinalChunksForIngestion waits for the index refresh before returning.
 // The final write makes every preceding no-refresh batch searchable before the
 // document task is acknowledged and its completion event is published.
-func insertFinalChunksForIngestion(eng engine.DocEngine) InsertFunc {
+func insertFinalChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
-		return eng.InsertChunks(ctx, chunks, baseName, datasetID)
+		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }
 
+// NewPipelineExecutor builds the executor for one document run. deps carries
+// the process-wide singletons (doc engine, database handle) resolved at the
+// server assembly point; the executor never resolves them itself.
 func NewPipelineExecutor(
 	taskCtx *TaskContext,
 	canvasID string,
 	docBulkSize int,
+	deps *ingestion.Deps,
 ) (*PipelineExecutor, error) {
 	if err := validateTaskContext(taskCtx); err != nil {
 		return nil, err
@@ -145,18 +154,22 @@ func NewPipelineExecutor(
 	if strings.TrimSpace(canvasID) == "" {
 		return nil, fmt.Errorf("pipeline executor: empty canvas id")
 	}
+	if deps == nil {
+		return nil, fmt.Errorf("pipeline executor: nil dependency bundle")
+	}
 	svc := &PipelineExecutor{
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
+		deps:        deps,
 		indexWriter: newChunkIndexWriter(
-			insertChunksForIngestion(engine.Get()),
+			insertChunksForIngestion(deps.Engine, datasetLanguage(taskCtx)),
 			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
 			taskCtx.Doc.KbID,
 			docBulkSize,
-		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get())),
+		).withFinalInsertFunc(insertFinalChunksForIngestion(deps.Engine, datasetLanguage(taskCtx))),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
-			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
+			return deps.Engine.DeleteChunks(ctx, condition, baseName, datasetID)
 		},
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
@@ -243,7 +256,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 			d := s.terminalDuration(start)
 			terminalDuration = &d
 		}
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
+		s.recordPipelineLog(context.WithoutCancel(ctx), s.deps.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
 	}
 
 	return result, nil
@@ -302,18 +315,16 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
-	// Per-document compiled knowledge products (those emitted by the
-	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
-	// as available_int=0: invisible to the normal retriever until the dataset-level
-	// post-processing consumer (§11) merges them into available_int=1 products.
-	// Ordinary source chunks stay available_int=1 (the index default) unless the
-	// document itself is disabled (status=0).
+	// Per-document wiki products are staged as available_int=0 until the
+	// dataset-level consumer merges them into available_int=1 products.
+	// Final per-document structures and ordinary source chunks are written with
+	// available_int=1 unless the document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
 	// Reload status immediately before write: LoadFromIngestionTask copied a
 	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
 	docStatus := s.taskCtx.Doc.Status
-	if dao.DB != nil {
-		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+	if s.deps.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, s.deps.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
 			docStatus = persisted.Status
 			s.taskCtx.Doc.Status = persisted.Status
 		} else if err != nil {
@@ -340,7 +351,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
-	if err := putWikiActiveStates(ctx, engine.Get(), activeStates); err != nil {
+	if err := putWikiActiveStates(ctx, s.deps.Engine, activeStates); err != nil {
 		return nil, fmt.Errorf("persist Wiki active MAP state: %w", err)
 	}
 
@@ -514,10 +525,10 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
 func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, []string, error) {
-	docEngine := engine.Get()
-	if docEngine == nil || s == nil || s.taskCtx == nil {
+	if s == nil || s.taskCtx == nil || s.deps == nil || s.deps.Engine == nil {
 		return nil, nil, nil, nil
 	}
+	docEngine := s.deps.Engine
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	oldIDs := make([]string, 0)
@@ -559,10 +570,10 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 // the last usable document Wiki; this method removes rows absent from the new
 // successful generation immediately before the dataset completion event.
 func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context, oldIDs []string, chunks []map[string]any) error {
-	docEngine := engine.Get()
-	if docEngine == nil || s == nil || s.taskCtx == nil {
+	if s == nil || s.taskCtx == nil || s.deps == nil || s.deps.Engine == nil {
 		return nil
 	}
+	docEngine := s.deps.Engine
 	newIDs := make(map[string]struct{})
 	for _, chunk := range chunks {
 		if strings.TrimSpace(asCompiledKwd(chunk)) == "" {
@@ -1013,7 +1024,7 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	if canvasID == "" {
 		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, s.deps.DB, canvasID)
 	if err != nil {
 		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
 	}
@@ -1105,7 +1116,8 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
 		pipelinepkg.WithProgressSink(s.progressSink),
-		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID),
+		pipelinepkg.WithKV(s.deps.KV))
 	if err != nil {
 		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}
@@ -1268,4 +1280,14 @@ func injectDebugChunkCap(inputs map[string]any) map[string]any {
 		inputs[globals.DebugChunkCapKey] = DebugChunkCapDefault
 	}
 	return inputs
+}
+
+// datasetLanguage is the language of the dataset being ingested, or "" when it
+// is unset. It selects the fulltext analyzer on engines that fix it when the
+// chunk store is created.
+func datasetLanguage(taskCtx *TaskContext) string {
+	if taskCtx == nil || taskCtx.KB.Language == nil {
+		return ""
+	}
+	return *taskCtx.KB.Language
 }

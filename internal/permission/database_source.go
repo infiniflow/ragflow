@@ -58,13 +58,74 @@ func (s *databaseSource) GetMembership(ctx context.Context, userID, tenantID str
 		}
 		return nil, err
 	}
+	role, valid, err := s.resolveMembershipRole(ctx, relation.TenantID, relation.Role)
+	if err != nil {
+		return nil, err
+	}
+	if !valid {
+		return nil, nil
+	}
 	return &Membership{
 		ID:       relation.ID,
 		UserID:   relation.UserID,
 		TenantID: relation.TenantID,
-		Role:     TenantRole(relation.Role),
+		Role:     role,
 		Active:   relation.Status != nil && *relation.Status == string(entity.StatusValid),
 	}, nil
+}
+
+func (s *databaseSource) resolveMembershipRole(ctx context.Context, tenantID, roleValue string) (TenantRole, bool, error) {
+	role := TenantRole(strings.TrimSpace(roleValue))
+	switch role {
+	case RoleOwner, RoleAdmin, RoleNormal, RoleInvite:
+		return role, true, nil
+	}
+	valid, err := isTenantRoleID(ctx, s.db, tenantID, string(role))
+	if err != nil {
+		return "", false, err
+	}
+	if !valid {
+		return "", false, nil
+	}
+	// Feature roles grant capabilities, while tenant membership still denotes
+	// ordinary membership to the shared resource policy.
+	return RoleNormal, true, nil
+}
+
+func (s *databaseSource) activeTenantIDsForUser(ctx context.Context, userID string) ([]string, error) {
+	if s == nil || s.db == nil {
+		return nil, ErrSourceUnavailable
+	}
+	var memberships []entity.UserTenant
+	if err := s.db.WithContext(ctx).
+		Select("tenant_id", "role").
+		Where("user_id = ? AND status = ?", userID, string(entity.StatusValid)).
+		Find(&memberships).Error; err != nil {
+		return nil, err
+	}
+
+	type roleResult struct {
+		role  TenantRole
+		valid bool
+		err   error
+	}
+	resolved := make(map[string]roleResult)
+	tenantIDs := make([]string, 0, len(memberships))
+	for _, membership := range memberships {
+		key := membership.TenantID + "\x00" + membership.Role
+		result, ok := resolved[key]
+		if !ok {
+			result.role, result.valid, result.err = s.resolveMembershipRole(ctx, membership.TenantID, membership.Role)
+			resolved[key] = result
+		}
+		if result.err != nil {
+			return nil, result.err
+		}
+		if result.valid && result.role != RoleInvite {
+			tenantIDs = append(tenantIDs, membership.TenantID)
+		}
+	}
+	return uniqueStringValues(tenantIDs), nil
 }
 
 func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) ([]Resource, error) {
@@ -247,15 +308,6 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	if err != nil {
 		return nil, err
 	}
-	modelTenantIDs := make([]string, 0, len(modelProvidersByID))
-	for _, provider := range modelProvidersByID {
-		modelTenantIDs = append(modelTenantIDs, provider.TenantID)
-	}
-	modelOwnerIDsByTenant, err := s.loadTenantOwnerIDs(ctx, modelTenantIDs)
-	if err != nil {
-		return nil, err
-	}
-
 	resources := make([]Resource, 0, len(refs))
 	for _, ref := range refs {
 		switch ref.Kind {
@@ -326,11 +378,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			resources = append(resources, syncTaskResource(task, connector, linked))
 		case ResourceKindModelProvider:
 			if provider, ok := modelProvidersByID[ref.ID]; ok {
-				ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-				if ownerUserID == "" {
-					return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+				if strings.TrimSpace(provider.UserID) == "" {
+					return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 				}
-				resources = append(resources, modelProviderResource(provider, ownerUserID))
+				resources = append(resources, modelProviderResource(provider))
 			}
 		case ResourceKindModelInstance:
 			instance, ok := modelInstancesByID[ref.ID]
@@ -341,11 +392,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			if !ok {
 				continue
 			}
-			ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-			if ownerUserID == "" {
-				return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+			if strings.TrimSpace(provider.UserID) == "" {
+				return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 			}
-			resources = append(resources, modelInstanceResource(instance, provider, ownerUserID))
+			resources = append(resources, modelInstanceResource(instance, provider))
 		case ResourceKindModel:
 			model, ok := tenantModelsByID[ref.ID]
 			if !ok {
@@ -359,11 +409,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			if !ok {
 				continue
 			}
-			ownerUserID := modelOwnerIDsByTenant[provider.TenantID]
-			if ownerUserID == "" {
-				return nil, fmt.Errorf("%w: tenant %q has no active owner", ErrInvalidPermission, provider.TenantID)
+			if strings.TrimSpace(provider.UserID) == "" {
+				return nil, fmt.Errorf("%w: model provider %q has no owner user_id", ErrInvalidPermission, provider.ID)
 			}
-			resources = append(resources, tenantModelResource(model, provider, ownerUserID))
+			resources = append(resources, tenantModelResource(model, provider))
 		case ResourceKindMCPServer:
 			tenantID, ok := mcpServerTenantsByID[ref.ID]
 			if !ok {
@@ -423,13 +472,8 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: canvases cannot have a parent scope", ErrInvalidPermission)
 		}
-		var tenantIDs []string
-		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-			Distinct("tenant_id").
-			Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
-				string(RoleOwner), string(RoleAdmin), string(RoleNormal),
-			}).
-			Pluck("tenant_id", &tenantIDs).Error; err != nil {
+		tenantIDs, err := s.activeTenantIDsForUser(ctx, subject.UserID)
+		if err != nil {
 			return nil, err
 		}
 		ownerIDs := append(append(make([]string, 0, len(tenantIDs)+1), tenantIDs...), subject.UserID)

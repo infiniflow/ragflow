@@ -144,3 +144,97 @@ func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
 		t.Fatalf("expected allowed=false on nil client (fail-closed)")
 	}
 }
+
+func TestClientSetNXDistinguishesContention(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err != nil {
+		t.Fatalf("first SetNX returned error: %v", err)
+	}
+	if !acquired {
+		t.Fatal("first SetNX acquired = false, want true")
+	}
+
+	acquired, err = r.SetNX(ctx, "lock:document", "owner-2", time.Minute)
+	if err != nil {
+		t.Fatalf("contended SetNX returned error: %v", err)
+	}
+	if acquired {
+		t.Fatal("contended SetNX acquired = true, want false")
+	}
+}
+
+func TestClientSetNXReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want transport error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true on transport failure, want false")
+	}
+}
+
+func TestClientSetNXReturnsErrorForNilClient(t *testing.T) {
+	var r *Client
+
+	acquired, err := r.SetNX(t.Context(), "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want initialization error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true for nil client, want false")
+	}
+}
+
+func TestDistributedLockSpinAcquireReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := lock.SpinAcquire(ctx); err == nil {
+		t.Fatal("SpinAcquire error = nil, want transport error")
+	}
+}
+
+func TestDistributedLockAcquireReturnsCleanupError(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	r.luaDeleteIfEqual = redis.NewScript(`return redis.error_reply("cleanup failed")`)
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	acquired, err := lock.Acquire(t.Context())
+	if err == nil {
+		t.Fatal("Acquire error = nil, want cleanup error")
+	}
+	if acquired {
+		t.Fatal("Acquire acquired = true on cleanup failure, want false")
+	}
+
+	exists, err := r.client.Exists(t.Context(), lock.lockKey).Result()
+	if err != nil {
+		t.Fatalf("check lock key after cleanup failure: %v", err)
+	}
+	if exists != 0 {
+		t.Fatal("Acquire attempted SetNX after cleanup failure")
+	}
+}

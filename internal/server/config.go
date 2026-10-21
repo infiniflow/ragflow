@@ -169,6 +169,17 @@ func GetConfig() *config.Config {
 	return globalConfig
 }
 
+// MCPAllowPrivateHosts reports whether self-hosted MCP servers on private
+// networks are permitted (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS). It is nil-safe:
+// an uninitialized global config yields false so callers fail closed instead
+// of panicking on a nil *config.Config.
+func MCPAllowPrivateHosts() bool {
+	if globalConfig == nil {
+		return false
+	}
+	return globalConfig.GetMCPAllowPrivateHosts()
+}
+
 // GetAllConfigs collects backend connection settings for administrator inspection.
 // ExportConfigs intentionally retains plaintext credentials; the admin configuration
 // endpoint restricts access to superusers, while PrintAll masks credentials in logs.

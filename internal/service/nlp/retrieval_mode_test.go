@@ -230,6 +230,7 @@ func TestSearchExplicitHybridPreservesDefaultRecall(t *testing.T) {
 		docEngine := &retryCaptureEngine{engineType: "elasticsearch", totals: []int64{0, 0, 1}}
 		_, err := NewRetrievalService(docEngine, nil).Search(t.Context(), &RetrievalSearchRequest{
 			Mode: mode, Question: "query", TenantIDs: []string{"tenant"}, KbIDs: []string{"kb"},
+			DocIDs: []string{"doc"}, Filter: map[string]interface{}{"category_kwd": "allowed"}, VectorOnly: mode == RetrievalModeHybrid,
 			EmbeddingModel: &models.EmbeddingModel{ModelDriver: &modeEmbeddingDriver{}},
 		})
 		if err != nil {
@@ -237,6 +238,11 @@ func TestSearchExplicitHybridPreservesDefaultRecall(t *testing.T) {
 		}
 		if len(docEngine.requests) != 3 {
 			t.Fatalf("混合模式请求次数 = %d，期望 3", len(docEngine.requests))
+		}
+		for _, request := range docEngine.requests {
+			if len(request.MatchExprs) == 0 || !reflect.DeepEqual(request.Filter["doc_id"], []string{"doc"}) || request.Filter["category_kwd"] != "allowed" {
+				t.Fatalf("混合模式重试丢失检索条件或范围：%#v", request)
+			}
 		}
 		if mode == "" {
 			defaultRequests = docEngine.requests

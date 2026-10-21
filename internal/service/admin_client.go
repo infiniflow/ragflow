@@ -42,7 +42,6 @@ type AdminClient struct {
 	version      string
 	lastSuccess  bool
 	attemptCount int
-	clusterInfo  *utility.ClusterInfo
 }
 
 // NewAdminClient creates a new heartbeat service instance
@@ -80,7 +79,7 @@ func (h *AdminClient) InitHTTPClient() error {
 
 	err := h.InitHTTPClientEE()
 	if err != nil {
-		common.Fatal(fmt.Sprintf("Fail to init enterprise service: %v", err))
+		common.Fatal(fmt.Sprintf("failed to init enterprise service: %v", err))
 	}
 
 	return nil
@@ -100,7 +99,7 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	if h.client == nil {
 		if err := h.InitHTTPClient(); err != nil {
-			common.Error("Failed to initialize HTTP client", err)
+			common.Error("failed to initialize HTTP client", err)
 			return err
 		}
 	}
@@ -117,11 +116,17 @@ func (h *AdminClient) SendHeartbeat() error {
 		Ext:         nil,
 	}
 
-	message.Ext = h.clusterInfo
-
-	jsonData, err := json.Marshal(message)
+	var err error
+	message, err = h.EnrichMessage(message)
 	if err != nil {
-		common.Error("Failed to marshal heartbeat message", err)
+		common.Error("failed to enrich heartbeat message", err)
+		return err
+	}
+
+	var jsonData []byte
+	jsonData, err = json.Marshal(message)
+	if err != nil {
+		common.Error("failed to marshal heartbeat message", err)
 		return err
 	}
 
@@ -160,7 +165,7 @@ func (h *AdminClient) SendHeartbeat() error {
 	responseData := responseBody["data"]
 	err = h.UpdateClient(responseData)
 	if err != nil {
-		common.Error("fail to update client info", err)
+		common.Error("failed to update client info", err)
 		return err
 	}
 

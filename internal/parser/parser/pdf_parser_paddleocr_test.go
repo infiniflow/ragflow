@@ -1,145 +1,143 @@
 package parser
 
 import (
-	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
+	"context"
+	"math"
+	"os"
+	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity/models"
 )
 
-// paddleOCRJobServer stubs the async PaddleOCR Job API
-// (submit → poll → fetch JSONL), mirroring Python's PaddleOCRParser.
-// wantToken is the expected Authorization bearer token; empty skips the check.
-func paddleOCRJobServer(t *testing.T, called *atomic.Bool, wantToken string) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
-			if wantToken != "" {
-				if got, want := r.Header.Get("Authorization"), "Bearer "+wantToken; got != want {
-					t.Errorf("Authorization = %q, want %q", got, want)
-					return
-				}
+func TestPaddleOCRBlockPosition(t *testing.T) {
+	page := models.OCRPage{Index: 2, Width: 600, Height: 800}
+	for _, tc := range []struct {
+		name string
+		box  []float64
+		want []any
+	}{
+		{"rectangle", []float64{30, 40, 300, 160}, []any{3, float64(15), float64(150), float64(20), float64(80)}},
+		{"noncanonical polygon", []float64{30, 40, 300, 40, 300, 160, 30, 160}, nil},
+		{"clip", []float64{-30, -40, 1200, 1000}, []any{3, float64(0), float64(300), float64(0), float64(400)}},
+		{"zero", []float64{1, 1, 1, 2}, nil},
+		{"outside", []float64{1000, 900, 1100, 1000}, nil},
+		{"nonfinite", []float64{0, 0, math.Inf(1), 100}, nil},
+		{"missing", nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := paddleOCRBlockPosition(page, tc.box, [2]float64{300, 400}); !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got=%v want=%v", got, tc.want)
 			}
-			if err := r.ParseMultipartForm(32 << 20); err != nil {
-				t.Errorf("ParseMultipartForm: %v", err)
-				return
-			}
-			f, _, err := r.FormFile("file")
-			if err != nil {
-				t.Errorf("FormFile: %v", err)
-				return
-			}
-			raw, readErr := io.ReadAll(f)
-			f.Close()
-			if readErr != nil {
-				t.Errorf("ReadAll: %v", readErr)
-				return
-			}
-			if got := string(raw); !strings.HasPrefix(got, "%PDF") {
-				t.Errorf("uploaded file = %q, want PDF bytes", got)
-				return
-			}
-			if got, want := r.FormValue("model"), "PaddleOCR-VL"; got != want {
-				t.Errorf("model = %q, want %q", got, want)
-				return
-			}
-			if got := r.FormValue("optionalPayload"); !strings.Contains(got, "formatBlockContent") {
-				t.Errorf("optionalPayload = %q, want formatBlockContent", got)
-				return
-			}
-			if called != nil {
-				called.Store(true)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
-			w.Header().Set("Content-Type", "application/json")
-			resultURL := "http://" + r.Host + "/result"
-			_, _ = fmt.Fprintf(w, `{"data":{"state":"done","resultJsonUrl":%q}}`, resultURL)
-		case r.Method == http.MethodGet && r.URL.Path == "/result":
-			w.Header().Set("Content-Type", "application/jsonl")
-			_, _ = w.Write([]byte(`{"result":{"layoutParsingResults":[{"prunedResult":{"parsing_res_list":[{"block_content":"# Paddle Title\n\nBody paragraph.\n"}]}}]}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-}
-
-func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
-	withSSRFBypass(t)
-	var called atomic.Bool
-	server := paddleOCRJobServer(t, &called, "paddle-secret")
-	defer server.Close()
-
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":       "PaddleOCR",
-		"output_format":      "markdown",
-		"paddleocr_base_url": server.URL,
-		"paddleocr_api_key":  "paddle-secret",
-	})
-
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if !called.Load() {
-		t.Fatal("PaddleOCR server was not called")
-	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
-	}
-	if got, want := res.Markdown, "# Paddle Title\n\nBody paragraph."; got != want {
-		t.Fatalf("Markdown = %q, want %q", got, want)
-	}
-	if got, want := res.File["name"], "sample.pdf"; got != want {
-		t.Fatalf("File.name = %v, want %v", got, want)
+		})
 	}
 }
 
-func TestPDFParser_ParseWithResult_PaddleOCRJSONIntegration(t *testing.T) {
-	withSSRFBypass(t)
-	server := paddleOCRJobServer(t, nil, "")
-	defer server.Close()
-
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":       "PaddleOCR",
-		"output_format":      "json",
-		"paddleocr_base_url": server.URL,
-	})
-
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
+func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a(1).png)", Label: "image"}}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 1 {
+		t.Fatalf("result=%+v", result)
 	}
-	if len(res.JSON) == 0 {
-		t.Fatal("JSON is empty; want markdown-normalized items")
-	}
-	if got := res.JSON[0]["text"]; got == nil {
-		t.Fatal("JSON[0].text missing")
+	item := result.JSON[0].ToMap()
+	if item["text"] != "keep me" || item["positions"] != nil {
+		t.Fatalf("item=%v", item)
 	}
 }
 
-func TestPDFParser_ParseWithResult_PaddleOCRRequiresBaseURL(t *testing.T) {
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{"parse_method": "PaddleOCR"})
-
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err == nil {
-		t.Fatal("ParseWithResult: want error when paddleocr_base_url is missing, got nil")
+func TestPaddleOCRPDFResultKeepsUnstructuredTableText(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(res.Err.Error(), "paddleocr_base_url") {
-		t.Fatalf("error = %q, want paddleocr_base_url context", res.Err.Error())
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "Item: 42", Label: "table", BBox: []float64{20, 40, 100, 120}}}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	item := result.JSON[0].ToMap()
+	if item["doc_type_kwd"] != "text" || item["text"] != "Item: 42" {
+		t.Fatalf("item=%v", item)
+	}
+}
+
+func TestPaddleOCRMarkdownTable(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Label: "table", Text: "| Item | Value |\n| --- | --- |\n| A | 42 |", BBox: []float64{10, 20, 100, 200}}}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	if len(result.JSON) != 1 || result.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Fatalf("GFM table lost structure: %v", ItemsToMaps(result.JSON))
+	}
+}
+
+func TestPaddleOCRCanceledContext(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Label: "text", Text: "body", BBox: []float64{10, 20, 100, 200}}}}}}
+	result := PaddleOCRPDFResult(ctx, "sample.pdf", data, response)
+	if result.Err == nil {
+		t.Fatal("canceled parse returned success")
+	}
+}
+
+func TestPaddleOCRTitleLabels(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ label, text, want, ckType string }{
+		{"doc_title", "Document title", "# Document title", "heading"},
+		{"paragraph_title", "Section title", "## Section title", "heading"},
+		{"doc_title", "### Existing title", "### Existing title", "heading"},
+		{"figure_title", "Figure caption", "Figure caption", "text"},
+		{"table_title", "Table caption", "Table caption", "text"},
+	} {
+		t.Run(tc.label+tc.text, func(t *testing.T) {
+			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: tc.label}}}}}
+			result := PaddleOCRPDFResult(t.Context(), "title.pdf", data, response)
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			item := result.JSON[0].ToMap()
+			if item["ck_type"] != tc.ckType || item["text"] != tc.want {
+				t.Fatalf("title semantics: %v", item)
+			}
+			formatted := pdfItemsToResult("title.pdf", ItemsToMaps(result.JSON), "markdown", 1)
+			if formatted.Markdown != tc.want {
+				t.Fatalf("markdown=%q; want %q", formatted.Markdown, tc.want)
+			}
+		})
+	}
+}
+
+func TestPaddleOCRPDFResultRejectsRenderedEmptyText(t *testing.T) {
+	for _, label := range []string{"text", "doc_title", "paragraph_title"} {
+		t.Run(label, func(t *testing.T) {
+			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Label: label, Text: "---"}}}}}
+			result := PaddleOCRPDFResult(t.Context(), "separator.pdf", nil, response)
+			if result.Err == nil || !strings.Contains(result.Err.Error(), "empty text") {
+				t.Fatalf("rendered-empty document accepted: %+v", result)
+			}
+			response.Pages[0].Blocks = append(response.Pages[0].Blocks, models.OCRBlock{Text: "body"})
+			result = PaddleOCRPDFResult(t.Context(), "mixed.pdf", nil, response)
+			if result.Err != nil || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "body" {
+				t.Fatalf("empty placeholder survived beside body: %+v", result)
+			}
+		})
 	}
 }

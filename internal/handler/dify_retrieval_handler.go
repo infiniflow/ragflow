@@ -273,6 +273,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		KNNTopK:             topK,
 		SimilarityThreshold: scoreThreshold,
 		EmbeddingModel:      embModel,
+		Language:            entity.KnowledgebasesLanguage(kbs),
 	}
 	if rankFeature != nil {
 		sr.RankFeature = &rankFeature
@@ -392,5 +393,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.SuccessNoMessage(c, true)
+	common.SuccessWithData(c, true, "success")
 }

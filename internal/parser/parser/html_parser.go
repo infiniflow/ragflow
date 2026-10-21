@@ -98,7 +98,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 			"name":     filename,
 			"encoding": encName,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: state.warnings(),
 	}
 }
@@ -126,21 +126,37 @@ func (s *htmlWalkState) warnings() []string {
 // order. Inline formatting is collapsed into its parent text; script, style,
 // and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	// Text and inline elements directly under <body> are one run of text, as
+	// a browser lays them out, so they are collected into one item. Emitted
+	// one item per text node and per inline element, "Hello <b>world</b>!"
+	// came out as the three items "Hello", "world" and "!".
+	var run *leafWriter
+	flushRun := func() {
+		if run != nil {
+			flushLeafText(run, out, "text", true)
+			run = nil
+		}
+	}
+	defer flushRun()
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.TextNode {
-			if emitsLooseHTMLText(root) {
-				appendHTMLTextItem(out, child.Data, "text", true)
-			}
+		// Invisible nodes neither show up nor end the run around them.
+		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
+			(child.Data == "script" || child.Data == "style" || child.Data == "noscript")) {
 			continue
 		}
+		if emitsLooseHTMLText(root) && (child.Type == html.TextNode || isHTMLInlineElement(child)) {
+			if run == nil {
+				run = &leafWriter{b: &bytes.Buffer{}}
+			}
+			walkHTMLLeaf(child, run, out, "text", true, state)
+			continue
+		}
+		flushRun()
 		if child.Type != html.ElementNode {
 			continue
 		}
 		tag := child.Data
 		switch tag {
-		case "script", "style", "noscript":
-			// Skip executable / stylistic blocks entirely.
-			continue
 		case "head":
 			// Skip document metadata so it does not pollute body text.
 			continue
@@ -186,6 +202,22 @@ func renderTableHTML(n *html.Node) string {
 
 func emitsLooseHTMLText(root *html.Node) bool {
 	return root.Type == html.ElementNode && root.Data == "body"
+}
+
+// isHTMLInlineElement reports whether n is a phrasing element, one a browser
+// lays out inside the surrounding line of text rather than as a block.
+func isHTMLInlineElement(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+	switch n.Data {
+	case "a", "abbr", "b", "bdi", "bdo", "big", "br", "cite", "code", "data",
+		"del", "dfn", "em", "font", "i", "img", "ins", "kbd", "label", "mark",
+		"q", "s", "samp", "small", "span", "strike", "strong", "sub", "sup",
+		"time", "tt", "u", "var", "wbr":
+		return true
+	}
+	return false
 }
 
 func appendHTMLTextItem(out *[]map[string]any, text, ckType string, trim bool) {
@@ -373,15 +405,11 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 			return
 		}
 		// Add a line break between block children so headings, paragraphs,
-		// and list items don't run together.
-		if !w.pre {
-			switch n.Data {
-			case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-				"tr", "blockquote":
-				if w.b.Len() > 0 && !w.endsNL {
-					w.hardBreak()
-				}
-			}
+		// and list items don't run together. A block starts on a new line as
+		// well as ending one: without the break before it, the text in front
+		// of a nested <div> ran into the block's own ("Name:Alice").
+		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
 			walkHTMLLeaf(child, w, out, ckType, trim, state)
@@ -594,10 +622,16 @@ func htmlAttribute(n *html.Node, key string) string {
 	return ""
 }
 
+// isBlockTag reports whether a browser lays tag out as a block, on lines of
+// its own (the elements the HTML rendering rules display as block or list
+// item), so its text must not run into the text around it.
 func isBlockTag(tag string) bool {
 	switch tag {
 	case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-		"tr", "blockquote", "div", "section", "article", "header", "footer":
+		"tr", "blockquote", "div", "section", "article", "header", "footer",
+		"main", "nav", "aside", "address", "hgroup", "search", "center",
+		"ul", "ol", "menu", "dl", "dt", "dd", "figure", "figcaption",
+		"details", "summary", "dialog", "form", "fieldset", "legend", "hr":
 		return true
 	}
 	return false

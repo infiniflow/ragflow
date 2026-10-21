@@ -199,9 +199,51 @@ func TestSearchDatasetsModePreservesPermissionAndNoMatchScope(t *testing.T) {
 	}
 	t.Run("关键词保留元数据无匹配标记", func(t *testing.T) {
 		svc, eng, ids := newModeSearchFixture(t, "missing-model")
-		_, err := svc.SearchDatasets(t.Context(), &service.SearchDatasetsRequest{DatasetIDs: ids, Question: "检索", RetrievalMode: nlp.RetrievalModeKeyword, DocumentIDs: []string{service.NoMatchDocIDSentinel}}, "user-1")
+		_, err := svc.SearchDatasets(t.Context(), &service.SearchDatasetsRequest{DatasetIDs: ids, Question: "检索", RetrievalMode: nlp.RetrievalModeKeyword, DocumentIDs: []string{service.NoMatchDocIDSentinel}, IncludeCompiledChunks: new(false)}, "user-1")
 		if err != nil || len(eng.requests) != 1 || !reflect.DeepEqual(eng.requests[0].Filter["doc_id"], []string{service.NoMatchDocIDSentinel}) {
 			t.Fatalf("无匹配文档范围丢失：请求=%#v，错误=%v", eng.requests, err)
 		}
 	})
+}
+
+func TestSearchDatasetsKeywordKeepsCompilationScope(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		scope          string
+		include        *bool
+		documentID     string
+		withDatasetIDs bool
+	}{
+		{name: "默认范围", documentID: "doc-1", withDatasetIDs: true},
+		{name: "知识库制品", scope: "dataset", documentID: "doc-1", withDatasetIDs: true},
+		{name: "文档制品", scope: "document", documentID: "doc-1"},
+		{name: "全部制品", scope: "all", documentID: "doc-1", withDatasetIDs: true},
+		{name: "关闭知识编译", scope: "all", include: new(false), documentID: "doc-1"},
+		{name: "默认编译保留无匹配标记", documentID: service.NoMatchDocIDSentinel, withDatasetIDs: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, eng, ids := newModeSearchFixture(t, "missing-model")
+			_, err := svc.SearchDatasets(t.Context(), &service.SearchDatasetsRequest{
+				DatasetIDs: ids, Question: "检索", RetrievalMode: nlp.RetrievalModeKeyword,
+				DocumentIDs: []string{tc.documentID}, IncludeCompiledChunks: tc.include, KnowledgeCompilationScope: tc.scope,
+			}, "user-1")
+			if err != nil || len(eng.requests) != 1 {
+				t.Fatalf("检索错误=%v，请求=%#v", err, eng.requests)
+			}
+			wantDocIDs := []string{tc.documentID}
+			if tc.withDatasetIDs {
+				wantDocIDs = append(wantDocIDs, ids...)
+			}
+			got := eng.requests[0]
+			if !reflect.DeepEqual(got.KbIDs, ids) || !reflect.DeepEqual(got.Filter["doc_id"], wantDocIDs) || got.Filter["available_int"] != 1 {
+				t.Fatalf("关键词模式改变检索范围：%#v", got)
+			}
+			wantFilter := knowledgeCompilationFilter(tc.include, tc.scope)
+			for _, key := range []string{"or", "must_not"} {
+				if !reflect.DeepEqual(got.Filter[key], wantFilter[key]) {
+					t.Fatalf("知识编译过滤丢失：字段=%s，实际=%#v，期望=%#v", key, got.Filter[key], wantFilter[key])
+				}
+			}
+		})
+	}
 }

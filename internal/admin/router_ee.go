@@ -74,11 +74,6 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/system/soft-fingerprint", r.handler.ShowSoftFingerprint)
 	protected.DELETE("/system/soft-fingerprint", r.handler.DeleteSoftFingerprint)
 
-	protected.GET("/fingerprint", r.handler.GetFingerprint)
-	protected.POST("/license", r.handler.SetLicense)
-	protected.POST("/license/config", r.handler.UpdateLicenseConfig)
-	protected.GET("/license", r.handler.ShowLicense)
-
 	// Token statistics
 	protected.GET("/stats/token", r.handler.GetTokenStats)
 	protected.GET("/stats/token/users", r.handler.GetTokenUsersStats)

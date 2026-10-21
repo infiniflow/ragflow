@@ -46,19 +46,30 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 		}
 		for _, tc := range []struct {
 			name    string
+			params  map[string]any
 			factory func(map[string]any) (runtime.Component, error)
-		}{{"QA", NewQAChunker}, {"Token", NewTokenChunker}, {"One", NewOneChunker}} {
+		}{
+			{"QA", nil, NewQAChunker},
+			{"Token", nil, NewTokenChunker},
+			{"One", nil, NewOneChunker},
+			// The title-family chunkers share extractLineRecords; a
+			// spreadsheet item must keep its sheet identity there too, or its
+			// selections would be decoded as PDF boxes.
+			{"Group", map[string]any{"levels": [][]string{{`^# `}}}, NewGroupTitleChunker},
+			{"Hierarchy", map[string]any{"hierarchy": 1, "levels": [][]string{{`^# `}}}, NewHierarchyTitleChunker},
+			{"Manual", map[string]any{"levels": [][]string{{`^# `}}}, NewManualChunker},
+		} {
 			t.Run(source.name+"/"+tc.name, func(t *testing.T) {
-				batches := [][]map[string]any{source.result.JSON}
+				batches := [][]map[string]any{parser.ItemsToMaps(source.result.JSON)}
 				// One preserves positions only for a single source item.
 				if tc.name == "One" {
 					batches = nil
 					for _, item := range source.result.JSON {
-						batches = append(batches, []map[string]any{item})
+						batches = append(batches, []map[string]any{item.ToMap()})
 					}
 				}
 				for _, items := range batches {
-					comp, err := tc.factory(nil)
+					comp, err := tc.factory(tc.params)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -147,7 +158,9 @@ func TestQAChunkerSheetNameOnlyPreservesSourceRows(t *testing.T) {
 		t.Fatalf("parser items=%d, want 1", len(parsed.JSON))
 	}
 	// Keep real parser selections, but exercise the supported name-only identity.
-	delete(parsed.JSON[0], "sheet_index")
+	m := parsed.JSON[0].ToMap()
+	delete(m, "sheet_index")
+	parsed.JSON[0] = parser.RawItem{M: m}
 	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)

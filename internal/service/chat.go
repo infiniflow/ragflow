@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -29,6 +30,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 )
 
 var DefaultRerankModels = map[string]struct{}{
@@ -942,6 +944,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 }
 
 func validatePromptConfigParameters(promptConfig map[string]interface{}) error {
+	if _, err := agentic_rag.ParseOverride(promptConfig["agentic_rag"]); err != nil {
+		return err
+	}
 	parameters, ok := promptConfig["parameters"].([]interface{})
 	if !ok {
 		return nil
@@ -1022,10 +1027,10 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 
 	embeddingModelIDs := make([]string, 0, len(kbs))
 	seenEmbedIDs := make(map[string]struct{})
-	embdNameCache := make(map[string]string)
+	embdNames := transaction.NewEmbeddingBaseNameResolver(s.kbDAO.EmbeddingBaseName)
 	for _, kb := range kbs {
 		embeddingModelIDs = append(embeddingModelIDs, kb.EmbdID)
-		seenEmbedIDs[s.kbDAO.EmbeddingBaseName(ctx, dao.DB, kb, embdNameCache)] = struct{}{}
+		seenEmbedIDs[embdNames.Resolve(ctx, dao.DB, kb)] = struct{}{}
 	}
 	if len(seenEmbedIDs) > 1 {
 		return nil, fmt.Errorf("datasets use different embedding models: %v", embeddingModelIDs)

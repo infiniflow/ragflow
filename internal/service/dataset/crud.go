@@ -143,10 +143,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
 	}
 
-	// Preserve the public default shape when parser_config is empty. The
-	// parent_child block remains the single source of truth; chunker
-	// children_delimiters are derived below only when it is configured.
+	// Preserve the public default shape without overriding pipeline delimiters
+	// unless the request explicitly configures parent_child.
 	parentChild := resolveParentChild(req.ParserConfig)
+	parentChildConfigured := parentChild != nil
 	if parentChild == nil {
 		parentChild = map[string]interface{}{
 			"use_parent_child":   false,
@@ -174,7 +174,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			}
 		}
 	}
-	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	if parentChildConfigured {
+		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
@@ -742,7 +744,7 @@ func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete chunks for kb %s: %v", kb.ID, err))
 	}
-	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"doc_id": docIDs}, kb.TenantID); err != nil {
+	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"kb_id": kb.ID}, kb.TenantID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete metadata for kb %s: %v", kb.ID, err))
 	}
 }

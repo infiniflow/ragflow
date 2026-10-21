@@ -6,95 +6,76 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"strings"
 	"testing"
 	"unicode/utf16"
+
+	"ragflow/internal/entity"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
 )
 
 // buildSyntheticDoc constructs a minimal but valid legacy Word binary (.doc)
-// entirely in memory — an OLE2/CFB container with a WordDocument stream
-// (FIB + piece-table-referenced text) and a 0Table stream (CLX). No external
-// tool or committed fixture is required, so the .doc parser can be exercised
-// end-to-end against dynamically generated input.
-//
-// Layout (sector size = 512):
-//
-//	sector 0: FAT
-//	sector 1: directory (Root Entry, WordDocument, 0Table)
-//	sector 2: WordDocument stream (FIB + CP1252 text piece)
-//	sector 3: 0Table stream (CLX)
-//
-// The structure follows office_oxide's reader expectations
-// (src/cfb/*, src/doc/fib.rs, src/doc/piece_table.rs).
+// entirely in memory.
 func buildSyntheticDoc(t *testing.T, text string) []byte {
 	t.Helper()
 	const sector = 512
-
-	// ── CLX (piece table) in the 0Table stream ────────────────────────────
-	// 1 piece covering all text, compressed (CP1252): fc bit 30 set,
-	// real byte offset = (fc & ~0x40000000) / 2.
-	const textOffset = 426 // safely past the FIB reads (max offset 0x1AA=426)
+	const textOffset = 426
 	fc := uint32(0x40000000) | uint32(textOffset*2)
 
 	clx := make([]byte, 21)
-	clx[0] = 0x02                                             // Pcdt
-	binary.LittleEndian.PutUint32(clx[1:], 16)                // PlcPcd size
-	binary.LittleEndian.PutUint32(clx[5:], 0)                 // CP[0] = 0
-	binary.LittleEndian.PutUint32(clx[9:], uint32(len(text))) // CP[1] = text_len
-	binary.LittleEndian.PutUint16(clx[13:], 0)                // PCD u16 unused
-	binary.LittleEndian.PutUint32(clx[15:], fc)               // PCD fc
-	binary.LittleEndian.PutUint16(clx[19:], 0)                // PCD prm
+	clx[0] = 0x02
+	binary.LittleEndian.PutUint32(clx[1:], 16)
+	binary.LittleEndian.PutUint32(clx[5:], 0)
+	binary.LittleEndian.PutUint32(clx[9:], uint32(len(text)))
+	binary.LittleEndian.PutUint16(clx[13:], 0)
+	binary.LittleEndian.PutUint32(clx[15:], fc)
+	binary.LittleEndian.PutUint16(clx[19:], 0)
 
-	// ── WordDocument stream: FIB + text ───────────────────────────────────
 	wordDoc := make([]byte, sector)
-	binary.LittleEndian.PutUint16(wordDoc[0:], 0xA5EC)                // wIdent (Word 97+)
-	binary.LittleEndian.PutUint16(wordDoc[2:], 0x00C1)                // nFib
-	binary.LittleEndian.PutUint16(wordDoc[0x0A:], 0x0000)             // flags: bit9=0 → 0Table
-	binary.LittleEndian.PutUint32(wordDoc[0x4C:], uint32(len(text)))  // ccpText
-	binary.LittleEndian.PutUint32(wordDoc[0x01A2:], 0)                // fcClx (offset 0 in 0Table)
-	binary.LittleEndian.PutUint32(wordDoc[0x01A6:], uint32(len(clx))) // lcbClx
+	binary.LittleEndian.PutUint16(wordDoc[0:], 0xA5EC)
+	binary.LittleEndian.PutUint16(wordDoc[2:], 0x00C1)
+	binary.LittleEndian.PutUint16(wordDoc[0x0A:], 0x0000)
+	binary.LittleEndian.PutUint32(wordDoc[0x4C:], uint32(len(text)))
+	binary.LittleEndian.PutUint32(wordDoc[0x01A2:], 0)
+	binary.LittleEndian.PutUint32(wordDoc[0x01A6:], uint32(len(clx)))
 	copy(wordDoc[textOffset:], []byte(text))
 
-	// ── CFB header ────────────────────────────────────────────────────────
 	header := make([]byte, sector)
 	copy(header[0:8], []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
-	binary.LittleEndian.PutUint16(header[0x18:], 0x003E)     // minor version
-	binary.LittleEndian.PutUint16(header[0x1A:], 3)          // major version (v3)
-	binary.LittleEndian.PutUint16(header[0x1C:], 0xFFFE)     // byte order
-	binary.LittleEndian.PutUint16(header[0x1E:], 9)          // sector shift (512)
-	binary.LittleEndian.PutUint16(header[0x20:], 6)          // mini sector shift (64)
-	binary.LittleEndian.PutUint32(header[0x2C:], 1)          // FAT sector count
-	binary.LittleEndian.PutUint32(header[0x30:], 1)          // first directory sector
-	binary.LittleEndian.PutUint32(header[0x38:], 4096)       // mini-stream cutoff
-	binary.LittleEndian.PutUint32(header[0x3C:], 0xFFFFFFFE) // first mini-FAT = END
-	binary.LittleEndian.PutUint32(header[0x44:], 0xFFFFFFFE) // first DIFAT = END
+	binary.LittleEndian.PutUint16(header[0x18:], 0x003E)
+	binary.LittleEndian.PutUint16(header[0x1A:], 3)
+	binary.LittleEndian.PutUint16(header[0x1C:], 0xFFFE)
+	binary.LittleEndian.PutUint16(header[0x1E:], 9)
+	binary.LittleEndian.PutUint16(header[0x20:], 6)
+	binary.LittleEndian.PutUint32(header[0x2C:], 1)
+	binary.LittleEndian.PutUint32(header[0x30:], 1)
+	binary.LittleEndian.PutUint32(header[0x38:], 4096)
+	binary.LittleEndian.PutUint32(header[0x3C:], 0xFFFFFFFE)
+	binary.LittleEndian.PutUint32(header[0x44:], 0xFFFFFFFE)
 	for i := 0; i < 109; i++ {
 		off := 0x4C + i*4
 		if i == 0 {
-			binary.LittleEndian.PutUint32(header[off:], 0) // FAT lives in sector 0
+			binary.LittleEndian.PutUint32(header[off:], 0)
 		} else {
-			binary.LittleEndian.PutUint32(header[off:], 0xFFFFFFFE) // ignored
+			binary.LittleEndian.PutUint32(header[off:], 0xFFFFFFFE)
 		}
 	}
 
-	// ── FAT sector ────────────────────────────────────────────────────────
-	fat := bytes.Repeat([]byte{0xFF}, sector)            // all FREE (0xFFFFFFFF)
-	binary.LittleEndian.PutUint32(fat[0*4:], 0xFFFFFFFD) // sector 0 = FAT itself
-	binary.LittleEndian.PutUint32(fat[1*4:], 0xFFFFFFFE) // directory = END
-	binary.LittleEndian.PutUint32(fat[2*4:], 0xFFFFFFFE) // WordDocument = END
-	binary.LittleEndian.PutUint32(fat[3*4:], 0xFFFFFFFE) // 0Table = END
+	fat := bytes.Repeat([]byte{0xFF}, sector)
+	binary.LittleEndian.PutUint32(fat[0*4:], 0xFFFFFFFD)
+	binary.LittleEndian.PutUint32(fat[1*4:], 0xFFFFFFFE)
+	binary.LittleEndian.PutUint32(fat[2*4:], 0xFFFFFFFE)
+	binary.LittleEndian.PutUint32(fat[3*4:], 0xFFFFFFFE)
 
-	// ── Directory sector: 4 entries ───────────────────────────────────────
 	dir := make([]byte, sector)
 	copy(dir[0*128:], dirEntry("Root Entry", 5, 0xFFFFFFFF, 0))
 	copy(dir[1*128:], dirEntry("WordDocument", 2, 2, uint64(len(wordDoc))))
 	copy(dir[2*128:], dirEntry("0Table", 2, 3, uint64(len(clx))))
 	copy(dir[3*128:], dirEntry("", 0, 0xFFFFFFFF, 0))
-	binary.LittleEndian.PutUint32(dir[0*128+0x4C:], 1) // root child: WordDocument
-	binary.LittleEndian.PutUint32(dir[1*128+0x44:], 2) // left sibling: 0Table
+	binary.LittleEndian.PutUint32(dir[0*128+0x4C:], 1)
+	binary.LittleEndian.PutUint32(dir[1*128+0x44:], 2)
 
-	// ── Assemble ──────────────────────────────────────────────────────────
 	tableSector := make([]byte, sector)
 	copy(tableSector, clx)
 
@@ -115,25 +96,24 @@ func dirEntry(name string, entryType byte, startSector uint32, streamSize uint64
 		for _, r := range utf16Name {
 			nameBytes = append(nameBytes, byte(r&0xFF), byte(r>>8))
 		}
-		nameBytes = append(nameBytes, 0, 0) // UTF-16LE null terminator
+		nameBytes = append(nameBytes, 0, 0)
 		copy(e[0:], nameBytes)
 		binary.LittleEndian.PutUint16(e[0x40:], uint16(len(nameBytes)))
 	}
 	e[0x42] = entryType
-	e[0x43] = 1 // color (black)
+	e[0x43] = 1
 	binary.LittleEndian.PutUint32(e[0x44:], 0xFFFFFFFF)
 	binary.LittleEndian.PutUint32(e[0x48:], 0xFFFFFFFF)
 	binary.LittleEndian.PutUint32(e[0x4C:], 0xFFFFFFFF)
 	binary.LittleEndian.PutUint32(e[0x74:], startSector)
-	binary.LittleEndian.PutUint32(e[0x78:], uint32(streamSize)) // v3: low 32 bits
+	binary.LittleEndian.PutUint32(e[0x78:], uint32(streamSize))
 	return e
 }
 
 // TestDOCParser_SyntheticDocRoundTrip verifies the legacy DOC path end-to-end
-// against a .doc that is generated at runtime (no committed binary, no external
-// converter). It exercises office_oxide.OpenFromBytes(data, "doc") and the
-// extractDocText fallback chain (IR → Markdown → PlainText) inside
-// ParseWithResult.
+// against a .doc generated at runtime. The JSON path emits structured sections
+// (one per paragraph/table/list), so this test asserts the recovered text
+// fragments appear across the JSON items.
 func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 	const body = "SYNTHETIC DOC\rFirst para alpha.\rSecond para beta."
 	data := buildSyntheticDoc(t, body)
@@ -151,22 +131,33 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 	if pr.OutputFormat != "json" {
 		t.Fatalf("OutputFormat = %q, want %q", pr.OutputFormat, "json")
 	}
-	if len(pr.JSON) != 1 {
-		t.Fatalf("ParseWithResult returned %d JSON items, want 1", len(pr.JSON))
-	}
-	if pr.Text == "" {
-		t.Fatal("ParseWithResult returned empty text — synthetic .doc was not parsed")
-	}
-	for _, want := range []string{"SYNTHETIC DOC", "First para alpha.", "Second para beta."} {
-		if !bytes.Contains([]byte(pr.Text), []byte(want)) {
-			t.Errorf("parsed text missing %q; got:\n%s", want, pr.Text)
-		}
-	}
-	if got, _ := pr.JSON[0]["text"].(string); got != pr.Text {
-		t.Errorf("JSON text = %q, want complete parser text %q", got, pr.Text)
+	if len(pr.JSON) == 0 {
+		t.Fatalf("ParseWithResult returned 0 JSON items, want at least 1")
 	}
 
-	// Also verify that explicit output_format="text" in setup is respected
+	var b strings.Builder
+	for _, it := range pr.JSON {
+		m := it.ToMap()
+		if txt, _ := m["text"].(string); txt != "" {
+			b.WriteString(txt)
+			b.WriteString("\n")
+		}
+		if td, _ := m["table"].(*entity.TableData); td != nil {
+			for _, row := range td.CellTexts() {
+				for _, c := range row {
+					b.WriteString(c)
+					b.WriteString(" ")
+				}
+			}
+		}
+	}
+	got := b.String()
+	for _, want := range []string{"SYNTHETIC DOC", "First para alpha.", "Second para beta."} {
+		if !strings.Contains(got, want) {
+			t.Errorf("parsed JSON missing %q; got:\n%s", want, got)
+		}
+	}
+
 	pText := NewDOCParser()
 	pText.ConfigureFromSetup(map[string]any{"output_format": "text"})
 	prText := pText.ParseWithResult(context.Background(), "synthetic.doc", data)

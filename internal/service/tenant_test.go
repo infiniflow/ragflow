@@ -38,7 +38,7 @@ func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.PermissionChangeLog{}); err != nil {
 		t.Fatalf("migrate tenant permission table: %v", err)
 	}
 	originalDB := dao.DB

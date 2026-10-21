@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 )
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
@@ -130,6 +131,9 @@ type ChunkDoc struct {
 	Positions     json.RawMessage `json:"positions,omitempty"`
 	Sheet         string          `json:"sheet,omitempty"`
 	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	// PreserveOrder declares the input sequence authoritative; geometry sorting
+	// must retain it. PaddleOCR sets this for its ordered layout blocks.
+	PreserveOrder bool `json:"_preserve_order,omitempty"`
 	// TableData is the structured table contract. When a chunk carries it
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
@@ -158,7 +162,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index", "table",
+		"sheet", "sheet_index", "table", "_preserve_order",
 	} {
 		delete(raw, key)
 	}
@@ -233,9 +237,49 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 			out = append(out, doc)
 		}
 		return out, true, nil
+	case []parser.DocItem:
+		return ChunkDocsFromDocItem(t)
 	default:
 		return nil, false, nil
 	}
+}
+
+// ChunkDocsFromDocItem converts a parser-produced []DocItem directly into a
+// typed chunk slice by projecting each item through its canonical DocItem.ToMap
+// wire shape and decoding the result via ChunkDocFromMap (see chunkDocFromDocItem).
+// The resulting []ChunkDoc is therefore identical to what the historical
+// ChunkDocsFromAny([]DocItem) path produced, which round-tripped through the same
+// ToMap projection.
+// This is the consumer-side entry the chunker uses once parsers emit DocItems
+// directly; other callers that still pass []map[string]any / []any / []ChunkDoc
+// keep using ChunkDocsFromAny.
+func ChunkDocsFromDocItem(items []parser.DocItem) ([]ChunkDoc, bool, error) {
+	if items == nil {
+		return nil, false, nil
+	}
+	out := make([]ChunkDoc, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		doc, err := chunkDocFromDocItem(it)
+		if err != nil {
+			return nil, true, err
+		}
+		out = append(out, doc)
+	}
+	return out, true, nil
+}
+
+// chunkDocFromDocItem converts a parser DocItem directly into a typed chunk by
+// projecting it through its canonical ToMap wire shape and decoding that via
+// ChunkDocFromMap. Using ToMap — the parser package's single canonical
+// projection, with mergeExtra semantics — instead of a second, divergent wire
+// map builder keeps the conversion identical to the historical []map path and
+// prevents an Extra key from shadowing an empty canonical field (e.g. a stray
+// Extra["text"] must never override TextItem.Text == "").
+func chunkDocFromDocItem(it parser.DocItem) (ChunkDoc, error) {
+	return ChunkDocFromMap(it.ToMap())
 }
 
 // ToMap converts a typed chunk back to the generic map form used by
