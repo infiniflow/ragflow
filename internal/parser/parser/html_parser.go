@@ -141,7 +141,7 @@ func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *html
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
 		// Invisible nodes neither show up nor end the run around them.
 		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
-			(child.Data == "script" || child.Data == "style" || child.Data == "noscript")) {
+			(child.Data == "script" || child.Data == "style" || child.Data == "noscript" || child.Data == "template")) {
 			continue
 		}
 		if emitsLooseHTMLText(root) && (child.Type == html.TextNode || isHTMLInlineElement(child)) {
@@ -363,7 +363,8 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 	case html.TextNode:
 		w.writeText(n.Data)
 	case html.ElementNode:
-		if n.Data == "script" || n.Data == "style" || n.Data == "noscript" {
+		// A <template> holds markup a script may clone; the page never shows it.
+		if n.Data == "script" || n.Data == "style" || n.Data == "noscript" || n.Data == "template" {
 			return
 		}
 		if n.Data == "br" {

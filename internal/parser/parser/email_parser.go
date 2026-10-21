@@ -544,7 +544,7 @@ func walkHTMLBodyText(n *html.Node, w *leafWriter) {
 		}
 	case html.ElementNode:
 		switch n.Data {
-		case "head", "script", "style", "noscript":
+		case "head", "script", "style", "noscript", "template":
 			return
 		case "br":
 			w.hardBreak()
