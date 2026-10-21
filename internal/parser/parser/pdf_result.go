@@ -6,8 +6,10 @@ import (
 	"math"
 	"strings"
 
+	"go.uber.org/zap"
 	"golang.org/x/net/html"
 
+	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
@@ -20,29 +22,49 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 		return result
 	}
 	if err := ctx.Err(); err != nil {
-		return ParseResult{Err: err}
+		result.Err = err
+		result.File = ensurePDFResultFile(result.File, filename)
+		return result
 	}
 	if len(result.JSON) == 0 {
 		switch {
 		case result.Markdown != "":
 			parsed := parsePDFMarkdown(ctx, filename, result.Markdown)
 			if parsed.Err != nil {
-				return ParseResult{Err: parsed.Err}
-			}
-			result.Warnings = append(result.Warnings, parsed.Warnings...)
-			if len(parsed.JSON) == 0 {
+				if ctx.Err() != nil {
+					// Cancellation is fatal; preserve file metadata for callers.
+					parsed.File = ensurePDFResultFile(result.File, filename)
+					return parsed
+				}
+				// Mirror the historical markdown→JSON fallback: a backend
+				// markdown payload that cannot be structured is still indexed
+				// as raw text instead of failing the task.
+				common.Warn("parser normalization fell back to text",
+					zap.String("filename", filename),
+					zap.String("normalized_from", "markdown"),
+					zap.Error(parsed.Err))
+				result.Warnings = append(result.Warnings, parsed.Warnings...)
+				result.Warnings = append(result.Warnings, "markdown normalization fell back to text: "+parsed.Err.Error())
 				result.JSON = []DocItem{NewTextJSONItem(result.Markdown)}
 			} else {
-				result.JSON = parsed.JSON
+				result.Warnings = append(result.Warnings, parsed.Warnings...)
+				if len(parsed.JSON) == 0 {
+					result.JSON = []DocItem{NewTextJSONItem(result.Markdown)}
+				} else {
+					result.JSON = parsed.JSON
+				}
 			}
 		case result.Text != "":
 			result.JSON = []DocItem{NewTextJSONItem(result.Text)}
 		}
 	}
 	items := make([]DocItem, 0, len(result.JSON))
+	droppedPositions := 0
 	for _, item := range result.JSON {
 		if err := ctx.Err(); err != nil {
-			return ParseResult{Err: err}
+			result.Err = err
+			result.File = ensurePDFResultFile(result.File, filename)
+			return result
 		}
 		if item == nil {
 			continue
@@ -61,9 +83,13 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 				fields["layout_type"] = layout
 			}
 		}
-		positions := validPDFPositions(fields["_pdf_positions"])
+		rawPrimary := fields["_pdf_positions"]
+		positions := validPDFPositions(rawPrimary)
+		droppedPositions += countPDFPositionRows(rawPrimary) - len(positions)
 		if len(positions) == 0 {
-			positions = validPDFPositions(fields["positions"])
+			rawFallback := fields["positions"]
+			positions = validPDFPositions(rawFallback)
+			droppedPositions += countPDFPositionRows(rawFallback) - len(positions)
 		}
 		delete(fields, "_pdf_positions")
 		delete(fields, "positions")
@@ -87,6 +113,13 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 			}
 		}
 		if p.FlattenMediaToText {
+			// Flattened output keeps one text carrier per item. Structured
+			// tables (MinerU content_list, projected HTML) carry cells in
+			// `table` and footnotes in `text`; rendering the table preserves
+			// cells, caption, and footnote in that order. The render
+			// normalizes markup (header inference, escaping, whitespace), so
+			// it is not byte-identical to the source HTML, but it is
+			// content-preserving. Items without a table keep their text verbatim.
 			if table, ok := fields["table"].(*entity.TableData); ok && table != nil {
 				text, _ := fields["text"].(string)
 				fields["text"] = strings.TrimSpace(tableutil.RenderTableHTML(table) + "\n" + text)
@@ -99,20 +132,54 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 		}
 		items = appendPDFItem(items, fields)
 	}
+	if droppedPositions > 0 {
+		// Zero-area or otherwise invalid boxes are dropped so they never reach
+		// the on-demand cropper. Log the count so a parser that stops emitting
+		// regions is distinguishable from one that never emitted any.
+		common.Warn("PDF normalization dropped invalid positions",
+			zap.String("filename", filename),
+			zap.Int("dropped_rows", droppedPositions))
+	}
 	result.JSON = items
 	result.OutputFormat, result.Markdown, result.Text = "json", "", ""
-	result.File = maps.Clone(result.File)
-	if result.File == nil {
-		result.File = map[string]any{}
-	}
-	if _, ok := result.File["name"]; !ok {
-		result.File["name"] = filename
-	}
+	result.File = ensurePDFResultFile(result.File, filename)
 	return result
+}
+
+// ensurePDFResultFile preserves backend file metadata while guaranteeing the
+// filename is present, including on error paths where callers still need to
+// report which document failed.
+func ensurePDFResultFile(file map[string]any, filename string) map[string]any {
+	file = maps.Clone(file)
+	if file == nil {
+		file = map[string]any{}
+	}
+	if _, ok := file["name"]; !ok {
+		file["name"] = filename
+	}
+	return file
+}
+
+// NewTableNoteItem builds the text item that carries a table's description.
+// The note keeps the table's page identity and ordering hint so downstream
+// chunking preserves document order. Shared by NormalizeResult's table
+// splitting and the vision enhancement path.
+func NewTableNoteItem(fields map[string]any, text string) TextItem {
+	note := TextItem{Text: text, Extra: map[string]any{"layout": "text"}}
+	for _, key := range []string{"page_number", "_preserve_order"} {
+		if value, ok := fields[key]; ok {
+			note.Extra[key] = value
+		}
+	}
+	return note
 }
 
 // appendPDFItem emits adjacent tables separately and keeps their descriptions
 // in text items. Chunkers materialize a table only when its text field is empty.
+// The isTableHTML branch handles one text carrier holding two adjacent tables
+// plus a trailing note (projectPDFTable only projects the leading table, so the
+// remainder can itself start with a table). Covered by
+// TestPDFNormalizeResultPreservesAdjacentTables.
 func appendPDFItem(items []DocItem, fields map[string]any) []DocItem {
 	for {
 		table, _ := fields["table"].(*entity.TableData)
@@ -136,12 +203,7 @@ func appendPDFItem(items []DocItem, fields map[string]any) []DocItem {
 				continue
 			}
 		}
-		note := TextItem{Text: text, Extra: map[string]any{"layout": "text"}}
-		for _, key := range []string{"page_number", "_preserve_order"} {
-			if value, ok := fields[key]; ok {
-				note.Extra[key] = value
-			}
-		}
+		note := NewTableNoteItem(fields, text)
 		return append(items, note)
 	}
 }
@@ -157,6 +219,8 @@ func parsePDFMarkdown(ctx context.Context, filename, markdown string) ParseResul
 
 // validPDFPositions validates canonical 1-based PDF positions without changing
 // page identity or units. Invalid regions must never reach the cropper.
+// Zero-area or inverted boxes are dropped; the caller logs the dropped count so
+// the loss is observable instead of silent.
 func validPDFPositions(raw any) [][]any {
 	var rows []any
 	switch v := raw.(type) {
@@ -201,6 +265,28 @@ func validPDFPositions(raw any) [][]any {
 		result = append(result, []any{int(page), values[1], values[2], values[3], values[4]})
 	}
 	return result
+}
+
+// countPDFPositionRows counts candidate position rows before validation so the
+// caller can report how many were dropped. It mirrors validPDFPositions'
+// container handling without any value checks.
+func countPDFPositionRows(raw any) int {
+	switch v := raw.(type) {
+	case [][]any:
+		return len(v)
+	case []any:
+		return len(v)
+	case [][]float64:
+		return len(v)
+	case []float64:
+		// A single flat 5-tuple is one candidate row for the legacy wire form.
+		if len(v) == 0 {
+			return 0
+		}
+		return 1
+	default:
+		return 0
+	}
 }
 
 // splitPDFTable separates the leading table from any following description.

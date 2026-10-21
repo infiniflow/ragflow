@@ -162,7 +162,18 @@ func pdfMarkdownToResult(ctx context.Context, filename, markdown, outputFormat s
 	case "", "json":
 		res := parsePDFMarkdown(ctx, filename, markdown)
 		if res.Err != nil {
-			return res
+			if ctx.Err() != nil {
+				res.File = fileMeta
+				return res
+			}
+			// Same text fallback as NormalizeResult: keep the backend
+			// markdown as raw text instead of failing the task.
+			return ParseResult{
+				OutputFormat: "json",
+				File:         fileMeta,
+				Warnings:     append(res.Warnings, "markdown normalization fell back to text: "+res.Err.Error()),
+				JSON:         []DocItem{NewTextJSONItem(markdown)},
+			}
 		}
 		res.File = fileMeta
 		return res

@@ -564,6 +564,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if enhanceOn && !handledMedia && !handledImage && !handledAudio && dispatched.Err == nil && ctx.Err() == nil {
 		// PDF dispatch and ordinary parsers share enhancement after normalization.
 		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+	} else {
+		// Enhancement skipped entirely (disabled or non-PDF media handled):
+		// still strip the transient backend-description marker so it never
+		// reaches the chunker.
+		dispatched = stripBackendDescribedResult(dispatched)
 	}
 	reportParserWarnings(ctx, dispatched.Warnings)
 

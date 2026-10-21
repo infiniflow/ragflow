@@ -105,3 +105,86 @@ func TestPDFTableEnhancementKeepsDescriptionOutsideTableBody(t *testing.T) {
 		t.Fatalf("table description broke table contract or order: %#v", result.JSON)
 	}
 }
+
+func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
+	withDesc := mineruContentItemToJSON(map[string]any{
+		"type": "image", "image_caption": []any{"Caption"},
+		"vlm_description": "backend desc",
+		"page_idx":        0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
+	}, nil)
+	if withDesc == nil {
+		t.Fatal("image item dropped")
+	}
+	if withDesc[backendDescribedKey] != true {
+		t.Fatalf("backend-described image not marked: %#v", withDesc)
+	}
+	if text, _ := withDesc["text"].(string); !strings.Contains(text, "backend desc") {
+		t.Fatalf("backend description lost from text: %q", text)
+	}
+	withoutDesc := mineruContentItemToJSON(map[string]any{
+		"type": "image", "image_caption": []any{"Caption"},
+		"page_idx": 0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
+	}, nil)
+	if withoutDesc == nil {
+		t.Fatal("image item dropped")
+	}
+	if _, ok := withoutDesc[backendDescribedKey]; ok {
+		t.Fatalf("undescribed image wrongly marked: %#v", withoutDesc)
+	}
+}
+
+func TestVisionEnhancementSkipsBackendDescribedImages(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	png := "data:image/png;base64," + visionTestPNGBase64(t)
+	marked := parser.DocItemFromMap(map[string]any{
+		"doc_type_kwd": "image", "layout": "figure",
+		"text": "Caption\nbackend desc", "image": png,
+		backendDescribedKey: true,
+	})
+	plain := parser.DocItemFromMap(map[string]any{
+		"doc_type_kwd": "image", "layout": "figure",
+		"text": "Caption", "image": png,
+	})
+	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{marked, plain}}
+	enhanced, handled, err := maybeDispatchVisionEnhancement(t.Context(), nil, utility.FileTypePDF, result, map[string]any{"tenant_id": "tenant-1"}, visionSettings{}, progress.Window{})
+	if err != nil || !handled {
+		t.Fatalf("enhancement failed: %v", err)
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("backend-described image should be skipped: %d VLM calls", len(invoker.images))
+	}
+	if len(enhanced.JSON) != 2 {
+		t.Fatalf("items lost: %#v", enhanced.JSON)
+	}
+	first := enhanced.JSON[0].ToMap()
+	if text, _ := first["text"].(string); text != "Caption\nbackend desc" {
+		t.Fatalf("backend-described text duplicated or changed: %q", text)
+	}
+	if _, ok := first[backendDescribedKey]; ok {
+		t.Fatalf("marker leaked to output: %#v", first)
+	}
+	second := enhanced.JSON[1].ToMap()
+	if text, _ := second["text"].(string); !strings.Contains(text, "a diagram of a pipeline") {
+		t.Fatalf("undescribed image not enhanced: %q", text)
+	}
+	if _, ok := second[backendDescribedKey]; ok {
+		t.Fatalf("marker leaked to output: %#v", second)
+	}
+}
+
+func TestStripBackendDescribedResultClearsMarker(t *testing.T) {
+	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+		parser.DocItemFromMap(map[string]any{"doc_type_kwd": "image", "text": "t", backendDescribedKey: true}),
+		parser.NewTextJSONItem("plain"),
+	}}
+	stripped := stripBackendDescribedResult(result)
+	for _, item := range stripped.JSON {
+		if _, ok := item.ToMap()[backendDescribedKey]; ok {
+			t.Fatalf("marker leaked: %#v", item.ToMap())
+		}
+	}
+	if text, _ := stripped.JSON[0].ToMap()["text"].(string); text != "t" {
+		t.Fatalf("text changed: %q", text)
+	}
+}

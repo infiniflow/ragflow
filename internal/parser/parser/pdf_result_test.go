@@ -64,8 +64,11 @@ func TestPDFNormalizeResultMarkdownAndCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	result = NewPDFParser().NormalizeResult(ctx, "ocr.pdf", ParseResult{OutputFormat: "markdown", Markdown: "body"})
-	if !errors.Is(result.Err, context.Canceled) || result.OutputFormat != "" {
+	if !errors.Is(result.Err, context.Canceled) {
 		t.Fatalf("cancellation = %+v", result)
+	}
+	if result.File["name"] != "ocr.pdf" {
+		t.Fatalf("cancellation lost file metadata: %+v", result)
 	}
 }
 
@@ -349,5 +352,82 @@ func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestPDFNormalizeResultIsIdempotent(t *testing.T) {
+	const markup = "<table><tr><td>First cell</td></tr></table>\n<table><tr><td>Second cell</td></tr></table>\nFootnote"
+	for _, flatten := range []bool{false, true} {
+		p := NewPDFParser()
+		p.FlattenMediaToText = flatten
+		item := map[string]any{
+			"doc_type_kwd": "table", "text": markup, "page_number": 3,
+			"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
+		}
+		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+		if once.Err != nil {
+			t.Fatal(once.Err)
+		}
+		twice := p.NormalizeResult(t.Context(), "sample.pdf", once)
+		if twice.Err != nil {
+			t.Fatal(twice.Err)
+		}
+		if len(once.JSON) != len(twice.JSON) {
+			t.Fatalf("flatten=%v: second normalize changed item count %d -> %d", flatten, len(once.JSON), len(twice.JSON))
+		}
+		for i := range once.JSON {
+			a, b := once.JSON[i].ToMap(), twice.JSON[i].ToMap()
+			if a["doc_type_kwd"] != b["doc_type_kwd"] {
+				t.Fatalf("flatten=%v: item %d type changed %v -> %v", flatten, i, a["doc_type_kwd"], b["doc_type_kwd"])
+			}
+			ta, _ := a["text"].(string)
+			tb, _ := b["text"].(string)
+			if ta != tb {
+				t.Fatalf("flatten=%v: item %d text changed %q -> %q", flatten, i, ta, tb)
+			}
+		}
+	}
+}
+
+func TestCountPDFPositionRows(t *testing.T) {
+	if got := countPDFPositionRows(nil); got != 0 {
+		t.Fatalf("nil = %d, want 0", got)
+	}
+	if got := countPDFPositionRows([][]any{{1, 0, 1, 0, 1}, {2, 0, 1, 0, 1}}); got != 2 {
+		t.Fatalf("[][]any = %d, want 2", got)
+	}
+	if got := countPDFPositionRows([]any{[]any{1, 0, 1, 0, 1}}); got != 1 {
+		t.Fatalf("[]any = %d, want 1", got)
+	}
+	if got := countPDFPositionRows("bad"); got != 0 {
+		t.Fatalf("bad type = %d, want 0", got)
+	}
+}
+
+func TestPDFNormalizeResultCancellationPreservesFile(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := NewPDFParser().NormalizeResult(ctx, "cancel.pdf", ParseResult{
+		OutputFormat: "json",
+		File:         map[string]any{"parse_method": "mineru"},
+		JSON:         MapsToItems([]map[string]any{{"text": "hi", "doc_type_kwd": "text"}}),
+	})
+	if !errors.Is(result.Err, context.Canceled) {
+		t.Fatalf("err = %v", result.Err)
+	}
+	if result.File["name"] != "cancel.pdf" || result.File["parse_method"] != "mineru" {
+		t.Fatalf("file lost: %+v", result.File)
+	}
+}
+
+func TestPDFMarkdownToResultPreservesFileOnCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := pdfMarkdownToResult(ctx, "cancel.pdf", "body", "json", 3)
+	if !errors.Is(result.Err, context.Canceled) {
+		t.Fatalf("err = %v", result.Err)
+	}
+	if result.File["name"] != "cancel.pdf" || result.File["page_count"] != 3 {
+		t.Fatalf("file lost: %+v", result.File)
 	}
 }
