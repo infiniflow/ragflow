@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 title: RAGFlow CLI
 sidebar_label: RAGFlow CLI
 slug: /admin_cli

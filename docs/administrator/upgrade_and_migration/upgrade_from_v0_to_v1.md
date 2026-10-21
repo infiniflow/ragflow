@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 5
 title: Upgrade from v0.x to v1.x
 sidebar_label: Upgrade from v0.x to v1.x
 slug: /upgrade_from_v0_to_v1
@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 This guide provides the step-by-step procedure for upgrading a MySQL-based Docker deployment from RAGFlow `v0.20.0` or later to the current latest version.
 
-Before continuing, review the standard route in [Migration Guide](./migration_overview.md) and complete the backup and preparation checklist.
+Before continuing, review the standard route in [Migration Guide](./start_here.md) and complete the backup and preparation checklist.
 
 :::danger Do not skip the v0.x to v1.x boundary
 Every `v0.x` deployment must successfully start and pass verification on `v0.27.2`, and must then be upgraded to `v1.0.0-rc1`. Do not upgrade directly from an earlier `v0.x` release to `v1.0.0-rc1` or a later `v1.x` release.

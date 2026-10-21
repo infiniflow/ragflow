@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 3
 title: Upgrade from v1.x to later releases
 sidebar_label: Upgrade from v1.x to later releases
 slug: /upgrade_from_v1_to_later_releases

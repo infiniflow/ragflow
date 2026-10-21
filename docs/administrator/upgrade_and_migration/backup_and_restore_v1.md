@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 2
 title: "Backup and Restore (v1.x)"
 sidebar_label: "Backup and Restore (v1.x)"
 slug: /backup_and_restore_v1
