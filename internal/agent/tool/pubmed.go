@@ -171,12 +171,42 @@ type pubmedXMLArticleID struct {
 	Value string `xml:",chardata"`
 }
 
+// pubmedInlineText decodes an element whose content model allows inline
+// markup. PubMed marks up titles and abstracts with i, b, sup, sub, u and
+// mml:math, and encoding/xml drops the text inside a nested element when the
+// target field is a plain string, so every wrapped species name, gene symbol
+// or exponent would be lost. Keep every character data token instead.
+type pubmedInlineText string
+
+func (t *pubmedInlineText) UnmarshalXML(d *xml.Decoder, _ xml.StartElement) error {
+	var text strings.Builder
+	depth := 0
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+		switch tok := token.(type) {
+		case xml.CharData:
+			text.Write(tok)
+		case xml.StartElement:
+			depth++
+		case xml.EndElement:
+			if depth == 0 {
+				*t = pubmedInlineText(text.String())
+				return nil
+			}
+			depth--
+		}
+	}
+}
+
 type pubmedXMLArticle struct {
 	PMID    string `xml:"MedlineCitation>PMID"`
 	Article struct {
-		Title    string `xml:"ArticleTitle"`
+		Title    pubmedInlineText `xml:"ArticleTitle"`
 		Abstract struct {
-			Text []string `xml:"AbstractText"`
+			Text []pubmedInlineText `xml:"AbstractText"`
 		} `xml:"Abstract"`
 		Journal struct {
 			Title string `xml:"Title"`
@@ -346,8 +376,12 @@ func truncatePubMedRunes(value string, limit int) string {
 }
 
 func formatPubMedResult(article pubmedXMLArticle) pubmedResult {
-	title := fallbackPubMedField(article.Article.Title, "No title")
-	abstract := fallbackPubMedField(strings.Join(article.Article.Abstract.Text, " "), "No abstract available")
+	sections := make([]string, 0, len(article.Article.Abstract.Text))
+	for _, section := range article.Article.Abstract.Text {
+		sections = append(sections, string(section))
+	}
+	title := fallbackPubMedField(string(article.Article.Title), "No title")
+	abstract := fallbackPubMedField(strings.Join(sections, " "), "No abstract available")
 	journal := fallbackPubMedField(article.Article.Journal.Title, "Unknown Journal")
 	volume := fallbackPubMedField(article.Article.Journal.Issue.Volume, "-")
 	issue := fallbackPubMedField(article.Article.Journal.Issue.Number, "-")
