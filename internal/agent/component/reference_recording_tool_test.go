@@ -95,6 +95,26 @@ func TestReferenceRecordingTool_SkipsErrorsAndNonJSON(t *testing.T) {
 	}
 }
 
+func TestReferenceRecordingTool_KeepsSameTitleDifferentDocumentIDs(t *testing.T) {
+	state := runtime.NewCanvasState("run-refs", "task-refs")
+	ctx := runtime.WithState(t.Context(), state)
+	inner := &referenceRecordingFakeTool{out: `{"results":["same title","same title"]}`}
+	recorder := &referenceRecordingTool{InvokableTool: inner, builder: inner}
+
+	if _, err := recorder.InvokableRun(ctx, `{"query":"q"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if aggs := state.GetRetrievalDocAggs(); len(aggs) != 2 {
+		t.Fatalf("recorded doc aggs = %d, want 2 for distinct document ids", len(aggs))
+	}
+	reference := state.GetRetrievalReference()
+	chunks, _ := reference["chunks"].([]any)
+	docAggs, _ := reference["doc_aggs"].([]any)
+	if len(chunks) != 2 || len(docAggs) != 2 {
+		t.Fatalf("reference = %d chunks / %d doc aggs, want 2/2", len(chunks), len(docAggs))
+	}
+}
+
 // TestWrapReferenceRecordingTools_WrapsReferenceBuilders asserts the ReAct
 // tool list is decorated while buildAgentTools keeps the raw tools.
 func TestWrapReferenceRecordingTools_WrapsReferenceBuilders(t *testing.T) {
