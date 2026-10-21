@@ -486,7 +486,7 @@ def test_version_lookup_degrades_to_per_doc_retry(monkeypatch):
     versions = asyncio.run(wiki._wiki_load_map_versions(set(doc_ids), "tenant-1", "kb-1", hashes))
 
     assert set(versions) == set(hashes)
-    assert max(store.doc_query_widths) == 3      # tried as one batch first
+    assert max(store.doc_query_widths) == 3  # tried as one batch first
     assert store.doc_query_widths.count(1) >= 3  # then degraded to per-doc
 
 
@@ -676,6 +676,7 @@ def test_llm_error_still_returns_none_without_split_retry(monkeypatch):
     assert seen_sizes == [4]
     assert merged == wiki._wiki_empty_extract()
     assert store.insert_calls == []
+
 
 class _ListValuedKwdDocStore(_StateDocStore):
     """Mirrors Infinity/Vastbase ``get_fields``: ``*_kwd`` columns come back as lists.

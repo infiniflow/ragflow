@@ -824,8 +824,7 @@ async def _wiki_load_map_versions(
                 wanted = [
                     chunk_id
                     for chunk_id in _wiki_doc_ids(row.get("source_chunk_ids"))
-                    if (not requested_chunk_ids or chunk_id in requested_chunk_ids)
-                    and (requested_versions is None or requested_versions.get(chunk_id) == chunk_hash)
+                    if (not requested_chunk_ids or chunk_id in requested_chunk_ids) and (requested_versions is None or requested_versions.get(chunk_id) == chunk_hash)
                 ]
                 if not wanted:
                     continue
