@@ -199,4 +199,4 @@ The setup is complete when:
 - To adjust Runner capacity, images, resource limits, network access, artifacts, or authentication, see [Manage Self-Managed Sandbox](./manage_self_managed_sandbox.md).
 - To connect RAGFlow to an Executor Manager on another host, see [Connect to a remote Executor Manager](./manage_self_managed_sandbox.md#connect-to-a-remote-executor-manager).
 - If startup, connection, authentication, or execution fails, see [Code Execution Sandbox FAQ](./faq.md).
-- To use SSH or a managed cloud service instead, see [Configure SSH and Cloud Providers](../management/admin_ui/configure_ssh_and_cloud_providers.md).
+- To use SSH or a managed cloud service instead, see [Configure SSH and Cloud Providers](./configure_ssh_and_cloud_providers.md).

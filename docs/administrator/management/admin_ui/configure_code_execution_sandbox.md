@@ -14,16 +14,18 @@ Saving a provider makes it active for subsequent Code component runs across this
 
 ## Select a provider
 
+![Select a sandbox provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
+
 The page supports:
 
 | Provider | Detailed instructions |
 | --- | --- |
 | **Self-Managed** | [Quickstart with Self-Managed](../../sandbox/quickstart_with_self_managed.md) |
-| **SSH** | [Configure SSH](./configure_ssh_and_cloud_providers.md#configure-ssh) |
-| **Aliyun Code Interpreter** | [Configure Aliyun Code Interpreter](./configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter) |
-| **E2B** | [Configure E2B](./configure_ssh_and_cloud_providers.md#configure-e2b) |
-| **Tenki** | [Configure Tenki](./configure_ssh_and_cloud_providers.md#configure-tenki) |
-| **UCloud Agent Sandbox** | [Configure UCloud Agent Sandbox](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) |
+| **SSH** | [Configure SSH](../../sandbox/configure_ssh_and_cloud_providers.md#configure-ssh) |
+| **Aliyun Code Interpreter** | [Configure Aliyun Code Interpreter](../../sandbox/configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter) |
+| **E2B** | [Configure E2B](../../sandbox/configure_ssh_and_cloud_providers.md#configure-e2b) |
+| **Tenki** | [Configure Tenki](../../sandbox/configure_ssh_and_cloud_providers.md#configure-tenki) |
+| **UCloud Agent Sandbox** | [Configure UCloud Agent Sandbox](../../sandbox/configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) |
 
 ## Test and save the configuration
 

@@ -1273,7 +1273,7 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 }
 
 func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
-	if positions := mergePositionMatrix(first, second); len(positions) > 0 {
+	if positions := mergePositionMatrix(first, second); positions != nil {
 		encoded, err := json.Marshal(positions)
 		if err == nil {
 			return encoded

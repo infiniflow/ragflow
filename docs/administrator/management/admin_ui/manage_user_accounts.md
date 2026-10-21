@@ -8,7 +8,7 @@ title: Manage User Accounts
 
 ## View and Search Users
 
-User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, `User type`, and `Last login time`.
+User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, and `User type`.
 
 ![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_1.jpg)
 
