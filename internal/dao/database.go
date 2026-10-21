@@ -256,6 +256,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migratePermissions(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate permissions: %w", err)
 		}
+		if err = migrateTenantModelProviderUserUniqueIndex(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant model provider unique index: %w", err)
+		}
 		common.Info("Database schema migrated successfully")
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
@@ -267,6 +270,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
+	}
+	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
+		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
 	}
 	// Conversation lists filter by dialog and usually order by update time.
 	for _, table := range []string{"conversation", "api_4_conversation"} {

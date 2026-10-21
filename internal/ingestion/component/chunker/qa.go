@@ -423,10 +423,9 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// block that merely opens with "<table" text (no row) stays on the
 		// prose path instead of silently pairing nothing. (Python's qa.py
 		// drops plain-text table payloads such as PDF tables entirely; the
-		// walker keeps their pairs.) Pre-upgrade row-IR payloads
-		// (ck_type: table_row/table_header with cells) hold no markup and
-		// fall through to the text extractor, so documents from before this
-		// wire must be re-parsed rather than re-chunked.
+		// walker keeps their pairs.) Pre-upgrade row-IR payloads hold no
+		// markup and fall through to the text extractor, so documents from
+		// before this wire must be re-parsed rather than re-chunked.
 		var rows [][]string
 		if td != nil {
 			rows = td.CellTexts()

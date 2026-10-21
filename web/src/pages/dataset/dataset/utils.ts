@@ -129,13 +129,13 @@ export const isDocumentProcessing = (
 // A file cannot be parsed under the dataset's current Parser operator when
 // the operator does not declare the file's type family at all
 // (unsupportedType), or when the family is declared but the model it needs
-// is not set (missingModel): audio reads its per-setup ASR model, while
-// video reads the Parser-level vision enhancement (enable_vision_enhancement
-// + vlm.llm_id) — its model no longer lives on the family setup. The tenant
-// default is deliberately not consulted: a global default does not make the
-// file parsable here. Image files only need their family declared: the image
-// OCR switch runs local extraction independently, and the vision model is a
-// global supplement for it.
+// is not set (missingModel): audio reads its per-setup ASR model. Video is
+// temporarily blocked as unsupported until the video-analysis capability
+// lands (maybeDispatchVideo still returns "not yet supported"), so it never
+// reports missingModel even when its family is declared.
+// Image files only need their family declared: the image OCR switch runs
+// local extraction independently, and the vision model is a global supplement
+// for it.
 // These helpers power the upload warning and the parse-click validation.
 
 export type ParserModelGap = {
@@ -209,8 +209,11 @@ const GeneralFamilyFileTypes = new Set<FileType>([
   FileType.Docx,
 ]);
 
-// Extension sets mirror utility.FilenameType (internal/utility/file.go); the
-// visual bucket intentionally includes the video extensions.
+// Extension sets mirror the backend upload buckets (utility.FilenameType):
+// the visual bucket admits image containers plus every video container in the
+// shared backend set, so video keeps the picture switch the backend performs.
+// Parsability is judged separately: pickBySwitchFate excludes video from the
+// switchable count because no parser implements video analysis.
 const VisualSwitchSuffixes = new Set([
   'jpg',
   'jpeg',
@@ -237,21 +240,26 @@ const VisualSwitchSuffixes = new Set([
   'apng',
   'icon',
   'ico',
-  'mpg',
-  'mpeg',
+  // Video containers (mirrors utility.videoExtensions).
+  'mp4',
   'avi',
+  'mkv',
+  'mov',
+  'webm',
+  'flv',
+  'mpeg',
+  'mpg',
+  'wmv',
+  '3gp',
+  '3gpp',
   'rm',
   'rmvb',
-  'mov',
-  'wmv',
   'asf',
   'dat',
   'asx',
   'wvx',
   'mpe',
   'mpa',
-  'mp4',
-  'mkv',
 ]);
 
 const AuralSwitchSuffixes = new Set([
@@ -279,6 +287,12 @@ export function builtinParserSwitchTarget(
   name: string,
   fileType: FileType | undefined,
 ): BuiltinSwitchTarget | null {
+  // Video uploads are accepted (visual bucket) but unsupported for parsing (no
+  // parser implements video analysis). The picture switch below mirrors what
+  // the backend performs; the row is still unparsable, so the user is warned
+  // at upload and blocked at parse-click. pickBySwitchFate separately excludes
+  // video from the switchable count so mixed batches never promise an
+  // automatic switch that cannot make the file parsable.
   const suffix = getExtension(name);
   if (VisualSwitchSuffixes.has(suffix)) {
     return 'picture';
@@ -327,7 +341,12 @@ export function pickBySwitchFate<T>(
   if (unsupported.length === 0) {
     return options.missingModel;
   }
-  const switchable = unsupported.filter((gap) => gap.autoSwitchTarget !== null);
+  // Video uploads switch to picture but stay unparsable, so they are not
+  // counted as switchable: counting them would promise an automatic switch
+  // that cannot make the file parsable.
+  const switchable = unsupported.filter(
+    (gap) => gap.autoSwitchTarget !== null && gap.fileType !== FileType.Video,
+  );
   if (switchable.length === 0) {
     return options.manualSwitch;
   }
@@ -338,20 +357,8 @@ export function pickBySwitchFate<T>(
 
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
-/**
- * The Parser-level vision enhancement globals (enable_vision_enhancement +
- * vlm.llm_id): one switch and model serve every media family. Undefined marks
- * a config saved before the model moved off the per-family setups — those
- * still carry the video model on the video setup itself.
- */
-export type ParserVisionEnhancement = {
-  enabled: boolean;
-  modelId: string;
-};
-
 export type SavedParserConfig = {
   setups: ParserSetup[];
-  visionEnhancement?: ParserVisionEnhancement;
 };
 
 const ExtensionToFileTypeMap: Record<string, FileType> = Object.entries(
@@ -369,32 +376,12 @@ export function getFileTypeByExtension(
   return ExtensionToFileTypeMap[extension.toLowerCase()];
 }
 
-// Reads the Parser-level vision globals from a saved Parser entry. A boolean
-// enable_vision_enhancement marks the current contract; configs saved before
-// the model moved to the top level do not have it, and their video setup
-// still holds the model — so the absence is meaningful, not a default-off.
-function readVisionEnhancement(
-  parserEntry: unknown,
-): ParserVisionEnhancement | undefined {
-  if (typeof parserEntry !== 'object' || parserEntry === null) {
-    return undefined;
-  }
-  const params = parserEntry as Record<string, any>;
-  const enabled = params.enable_vision_enhancement;
-  if (typeof enabled !== 'boolean') {
-    return undefined;
-  }
-  const modelId = params.vlm?.llm_id;
-  return { enabled, modelId: typeof modelId === 'string' ? modelId : '' };
-}
-
 /**
- * Parser config exactly as saved: the per-family setups plus the Parser-level
- * vision enhancement globals. Accepts either a dataset or a document row: a
- * document's parser_config snapshots the parser it actually runs with
- * (dataset config at upload, the override after a parser change). Returns
- * null when parser_config has no Parser operator entry (legacy flat-shape
- * configs, pipelines without a Parser stage): type support cannot be
+ * Parser config exactly as saved: the per-family setups. Accepts either a
+ * dataset or a document row: a document's parser_config snapshots the parser it
+ * actually runs with (dataset config at upload, the override after a parser
+ * change). Returns null when parser_config has no Parser operator entry (legacy
+ * flat-shape configs, pipelines without a Parser stage): type support cannot be
  * determined then and validation is skipped.
  */
 export function getSavedParserConfig(
@@ -411,7 +398,6 @@ export function getSavedParserConfig(
   }
   return {
     setups: transformParserConfigSetups(parserEntry),
-    visionEnhancement: readVisionEnhancement(parserEntry),
   };
 }
 
@@ -441,16 +427,12 @@ export function findParserGap(
           };
     }
     case FileType.Video: {
-      const hasVisionModel = config.visionEnhancement
-        ? config.visionEnhancement.enabled && !!config.visionEnhancement.modelId
-        : !!setup.vlm?.llm_id;
-      return hasVisionModel
-        ? null
-        : {
-            reason: ParserGapReason.MissingModel,
-            fileType,
-            modelKind: ParserModelKind.Vision,
-          };
+      // Video parsing is not implemented yet (the backend dispatch returns
+      // "video parsing is not yet supported"), so a declared family or a
+      // configured vision model does not make the file parsable. Report it
+      // as unsupported so upload warns and parse-click blocks instead of
+      // prompting for a model that cannot unblock it.
+      return { reason: ParserGapReason.UnsupportedType, fileType };
     }
     default:
       return null;
@@ -480,6 +462,20 @@ export function findDocumentsParserGaps(
 ): FileParserGap[] {
   return documents.flatMap((doc) => {
     const config = getSavedParserConfig(doc) ?? fallbackConfig;
-    return config ? findFilesParserGaps([doc.name], config) : [];
+    if (!config) {
+      // Video is never parsable regardless of configuration, so it stays
+      // blocked even when type support cannot be determined for other files.
+      const fileType = getFileTypeByExtension(getExtension(doc.name));
+      return fileType === FileType.Video
+        ? [
+            {
+              reason: ParserGapReason.UnsupportedType,
+              fileType,
+              name: doc.name,
+            },
+          ]
+        : [];
+    }
+    return findFilesParserGaps([doc.name], config);
   });
 }

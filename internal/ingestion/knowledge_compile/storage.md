@@ -15,8 +15,8 @@ session kinds remain `session_graph` and `session_essence`.
 
 Wiki page categories such as `concept`, `entity`, and `topic` are stored in
 `entity_type_kwd`. Inferred structure extraction types such as `list`, `set`,
-and `hypergraph` are retained as `compile_type` inside the JSON string in `extra`.
-Neither changes the compilation kind.
+and `hypergraph` guide extraction but are not persisted. Compilation products do
+not write `extra`.
 
 New writes omit `compilation_template_kind_kwd` and `page_type_kwd`.
 Their engine columns remain available for reading existing data.

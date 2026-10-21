@@ -79,7 +79,7 @@ func TestMigratePermissions(t *testing.T) {
 		t.Fatalf("auto-migrate enterprise permission entities: %v", err)
 	}
 	ctx := context.Background()
-	if err := setDatabaseMigrationVersion(ctx, db, tenantModelMaxTokensTargetVersion); err != nil {
+	if err := setDatabaseMigrationVersion(ctx, db, "v1.0.0-rc3.dev2"); err != nil {
 		t.Fatalf("set previous migration version: %v", err)
 	}
 	if err := migratePermissions(ctx, db); err != nil {

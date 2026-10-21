@@ -80,7 +80,6 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 		// so text-bound assertions (e.g. TokenChunker boundary tests) stay valid.
 		"text":         tableutil.RenderTableHTML(td),
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
 		"positions":    matrix,
 	}
@@ -319,8 +318,8 @@ func TestGeneralChunkerMarkdownShortHeadingForcesNextUnit(t *testing.T) {
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -346,8 +345,8 @@ func TestGeneralChunkerMarkdownLongHeadingUsesNormalCap(t *testing.T) {
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": longHeading, "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": longHeading, "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -375,7 +374,7 @@ func TestGeneralChunkerMarkdownImageMergesWithTextAndPreservesPayload(t *testing
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "figure caption", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
 		},
 	})
@@ -516,9 +515,9 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table", "ck_type": "table"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -533,9 +532,6 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 	}
 	if got := chunks[0]["doc_type_kwd"]; got != "table" {
 		t.Errorf("table doc_type_kwd = %v, want table", got)
-	}
-	if got := chunks[0]["ck_type"]; got != "table" {
-		t.Errorf("table ck_type = %v, want table", got)
 	}
 }
 
@@ -639,7 +635,7 @@ func TestGeneralChunkerMarkdownTableDoesNotDuplicateShortHeadingInContext(t *tes
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "## Section", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 		},
 	})
@@ -678,7 +674,7 @@ func TestGeneralChunkerMarkdownTableKeepsEarlierContextWhenHeadingFolds(t *testi
 		"output_format": "json",
 		"json": []map[string]any{
 			{"text": "intro", "doc_type_kwd": "text"},
-			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "## Section", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 		},
 	})
@@ -803,11 +799,11 @@ func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 
 func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 	units := []schema.ChunkDoc{
-		{Text: "before one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "before two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "", DocType: "table", CKType: "table"},
-		{Text: "after one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "before one", DocType: "text", TKNums: intPtr(1)},
+		{Text: "before two", DocType: "text", TKNums: intPtr(1)},
+		{Text: "", DocType: "table"},
+		{Text: "after one", DocType: "text", TKNums: intPtr(1)},
+		{Text: "after two", DocType: "text", TKNums: intPtr(1)},
 	}
 
 	if got, want := collectGeneralMediaContext(units, 2, 10, true, contextSentencePattern), "before one\nbefore two"; got != want {
@@ -855,8 +851,8 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 
 func TestGroupDOCXUnitsByRecordBoundaryInactiveWithoutBoundary(t *testing.T) {
 	units := []schema.ChunkDoc{
-		{Text: "plain paragraph one", DocType: "text", CKType: "text"},
-		{Text: "plain paragraph two", DocType: "text", CKType: "text"},
+		{Text: "plain paragraph one", DocType: "text"},
+		{Text: "plain paragraph two", DocType: "text"},
 	}
 	got, grouped := groupDOCXUnitsByRecordBoundary(units, []string{"问："})
 	if grouped {
@@ -1013,9 +1009,9 @@ func TestSortPDFUnitsKeepsUnpositionedMediaInInputOrder(t *testing.T) {
 		return json.RawMessage(fmt.Sprintf("[[1,0,10,%g,%g]]", top, top+5))
 	}
 	units := []schema.ChunkDoc{
-		{Text: "before", DocType: "text", CKType: "text", Positions: position(10)},
-		{Text: "figure", DocType: "image", CKType: "image"},
-		{Text: "after", DocType: "text", CKType: "text", Positions: position(30)},
+		{Text: "before", DocType: "text", Positions: position(10)},
+		{Text: "figure", DocType: "image"},
+		{Text: "after", DocType: "text", Positions: position(30)},
 	}
 
 	got := sortPDFUnits(units)
@@ -1044,7 +1040,7 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
 	}
 	text, _ := chunks[0]["text"].(string)
-	if chunks[0]["ck_type"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
+	if chunks[0]["doc_type_kwd"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
@@ -1063,7 +1059,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure", "sheet_index": 1},
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Growth"}}, 1, 3),
 		},
 	})
@@ -1074,7 +1070,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want segment, image, segment", chunks)
 	}
-	if chunks[1]["ck_type"] != "image" {
+	if chunks[1]["doc_type_kwd"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
 	assertMaterializedMediaContext(t, chunks[1], "RevenueB2Growth")
@@ -1091,7 +1087,7 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Sheet one"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure", "sheet_index": 1},
 			spreadsheetSegmentItem("Sheet2", []string{"Name"}, [][]string{{"Sheet two"}}, 2, 2),
 		},
 	})
@@ -1243,9 +1239,8 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 	}
 
 	const wantText = "before<table><tr><td>A</td></tr></table>after"
-	// The table chunk is selected by the STORED type column: ck_type is chunker
-	// bookkeeping and the index boundary strips it (it has no chunk-store
-	// column, and a strict engine rejects the whole insert over one).
+	// The table chunk is selected by the STORED type column: doc_type_kwd is
+	// the content-type contract and the index boundary keeps it.
 	var table map[string]any
 	for _, ck := range chunks {
 		if ck["doc_type_kwd"] == "table" {
@@ -1347,7 +1342,6 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 	table := map[string]any{
 		"text":         "<table><caption>Doc</caption>\n<tr><th>Name</th></tr>\n<tr><td>Revenue</td></tr>\n</table>\n",
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
 	}
 	out, err := component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "document.docx",
@@ -1355,7 +1349,7 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			table,
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure"},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure"},
 			table,
 		},
 	})
@@ -1366,7 +1360,7 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want table, image, table", chunks)
 	}
-	if chunks[1]["ck_type"] != "image" {
+	if chunks[1]["doc_type_kwd"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
 	if got, _ := chunks[1]["text"].(string); got != "B2" {

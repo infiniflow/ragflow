@@ -130,17 +130,20 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 	p.FlattenMediaToText = true
 	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell"}}}, Caption: "Caption"}
 	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: []DocItem{
-		TableItem{Table: table, CKType: "table", Extra: map[string]any{"text": "Footnote"}},
-		ImageItem{Text: "Figure", Image: "image-data", CKType: "image", Positions: Positions{AbsoluteBox{PageNumber: 2, Left: 1, Right: 5, Top: 2, Bottom: 6}}},
-		TextItem{Text: "Title", CKType: "heading"},
+		TableItem{Table: table, Extra: map[string]any{"text": "Footnote"}},
+		ImageItem{Text: "Figure", Image: "image-data", Positions: Positions{AbsoluteBox{PageNumber: 2, Left: 1, Right: 5, Top: 2, Bottom: 6}}},
+		TextItem{Text: "Title", Extra: map[string]any{"layout": "heading"}},
 	}})
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	for i, item := range result.JSON[:2] {
 		fields := item.ToMap()
-		if fields["doc_type_kwd"] != "text" || fields["ck_type"] == "image" || fields["ck_type"] == "table" {
+		if fields["doc_type_kwd"] != "text" {
 			t.Fatalf("flattened item %d still has media type: %#v", i, fields)
+		}
+		if _, ok := fields["ck_type"]; ok {
+			t.Fatalf("flattened item %d still carries the retired ck_type: %#v", i, fields)
 		}
 	}
 	text, _ := result.JSON[0].ToMap()["text"].(string)
@@ -155,8 +158,8 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 	if _, ok := ExtractPDFPositions(result.JSON[1].ToMap()); !ok {
 		t.Fatal("flatten lost positions")
 	}
-	if result.JSON[2].ToMap()["ck_type"] != "heading" {
-		t.Fatal("heading subtype changed")
+	if result.JSON[2].ToMap()["layout"] != "heading" {
+		t.Fatal("heading layout changed")
 	}
 }
 
@@ -168,8 +171,11 @@ func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 		t.Fatal(result.Err)
 	}
 	item := result.JSON[0].ToMap()
-	if item["doc_type_kwd"] != "text" || item["ck_type"] == "table" || item["text"] != "Recognized text without cells" {
+	if item["doc_type_kwd"] != "text" || item["text"] != "Recognized text without cells" {
 		t.Fatalf("unstructured table kept an inconsistent subtype: %#v", item)
+	}
+	if _, ok := item["ck_type"]; ok {
+		t.Fatalf("retired ck_type survived normalization: %#v", item)
 	}
 }
 

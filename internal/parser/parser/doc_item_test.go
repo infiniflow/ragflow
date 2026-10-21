@@ -34,17 +34,9 @@ func TestTextItem_ToMap(t *testing.T) {
 		mustMap(t, map[string]any{"text": "", DocTypeKey: DocTypeText},
 			TextItem{}.ToMap())
 	})
-	t.Run("with text and no ck_type", func(t *testing.T) {
+	t.Run("with text", func(t *testing.T) {
 		mustMap(t, map[string]any{"text": "body", DocTypeKey: DocTypeText},
 			TextItem{Text: "body"}.ToMap())
-	})
-	t.Run("ck_type emitted only when non-empty", func(t *testing.T) {
-		mustMap(t, map[string]any{"text": "h", DocTypeKey: DocTypeText, "ck_type": "heading"},
-			TextItem{Text: "h", CKType: "heading"}.ToMap())
-		// empty CKType must NOT appear as a key.
-		if _, ok := (TextItem{Text: "h"}).ToMap()["ck_type"]; ok {
-			t.Error("ck_type present despite empty CKType")
-		}
 	})
 	t.Run("extra passthrough", func(t *testing.T) {
 		mustMap(t, map[string]any{
@@ -60,21 +52,19 @@ func TestTextItem_ToMap(t *testing.T) {
 }
 
 func TestTextItem_ExtraDoesNotClobberCanonical(t *testing.T) {
-	// An attacker/stray Extra key must never shadow the typed fields.
+	// An attacker/stray Extra key must never shadow the typed fields, and a
+	// retired ck_type must not be resurrected through Extra.
 	got := TextItem{
-		Text:   "real",
-		CKType: "heading",
+		Text: "real",
 		Extra: map[string]any{
 			"text":     "evil",
 			DocTypeKey: "evil",
-			"ck_type":  "evil",
 			"layout":   "kept", // not a canonical key -> passes through
 		},
 	}.ToMap()
 	mustMap(t, map[string]any{
 		"text":     "real",
 		DocTypeKey: DocTypeText,
-		"ck_type":  "heading",
 		"layout":   "kept",
 	}, got)
 }
@@ -84,25 +74,15 @@ func TestTableItem_ToMap(t *testing.T) {
 		mustMap(t, map[string]any{
 			"table":    (*entity.TableData)(nil),
 			DocTypeKey: DocTypeTable,
-			"ck_type":  DocTypeTable,
 		}, TableItem{}.ToMap())
 	})
-	t.Run("ck_type falls back to table when empty", func(t *testing.T) {
-		mustMap(t, map[string]any{
-			"table":    (*entity.TableData)(nil),
-			DocTypeKey: DocTypeTable,
-			"ck_type":  DocTypeTable,
-		}, TableItem{CKType: ""}.ToMap())
-	})
-	t.Run("ck_type explicit wins", func(t *testing.T) {
+	t.Run("sheet and positions", func(t *testing.T) {
 		mustMap(t, map[string]any{
 			"table":     (*entity.TableData)(nil),
 			DocTypeKey:  DocTypeTable,
-			"ck_type":   "table",
 			"sheet":     "Sheet1",
 			"positions": [][]float64{{0, 1, 1, 2, 2}},
 		}, TableItem{
-			CKType:    "table",
 			Sheet:     "Sheet1",
 			Positions: SpreadsheetPositions([][]float64{{0, 1, 1, 2, 2}}),
 		}.ToMap())
@@ -119,30 +99,25 @@ func TestTableItem_ToMap(t *testing.T) {
 }
 
 func TestImageItem_ToMap(t *testing.T) {
-	t.Run("docx-like: no ck_type, empty image", func(t *testing.T) {
-		// docx image items historically set doc_type_kwd:"image" with no
-		// ck_type and an empty image when over budget.
+	t.Run("docx-like: empty image", func(t *testing.T) {
+		// docx image items historically set doc_type_kwd:"image" with an empty
+		// image when over budget.
 		mustMap(t, map[string]any{
 			"text":     "",
 			"image":    "",
 			DocTypeKey: DocTypeImage,
 		}, ImageItem{}.ToMap())
-		if _, ok := (ImageItem{}).ToMap()["ck_type"]; ok {
-			t.Error("ck_type present despite empty CKType")
-		}
 	})
-	t.Run("xlsx-like: ck_type image + sheet + positions", func(t *testing.T) {
+	t.Run("xlsx-like: sheet + positions", func(t *testing.T) {
 		mustMap(t, map[string]any{
 			"text":      "alt",
 			"image":     "data:image/png;base64,xxx",
 			DocTypeKey:  DocTypeImage,
-			"ck_type":   "image",
 			"sheet":     "Sheet2",
 			"positions": [][]float64{{1, 0, 0, 3, 4}},
 		}, ImageItem{
 			Text:      "alt",
 			Image:     "data:image/png;base64,xxx",
-			CKType:    "image",
 			Sheet:     "Sheet2",
 			Positions: SpreadsheetPositions([][]float64{{1, 0, 0, 3, 4}}),
 		}.ToMap())
@@ -166,7 +141,6 @@ func TestRawItem_Passthrough(t *testing.T) {
 		in := map[string]any{
 			"text":      "hello",
 			DocTypeKey:  DocTypeText,
-			"ck_type":   "heading",
 			"layout":    "title",
 			"arbitrary": []int{1, 2, 3},
 			"nested":    map[string]any{"k": "v"},
@@ -222,7 +196,6 @@ func TestConstructorWireShapeRegression(t *testing.T) {
 		mustMap(t, map[string]any{
 			"table":     td,
 			DocTypeKey:  DocTypeTable,
-			"ck_type":   DocTypeTable,
 			"sheet":     "S",
 			"positions": [][]float64{{0, 0, 0, 1, 1}},
 		}, NewTableDataJSONItem(td, "S", SpreadsheetPositions([][]float64{{0, 0, 0, 1, 1}})).ToMap())
@@ -253,7 +226,6 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	textMap := map[string]any{
 		"text":        "hello",
 		DocTypeKey:    DocTypeText,
-		"ck_type":     "heading",
 		"layout":      "1",
 		"page_number": 3,
 	}
@@ -261,13 +233,11 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 		"text":        "alt",
 		"image":       "data:image/png;base64,xxx",
 		DocTypeKey:    DocTypeImage,
-		"ck_type":     "image",
 		"page_number": 2,
 	}
 	tableMap := map[string]any{
 		"table":       &entity.TableData{},
 		DocTypeKey:    DocTypeTable,
-		"ck_type":     DocTypeTable,
 		"sheet":       "s",
 		"positions":   [][]float64{{1, 2}},
 		"sheet_index": 0,
@@ -281,13 +251,11 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 		"text":      "alt",
 		"image":     "data:image/png;base64,xxx",
 		DocTypeKey:  DocTypeImage,
-		"ck_type":   "image",
 		"positions": [][]any{{1, 2, 3, 4}},
 	}
 	tableMapAny := map[string]any{
 		"table":     &entity.TableData{},
 		DocTypeKey:  DocTypeTable,
-		"ck_type":   DocTypeTable,
 		"positions": [][]any{{1, 2, 3, 4}},
 	}
 	// A table whose "table" value is a JSON-decoded map[string]any (not a typed
@@ -300,7 +268,6 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	tableMapJSONDecoded := map[string]any{
 		"table":    map[string]any{"grid": []any{}, "header_rows": float64(1)},
 		DocTypeKey: DocTypeTable,
-		"ck_type":  DocTypeTable,
 	}
 
 	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny, tableMapJSONDecoded} {
@@ -325,11 +292,29 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	}
 }
 
+// A legacy payload may still carry the retired ck_type key. Typed conversion
+// must drop it rather than route it through Extra and re-emit it.
+func TestDocItemFromMap_DropsRetiredCKType(t *testing.T) {
+	legacy := map[string]any{
+		"text":     "h",
+		DocTypeKey: DocTypeText,
+		"ck_type":  "heading",
+		"layout":   "heading",
+	}
+	got := DocItemFromMap(legacy).ToMap()
+	if _, ok := got["ck_type"]; ok {
+		t.Fatalf("retired ck_type leaked through ToMap: %#v", got)
+	}
+	if got["layout"] != "heading" {
+		t.Fatalf("layout lost during conversion: %#v", got)
+	}
+}
+
 // DocItemsFromMaps maps a []map[string]any to typed DocItems the same way
 // DocItemFromMap does, preserving order and skipping nothing.
 func TestMapsToItems_OrderAndType(t *testing.T) {
 	maps := []map[string]any{
-		{"text": "a", DocTypeKey: DocTypeText, "ck_type": "text"},
+		{"text": "a", DocTypeKey: DocTypeText},
 		{"foo": "bar"},
 	}
 	items := MapsToItems(maps)
