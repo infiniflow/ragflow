@@ -57,6 +57,11 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "openai-api-compatible":
 		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
+	case "systemone":
+		// Not chat-completions-shaped: this provider speaks TypeSafe System One,
+		// where one request carries many questions and the answer is a labelled
+		// verdict per question rather than a message.
+		return NewSystemOneModel(baseURL, urlSuffix), nil
 	case "mws":
 		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
@@ -184,6 +189,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGreenPTModel(baseURL, urlSuffix), nil
 	case "synthorai":
 		return NewSynthoraiModel(baseURL, urlSuffix), nil
+	case "radeon cloud":
+		return NewRadeonCloudModel(baseURL, urlSuffix), nil
 	case "anonrouter":
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
@@ -192,6 +199,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
+	case "new api":
+		return NewNewAPIModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

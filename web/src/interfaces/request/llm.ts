@@ -151,4 +151,9 @@ export interface IListProviderModelsRequestBody {
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
+  /**
+   * An already-saved instance: the server then lists with the stored credential
+   * and base URL, so the picker works without the browser ever holding the key.
+   */
+  instance_name?: string;
 }

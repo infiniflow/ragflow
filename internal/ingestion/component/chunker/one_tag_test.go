@@ -28,8 +28,8 @@ import (
 // coordinate tags into the single emitted chunk.
 func TestOneChunkerStripsCoordTagsJSON(t *testing.T) {
 	items := []schema.ChunkDoc{
-		{Text: "Sentence one@@1\t2\t3\t4##", CKType: "text"},
-		{Text: "Sentence two@@1\t2\t3\t4##", CKType: "text"},
+		{Text: "Sentence one@@1\t2\t3\t4##"},
+		{Text: "Sentence two@@1\t2\t3\t4##"},
 	}
 	out := emitOneFromItems(items, nil)
 	chunks, _ := out["chunks"].([]map[string]any)

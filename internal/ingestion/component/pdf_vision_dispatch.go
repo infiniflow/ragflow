@@ -883,8 +883,19 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 	text := mineruItemText(item, typ)
 	imageURI := ""
 	docType := "text"
-	layout := typ
+	// External MinerU labels are mapped explicitly. Unknown labels must not
+	// acquire parser block-kind semantics implicitly; list/code are real
+	// structural types and stay structural.
+	layout := "text"
 	switch typ {
+	case "title":
+		layout = "title"
+	case "list":
+		layout = "list"
+	case "code":
+		layout = "code"
+	case "equation":
+		layout = "equation"
 	case "image", "chart":
 		docType = "image"
 		layout = "figure"

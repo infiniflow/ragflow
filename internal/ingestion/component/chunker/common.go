@@ -216,15 +216,10 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
-// isMediaChunk reports whether a chunk is an image or table region. It checks
-// CKType first (general/token paths set it) and falls back to DocType
-// (group/hierarchy forward parser output that carries only doc_type_kwd), so
-// it classifies media regardless of which chunker produced the chunk.
+// isMediaChunk reports whether a chunk is an image or table region. The
+// content type lives on doc_type_kwd; layout never describes media.
 func isMediaChunk(ck schema.ChunkDoc) bool {
-	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
-	if typ == "" {
-		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
-	}
+	typ := itemDocType(ck)
 	return typ == "image" || typ == "table"
 }
 
@@ -310,6 +305,11 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	materialized := make([]schema.ChunkDoc, len(chunks))
 	for i := range chunks {
 		materialized[i] = materializeMediaContext(chunks[i])
+		// Structural layout is chunker-internal: it is consumed by merge,
+		// split, and crop, and must not cross the output boundary. PDF model
+		// layouts (title/figure/equation/...) are not structural and pass
+		// through unchanged.
+		clearStructuralLayout(&materialized[i])
 	}
 	return map[string]any{
 		"output_format": "chunks",

@@ -26,19 +26,22 @@ import (
 	"gorm.io/gorm"
 )
 
-const permissionMigrationTargetVersion = "v1.0.0-rc3.dev1"
+const permissionMigrationTargetVersion = "v1.0.0-rc3.dev3"
 
 // migratePermissions applies the permission schema migration and records its version.
 func migratePermissions(ctx context.Context, db *gorm.DB) error {
+	// Enterprise migrations have their own marker. Run this hook before checking
+	// the shared marker so a community migration cannot skip enterprise data work.
+	if err := migratePermissionDataEE(ctx, db); err != nil {
+		return fmt.Errorf("migrate enterprise permission data: %w", err)
+	}
+
 	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
 		return fmt.Errorf("read database migration version: %w", err)
 	}
 	if shouldSkipMigration(version, permissionMigrationTargetVersion) {
 		return nil
-	}
-	if err := migratePermissionDataEE(ctx, db); err != nil {
-		return fmt.Errorf("migrate enterprise permission data: %w", err)
 	}
 	if err := migrateInvitedByNullable(ctx, db); err != nil {
 		return err

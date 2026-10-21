@@ -1749,7 +1749,6 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 					// row without them cannot be placed on it.
 					FromType: fromType, ToType: toType,
 					CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind,
-					CompileType:  metaString(p.Meta, "compile_type"),
 					RelationType: relType,
 				}
 				relByKey[k] = b
@@ -1771,7 +1770,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		k := ekey{template: template, name: nameKey, typ: structureEntityTypeKey(typ), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
 			if _, seen := entByName[template+"\x00"+k.name+"\x00"+ckwd]; !seen {
 				entByName[template+"\x00"+k.name+"\x00"+ckwd] = b

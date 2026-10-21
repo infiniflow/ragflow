@@ -251,6 +251,9 @@ func familyToExt(family string) utility.FileType {
 // Python family identifier used by ParserComponent setups.
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
+	if utility.IsVideoExtension(raw) || raw == "video" {
+		return "video"
+	}
 	switch raw {
 	case "pdf":
 		return "pdf"
@@ -275,9 +278,6 @@ func pythonFamilyName(raw string) string {
 	case "text&code", "txt", "py", "js", "java", "c", "cpp", "h", "php",
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
-	case "mp4", "avi", "mkv", "mov", "webm", "flv",
-		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
-		return "video"
 	case "eml", "msg", "email":
 		return "email"
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",

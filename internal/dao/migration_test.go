@@ -19,13 +19,33 @@ package dao
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
+	"ragflow/internal/entity"
 )
 
 const tenantModelIDWidth = 32
+
+func TestKnowledgeCompileBacklogColumnsUseLongText(t *testing.T) {
+	parsed, err := schema.Parse(&entity.KnowledgeCompileDataset{}, &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		t.Fatalf("parse KnowledgeCompileDataset schema: %v", err)
+	}
+
+	for _, name := range []string{"BacklogDocIDs", "InflightDocIDs"} {
+		field := parsed.FieldsByName[name]
+		if field == nil {
+			t.Fatalf("missing field %s", name)
+		}
+		if field.DataType != "longtext" {
+			t.Errorf("%s database type = %q, want longtext", name, field.DataType)
+		}
+	}
+}
 
 // setupOrphanColumnTestDB builds the narrow shape discardOrphanedColumnValues
 // needs: a table holding values left over from an int column widened to hold

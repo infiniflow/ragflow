@@ -548,7 +548,6 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				imgID:         imgID,
 				image:         image,
 				layout:        it.Layout,
-				ckType:        it.CKType,
 				pdfPositions:  it.PDFPositions,
 				positions:     it.Positions,
 				preserveOrder: it.PreserveOrder,
@@ -562,7 +561,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		// so heading regexes can see headings after the first line. Structured
 		// media/table items and positioned text remain atomic, and the image
 		// payload stays out of per-line records so a blob is never duplicated.
-		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
+		plainText := itemDocType(it) == "text" && !isStructuralLayout(it.Layout)
 		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
 		if plainText && unpositioned && strings.Contains(text, "\n") {
 			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {

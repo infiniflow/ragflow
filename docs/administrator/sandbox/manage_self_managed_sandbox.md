@@ -1,5 +1,5 @@
 ---
-sidebar_position: 4
+sidebar_position: 2
 title: Manage Self-Managed Sandbox
 sidebar_label: Manage Self-Managed Sandbox
 slug: /manage_self_managed_sandbox
@@ -213,4 +213,4 @@ The Compose service accepts one configured token. Requests can fail between rest
 
 Admin controls the RAGFlow-to-Manager connection: endpoint, API token, and request timeout. Compose variables control the Manager and Runner deployment. Changing one does not automatically update the other.
 
-For the connection fields, see [Configure Code Execution Sandbox](../admin/admin_ui/configure_code_execution_sandbox.md#self-managed-fields).
+For the connection fields, see [Configure Code Execution Sandbox](../management/admin_ui/configure_code_execution_sandbox.md#self-managed-fields).
