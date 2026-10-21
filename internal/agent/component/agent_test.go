@@ -1588,6 +1588,9 @@ func TestAgent_AnthropicReActToolCallLoop(t *testing.T) {
 	}
 	if msg.Content != "RAGFlow 是一款基于深度文档理解的开源 RAG 引擎。" {
 		t.Fatalf("unexpected content: %s", msg.Content)
+	}
+}
+
 func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
 	p := AgentParam{
 		Tools: []string{"search_archa_metodika", "search_archa_data"},

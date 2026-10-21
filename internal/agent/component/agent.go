@@ -179,7 +179,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 	toolAliases, err := indexedToolNameAliases(ctx, tools)
 	if err != nil {
-		return nil, fmt.Errorf("build tools: %w", err)
+		return nil, fmt.Errorf("index tool aliases: %w", err)
 	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
