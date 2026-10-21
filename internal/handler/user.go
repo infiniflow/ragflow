@@ -423,39 +423,6 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	common.RespondSuccess(c, nil, "success")
 }
 
-// ChangePassword change user password
-// @Summary Change User Password
-// @Description Change current user's password
-// @Tags users
-// @Security ApiKeyAuth
-// @Param request body service.ChangePasswordRequest true "password change info"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/setting/password [post]
-func (h *UserHandler) ChangePassword(c *gin.Context) {
-	ctx := c.Request.Context()
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	// Parse request
-	var req service.ChangePasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error())
-		return
-	}
-
-	// Change password
-	code, err := h.userService.ChangePassword(ctx, user, &req)
-	if err != nil {
-		common.RespondError(c, code, err.Error())
-		return
-	}
-
-	common.RespondSuccess(c, nil, "password changed successfully")
-}
-
 // SetTenantInfo update tenant information
 // @Summary Set Tenant Info
 // @Description Update tenant model configuration
