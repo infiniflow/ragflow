@@ -23,6 +23,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+import common.doc_store.doc_store_base as _real_doc_store_base
+
 
 def _load_module(monkeypatch):
     class OrderByExpr:
@@ -41,6 +43,7 @@ def _load_module(monkeypatch):
     common = ModuleType("common")
     common.settings = SimpleNamespace()
     doc_store_base = ModuleType("common.doc_store.doc_store_base")
+    doc_store_base.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
     doc_store_base.OrderByExpr = OrderByExpr
     doc_store_base.MatchTextExpr = MatchTextExpr
     misc_utils = ModuleType("common.misc_utils")
@@ -203,3 +206,41 @@ def test_keyword_subgraph_returns_empty_without_name_match(monkeypatch, base_ent
     assert relations == []
     assert len(search_expressions) == 1
     assert isinstance(search_expressions[0], sys.modules["common.doc_store.doc_store_base"].MatchTextExpr)
+
+
+def _as_infinity(row):
+    """Mirror ``InfinityConnection.get_fields``: ``*_kwd`` -> list, absent -> ``None``."""
+    converted = {}
+    for key, val in row.items():
+        if key.endswith("_kwd") and isinstance(val, str):
+            converted[key] = [part for part in val.split("###") if part]
+        else:
+            converted[key] = val
+    return converted
+
+
+def test_build_bucket_accepts_infinity_list_shaped_kwd_columns(monkeypatch):
+    module = _load_module(monkeypatch)
+    rows = [_as_infinity(_entity("Root", "title")), _as_infinity(_relation("root", "Leaf"))]
+
+    async def graph_search(_index, _kb_id, _fields, _condition, _order, limit, match_expressions=None, offset=0):
+        return {str(i): row for i, row in enumerate(rows[:limit])}, len(rows)
+
+    module.graph_search = graph_search
+
+    entities, relations = asyncio.run(module.build_bucket("index", "kb-1", {}))
+
+    assert [entity["name"] for entity in entities] == ["Root"]
+    # normalize_relation_endpoints() cases the endpoint to the entity name.
+    assert [(relation["from"], relation["to"]) for relation in relations] == [("Root", "Leaf")]
+
+
+def test_project_relation_reads_list_shaped_entity_columns(monkeypatch):
+    module = _load_module(monkeypatch)
+    row = {
+        "content_with_weight": json.dumps({"type": "parent_child"}),
+        "from_entity_kwd": ["root"],
+        "to_entity_kwd": ["leaf"],
+    }
+
+    assert module.project_relation(row) == {"from": "root", "to": "leaf", "type": "parent_child"}

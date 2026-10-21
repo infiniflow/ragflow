@@ -36,9 +36,8 @@ import logging
 import re
 
 from common import settings
-from common.doc_store.doc_store_base import OrderByExpr
+from common.doc_store.doc_store_base import OrderByExpr, field_scalar
 from common.misc_utils import thread_pool_exec
-
 
 # Below this combined (entities + relations) count for a bucket, return all rows.
 GRAPH_FULL_THRESHOLD = 1024
@@ -128,8 +127,8 @@ def project_relation(row: dict) -> dict | None:
         node = _struct_graph_relation(payload)
         if node:
             return node
-    src = str(row.get("from_entity_kwd") or "").strip()
-    tgt = str(row.get("to_entity_kwd") or "").strip()
+    src = field_scalar(row.get("from_entity_kwd"))
+    tgt = field_scalar(row.get("to_entity_kwd"))
     if not src or not tgt:
         return None
     typ = payload.get("type") if isinstance(payload, dict) else None
@@ -294,7 +293,7 @@ async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str
         for row in field_map.values():
             if not _row_has_enabled_source(row, excluded_doc_ids):
                 continue
-            if row.get("knowledge_graph_kwd") == "relation":
+            if field_scalar(row.get("knowledge_graph_kwd")) == "relation":
                 edge = project_relation(row)
                 if edge:
                     relations.append(edge)

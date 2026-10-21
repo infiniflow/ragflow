@@ -26,7 +26,7 @@ import numpy as np
 
 from common import settings
 from common.constants import PAGERANK_FLD, TAG_FLD
-from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, OrderByExpr
+from common.doc_store.doc_store_base import DocStoreConnection, FusionExpr, MatchDenseExpr, OrderByExpr, field_scalar
 from common.float_utils import get_float
 from common.misc_utils import thread_pool_exec
 from common.string_utils import remove_redundant_spaces
@@ -50,13 +50,6 @@ def index_name(uid):
     return f"ragflow_{uid}"
 
 
-def _chunk_scalar(value) -> str:
-    """Normalize a doc-store scalar that Infinity may return as a one-item list."""
-    if isinstance(value, (list, tuple)):
-        value = value[0] if value else ""
-    return str(value or "").strip()
-
-
 def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     """True for compilation/graph rows keyed to the KB, not a source document.
 
@@ -69,13 +62,13 @@ def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     """
     if not isinstance(chunk, dict):
         return False
-    doc_id = _chunk_scalar(chunk.get("doc_id"))
-    kb_id = _chunk_scalar(chunk.get("kb_id"))
+    doc_id = field_scalar(chunk.get("doc_id"))
+    kb_id = field_scalar(chunk.get("kb_id"))
     if kb_id and doc_id == kb_id:
         return True
     if doc_id:
         return False
-    return bool(_chunk_scalar(chunk.get("compile_kwd")))
+    return bool(field_scalar(chunk.get("compile_kwd")))
 
 
 def _scope_values(value) -> frozenset:
@@ -195,7 +188,7 @@ class Dealer:
         for chunk in fields.values():
             if not chunk or is_kb_scoped_chunk(chunk):
                 continue
-            doc_id = _chunk_scalar(chunk.get("doc_id"))
+            doc_id = field_scalar(chunk.get("doc_id"))
             if doc_id:
                 chunk_doc_ids.append(doc_id)
             else:
@@ -223,7 +216,7 @@ class Dealer:
                 if sres.highlight and chunk_id in sres.highlight:
                     filtered_highlight[chunk_id] = sres.highlight[chunk_id]
                 continue
-            if _chunk_scalar(chunk.get("doc_id")) not in existing_doc_ids:
+            if field_scalar(chunk.get("doc_id")) not in existing_doc_ids:
                 removed += 1
                 continue
 

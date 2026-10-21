@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 from common import settings
+from common.doc_store.doc_store_base import field_scalar
 from rag.advanced_rag.harness.chunk_utils import (  # noqa: F401
     _chunk_attr,
     _chunk_id,
@@ -196,7 +197,7 @@ async def hybrid_search(
     if chunks_now:
         _doc_stats: dict = {}
         for _c in chunks_now:
-            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or _c.get("doc_name") or "?")
+            _d = field_scalar(_c.get("docnm_kwd")) or field_scalar(_c.get("docnm")) or field_scalar(_c.get("doc_name")) or "?"
             _s = _doc_stats.setdefault(_d, [0, 0])
             _s[0] += 1
             _s[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))
@@ -540,7 +541,7 @@ async def grep_search(
     if _g:
         _gs: dict = {}
         for _c in _g:
-            _d = str(_c.get("docnm_kwd") or _c.get("docnm") or "?")
+            _d = field_scalar(_c.get("docnm_kwd")) or field_scalar(_c.get("docnm")) or "?"
             _e = _gs.setdefault(_d, [0, 0])
             _e[0] += 1
             _e[1] += len(str(_c.get("content") or _c.get("content_with_weight") or ""))

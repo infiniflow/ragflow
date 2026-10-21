@@ -19,21 +19,25 @@ import logging
 import math
 import random
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Callable
 
 import numpy as np
 
 from common import settings
-from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, field_scalar
 from common.misc_utils import thread_pool_exec
-from rag.prompts.generator import message_fit_in
 from rag.nlp import search
+from rag.prompts.generator import message_fit_in
 
 from ._common import (
     env_int as _env_int,
+)
+from ._common import (
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+)
+from ._common import (
     stable_row_id as _stable_row_id,
 )
 
@@ -2171,15 +2175,13 @@ async def _wiki_refine_page(
     # only grouped pages may receive a synthesized title from the LLM.
     existing = existing_page or {}
     member_names = {str(name).strip() for name in (entity_names or []) if str(name).strip()}
+    existing_title = field_scalar(existing.get("title_kwd")) or str(page_title or "")
     if len(member_names) <= 1:
-        title = str(existing.get("title_kwd") or page_title).strip()
+        title = existing_title
     else:
-        title = title or str(existing.get("title_kwd") or page_title).strip()
+        title = title or existing_title
     if not topic:
-        existing_topic = existing.get("topic_kwd")
-        if isinstance(existing_topic, (list, tuple)):
-            existing_topic = existing_topic[0] if existing_topic else ""
-        topic = str(existing_topic or WIKI_TOPIC_FALLBACK).strip()
+        topic = field_scalar(existing.get("topic_kwd")) or WIKI_TOPIC_FALLBACK
     topic_key = _normalize_key(topic)
     candidate_keys = {_normalize_key(candidate) for candidate in topic_candidates or [] if candidate}
     is_new_topic = bool(topic and topic_key not in candidate_keys)
@@ -2958,9 +2960,9 @@ async def _wiki_page_router(
     An explicitly empty dict means this is a first build, so page-index
     candidate retrieval can be skipped and entities can go straight to grouping.
     """
+    from common.doc_store.doc_store_base import OrderByExpr
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
-    from common.doc_store.doc_store_base import OrderByExpr
 
     query_texts = [_entity_to_query_text(e) for e in affected_entities]
     embeddings, _ = await thread_pool_exec(embd_mdl.encode, query_texts)
@@ -4277,7 +4279,7 @@ def _wiki_reconcile_page_moves(
 
     result: dict[str, list[dict]] = {}
     for target_id, entities in assignments.items():
-        target_key = target_id[5:] if target_id.startswith("_new_") else target_id
+        target_key = target_id.removeprefix("_new_")
         for entity in entities:
             name = entity.get("entity_name", "")
             old_memberships = previous_pages.get(_normalize_key(name), [])
@@ -4390,7 +4392,7 @@ async def _wiki_mode_b_run(
     # Collect source chunks per assignment for the REFINE prompt
     page_source_chunks: dict[str, list[dict]] = {}
     for pid, entities in assignments.items():
-        page_key = pid[5:] if pid.startswith("_new_") else pid
+        page_key = pid.removeprefix("_new_")
         chunks: list[dict] = []
         for ent in entities:
             for cid in ent.get("source_chunk_ids", []):
@@ -4575,7 +4577,7 @@ async def _wiki_mode_b_run(
 
             except Exception as exc:
                 logging.exception("wiki B: REFINE failed for %s", page_id)
-                failed_page_id = page_id[5:] if page_id.startswith("_new_") else page_id
+                failed_page_id = page_id.removeprefix("_new_")
                 await _wiki_record_refine_failure(
                     tenant_id,
                     kb_id,
@@ -4765,9 +4767,9 @@ async def _wiki_update_plan_group(
     page_version: int,
 ) -> None:
     """Update or create plan_group row (Mode B)."""
-    from rag.nlp import search
-    from common.misc_utils import thread_pool_exec
     from common.doc_store.doc_store_base import OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
 
     index = search.index_name(tenant_id)
     condition = {
@@ -4863,19 +4865,19 @@ async def _wiki_load_plan_group_members(tenant_id: str, kb_id: str) -> dict[str,
 
 
 __all__ = [
+    "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
+    "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
     "WIKI_PAGE_COMPILE_KWD",
     "WIKI_PLAN_GROUP_COMPILE_KWD",
-    "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
-    "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
-    "wiki_compile_incremental",
-    "_wiki_reduce_entity",
-    "_wiki_reduce_batch",
-    "_wiki_match_entities",
-    "_wiki_page_router",
-    "_wiki_finalize",
-    "_wiki_refine_page",
-    "_wiki_update_doc_page_source",
-    "_load_canonical_entities",
     "_delete_canonical_entity",
     "_extract_raw_entities",
+    "_load_canonical_entities",
+    "_wiki_finalize",
+    "_wiki_match_entities",
+    "_wiki_page_router",
+    "_wiki_reduce_batch",
+    "_wiki_reduce_entity",
+    "_wiki_refine_page",
+    "_wiki_update_doc_page_source",
+    "wiki_compile_incremental",
 ]
