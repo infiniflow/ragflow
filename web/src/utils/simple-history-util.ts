@@ -45,6 +45,7 @@ class GlobalHistory {
     if (typeof path === 'string') {
       finalPath = path;
     } else {
+      state = state === undefined ? path.state : state;
       finalPath = path.pathname || '';
       if (path.search) finalPath += path.search;
       if (path.hash) finalPath += path.hash;
@@ -74,6 +75,7 @@ class GlobalHistory {
     if (typeof path === 'string') {
       finalPath = path;
     } else {
+      state = state === undefined ? path.state : state;
       finalPath = path.pathname || '';
       if (path.search) finalPath += path.search;
       if (path.hash) finalPath += path.hash;
