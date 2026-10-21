@@ -77,3 +77,79 @@ func TestDevUpdateChunkCommandUsesChunkResource(t *testing.T) {
 		t.Fatalf("unexpected response: %#v", result)
 	}
 }
+
+// TestAPIListIngestionTasksSendsDatasetIDFilter pins the fix for the wrong
+// type assertion: the parser stores dataset_id as a plain string, but the old
+// code asserted .(*string), which always failed and sent dataset_id: null —
+// so the server returned tasks across ALL datasets instead of the requested
+// one. The id must now reach the request body.
+func TestAPIListIngestionTasksSendsDatasetIDFilter(t *testing.T) {
+	got := make(chan map[string]interface{}, 1)
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/datasets/ingestion/tasks" || r.Method != http.MethodGet {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+			return
+		}
+		var payload map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode body: %v", err)
+			http.NotFound(w, r)
+			return
+		}
+		got <- payload
+		_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":[]}`)
+	}))
+	client.useAPIKey = true
+	c := &CLI{
+		Config: &CommandLineConfig{
+			CLIMode:         APIMode,
+			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+		},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	if _, err := c.APIListIngestionTasks(1, &Command{Params: map[string]interface{}{"dataset_id": "ds-1"}}); err != nil {
+		t.Fatalf("APIListIngestionTasks: %v", err)
+	}
+	select {
+	case payload := <-got:
+		if payload["dataset_id"] != "ds-1" {
+			t.Fatalf("dataset_id = %#v, want \"ds-1\" (filter must reach the body)", payload["dataset_id"])
+		}
+	default:
+		t.Fatal("no request was sent")
+	}
+}
+
+// TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent confirms the fix keeps
+// the "no filter" semantics when the caller does not supply a dataset_id:
+// the field must be omitted/null (the server filters only when it is
+// non-nil), not an empty string that would trigger a permission check.
+func TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent(t *testing.T) {
+	got := make(chan map[string]interface{}, 1)
+	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+		got <- payload
+		_, _ = fmt.Fprint(w, `{"code":0,"message":"success","data":[]}`)
+	}))
+	client.useAPIKey = true
+	c := &CLI{
+		Config: &CommandLineConfig{
+			CLIMode:         APIMode,
+			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
+		},
+		APIServerClientMap: map[string]*HTTPClient{"test": client},
+	}
+	if _, err := c.APIListIngestionTasks(1, &Command{Params: map[string]interface{}{}}); err != nil {
+		t.Fatalf("APIListIngestionTasks: %v", err)
+	}
+	select {
+	case payload := <-got:
+		if v, present := payload["dataset_id"]; present && v != nil {
+			t.Fatalf("dataset_id = %#v, want omitted or null when no filter given", v)
+		}
+	default:
+		t.Fatal("no request was sent")
+	}
+}
