@@ -1076,6 +1076,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
+      naiveSettings: 'Naive 设置',
+      agenticSettings: 'Agentic 设置',
+      agenticTemplate: 'Agentic 模板',
+      agenticTemplateTip:
+        'Agentic RAG 运行时使用的系统模板。编辑后为当前助手覆盖默认模板，可一键重置恢复。',
+      agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
+      resetToDefault: '重置为默认',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
