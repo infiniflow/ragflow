@@ -461,19 +461,23 @@ func mergePositionMatrix(sources ...json.RawMessage) any {
 	return positionMatrixWire(out)
 }
 
-// positionMatrixWire returns [][]float64 when every page cell is scalar (the
-// historical shape) and [][]any when any page cell is a list.
+// positionMatrixWire returns [][]float64 only when every element of every row
+// is numeric (the historical shape). A page-list row or any non-numeric
+// element keeps the raw rows so callers can preserve the value instead of
+// silently turning it into 0.
 func positionMatrixWire(rows [][]any) any {
 	for _, row := range rows {
-		if _, isList := row[0].([]any); isList {
-			return rows
+		for i := range row {
+			if _, ok := positionRowNumber(row[i]); !ok {
+				return rows
+			}
 		}
 	}
 	scalar := make([][]float64, 0, len(rows))
 	for _, row := range rows {
 		nums := make([]float64, len(row))
 		for i := range row {
-			nums[i] = positionRowFloat(row, i)
+			nums[i], _ = positionRowNumber(row[i])
 		}
 		scalar = append(scalar, nums)
 	}
@@ -537,13 +541,22 @@ func positionRowFloat(row []any, index int) float64 {
 	if index >= len(row) {
 		return 0
 	}
-	switch v := row[index].(type) {
+	value, _ := positionRowNumber(row[index])
+	return value
+}
+
+// positionRowNumber decodes one numeric matrix element. JSON-decoded numbers
+// are float64; Go-constructed callers may use int/int64.
+func positionRowNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
 	case float64:
-		return v
+		return v, true
 	case int:
-		return float64(v)
+		return float64(v), true
+	case int64:
+		return float64(v), true
 	default:
-		return 0
+		return 0, false
 	}
 }
 

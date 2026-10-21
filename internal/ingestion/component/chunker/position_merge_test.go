@@ -42,6 +42,61 @@ func TestMergePositionMatrixAcceptsPageLists(t *testing.T) {
 	}
 }
 
+// TestMergePositionMatrixPreservesNonNumericRows pins that a malformed row is
+// kept verbatim instead of being converted to zeros by the scalar fast path.
+func TestMergePositionMatrixPreservesNonNumericRows(t *testing.T) {
+	src := json.RawMessage(`[[1,"bad",100,10,100]]`)
+	got := mergePositionMatrix(src)
+	if _, ok := got.([][]any); !ok {
+		t.Fatalf("mergePositionMatrix = %#v, want raw rows for non-numeric input", got)
+	}
+	raw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if string(raw) != `[[1,"bad",100,10,100]]` {
+		t.Errorf("raw rows = %s, want the source unchanged", raw)
+	}
+}
+
+// TestTitleFamilyAcceptsFlatRowPositions covers the TCADP shape: a source may
+// carry one flat 5-tuple instead of a list of rows. The title merge must nest
+// it so the emitted chunk is still [[page,left,right,top,bottom]].
+func TestTitleFamilyAcceptsFlatRowPositions(t *testing.T) {
+	pos := []float64{1, 10, 100, 10, 100}
+	items := []map[string]any{
+		{"text": "before", "doc_type_kwd": "text"},
+		{"text": "Figure 1: caption", "doc_type_kwd": "image", "positions": pos, "_pdf_positions": pos},
+	}
+	title, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	out, err := title.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.pdf", "output_format": "json", "json": items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	var image map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "image" {
+			image = ck
+		}
+	}
+	if image == nil {
+		t.Fatalf("no image chunk emitted: %#v", chunks)
+	}
+	raw, err := json.Marshal(image["positions"])
+	if err != nil {
+		t.Fatalf("marshal positions: %v", err)
+	}
+	if string(raw) != `[[1,10,100,10,100]]` {
+		t.Errorf("positions = %s, want [[1,10,100,10,100]]", raw)
+	}
+}
+
 // TestTitleFamilyKeepsListPagePositions is the end-to-end guard: an image
 // record whose page cell is a list must keep its coordinates on the emitted
 // chunk, matching General's pass-through behavior.

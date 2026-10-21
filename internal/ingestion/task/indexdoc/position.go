@@ -34,6 +34,73 @@ func positionsToIntMatrix(positions []float64) [][]int {
 	return matrix
 }
 
+// flattenMixedPositions expands a [][]any position matrix into the flat
+// [page,left,right,top,bottom,...] form addPDFPositions expects. This is the
+// shape left by the title-family merge when a page cell is a list (or rows are
+// otherwise non-float); each page in a list becomes its own scalar tuple so
+// page_num_int/top_int can be built without discarding the whole matrix.
+func flattenMixedPositions(rows [][]any) ([]float64, bool) {
+	flat := make([]float64, 0, len(rows)*5)
+	for _, row := range rows {
+		if len(row) < 5 {
+			continue
+		}
+		left, lok := positionNumber(row[1])
+		right, rok := positionNumber(row[2])
+		top, tok := positionNumber(row[3])
+		bottom, bok := positionNumber(row[4])
+		if !lok || !rok || !tok || !bok {
+			continue
+		}
+		pages, ok := positionPages(row[0])
+		if !ok {
+			continue
+		}
+		for _, page := range pages {
+			flat = append(flat, page, left, right, top, bottom)
+		}
+	}
+	return flat, len(flat) > 0
+}
+
+func positionPages(raw any) ([]float64, bool) {
+	switch v := raw.(type) {
+	case []any:
+		pages := make([]float64, 0, len(v))
+		for _, e := range v {
+			page, ok := positionNumber(e)
+			if !ok {
+				return nil, false
+			}
+			pages = append(pages, page)
+		}
+		return pages, len(pages) > 0
+	default:
+		page, ok := positionNumber(v)
+		if !ok {
+			return nil, false
+		}
+		return []float64{page}, true
+	}
+}
+
+func positionNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
 // addPDFPositions stores PDF layout boxes: positions is a flat []float64
 // grouped by five as [page, left, right, top, bottom] and is written to
 // page_num_int / top_int / position_int. Page numbers are ALREADY 1-indexed on

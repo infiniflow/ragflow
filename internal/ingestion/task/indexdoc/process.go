@@ -229,6 +229,12 @@ func processChunkPositions(ck map[string]any, spreadsheet bool) {
 			flat = append(flat, group...)
 		}
 		storePositions(ck, flat, spreadsheet)
+	case [][]any:
+		if flat, ok := flattenMixedPositions(v); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+		}
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}

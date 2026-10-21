@@ -456,6 +456,38 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 	}
 }
 
+// TestProcessChunkPositions_MixedPageList covers the matrix shape left by the
+// title-family merge when a row spans pages: a list page expands into one
+// scalar tuple per page instead of discarding the whole matrix.
+func TestProcessChunkPositions_MixedPageList(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]any{
+			{[]any{1, 2}, 100, 50, 200, 150},
+			{3, 200, 60, 300, 250},
+		},
+	}
+	processChunkPositions(chunk, false)
+
+	if _, exists := chunk["positions"]; exists {
+		t.Fatal("positions key must be removed")
+	}
+	pageNum := chunk["page_num_int"].([]int)
+	if len(pageNum) != 3 || pageNum[0] != 1 || pageNum[1] != 2 || pageNum[2] != 3 {
+		t.Errorf("page_num_int = %v, want [1 2 3]", pageNum)
+	}
+	top := chunk["top_int"].([]int)
+	if len(top) != 3 || top[0] != 200 || top[1] != 200 || top[2] != 300 {
+		t.Errorf("top_int = %v, want [200 200 300]", top)
+	}
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 3 {
+		t.Fatalf("position_int = %v, want 3 rows", chunk["position_int"])
+	}
+	if matrix[1][0] != 2 {
+		t.Errorf("expanded row page = %d, want 2", matrix[1][0])
+	}
+}
+
 func TestProcessChunkPositions_NoPositions(t *testing.T) {
 	// _pdf_positions is pruned unconditionally, even on the early-return path
 	// where "positions" is absent, since the two fields are independent.
