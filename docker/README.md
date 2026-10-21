@@ -168,6 +168,37 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
+### Deploy behind a reverse-proxy subpath (e.g. `/ragflow`)
+
+To serve the UI from a path prefix instead of the domain root:
+
+1. **Build the image** with a matching Vite base path (trailing slash required):
+
+   ```bash
+   docker build --build-arg VITE_BASE_URL=/ragflow/ -f Dockerfile -t infiniflow/ragflow:custom .
+   ```
+
+2. **Set the runtime env** in `docker/.env` (or compose):
+
+   ```bash
+   RAGFLOW_WEB_BASE_PATH=/ragflow
+   ```
+
+   On container start, `entrypoint.sh` rewrites the bundled nginx config so static assets, SPA routes, and API proxy locations are served under the same prefix.
+
+3. **Proxy from your outer nginx** (example):
+
+   ```nginx
+   location = /ragflow {
+       return 301 /ragflow/;
+   }
+   location /ragflow/ {
+       proxy_pass http://<ragflow-host>:80/ragflow/;
+   }
+   ```
+
+   `VITE_BASE_URL` and `RAGFLOW_WEB_BASE_PATH` must refer to the same path (`/ragflow/` at build time, `/ragflow` at runtime).
+
 ### Embedding batch size
 
 - `TOKENIZER_EMBEDDING_BATCH_SIZE`
