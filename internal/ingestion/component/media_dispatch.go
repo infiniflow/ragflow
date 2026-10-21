@@ -76,8 +76,8 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: OCR followed by optional IMAGE2TEXT enhancement.
-
+// maybeDispatchImage extracts local or selected-model OCR (native text for SVG),
+// preserves the original image and optionally appends global vision enhancement.
 func maybeDispatchImage(
 	ctx context.Context,
 	db *gorm.DB,
@@ -108,13 +108,35 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	img, err := decodeDispatchImage(binary, useOCR)
-	if err != nil {
-		return parser.ParseResult{}, true, err
+	if len(binary) == 0 || len(binary) > parser.MaxImagePayloadBytes {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
+	// SVG carries its text in the document, so it is read rather than
+	// rasterized for OCR, whatever the OCR switch says.
+	isSVG := isSVGFilename(filename)
 	var text string
-	if useOCR {
-		text, err = extractImageText(ctx, img)
+	var ocrErr error
+	if isSVG {
+		text, err = extractSVGText(ctx, binary)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+	} else {
+		ocrModelID := strings.TrimSpace(getStringOr(setup, "ocr_model_id", ""))
+		img, err := decodeDispatchImage(binary, useOCR && ocrModelID == "")
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		if useOCR {
+			if ocrModelID == "" {
+				text, ocrErr = extractImageText(ctx, img)
+			} else {
+				// Selected OCR uses original bytes, so media admission need not
+				// cover database resolution or remote inference.
+				release()
+				text, ocrErr = extractSelectedImageOCR(ctx, db, getStringOr(inputs, "tenant_id", ""), ocrModelID, binary)
+			}
+		}
 	}
 	release()
 	parsed := dispatchParse(ctx, fileType, filename, binary, setups, progress.Window{})
@@ -129,8 +151,10 @@ func maybeDispatchImage(
 	m := parsed.JSON[0].ToMap()
 	m["text"] = text
 	parsed.JSON[0] = parser.DocItemFromMap(m)
-	if err != nil {
-		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", err))
+	if ocrErr != nil {
+		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", ocrErr))
+	} else if isSVG && text == "" {
+		parsed.Warnings = append(parsed.Warnings, "image SVG contains no text")
 	} else if useOCR && strings.TrimSpace(text) == "" {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
@@ -146,7 +170,10 @@ func maybeDispatchImage(
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement {
+	if enableVisionEnhancement && isSVG {
+		// Vision providers take raster images; raw SVG is not sent to them.
+		parsed.Warnings = append(parsed.Warnings, "image VLM enhancement skipped: SVG is not rasterized for vision models")
+	} else if enableVisionEnhancement {
 		// A setup with an explicit ocr_enabled switch always uses the global
 		// vision settings. Only legacy setups (no switch) carry the VLM model
 		// reference in parse_method, which also disabled OCR by construction.
@@ -172,10 +199,9 @@ func maybeDispatchImage(
 	return parsed, true, nil
 }
 
+// decodeDispatchImage validates dimensions and raster limits for all image
+// sources, decoding pixels only when local DeepDoc OCR needs them.
 func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
-	if len(data) == 0 || len(data) > parser.MaxImagePayloadBytes {
-		return nil, fmt.Errorf("parser: image payload exceeds size limits")
-	}
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("parser: decode image: %w", err)
@@ -189,7 +215,7 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
-	// VLM consumes the original bytes; only local OCR needs a decoded raster.
+	// VLM and PaddleOCR consume the original bytes; only DeepDoc needs a raster.
 	if !decodeRaster {
 		return nil, nil
 	}

@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"slices"
@@ -215,51 +214,8 @@ func createChunkTestDocument(t *testing.T, filename string) (string, string) {
 func uploadChunkTestDocument(t *testing.T, datasetID, filename string) string {
 	t.Helper()
 
-	const fileContents = "ragflow test upload"
-	var uploadBody bytes.Buffer
-	writer := multipart.NewWriter(&uploadBody)
-	file, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("create multipart file field: %v", err)
-	}
-	if _, err := io.WriteString(file, fileContents); err != nil {
-		t.Fatalf("write multipart file: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
-
-	requestURL := fmt.Sprintf("%s/datasets/%s/documents", TestConfig.apiBase(), datasetID)
-	t.Logf("request: %s %s\npayload: multipart file %q (%d bytes), content=%q",
-		http.MethodPost, requestURL, filename, len(fileContents), fileContents)
-	request, err := http.NewRequest(http.MethodPost, requestURL, &uploadBody)
-	if err != nil {
-		t.Fatalf("create document upload request: %v", err)
-	}
-	request.Header = TestConfig.buildHeaders(nil)
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response, err := chunkHTTPClient.Do(request)
-	if err != nil {
-		t.Fatalf("upload test document: %v", err)
-	}
-	uploadResult := readChunkAPIResponse(t, requestURL, response)
-	if uploadResult.err != nil {
-		t.Fatalf("decode document upload response: %v; body: %s", uploadResult.err, uploadResult.body)
-	}
-	if uploadResult.status != http.StatusOK {
-		t.Fatalf("document upload status = %d, want %d; response: %s", uploadResult.status, http.StatusOK, uploadResult.body)
-	}
-	requireChunkCode(t, uploadResult.payload, 0)
-
-	items, ok := uploadResult.payload["data"].([]interface{})
-	if !ok || len(items) == 0 {
-		t.Fatalf("document upload data is not a non-empty array: %v", uploadResult.payload)
-	}
-	document, ok := items[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("document upload item is not an object: %v", items[0])
-	}
-	documentID := chunkString(t, document, "id")
+	items := uploadRESTDocuments(t, TestConfig, datasetID, []documentUpload{{Name: filename, Content: []byte("ragflow test upload")}})
+	documentID := chunkString(t, object(t, items[0]), "id")
 	t.Cleanup(func() {
 		deleted := requestChunkAPI(t, TestConfig, http.MethodDelete,
 			fmt.Sprintf("/datasets/%s/documents", datasetID),

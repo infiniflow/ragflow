@@ -12,27 +12,10 @@
 //	See the License for the specific language governing permissions and
 //	limitations under the License.
 //
-// ManualChunker is the Go port of Python's `manual` doc-type chunk method
-// (rag/app/manual.py). Like GroupTitleChunker it merges adjacent text records
-// into heading-bounded groups, but it first re-sorts the records into physical
-// reading order before grouping.
-//
-// Why the resort matters: for multi-column / manually-laid-out PDFs the parser
-// emits records in READING order (column-by-column), so a naive grouping
-// interleaves the left column's later content with the right column's earlier
-// content. ManualChunker re-orders records by (page, top, left) — mirroring
-// Python's
-//
-//	sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))
-//
-// so grouping then follows the true top-down, left-to-right layout.
-//
-// Crucially, docx (and any coordinate-free payload) emits records in
-// document-logical order with NO positions — exactly as Python's manual docx
-// branch, which performs no resort. When no record carries coordinates,
-// ManualChunker skips the sort entirely and reuses the identical grouping
-// pipeline as GroupTitleChunker, so its output is bit-for-bit equal (locked by
-// TestManualChunker_NoPositionsEqualsGroupChunker). No parser change is needed.
+// ManualChunker groups adjacent records by heading after sorting PDF records
+// by page, top and left. Records with parser-established order or without
+// coordinates retain their input positions. Geometry is the ordering fallback
+// when the producer has not declared an authoritative reading sequence.
 package chunker
 
 import (
@@ -105,8 +88,14 @@ func (c *ManualChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs
 	return c.invoke(ctx, db, withName(inputs, name))
 }
 
+// invoke decodes the upstream payload once, extracts the records, and runs
+// the shared group pipeline after a physical-position resort.
 func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	records := extractLineRecords(inputs)
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return inputErrorOutput(err), nil
+	}
+	records := extractLineRecords(upstream)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -117,7 +106,7 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	}
 	// ManualChunker is exempt from the title-family token cap (#18455): it
 	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
-	return chunkFromRecords(ctx, db, inputs, &c.param, records, 0)
+	return chunkFromRecords(ctx, db, upstream, &c.param, records, 0)
 }
 
 // hasPdfPositions reports whether any record carries a PDF coordinate matrix
@@ -133,9 +122,9 @@ func hasPdfPositions(records []lineRecord) bool {
 
 // sortRecordsByPosition re-orders records into physical reading order
 // (page, then top, then left) using a stable sort, so records that share a
-// key keep their original relative order. Records without coordinates act as
-// immovable barriers: they keep their original relative order and are never
-// compared against positioned records.
+// key keep their original relative order. Records with explicit parser order
+// or without coordinates act as immovable barriers: they retain their input
+// positions and are never compared against positioned records.
 //
 // The slice is split into maximal contiguous runs of positioned records and
 // each run is sorted independently. This is required because a single
@@ -160,7 +149,7 @@ func sortRecordsByPosition(records []lineRecord) {
 		runStart = -1
 	}
 	for i := 0; i <= len(records); i++ {
-		positioned := i < len(records)
+		positioned := i < len(records) && !records[i].preserveOrder
 		if positioned {
 			_, positioned = firstPositionRow(records[i])
 		}

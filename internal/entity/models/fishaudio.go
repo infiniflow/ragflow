@@ -451,3 +451,7 @@ func (f *FishAudioModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 func (f *FishAudioModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
+
+func (f *FishAudioModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}

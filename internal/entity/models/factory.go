@@ -121,6 +121,10 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTokenHubModel(baseURL, urlSuffix), nil
 	case "demon route":
 		return NewDemonRouteModel(baseURL, urlSuffix), nil
+	case "trustedrouter":
+		return NewTrustedRouterModel(baseURL, urlSuffix), nil
+	case "ai stupid level":
+		return NewAIStupidLevelModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
@@ -180,12 +184,18 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewGreenPTModel(baseURL, urlSuffix), nil
 	case "synthorai":
 		return NewSynthoraiModel(baseURL, urlSuffix), nil
+	case "radeon cloud":
+		return NewRadeonCloudModel(baseURL, urlSuffix), nil
 	case "anonrouter":
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
+	case "empiriolabs ai":
+		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
+	case "new api":
+		return NewNewAPIModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

@@ -212,12 +212,18 @@ func (c *Config) GetEnvironments() error {
 		c.environments.DefaultSuperUser.Email = superUserEmail
 	}
 
-	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
+	// DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is the
+	// same alias creation uses when the canonical name is empty. A generated
+	// bootstrap-file password is not filled in here.
+	superUserPassword := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword))
+	if superUserPassword == "" {
+		superUserPassword = strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword))
+	}
 	if superUserPassword != "" {
 		c.environments.DefaultSuperUser.Password = superUserPassword
 	}
 
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
+	superUserNickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname))
 	if superUserNickname != "" {
 		c.environments.DefaultSuperUser.Nickname = superUserNickname
 	}
@@ -624,7 +630,7 @@ func (c *Config) GetEnvDefaultSuperUserEmail() string {
 }
 
 func (c *Config) GetEnvDefaultSuperUserNick() string {
-	return c.environments.DefaultSuperUser.Email
+	return c.environments.DefaultSuperUser.Nickname
 }
 
 func (c *Config) GetEnvDictionaryPath() string {

@@ -499,10 +499,10 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 // system_settings under mysql_migration.database.version, the marker shared with
 // the other versioned steps, so work already performed by a previous run is
 // skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2.dev1 step deletes. raptor and graphrag moved out of the dataset
+// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 
@@ -644,6 +644,17 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			columnType: "longtext", nullable: true,
 			definition: "longtext NULL",
 		},
+		// Knowledge-compile queues can exceed MySQL TEXT's 64 KiB limit.
+		{
+			table: "knowledge_compile_docs", column: "backlog_doc_ids",
+			columnType: "longtext", nullable: false,
+			definition: "longtext NOT NULL",
+		},
+		{
+			table: "knowledge_compile_docs", column: "inflight_doc_ids",
+			columnType: "longtext", nullable: false,
+			definition: "longtext NOT NULL",
+		},
 		// system_settings.value mirrors Python's EmptyStringTextField(null=False).
 		{
 			table: "system_settings", column: "value",
@@ -667,6 +678,17 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	for _, spec := range specs {
 		if err := applyColumnSpec(ctx, db, spec); err != nil {
 			return err
+		}
+	}
+	if db.WithContext(ctx).Migrator().HasTable("knowledge_compile_docs") {
+		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
+			columnType, nullable, exists, err := columnDefinition(ctx, db, "knowledge_compile_docs", column)
+			if err != nil {
+				return fmt.Errorf("failed to verify knowledge_compile_docs.%s after migration: %w", column, err)
+			}
+			if exists && (normalizeColumnType(columnType) != "longtext" || nullable) {
+				return fmt.Errorf("knowledge_compile_docs.%s is %s nullable=%v after migration, want longtext NOT NULL", column, columnType, nullable)
+			}
 		}
 	}
 

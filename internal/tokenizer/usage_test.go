@@ -52,3 +52,36 @@ func TestRunUsageCallSnapshot(t *testing.T) {
 	// Without a sink installed, recording is a no-op (not a panic).
 	RecordRunTokenUsageFor(context.Background(), "m", 1, 1, 2)
 }
+
+// TestRunUsagePhases pins phase attribution: a call issued inside a section
+// that installed a phase is tagged with it, a section that installs nothing
+// inherits its caller's phase, and the aggregate is untouched by attribution.
+func TestRunUsagePhases(t *testing.T) {
+	base := WithRunUsage(context.Background())
+	explore := WithUsagePhase(base, "explore")
+	RecordRunTokenUsageFor(explore, "MiniMax-M3", 1000, 100, 1100)
+	// An empty phase means "inherit", not "clear".
+	RecordRunTokenUsageFor(WithUsagePhase(explore, ""), "MiniMax-M3", 2000, 200, 2200)
+	synth := WithUsagePhase(base, "synth")
+	RecordRunTokenUsageFor(synth, "MiniMax-M3", 100, 300, 400)
+
+	if got := UsagePhase(base); got != "" {
+		t.Fatalf("base context phase = %q, want empty", got)
+	}
+	if got := UsagePhase(explore); got != "explore" {
+		t.Fatalf("explore phase = %q", got)
+	}
+
+	sink := GetRunUsage(base)
+	pt, ct, tt, calls := sink.Snapshot()
+	if pt != 3100 || ct != 600 || tt != 3700 || calls != 3 {
+		t.Fatalf("aggregate = %d/%d/%d calls=%d", pt, ct, tt, calls)
+	}
+	turns := sink.CallSnapshot()
+	want := []string{"explore", "explore", "synth"}
+	for i, phase := range want {
+		if turns[i].Phase != phase {
+			t.Fatalf("call %d phase = %q, want %q", i+1, turns[i].Phase, phase)
+		}
+	}
+}

@@ -607,7 +607,7 @@ func extraToolSupport(extra string) (bool, bool) {
 
 func catalogToolSupport(providerName, modelName string) bool {
 	providerManager := dao.GetModelProviderManager()
-	provider := providerManager.FindProvider(providerName)
+	provider := providerManager.FindProvider(modelModule.CatalogProviderName(providerName))
 	if provider == nil {
 		return false
 	}
@@ -733,12 +733,13 @@ func (s *ModelFactory) resolveTenantModel(ctx context.Context, modelType entity.
 	providerEntity := identity.providerEntity
 	instanceEntity := identity.instanceEntity
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
+	catalogName := modelModule.CatalogProviderName(providerEntity.ProviderName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerEntity.ProviderName)
 	}
 
-	modelInfo, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName)
+	modelInfo, _ := dao.GetModelProviderManager().GetModelByName(catalogName, modelEntity.ModelName)
 	modelInfo, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
 	if err != nil {
 		return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
@@ -888,7 +889,8 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	catalogName := modelModule.CatalogProviderName(providerName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if availableTypes != 0 {
 		if access.UserID != "" {
 			if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
@@ -902,7 +904,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		if driverErr != nil {
 			return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, driverErr)
 		}
-		modelInfo, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName)
+		modelInfo, _ := dao.GetModelProviderManager().GetModelByName(catalogName, pureModelName)
 		modelInfo, err = modelInfoWithTenantExtra(modelInfo, modelEntity)
 		if err != nil {
 			return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
@@ -926,7 +928,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 	if providerInfo == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(catalogName)
 	if targetProvider == nil {
 		return nil, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}
@@ -1058,7 +1060,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return activeTypes, nil
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(modelModule.CatalogProviderName(providerName))
 	if providerInfo == nil {
 		return 0, fmt.Errorf("%w: model provider config not found: %s", errModelConfigUnavailable, providerName)
 	}

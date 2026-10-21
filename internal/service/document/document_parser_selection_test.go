@@ -120,6 +120,8 @@ func generalParserConfig() entity.JSONMap {
 			"pdf":       map[string]any{"suffix": []any{"pdf"}},
 			"text&code": map[string]any{},
 			"docx":      map[string]any{},
+			"image":     map[string]any{"suffix": []any{"jpg"}},
+			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
 		},
 	}
 }
@@ -243,6 +245,16 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyOut: "",
 		},
 		{
+			name:          "legacy flat config still routes audio",
+			kbParser:      "naive",
+			kbConfig:      legacyConfig,
+			filename:      "talk.mp3",
+			filetype:      utility.FileTypeAURAL,
+			wantParserID:  "audio",
+			wantFamilyIn:  "audio",
+			wantFamilyOut: "",
+		},
+		{
 			name:          "legacy flat config still routes an owned family",
 			kbParser:      "naive",
 			kbConfig:      legacyConfig,
@@ -250,6 +262,16 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			filetype:      utility.FileTypeDOC,
 			wantParserID:  "presentation",
 			wantFamilyIn:  "slides",
+			wantFamilyOut: "",
+		},
+		{
+			name:          "legacy flat config keeps an image in general",
+			kbParser:      "naive",
+			kbConfig:      legacyConfig,
+			filename:      "photo.jpg",
+			filetype:      utility.FileTypeVISUAL,
+			wantParserID:  "naive",
+			wantFamilyIn:  "",
 			wantFamilyOut: "",
 		},
 		{
@@ -401,10 +423,10 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 }
 
 // TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers pins the Python
-// FileService.get_parser parity: an uploaded image or presentation is re-pointed
-// at the pipeline that owns its file type and carries that pipeline's document
-// config (the config the parser-gap validation and the runtime read), while a
-// plain text upload keeps the dataset parser and config untouched.
+// FileService.get_parser parity: an uploaded presentation or audio file is
+// re-pointed at the pipeline that owns its file type and carries that
+// pipeline's document config, while image/email/text uploads stay on the
+// dataset parser now that the general template declares those families.
 func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -422,6 +444,12 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	}
 
 	kbConfig := entity.JSONMap{
+		"Parser:HipSignsRhyme": map[string]any{
+			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"text&code": map[string]any{},
+			"image":     map[string]any{"ocr_enabled": true, "suffix": []any{"jpg"}},
+			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+		},
 		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 512},
 		"metadata": map[string]any{
 			"enabled":           true,
@@ -446,6 +474,8 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	files := []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "photo.jpg", []byte("jpeg-bytes")),
 		makeTestFileHeader(t, "file", "deck.pptx", []byte("pptx-bytes")),
+		makeTestFileHeader(t, "file", "note.eml", []byte("eml-bytes")),
+		makeTestFileHeader(t, "file", "talk.mp3", []byte("mp3-bytes")),
 		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
 	}
 	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", files, "", nil)
@@ -456,12 +486,12 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("uploaded docs = %d, want %d", len(got), len(files))
 	}
 
-	if parserID, _ := got[0]["parser_id"].(string); parserID != "picture" {
-		t.Fatalf("jpg parser_id = %q, want picture", parserID)
+	if parserID, _ := got[0]["parser_id"].(string); parserID != "naive" {
+		t.Fatalf("jpg parser_id = %q, want the dataset parser naive", parserID)
 	}
 	imageSetup := parserFamilySetup(t, got[0], "image")
 	if imageSetup["ocr_enabled"] != true {
-		t.Fatalf("jpg image setup = %#v, want the picture pipeline defaults", imageSetup)
+		t.Fatalf("jpg image setup = %#v, want the general pipeline defaults", imageSetup)
 	}
 
 	if parserID, _ := got[1]["parser_id"].(string); parserID != "presentation" {
@@ -472,10 +502,19 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("pptx slides setup = %#v, want the presentation pipeline defaults", slidesSetup)
 	}
 
-	// The rebuilt config goes through the same assembly as a parser switch, so
-	// the tenant LLM id and the dataset metadata group reach the target
+	if parserID, _ := got[2]["parser_id"].(string); parserID != "naive" {
+		t.Fatalf("eml parser_id = %q, want the dataset parser naive", parserID)
+	}
+	parserFamilySetup(t, got[2], "email")
+
+	if parserID, _ := got[3]["parser_id"].(string); parserID != "audio" {
+		t.Fatalf("mp3 parser_id = %q, want audio", parserID)
+	}
+
+	// The rebuilt configs go through the same assembly as a parser switch, so
+	// the tenant LLM id and the dataset metadata group reach each target
 	// pipeline's Extractor node.
-	for _, doc := range got[:2] {
+	for _, doc := range []map[string]interface{}{got[1], got[3]} {
 		cfg := doc["parser_config"].(map[string]interface{})
 		extractor, _ := cfg["Extractor:AutoExtractDefault"].(map[string]interface{})
 		if extractor["llm_id"] != "llm-default" {
@@ -487,10 +526,10 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		}
 	}
 
-	if parserID, _ := got[2]["parser_id"].(string); parserID != "naive" {
+	if parserID, _ := got[4]["parser_id"].(string); parserID != "naive" {
 		t.Fatalf("txt parser_id = %q, want the dataset parser naive", parserID)
 	}
-	txtCfg, _ := got[2]["parser_config"].(map[string]interface{})
+	txtCfg, _ := got[4]["parser_config"].(map[string]interface{})
 	if _, ok := txtCfg["GeneralChunker:SixApplesFall"]; !ok {
 		t.Fatalf("txt parser_config = %#v, want the dataset config untouched", txtCfg)
 	}

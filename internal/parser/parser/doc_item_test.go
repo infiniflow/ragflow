@@ -104,7 +104,7 @@ func TestTableItem_ToMap(t *testing.T) {
 		}, TableItem{
 			CKType:    "table",
 			Sheet:     "Sheet1",
-			Positions: [][]float64{{0, 1, 1, 2, 2}},
+			Positions: SpreadsheetPositions([][]float64{{0, 1, 1, 2, 2}}),
 		}.ToMap())
 	})
 	t.Run("empty sheet/positions omitted", func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestImageItem_ToMap(t *testing.T) {
 			Image:     "data:image/png;base64,xxx",
 			CKType:    "image",
 			Sheet:     "Sheet2",
-			Positions: [][]float64{{1, 0, 0, 3, 4}},
+			Positions: SpreadsheetPositions([][]float64{{1, 0, 0, 3, 4}}),
 		}.ToMap())
 	})
 	t.Run("extra passthrough (media_order/parent_table_id)", func(t *testing.T) {
@@ -173,11 +173,6 @@ func TestRawItem_Passthrough(t *testing.T) {
 		}
 		got := RawItem{M: in}.ToMap()
 		mustMap(t, in, got)
-	})
-	t.Run("DocType is empty (lives in map)", func(t *testing.T) {
-		if (RawItem{M: map[string]any{DocTypeKey: DocTypeText}}).DocType() != "" {
-			t.Error("RawItem.DocType should be empty; discriminator is in the map")
-		}
 	})
 	t.Run("nil map does not panic", func(t *testing.T) {
 		var ri RawItem
@@ -222,13 +217,15 @@ func TestConstructorWireShapeRegression(t *testing.T) {
 	})
 	t.Run("NewTableDataJSONItem", func(t *testing.T) {
 		td := &entity.TableData{}
+		// Spreadsheet positions render as [][]float64 on the wire (the historical
+		// shape the ingestion indexer consumes); only PDF positions stay [][]any.
 		mustMap(t, map[string]any{
 			"table":     td,
 			DocTypeKey:  DocTypeTable,
 			"ck_type":   DocTypeTable,
 			"sheet":     "S",
 			"positions": [][]float64{{0, 0, 0, 1, 1}},
-		}, NewTableDataJSONItem(td, "S", [][]float64{{0, 0, 0, 1, 1}}).ToMap())
+		}, NewTableDataJSONItem(td, "S", SpreadsheetPositions([][]float64{{0, 0, 0, 1, 1}})).ToMap())
 	})
 }
 
@@ -293,8 +290,20 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 		"ck_type":   DocTypeTable,
 		"positions": [][]any{{1, 2, 3, 4}},
 	}
+	// A table whose "table" value is a JSON-decoded map[string]any (not a typed
+	// *entity.TableData — the shape a component-boundary JSON payload produces)
+	// must NOT be silently coerced into a TableItem with a nil table, which would
+	// emit "table": null and drop the data. The failed type assertion must fall
+	// back to RawItem, preserving the map verbatim — the same round-trip guard
+	// the text/image branches uphold. Regression guard for the silent
+	// table-dropping path.
+	tableMapJSONDecoded := map[string]any{
+		"table":    map[string]any{"grid": []any{}, "header_rows": float64(1)},
+		DocTypeKey: DocTypeTable,
+		"ck_type":  DocTypeTable,
+	}
 
-	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny} {
+	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny, tableMapJSONDecoded} {
 		got := DocItemFromMap(m).ToMap()
 		if !reflect.DeepEqual(got, m) {
 			t.Fatalf("DocItemFromMap round-trip mismatch for %q\n got=%#v\nwant=%#v", m[DocTypeKey], got, m)
@@ -318,12 +327,12 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 
 // DocItemsFromMaps maps a []map[string]any to typed DocItems the same way
 // DocItemFromMap does, preserving order and skipping nothing.
-func TestDocItemsFromMaps_OrderAndType(t *testing.T) {
+func TestMapsToItems_OrderAndType(t *testing.T) {
 	maps := []map[string]any{
 		{"text": "a", DocTypeKey: DocTypeText, "ck_type": "text"},
 		{"foo": "bar"},
 	}
-	items := DocItemsFromMaps(maps)
+	items := MapsToItems(maps)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}

@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
@@ -125,8 +126,9 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	// the global token-size budget (chunk_token_size=512, no backtick
 	// delimiter): this matches Python's _merge_text_chunks_by_token_size and
 	// is the intended behaviour. TextParser emits one normalized json item;
-	// GeneralChunker owns the delimiter split and collapses the atoms.
-	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
+	// the blank line between the paragraphs is preserved verbatim in the
+	// merged chunk text (no whitespace collapsing).
+	wantChunkTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -167,13 +169,13 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if got := parserState["output_format"]; got != "json" {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
-	jsonItems, ok := parserState["json"].([]map[string]any)
+	jsonItems, ok := parserState["json"].([]parser.DocItem)
 	if !ok || len(jsonItems) != 1 {
 		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
 	wantParserTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
 	for i, wantText := range wantParserTexts {
-		if got := jsonItems[i]["text"]; got != wantText {
+		if got := jsonItems[i].ToMap()["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}

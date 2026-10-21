@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"reflect"
 	"slices"
 	"testing"
@@ -190,4 +191,87 @@ func TestSelectMetadataFilteredDocIDs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFormatDatasetSearchChunksCompilationVisibility(t *testing.T) {
+	enabled, disabled := true, false
+	for _, tt := range []struct {
+		name    string
+		include *bool
+		present bool
+	}{
+		{name: "disabled", include: &disabled},
+		{name: "enabled", include: &enabled, present: true},
+		{name: "unspecified", present: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks := []map[string]interface{}{
+				{"chunk_id": "compiled-1", "content_with_weight": "compiled content", "compile_kwd": "page_index", "vector": []float64{1}},
+				{"chunk_id": "ordinary-1", "content_with_weight": "ordinary content"},
+			}
+			formatDatasetSearchChunks(chunks, tt.include)
+			if len(chunks) != 2 || chunks[0]["id"] != "compiled-1" || chunks[0]["content"] != "compiled content" {
+				t.Fatalf("API fields changed: %#v", chunks)
+			}
+			kind, present := chunks[0]["compile_kwd"]
+			if present != tt.present || (present && kind != "page_index") {
+				t.Fatalf("compile_kwd = %v, present = %v; want present = %v", kind, present, tt.present)
+			}
+			if _, present := chunks[1]["compile_kwd"]; present {
+				t.Fatalf("ordinary chunk has compilation marker: %#v", chunks[1])
+			}
+			if _, present := chunks[0]["vector"]; present {
+				t.Fatalf("API chunk still has vector: %#v", chunks[0])
+			}
+		})
+	}
+}
+
+func TestDisabledCompilationStillPromotesOrdinaryParent(t *testing.T) {
+	disabled := false
+	eng := &compilationSearchEngine{rows: []map[string]interface{}{
+		{"id": "compiled", "compile_kwd": "page_index", "available_int": 1},
+		{"id": "child-1", "mom_id": "parent-1", "doc_id": "doc-1", "kb_id": "kb-1", "available_int": 1},
+		{"id": "parent-1", "doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "parent content", "available_int": 0},
+	}}
+	filter := knowledgeCompilationFilter(&disabled, "all")
+	filter["available_int"] = 1
+	hits, err := eng.Search(t.Context(), &types.SearchRequest{Filter: filter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits.Chunks) != 1 || hits.Chunks[0]["id"] != "child-1" {
+		t.Fatalf("initial hits = %#v, want only the ordinary child", hits.Chunks)
+	}
+	hits.Chunks[0]["chunk_id"] = hits.Chunks[0]["id"]
+	chunks := nlp.RetrievalByChildren(hits.Chunks, []string{"tenant-1"}, eng, t.Context())
+	formatDatasetSearchChunks(chunks, &disabled)
+	if len(chunks) != 1 || chunks[0]["id"] != "parent-1" || chunks[0]["content"] != "parent content" {
+		t.Fatalf("parent promotion changed: %#v", chunks)
+	}
+	if _, present := chunks[0]["compile_kwd"]; present {
+		t.Fatalf("disabled response has compilation marker: %#v", chunks[0])
+	}
+}
+
+type compilationSearchEngine struct {
+	fakeChatDocEngine
+	rows []map[string]interface{}
+}
+
+func (e *compilationSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	var chunks []map[string]interface{}
+	for _, row := range e.rows {
+		if !matchesKnowledgeCompilationFilter(req.Filter, row) {
+			continue
+		}
+		chunk := make(map[string]interface{}, len(row))
+		for field, value := range row {
+			if len(req.SelectFields) == 0 || field == "id" || slices.Contains(req.SelectFields, field) {
+				chunk[field] = value
+			}
+		}
+		chunks = append(chunks, chunk)
+	}
+	return &types.SearchResult{Chunks: chunks, Total: int64(len(chunks))}, nil
 }

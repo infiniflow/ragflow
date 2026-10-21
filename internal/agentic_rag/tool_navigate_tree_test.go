@@ -28,6 +28,7 @@ import (
 // Search is exercised by navigate_tree; the rest satisfy the interface.
 type fakeNavService struct {
 	search func(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]nav.NavHit, error)
+	encode func(ctx context.Context, tenantID, text string) []float64
 }
 
 func (f fakeNavService) UpsertDoc(context.Context, nav.UpsertDocInput) error { return nil }
@@ -39,6 +40,12 @@ func (f fakeNavService) Search(ctx context.Context, tenantID, kbID, query string
 		return f.search(ctx, tenantID, kbID, query, embd, docScope, topK)
 	}
 	return nil, nil
+}
+func (f fakeNavService) EncodeQueryVector(ctx context.Context, tenantID, text string) []float64 {
+	if f.encode != nil {
+		return f.encode(ctx, tenantID, text)
+	}
+	return nil
 }
 func (f fakeNavService) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return nil, 0, nil
