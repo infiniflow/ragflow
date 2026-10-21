@@ -23,6 +23,10 @@ import (
 type AdminConfig struct {
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
+	// DisableHeartbeat stops this node from sending heartbeats to the admin
+	// server and lifts the request gate that depends on them. The zero value
+	// keeps the default behavior.
+	DisableHeartbeat bool `mapstructure:"disable_heartbeat"`
 }
 
 func (c *Config) ParseAdminConfig(v *viper.Viper) error {
@@ -37,6 +41,7 @@ func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 	// ragflow section), so the root read already consults it.
 	c.admin.Host = "localhost"
 	c.admin.HTTPPort = 9381
+	c.admin.DisableHeartbeat = false
 
 	if v.IsSet("admin.host") {
 		c.admin.Host = v.GetString("admin.host")
@@ -46,7 +51,18 @@ func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 		c.admin.HTTPPort = v.GetInt("admin.http_port")
 	}
 
+	if v.IsSet("admin.disable_heartbeat") {
+		c.admin.DisableHeartbeat = v.GetBool("admin.disable_heartbeat")
+	}
+
 	return nil
+}
+
+// AdminHeartbeatDisabled reports whether admin.disable_heartbeat is set. It is
+// nil-safe and false by default; an unset or unparsable value keeps the
+// heartbeat and its request gate on.
+func (c *Config) AdminHeartbeatDisabled() bool {
+	return c != nil && c.admin.DisableHeartbeat
 }
 
 func (c *Config) GetAdminServerConfig() AdminConfig {

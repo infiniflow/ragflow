@@ -64,6 +64,11 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 // server. It is shared by the API, ingestor, and syncer server modes. The
 // caller must defer the returned *utility.ScheduledTask's Stop() method.
 func StartHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
+	if server.GetConfig().AdminHeartbeatDisabled() {
+		common.Info("Admin heartbeat is disabled by admin.disable_heartbeat")
+		return nil
+	}
+
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
 		common.Fatal("fail to get local ip address")

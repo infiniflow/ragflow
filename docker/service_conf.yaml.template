@@ -27,6 +27,8 @@ api:
 admin:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9381
+  # disable_heartbeat: false # true stops sending heartbeats to the admin server
+  #   and lets auth and login work without it. Default false keeps the check.
 mysql:
   name: '${MYSQL_DBNAME:-rag_flow}'
   user: '${MYSQL_USER:-root}'

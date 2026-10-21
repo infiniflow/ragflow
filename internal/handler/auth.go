@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/server"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 
@@ -156,7 +157,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		if !local.IsAdminAvailable() {
+		if adminGateClosed() {
 			license := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server license %s", license.Reason)
 			common.Warn(errMsg)
@@ -170,6 +171,13 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		c.Set("auth_via_api_token", authViaAPIToken)
 		c.Next()
 	}
+}
+
+// adminGateClosed reports whether requests must be rejected because the admin
+// heartbeat is in use (admin.disable_heartbeat is not set) but has not
+// succeeded.
+func adminGateClosed() bool {
+	return !server.GetConfig().AdminHeartbeatDisabled() && !local.IsAdminAvailable()
 }
 
 func setAuthIdentity(c *gin.Context, identity *service.AuthIdentity) {

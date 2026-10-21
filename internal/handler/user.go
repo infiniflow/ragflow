@@ -236,7 +236,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	operationLog.ResourceName = req.Email
 
-	if !local.IsAdminAvailable() {
+	if adminGateClosed() {
 		license := local.GetAdminStatus()
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", license.Reason)
 		operationLog.ErrorCode = uint16(common.CodeAuthenticationError)
