@@ -126,12 +126,12 @@ func (l *ListChunksTool) Info(_ context.Context) (*schema.ToolInfo, error) {
       "default": 0,
       "minimum": 0,
       "maximum": 100
-    }
-  },
+    },
     "intent": {
       "type": "string",
       "description": "REQUIRED: what information THIS call needs, in one sentence, e.g. the first name of Sarah Polk's mother, needed to build the final name. Each returned passage is kept or dropped by whether it serves this stated need, so name the fact you are looking for - not the search terms, and not 'relevant information'."
-    },
+    }
+  },
   "required": ["doc_id", "anchor_chunk_ids", "intent"]
 }`
 	s := &jsonschema.Schema{}

@@ -109,12 +109,12 @@ func (k *SearchSemanticChunksTool) Info(_ context.Context) (*schema.ToolInfo, er
       "description": "Minimum vector similarity (0.0-1.0) for a chunk to be returned; higher is stricter (fewer, more relevant results). Default 0.2.",
       "minimum": 0,
       "maximum": 1
-    }
-  },
+    },
     "intent": {
       "type": "string",
       "description": "REQUIRED: what information THIS call needs, in one sentence, e.g. the first name of Sarah Polk's mother, needed to build the final name. Each returned passage is kept or dropped by whether it serves this stated need, so name the fact you are looking for - not the search terms, and not 'relevant information'."
-    },
+    }
+  },
   "required": ["queries", "intent"]
 }`
 	s := &jsonschema.Schema{}

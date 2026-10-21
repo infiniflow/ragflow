@@ -98,8 +98,15 @@ func resolveDecisionBackend(ctx context.Context) *decisionBackend {
 		return decisionBackendFromEnv()
 	}
 
+	// The cache key carries the tenant: a model id resolved for one tenant
+	// carries that tenant's credential and endpoint, and buildDecisionBackendFromModel's
+	// ownership check only runs on a miss. Keyed by model id alone, a second
+	// tenant that names the same id within the TTL would receive the first
+	// tenant's backend without the check ever running.
+	cacheKey := scope.tenantID + "\x00" + modelID
+
 	decisionConfigMu.Lock()
-	entry := decisionConfigCache[modelID]
+	entry := decisionConfigCache[cacheKey]
 	decisionConfigMu.Unlock()
 	if entry != nil && time.Now().Before(entry.expiresAt) {
 		return entry.backend
@@ -114,7 +121,7 @@ func resolveDecisionBackend(ctx context.Context) *decisionBackend {
 	}
 
 	decisionConfigMu.Lock()
-	decisionConfigCache[modelID] = &decisionConfigEntry{backend: backend, expiresAt: time.Now().Add(decisionConfigTTL)}
+	decisionConfigCache[cacheKey] = &decisionConfigEntry{backend: backend, expiresAt: time.Now().Add(decisionConfigTTL)}
 	decisionConfigMu.Unlock()
 	return backend
 }
@@ -130,19 +137,39 @@ func decisionModelIDFor(ctx context.Context, scope decisionScope) string {
 	}
 	if scope.chatID != "" {
 		var chat entity.Chat
-		if err := dao.DB.Where("id = ?", scope.chatID).First(&chat).Error; err == nil && chat.DecisionID != nil {
-			if id := strings.TrimSpace(*chat.DecisionID); id != "" {
+		if err := dao.DB.Where("id = ?", scope.chatID).First(&chat).Error; err == nil {
+			if id := resolvedDecisionID(chat.TenantDecisionID, chat.DecisionID); id != "" {
 				return id
 			}
 		}
 	}
 	if scope.tenantID != "" {
 		var tenant entity.Tenant
-		if err := dao.DB.Where("id = ?", scope.tenantID).First(&tenant).Error; err == nil && tenant.DecisionID != nil {
-			if id := strings.TrimSpace(*tenant.DecisionID); id != "" {
+		if err := dao.DB.Where("id = ?", scope.tenantID).First(&tenant).Error; err == nil {
+			if id := resolvedDecisionID(tenant.TenantDecisionID, tenant.DecisionID); id != "" {
 				return id
 			}
 		}
+	}
+	return ""
+}
+
+// resolvedDecisionID prefers the resolved tenant_model row id over the value the
+// operator typed.
+//
+// DecisionID holds whatever the caller sent — typically the composite
+// "name@provider@type" string — while TenantDecisionID holds the row id that
+// string resolved to at save time, which is what the model lookup keys on. Older
+// rows stored the row id in DecisionID, so that stays the fallback rather than
+// being ignored.
+func resolvedDecisionID(rowID, requested *string) string {
+	if rowID != nil {
+		if id := strings.TrimSpace(*rowID); id != "" {
+			return id
+		}
+	}
+	if requested != nil {
+		return strings.TrimSpace(*requested)
 	}
 	return ""
 }

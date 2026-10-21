@@ -225,3 +225,60 @@ func TestResolveDecisionBackendRejectsForeignTenant(t *testing.T) {
 		t.Fatalf("resolved %p, want the env backend (model belongs to another tenant)", got)
 	}
 }
+
+// The resolved row id wins over the value the operator typed. DecisionID holds
+// the composite "name@provider@type" string, which the model lookup cannot key
+// on; TenantDecisionID holds what that string resolved to at save time.
+func TestDecisionModelIDPrefersResolvedRowID(t *testing.T) {
+	setupDecisionConfigDB(t)
+	db := dao.DB
+	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "resolved", int(entity.ModelTypeDecision))
+	composite := "resolved@systemone@chat"
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &composite, TenantDecisionID: &modelID}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	got := decisionModelIDFor(context.Background(), decisionScope{tenantID: "tenant-1"})
+	if got != modelID {
+		t.Errorf("model id = %q, want the resolved row id %q", got, modelID)
+	}
+}
+
+// A legacy row that stored the row id in DecisionID still resolves.
+func TestDecisionModelIDFallsBackToRequestedValue(t *testing.T) {
+	setupDecisionConfigDB(t)
+	db := dao.DB
+	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "legacy", int(entity.ModelTypeDecision))
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &modelID}).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	if got := decisionModelIDFor(context.Background(), decisionScope{tenantID: "tenant-1"}); got != modelID {
+		t.Errorf("model id = %q, want %q", got, modelID)
+	}
+}
+
+// The resolution cache must not hand one tenant's backend to another. Keyed by
+// model id alone, the second tenant would skip the ownership check entirely and
+// receive the first tenant's API key and endpoint.
+func TestDecisionBackendCacheIsScopedToTenant(t *testing.T) {
+	setupDecisionConfigDB(t)
+	db := dao.DB
+	t.Setenv("RAGFLOW_DECISION_BACKEND", "")
+	t.Setenv("RAGFLOW_DECISION_KEY", "")
+
+	_, _, modelID := seedDecisionModel(t, db, "tenant-a", "shared", int(entity.ModelTypeDecision))
+	for _, tenantID := range []string{"tenant-a", "tenant-b"} {
+		id := modelID
+		if err := db.Create(&entity.Tenant{ID: tenantID, TenantDecisionID: &id}).Error; err != nil {
+			t.Fatalf("seed tenant %s: %v", tenantID, err)
+		}
+	}
+
+	if got := resolveDecisionBackend(withDecisionScope(context.Background(), "tenant-a", "")); got == nil {
+		t.Fatal("tenant A owns the model and must resolve it")
+	}
+	if got := resolveDecisionBackend(withDecisionScope(context.Background(), "tenant-b", "")); got != nil {
+		t.Fatalf("tenant B received a cached backend it does not own (key %q)", got.key)
+	}
+}

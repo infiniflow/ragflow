@@ -114,12 +114,12 @@ func (g *GrepChunksTool) Info(_ context.Context) (*schema.ToolInfo, error) {
       "description": "Optional document ids to restrict the search to (at most 10).",
       "items": { "type": "string" },
       "maxItems": 10
-    }
-  },
+    },
     "intent": {
       "type": "string",
       "description": "REQUIRED: what information THIS call needs, in one sentence, e.g. the first name of Sarah Polk's mother, needed to build the final name. Each returned passage is kept or dropped by whether it serves this stated need, so name the fact you are looking for - not the search terms, and not 'relevant information'."
-    },
+    }
+  },
   "required": ["query", "intent"]
 }`
 	s := &jsonschema.Schema{}

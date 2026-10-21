@@ -266,6 +266,12 @@ func (g *GrepAdapter) fetchScoped(
 		if err == nil {
 			return toChunks(res.Chunks), nil
 		}
+		// A cancelled or timed-out run must not pay for a second query against
+		// the same engine: the degradation below is for a query the engine
+		// rejected, not for one that never had a chance to run.
+		if cerr := ectx.Err(); cerr != nil {
+			return nil, fmt.Errorf("list_chunks: deep-read recall: %w", err)
+		}
 		// Fall through, not fatal: the field's mapping is not guaranteed. An index
 		// built before content_with_weight became a searchable keyword has it as
 		// text with index:false, and the engine rejects the query outright —
@@ -291,6 +297,16 @@ func (g *GrepAdapter) fetchScoped(
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list_chunks: scoped recall: %w", err)
+	}
+	// The filter path pages at deepReadFetchLimit while the pushdown asks for
+	// everything, so a document with more chunks silently loses its tail here.
+	// Say so: the caller's neighbor math assumes a complete index, and a silent
+	// short read is indistinguishable from a short document.
+	if res.Total > int64(len(res.Chunks)) {
+		common.WarnCtx(ctx, "agentic_rag: list_chunks deep read TRUNCATED by the engine result window",
+			zap.String("path", deepReadPathFilterSearch),
+			zap.Int("returned", len(res.Chunks)), zap.Int64("total", res.Total),
+			zap.Int("limit", deepReadFetchLimit))
 	}
 	return toChunks(res.Chunks), nil
 }
