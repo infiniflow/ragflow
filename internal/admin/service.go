@@ -793,7 +793,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		now := time.Now()
 		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
-		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
+		if now.Sub(serverStatus.Timestamp) < 5*globalConfig.GetHeartbeatInterval() {
 			serverItem.Status = "alive"
 		} else {
 			serverItem.Status = "timeout"
