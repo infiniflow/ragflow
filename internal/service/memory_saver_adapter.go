@@ -23,7 +23,6 @@ import (
 
 	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
 
@@ -64,7 +63,7 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		if userID == "" {
 			return permission.ErrUnauthenticated
 		}
-		checker := permission.NewDatabaseChecker(dao.DB)
+		checker := permission.NewDatabaseChecker(a.svc.db)
 		entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
 		for _, memoryID := range req.MemoryIDs {
 			memoryID = strings.TrimSpace(memoryID)

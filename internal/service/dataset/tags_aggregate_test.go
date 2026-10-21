@@ -422,7 +422,7 @@ func TestDatasetServiceAggregateTagsCountsSharedFileOnce(t *testing.T) {
 // loader, so the error carries the production sentinel rather than a stub's
 // approximation of it.
 func missingTagSourceLoader(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
-	return component.TagVocabularyFromTagFileID(ctx, tagFileID, ownerTenantID)
+	return component.TagVocabularyFromTagFileID(ctx, dao.DB, tagFileID, ownerTenantID)
 }
 
 // TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource is the

@@ -9,6 +9,8 @@ sidebar_custom_props: {
 
 A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
+In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
+
 ---
 
 ## ERROR CODES
@@ -1199,6 +1201,8 @@ Failure:
 **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 
 Updates configurations for a specified document.
+
+Saving parser settings preserves existing chunks, chunk images, counters, and parsing progress. The saved settings take effect on the next parse; this update does not start parsing or delete existing results. Use the document parse action to clear existing chunks and re-parse with the saved settings.
 
 #### Request
 
@@ -3925,7 +3929,7 @@ Success without `chat_id` or `session_id`:
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "I am an assistant powered by the tenant's default chat model.",
         "reference": {},
@@ -3936,7 +3940,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -3948,7 +3952,7 @@ Streaming response example with `chat_id` and `session_id`:
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "",
         "reference": {
@@ -3966,7 +3970,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "The user just said \"hello\". I should respond warmly and ask how I can help.",
         "reference": {
@@ -3983,7 +3987,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": " Let's keep it short and friendly.",
         "reference": {
@@ -4000,7 +4004,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "",
         "reference": {
@@ -4018,7 +4022,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "Hello! 👋 Welcome!",
         "reference": {
@@ -4035,7 +4039,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -4045,7 +4049,7 @@ For `legacy: true`, the same request keeps the thinking content inside `answer` 
 ```json
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\".",
         "reference": {
@@ -4062,7 +4066,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help.",
         "reference": {
@@ -4079,7 +4083,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": {
         "answer": "<think>The user just said \"hello\". I should respond warmly and ask how I can help. Let's keep it short and friendly.</think>Hello! 👋 Welcome!",
         "reference": {
@@ -4096,7 +4100,7 @@ data:{
 }
 data:{
     "code": 0,
-    "message": "",
+    "message": "success",
     "data": true
 }
 ```
@@ -5577,7 +5581,7 @@ Success:
 	"data": {
 	...your new memory here
 	},
-	"message": true
+	"message": "success"
 }
 ```
 
@@ -5703,7 +5707,7 @@ Success:
 	"data": {
 	...your updated memory here
 	},
-	"message": true
+	"message": "success"
 }
 ```
 
@@ -5801,7 +5805,7 @@ Success:
         ],
         "total_count": 4
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5877,7 +5881,7 @@ Success
         "update_time": null,
         "user_prompt": null
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5929,7 +5933,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -5939,7 +5943,7 @@ Failure
 {
     "code": 404,
     "data": null,
-    "message": true
+    "message": "Resource not found"
 }
 ```
 
@@ -6058,7 +6062,7 @@ Success
         },
         "storage_type": "table"
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6201,7 +6205,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6266,7 +6270,7 @@ Success
 {
     "code": 0,
     "data": null,
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6363,7 +6367,7 @@ Success
         },
         ...other 2 matched messages here
     ],
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6441,7 +6445,7 @@ Success
         },
         ...other 9 messages here
     ],
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -6514,7 +6518,7 @@ Success
         "valid_at": "2026-01-07 16:48:37",
         "zone_id": 0
     },
-    "message": true
+    "message": "success"
 }
 ```
 
@@ -8303,9 +8307,9 @@ curl --request POST \
 Success (streaming):
 
 ```text
-data: {"code": 0, "message": "", "data": {"answer": "...", "reference": {...}}}
+data: {"code": 0, "message": "success", "data": {"answer": "...", "reference": {...}}}
 
-data: {"code": 0, "message": "", "data": true}
+data: {"code": 0, "message": "success", "data": true}
 ```
 
 Failure:

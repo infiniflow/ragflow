@@ -1019,53 +1019,6 @@ func (c *CLI) AdminDropUserAPIKeyCommand(commandCount int, cmd *Command) (Respon
 	return HandleCommonDataResponse(resp, "drop API key")
 }
 
-// ListUserDatasets lists datasets for a specific user (admin mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListUserDatasets(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	// Convert to slice of maps and remove avatar
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			delete(itemMap, "avatar")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
-}
-
 // ShowUserPermission shows user's permissions (admin mode only)
 func (c *CLI) ShowUserPermission(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2286,48 +2239,6 @@ func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command)
 	return &result, nil
 }
 
-func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s datasets: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("list user %s datasets", userName))
-}
-func (c *CLI) AdminListUserAgentsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s agents: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("list user %s agents", userName))
-}
 func (c *CLI) AdminListUserChatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {

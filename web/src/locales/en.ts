@@ -416,6 +416,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         '{{name}} ({{fileType}}): not supported by the current parser configuration; it will automatically switch to the built-in {{parser}} configuration',
       fileTypeUnsupportedManualSwitch:
         '{{name}} ({{fileType}}): not supported by the current parser configuration; switch its parsing method manually after upload',
+      fileTypeVideoUnsupported:
+        '{{name}} ({{fileType}}): video files cannot be parsed yet',
+      videoUnsupportedAfterUploadHint:
+        'You can continue uploading, but video files cannot be parsed yet and will not be processed.',
+      videoUnsupportedParseHint:
+        'Video files cannot be parsed yet. Delete this file or convert it to a supported format.',
       reselectParserAfterUploadHint:
         'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
       manualSwitchAfterUploadHint:
@@ -485,6 +491,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
       clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
+      parserConfigReparseTip:
+        'Existing chunks were generated using the previous parser settings. Would you like to clear them and re-parse this document using the saved settings?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
@@ -707,9 +715,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
       mineruFormulaEnable: 'Formula recognition',
       mineruFormulaEnableTip:
-        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+        'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
       mineruTableEnable: 'Table recognition',
-      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruTableEnableTip:
+        'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
@@ -1137,6 +1146,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
+      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      turnElapsed: '{{seconds}}s',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -1176,6 +1190,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
+      naiveSettings: 'Naive settings',
+      agenticSettings: 'Agentic settings',
+      agenticTemplate: 'Agentic template',
+      agenticTemplateTip:
+        'The system template the agentic RAG agent runs with. Editing it overrides the shipped default for this chat; reset to restore it.',
+      agenticTemplateTooLong: 'Template must be at most 32768 characters',
+      resetToDefault: 'Reset to default',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -2176,6 +2197,9 @@ Example: Virtual Hosted Style`,
       models: 'Models',
       chatModel: 'LLM',
       chatModelTip: 'The default LLM for each newly created dataset.',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
         'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
@@ -2893,7 +2917,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
@@ -2908,8 +2931,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generate: 'Generate',
       answer: 'Interact',
       categorize: 'Categorize',
-      rewriteQuestion: 'Rewrite',
-      rewrite: 'Rewrite',
       begin: 'Begin',
       message: 'Message',
       blank: 'Blank',
@@ -3590,10 +3611,7 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
-      checklistTitle:
-        'Resolve the following issues before running or publishing',
-      checklistResolveBefore:
-        'Please resolve the issues in the checklist first',
+      checklistTitle: 'The following issues may affect running or publishing',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:

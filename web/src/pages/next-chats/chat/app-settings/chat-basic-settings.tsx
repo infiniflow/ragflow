@@ -1,6 +1,10 @@
 'use client';
 
 import { AvatarNameDescription } from '@/components/avatar-name-description';
+import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
 import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
 import { LlmSettingFieldItems } from '@/components/llm-setting-items/next';
 import {
@@ -56,6 +60,14 @@ export default function ChatBasicSetting({
         collapseOpen={collapseOpen}
         onCollapseOpenChange={onCollapseOpenChange}
       ></LlmSettingFieldItems>
+
+      <ModelTreeSelectFormField
+        name={prefixName(prefix, 'decision_id')}
+        label={t('decisionModel')}
+        tooltip={t('decisionModelTip')}
+        modelTypes={ModelTypeMap.decision_id}
+        allowClear
+      />
 
       <FormField
         control={form.control}

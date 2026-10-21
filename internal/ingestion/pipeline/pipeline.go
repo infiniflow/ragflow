@@ -42,6 +42,7 @@ type Pipeline struct {
 	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	tracker *canvas.RunTracker       // optional injected; nil -> resolve at Run
+	kv      *kvrocks.Client          // optional; nil -> no tracker fallback (unit/test runs)
 	factory runtime.ComponentFactory // optional instance-scoped component factory
 	sink    ProgressSink             // optional progress sink; nil -> drop events (DB-independent)
 }
@@ -51,10 +52,18 @@ type Pipeline struct {
 type PipelineOption func(*Pipeline)
 
 // WithRunTracker injects a RunTracker for progress mirroring (terminal
-// run-status marks). When unset, Run resolves one from the global Kvrocks
-// client.
+// run-status marks). When unset and no Kvrocks client is configured, Run does
+// not mirror progress.
 func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 	return func(p *Pipeline) { p.tracker = t }
+}
+
+// WithKV injects the Kvrocks client used to resolve a RunTracker when none is
+// injected. It replaces the previous global kvrocks.Get() lookup, so the
+// pipeline no longer reads a process-wide singleton (arch_test.go guards that
+// rule). A nil client disables the RunTracker fallback.
+func WithKV(kv *kvrocks.Client) PipelineOption {
+	return func(p *Pipeline) { p.kv = kv }
 }
 
 // WithDocumentID binds the pipeline's owning document so numeric progress can
@@ -268,8 +277,8 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 	if p.tracker != nil {
 		return p.tracker
 	}
-	if kvrocks.Get() != nil {
-		return canvas.NewRunTracker(defaultTrackerTTL)
+	if p.kv != nil {
+		return canvas.NewRunTrackerWithClient(p.kv.GetClient(), defaultTrackerTTL)
 	}
 	return nil
 }

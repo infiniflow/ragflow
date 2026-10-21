@@ -69,7 +69,6 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 				"text":         "",
 				"image":        nil,
 				"doc_type_kwd": "image",
-				"ck_type":      "image",
 				"slide_number": i + 1,
 				"media_order":  mediaOrder,
 			}

@@ -42,7 +42,9 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	switch {
 	case strings.HasSuffix(name, ".ppt"),
 		strings.HasSuffix(name, ".pptx"),
-		strings.HasSuffix(name, ".pages"):
+		strings.HasSuffix(name, ".pages"),
+		strings.HasSuffix(name, ".dps"),
+		strings.HasSuffix(name, ".dpt"):
 		return "presentation"
 	case strings.HasSuffix(name, ".msg"),
 		strings.HasSuffix(name, ".eml"):

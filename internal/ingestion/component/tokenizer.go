@@ -188,6 +188,23 @@ func resolveEmbedderMaxTokens(embedder Embedder) int {
 	return embedder.MaxTokens()
 }
 
+// tableStructureTagRe mirrors the Python tokenizer's cleaned_txt step
+// (rag/flow/tokenizer/tokenizer.py:86): table-structure tags are replaced
+// with a space before the emptiness check and before the text is embedded,
+// so a chunk that is nothing but an empty table carries no embeddable
+// content. The attribute group is deliberately bounded to 12 non-tag
+// characters, exactly like the Python pattern: a tag with longer attributes
+// survives the strip. Do not "fix" the bound — it is parity, not a bug.
+var tableStructureTagRe = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+
+// cleanEmbedText applies the table-structure strip and trims, mirroring
+// Python's cleaned_txt. The stripped text is both the emptiness check and
+// what gets embedded — Python appends cleaned_txt to the embedding batch
+// (tokenizer.py:89), not the raw chunk.
+func cleanEmbedText(raw string) string {
+	return strings.TrimSpace(tableStructureTagRe.ReplaceAllString(raw, " "))
+}
+
 // EmbedderResolver resolves the embedder and its dataset-bound embedding-model
 // id for one tokenizer invocation. The resolver derives the model exclusively
 // from the knowledgebase's configured embd_id (see internal/ingestion/task/
@@ -470,7 +487,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
-		txt := strings.TrimSpace(raw)
+		// Python parity (tokenizer.py:86-89): strip table-structure tags
+		// before the emptiness check and embed the stripped text, so an
+		// empty-table chunk contributes nothing to the batch.
+		txt := cleanEmbedText(raw)
 		if txt == "" {
 			continue
 		}
@@ -498,11 +518,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
-	if len(texts) == 0 {
-		// Nothing to embed — but cache hits may still need to be written through.
-		if store == nil {
-			return chunks, 0, nil
-		}
+	if len(texts) == 0 && cacheHits == 0 {
+		// Nothing to embed and nothing to serve from cache: return before the
+		// title encode, exactly like Python's `if not texts: return` — an
+		// all-skipped batch must not burn a title embedding. (When the cache
+		// serves every chunk the flow continues so those vectors attach.)
+		return chunks, 0, nil
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -1070,12 +1091,11 @@ func requiresFullTextTokens(ck schema.ChunkDoc) bool {
 	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(schema.ContextualText(ck)) != ""
 }
 
+// requiresEmbeddingVector uses the same cleaning as the embed path
+// (cleanEmbedText): a chunk whose cleaned text is empty was skipped from the
+// embedding batch and therefore legitimately carries no vector.
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
-	return strings.TrimSpace(cleanEmbeddingText(concatFields(ck, fields))) != ""
-}
-
-func cleanEmbeddingText(text string) string {
-	return strings.TrimSpace(text)
+	return cleanEmbedText(concatFields(ck, fields)) != ""
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {

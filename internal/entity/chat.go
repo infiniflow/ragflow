@@ -20,15 +20,23 @@ import "encoding/json"
 
 // Chat chat model (mapped to dialog table)
 type Chat struct {
-	ID             string   `gorm:"column:id;primaryKey;size:32" json:"id"`
-	TenantID       string   `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	Name           *string  `gorm:"column:name;size:255;index" json:"name,omitempty"`
-	Description    *string  `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	Icon           *string  `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
-	Language       *string  `gorm:"column:language;size:32;index" json:"language,omitempty"`
-	LLMID          string   `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
-	TenantLLMID    *string  `gorm:"column:tenant_llm_id;size:32;index" json:"tenant_llm_id,omitempty"`
-	LLMSetting     JSONMap  `gorm:"column:llm_setting;type:longtext;not null" json:"llm_setting"`
+	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	TenantID    string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	Name        *string `gorm:"column:name;size:255;index" json:"name,omitempty"`
+	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
+	Icon        *string `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
+	Language    *string `gorm:"column:language;size:32;index" json:"language,omitempty"`
+	LLMID       string  `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
+	TenantLLMID *string `gorm:"column:tenant_llm_id;size:32;index" json:"tenant_llm_id,omitempty"`
+	// TenantDecisionID mirrors TenantLLMID: the resolved row id behind the
+	// requested decision_id, so a later rename of the model value does not
+	// silently point this chat at a different model.
+	TenantDecisionID *string `gorm:"column:tenant_decision_id;size:32;index" json:"tenant_decision_id,omitempty"`
+	LLMSetting       JSONMap `gorm:"column:llm_setting;type:longtext;not null" json:"llm_setting"`
+	// DecisionID overrides the tenant's default decision model for this
+	// conversation. Nullable and empty by default: empty means "inherit the
+	// tenant default", which is what almost every chat wants.
+	DecisionID     *string  `gorm:"column:decision_id;size:256" json:"decision_id,omitempty"`
 	PromptType     string   `gorm:"column:prompt_type;size:16;not null;default:'simple';index" json:"prompt_type"`
 	PromptConfig   JSONMap  `gorm:"column:prompt_config;type:longtext;not null" json:"prompt_config"`
 	MetaDataFilter *JSONMap `gorm:"column:meta_data_filter;type:longtext" json:"meta_data_filter,omitempty"`

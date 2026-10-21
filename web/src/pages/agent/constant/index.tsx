@@ -63,7 +63,6 @@ export const AgentOperatorList = [
   Operator.Retrieval,
   Operator.Categorize,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.WaitingDialogue,
@@ -111,12 +110,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -847,17 +840,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-  ],
+  [Operator.Message]: [Operator.Begin, Operator.Message, Operator.Categorize],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
@@ -918,7 +901,6 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
@@ -999,7 +981,6 @@ export const BeginQueryTypeIconMap = {
 export const NoDebugOperatorsList = [
   Operator.Begin,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.UserFillUp,

@@ -12,19 +12,21 @@ import (
 	"strings"
 )
 
+// parsePDFWithOpenDataLoader normalizes the selected server's JSON or Markdown
+// output. Explicit tenant configuration never borrows a global endpoint or key.
 func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(parser.OpenDataLoaderAPIServer)
-	if baseURL == "" {
+	if baseURL == "" && !parser.UseTenantModelConfig {
 		baseURL = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIServer))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader requires opendataloader_apiserver or OPENDATALOADER_APISERVER")}
 	}
 	apiKey := strings.TrimSpace(parser.OpenDataLoaderAPIKey)
-	if apiKey == "" {
+	if apiKey == "" && !parser.UseTenantModelConfig {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvOpenDataLoaderAPIKey))
 	}
 

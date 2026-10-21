@@ -51,6 +51,8 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 // bgSmoothing is the Dirichlet smoothing constant for background prior tag probabilities.
@@ -663,8 +665,8 @@ func tagVocabularyFromLabels(labels []schema.TagLabel) map[string]int {
 // be proven to belong to that tenant before its bytes are read (IDOR, CWE-639).
 // An empty ownerTenantID fails closed. Note that storage.Get's tenant argument
 // does not establish file ownership by itself.
-func readTagSourceFile(ctx context.Context, tagFileID, ownerTenantID string) (*entity.File, []byte, error) {
-	f, err := resolveTagSourceFile(ctx, tagFileID, ownerTenantID)
+func readTagSourceFile(ctx context.Context, db *gorm.DB, tagFileID, ownerTenantID string) (*entity.File, []byte, error) {
+	f, err := resolveTagSourceFile(ctx, db, tagFileID, ownerTenantID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -757,13 +759,13 @@ func IsTagSourceNotFound(err error) bool {
 // validates that it is a readable stored object. Resolved rows are reused for
 // tagSourceFileRowTTL so repeated lookups of the same file do not each cost a
 // query.
-func resolveTagSourceFile(ctx context.Context, tagFileID, ownerTenantID string) (*entity.File, error) {
+func resolveTagSourceFile(ctx context.Context, db *gorm.DB, tagFileID, ownerTenantID string) (*entity.File, error) {
 	key := tagFileID + "\x00" + ownerTenantID
 	now := time.Now()
 	if cached, ok := tagSourceFileRows.load(key, now); ok {
 		return cached, nil
 	}
-	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, dao.DB, tagFileID, ownerTenantID)
+	f, err := dao.NewFileDAO().GetByIDAndTenant(ctx, db, tagFileID, ownerTenantID)
 	if err != nil {
 		// The DAO returns database errors unchanged, and only a genuine miss
 		// means this id is dead: wrapping a transient failure as well would
@@ -802,12 +804,12 @@ func fetchTagSourceBytes(ctx context.Context, f *entity.File, ownerTenantID stri
 // selectable-tag list surfaced by the tag-options/aggregation API.
 //
 // It returns (nil, nil) when tagFileID is empty.
-func TagVocabularyFromTagFileID(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+func TagVocabularyFromTagFileID(ctx context.Context, db *gorm.DB, tagFileID, ownerTenantID string) (map[string]int, error) {
 	if tagFileID == "" {
 		return nil, nil
 	}
 	common.Info(fmt.Sprintf("tag_vocab: loading tag source file_id=%q", tagFileID))
-	f, data, err := readTagSourceFile(ctx, tagFileID, ownerTenantID)
+	f, data, err := readTagSourceFile(ctx, db, tagFileID, ownerTenantID)
 	if err != nil {
 		return nil, err
 	}

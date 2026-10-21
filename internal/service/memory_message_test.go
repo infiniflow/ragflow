@@ -121,7 +121,7 @@ func TestMemoryWithAccessReturnsCanceledContext(t *testing.T) {
 	cancel()
 
 	err := ctx.Err()
-	if _, gotErr := NewMemoryService().memoryWithAccess(ctx, "user-1", "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
+	if _, gotErr := NewMemoryService(dao.DB, engine.Get()).memoryWithAccess(ctx, "user-1", "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
 		t.Fatalf("memoryWithAccess error = %v, want %v", gotErr, err)
 	}
 }
@@ -215,7 +215,7 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 		}
 	}
 
-	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(t.Context(), "user-1")
 	if err != nil {
 		t.Fatalf("ListMemoryFilters: %v", err)
 	}
@@ -243,7 +243,7 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 		t.Fatalf("storage type filter = %+v, want %+v", got, want)
 	}
 
-	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(t.Context(), "user-1")
 	if err != nil {
 		t.Fatalf("ListMemoryFilters refresh: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 		}
 	}
 
-	filters, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(t.Context(), "user-1")
 	if err != nil {
 		t.Fatalf("ListMemoryFilters: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	if err := dao.DB.Model(&entity.Memory{ID: "mem-semantic"}).Update("update_time", bumped).Error; err != nil {
 		t.Fatalf("bump update_time: %v", err)
 	}
-	refreshed, err := NewMemoryService().ListMemoryFilters(t.Context(), "user-1")
+	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(t.Context(), "user-1")
 	if err != nil {
 		t.Fatalf("ListMemoryFilters refresh: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	} {
 		t.Run(test.engineType, func(t *testing.T) {
 			docEngine := &memoryMessageDocEngine{engineType: test.engineType}
-			service := NewMemoryService()
+			service := NewMemoryService(dao.DB, engine.Get())
 			service.docEngine = docEngine
 
 			if err := service.ForgetMessage(t.Context(), "user-1", "memory-1", 42); err != nil {
@@ -413,7 +413,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 		t.Fatalf("seed user tenant: %v", err)
 	}
 
-	svc := NewMemoryService()
+	svc := NewMemoryService(dao.DB, engine.Get())
 	samePermission := " TEAM "
 	if _, err := svc.UpdateMemory(t.Context(), "member-1", "mem-team", &UpdateMemoryRequest{
 		Description: sptr("member edit"),
@@ -496,7 +496,7 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 	}
 
 	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService().UpdateMemory(t.Context(), "member-1", "mem-model", &UpdateMemoryRequest{
+	if _, err := NewMemoryService(dao.DB, engine.Get()).UpdateMemory(t.Context(), "member-1", "mem-model", &UpdateMemoryRequest{
 		LLMID: &llmID,
 	}); err != nil {
 		t.Fatalf("UpdateMemory model error = %v", err)
@@ -572,7 +572,7 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -655,7 +655,7 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService().ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -718,7 +718,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 
 	ctx := t.Context()
 
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -726,7 +726,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
 	}
 
-	resp, err = NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
+	resp, err = NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -773,7 +773,7 @@ func TestListMemoriesForCanvasUsesCallerOwnerIntersection(t *testing.T) {
 		}
 	}
 
-	response, err := NewMemoryService().ListMemories(t.Context(), "caller", nil, nil, "", "", 1, 30, canvas.ID)
+	response, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(t.Context(), "caller", nil, nil, "", "", 1, 30, canvas.ID)
 	if err != nil {
 		t.Fatalf("ListMemories(canvas): %v", err)
 	}
@@ -833,7 +833,7 @@ func TestSaveAgentMessageChecksMemoryAccess(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO()}
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB}
 	msg := MemoryMessage{
 		AgentID:       "agent-1",
 		SessionID:     "session-1",
@@ -871,6 +871,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	seedMemoryMessages(t)
 
 	docEngine := &memoryMessageDocEngine{
+		engineType: "infinity",
 		searchResp: &enginetypes.SearchResult{
 			Total: 1,
 			Chunks: []map[string]interface{}{
@@ -889,7 +890,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 			},
 		},
 	}
-	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: docEngine}
 
 	got, code, err := svc.GetMessages(t.Context(), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
 	if err != nil {
@@ -910,11 +911,11 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 		t.Fatal("expected doc engine search request")
 	}
 	// The per-memory index name gains a `_<memoryID>` suffix on infinity
-	// (see memorySearchIndexNames). The engine type is process-global and set
-	// by sibling integration tests, so make the expectation engine-aware rather
-	// than hard-coding the non-infinity name.
+	// (see memorySearchIndexNames). The service now reads the engine type from
+	// the injected doc engine rather than the process-global engine type, so
+	// derive the expectation from the injected docEngine's type.
 	wantIndexName := "memory_user-1"
-	if engine.GetEngineType() == "infinity" {
+	if docEngine.GetType() == "infinity" {
 		wantIndexName = "memory_user-1_mem-owned"
 	}
 	if !reflect.DeepEqual(req.IndexNames, []string{wantIndexName}) {
@@ -959,7 +960,7 @@ func TestSearchMessageFiltersAccessibleMemoryAndDefaultsStatus(t *testing.T) {
 			},
 		},
 	}
-	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: docEngine}
 	filter := map[string]interface{}{
 		"memory_id":  []string{"mem-owned", "mem-other"},
 		"agent_id":   "agent-1",
@@ -1010,7 +1011,7 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	seedMemoryMessages(t)
 
 	docEngine := &memoryMessageDocEngine{}
-	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), docEngine: docEngine}
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: docEngine}
 
 	ok, err := svc.UpdateMessage(t.Context(), "user-1", "mem-owned", 42, true)
 	if err != nil {

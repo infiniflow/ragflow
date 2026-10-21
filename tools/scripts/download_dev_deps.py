@@ -77,13 +77,24 @@ import requests
 #
 # Source of the native static archives: infiniflow/ragflow-build (our own
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
-# account. The release tag is `onnxruntime-v{ORT_VERSION}` and it publishes one
-# asset per target: `onnxruntime-v{ORT_VERSION}-<target>.zip` (see ort_target).
-# The archive is occasionally re-issued under this SAME tag/asset name with
+# account. The release tag is `ORT_RELEASE_TAG` (see below; currently
+# onnxruntime-v1.29.0-patch2) and it publishes one asset per target:
+# `onnxruntime-v{ORT_VERSION}-<target>.zip` (see ort_target). The archive is
+# occasionally re-issued under this SAME tag/asset name with
 # patched content (e.g. the build that exports SessionGetInitializer*); the
 # downloader detects that via a `{asset}.sha256` sidecar and
 # re-downloads/re-extracts, so a stale local copy never silently lingers.
 ORT_VERSION = "1.29.0"
+
+# Release tag on infiniflow/ragflow-build. v1.29.0's Linux x86_64 minimal build
+# reduced operators to required_operators.config, which omitted Clip@13 — so
+# Clip(opset 13) models (e.g. the DeepDoc rec/tsr weights) failed to load with
+# "Could not find an implementation for Clip(13)". onnxruntime-v1.29.0-patch2
+# re-adds Clip to the ai.onnx;13 allow list and rebuilds. Its asset name,
+# extracted dir and normalized dir all keep the bare version, so ONLY the
+# release tag changes here (revert to onnxruntime-v{ORT_VERSION} once a stock
+# build ships Clip@13).
+ORT_RELEASE_TAG = "onnxruntime-v1.29.0-patch2"
 
 # pdf_oxide go-ffi release. Bare module version (the "v" is added by
 # pdf_oxide_url); matches the value build.sh uses to validate the embedded
@@ -213,7 +224,7 @@ def ort_asset_name(version: str, target: str) -> str:
 
 
 def ort_url(version: str, target: str) -> str:
-    return f"{gh_proxy()}https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{version}/{ort_asset_name(version, target)}"
+    return f"{gh_proxy()}https://github.com/infiniflow/ragflow-build/releases/download/{ORT_RELEASE_TAG}/{ort_asset_name(version, target)}"
 
 
 def ort_extracted_dir(version: str, target: str) -> str:

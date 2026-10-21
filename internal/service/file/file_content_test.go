@@ -83,7 +83,7 @@ func TestParseResultText_SpreadsheetSegmentsAreTheirOwnMarkup(t *testing.T) {
 	result, err := parseResultText(parser.ParseResult{
 		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
-			{"text": segment, "doc_type_kwd": "table", "ck_type": "table", "sheet": "Data", "sheet_index": 1},
+			{"text": segment, "doc_type_kwd": "table", "sheet": "Data", "sheet_index": 1},
 		}),
 	})
 	if err != nil {
