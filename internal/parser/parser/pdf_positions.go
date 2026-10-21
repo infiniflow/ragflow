@@ -8,9 +8,13 @@ import "encoding/json"
 // supported.
 //
 // Supported shapes:
-//   - a matrix of 5-tuples: [][]any, []any of rows, [][]float64;
+//   - a matrix of 5-tuples: [][]any, []any of rows, [][]float64; a page cell
+//     may be a scalar or a list (the raw layout.SectionsToJSON form, also
+//     seen in external/historical payloads), ordered by its first page;
 //   - one flat 5-tuple: []float64, the legacy wire form some engines (TCADP)
-//     still emit.
+//     still emit;
+//   - a flat sequence of multiple 5-tuples (TCADP/external producers), grouped
+//     by five.
 //
 // A row is [page, left, right, top, bottom]. The page is 1-based.
 
@@ -52,27 +56,72 @@ func PDFPositionRows(raw any) [][]any {
 }
 
 // PDFPositionRowsFromJSON decodes a PDF position matrix carried as raw JSON.
-// It accepts the matrix form and the legacy flat 5-tuple and returns rows of
-// five floats. Rows shorter than five values are skipped.
+// It accepts the nested matrix form (a page cell may be a scalar or a list),
+// a single flat 5-tuple, and a flat sequence of multiple 5-tuples grouped by
+// five, and returns rows of five floats. Rows shorter than five values, rows
+// with non-numeric coordinates, and flat sequences whose length is not a
+// multiple of five (ambiguous tuple boundaries) are skipped.
 func PDFPositionRowsFromJSON(raw json.RawMessage) [][]float64 {
 	if len(raw) == 0 {
 		return nil
 	}
-	var matrix [][]float64
-	if err := json.Unmarshal(raw, &matrix); err == nil {
-		out := make([][]float64, 0, len(matrix))
-		for _, row := range matrix {
-			if len(row) >= 5 {
-				out = append(out, row)
+	var rows [][]any
+	if err := json.Unmarshal(raw, &rows); err == nil {
+		out := make([][]float64, 0, len(rows))
+		for _, row := range rows {
+			if floats, ok := positionRowFloats(row); ok {
+				out = append(out, floats)
 			}
 		}
 		return out
 	}
-	var flat []float64
-	if err := json.Unmarshal(raw, &flat); err == nil && len(flat) >= 5 {
-		return [][]float64{flat}
+	var flat []any
+	if err := json.Unmarshal(raw, &flat); err != nil || len(flat) < 5 || len(flat)%5 != 0 {
+		return nil
 	}
-	return nil
+	out := make([][]float64, 0, len(flat)/5)
+	for i := 0; i < len(flat); i += 5 {
+		if floats, ok := positionRowFloats(flat[i : i+5]); ok {
+			out = append(out, floats)
+		}
+	}
+	return out
+}
+
+// positionRowFloats decodes one [page,left,right,top,bottom] row for numeric
+// consumers (ordering, crop-region checks). A list page cell is ordered by
+// its first page. The verbatim []any form is kept by the chunker merge for
+// consumers that need the original cell.
+func positionRowFloats(row []any) ([]float64, bool) {
+	if len(row) < 5 {
+		return nil, false
+	}
+	page, ok := positionPageFloat(row[0])
+	if !ok {
+		return nil, false
+	}
+	out := make([]float64, 5)
+	out[0] = page
+	for i := 1; i < 5; i++ {
+		v, ok := positionFloat(row[i])
+		if !ok {
+			return nil, false
+		}
+		out[i] = v
+	}
+	return out, true
+}
+
+// positionPageFloat decodes a page cell: a scalar number or a list whose
+// first entry is numeric.
+func positionPageFloat(raw any) (float64, bool) {
+	if v, ok := positionFloat(raw); ok {
+		return v, true
+	}
+	if pages, ok := raw.([]any); ok && len(pages) > 0 {
+		return positionPageFloat(pages[0])
+	}
+	return 0, false
 }
 
 func filterPositionRows(rows [][]any, keep func([]any) []any) [][]any {

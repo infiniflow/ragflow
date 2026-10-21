@@ -1,6 +1,7 @@
 package indexdoc
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -453,6 +454,135 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 	top := chunk["top_int"].([]int)
 	if len(top) != 2 || top[0] != 200 || top[1] != 300 {
 		t.Errorf("top_int = %v, want [200 300]", top)
+	}
+}
+
+// TestProcessChunkPositions_ToMapMixedMatrix pins the real production type
+// boundary: ChunkDoc.ToMap() decodes a list-page matrix through the generic
+// JSON path, so the indexer receives []any (not [][]any). Every valid scalar
+// and list-page row must still reach page_num_int/top_int/position_int.
+func TestProcessChunkPositions_ToMapMixedMatrix(t *testing.T) {
+	raw := json.RawMessage(`[[[1,2],10,100,20,80],[3,30,120,40,90]]`)
+	doc := schema.ChunkDoc{
+		Text:         "Figure 1: caption",
+		DocType:      "image",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	if _, ok := ck["positions"].([]any); !ok {
+		t.Fatalf("production positions type = %T, want []any", ck["positions"])
+	}
+
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2, 3}) {
+		t.Errorf("page_num_int = %v, want [1 2 3]", pageNum)
+	}
+	top, ok := ck["top_int"].([]int)
+	if !ok {
+		t.Fatalf("top_int = %#v, want []int", ck["top_int"])
+	}
+	if !reflect.DeepEqual(top, []int{20, 20, 40}) {
+		t.Errorf("top_int = %v, want [20 20 40]", top)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 3 {
+		t.Fatalf("position_int = %#v, want 3 rows", ck["position_int"])
+	}
+	if !reflect.DeepEqual(matrix[1], []int{2, 10, 100, 20, 80}) {
+		t.Errorf("expanded row = %v, want [2 10 100 20 80]", matrix[1])
+	}
+}
+
+// TestProcessChunkPositions_FlatMultiTuple pins the flat multi-row shape:
+// ChunkDoc.ToMap produces a flat []any of numbers, and every five-tuple must
+// reach the index fields, not just the first.
+func TestProcessChunkPositions_FlatMultiTuple(t *testing.T) {
+	raw := json.RawMessage(`[1,10,100,20,80,2,30,120,40,90]`)
+	doc := schema.ChunkDoc{
+		Text:         "two rows",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2}) {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 2 {
+		t.Fatalf("position_int = %#v, want two rows", ck["position_int"])
+	}
+	if !reflect.DeepEqual(matrix[1], []int{2, 30, 120, 40, 90}) {
+		t.Errorf("second row = %v, want [2 30 120 40 90]", matrix[1])
+	}
+}
+
+// TestProcessChunkPositions_SkipsInvalidRows pins the partial-loss guard: a
+// null row must not discard the valid rows around it.
+func TestProcessChunkPositions_SkipsInvalidRows(t *testing.T) {
+	raw := json.RawMessage(`[[1,10,100,20,80],null,[2,30,120,40,90]]`)
+	doc := schema.ChunkDoc{
+		Text:         "Figure 1: caption",
+		DocType:      "image",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2}) {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 2 {
+		t.Fatalf("position_int = %#v, want the two valid rows", ck["position_int"])
+	}
+}
+
+// TestProcessChunkPositions_MixedPageList covers the matrix shape left by the
+// title-family merge when a row spans pages: a list page expands into one
+// scalar tuple per page instead of discarding the whole matrix.
+func TestProcessChunkPositions_MixedPageList(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]any{
+			{[]any{1, 2}, 100, 50, 200, 150},
+			{3, 200, 60, 300, 250},
+		},
+	}
+	processChunkPositions(chunk, false)
+
+	if _, exists := chunk["positions"]; exists {
+		t.Fatal("positions key must be removed")
+	}
+	pageNum := chunk["page_num_int"].([]int)
+	if len(pageNum) != 3 || pageNum[0] != 1 || pageNum[1] != 2 || pageNum[2] != 3 {
+		t.Errorf("page_num_int = %v, want [1 2 3]", pageNum)
+	}
+	top := chunk["top_int"].([]int)
+	if len(top) != 3 || top[0] != 200 || top[1] != 200 || top[2] != 300 {
+		t.Errorf("top_int = %v, want [200 200 300]", top)
+	}
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 3 {
+		t.Fatalf("position_int = %v, want 3 rows", chunk["position_int"])
+	}
+	if matrix[1][0] != 2 {
+		t.Errorf("expanded row page = %d, want 2", matrix[1][0])
 	}
 }
 

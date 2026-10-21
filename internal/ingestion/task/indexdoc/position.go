@@ -34,6 +34,131 @@ func positionsToIntMatrix(positions []float64) [][]int {
 	return matrix
 }
 
+// positionRowsFromAny normalizes the generic []any shape produced by
+// ChunkDoc.ToMap (JSON decoding into `any`) into [][]any. It accepts a list of
+// rows (each []any/[]float64), a single flat 5-tuple, or a flat sequence of
+// multiple 5-tuples (TCADP/external producers).
+//
+// Element 1 distinguishes the shapes: a row list has another row (or an
+// invalid entry) there, while a flat sequence has a numeric coordinate. A flat
+// sequence is then grouped by five; a length that is not a multiple of five is
+// malformed, matching positionsToIntMatrix.
+func positionRowsFromAny(v []any) ([][]any, bool) {
+	if len(v) == 0 {
+		return nil, false
+	}
+	if len(v) == 1 {
+		if row, ok := positionRowFromAny(v[0]); ok {
+			return [][]any{row}, true
+		}
+	}
+	if len(v) >= 2 {
+		_, secondIsRow := positionRowFromAny(v[1])
+		if secondIsRow || v[1] == nil {
+			_, firstIsRow := positionRowFromAny(v[0])
+			if firstIsRow || v[0] == nil {
+				rows := make([][]any, 0, len(v))
+				for _, e := range v {
+					if row, ok := positionRowFromAny(e); ok {
+						rows = append(rows, row)
+					}
+				}
+				return rows, len(rows) > 0
+			}
+		}
+	}
+	if len(v)%5 != 0 {
+		return nil, false
+	}
+	rows := make([][]any, 0, len(v)/5)
+	for i := 0; i < len(v); i += 5 {
+		rows = append(rows, v[i:i+5])
+	}
+	return rows, len(rows) > 0
+}
+
+func positionRowFromAny(e any) ([]any, bool) {
+	switch row := e.(type) {
+	case []any:
+		return row, true
+	case []float64:
+		out := make([]any, len(row))
+		for i, value := range row {
+			out[i] = value
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+// flattenMixedPositions expands a [][]any position matrix into the flat
+// [page,left,right,top,bottom,...] form addPDFPositions expects. This is the
+// shape left by the title-family merge when a page cell is a list (or rows are
+// otherwise non-float); each page in a list becomes its own scalar tuple so
+// page_num_int/top_int can be built without discarding the whole matrix.
+func flattenMixedPositions(rows [][]any) ([]float64, bool) {
+	flat := make([]float64, 0, len(rows)*5)
+	for _, row := range rows {
+		if len(row) < 5 {
+			continue
+		}
+		left, lok := positionNumber(row[1])
+		right, rok := positionNumber(row[2])
+		top, tok := positionNumber(row[3])
+		bottom, bok := positionNumber(row[4])
+		if !lok || !rok || !tok || !bok {
+			continue
+		}
+		pages, ok := positionPages(row[0])
+		if !ok {
+			continue
+		}
+		for _, page := range pages {
+			flat = append(flat, page, left, right, top, bottom)
+		}
+	}
+	return flat, len(flat) > 0
+}
+
+func positionPages(raw any) ([]float64, bool) {
+	switch v := raw.(type) {
+	case []any:
+		pages := make([]float64, 0, len(v))
+		for _, e := range v {
+			page, ok := positionNumber(e)
+			if !ok {
+				return nil, false
+			}
+			pages = append(pages, page)
+		}
+		return pages, len(pages) > 0
+	default:
+		page, ok := positionNumber(v)
+		if !ok {
+			return nil, false
+		}
+		return []float64{page}, true
+	}
+}
+
+func positionNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
 // addPDFPositions stores PDF layout boxes: positions is a flat []float64
 // grouped by five as [page, left, right, top, bottom] and is written to
 // page_num_int / top_int / position_int. Page numbers are ALREADY 1-indexed on
