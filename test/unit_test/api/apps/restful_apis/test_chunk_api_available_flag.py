@@ -29,8 +29,8 @@ Tests pin the helper contract:
 1. Valid ``0`` / ``1`` pass through as ``(True, int)``.
 2. Non-integer (``"abc"``, ``"1.5"``, ``None``, ``[]``) returns the
    argument-error message instead of raising.
-3. ``bool`` is rejected — ``bool`` is an ``int`` subclass so ``int(True)
-   == 1`` would otherwise sneak past.
+3. Boolean availability remains supported: ``True`` becomes 1 and
+   ``False`` becomes 0, matching the established SDK contract.
 4. Out-of-range integers (``2``, ``-1``, ``100``) are rejected.
 
 The helper is loaded directly via AST extraction so the test does not
@@ -103,15 +103,13 @@ def test_accepts_zero_and_one(value):
         {},
         "1e2",  # exponential notation
         "  ",  # whitespace
-        True,  # bool — rejected even though int(True) == 1
-        False,  # bool — same
         2,
         -1,
         100,
     ],
 )
 def test_rejects_bad_values(bad_value):
-    """Non-integers, bools, and out-of-range ints all return the
+    """Non-integers and out-of-range ints all return the
     data-error message instead of raising."""
     ok, message = parse_flag(bad_value, "available")
     assert ok is False
@@ -146,17 +144,14 @@ def test_message_uses_provided_field_name():
     assert "`available_int`" in message
 
 
-def test_bool_true_explicitly_rejected():
-    """Regression for ``int(True) == 1`` sneaking past the parser."""
-    ok, message = parse_flag(True, "available")
-    assert ok is False
-    assert "should be 0 or 1" in message
-
-
-def test_bool_false_explicitly_rejected():
-    ok, message = parse_flag(False, "available")
-    assert ok is False
-    assert "should be 0 or 1" in message
+@pytest.mark.parametrize("field_name", ["available", "available_int"])
+@pytest.mark.parametrize("value, expected", [(True, 1), (False, 0)])
+def test_boolean_availability_remains_supported(field_name, value, expected):
+    """Boolean flags are part of the existing SDK availability contract."""
+    ok, result = parse_flag(value, field_name)
+    assert ok is True
+    assert type(result) is int
+    assert result == expected
 
 
 def test_does_not_raise_on_any_input():

@@ -203,8 +203,8 @@ def _parse_available_flag(raw, field_name):
 
     The chunk routes previously called ``int(raw)`` with no guard; non-integer
     input raised ``ValueError`` and surfaced as a generic 500 (issue #19479).
-    Rejects bools explicitly (``bool`` is an ``int`` subclass, so ``int(True) ==
-    1`` would otherwise sneak past) and pins the value to ``{0, 1}`` — the
+    Preserves boolean availability (``True`` / ``False`` become 1 / 0)
+    and pins the value to ``{0, 1}`` — the
     document storage column is a single-bit enum and any other int would
     be silently reinterpreted downstream.
 
@@ -214,7 +214,7 @@ def _parse_available_flag(raw, field_name):
         value = int(raw)
     except (TypeError, ValueError):
         return False, f"`{field_name}` should be an integer."
-    if isinstance(raw, bool) or value not in (0, 1):
+    if value not in (0, 1):
         return False, f"`{field_name}` should be 0 or 1."
     return True, value
 
