@@ -47,25 +47,26 @@ import (
 
 // Service admin service layer
 type Service struct {
-	userDAO             *dao.UserDAO
-	licenseDAO          *dao.LicenseDAO
-	timeRecordDAO       *dao.TimeRecordDAO
-	systemSettingsDAO   *dao.SystemSettingsDAO
-	tenantDAO           *dao.TenantDAO
-	userTenantDAO       *dao.UserTenantDAO
-	fileDAO             *dao.FileDAO
-	documentDAO         *dao.DocumentDAO
-	taskDAO             *dao.TaskDAO
-	kbDAO               *dao.KnowledgebaseDAO
-	canvasDAO           *dao.UserCanvasDAO
-	chatDAO             *dao.ChatDAO
-	chatSessionDAO      *dao.ChatSessionDAO
-	apiTokenDAO         *dao.APITokenDAO
-	api4ConvDAO         *dao.API4ConversationDAO
-	llmDAO              *dao.LLMDAO
-	ingestionTaskDAO    *dao.IngestionTaskDAO
-	ingestionTaskLogDao *dao.IngestionTaskLogDAO
-	ingestionTaskSvc    *servicepkg.IngestionTaskService
+	userDAO              *dao.UserDAO
+	licenseDAO           *dao.LicenseDAO
+	timeRecordDAO        *dao.TimeRecordDAO
+	systemSettingsDAO    *dao.SystemSettingsDAO
+	tenantDAO            *dao.TenantDAO
+	userTenantDAO        *dao.UserTenantDAO
+	fileDAO              *dao.FileDAO
+	documentDAO          *dao.DocumentDAO
+	taskDAO              *dao.TaskDAO
+	kbDAO                *dao.KnowledgebaseDAO
+	canvasDAO            *dao.UserCanvasDAO
+	chatDAO              *dao.ChatDAO
+	chatSessionDAO       *dao.ChatSessionDAO
+	apiTokenDAO          *dao.APITokenDAO
+	api4ConvDAO          *dao.API4ConversationDAO
+	llmDAO               *dao.LLMDAO
+	ingestionTaskDAO     *dao.IngestionTaskDAO
+	ingestionTaskLogDao  *dao.IngestionTaskLogDAO
+	ingestionTaskSvc     *servicepkg.IngestionTaskService
+	modelProviderService *servicepkg.ModelProviderService
 
 	BillingProductDAO      *dao.BillingProductDAO
 	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
@@ -78,25 +79,26 @@ type Service struct {
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:             dao.NewUserDAO(),
-		licenseDAO:          dao.NewLicenseDAO(),
-		timeRecordDAO:       dao.NewTimeRecordDAO(),
-		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
-		tenantDAO:           dao.NewTenantDAO(),
-		userTenantDAO:       dao.NewUserTenantDAO(),
-		fileDAO:             dao.NewFileDAO(),
-		documentDAO:         dao.NewDocumentDAO(),
-		taskDAO:             dao.NewTaskDAO(),
-		kbDAO:               dao.NewKnowledgebaseDAO(),
-		canvasDAO:           dao.NewUserCanvasDAO(),
-		chatDAO:             dao.NewChatDAO(),
-		chatSessionDAO:      dao.NewChatSessionDAO(),
-		apiTokenDAO:         dao.NewAPITokenDAO(),
-		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
-		llmDAO:              dao.NewLLMDAO(),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
-		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+		userDAO:              dao.NewUserDAO(),
+		licenseDAO:           dao.NewLicenseDAO(),
+		timeRecordDAO:        dao.NewTimeRecordDAO(),
+		systemSettingsDAO:    dao.NewSystemSettingsDAO(),
+		tenantDAO:            dao.NewTenantDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+		fileDAO:              dao.NewFileDAO(),
+		documentDAO:          dao.NewDocumentDAO(),
+		taskDAO:              dao.NewTaskDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
+		canvasDAO:            dao.NewUserCanvasDAO(),
+		chatDAO:              dao.NewChatDAO(),
+		chatSessionDAO:       dao.NewChatSessionDAO(),
+		apiTokenDAO:          dao.NewAPITokenDAO(),
+		api4ConvDAO:          dao.NewAPI4ConversationDAO(),
+		llmDAO:               dao.NewLLMDAO(),
+		ingestionTaskDAO:     dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao:  dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:     servicepkg.NewIngestionTaskService(),
+		modelProviderService: servicepkg.NewModelProviderService(),
 
 		BillingProductDAO:      dao.NewBillingProductDAO(),
 		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
@@ -284,7 +286,11 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err = tx.Create(tenant).Error; err != nil {
+	if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+	}
+	if err = dao.NewTenantDAO().Create(ctx, tx, tenant); err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -568,7 +574,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -585,6 +591,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	result := make([]map[string]interface{}, 0, len(tokens))
 	for _, token := range tokens {
 		result = append(result, map[string]interface{}{
+			"user_id":     token.UserID,
 			"tenant_id":   token.TenantID,
 			"token":       token.Token,
 			"beta":        token.Beta,
@@ -609,7 +616,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -622,6 +629,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
+		UserID:   &user.ID,
 		Token:    key,
 		Beta:     &beta,
 	}
@@ -632,6 +640,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	return map[string]interface{}{
+		"user_id":     user.ID,
 		"tenant_id":   tenantID,
 		"token":       key,
 		"beta":        beta,
@@ -651,7 +660,7 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return fmt.Errorf("tenant not found")
 	}
@@ -1423,8 +1432,11 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		ID:   userID,
 		Name: &tenantName,
 	}
+	if err := dao.ApplyDefaultTenantInviteEnabled(context.Background(), dao.DB, tenant); err != nil {
+		return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+	}
 
-	if err := dao.DB.Create(tenant).Error; err != nil {
+	if err := dao.NewTenantDAO().Create(context.Background(), dao.DB, tenant); err != nil {
 		return err
 	}
 

@@ -90,9 +90,32 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return res
 	}
 
-	res.OutputFormat = "json"
-	res.JSON = []DocItem{NewTextJSONItem(text)}
-	return res
+	// JSON path: prefer the structured IR, which office_oxide recovers table
+	// (and list) structure for. Emitting structured sections lets the chunker
+	// render tables as HTML (#20918) instead of losing them to plain text — the
+	// legacy path flattened the whole document (tables included) into a single
+	// text item. Fall back to the flattened text only when the IR yields no
+	// usable sections, so a document whose IR is empty/unusable still keeps its
+	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
+	if strings.TrimSpace(irJSON) != "" {
+		budget := newEmbeddedMediaBudget()
+		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
+			return ParseResult{
+				OutputFormat: "json",
+				File:         map[string]any{"name": filename, "format": "doc"},
+				JSON:         MapsToItems(sections),
+				Warnings:     budget.warnings(),
+			}
+		}
+	}
+	if strings.TrimSpace(text) == "" {
+		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
+	}
+	return ParseResult{
+		OutputFormat: "json",
+		File:         map[string]any{"name": filename, "format": "doc"},
+		JSON:         []DocItem{NewTextJSONItem(text)},
+	}
 }
 
 // extractDocText returns the best-effort plain text for a legacy .doc

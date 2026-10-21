@@ -575,3 +575,12 @@ func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 		t.Errorf("json = %+v, want [alpha beta]", jsonItems)
 	}
 }
+
+func TestReportParserWarningsDeduplicatesMessages(t *testing.T) {
+	var got []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) { got = append(got, component+": "+message) })
+	reportParserWarnings(ctx, []string{"repeated", "repeated", "distinct", "repeated"})
+	if len(got) != 2 || got[0] != "Parser: WARNING: repeated" || got[1] != "Parser: WARNING: distinct" {
+		t.Fatalf("warnings=%v", got)
+	}
+}

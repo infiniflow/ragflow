@@ -34,6 +34,8 @@ import (
 	"github.com/signintech/gopdf"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	tableast "github.com/yuin/goldmark/extension/ast"
 	gmtext "github.com/yuin/goldmark/text"
 )
 
@@ -77,6 +79,7 @@ type pdfFontSet struct {
 
 type pdfBlock struct {
 	text        string
+	table       [][]string
 	fontSize    int
 	indent      float64
 	spaceBefore float64
@@ -133,6 +136,16 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 	}
 
 	for _, block := range markdownPDFBlocks(content, opts.FontSize) {
+		if block.table != nil {
+			if bodyY > bodyTop {
+				bodyY += block.spaceBefore
+			}
+			if err := drawPDFTable(pdf, fonts, block.table, bodyX, &bodyY, bodyWidth, bodyBottom, opts.FontSize, newPage); err != nil {
+				return nil, err
+			}
+			bodyY += float64(opts.FontSize)
+			continue
+		}
 		lineHeight := float64(block.fontSize) * 1.5
 		if bodyTop+lineHeight > bodyBottom {
 			return nil, fmt.Errorf("PDF: font size %d leaves no usable body area", block.fontSize)
@@ -175,8 +188,9 @@ func WritePDF(content string, opts PDFOptions) ([]byte, error) {
 }
 
 func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
+	content = normalizeMarkdownTableSeparators(content)
 	source := []byte(content)
-	document := goldmark.DefaultParser().Parse(gmtext.NewReader(source))
+	document := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(gmtext.NewReader(source))
 	blocks := make([]pdfBlock, 0, document.ChildCount())
 	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
 		switch n := node.(type) {
@@ -203,9 +217,24 @@ func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
 		case *ast.CodeBlock:
 			blocks = append(blocks, pdfBlock{text: rawPDFBlockText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
 		case *ast.FencedCodeBlock:
-			blocks = append(blocks, pdfBlock{text: rawPDFBlockText(n, source), fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+			text := rawPDFBlockText(n, source)
+			if strings.EqualFold(string(n.Language(source)), "markdown") || strings.EqualFold(string(n.Language(source)), "md") {
+				blocks = append(blocks, markdownPDFBlocks(text, baseSize)...)
+			} else {
+				blocks = append(blocks, pdfBlock{text: text, fontSize: baseSize, indent: 12, spaceAfter: float64(baseSize)})
+			}
 		case *ast.ThematicBreak:
 			blocks = append(blocks, pdfBlock{fontSize: baseSize, spaceAfter: float64(baseSize)})
+		case *tableast.Table:
+			rows := make([][]string, 0, n.ChildCount())
+			for row := n.FirstChild(); row != nil; row = row.NextSibling() {
+				cells := make([]string, 0, row.ChildCount())
+				for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+					cells = append(cells, inlinePDFText(cell, source))
+				}
+				rows = append(rows, cells)
+			}
+			blocks = append(blocks, pdfBlock{table: rows, fontSize: baseSize, spaceBefore: float64(baseSize), spaceAfter: float64(baseSize)})
 		default:
 			if text := inlinePDFText(n, source); text != "" {
 				blocks = append(blocks, pdfBlock{text: text, fontSize: baseSize, spaceAfter: float64(baseSize)})
@@ -213,6 +242,146 @@ func markdownPDFBlocks(content string, baseSize int) []pdfBlock {
 		}
 	}
 	return blocks
+}
+
+func normalizeMarkdownTableSeparators(content string) string {
+	lines := strings.Split(content, "\n")
+	for i := 1; i < len(lines); i++ {
+		previous, separator := strings.TrimSpace(lines[i-1]), strings.TrimSpace(lines[i])
+		if !strings.Contains(previous, "|") || !strings.Contains(separator, "|") {
+			continue
+		}
+		cells := func(line string) []string {
+			parts := strings.Split(strings.Trim(line, "|"), "|")
+			for j := range parts {
+				parts[j] = strings.TrimSpace(parts[j])
+			}
+			if len(parts) > 0 && parts[0] == "" {
+				parts = parts[1:]
+			}
+			if len(parts) > 0 && parts[len(parts)-1] == "" {
+				parts = parts[:len(parts)-1]
+			}
+			return parts
+		}
+		columns, rules := cells(previous), cells(separator)
+		isRule := len(rules) > 0
+		for _, rule := range rules {
+			trimmed := strings.Trim(rule, ":- ")
+			if trimmed != "" || !strings.Contains(rule, "-") {
+				isRule = false
+				break
+			}
+		}
+		if isRule && len(rules) < len(columns) {
+			for len(rules) < len(columns) {
+				rules = append(rules, "---")
+			}
+			lines[i] = "| " + strings.Join(rules, " | ") + " |"
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func drawPDFTable(pdf *gopdf.GoPdf, fonts pdfFontSet, rows [][]string, x float64, y *float64, width, bottom float64, fontSize int, newPage func() error) error {
+	columns := 0
+	for _, row := range rows {
+		columns = max(columns, len(row))
+	}
+	if columns == 0 {
+		return nil
+	}
+	cellWidths := make([]float64, columns)
+	for column := range cellWidths {
+		maxWidth := 0.0
+		for _, row := range rows {
+			if column < len(row) {
+				measured, err := pdfCellTextWidth(pdf, fonts, row[column], fontSize)
+				if err != nil {
+					return fmt.Errorf("PDF: measure table cell: %w", err)
+				}
+				maxWidth = max(maxWidth, measured)
+			}
+		}
+		cellWidths[column] = maxWidth + 16
+	}
+	if total := sumPDFWidths(cellWidths); total > width {
+		for i := range cellWidths {
+			cellWidths[i] *= width / total
+		}
+	}
+	lineHeight := float64(fontSize) * 1.5
+	tableWidth := sumPDFWidths(cellWidths)
+	for rowIndex, row := range rows {
+		wrapped := make([][]string, columns)
+		rowLines := 1
+		for column := 0; column < columns; column++ {
+			if column < len(row) {
+				lines, err := wrapPDFText(pdf, fonts, row[column], fontSize, cellWidths[column]-16)
+				if err != nil {
+					return fmt.Errorf("PDF: wrap table cell: %w", err)
+				}
+				if len(lines) == 0 {
+					lines = []string{""}
+				}
+				wrapped[column] = lines
+				rowLines = max(rowLines, len(lines))
+			}
+		}
+		rowHeight := float64(rowLines)*lineHeight + 8
+		if *y > 72 && *y+rowHeight > bottom {
+			pdf.Line(x, *y, x+tableWidth, *y)
+			if err := newPage(); err != nil {
+				return err
+			}
+		}
+		if rowIndex == 0 || *y == 72 {
+			pdf.Line(x, *y, x+tableWidth, *y)
+		}
+		columnX := x
+		for column, lines := range wrapped {
+			for line, text := range lines {
+				pdf.SetXY(columnX+4, *y+4+float64(fontSize)+float64(line)*lineHeight)
+				if err := drawPDFText(pdf, fonts, text, fontSize); err != nil {
+					return fmt.Errorf("PDF: draw table cell: %w", err)
+				}
+			}
+			columnX += cellWidths[column]
+		}
+		*y += rowHeight
+		if rowIndex == 0 {
+			pdf.Line(x, *y, x+tableWidth, *y)
+		}
+	}
+	pdf.Line(x, *y, x+tableWidth, *y)
+	return nil
+}
+
+func pdfCellTextWidth(pdf *gopdf.GoPdf, fonts pdfFontSet, text string, fontSize int) (float64, error) {
+	var width float64
+	for _, segment := range splitByPDFFont(text) {
+		family := fonts.latinFamily
+		if segment.cjk && fonts.hasCJK {
+			family = fonts.cjkFamily
+		}
+		if err := pdf.SetFont(family, "", fontSize); err != nil {
+			return 0, err
+		}
+		segmentWidth, err := pdf.MeasureTextWidth(segment.text)
+		if err != nil {
+			return 0, err
+		}
+		width += segmentWidth
+	}
+	return width, nil
+}
+
+func sumPDFWidths(widths []float64) float64 {
+	var total float64
+	for _, width := range widths {
+		total += width
+	}
+	return total
 }
 
 func inlinePDFText(node ast.Node, source []byte) string {

@@ -105,18 +105,52 @@ const RetrievalDocuments = ({
     });
   }, [useDocuments]);
 
+  // The last selection handed to the parent. Compared on close so a re-render
+  // with fresh props cannot make us fire the search twice.
+  const committedIdsRef = useRef<string[]>(selectedDocumentIds);
+
+  useEffect(() => {
+    committedIdsRef.current = selectedDocumentIds;
+  }, [selectedDocumentIds]);
+
+  const isSelectionChanged = (value: string[]) => {
+    const committed = committedIdsRef.current;
+    return (
+      value.length !== committed.length ||
+      value.some((id) => !committed.includes(id))
+    );
+  };
+
+  const commitSelection = (value: string[]) => {
+    if (!isSelectionChanged(value)) {
+      return;
+    }
+    committedIdsRef.current = value;
+    setSelectedDocumentIds(value);
+    onTesting(value);
+  };
+
+  // While the popover is open, interactions only update the draft; the search
+  // is re-triggered once it blurs and the draft differs from the committed ids.
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      commitSelection(selectedValues);
+    }
+    setIsPopoverOpen(open);
+  };
+
   const handleTogglePopover = () => {
-    setIsPopoverOpen((prev) => !prev);
+    handleOpenChange(!isPopoverOpen);
   };
 
   const onValueChange = (value: string[]) => {
-    console.log(value);
-    onTesting(value);
-    setSelectedDocumentIds(value);
+    setSelectedValues(value);
+    if (!isPopoverOpen) {
+      commitSelection(value);
+    }
     // handleDatasetSelectChange(value, field.onChange);
   };
   const handleClear = () => {
-    setSelectedValues([]);
     onValueChange([]);
   };
 
@@ -126,7 +160,6 @@ const RetrievalDocuments = ({
     } else if (event.key === 'Backspace' && !event.currentTarget.value) {
       const newSelectedValues = [...selectedValues];
       newSelectedValues.pop();
-      setSelectedValues(newSelectedValues);
       onValueChange(newSelectedValues);
     }
   };
@@ -134,11 +167,10 @@ const RetrievalDocuments = ({
     const newSelectedValues = selectedValues.includes(option)
       ? selectedValues.filter((value) => value !== option)
       : [...selectedValues, option];
-    setSelectedValues(newSelectedValues);
     onValueChange(newSelectedValues);
   };
   return (
-    <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+    <Popover open={isPopoverOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         {useDocuments?.length > 0 && (
           <Button
@@ -176,7 +208,7 @@ const RetrievalDocuments = ({
       <PopoverContent
         className="w-auto p-0"
         align="start"
-        onEscapeKeyDown={() => setIsPopoverOpen(false)}
+        onEscapeKeyDown={() => handleOpenChange(false)}
       >
         <Command>
           <CommandInput
@@ -262,7 +294,7 @@ const RetrievalDocuments = ({
                   </>
                 )}
                 <CommandItem
-                  onSelect={() => setIsPopoverOpen(false)}
+                  onSelect={() => handleOpenChange(false)}
                   className="flex-1 justify-center cursor-pointer max-w-full"
                 >
                   {t('common.close')}
