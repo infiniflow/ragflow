@@ -40,3 +40,63 @@ func RegisterEENoAuthRouter(apiNoAuth *gin.RouterGroup, r *Router) {
 }
 
 func RegisterEEProtectedRouter(_ *gin.RouterGroup, _ *Router) {}
+
+func ToggleWorkflow() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleChat() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleFile() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleSearch() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleModel() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleUserInTenant() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleGroup() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleEvaluation() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleDataset() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
+
+func ToggleMemory() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Next()
+	}
+}
