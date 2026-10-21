@@ -6,6 +6,8 @@ import types
 from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
+
 """TDD tests for the TitleChunker token-count CAP (chunk_token_cap).
 
 The TitleChunker (both ``hierarchy`` and ``group`` methods) historically had
@@ -327,13 +329,14 @@ def test_cap_zero_disables_splitting():
 # --------------------------------------------------------------------------- #
 # 5. table/image chunks are atomic and never split                            #
 # --------------------------------------------------------------------------- #
-def test_non_text_chunk_is_atomic():
-    big_table = "x" * 200  # 200 tokens, far above any reasonable cap
-    items = [{"text": big_table, "doc_type_kwd": "table"}]
+@pytest.mark.parametrize("doc_type", ["table", "image"])
+def test_non_text_chunk_is_atomic(doc_type):
+    big_table = "row\n" * 50  # 200 tokens, far above any reasonable cap
+    items = [{"text": big_table, "doc_type_kwd": doc_type}]
     chunks = _run("hierarchy", _json_upstream(items), levels=[], chunk_token_cap=20)
 
     assert len(chunks) == 1
-    assert chunks[0]["doc_type_kwd"] == "table"
+    assert chunks[0]["doc_type_kwd"] == doc_type
     assert chunks[0]["text"] == big_table
 
 
@@ -711,3 +714,100 @@ def test_hierarchy_short_parent_body_keeps_original_order():
         chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+编", r"第.+章"]], hierarchy="2", chunk_token_cap=cap)
         assert len(chunks) == 1
         assert chunks[0]["text"] == "第一编 总则\n编的说明。\n第一章 基本规定\n子章正文。\n"
+
+
+@pytest.mark.parametrize("output_format", ["json", "chunks"])
+@pytest.mark.parametrize("method", ["hierarchy", "group"])
+@pytest.mark.parametrize("include_heading_content", [False, True])
+def test_multiline_records_separate_headings_from_body(output_format, method, include_heading_content):
+    body = "正文内容。" * 50
+    items = [{"text": "第一编 总则\r\n\r\n第一章 基本规定\r\n" + body + "\r\n第二章 自然人\r\n后章正文。", "doc_type_kwd": "text"}]
+    chunks = _run(
+        method,
+        _json_upstream(items, output_format),
+        levels=[[r"第.+编", r"第.+章"]],
+        hierarchy="2",
+        include_heading_content=include_heading_content,
+        chunk_token_cap=128,
+    )
+    assert len(chunks) > 1
+    assert all(len(chunk["text"]) <= 128 for chunk in chunks)
+    assert "".join(chunk["text"] for chunk in chunks).count("正文内容。") == 50
+    expected_last = "第二章 自然人\n后章正文。\n"
+    if method == "hierarchy":
+        expected_last = "第一编 总则\n" + expected_last
+    assert chunks[-1]["text"] == expected_last
+
+
+def test_multiline_records_preserve_positions_on_each_section():
+    positions = [[1, 10, 200, 50, 80]]
+    items = [{"text": "第一章 总则\n章一正文。\n第二章 自然人\n章二正文。", "positions": positions}]
+    chunks = _run("hierarchy", _json_upstream(items), levels=[[r"第.+章"]], hierarchy="1", faithful_positions=True)
+    assert [chunk["text"] for chunk in chunks] == ["第一章 总则\n章一正文。\n", "第二章 自然人\n章二正文。\n"]
+    assert all(chunk["position_int"] == positions for chunk in chunks)
+    chunks[0]["position_int"][0][0] = 999
+    assert chunks[1]["position_int"] == positions
+
+
+def test_layout_heading_keeps_wrapped_title_but_body_lines_are_not_headings():
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, _group_module):
+        common_module.not_title = lambda text: False
+        param = common_module.TitleChunkerParam()
+        param.method = "hierarchy"
+        param.hierarchy = "1"
+        param.chunk_token_cap = 128
+        process = common_module.ProcessBase(None, "title", param)
+        items = [
+            {"text": "跨行的\n完整标题", "layout_type": "title"},
+            {"text": "正文内容。" * 30 + "\n末尾正文。", "layout_type": "text"},
+        ]
+        chunker = hierarchy_module.HierarchyTitleChunker(process, _json_upstream(items))
+        records = chunker.extract_line_records()
+        chunks = chunker.build_chunks(records, chunker.resolve_levels(records))
+    prefix = "跨行的\n完整标题\n"
+    assert all(chunk["text"].startswith(prefix) for chunk in chunks)
+    assert "".join(chunk["text"][len(prefix) :] for chunk in chunks) == "正文内容。" * 30 + "\n末尾正文。\n"
+
+
+@pytest.mark.parametrize("parser_cap", [128, 512])
+@pytest.mark.parametrize("method", ["hierarchy", "group"])
+def test_txt_parser_json_preserves_sections_and_body(method, parser_cap):
+    from common import token_utils
+    from deepdoc.parser.txt_parser import RAGFlowTxtParser
+    from rag.nlp import not_bullet
+
+    headings = ["第一编 总则", "第一章 基本规定", "第二章 自然人"]
+    first_body = "".join(f"本条规定编号{i}的民事权利义务。" for i in range(80))
+    second_body = "后章正文。"
+    text = "\n".join([*headings[:2], first_body, headings[2], second_body])
+    sections = RAGFlowTxtParser.parser_txt(text, parser_cap, keep_delimiters=True)
+    items = [{"text": section[0], "doc_type_kwd": "text"} for section in sections]
+    with _load_title_chunker_with_stubs() as (common_module, hierarchy_module, group_module):
+        common_module.num_tokens_from_string = token_utils.num_tokens_from_string
+        common_module.truncate = token_utils.truncate
+        common_module.not_bullet = not_bullet
+        group_module.num_tokens_from_string = token_utils.num_tokens_from_string
+        param = common_module.TitleChunkerParam()
+        param.method = method
+        param.levels = [[r"第.+编", r"第.+章"]]
+        param.hierarchy = "2"
+        process = common_module.ProcessBase(None, "title", param)
+        cls = hierarchy_module.HierarchyTitleChunker if method == "hierarchy" else group_module.GroupTitleChunker
+        chunker = cls(process, _json_upstream(items))
+        records = chunker.extract_line_records()
+        chunks = chunker.build_chunks(records, chunker.resolve_levels(records))
+    assert all(token_utils.num_tokens_from_string(chunk["text"]) <= 512 for chunk in chunks)
+    body = "".join(chunk["text"] for chunk in chunks)
+    for heading in headings:
+        body = body.replace(heading, "")
+    assert body.replace("\n", "") == first_body + second_body
+    second_prefix = (headings[0] + "\n" if method == "hierarchy" else "") + headings[2] + "\n"
+    assert chunks[-1]["text"] == second_prefix + second_body + "\n"
+
+
+def test_overlong_heading_error_reports_budget_and_heading():
+    with pytest.raises(ValueError) as exc:
+        _run("hierarchy", _json_upstream([{"text": "第一编 很长的标题"}, {"text": "正文。"}]), levels=[[r"第.+编"]], hierarchy="1", chunk_token_cap=10)
+    assert "heading_tokens=10" in str(exc.value)
+    assert "cap=10" in str(exc.value)
+    assert "第一编 很长的标题" in str(exc.value)

@@ -143,7 +143,9 @@ class BaseTitleChunker(ABC):
             while head and self._token_count(heading + head) > cap:
                 head = head[:-1]
             if not head:
-                raise ValueError("Title chunker heading leaves no room for the next body character within the token cap.")
+                raise ValueError(
+                    f"Title chunker heading leaves no room for the next body character within the token cap. heading_tokens={self._token_count(heading)}, cap={cap}, heading={heading[:120]!r}"
+                )
             out.append(head)
             if head == rest:
                 break
@@ -158,8 +160,9 @@ class BaseTitleChunker(ABC):
         positions so each still gets its preview image and highlight.
         """
         text = (chunk.get("text") or "") if body is None else body
-        if heading and self._token_count(heading) >= cap:
-            raise ValueError("Title chunker heading leaves no room for body within the token cap.")
+        heading_tokens = self._token_count(heading)
+        if heading and heading_tokens >= cap:
+            raise ValueError(f"Title chunker heading leaves no room for body within the token cap. heading_tokens={heading_tokens}, cap={cap}, heading={heading[:120]!r}")
         sentences = self._split_text_by_sentences(text)
         if not sentences:
             return [chunk]
@@ -268,16 +271,26 @@ class BaseTitleChunker(ABC):
             logger.info(f"payload filter: format={self.from_upstream.output_format} before={input_line_count} after={output_line_count}")
             return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in clean_lines]
         items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
-        return [
-            {
+        records = []
+        for item in items or []:
+            record = {
                 "text": item.get("text") or "",
                 "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
                 "img_id": item.get("img_id"),
                 "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
                 PDF_POSITIONS_KEY: extract_pdf_positions(item),
             }
-            for item in items or []
-        ]
+            # An explicit layout heading can wrap across lines. Keep that
+            # block intact, as well as atomic tables/images. Other text blocks
+            # may contain several headings and body paragraphs merged by the
+            # parser; resolve their levels line by line, just like text input.
+            if record["doc_type_kwd"] != "text" or re.search(r"(section|title|head)", record["layout"], re.IGNORECASE):
+                records.append(record)
+                continue
+            for line in record["text"].splitlines():
+                if line.strip():
+                    records.append({**record, "text": line, PDF_POSITIONS_KEY: deepcopy(record[PDF_POSITIONS_KEY])})
+        return records
 
     def extract_outlines(self):
         """Extract PDF bookmarks/outlines used for outline-based leveling."""
