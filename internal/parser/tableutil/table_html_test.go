@@ -47,6 +47,26 @@ func TestParseTableHTMLHappyPath(t *testing.T) {
 	assertRowsEqual(t, td.CellTexts(), want)
 }
 
+// HTML 4 required <tfoot> before <tbody>, and a browser still draws it
+// below the body, so its rows read last; a footer of <th> cells is not part
+// of the header either.
+func TestParseTableHTMLFooterRowsComeLast(t *testing.T) {
+	html := `<table><thead><tr><th>Item</th><th>Qty</th></tr></thead>` +
+		`<tfoot><tr><th>Total</th><th>3</th></tr></tfoot>` +
+		`<tbody><tr><td>pen</td><td>1</td></tr><tr><td>ink</td><td>2</td></tr></tbody></table>`
+	td := mustParse(t, html)
+	if td.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
+	}
+	want := [][]string{
+		{"Item", "Qty"},
+		{"pen", "1"},
+		{"ink", "2"},
+		{"Total", "3"},
+	}
+	assertRowsEqual(t, td.CellTexts(), want)
+}
+
 func TestParseTableHTMLMultipleHeaderRows(t *testing.T) {
 	html := `<table><tr><th>H1</th></tr><tr><th>H2</th></tr>` +
 		`<tr><td>a</td></tr></table>`
