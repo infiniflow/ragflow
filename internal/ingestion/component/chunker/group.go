@@ -420,22 +420,29 @@ func pdfPosRowLess(a, b []float64) bool {
 // [page,left,right,top,bottom]; duplicates (by the first five columns)
 // are dropped and rows are sorted by (page, top, left). Returns nil when
 // no source carries any usable coordinates.
-func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
-	var out [][]float64
+//
+// The page cell may be a scalar (deepdoc's normalized form) or a list (the
+// raw layout.SectionsToJSON form, also seen in external/historical payloads);
+// both are preserved verbatim so the downstream PositionsFromMatrix can decode
+// either. A source may also be a single flat 5-tuple rather than a list of
+// rows (TCADP and some external producers emit that shape).
+//
+// Rows stay []any because a page cell may itself be a list; the generic shape
+// is what ChunkDoc.ToMap emits for such a matrix, so one representation flows
+// through the chunker and the index boundary.
+func mergePositionMatrix(sources ...json.RawMessage) [][]any {
+	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
-		if len(src) == 0 {
+		rows, ok := decodePositionRows(src)
+		if !ok {
 			continue
 		}
-		var mat [][]float64
-		if err := json.Unmarshal(src, &mat); err != nil {
-			continue
-		}
-		for _, row := range mat {
+		for _, row := range rows {
 			if len(row) < 5 {
 				continue
 			}
-			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			key := fmt.Sprint(row[:5])
 			if seen[key] {
 				continue
 			}
@@ -446,10 +453,99 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 	if len(out) == 0 {
 		return nil
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return pdfPosRowLess(out[i], out[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return positionRowLess(out[i], out[j])
 	})
 	return out
+}
+
+// decodePositionRows accepts the nested matrix form, a single flat 5-tuple,
+// and a flat sequence of multiple 5-tuples (TCADP/external producers emit a
+// flat array). JSON-decoded numbers are float64, and a page cell may itself
+// be a list, so the rows stay []any rather than being coerced to [][]float64.
+//
+// A flat sequence whose length is a multiple of five is grouped by five so
+// every tuple survives; a flat length that is not a multiple of five has
+// ambiguous tuple boundaries and is preserved verbatim as one row so the
+// first tuple still reaches cropping (sorting abstains via firstPositionRow).
+func decodePositionRows(src json.RawMessage) ([][]any, bool) {
+	if len(src) == 0 {
+		return nil, false
+	}
+	var rows [][]any
+	if err := json.Unmarshal(src, &rows); err == nil {
+		return rows, true
+	}
+	var flat []any
+	if err := json.Unmarshal(src, &flat); err != nil || len(flat) < 5 {
+		return nil, false
+	}
+	if len(flat)%5 != 0 {
+		return [][]any{flat}, true
+	}
+	grouped := make([][]any, 0, len(flat)/5)
+	for i := 0; i < len(flat); i += 5 {
+		grouped = append(grouped, flat[i:i+5])
+	}
+	return grouped, true
+}
+
+// positionRowLess orders rows by (first page, top, left), matching
+// pdfPosRowLess for scalar page numbers while tolerating a list page cell.
+func positionRowLess(a, b []any) bool {
+	ap, bp := positionRowPage(a), positionRowPage(b)
+	if ap != bp {
+		return ap < bp
+	}
+	at, bt := positionRowFloat(a, 3), positionRowFloat(b, 3)
+	if at != bt {
+		return at < bt
+	}
+	return positionRowFloat(a, 1) < positionRowFloat(b, 1)
+}
+
+// positionRowPage decodes the page cell for ordering only; the original cell
+// is kept in the emitted row. A list page uses its first entry.
+func positionRowPage(row []any) float64 {
+	if len(row) == 0 {
+		return 0
+	}
+	switch v := row[0].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case []any:
+		if len(v) == 0 {
+			return 0
+		}
+		return positionRowPage([]any{v[0]})
+	default:
+		return 0
+	}
+}
+
+func positionRowFloat(row []any, index int) float64 {
+	if index >= len(row) {
+		return 0
+	}
+	value, _ := positionRowNumber(row[index])
+	return value
+}
+
+// positionRowNumber decodes one numeric matrix element. JSON-decoded numbers
+// are float64; Go-constructed callers may use int/int64.
+func positionRowNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 // extractLineRecords converts the decoded upstream payload into records in the

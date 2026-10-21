@@ -367,7 +367,7 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
 		// (b) positions must be merged across both records.
-		pos, ok := ck["positions"].([][]float64)
+		pos, ok := ck["positions"].([][]any)
 		if !ok {
 			t.Fatalf("positions missing or wrong type %T on merged group chunk", ck["positions"])
 		}
