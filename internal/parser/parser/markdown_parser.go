@@ -487,19 +487,10 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				case !budget.reserveItem():
 					item["media_omitted"] = true
 				default:
-					encoded, raw, resolved := resolveImageURL(ctx, imgURL)
+					encoded, raw, size, resolved := resolveImageURL(ctx, imgURL)
 					if !resolved {
 						unresolvedImages++
 						break
-					}
-					size := len(raw)
-					if raw == nil {
-						decodedSize, ok := base64DecodedSize(encoded, len(encoded))
-						if !ok {
-							unresolvedImages++
-							break
-						}
-						size = int(decodedSize)
 					}
 					if !budget.includeReservedSize(size) {
 						item["media_omitted"] = true
@@ -555,14 +546,14 @@ func findBlockImage(n ast.Node) (string, bool) {
 }
 
 // resolveImageURL resolves a Markdown image URL to an encoded payload or raw
-// bytes.
+// bytes plus the image size in bytes.
 // Supports:
-//   - data:image/... URIs → validated encoded payload
+//   - data:image/... URIs → validated, normalized encoded payload
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
 // Local / relative paths are not fetched (security). Returns
 // exactly one of encoded and raw populated on success.
-func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, ok bool) {
+func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, size int, ok bool) {
 	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
 		// data:image/png;base64,xxxx
 		idx := strings.Index(imageURL, "base64,")
@@ -570,23 +561,24 @@ func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw 
 			idx = strings.Index(strings.ToLower(imageURL), "base64,")
 		}
 		if idx < 0 {
-			return "", nil, false
+			return "", nil, 0, false
 		}
-		encoded, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		var decodedSize int64
+		encoded, decodedSize, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
 		if !ok {
-			return "", nil, false
+			return "", nil, 0, false
 		}
-		return encoded, nil, true
+		return encoded, nil, int(decodedSize), true
 	}
 	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
 		raw, err := fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", nil, false
+			return "", nil, 0, false
 		}
-		return "", raw, true
+		return "", raw, len(raw), true
 	}
 	// Local / relative paths — not fetched for security.
-	return "", nil, false
+	return "", nil, 0, false
 }
 
 // fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses

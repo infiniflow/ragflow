@@ -77,20 +77,24 @@ func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
 		name, payload string
 		limit         int
 		want          string
+		wantSize      int64
 	}{
-		{"negative_limit", "YQ", -1, ""},
-		{"zero_limit", "YQ", 0, ""},
-		{"exact_limit_padded", "YWI=", 2, "YWI="},
-		{"exact_limit_unpadded", "YWI", 2, "YWI="},
-		{"exact_limit_wrapped", "YW\r\nI", 2, "YWI="},
-		{"over_limit_padded", "YWI=", 1, ""},
-		{"over_limit_unpadded", "YWI", 1, ""},
-		{"over_encoded_limit", "YWJjZA==", 2, ""},
+		{"negative_limit", "YQ", -1, "", 0},
+		{"zero_limit", "YQ", 0, "", 0},
+		{"exact_limit_padded", "YWI=", 2, "YWI=", 2},
+		{"exact_limit_unpadded", "YWI", 2, "YWI=", 2},
+		{"exact_limit_wrapped", "YW\r\nI", 2, "YWI=", 2},
+		{"over_limit_padded", "YWI=", 1, "", 0},
+		{"over_limit_unpadded", "YWI", 1, "", 0},
+		{"over_encoded_limit", "YWJjZA==", 2, "", 0},
+		{"data_after_padding", "G0==JbjQ", 16, "", 0},
+		{"data_after_padding_long", "aMRFPqfZALtY6rw50P==Pn5d", 16, "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
-			if got != tc.want || ok != (tc.want != "") {
-				t.Errorf("normalizeBase64ImagePayload(%q, %d) = (%q, %v), want (%q, %v)", tc.payload, tc.limit, got, ok, tc.want, tc.want != "")
+			got, size, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
+			if got != tc.want || ok != (tc.want != "") || size != tc.wantSize {
+				t.Errorf("normalizeBase64ImagePayload(%q, %d) = (%q, %d, %v), want (%q, %d, %v)",
+					tc.payload, tc.limit, got, size, ok, tc.want, tc.wantSize, tc.want != "")
 			}
 		})
 	}

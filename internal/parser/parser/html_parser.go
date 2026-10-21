@@ -539,7 +539,7 @@ func normalizeHTMLImageSource(src string) (string, bool) {
 	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
 		return "", false
 	}
-	payload, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+	payload, _, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
 	if !ok {
 		return "", false
 	}
