@@ -56,7 +56,6 @@
                         "pdf": {
                             "enable_multi_column": true,
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -444,7 +443,6 @@
                                     "enable_multi_column": true,
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"

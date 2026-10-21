@@ -55,7 +55,6 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -71,7 +70,6 @@
                             "column_names": []
                         },
                         "text&code": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -198,7 +196,6 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -207,7 +204,6 @@
                                 },
                                 {
                                     "fileFormat": "text&code",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
