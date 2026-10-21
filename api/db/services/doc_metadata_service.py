@@ -835,9 +835,7 @@ class DocMetadataService:
                         raise MetadataPaginationError("Elasticsearch metadata total is unavailable")
                 if not batch_docs:
                     if use_es_cursor and (total_docs is None or len(all_results) < total_docs):
-                        raise MetadataPaginationError(
-                            f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents"
-                        )
+                        raise MetadataPaginationError(f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents")
                     break
                 if use_es_cursor:
                     hits = batch.get("hits", {}).get("hits", [])
@@ -856,9 +854,7 @@ class DocMetadataService:
                 )
                 if len(batch_docs) < page_size:
                     if use_es_cursor and (total_docs is None or len(all_results) < total_docs):
-                        raise MetadataPaginationError(
-                            f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents"
-                        )
+                        raise MetadataPaginationError(f"Elasticsearch metadata cursor ended after {len(all_results)} of {total_docs} documents")
                     break
                 if use_es_cursor:
                     cursor = next_cursor

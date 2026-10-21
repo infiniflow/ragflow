@@ -54,10 +54,7 @@ _stubs = {
     "common.settings": types.ModuleType("common.settings"),
 }
 _previous = {name: sys.modules.get(name) for name in _stubs}
-_previous_es_modules = {
-    name: sys.modules.get(name)
-    for name in ("common.doc_store.es_conn_base", "rag.utils.es_conn")
-}
+_previous_es_modules = {name: sys.modules.get(name) for name in ("common.doc_store.es_conn_base", "rag.utils.es_conn")}
 for _name, _module in _stubs.items():
     sys.modules.setdefault(_name, _module)
 
@@ -213,8 +210,15 @@ def test_explicit_search_after_cursor_fetches_next_page_without_replaying_prior_
     collected = []
     for _ in range(13):
         result = conn.search(
-            ["*"], [], {"kb_id": ["kb-1"]}, [], OrderByExpr().asc("id"),
-            0, 1_000, "ragflow_doc_meta_tenant-1", ["kb-1"],
+            ["*"],
+            [],
+            {"kb_id": ["kb-1"]},
+            [],
+            OrderByExpr().asc("id"),
+            0,
+            1_000,
+            "ragflow_doc_meta_tenant-1",
+            ["kb-1"],
             search_after=cursor,
         )
         hits = result["hits"]["hits"]
@@ -232,11 +236,7 @@ def test_explicit_cursor_requires_unique_final_id_and_full_sort_tuple():
     from pytest import raises
 
     with raises(ValueError, match="final unique sort field"):
-        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [],
-                    OrderByExpr().asc("available_int"), 0, 100,
-                    "ragflow_doc_meta_tenant-1", ["kb-1"], search_after=[1])
+        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [], OrderByExpr().asc("available_int"), 0, 100, "ragflow_doc_meta_tenant-1", ["kb-1"], search_after=[1])
     order_by = OrderByExpr().asc("available_int").asc("id")
     with raises(ValueError, match="every returned sort value"):
-        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [],
-                    order_by, 0, 100, "ragflow_doc_meta_tenant-1", ["kb-1"],
-                    search_after=[1])
+        conn.search(["*"], [], {"kb_id": ["kb-1"]}, [], order_by, 0, 100, "ragflow_doc_meta_tenant-1", ["kb-1"], search_after=[1])
