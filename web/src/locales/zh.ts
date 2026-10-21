@@ -438,6 +438,8 @@ export default {
       applyAutoMetadataSettings: '应用全局自动元数据设置',
       parseFileTip: '您确定要解析吗？',
       clearChunksReparseTip: '您确定要清空分块重新解析吗？',
+      parserConfigReparseTip:
+        '现有分块由之前的解析设置生成。是否清空现有分块，并使用已保存的设置重新解析此文档？',
       parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
