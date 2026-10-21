@@ -29,6 +29,8 @@ export function NodeContextMenu({
       y: node?.position?.y || 0 + 50,
     };
 
+    if (!node) return;
+
     addNodes({
       ...(node || {}),
       data: node?.data,
