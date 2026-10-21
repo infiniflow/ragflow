@@ -100,7 +100,11 @@ export const util = {
         key: item.field,
         type: item.valueType?.toLowerCase(),
         description: item.description,
-        enum: item.values,
+        // An explicit OFF on the restriction switch clears the saved enum;
+        // the reader at metaDataSettingJSONToMetaDataTableData maps an empty
+        // enum back to restrictDefinedValues: false. Callers that omit the
+        // switch (undefined) keep the existing values and stay restricted.
+        enum: item.restrictDefinedValues === false ? [] : item.values,
       };
     });
   },
