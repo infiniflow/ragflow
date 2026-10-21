@@ -147,12 +147,12 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // pipeline vocabulary cannot name cannot be judged against a declaration: the
 // owning pipeline still takes the file, and with no owner (rtf, wps, ...) the
 // dataset's choice is honored. The row then matches the pipeline that actually
-// runs it: document parser_config drives both the parser-gap validation and
-// the runtime override params, and a row left on a parser that cannot run its
-// file is reported as unsupported by its own type. An unchanged parser keeps
-// its config, and on a DSL failure the selection and config are kept: a
-// registry lookup must not fail an upload, and a half-switched row (new parser,
-// old config) is the inconsistent state this function exists to avoid.
+// runs it: document parser_config drives both the parser-gap validation and the
+// runtime override params, and a row left on a parser that cannot run its file
+// is reported as unsupported by its own type. An unchanged parser keeps its
+// config, and on a DSL failure the selection and config are kept: a registry
+// lookup must not fail an upload, and a half-switched row (new parser, old
+// config) is the inconsistent state this function exists to avoid.
 func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap) (*service.ParserSelection, entity.JSONMap) {
 	selection := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	family := componentpkg.ParserFileFamily(utility.GetFileExtension(filename))
@@ -171,13 +171,6 @@ func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filena
 		return selection, base
 	}
 	if rebuilt, ok := rebuildParserConfig(ctx, kb, target, filename, base); ok {
-		// Video has no parser that implements it, so a switch to picture is
-		// expected to stay unparsable; log the routing decision for debugging.
-		if family == "video" {
-			common.Debug("document: video upload switched to picture pipeline",
-				zap.String("filename", filename),
-				zap.String("parser_id", target))
-		}
 		return &service.ParserSelection{Mode: service.ParseModeBuiltIn, ParserID: target}, rebuilt
 	}
 	return selection, base
