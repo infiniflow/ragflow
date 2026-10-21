@@ -33,7 +33,6 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
-	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/utility"
 )
 
@@ -353,6 +352,14 @@ func (p *PDFParser) validateParseMethod() error {
 // build-tag agnostic: under !cgo the deepdoc path transparently reports
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	result := p.parseWithResult(ctx, filename, data)
+	if result.Err == nil && result.OutputFormat == "json" {
+		return p.NormalizeResult(ctx, filename, result)
+	}
+	return result
+}
+
+func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if err := p.validateParseMethod(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -527,10 +534,6 @@ func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
 	return deepDocAnalyzerFromEnv()
 }
 
-func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
-	return pdfParseResultToJSONWithOptions(filename, parsed, pdfPostProcessOptions{})
-}
-
 func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseResult, opts pdfPostProcessOptions) ParseResult {
 	if parsed == nil {
 		return ParseResult{Err: fmt.Errorf("parser: nil DeepDOC PDF result for %s", filename)}
@@ -541,6 +544,8 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	if opts.enableMultiColumn && opts.pageWidth <= 0 {
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
+	// JSON media policy is applied once at the PDFParser result boundary.
+	opts.flattenMediaToText = false
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
 	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under
@@ -559,15 +564,13 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		if layoutType, _ := items[i]["layout_type"].(string); layoutType != "" {
 			items[i]["layout"] = layoutType
 		}
-		if normalized := normalizePDFPositions(items[i]["_pdf_positions"]); len(normalized) > 0 {
+		if normalized := normalizeDeepDocPositions(items[i]["_pdf_positions"]); len(normalized) > 0 {
 			items[i]["_pdf_positions"] = normalized
 			items[i]["positions"] = normalized
 			if _, ok := items[i]["page_number"]; !ok {
 				items[i]["page_number"] = firstPageNumber(normalized)
 			}
 		}
-		normalizePDFDocType(items[i])
-		projectPDFTable(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
 			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
@@ -897,7 +900,9 @@ func firstPDFPageWidth(pageWidths map[int]float64) float64 {
 	return pageWidths[pg]
 }
 
-func normalizePDFPositions(raw any) [][]any {
+// normalizeDeepDocPositions converts DeepDoc source positions, including its
+// zero-based pages. Other engines must not pass canonical positions here.
+func normalizeDeepDocPositions(raw any) [][]any {
 	positions, ok := raw.([][]any)
 	if !ok || len(positions) == 0 {
 		return nil
@@ -907,7 +912,7 @@ func normalizePDFPositions(raw any) [][]any {
 		if len(pos) < 5 {
 			continue
 		}
-		pageNumber, ok := normalizePDFPageNumber(pos[0])
+		pageNumber, ok := normalizeDeepDocPageNumber(pos[0])
 		if !ok {
 			continue
 		}
@@ -923,7 +928,7 @@ func normalizePDFPositions(raw any) [][]any {
 	return normalized
 }
 
-// normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
+// normalizeDeepDocPageNumber converts a DeepDoc 0-indexed page number to the
 // 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
 // 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
 // and every downstream consumer (addPDFPositions for ES storage,
@@ -931,24 +936,24 @@ func normalizePDFPositions(raw any) [][]any {
 // Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
 // consistent; the old heuristic left page>=1 unconverted, which addPDFPositions
 // then double-incremented and PositionsFromMatrix mis-decremented.
-func normalizePDFPageNumber(raw any) (int, bool) {
+func normalizeDeepDocPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case int:
 		return v + 1, true
 	case int64:
-		return normalizePDFPageNumber(int(v))
+		return normalizeDeepDocPageNumber(int(v))
 	case float64:
-		return normalizePDFPageNumber(int(v))
+		return normalizeDeepDocPageNumber(int(v))
 	case []any:
 		if len(v) == 0 {
 			return 0, false
 		}
-		return normalizePDFPageNumber(v[len(v)-1])
+		return normalizeDeepDocPageNumber(v[len(v)-1])
 	case []int:
 		if len(v) == 0 {
 			return 0, false
 		}
-		return normalizePDFPageNumber(v[len(v)-1])
+		return normalizeDeepDocPageNumber(v[len(v)-1])
 	default:
 		return 0, false
 	}
@@ -967,86 +972,11 @@ func numericAny(raw any) (float64, bool) {
 	}
 }
 
-func normalizePDFDocType(item map[string]any) {
-	if item == nil {
-		return
-	}
-	layoutType, _ := item["layout_type"].(string)
-	// A figure caption is a media section even when the parser no longer
-	// inlines its cropped image (cgo): it still carries PDF positions, so the
-	// downstream VLM/chunker crop it on demand. Classify it as image whenever
-	// it has positions (the inlined image was only a side effect of cropping).
-	_, hasMedia := ExtractPDFPositions(item)
-	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
-		// A figure caption keeps its media classification so the downstream
-		// VLM enhancement and on-demand chunker crop it.
-		if docType == "text" && layoutType == deepdoctype.DLALabelFigureCaption && hasMedia {
-			item["doc_type_kwd"] = "image"
-		}
-		return
-	}
-	switch layoutType {
-	case "table":
-		item["doc_type_kwd"] = "table"
-	case "figure", "image":
-		item["doc_type_kwd"] = "image"
-	case deepdoctype.DLALabelFigureCaption:
-		if hasMedia {
-			item["doc_type_kwd"] = "image"
-		} else {
-			item["doc_type_kwd"] = "text"
-		}
-	default:
-		if img, _ := item["image"].(string); img != "" {
-			item["doc_type_kwd"] = "image"
-			return
-		}
-		item["doc_type_kwd"] = "text"
-	}
-}
-
-// projectPDFTable upgrades a legacy pdf table item — one whose doc_type_kwd is
-// "table" and whose text is <table> markup — to the structured TableData
-// contract, so the downstream chunker reads Rows directly instead of
-// re-parsing HTML. ParseTableHTML + RenderTableHTML round-trips the legacy
-// htmlTableRE extraction exactly (entity/html unescaping is left to the
-// consumer), so dropping the original HTML string loses no information: the
-// markdown and search paths render it on demand from `table`. The pdf page
-// number (when present) is projected onto TableData.Page.
-//
-// The redundant HTML `text` is deleted once `table` is projected: keeping both
-// would duplicate every table's cell text in the parse result (the storage
-// cost that motivated moving to the structured contract). Non-table items, and
-// table items whose text is not <table> markup, are left untouched so their
-// `text` is preserved as a last-resort carrier.
-func projectPDFTable(item map[string]any) {
-	if item == nil {
-		return
-	}
-	if dt, _ := item["doc_type_kwd"].(string); dt != "table" {
-		return
-	}
-	text, _ := item["text"].(string)
-	if !isTableHTML(text) {
-		return
-	}
-	td, err := tableutil.ParseTableHTML(text)
-	if err != nil || td == nil {
-		return
-	}
-	if page := numberValue(item["page_number"]); page > 0 {
-		td.Page = int(page)
-	}
-	item["table"] = td
-	delete(item, "text")
-}
-
 // ExtractPDFPositions is the single source of truth for "does this parsed item
-// carry a usable PDF crop region". It returns the non-empty positions matrix
-// (under the canonical _pdf_positions key or the legacy positions key),
-// accepting either the typed [][]any form produced in-process or the
-// JSON-decoded []any form whose elements are themselves []any rows. The bool
-// reports whether a usable matrix was present.
+// carry PDF positions". It returns the position rows (under the canonical
+// _pdf_positions key or the legacy positions key), decoded through
+// PDFPositionRows so every wire shape is understood. The bool reports whether
+// any row was present.
 //
 // The parser (doc-type classification in normalizePDFDocType) and the on-demand
 // croppers (VLM vision_enhancement and the chunker) MUST agree on this
@@ -1056,32 +986,11 @@ func projectPDFTable(item map[string]any) {
 // which escaped the figure-caption → image normalization and the crop path.
 func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
 	for _, key := range []string{"_pdf_positions", "positions"} {
-		switch v := item[key].(type) {
-		case [][]any:
-			if len(v) > 0 {
-				return v, true
-			}
-		case []any:
-			out := make([][]any, 0, len(v))
-			ok := true
-			for _, row := range v {
-				r, rOK := row.([]any)
-				if !rOK {
-					ok = false
-					break
-				}
-				out = append(out, r)
-			}
-			if ok && len(out) > 0 {
-				return out, true
-			}
+		if rows := PDFPositionRows(item[key]); len(rows) > 0 {
+			return rows, true
 		}
 	}
 	return nil, false
-}
-
-func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
-	return parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{}, parseFn)
 }
 
 func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byte, opts pdfPostProcessOptions, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
@@ -1104,13 +1013,6 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 		res = pdfParseResultToMarkdownWithOptions(filename, parsed, opts)
 	default:
 		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", opts.outputFormat)}
-	}
-	for i := range res.JSON {
-		m := res.JSON[i].ToMap()
-		if img, _ := m["image"].(string); img != "" {
-			m["image"] = pdflayout.InlinePNGDataURL(img)
-			res.JSON[i] = DocItemFromMap(m)
-		}
 	}
 	return res
 }
