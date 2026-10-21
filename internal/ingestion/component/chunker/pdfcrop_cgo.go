@@ -278,11 +278,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // region (Python restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
 //
-// Content type comes from doc_type_kwd. Structural layout values are carried
-// through so headings, code, and list blocks stay out of preview cropping on
-// the paths that preserve them (the markdown path); PDF model layouts
-// (title/figure/equation) are not structural and fall back to their content
-// type, matching the historical behavior.
+// The content type on doc_type_kwd alone decides the crop kind. Headings are
+// text chunks and get the same text preview as any other body text, matching
+// the historical behavior.
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch cropChunkType(ck) {
 	case "image", "table", "text":
@@ -293,13 +291,5 @@ func needsCrop(ck schema.ChunkDoc) bool {
 }
 
 func cropChunkType(ck schema.ChunkDoc) string {
-	// Content type wins: a media block is cropped even if a parser or OCR
-	// label also attached a structural layout to it.
-	if typ := itemDocType(ck); typ != "text" {
-		return typ
-	}
-	if isStructuralLayout(ck.Layout) {
-		return ck.Layout
-	}
-	return "text"
+	return itemDocType(ck)
 }

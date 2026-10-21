@@ -533,9 +533,6 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 	if got := chunks[0]["doc_type_kwd"]; got != "table" {
 		t.Errorf("table doc_type_kwd = %v, want table", got)
 	}
-	if got := chunks[0]["doc_type_kwd"]; got != "table" {
-		t.Errorf("table doc_type_kwd = %v, want table", got)
-	}
 }
 
 func TestGeneralChunkerDOCXMediaDoesNotBreakTextMerge(t *testing.T) {

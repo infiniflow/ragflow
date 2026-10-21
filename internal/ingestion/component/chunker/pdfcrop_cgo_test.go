@@ -78,7 +78,7 @@ func TestNeedsCrop(t *testing.T) {
 		{"text with positions", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"image without positions", schema.ChunkDoc{DocType: "image"}, false},
 		{"image with heading layout still crops", schema.ChunkDoc{DocType: "image", Layout: "heading", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		{"heading excluded by layout", schema.ChunkDoc{Layout: "heading", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, false},
+		{"heading text previews like text", schema.ChunkDoc{Layout: "heading", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		// A non-media model layout (equation) is not structural, so it falls
 		// back to its content type and is previewed as text.
 		{"equation layout falls back to text", schema.ChunkDoc{Layout: "equation", DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
@@ -88,9 +88,8 @@ func TestNeedsCrop(t *testing.T) {
 		{"doc image fallback", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc table fallback", schema.ChunkDoc{DocType: "table", Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
 		{"doc text fallback", schema.ChunkDoc{DocType: "text", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
-		// Heading-tagged blocks carry doc_type_kwd "text" but group/hierarchy
-		// cannot distinguish them from body text at this layer, so they are
-		// previewed too (matching Python's restore_pdf_text_previews).
+		// Headings are text chunks and are previewed too, matching Python's
+		// restore_pdf_text_previews.
 		{"doc image without positions", schema.ChunkDoc{DocType: "image"}, false},
 		// Unknown doc_type values normalize to text (itemDocType), matching
 		// every other content-type dispatch.
@@ -189,25 +188,6 @@ func TestCropImageChunks_DocTypeFallbackCropsImageTableText(t *testing.T) {
 				t.Errorf("chunk %d (doc table): image = %q, want cropped via DocType fallback", i, ck.Image)
 			}
 		}
-	}
-}
-
-// TestCropImageChunks_HeadingExcludedByLayout verifies that the general/token
-// path still excludes headings: a chunk with layout "heading" is never
-// previewed even when it carries positions — the heading check takes priority
-// over the content-type fallback.
-func TestCropImageChunks_HeadingExcludedByLayout(t *testing.T) {
-	ctx := context.Background()
-	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
-	chunks := []schema.ChunkDoc{
-		{Layout: "heading", DocType: "text", PDFPositions: pos},
-	}
-	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
-	if len(out) != 1 {
-		t.Fatalf("len(out) = %d, want 1", len(out))
-	}
-	if out[0].Image != "" {
-		t.Errorf("heading chunk: image = %q, want no preview (layout heading)", out[0].Image)
 	}
 }
 

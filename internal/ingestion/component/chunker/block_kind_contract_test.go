@@ -116,6 +116,9 @@ func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
 				if kind, ok := ck["ck_type"]; ok {
 					t.Errorf("chunk[%d] emits retired ck_type %v: %#v", i, kind, ck)
 				}
+				if layout, ok := ck["layout"].(string); ok && isStructuralLayout(layout) {
+					t.Errorf("chunk[%d] leaks structural layout %q: %#v", i, layout, ck)
+				}
 			}
 		})
 	}

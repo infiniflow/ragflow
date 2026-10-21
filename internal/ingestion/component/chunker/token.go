@@ -286,9 +286,9 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 
 // cropTitleChunks crops image/table/text previews for chunks produced by
 // the Title/Group/Hierarchy chunkers, mirroring the TokenChunker JSON path
-// (cropImageChunks at token.go:513). A nil engine — or an
-// empty chunk list — leaves chunks unchanged (best-effort, matching the
-// on-demand PDF crop contract used by the TokenChunker path).
+// (cropImageChunks at token.go:513). A nil engine (or an undecodable payload)
+// skips cropping, but the returned maps are still normalized so retired
+// ck_type and chunker-internal structural layout never leave the component.
 func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
 	if len(chunks) == 0 {
 		return chunks

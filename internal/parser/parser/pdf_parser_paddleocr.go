@@ -11,8 +11,6 @@ import (
 	"ragflow/internal/utility"
 )
 
-// PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
-// emits the structured items consumed by the existing PDF chunk pipeline.
 // isStructuralOCRTextLayout reports whether an item already carries a
 // structural block kind produced by markdown normalization. Those values are
 // finer than an OCR block label and must win over it.
@@ -25,6 +23,8 @@ func isStructuralOCRTextLayout(fields map[string]any) bool {
 	return false
 }
 
+// PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
+// emits the structured items consumed by the existing PDF chunk pipeline.
 func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
