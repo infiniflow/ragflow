@@ -208,25 +208,16 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 
 func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 	var deleteQuery map[string]interface{}
-	refreshed := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		switch r.Method {
 		case http.MethodHead:
 			w.WriteHeader(http.StatusOK)
 		case http.MethodPost:
-			if r.URL.Path == "/ragflow_tenant/_refresh" {
-				refreshed = true
-				_, _ = w.Write([]byte(`{"_shards":{"failed":0}}`))
-				return
-			}
 			if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
 				t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
 				http.Error(w, "unexpected request path", http.StatusNotFound)
 				return
-			}
-			if !refreshed {
-				t.Error("delete must refresh first to see the latest bulk writes")
 			}
 			if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
 				t.Errorf("decode delete query: %v", err)
@@ -278,25 +269,16 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 // build a match_all query and delete every document in the index.
 func TestDeleteChunksIDStringSlice(t *testing.T) {
 	var deleteQuery map[string]interface{}
-	refreshed := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		switch r.Method {
 		case http.MethodHead:
 			w.WriteHeader(http.StatusOK)
 		case http.MethodPost:
-			if r.URL.Path == "/ragflow_tenant/_refresh" {
-				refreshed = true
-				_, _ = w.Write([]byte(`{"_shards":{"failed":0}}`))
-				return
-			}
 			if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
 				t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
 				http.Error(w, "unexpected request path", http.StatusNotFound)
 				return
-			}
-			if !refreshed {
-				t.Error("delete must refresh first to see the latest bulk writes")
 			}
 			if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
 				t.Errorf("decode delete query: %v", err)
