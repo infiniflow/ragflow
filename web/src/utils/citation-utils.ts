@@ -30,6 +30,17 @@ export const normalizeCitationDigits = (text: string) => {
 
 export type CitationKey = number | string;
 
+// Knowledge-base citation markers are positional indices produced by
+// strconv.Itoa, so they stay numeric and small. Sixteen-digit hex agent IDs
+// exceed Number.MAX_SAFE_INTEGER and must keep their string form; leading-zero
+// values are opaque ids for the same reason.
+const maxNumericCitationIndexDigits = 15;
+
+const isNumericCitationIndex = (value: string) =>
+  /^\d+$/.test(value) &&
+  value.length <= maxNumericCitationIndexDigits &&
+  (value.length === 1 || value[0] !== '0');
+
 export const parseCitationIndex = (value: string): CitationKey => {
   const normalized = normalizeCitationDigits(value);
   const markerMatch = normalized.match(
@@ -37,9 +48,9 @@ export const parseCitationIndex = (value: string): CitationKey => {
   );
   if (markerMatch) {
     const captured = markerMatch[1];
-    // Explicit [ID:...] markers are opaque chunk ids, including all-digit
-    // hexadecimal ids that would lose leading zeros or precision as numbers.
-    if (/^\s*\[?ID:/i.test(normalized)) return captured;
+    if (/^\s*\[?ID:/i.test(normalized)) {
+      return isNumericCitationIndex(captured) ? Number(captured) : captured;
+    }
     return /^\d+$/.test(captured) ? Number(captured) : captured;
   }
   if (/^\d+$/.test(normalized)) return Number(normalized);
