@@ -211,3 +211,73 @@ func TestPushdownCapSemantics(t *testing.T) {
 		t.Fatalf("expected total > cap, got total=%d cap=%d", total, metaPushdownMaxSize)
 	}
 }
+
+// dateExactMatch is the clause an exact match on an ISO-date value must
+// produce: ES dynamic date detection maps a YYYY-MM-DD meta field as `date`,
+// which has no `.keyword` sub-field, so the parent field must be queried too.
+func dateExactMatch(value string) map[string]interface{} {
+	return map[string]interface{}{
+		"bool": map[string]interface{}{
+			"should": []map[string]interface{}{
+				{"term": map[string]interface{}{"meta_fields.date": value}},
+				{"term": map[string]interface{}{"meta_fields.date.keyword": map[string]interface{}{
+					"value":            value,
+					"case_insensitive": true,
+				}}},
+			},
+			"minimum_should_match": 1,
+		},
+	}
+}
+
+func TestTranslateEqualOnDateQueriesDateTypedField(t *testing.T) {
+	got, err := NewMetaFilterTranslator().Translate(map[string]interface{}{"key": "date", "op": "=", "value": "2026-04-23"})
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	want := []map[string]interface{}{dateExactMatch("2026-04-23")}
+	if !reflect.DeepEqual(got.Must, want) {
+		t.Errorf("Must:\n got  %#v\n want %#v", got.Must, want)
+	}
+}
+
+func TestTranslateNotEqualOnDateExcludesDateTypedField(t *testing.T) {
+	got, err := NewMetaFilterTranslator().Translate(map[string]interface{}{"key": "date", "op": "≠", "value": "2026-04-23"})
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	want := []map[string]interface{}{dateExactMatch("2026-04-23")}
+	if !reflect.DeepEqual(got.MustNot, want) {
+		t.Errorf("MustNot:\n got  %#v\n want %#v", got.MustNot, want)
+	}
+}
+
+func TestTranslateInWithDatesQueriesDateTypedField(t *testing.T) {
+	got, err := NewMetaFilterTranslator().Translate(map[string]interface{}{"key": "date", "op": "in", "value": "2026-04-23, 2026-04-24"})
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	want := []map[string]interface{}{{
+		"bool": map[string]interface{}{
+			"should":               []map[string]interface{}{dateExactMatch("2026-04-23"), dateExactMatch("2026-04-24")},
+			"minimum_should_match": 1,
+		},
+	}}
+	if !reflect.DeepEqual(got.Must, want) {
+		t.Errorf("Must:\n got  %#v\n want %#v", got.Must, want)
+	}
+}
+
+func TestTranslateEqualOnPlainStringKeepsKeywordTerm(t *testing.T) {
+	got, err := NewMetaFilterTranslator().Translate(map[string]interface{}{"key": "author", "op": "=", "value": "Luo"})
+	if err != nil {
+		t.Fatalf("Translate: %v", err)
+	}
+	want := []map[string]interface{}{{"term": map[string]interface{}{"meta_fields.author.keyword": map[string]interface{}{
+		"value":            "luo",
+		"case_insensitive": true,
+	}}}}
+	if !reflect.DeepEqual(got.Must, want) {
+		t.Errorf("Must:\n got  %#v\n want %#v", got.Must, want)
+	}
+}
