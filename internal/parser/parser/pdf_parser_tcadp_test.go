@@ -204,6 +204,41 @@ func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 	}
 }
 
+// TestTCADPItemsKeepPageIdentityThroughNormalization runs the TCADP adapter
+// output through the shared PDF normalization boundary. The flat page-only
+// tuple must survive as page identity (the indexer derives page_num_int from
+// positions) while staying out of the crop path.
+func TestTCADPItemsKeepPageIdentityThroughNormalization(t *testing.T) {
+	for _, raw := range []map[string]any{
+		{"content": "slide text", "type": "text", "page_number": 3},
+		{"caption": "fig", "type": "image", "page_number": 5},
+		{"type": "table", "table_data": map[string]any{"rows": []any{[]any{"a", "b"}}}, "page_number": 2},
+	} {
+		items := tcadpAnyToItems(raw)
+		if len(items) == 0 {
+			t.Fatalf("tcadpAnyToItems(%v) returned no items", raw)
+		}
+		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems(items)})
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+		item := result.JSON[0].ToMap()
+		if item["page_number"] == nil {
+			t.Fatalf("page identity lost: %#v", item)
+		}
+		positions, ok := ExtractPDFPositions(item)
+		if !ok || len(positions) != 1 {
+			t.Fatalf("page-only position lost: %#v", item)
+		}
+		if positions[0][0] != item["page_number"] {
+			t.Fatalf("position page %v != page_number %v", positions[0][0], item["page_number"])
+		}
+		if HasPDFCropRegion(item) {
+			t.Fatalf("page-only position exposed as a crop region: %#v", item)
+		}
+	}
+}
+
 // TestTCADPAnyToItems_NestedArrayKeepsEachPage verifies that a nested
 // array of TCADP elements produces one item per element, each carrying
 // its own page-derived positions — not just the first element.

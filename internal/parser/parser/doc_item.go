@@ -184,7 +184,7 @@ func imageItemFromMap(m map[string]any) DocItem {
 	if pos != nil {
 		// Parsed into the typed field: it owns "positions", so strip it from
 		// Extra. Both [][]float64 (office/xlsx) and [][]any (PDF crop regions
-		// from normalizePDFPositions) parse here, so the old [][]any-only
+		// from normalizeDeepDocPositions) parse here, so the old [][]any-only
 		// Extra fallback is gone.
 		skip = append(skip, "positions")
 	}
@@ -385,7 +385,7 @@ func wireToPositions(raw any, hasSheet bool) Positions {
 // into the historical wire form for ToMap. The wire container type is preserved
 // per vocabulary so the parser output is byte-for-byte unchanged:
 //   - AbsoluteBox (PDF)  -> [][]any  (int page + float64 coords), matching the
-//     shape normalizePDFPositions already emitted and keeping the page a
+//     shape normalizeDeepDocPositions already emitted and keeping the page a
 //     genuine int (a [][]float64 container would coerce it to float64).
 //   - RowColumnBox (xlsx/csv) -> [][]float64, matching the historical
 //     spreadsheet wire the ingestion indexer consumes.
