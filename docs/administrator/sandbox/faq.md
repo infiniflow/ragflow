@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 3
 title: Code Execution Sandbox FAQ
 sidebar_label: FAQ
 slug: /sandbox_faq
@@ -129,7 +129,7 @@ The network connection reached the SSH server, but RAGFlow could not find a trus
 
 For a non-default SSH port, the `known_hosts` entry must include the port—for example, `[192.168.1.5]:2222`. Verify the server fingerprint, add the key to the file used by RAGFlow, and ensure that the file is visible to the RAGFlow process or container.
 
-For Docker and source deployment instructions, see [Prepare the SSH `known_hosts` file](./configure_ssh_and_cloud_providers.md#prepare-the-ssh-known_hosts-file).
+For Docker and source deployment instructions, see [Prepare the SSH `known_hosts` file](../management/admin_ui/configure_ssh_and_cloud_providers.md#prepare-the-ssh-known_hosts-file).
 
 If the message reports a host-key mismatch instead, verify whether the server key was intentionally changed before replacing the existing entry. An unexpected key change can indicate that the connection is being intercepted.
 
@@ -156,7 +156,7 @@ The configured binary must be available in the non-interactive SSH session. Shel
 
 ## Cloud providers
 
-Return to the detailed configuration for [Aliyun Code Interpreter](./configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter), [E2B](./configure_ssh_and_cloud_providers.md#configure-e2b), [Tenki](./configure_ssh_and_cloud_providers.md#configure-tenki), or [UCloud Agent Sandbox](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) when checking credentials, regions, endpoints, resource settings, or network access.
+Return to the detailed configuration for [Aliyun Code Interpreter](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter), [E2B](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-e2b), [Tenki](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-tenki), or [UCloud Agent Sandbox](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) when checking credentials, regions, endpoints, resource settings, or network access.
 
 ### Why is the API credential rejected?
 

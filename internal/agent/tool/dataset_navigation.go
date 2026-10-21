@@ -237,6 +237,8 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			TenantID:                 tenantID,
 			DocScope:                 docScope,
 			RetrievalFrom:            "dataset",
+			// Agentic, so no dense-only rescue.
+			AllowDenseFallback: new(false),
 		})
 		if err != nil {
 			common.Warn("dataset navigation: content-recall retrieval failed", zap.Error(err))

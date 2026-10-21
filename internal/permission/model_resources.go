@@ -106,13 +106,7 @@ func (s *databaseSource) loadTenantOwnerIDs(ctx context.Context, tenantIDs []str
 }
 
 func (s *databaseSource) tenantIDsForSubject(ctx context.Context, subject Subject) ([]string, error) {
-	var tenantIDs []string
-	err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-		Distinct("tenant_id").
-		Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
-			string(RoleOwner), string(RoleAdmin), string(RoleNormal),
-		}).
-		Pluck("tenant_id", &tenantIDs).Error
+	tenantIDs, err := s.activeTenantIDsForUser(ctx, subject.UserID)
 	if err != nil {
 		return nil, err
 	}

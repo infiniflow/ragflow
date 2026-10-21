@@ -38,8 +38,16 @@ type Tenant struct {
 	TenantOCRID     *string `gorm:"column:tenant_ocr_id;size:32;index" json:"tenant_ocr_id,omitempty"`
 	ScoringID       *string `gorm:"column:scoring_id;size:256;index" json:"scoring_id,omitempty"`
 	TenantScoringID *string `gorm:"column:tenant_scoring_id;size:32;index" json:"tenant_scoring_id,omitempty"`
-	Credit          int     `gorm:"column:credit;default:512;index" json:"credit"`
-	Status          *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
+	// DecisionID is the tenant's default decision model: the one that judges
+	// whether a retrieved passage is worth showing the chat model. Nullable
+	// because the decision gate is optional — a tenant that never sets it runs
+	// without one, which must not be an error.
+	DecisionID       *string `gorm:"column:decision_id;size:256;index" json:"decision_id,omitempty"`
+	TenantDecisionID *string `gorm:"column:tenant_decision_id;size:32;index" json:"tenant_decision_id,omitempty"`
+	Credit           int     `gorm:"column:credit;default:512;index" json:"credit"`
+	InviteEnabled    bool    `gorm:"column:invite_enabled;not null;default:false" json:"invite_enabled"`
+	RoleID           *int32  `gorm:"column:role_id" json:"role_id,omitempty"`
+	Status           *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
 

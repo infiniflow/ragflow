@@ -3,6 +3,50 @@ import { ParserFields } from '../../constant/pipeline';
 import { FormSchema } from './schema';
 
 describe('parser FormSchema', () => {
+  it.each([undefined, true, false])(
+    'retains MinerU extraction switches set to %s',
+    (enabled) => {
+      const result = FormSchema.parse({
+        setups: [
+          {
+            fileFormat: FileType.PDF,
+            parse_method: 'mineru-model-id',
+            mineru_parse_method: 'ocr',
+            mineru_lang: 'Japanese',
+            ...(enabled === undefined
+              ? {}
+              : {
+                  mineru_formula_enable: enabled,
+                  mineru_table_enable: enabled,
+                }),
+          },
+        ],
+      });
+      expect(result.setups[0]).toMatchObject({
+        mineru_parse_method: 'ocr',
+        mineru_lang: 'Japanese',
+      });
+      if (enabled !== undefined) {
+        expect(result.setups[0]).toMatchObject({
+          mineru_formula_enable: enabled,
+          mineru_table_enable: enabled,
+        });
+      }
+    },
+  );
+
+  it.each(['mineru_formula_enable', 'mineru_table_enable'])(
+    'rejects non-boolean %s',
+    (key) => {
+      for (const value of [null, 'false', 0, [], {}]) {
+        const result = FormSchema.safeParse({
+          setups: [{ fileFormat: FileType.PDF, [key]: value }],
+        });
+        expect(result.success).toBe(false);
+      }
+    },
+  );
+
   it('keeps the explicit image OCR model through schema save/readback', () => {
     const values = {
       setups: [
@@ -27,6 +71,7 @@ describe('parser FormSchema', () => {
       }).success,
     ).toBe(false);
   });
+
   it('accepts video and audio setups without a model', () => {
     const result = FormSchema.safeParse({
       setups: [

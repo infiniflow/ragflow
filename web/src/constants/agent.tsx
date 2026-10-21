@@ -87,7 +87,6 @@ export enum Operator {
   Categorize = 'Categorize',
   ScoredSwitch = 'ScoredSwitch',
   Message = 'Message',
-  RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',

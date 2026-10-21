@@ -254,6 +254,17 @@ func TestCompileDelimiterPatternListChildrenPrefixOrder(t *testing.T) {
 	}
 }
 
+func TestCustomDelimiterPrefixes(t *testing.T) {
+	got := CustomDelimiterPrefixes([]string{"\n", "`问：`", "`##`"})
+	want := []string{"问：", "##"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CustomDelimiterPrefixes = %#v, want %#v", got, want)
+	}
+	if CustomDelimiterPrefixes([]string{"\n", "!"}) != nil {
+		t.Fatal("expected nil when no backtick entries")
+	}
+}
+
 func TestHasCustomDelimiterList(t *testing.T) {
 	if HasCustomDelimiterList([]string{"\n", "!"}) {
 		t.Fatal("bare list should be false")

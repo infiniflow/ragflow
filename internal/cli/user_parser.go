@@ -639,6 +639,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowMemory()
 	case TokenConcurrency:
 		return p.parseAPIShowConcurrency()
+	case TokenQuota:
+		return p.parseAPIShowQuota()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -943,6 +945,19 @@ func (p *Parser) parseAPIShowMemory() (*Command, error) {
 func (p *Parser) parseAPIShowConcurrency() (*Command, error) {
 	p.nextToken() // consume CONCURRENCY
 	cmd := NewCommand("api_show_concurrency")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW QUOTA
+func (p *Parser) parseAPIShowQuota() (*Command, error) {
+	p.nextToken() // consume QUOTA
+	cmd := NewCommand("api_show_quota")
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

@@ -296,6 +296,8 @@ export default {
   createChat: `${restAPIv1}/chats`,
   listChats: `${restAPIv1}/chats`,
   getChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
+  getAgenticRagConfig: (chatId: string) =>
+    `${restAPIv1}/chats/${chatId}/agentic-rag`,
   updateChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   patchChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   deleteChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,

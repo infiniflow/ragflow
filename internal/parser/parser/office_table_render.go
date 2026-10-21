@@ -96,7 +96,7 @@ func trimCells(row []string) []string {
 // Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
 // colEnd]. The same `positions` field carries PDF layout boxes
 // ([page, left, right, top, bottom]) on PDF items, so a consumer must key the
-// vocabulary off sheet_index / ck_type and never reinterpret one as the other.
+// vocabulary off sheet_index / doc_type_kwd and never reinterpret one as the other.
 func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
 	sortImagesByAnchor(images)
 	if len(records) == 0 {
@@ -356,7 +356,6 @@ cellLoop:
 			item := map[string]any{
 				"text":         alt,
 				"doc_type_kwd": "image",
-				"ck_type":      "image",
 				"sheet":        sheet,
 				"cell":         cell,
 				"row_start":    row,

@@ -91,7 +91,7 @@ func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []str
 		if sub == "" {
 			continue
 		}
-		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub))})
 	}
 	merged := mergeUnits(units, cap, overlapPct, "")
 	out := make([]string, 0, len(merged))
@@ -239,7 +239,7 @@ func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappe
 		if sub == "" {
 			continue
 		}
-		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub))})
 	}
 	merged := mergeUnits(units, chunkTokenSize, overlappedPercent, "")
 	out := make([]string, 0, len(merged))

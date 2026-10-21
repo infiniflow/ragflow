@@ -328,7 +328,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		}
 	}
 	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 		return false
 	})
 
@@ -476,7 +476,7 @@ func sseAnswer(answer string, refs interface{}, final bool) string {
 	}
 	payload := ssePayload{
 		Code:    0,
-		Message: "",
+		Message: "success",
 		Data: askSSEData{
 			Answer:    answer,
 			Reference: refs,
@@ -516,7 +516,7 @@ func sseMarker(marker string) string {
 	} else {
 		d.EndToThink = true
 	}
-	payload := ssePayload{Code: 0, Message: "", Data: d}
+	payload := ssePayload{Code: 0, Message: "success", Data: d}
 	b, _ := json.Marshal(payload)
 	return fmt.Sprintf("data: %s\n\n", string(b))
 }

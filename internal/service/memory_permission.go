@@ -20,12 +20,11 @@ import (
 	"context"
 	"strings"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
 
-func checkMemoryPermission(ctx context.Context, userID, memoryID string, operation permission.Operation) error {
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(
+func (s *MemoryService) checkMemoryPermission(ctx context.Context, userID, memoryID string, operation permission.Operation) error {
+	return permission.NewDatabaseChecker(s.db).CheckResource(
 		ctx,
 		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID},
@@ -33,8 +32,8 @@ func checkMemoryPermission(ctx context.Context, userID, memoryID string, operati
 	)
 }
 
-func accessibleMemoryIDs(ctx context.Context, userID string, operation permission.Operation) ([]string, error) {
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+func (s *MemoryService) accessibleMemoryIDs(ctx context.Context, userID string, operation permission.Operation) ([]string, error) {
+	scope, err := permission.NewDatabaseChecker(s.db).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
 		Kind:      permission.ResourceKindMemory,
 		Operation: operation,
 	})
@@ -47,12 +46,12 @@ func accessibleMemoryIDs(ctx context.Context, userID string, operation permissio
 	return scope.ResourceIDs, nil
 }
 
-func accessibleMemoryIDsForCanvas(ctx context.Context, userID, canvasID string) ([]string, error) {
+func (s *MemoryService) accessibleMemoryIDsForCanvas(ctx context.Context, userID, canvasID string) ([]string, error) {
 	canvasID = strings.TrimSpace(canvasID)
 	if canvasID == "" {
-		return accessibleMemoryIDs(ctx, userID, permission.OperationRead)
+		return s.accessibleMemoryIDs(ctx, userID, permission.OperationRead)
 	}
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	scope, err := permission.NewDatabaseChecker(s.db).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
 		Kind:      permission.ResourceKindMemory,
 		Operation: permission.OperationUse,
 		Entry:     &permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID},
@@ -67,12 +66,12 @@ func accessibleMemoryIDsForCanvas(ctx context.Context, userID, canvasID string) 
 	return scope.ResourceIDs, nil
 }
 
-func filterMemoryIDs(ctx context.Context, userID string, memoryIDs []string, operation permission.Operation) ([]string, error) {
+func (s *MemoryService) filterMemoryIDs(ctx context.Context, userID string, memoryIDs []string, operation permission.Operation) ([]string, error) {
 	refs := make([]permission.ResourceRef, 0, len(memoryIDs))
 	for _, memoryID := range memoryIDs {
 		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID})
 	}
-	accessible, err := permission.NewDatabaseChecker(dao.DB).FilterResources(
+	accessible, err := permission.NewDatabaseChecker(s.db).FilterResources(
 		ctx,
 		permission.Subject{UserID: userID},
 		refs,

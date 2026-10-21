@@ -77,7 +77,6 @@ import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
-import { RewriteNode } from './node/rewrite-node';
 import { ScoredSwitchNode } from './node/scored-switch-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
@@ -95,7 +94,6 @@ export const nodeTypes: NodeTypes = {
   scoredSwitchNode: ScoredSwitchNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
-  rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   // emailNode: EmailNode,
   iterationNode: IterationNode,

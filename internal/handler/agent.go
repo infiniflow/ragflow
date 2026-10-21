@@ -35,7 +35,9 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
@@ -114,7 +116,12 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
 		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
-			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
+			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize, &ingestion.Deps{
+				Engine: engine.Get(),
+				DB:     dao.DB,
+				MQ:     engine.GetMessageQueueEngine(),
+				KV:     kvrocks.Get(),
+			})
 		},
 	}
 }

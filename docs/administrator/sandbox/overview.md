@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 0
 title: Code Execution Sandbox
 sidebar_label: Overview
 slug: /code_execution_sandbox
@@ -24,11 +24,11 @@ Choose the provider that matches where you want code to run and who should manag
 | Provider | Where code runs | Choose it when |
 | --- | --- | --- |
 | [**Self-Managed**](./quickstart_with_self_managed.md) | Python or Node.js Runner containers managed by Sandbox Executor Manager in your environment | You want to keep code execution under your operational control. This is the default option and the focus of the Self-Managed guides. |
-| [**SSH**](./configure_ssh_and_cloud_providers.md#configure-ssh) | An existing remote Linux host | You already operate a suitable execution server with Python or Node.js and can manage its SSH access and host keys. |
-| [**Aliyun Code Interpreter**](./configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter) | Alibaba Cloud Code Interpreter | Your organization uses Alibaba Cloud and wants a managed execution environment. |
-| [**E2B**](./configure_ssh_and_cloud_providers.md#configure-e2b) | E2B cloud sandboxes | You want an externally managed cloud sandbox without operating local Runner containers. |
-| [**Tenki**](./configure_ssh_and_cloud_providers.md#configure-tenki) | A disposable Tenki microVM created for each execution | You want each run to use an isolated, short-lived cloud microVM. |
-| [**UCloud Agent Sandbox**](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) | A disposable UCloud Agent Sandbox | You want a managed cloud sandbox in a supported UCloud region. |
+| [**SSH**](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-ssh) | An existing remote Linux host | You already operate a suitable execution server with Python or Node.js and can manage its SSH access and host keys. |
+| [**Aliyun Code Interpreter**](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-aliyun-code-interpreter) | Alibaba Cloud Code Interpreter | Your organization uses Alibaba Cloud and wants a managed execution environment. |
+| [**E2B**](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-e2b) | E2B cloud sandboxes | You want an externally managed cloud sandbox without operating local Runner containers. |
+| [**Tenki**](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-tenki) | A disposable Tenki microVM created for each execution | You want each run to use an isolated, short-lived cloud microVM. |
+| [**UCloud Agent Sandbox**](../management/admin_ui/configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) | A disposable UCloud Agent Sandbox | You want a managed cloud sandbox in a supported UCloud region. |
 
 :::note Before choosing a cloud provider
 Confirm that your RAGFlow deployment can reach the provider's API, and that your account has valid credentials, sufficient quota, and access to the required region.
@@ -47,5 +47,5 @@ RAGFlow can run with Docker Compose or directly from source while Sandbox Execut
 ## Next steps
 
 - Get started with [Quickstart with Self-Managed](./quickstart_with_self_managed.md).
-- To use SSH or a cloud service, see [Configure SSH and Cloud Providers](./configure_ssh_and_cloud_providers.md).
+- To use SSH or a cloud service, see [Configure SSH and Cloud Providers](../management/admin_ui/configure_ssh_and_cloud_providers.md).
 - For maintenance and troubleshooting, see [Manage Self-Managed Sandbox](./manage_self_managed_sandbox.md) and [FAQ](./faq.md).

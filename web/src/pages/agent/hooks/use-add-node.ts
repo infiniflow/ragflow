@@ -45,7 +45,6 @@ import {
   initialQueritContentsValues,
   initialQueritValues,
   initialRetrievalValues,
-  initialRewriteQuestionValues,
   initialScoredSwitchValues,
   initialSearXNGValues,
   initialStringTransformValues,
@@ -170,10 +169,6 @@ export const useInitializeOperatorParams = () => {
         ...initialScoredSwitchValues,
         llm_id: scoringId,
       },
-      [Operator.RewriteQuestion]: {
-        ...initialRewriteQuestionValues,
-        llm_id: llmId,
-      },
       [Operator.Message]: initialMessageValues,
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
@@ -220,6 +215,12 @@ export const useInitializeOperatorParams = () => {
       // The manual chunker shares the title chunker's form (TitleChunkerForm
       // with pinMethodGroup) and initial values, like normalizeOperatorForm.
       [Operator.ManualChunker]: initialTitleChunkerValues,
+      // Parser-internal chunkers are never added through the canvas; these
+      // entries only keep the map exhaustive over Operator.
+      [Operator.TableChunker]: {},
+      [Operator.QAChunker]: {},
+      [Operator.OneChunker]: {},
+      [Operator.PageChunker]: {},
       [Operator.Extractor]: {
         ...getInitialExtractorValues(),
         llm_id: llmId,
@@ -235,15 +236,12 @@ export const useInitializeOperatorParams = () => {
       [Operator.DocGenerator]: initialDocGeneratorValues,
       [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
-    };
+    } satisfies Record<Operator, unknown>;
   }, [defaultModelDictionary, llmId, scoringId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
-      // The map only covers canvas operators; parser-internal chunkers
-      // (Table/QA/One/Page) are never added through this path.
-      const initialValues =
-        initialFormValuesMap[operatorName as keyof typeof initialFormValuesMap];
+      const initialValues = initialFormValuesMap[operatorName];
       if (operatorName === Operator.ScoredSwitch) {
         return {
           ...initialValues,

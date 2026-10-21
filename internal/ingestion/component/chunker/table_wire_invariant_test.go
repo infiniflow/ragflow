@@ -55,9 +55,8 @@ func TestTableWireHasNoRowIRChunkTypes(t *testing.T) {
 			continue
 		}
 		for i, chunk := range chunks {
-			kind, _ := chunk["ck_type"].(string)
-			if kind == "table_header" || kind == "table_row" {
-				t.Errorf("%s chunk[%d] ck_type = %q: the row IR must not come back", name, i, kind)
+			if kind, ok := chunk["ck_type"]; ok {
+				t.Errorf("%s chunk[%d] emits retired ck_type %v: the row IR must not come back", name, i, kind)
 			}
 		}
 		tested++

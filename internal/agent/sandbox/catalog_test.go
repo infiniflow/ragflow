@@ -13,7 +13,7 @@ func TestCatalogOrderAndFreshSchemas(t *testing.T) {
 	if len(providers) != 7 {
 		t.Fatalf("provider count = %d, want 7", len(providers))
 	}
-	for i, want := range providerOrder {
+	for i, want := range []string{"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "local"} {
 		if got := providers[i]["id"]; got != want {
 			t.Errorf("provider %d = %v, want %q", i, got, want)
 		}

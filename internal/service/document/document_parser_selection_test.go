@@ -27,6 +27,9 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 		{"pptx routes to presentation", utility.FileTypeDOC, "deck.pptx", "presentation"},
 		{"legacy ppt routes to presentation", utility.FileTypeDOC, "deck.ppt", "presentation"},
 		{"pages routes to presentation", utility.FileTypeDOC, "deck.pages", "presentation"},
+		{"wps presentation dps routes to presentation", utility.FileTypePPT, "deck.dps", "presentation"},
+		{"wps presentation dpt routes to presentation", utility.FileTypePPT, "deck.dpt", "presentation"},
+		{"wps presentation dps is case-insensitive", utility.FileTypePPT, "DECK.DPS", "presentation"},
 		{"presentation extension is case-insensitive", utility.FileTypeDOC, "DECK.PPTX", "presentation"},
 		{"eml routes to email", utility.FileTypeDOC, "mail.eml", "email"},
 		{"msg routes to email", utility.FileTypeDOC, "mail.msg", "email"},
@@ -338,6 +341,15 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyIn: "slides",
 		},
 		{
+			name:         "wps presentation dps reaches its owner pipeline",
+			kbParser:     "general",
+			kbConfig:     generalParserConfig(),
+			filename:     "deck.dps",
+			filetype:     utility.FileTypePPT,
+			wantParserID: "presentation",
+			wantFamilyIn: "slides",
+		},
+		{
 			name:         "an unmappable visual extension still reaches picture",
 			kbParser:     "general",
 			kbConfig:     generalParserConfig(),
@@ -624,6 +636,63 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 		t.Fatalf("canvas txt pipeline_id = %q, want none", pipelineID)
 	}
 	parserFamilySetup(t, got[1], "text&code")
+}
+
+// TestUploadLocalDocuments_SwitchesVideoToPicture pins the upload policy:
+// video uploads are accepted (visual bucket) and switched to the picture
+// pipeline; parsing stays blocked later because no parser implements video
+// analysis.
+func TestUploadLocalDocuments_SwitchesVideoToPicture(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	if err := dao.DB.Create(&entity.Tenant{
+		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
+	}).Error; err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+
+	kb := &entity.Knowledgebase{
+		ID:           "kb-video-block",
+		TenantID:     "tenant-1",
+		Name:         "kb-video-block",
+		CreatedBy:    "user-1",
+		ParserID:     "naive",
+		ParserConfig: presentationParserConfig(),
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	ctx := t.Context()
+	svc := testDocumentService(t)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "clip.mov", []byte("mov-bytes")),
+		makeTestFileHeader(t, "file", "movie.mp4", []byte("mp4-bytes")),
+		makeTestFileHeader(t, "file", "legacy.rmvb", []byte("rmvb-bytes")),
+		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
+	}, "", nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 4 {
+		t.Fatalf("uploaded docs = %d, want 4", len(got))
+	}
+	for _, doc := range got[:3] {
+		if parserID, _ := doc["parser_id"].(string); parserID != "picture" {
+			t.Fatalf("%v parser_id = %q, want picture", doc["name"], parserID)
+		}
+		if docType, _ := doc["type"].(string); docType != string(utility.FileTypeVISUAL) {
+			t.Fatalf("%v type = %q, want %q", doc["name"], docType, utility.FileTypeVISUAL)
+		}
+		parserFamilySetup(t, doc, "video")
+	}
 }
 
 // TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily covers the connector
