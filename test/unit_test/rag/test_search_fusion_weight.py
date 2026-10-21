@@ -53,6 +53,7 @@ def search_environment(monkeypatch):
     fake_settings.DOC_ENGINE_OCEANBASE = False
     fake_settings.DOC_ENGINE_GAUSSDB = False
     fake_settings.DOC_ENGINE_SERENEDB = False
+    fake_settings.DOC_ENGINE_VASTBASE = False
     fake_settings.DOC_ENGINE_INFINITY = True
 
     fake_token_utils = types.ModuleType("common.token_utils")

@@ -2192,6 +2192,8 @@ Example: Virtual Hosted Style`,
       editModel: 'Edit model',
       instanceName: 'Instance name',
       instanceNameMessage: 'Please input the instance name!',
+      instanceNameInvalidCharacters:
+        'Instance name may only contain ASCII letters, digits, underscores, and hyphens.',
       instanceNameTip:
         'A unique name to identify this provider instance under the same factory.',
       instanceNamePlaceholder: 'Please input instance name',
@@ -2835,7 +2837,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',

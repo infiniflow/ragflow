@@ -16,26 +16,39 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
+import random
 import re
-from typing import Callable
+from collections.abc import Callable
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 
 import numpy as np
 
 from common import settings
-from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, field_scalar
 from common.misc_utils import thread_pool_exec
-from rag.prompts.generator import message_fit_in
 from rag.nlp import search
+from rag.prompts.generator import message_fit_in
 
 from ._common import (
+    env_int as _env_int,
+)
+from ._common import (
     knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+)
+from ._common import (
     stable_row_id as _stable_row_id,
 )
 
+_LOGGER = logging.getLogger(__name__)
 
 # ----- REFINE progress -----
 
 WIKI_REFINE_PROGRESS_UPDATES = 20
+WIKI_REFINE_LLM_RETRIES = _env_int("WIKI_REFINE_LLM_RETRIES", 2, minimum=0)
+WIKI_REFINE_LLM_RETRY_BASE_DELAY = _env_int("WIKI_REFINE_LLM_RETRY_BASE_DELAY", 30, minimum=0)
+WIKI_REFINE_LLM_RETRY_MAX_DELAY = _env_int("WIKI_REFINE_LLM_RETRY_MAX_DELAY", 120, minimum=0)
 
 
 async def _wiki_run_refine_tasks(tasks: list, progress: Callable[[str], None]) -> None:
@@ -186,6 +199,102 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
     if any(line.lstrip().startswith("**ERROR**") for line in response.splitlines()):
         raise RuntimeError(f"Wiki LLM call failed: {response}")
     return response
+
+
+def _wiki_retryable_llm_error(error: Exception) -> bool:
+    """Retry explicit transient LLM failures, excluding permanent 429 errors."""
+    body = getattr(error, "body", None)
+    if isinstance(body, dict):
+        body = body.get("error", body)
+    codes = [getattr(error, "code", None)]
+    if isinstance(body, dict):
+        codes.extend((body.get("code"), body.get("type")))
+    text = " ".join(str(value).lower() for value in (*codes, error) if value is not None)
+    # chat_model's ERROR_QUOTA also covers temporary capacity/request limits.
+    # Reject explicit permanent details, not that label or bare quota/credit words.
+    if any(
+        marker in text
+        for marker in (
+            "insufficient_quota",
+            "insufficient quota",
+            "insufficient_credit",
+            "insufficient credit",
+            "insufficient_balance",
+            "insufficient balance",
+            "credit balance is too low",
+            "billing_hard_limit",
+            "billing hard limit",
+            "billing_limit",
+            "billing limit",
+            "欠费",
+            "余额不足",
+            "额度不足",
+            "invalid_api_key",
+            "authentication_error",
+            "permission_denied",
+            "invalid_request_error",
+            "context_length_exceeded",
+            "model_not_found",
+            "error_authentication",
+            "error_invalid_request",
+            "error_content_filter",
+            "error_model",
+        )
+    ):
+        return False
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    if status is None:
+        # Adapters may flatten HTTP errors to strings. Require a status label:
+        # ordinary request/quota counts such as 400 or 429 are not HTTP evidence.
+        match = re.search(r"\b(?:http(?:/\d(?:\.\d)?)?(?:\s+status(?:\s+code)?)?|status(?:[_ ]code)?|error code)[\"']?\s*[:=]?\s*[\"']?([1-5]\d{2})\b", text)
+        if match:
+            status = int(match.group(1))
+    if status is not None:
+        return status in (408, 429, 500, 502, 503, 504, 529)
+    if isinstance(error, (TimeoutError, ConnectionError)):
+        return True
+    return any(
+        marker in text
+        for marker in ("error_rate_limit", "rate_limit_exceeded", "rate_limit_error", "error_timeout", "error_connection", "error_server", "rate limit", "too many requests", "timed out")
+    )
+
+
+def _wiki_retry_after(error: Exception) -> float:
+    """Read Retry-After when the provider preserves the HTTP response."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {}) or {}
+    value = next((value for name, value in headers.items() if name.lower() == "retry-after"), None)
+    if value is None:
+        return 0.0
+    try:
+        delay = float(value)
+    except (TypeError, ValueError):
+        try:
+            delay = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+    return max(0.0, delay) if math.isfinite(delay) else 0.0
+
+
+async def _wiki_ask_page_writer(chat_mdl, system_prompt: str, user_prompt: str, *, page_id: str) -> str:
+    """Recover a page's LLM call after provider/pool retries, before any writes."""
+    for attempt in range(WIKI_REFINE_LLM_RETRIES + 1):
+        try:
+            return await _chat_mdl_ask(chat_mdl, system_prompt, user_prompt)
+        except Exception as exc:
+            if attempt >= WIKI_REFINE_LLM_RETRIES or min(WIKI_REFINE_LLM_RETRY_BASE_DELAY, WIKI_REFINE_LLM_RETRY_MAX_DELAY) <= 0 or not _wiki_retryable_llm_error(exc):
+                raise
+            retry_after = _wiki_retry_after(exc)
+            if retry_after > WIKI_REFINE_LLM_RETRY_MAX_DELAY:
+                # Do not retry before the server's reset or wait without a bound.
+                raise
+            backoff = min(WIKI_REFINE_LLM_RETRY_MAX_DELAY, WIKI_REFINE_LLM_RETRY_BASE_DELAY * (2**attempt))
+            delay = min(WIKI_REFINE_LLM_RETRY_MAX_DELAY, max(retry_after, backoff + random.uniform(0, backoff * 0.25)))
+            _LOGGER.warning("wiki REFINE: retrying page=%s attempt=%d/%d delay=%.2fs error_type=%s", page_id, attempt + 1, WIKI_REFINE_LLM_RETRIES, delay, type(exc).__name__)
+            await asyncio.sleep(delay)
+    raise AssertionError("Wiki page writer retry loop exhausted unexpectedly")
 
 
 def _wiki_should_re_synthesize(
@@ -2023,10 +2132,11 @@ async def _wiki_refine_page(
         )
 
     # Call LLM
-    response = await _chat_mdl_ask(
+    response = await _wiki_ask_page_writer(
         chat_mdl,
         system_prompt,
         user_prompt,
+        page_id=page_id,
     )
 
     if not response or not response.strip():
@@ -2065,15 +2175,13 @@ async def _wiki_refine_page(
     # only grouped pages may receive a synthesized title from the LLM.
     existing = existing_page or {}
     member_names = {str(name).strip() for name in (entity_names or []) if str(name).strip()}
+    existing_title = field_scalar(existing.get("title_kwd")) or str(page_title or "")
     if len(member_names) <= 1:
-        title = str(existing.get("title_kwd") or page_title).strip()
+        title = existing_title
     else:
-        title = title or str(existing.get("title_kwd") or page_title).strip()
+        title = title or existing_title
     if not topic:
-        existing_topic = existing.get("topic_kwd")
-        if isinstance(existing_topic, (list, tuple)):
-            existing_topic = existing_topic[0] if existing_topic else ""
-        topic = str(existing_topic or WIKI_TOPIC_FALLBACK).strip()
+        topic = field_scalar(existing.get("topic_kwd")) or WIKI_TOPIC_FALLBACK
     topic_key = _normalize_key(topic)
     candidate_keys = {_normalize_key(candidate) for candidate in topic_candidates or [] if candidate}
     is_new_topic = bool(topic and topic_key not in candidate_keys)
@@ -2852,9 +2960,9 @@ async def _wiki_page_router(
     An explicitly empty dict means this is a first build, so page-index
     candidate retrieval can be skipped and entities can go straight to grouping.
     """
+    from common.doc_store.doc_store_base import OrderByExpr
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
-    from common.doc_store.doc_store_base import OrderByExpr
 
     query_texts = [_entity_to_query_text(e) for e in affected_entities]
     embeddings, _ = await thread_pool_exec(embd_mdl.encode, query_texts)
@@ -4171,7 +4279,7 @@ def _wiki_reconcile_page_moves(
 
     result: dict[str, list[dict]] = {}
     for target_id, entities in assignments.items():
-        target_key = target_id[5:] if target_id.startswith("_new_") else target_id
+        target_key = target_id.removeprefix("_new_")
         for entity in entities:
             name = entity.get("entity_name", "")
             old_memberships = previous_pages.get(_normalize_key(name), [])
@@ -4284,7 +4392,7 @@ async def _wiki_mode_b_run(
     # Collect source chunks per assignment for the REFINE prompt
     page_source_chunks: dict[str, list[dict]] = {}
     for pid, entities in assignments.items():
-        page_key = pid[5:] if pid.startswith("_new_") else pid
+        page_key = pid.removeprefix("_new_")
         chunks: list[dict] = []
         for ent in entities:
             for cid in ent.get("source_chunk_ids", []):
@@ -4469,7 +4577,7 @@ async def _wiki_mode_b_run(
 
             except Exception as exc:
                 logging.exception("wiki B: REFINE failed for %s", page_id)
-                failed_page_id = page_id[5:] if page_id.startswith("_new_") else page_id
+                failed_page_id = page_id.removeprefix("_new_")
                 await _wiki_record_refine_failure(
                     tenant_id,
                     kb_id,
@@ -4659,9 +4767,9 @@ async def _wiki_update_plan_group(
     page_version: int,
 ) -> None:
     """Update or create plan_group row (Mode B)."""
-    from rag.nlp import search
-    from common.misc_utils import thread_pool_exec
     from common.doc_store.doc_store_base import OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
 
     index = search.index_name(tenant_id)
     condition = {
@@ -4757,19 +4865,19 @@ async def _wiki_load_plan_group_members(tenant_id: str, kb_id: str) -> dict[str,
 
 
 __all__ = [
+    "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
+    "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
     "WIKI_PAGE_COMPILE_KWD",
     "WIKI_PLAN_GROUP_COMPILE_KWD",
-    "WIKI_DOC_PAGE_SOURCE_COMPILE_KWD",
-    "WIKI_CANONICAL_ENTITY_COMPILE_KWD",
-    "wiki_compile_incremental",
-    "_wiki_reduce_entity",
-    "_wiki_reduce_batch",
-    "_wiki_match_entities",
-    "_wiki_page_router",
-    "_wiki_finalize",
-    "_wiki_refine_page",
-    "_wiki_update_doc_page_source",
-    "_load_canonical_entities",
     "_delete_canonical_entity",
     "_extract_raw_entities",
+    "_load_canonical_entities",
+    "_wiki_finalize",
+    "_wiki_match_entities",
+    "_wiki_page_router",
+    "_wiki_reduce_batch",
+    "_wiki_reduce_entity",
+    "_wiki_refine_page",
+    "_wiki_update_doc_page_source",
+    "wiki_compile_incremental",
 ]

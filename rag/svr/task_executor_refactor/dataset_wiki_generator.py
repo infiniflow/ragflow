@@ -36,16 +36,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, Callable, Dict, List
+from collections.abc import AsyncIterator, Callable
 
 import xxhash
 
 from common import settings
 from common.constants import LLMType
+from common.doc_store.doc_store_base import field_scalar
 from common.misc_utils import thread_pool_exec
-from rag.nlp import search
-from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile._common import env_int
+from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile.wiki import (
     WIKI_MAP_STATE_COMPILE_KWD,
     WIKI_MAP_STATE_META_COMPILE_KWD,
@@ -56,8 +56,8 @@ from rag.advanced_rag.knowlege_compile.wiki import (
     _wiki_scan_current_chunk_state,
     wiki_map_from_chunks,
 )
+from rag.nlp import search
 from rag.svr.task_executor_refactor.task_context import TaskContext
-
 
 # ----- tunables ------------------------------------------------------
 # Artifact-MAP tuning: how many chunks to feed per ``wiki_map_from_chunks``
@@ -131,11 +131,11 @@ WIKI_DERIVED_COMPILE_KWDS = (
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's ``parser_config`` to compile-template ids by
     looking up configured groups. Returns ``[]`` if no group resolves."""
-    from rag.svr.task_executor_refactor.chunk_post_processor import (
-        _parser_config_compilation_template_group_ids,
-    )
     from api.db.services.compilation_template_group_service import (
         CompilationTemplateGroupService,
+    )
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
     )
 
     template_ids: list[str] = []
@@ -312,8 +312,8 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
     ``parser_config``. Returns ``(doc, template_id)`` for the first wiki template
     matched per doc.
     """
-    from api.db.services.compilation_template_service import CompilationTemplateService
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
+    from api.db.services.compilation_template_service import CompilationTemplateService
 
     skip_doc_ids = skip_doc_ids or set()
     eligible: list[tuple[dict, str]] = []
@@ -475,10 +475,10 @@ async def _wiki_delete_deleted_doc_state(
                 to_shrink.append((row_id, remaining))
             else:
                 to_delete.append(row_id)
-                if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
-                    slug = row.get("slug_kwd")
-                    if isinstance(slug, str) and slug:
-                        page_history_to_delete.append((row_id, slug, row.get("page_type_kwd") or "concept"))
+                if field_scalar(row.get("compile_kwd")) == WIKI_PAGE_COMPILE_KWD:
+                    slug = field_scalar(row.get("slug_kwd"))
+                    if slug:
+                        page_history_to_delete.append((row_id, slug, field_scalar(row.get("page_type_kwd")) or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
@@ -567,10 +567,7 @@ async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
         )
         fm = settings.docStoreConn.get_fields(res, ["mode_kwd"]) or {}
         for row in fm.values():
-            val = row.get("mode_kwd")
-            if isinstance(val, list):
-                val = val[0] if val else ""
-            val = str(val or "").strip()
+            val = field_scalar(row.get("mode_kwd"))
             if val in ("entity", "topic"):
                 return val
     except Exception:
@@ -600,10 +597,8 @@ async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | 
         )
         fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
         for row in fm.values():
-            value = row.get("embedding_model_kwd")
-            if isinstance(value, list):
-                value = value[0] if value else ""
-            return str(value).strip() or None
+            value = field_scalar(row.get("embedding_model_kwd"))
+            return value or None
     except Exception:
         logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
     return None
@@ -679,9 +674,9 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
 
 
 def build_wiki_page_graph(
-    pages: List[Dict],
+    pages: list[dict],
     kb_id: str,
-) -> tuple[List[Dict], List[Dict]]:
+) -> tuple[list[dict], list[dict]]:
     """Project the REFINE-emitted page list onto per-entity and
     per-relation ES rows.
 
@@ -699,8 +694,8 @@ def build_wiki_page_graph(
     """
     from rag.nlp import rag_tokenizer
 
-    by_slug: Dict[str, Dict] = {}
-    entity_rows: List[Dict] = []
+    by_slug: dict[str, dict] = {}
+    entity_rows: list[dict] = []
     for p in pages or []:
         slug = (p.get("slug") or "").strip()
         if not slug:
@@ -775,7 +770,7 @@ def build_wiki_page_graph(
             }
         )
 
-    relation_rows: List[Dict] = []
+    relation_rows: list[dict] = []
     for p in pages or []:
         src = (p.get("slug") or "").strip()
         if not src or src not in by_slug:
@@ -822,7 +817,7 @@ def build_wiki_page_graph(
 
 async def persist_wiki_page_graph(
     ctx: TaskContext,
-    pages: List[Dict],
+    pages: list[dict],
 ) -> None:
     """Materialize and store the per-entity / per-relation doc-store rows
     derived from artifact pages.
@@ -843,7 +838,7 @@ async def persist_wiki_page_graph(
 
     index = search.index_name(ctx.tenant_id)
 
-    async def _replace_bucket(kwd: str, rows: List[Dict]) -> None:
+    async def _replace_bucket(kwd: str, rows: list[dict]) -> None:
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
@@ -917,10 +912,10 @@ async def run_wiki_incremental(
         load_chunks_for_doc: Chunk loader
         mode: ``entity`` or ``topic``
     """
-    from api.db.services.document_service import DocumentService
-    from api.db.services.compilation_template_service import CompilationTemplateService
-    from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import resolve_model_config
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.db.services.document_service import DocumentService
+    from api.db.services.llm_service import LLMBundle
     from rag.advanced_rag.knowlege_compile.wiki_incremental import (
         wiki_compile_incremental,
     )

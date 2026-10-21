@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Unit tests for ``record_doc_deletion`` in ``dataset_structure_merger.py``."""
+"""Unit tests for ``dataset_structure_merger.py`` (deletion markers + row field normalization)."""
 
 from unittest.mock import MagicMock, patch
 
@@ -21,7 +21,45 @@ import pytest
 
 pytestmark = pytest.mark.p2
 
-from rag.svr.task_executor_refactor.dataset_structure_merger import _UPGRADED_TABLES, record_doc_deletion
+from common.doc_store.doc_store_base import field_scalar
+from rag.svr.task_executor_refactor.dataset_structure_merger import _UPGRADED_TABLES, _is_relation_row, record_doc_deletion
+
+
+class TestFieldScalar:
+    """``*_kwd`` columns are one-item lists on Infinity and scalars on ES."""
+
+    def test_unwraps_infinity_list(self):
+        assert field_scalar(["tree"]) == "tree"
+
+    def test_passes_through_es_scalar(self):
+        assert field_scalar("tree") == "tree"
+
+    def test_none_and_empty_are_empty(self):
+        assert field_scalar(None) == ""
+        assert field_scalar([]) == ""
+        assert field_scalar("  ") == ""
+
+    def test_default_applies_to_missing(self):
+        assert field_scalar(None, default="skill") == "skill"
+        assert field_scalar([], default="skill") == "skill"
+        assert field_scalar(["x"], default="skill") == "x"
+
+
+class TestIsRelationRow:
+    def test_entity_row_is_not_a_relation_even_when_infinity_fills_the_column(self):
+        # Infinity fills absent columns, so ``from_entity_kwd`` exists (as [])
+        # on an entity row; a ``key in row`` test would misclassify it.
+        entity_row = {"name_kwd": ["apple"], "from_entity_kwd": [], "to_entity_kwd": []}
+        assert not _is_relation_row(entity_row)
+
+    def test_relation_row_is_detected_from_knowledge_graph_kwd(self):
+        assert _is_relation_row({"knowledge_graph_kwd": ["relation"]})
+
+    def test_relation_row_is_detected_from_entity_columns(self):
+        assert _is_relation_row({"from_entity_kwd": ["apple"], "to_entity_kwd": ["iphone"]})
+
+    def test_relation_row_without_marker_is_not_a_relation(self):
+        assert not _is_relation_row({"name_kwd": ["apple"]})
 
 
 class TestRecordDocDeletion:

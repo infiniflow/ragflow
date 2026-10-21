@@ -26,6 +26,31 @@ def _es_index_prefix() -> str:
     return os.environ.get("ES_INDEX_PREFIX", "").strip()
 
 
+def _valid_at_sort_key(message: dict) -> str:
+    """Normalize `valid_at` to a string that compares chronologically.
+
+    Stored timestamps are `yyyy-MM-dd HH:mm:ss`, so lexicographic order matches
+    chronological order. Connectors may hand back datetime objects instead of
+    strings; `str()` renders both in the same comparable form.
+    """
+    value = message.get("valid_at")
+    return "" if value is None else str(value)
+
+
+def _message_id_sort_key(message: dict) -> int:
+    """Normalize `message_id` to a number so it can be used as a tie-breaker.
+
+    `message_id` is a globally increasing integer, but the store returns it as
+    int (Elasticsearch, GaussDB) or str (Infinity, OceanBase). Comparing the raw
+    values either raises or falls back to lexicographic order, which puts "10"
+    before "9".
+    """
+    try:
+        return int(str(message.get("message_id")))
+    except (TypeError, ValueError):
+        return -1
+
+
 def index_name(uid: str):
     prefix = _es_index_prefix()
     return f"memory_{prefix}_{uid}" if prefix else f"memory_{uid}"
@@ -115,6 +140,15 @@ class MessageService:
                 grouped_extract_msg[msg["source_id"]].append(msg)
             else:
                 grouped_extract_msg[msg["source_id"]] = [msg]
+
+        # Facts extracted from one raw message share a second-precision `valid_at`,
+        # so the store has no way to order them: tied rows come back in storage
+        # order and reshuffle whenever an update rewrites them. Sort here instead.
+        # Python's sort is stable, so sorting by the tie-breaker first keeps
+        # `valid_at` descending as the primary key.
+        for msgs in grouped_extract_msg.values():
+            msgs.sort(key=_message_id_sort_key)
+            msgs.sort(key=_valid_at_sort_key, reverse=True)
 
         for raw_msg in raw_messages:
             raw_msg["extract"] = grouped_extract_msg.get(raw_msg["message_id"], [])

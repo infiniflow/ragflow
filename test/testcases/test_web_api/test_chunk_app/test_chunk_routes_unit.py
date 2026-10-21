@@ -16,8 +16,8 @@
 
 import asyncio
 import contextlib
-import inspect
 import importlib.util
+import inspect
 import sys
 import threading
 import time
@@ -26,6 +26,8 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+
+import common.doc_store.doc_store_base as _real_doc_store_base
 
 
 class _DummyManager:
@@ -76,6 +78,7 @@ class _DummyRetCode:
     DATA_ERROR = 102
     EXCEPTION_ERROR = 100
     OPERATING_ERROR = 103
+    SERVER_ERROR = 500
     NOT_FOUND = 404
 
 
@@ -146,6 +149,12 @@ class _DummyDocStore:
 
     def index_exist(self, *_args, **_kwargs):
         return True
+
+    def search(self, *_args, **_kwargs):
+        return None
+
+    def get_fields(self, *_args, **_kwargs):
+        return {}
 
 
 class _DummyStorage:
@@ -245,7 +254,8 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
-    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {})
+    doc_store_base_mod.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
+    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {"asc": lambda self, _field: self, "desc": lambda self, _field: self})
     monkeypatch.setitem(sys.modules, "common.doc_store", ModuleType("common.doc_store"))
     monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", doc_store_base_mod)
 
@@ -268,8 +278,8 @@ def _load_chunk_module(monkeypatch):
 
     misc_utils_mod = ModuleType("common.misc_utils")
 
-    async def _thread_pool_exec(func):
-        return func()
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
 
     misc_utils_mod.thread_pool_exec = _thread_pool_exec
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
@@ -360,7 +370,7 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_data_error_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
     api_utils_mod.get_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
-    api_utils_mod.get_error_data_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
+    api_utils_mod.get_error_data_result = lambda message="", code=_DummyRetCode.DATA_ERROR: {"code": code, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": _DummyRetCode.EXCEPTION_ERROR, "message": repr(exc), "data": False}
     api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     api_utils_mod.add_tenant_id_to_kwargs = lambda func: func

@@ -45,10 +45,6 @@ def find_codec(monkeypatch):
     pil = _stub("PIL")
     pil.Image = _stub("PIL.Image")
 
-    # Another test module stubs chardet at import time; drop any such stub so the
-    # fresh rag.nlp import below binds the real chardet (find_codec needs it).
-    monkeypatch.delitem(sys.modules, "chardet", raising=False)
-
     # Force a fresh import so the stubs above are picked up; monkeypatch restores
     # the module table (including rag.nlp) afterwards.
     monkeypatch.delitem(sys.modules, "rag.nlp", raising=False)

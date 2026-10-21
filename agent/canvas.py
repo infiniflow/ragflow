@@ -114,9 +114,9 @@ class Graph:
     def validate_component_parameters(dsl):
         component_params = {}
         for k, cpn in dsl["components"].items():
-            param = component_class(cpn["obj"]["component_name"] + "Param")()
-            param.update(cpn["obj"]["params"])
             try:
+                param = component_class(cpn["obj"]["component_name"] + "Param")()
+                param.update(cpn["obj"]["params"])
                 param.check()
             except Exception as e:
                 raise ValueError(Graph._get_component_name(dsl, k) + f": {e}")
@@ -1123,7 +1123,15 @@ class Canvas(Graph):
         if isinstance(downloads, list) and downloads:
             message_end["downloads"] = downloads
         if self._has_reference():
-            message_end["reference"] = self.get_reference()
+            citation_sources = []
+            for element in cpn_obj.get_input_elements().values():
+                if not element.get("_cpn_id"):
+                    continue
+                source = self.get_component_obj(element["_cpn_id"])
+                if source.component_name.lower() in ("agent", "llm"):
+                    citation_sources.append(source)
+            if not citation_sources or any(source.get_param("cite") for source in citation_sources):
+                message_end["reference"] = self.get_reference()
         # NOTE: aggregated run token usage is intentionally NOT attached here.
         # _build_message_end runs once per Message component, so a multi-Message graph
         # would emit cumulative usage repeatedly and double count. The run total is
