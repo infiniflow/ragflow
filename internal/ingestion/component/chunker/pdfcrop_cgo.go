@@ -290,6 +290,10 @@ func needsCrop(ck schema.ChunkDoc) bool {
 	}
 }
 
+// cropChunkType returns the content type that selects the crop. Callers must
+// pass normalized chunks: General/Token clear structural layout before
+// cropping, so passing raw parser items would lose their block-kind
+// distinction here.
 func cropChunkType(ck schema.ChunkDoc) string {
 	return itemDocType(ck)
 }

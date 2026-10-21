@@ -173,9 +173,9 @@ func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
 	}
 }
 
-// TestTitleKeepsHTMLParagraphAtomic pins the line-split gate: a paragraph
-// layout keeps a multi-line block as one record, so an inner line that looks
-// like a heading cannot create a spurious section.
+// TestMarkdownImageHeadingFoldsIntoPreviousChunk pins the base chunk
+// boundary for an image-only heading: the image is a media attachment and
+// folds into the preceding chunk.
 func TestMarkdownImageHeadingFoldsIntoPreviousChunk(t *testing.T) {
 	c, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
 	if err != nil {
@@ -199,6 +199,9 @@ func TestMarkdownImageHeadingFoldsIntoPreviousChunk(t *testing.T) {
 	}
 }
 
+// TestTitleKeepsHTMLParagraphAtomic pins the line-split gate: a paragraph
+// layout keeps a multi-line block as one record, so an inner line that looks
+// like a heading cannot create a spurious section.
 func TestTitleKeepsHTMLParagraphAtomic(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {

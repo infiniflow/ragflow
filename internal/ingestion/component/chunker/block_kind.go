@@ -17,8 +17,9 @@ package chunker
 import "ragflow/internal/ingestion/component/schema"
 
 // structuralLayouts are the non-media block kinds a parser asserts on the
-// layout channel. They gate heading detection, line splitting, and preview
-// cropping; they never describe content type (doc_type_kwd owns that).
+// layout channel. They gate heading detection and line splitting; they never
+// describe content type (doc_type_kwd owns that) and are cleared before the
+// chunker output boundary.
 //
 // "title" is deliberately absent: it is the PDF models' heuristic label and
 // goes through the Title chunker's notTitle guard, while "heading" is an
