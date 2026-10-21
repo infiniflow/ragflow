@@ -16,7 +16,12 @@
 
 package service
 
-import "ragflow/internal/common"
+import (
+	"sort"
+
+	"ragflow/internal/common"
+	"ragflow/internal/server"
+)
 
 type LoginChannel struct {
 	Channel     string `json:"channel"`
@@ -24,9 +29,22 @@ type LoginChannel struct {
 	Icon        string `json:"icon"`
 }
 
-// GetLoginChannels gets all supported authentication channels
+// GetLoginChannels gets all supported authentication channels configured under
+// the top-level `oauth:` block. The result is sorted by channel name so the
+// login page renders a stable order across requests and restarts.
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	channels := make([]*LoginChannel, 0)
+	providers := server.GetConfig().GetOAuthConfig().Providers
+	channels := make([]*LoginChannel, 0, len(providers))
+	for _, p := range providers {
+		channels = append(channels, &LoginChannel{
+			Channel:     p.Channel,
+			DisplayName: p.DisplayName,
+			Icon:        p.Icon,
+		})
+	}
+	sort.Slice(channels, func(i, j int) bool {
+		return channels[i].Channel < channels[j].Channel
+	})
 
 	return channels, common.CodeSuccess, nil
 }
