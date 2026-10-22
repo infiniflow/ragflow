@@ -2565,6 +2565,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sofyaSearchDepthBasic: '页面正文',
       sofyaSearchDepthSnippets: '仅摘要',
       sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
+      contextFetchSearch: 'ContextFetch',
+      contextFetchSearchDescription:
+        '基于 ContextFetch 的网络搜索组件。每条结果附带标题、链接以及页面中最相关的段落。需要配置 API Key。',
+      contextFetchApiKeyTip: '必填。请在 contextfetch.dev 申请 API Key。',
       search1APISearch: 'Search1API',
       search1APISearchDescription:
         '基于 Search1API 的网页与新闻搜索组件，覆盖 Google、Bing、百度、GitHub、arXiv、Reddit、YouTube、Hacker News、Reuters 等搜索服务。作为智能体工具时，智能体可以在每次调用时自行选择频道和搜索服务。需要配置 API Key。',

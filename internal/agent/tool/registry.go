@@ -36,6 +36,7 @@ var registry = map[string]Factory{
 	"arxiv":                      buildArxivTool,
 	"bgpt":                       buildBGPTTool,
 	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
+	"contextfetch":               buildContextFetchTool,
 	"crawler":                    noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"dataset_navigation_by_tree": noConfig("dataset_navigation_by_tree", func() einotool.BaseTool { return NewDatasetNavigationByTree() }),
 	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
@@ -80,17 +81,18 @@ var registry = map[string]Factory{
 // names such as "CodeExec" and "GoogleScholar", while the tool registry uses
 // snake_case names for several tools.
 var canvasToolNames = map[string]string{
-	"codeexec":         "code_exec",
-	"googlescholar":    "google_scholar",
-	"keenablesearch":   "keenable",
-	"queritcontents":   "querit_contents",
-	"queritsearch":     "querit_search",
-	"search1apicrawl":  "search1api_crawl",
-	"search1apisearch": "search1api",
-	"sofyasearch":      "sofya",
-	"tavilyextract":    "tavily_extract",
-	"tavilysearch":     "tavily",
-	"yahoofinance":     "yahoo_finance",
+	"codeexec":           "code_exec",
+	"contextfetchsearch": "contextfetch",
+	"googlescholar":      "google_scholar",
+	"keenablesearch":     "keenable",
+	"queritcontents":     "querit_contents",
+	"queritsearch":       "querit_search",
+	"search1apicrawl":    "search1api_crawl",
+	"search1apisearch":   "search1api",
+	"sofyasearch":        "sofya",
+	"tavilyextract":      "tavily_extract",
+	"tavilysearch":       "tavily",
+	"yahoofinance":       "yahoo_finance",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -747,6 +749,26 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires api_key for realtime mode", "keenable")
 	}
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
+}
+
+func buildContextFetchTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "contextfetch")
+		}
+	}
+	topN := 0
+	if value, ok := params["top_n"]; ok {
+		var valid bool
+		topN, valid = strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "contextfetch")
+		}
+	}
+	return newContextFetchTool(nil, apiKey, topN), nil
 }
 
 func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {

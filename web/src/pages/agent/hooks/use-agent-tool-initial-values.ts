@@ -72,6 +72,8 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'api_key', 'freshness', 'top_n');
         case Operator.SofyaSearch:
           return pick(initialValues, 'api_key', 'search_depth', 'top_n');
+        case Operator.ContextFetchSearch:
+          return pick(initialValues, 'api_key', 'top_n');
         case Operator.Search1APISearch:
           return pick(
             initialValues,

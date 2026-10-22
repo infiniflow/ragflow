@@ -1,5 +1,6 @@
 jest.mock('@/constants/agent', () => ({
   Operator: {
+    ContextFetchSearch: 'ContextFetchSearch',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
     Search1APICrawl: 'Search1APICrawl',
@@ -36,6 +37,13 @@ describe('getToolOperatorName', () => {
     'maps the Search1API crawl timeline name %p to its operator',
     (toolName) => {
       expect(getToolOperatorName(toolName)).toBe(Operator.Search1APICrawl);
+    },
+  );
+
+  it.each(['ContextFetchSearch', 'contextfetch_search'])(
+    'maps the ContextFetch timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.ContextFetchSearch);
     },
   );
 

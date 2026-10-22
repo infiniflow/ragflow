@@ -91,6 +91,7 @@ export function AccordionOperators({
     Operator.KeenableSearch,
     Operator.YouComSearch,
     Operator.SofyaSearch,
+    Operator.ContextFetchSearch,
     Operator.Search1APISearch,
     Operator.Search1APICrawl,
     Operator.DocGenerator,

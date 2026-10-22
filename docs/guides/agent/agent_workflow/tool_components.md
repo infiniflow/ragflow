@@ -16,7 +16,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API, ContextFetch | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -312,6 +312,30 @@ Search1API Crawl reads one web page and returns its title and full content. A co
 #### Output Result
 
 `json` contains the page title, link, content, and any metadata returned by Search1API.
+
+### ContextFetch
+
+ContextFetch is a web search API for AI Agents. Each result carries its title, link, and the most relevant passage of the page. An API key is required and can be created at [contextfetch.dev](https://contextfetch.dev). See the [ContextFetch documentation](https://contextfetch.dev/docs) for details.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| api_key | string | Node configuration | Empty | ContextFetch API key. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 20. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-contextfetch-api-key>` |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, passages, and relevance scores returned by ContextFetch. `formalized_content` is commonly used as Agent context, while `json` preserves the raw result list.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.

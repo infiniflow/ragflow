@@ -46,6 +46,7 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		wantToolName string
 	}{
 		{name: "CodeExec", wantToolName: "execute_code"},
+		{name: "ContextFetchSearch", wantToolName: "contextfetch_search"},
 		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
 		{name: "QueritContents", wantToolName: "querit_contents"},
@@ -162,7 +163,7 @@ func TestBuildByName_QueritContentsAliases(t *testing.T) {
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "arxiv", "bgpt", "code_exec", "contextfetch", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
@@ -226,7 +227,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Every entry the registry advertises.
 	names := []string{
-		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"akshare", "arxiv", "bgpt", "code_exec", "contextfetch", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
