@@ -28,8 +28,8 @@ DATASET_NAME_LIMIT = 128
 def create_dataset(auth, payload=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}"
     body = {"parse_type": 1, **(payload or {})}
-    if body["parse_type"] == 1:
-        body.setdefault("parser_id", "general")
+    if body["parse_type"] == 1 and body.get("parser_id") is None:
+        body["parser_id"] = "general"
     res = requests.post(url=url, headers={"Content-Type": "application/json", "Authorization": auth}, json=body)
     return res.json()
 

@@ -206,6 +206,7 @@ jobs:
 
   ragflow_python_sdk_unit:
     name: ragflow_python_sdk_unit
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
     runs-on: ubuntu-24.04
     steps:
       - name: Check out code

@@ -183,7 +183,7 @@ Selects the parser mode. Defaults to `1`.
 
 The builtin parser ID. Defaults to `"general"` when `parse_type` is `1`.
 
-Available values include `"general"`, `"qa"`, `"manual"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, and `"email"`.
+Available values include `"general"`, `"qa"`, `"manual"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, `"audio"`, and `"email"`.
 
 Must be omitted when `parse_type` is `2`.
 

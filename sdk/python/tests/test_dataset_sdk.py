@@ -116,6 +116,24 @@ def test_create_dataset_treats_blank_parser_id_as_absent_for_pipeline(parser_id)
     assert payload["pipeline_id"] == "0123456789abcdef0123456789abcdef"
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"parser_id": 123}, "parser_id must be a string"),
+        ({"parse_type": 2, "pipeline_id": 123}, "pipeline_id must be a string"),
+    ],
+)
+def test_create_dataset_rejects_non_string_parser_ids(kwargs, message):
+    rag = RecordingRAGFlow({})
+    # Exercise the runtime guard used when beartype is unavailable.
+    create_dataset = getattr(RAGFlow.create_dataset, "__wrapped__", RAGFlow.create_dataset)
+
+    with pytest.raises(ValueError, match=message):
+        create_dataset(rag, name="kb", **kwargs)
+
+    assert rag.calls == []
+
+
 @pytest.mark.parametrize("parser_id", ["", "  "])
 def test_create_dataset_rejects_blank_parser_id_for_builtin(parser_id):
     rag = RecordingRAGFlow({})

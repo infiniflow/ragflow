@@ -70,6 +70,10 @@ class RAGFlow:
         ``"general"``. ``parse_type=2`` selects an ingestion pipeline and requires
         ``pipeline_id``.
         """
+        if parser_id is not None and not isinstance(parser_id, str):
+            raise ValueError("parser_id must be a string")
+        if pipeline_id is not None and not isinstance(pipeline_id, str):
+            raise ValueError("pipeline_id must be a string")
         parser_id = parser_id.strip() if parser_id is not None else None
         pipeline_id = pipeline_id.strip() if pipeline_id is not None else None
 
