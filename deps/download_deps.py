@@ -25,7 +25,7 @@
 #
 # Typical workflow:
 #
-#   uv run ragflow_deps/download_deps.py
+#   uv run deps/download_deps.py
 #
 # Go DeepDoc weights: in addition to the resources above, this script downloads
 # the five Go model files (internal/common.DeepDocModelFiles) from
@@ -39,8 +39,8 @@
 #
 # Embedding tokenizer assets: the Go token counters in internal/tokenizer load a
 # tokenizer file per family (XLM-R SentencePiece, BERT WordPiece, two byte-level BPE
-# families) from `huggingface.co/<repo>/<file>` at the top of ragflow_deps/ - the path
-# the loaders search and the one ragflow_deps/Dockerfile ships. This script fetches
+# families) from `huggingface.co/<repo>/<file>` at the top of deps/ - the path
+# the loaders search and the one deps/Dockerfile ships. This script fetches
 # them too, per the inlined TOKENIZER_ASSETS list. Models that declare a missing
 # tokenizer cannot be ingested (see internal/tokenizer/embedding_token_limits.md).
 
@@ -217,7 +217,7 @@ def download_go_models(use_china_mirrors=False):
     `internal/rag/res/deepdoc/` (relative to the repo root, one level up from
     this script). The Go server auto-discovers that directory, and build.sh
     --test-native defaults MODEL_DIR there too. A copy also lands under
-    ragflow_deps/huggingface.co/InfiniFlow/deepdoc/ to keep the dependency
+    deps/huggingface.co/InfiniFlow/deepdoc/ to keep the dependency
     image's existing build-context layout.
     """
     if use_china_mirrors:
@@ -272,8 +272,8 @@ def download_go_models(use_china_mirrors=False):
 def download_tokenizer_assets(use_china_mirrors=False):
     """Download the embedding tokenizer assets the Go counters load.
 
-    Written to `ragflow_deps/huggingface.co/<repo>/<file>`: the path internal/tokenizer
-    searches and the one ragflow_deps/Dockerfile builds its image from. Fetched per file
+    Written to `deps/huggingface.co/<repo>/<file>`: the path internal/tokenizer
+    searches and the one deps/Dockerfile builds its image from. Fetched per file
     (these repos also carry multi-GB weights we do not want), routed via hf-mirror.com
     when --china-mirrors is set.
 
@@ -334,7 +334,7 @@ def main():
     parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
     args = parser.parse_args()
 
-    # Anchor archives, the BPE table, and tokenizer assets to ragflow_deps/.
+    # Anchor archives, the BPE table, and tokenizer assets to deps/.
     os.chdir(SCRIPT_DIR)
 
     # ── cl100k_base BPE table ──────────────────────────────────────────────
@@ -367,7 +367,7 @@ def main():
     download_go_models(args.china_mirrors)
 
     # Same one-stop idea for the token counters: their tokenizer files, in the layout
-    # the loaders search and ragflow_deps/Dockerfile ships.
+    # the loaders search and deps/Dockerfile ships.
     print("== tokenizer assets ==")
     download_tokenizer_assets(args.china_mirrors)
 

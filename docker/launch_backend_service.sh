@@ -69,7 +69,7 @@ PIDS=()
 
 # Set the path to the NLTK data directory
 # Use the repository's NLTK data directory when it is provisioned.
-export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
+export NLTK_DATA="$(pwd)/deps/nltk_data"
 
 # Function to handle termination signals
 cleanup() {

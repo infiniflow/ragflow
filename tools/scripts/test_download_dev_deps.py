@@ -319,7 +319,7 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
 def native_dirs(tmp_path, monkeypatch):
     """Point the dev script's repo-anchored paths at a temp tree so the
     runtime-resource downloads written by tests never touch the real repo."""
-    deps = tmp_path / "ragflow_deps"
+    deps = tmp_path / "deps"
     deps.mkdir()
     root = tmp_path / "repo"
     root.mkdir()
@@ -372,7 +372,7 @@ def test_download_go_models_downloads_when_missing(native_dirs, monkeypatch):
     deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
     for fname in native.HF_DEEPDOC_MODEL_FILES:
         assert (deepdoc_dir / fname).is_file(), f"missing DeepDoc model {fname}"
-    # The image-layout copy under ragflow_deps/huggingface.co must also exist.
+    # The image-layout copy under deps/huggingface.co must also exist.
     for fname in native.HF_DEEPDOC_MODEL_FILES:
         assert (deps / "huggingface.co" / native.HF_DEEPDOC_REPO / fname).is_file()
 
@@ -390,7 +390,7 @@ def test_download_go_models_fails_loud(native_dirs, monkeypatch):
 
 def _seed_tokenizer_targets(deps, present):
     """Create (present=True) or leave absent the on-disk targets the inlined
-    TOKENIZER_ASSETS list resolves to under ragflow_deps/huggingface.co/<repo>/<file>."""
+    TOKENIZER_ASSETS list resolves to under deps/huggingface.co/<repo>/<file>."""
     for repo, filename, _kind in native.TOKENIZER_ASSETS:
         target = deps / "huggingface.co" / repo / filename
         if present:
@@ -483,7 +483,7 @@ def test_native_script_does_not_fetch_stagehand():
 
 
 def test_image_script_does_not_handle_native_archives():
-    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ragflow_deps", "download_deps.py")
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deps", "download_deps.py")
     assert os.path.isfile(deps_path), f"download_deps.py not found at {deps_path}"
     spec = importlib.util.spec_from_file_location("download_deps_img", deps_path)
     img = importlib.util.module_from_spec(spec)
