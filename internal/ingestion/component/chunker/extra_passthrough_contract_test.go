@@ -102,6 +102,16 @@ func TestChunkersCarryItemExtra(t *testing.T) {
 				if !strings.Contains(toString(ck["text"]), "linked body") {
 					continue
 				}
+				// The nested slot has to be nested already in the chunker's own
+				// payload: `extra` is the declared column the engine write path
+				// keeps, and the families reach it by different routes (General
+				// and Token through ChunkDoc's wire map, the title family through
+				// the group merge). Asserting the key here is what makes "these
+				// shapes agree" a stated contract rather than an accident of
+				// Extra's decode whitelist.
+				if _, ok := ck["extra"]; !ok {
+					t.Fatalf("%s: chunk payload carries no nested extra key: %#v", tc.name, ck)
+				}
 				// The title path emits the raw `extra` object; the General/Token
 				// paths decode it. Assert through JSON so both shapes are covered
 				// the way the engine write path sees them.
