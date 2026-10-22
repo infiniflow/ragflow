@@ -647,7 +647,7 @@ type lineRecord struct {
 	preserveOrder bool
 	sheet         string
 	sheetIndex    *int
-	parentMeta    map[string]any
+	extra         map[string]json.RawMessage
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }

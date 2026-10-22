@@ -19,6 +19,7 @@ package chunker
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -428,4 +429,34 @@ func cloneInputs(m map[string]any) map[string]any {
 		cp[k] = v
 	}
 	return cp
+}
+
+// cloneExtra returns a deep copy of a chunk's dynamic keys, or nil.
+func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]json.RawMessage, len(in))
+	for key, value := range in {
+		out[key] = append(json.RawMessage(nil), value...)
+	}
+	return out
+}
+
+// mergeExtraFirstWins copies src's dynamic keys into dst, keeping the value a
+// merged chunk already carries for a key (the first unit owns it). Shared by the
+// General, Token and Title merges so item metadata — linked-content provenance
+// among it — cannot vanish just because a different chunker was configured.
+func mergeExtraFirstWins(dst *map[string]json.RawMessage, src map[string]json.RawMessage) {
+	if len(src) == 0 {
+		return
+	}
+	if *dst == nil {
+		*dst = make(map[string]json.RawMessage, len(src))
+	}
+	for key, value := range src {
+		if _, exists := (*dst)[key]; !exists {
+			(*dst)[key] = append(json.RawMessage(nil), value...)
+		}
+	}
 }

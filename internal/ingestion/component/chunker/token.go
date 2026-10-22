@@ -1174,19 +1174,10 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
 		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
 		// A joined chunk covers every unit it absorbed, so it carries their
-		// dynamic keys too (first unit wins per key), matching the general
-		// chunker's merge. Without this, a chunk that spans the parent body and
-		// an appended linked page drops that page's provenance (#21032).
-		if len(ck.Extra) > 0 {
-			if prev.Extra == nil {
-				prev.Extra = make(map[string]json.RawMessage, len(ck.Extra))
-			}
-			for key, value := range ck.Extra {
-				if _, exists := prev.Extra[key]; !exists {
-					prev.Extra[key] = append(json.RawMessage(nil), value...)
-				}
-			}
-		}
+		// dynamic keys too, matching the general chunker's merge. Without this, a
+		// chunk spanning the parent body and an appended linked page drops that
+		// page's provenance (#21032).
+		mergeExtraFirstWins(&prev.Extra, ck.Extra)
 		mergedItems[prevIdx] = append(mergedItems[prevIdx], cur)
 	}
 	return merged
@@ -1633,17 +1624,6 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
 	}
 	out.Extra = cloneExtra(in.Extra)
-	return out
-}
-
-func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]json.RawMessage, len(in))
-	for key, value := range in {
-		out[key] = append(json.RawMessage(nil), value...)
-	}
 	return out
 }
 

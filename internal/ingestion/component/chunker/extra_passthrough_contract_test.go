@@ -36,7 +36,9 @@ func TestChunkersCarryItemExtra(t *testing.T) {
 	items := func(extra map[string]any) []map[string]any {
 		return []map[string]any{
 			{"text": "# Heading", "doc_type_kwd": "text"},
-			{"text": "linked body", "doc_type_kwd": "text", "extra": extra},
+			// A second dynamic key proves the whole item Extra travels, not just
+			// the `extra` slot the feature happens to use.
+			{"text": "linked body", "doc_type_kwd": "text", "extra": extra, "slide_number": 2},
 		}
 	}
 
@@ -99,13 +101,17 @@ func TestChunkersCarryItemExtra(t *testing.T) {
 					t.Fatalf("%s: marshal chunk: %v", tc.name, err)
 				}
 				var decoded struct {
-					Extra map[string]any `json:"extra"`
+					Extra       map[string]any `json:"extra"`
+					SlideNumber int            `json:"slide_number"`
 				}
 				if err := json.Unmarshal(encoded, &decoded); err != nil {
 					t.Fatalf("%s: unmarshal chunk: %v", tc.name, err)
 				}
 				if decoded.Extra["source_url"] != "https://example.com/linked" || decoded.Extra["parent_doc_id"] != "doc-1" {
 					t.Fatalf("%s: chunk extra = %#v, want the provenance pair (%s)", tc.name, decoded.Extra, encoded)
+				}
+				if decoded.SlideNumber != 2 {
+					t.Fatalf("%s: slide_number = %d, want the item key carried alongside provenance (%s)", tc.name, decoded.SlideNumber, encoded)
 				}
 				labelled++
 			}

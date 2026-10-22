@@ -1262,14 +1262,7 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 	if dst.PageNumber == nil {
 		dst.PageNumber = src.PageNumber
 	}
-	if dst.Extra == nil && len(src.Extra) > 0 {
-		dst.Extra = make(map[string]json.RawMessage, len(src.Extra))
-	}
-	for key, value := range src.Extra {
-		if _, exists := dst.Extra[key]; !exists {
-			dst.Extra[key] = append(json.RawMessage(nil), value...)
-		}
-	}
+	mergeExtraFirstWins(&dst.Extra, src.Extra)
 }
 
 func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
