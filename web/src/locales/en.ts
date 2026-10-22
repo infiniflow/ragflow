@@ -2143,7 +2143,8 @@ Example: Virtual Hosted Style`,
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
       mineruApiToken: 'MinerU API token',
-      mineruApiTokenPlaceholder: 'Token from mineru.net API management (optional)',
+      mineruApiTokenPlaceholder:
+        'Token from mineru.net API management (optional)',
       mineruApiTokenTip:
         'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
