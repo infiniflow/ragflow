@@ -67,6 +67,19 @@ func TestParseTableHTMLFooterRowsComeLast(t *testing.T) {
 	assertRowsEqual(t, td.CellTexts(), want)
 }
 
+func TestParseTableHTMLFooterRowsStayWithTheirTable(t *testing.T) {
+	html := `<table><tfoot><tr><td>Total</td><td>1</td></tr></tfoot>` +
+		`<tbody><tr><td>A</td><td>1</td></tr></tbody></table>` +
+		`<table><tr><td>B</td><td>2</td></tr></table>`
+	td := mustParse(t, html)
+	want := [][]string{
+		{"A", "1"},
+		{"Total", "1"},
+		{"B", "2"},
+	}
+	assertRowsEqual(t, td.CellTexts(), want)
+}
+
 func TestParseTableHTMLMultipleHeaderRows(t *testing.T) {
 	html := `<table><tr><th>H1</th></tr><tr><th>H2</th></tr>` +
 		`<tr><td>a</td></tr></table>`

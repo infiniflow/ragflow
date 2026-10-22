@@ -67,6 +67,17 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			caption = cellText(n)
 			return
 		}
+		// A table's footer goes below that table's own body, not below every table
+		// the fragment holds
+		if isHTMLElement(n, "table") && !inFoot {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			rows = append(rows, footRows...)
+			headerFlags = append(headerFlags, footFlags...)
+			footRows, footFlags = nil, nil
+			return
+		}
 		if isHTMLElement(n, "tfoot") && !inFoot {
 			inFoot = true
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
