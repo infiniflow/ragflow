@@ -18,6 +18,8 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -735,5 +737,77 @@ func TestFlattenLegacyParserSetups(t *testing.T) {
 				t.Errorf("FlattenLegacyParserSetups() = %#v, want %#v", got, tc.want)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// HyperlinkFetchParam
+// ---------------------------------------------------------------------------
+
+func TestHyperlinkFetchParamDefaults(t *testing.T) {
+	p := HyperlinkFetchParam{}.Defaults()
+	if p.FetchLinks || p.CollectMarkdownLinks {
+		t.Errorf("linked-content ingestion must default off, got %+v", p)
+	}
+	if p.MaxURLs != HyperlinkDefaultMaxURLs || p.MaxBytesPerURL != HyperlinkDefaultMaxBytesPerURL ||
+		p.MaxTotalBytes != HyperlinkDefaultMaxTotalBytes || p.TimeoutSeconds != HyperlinkDefaultTimeoutSeconds {
+		t.Errorf("default budgets = %+v, want the HyperlinkDefault* values", p)
+	}
+	if err := p.Validate(); err != nil {
+		t.Fatalf("default HyperlinkFetchParam failed Validate: %v", err)
+	}
+}
+
+// Every budget is bounded on both sides, and a disabled param validates them
+// too: nonsense configured today cannot silently work after a toggle.
+func TestHyperlinkFetchParamValidate(t *testing.T) {
+	valid := HyperlinkFetchParam{}.Defaults()
+	for _, tc := range []struct {
+		name      string
+		mutate    func(*HyperlinkFetchParam)
+		wantField string
+	}{
+		{"max_urls below range", func(p *HyperlinkFetchParam) { p.MaxURLs = 0 }, HyperlinkKeyMaxURLs},
+		{"max_urls above limit", func(p *HyperlinkFetchParam) { p.MaxURLs = hyperlinkMaxURLsLimit + 1 }, HyperlinkKeyMaxURLs},
+		{"max_bytes_per_url below range", func(p *HyperlinkFetchParam) { p.MaxBytesPerURL = 0 }, HyperlinkKeyMaxBytesPerURL},
+		{"max_bytes_per_url above limit", func(p *HyperlinkFetchParam) { p.MaxBytesPerURL = hyperlinkMaxBytesPerURLLimit + 1 }, HyperlinkKeyMaxBytesPerURL},
+		{"max_total_bytes above limit", func(p *HyperlinkFetchParam) { p.MaxTotalBytes = hyperlinkMaxTotalBytesLimit + 1 }, HyperlinkKeyMaxTotalBytes},
+		{"timeout_s above limit", func(p *HyperlinkFetchParam) { p.TimeoutSeconds = hyperlinkTimeoutSecondsLimit + 1 }, HyperlinkKeyTimeoutSeconds},
+		{"budget validated while disabled", func(p *HyperlinkFetchParam) { p.FetchLinks = false; p.MaxURLs = -1 }, HyperlinkKeyMaxURLs},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := valid
+			tc.mutate(&p)
+			var invalid errInvalidValue
+			if err := p.Validate(); !errors.As(err, &invalid) {
+				t.Fatalf("Validate() = %v, want an errInvalidValue for %q", err, tc.wantField)
+			}
+			if invalid.Field != tc.wantField {
+				t.Errorf("rejected field = %q, want %q", invalid.Field, tc.wantField)
+			}
+		})
+	}
+}
+
+// Budgets arrive as JSON numbers: an integral float decodes, while a fractional
+// value, a bool, a string or an out-of-int32 number is rejected rather than
+// truncated or counted as 1.
+func TestHyperlinkFetchParamFromSetupBudgetTypes(t *testing.T) {
+	p, err := HyperlinkFetchParamFromSetup(ParserSetup{
+		HyperlinkKeyMaxURLs: float64(7), HyperlinkKeyTimeoutSeconds: 3,
+	})
+	if err != nil {
+		t.Fatalf("integral values rejected: %v", err)
+	}
+	if p.MaxURLs != 7 || p.TimeoutSeconds != 3 {
+		t.Fatalf("parsed = %+v, want max_urls 7 and timeout_s 3", p)
+	}
+	for _, raw := range []any{3.5, true, "5", nil, math.MaxInt32 + 1.0} {
+		if _, err := HyperlinkFetchParamFromSetup(ParserSetup{HyperlinkKeyMaxURLs: raw}); err == nil {
+			t.Errorf("max_urls %v (%T) accepted, want rejection", raw, raw)
+		}
+	}
+	if _, err := HyperlinkFetchParamFromSetup(ParserSetup{HyperlinkKeyFetchLinks: "yes"}); err == nil {
+		t.Error("fetch_links as a string accepted, want rejection")
 	}
 }

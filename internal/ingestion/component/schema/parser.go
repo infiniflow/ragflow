@@ -73,12 +73,12 @@ const (
 // collecting section links, mirroring Python's analyze_hyperlink /
 // hyperlink_urls split. Budgets bound a single document's fetch.
 type HyperlinkFetchParam struct {
-	FetchLinks           bool
-	CollectMarkdownLinks bool
-	MaxURLs              int
-	MaxBytesPerURL       int
-	MaxTotalBytes        int
-	TimeoutSeconds       int
+	FetchLinks           bool `json:"fetch_links"`
+	CollectMarkdownLinks bool `json:"collect_markdown_links"`
+	MaxURLs              int  `json:"max_urls"`
+	MaxBytesPerURL       int  `json:"max_bytes_per_url"`
+	MaxTotalBytes        int  `json:"max_total_bytes"`
+	TimeoutSeconds       int  `json:"timeout_s"`
 }
 
 // Defaults returns the disabled-by-default hyperlink param.
@@ -97,16 +97,16 @@ func (HyperlinkFetchParam) Defaults() HyperlinkFetchParam {
 // so a later enable cannot silently pick up nonsense.
 func (p *HyperlinkFetchParam) Validate() error {
 	if p.MaxURLs < 1 || p.MaxURLs > hyperlinkMaxURLsLimit {
-		return errInvalidValue{Field: "max_urls", Value: fmt.Sprintf("%d", p.MaxURLs)}
+		return errInvalidValue{Field: HyperlinkKeyMaxURLs, Value: fmt.Sprintf("%d", p.MaxURLs)}
 	}
 	if p.MaxBytesPerURL < 1 || p.MaxBytesPerURL > hyperlinkMaxBytesPerURLLimit {
-		return errInvalidValue{Field: "max_bytes_per_url", Value: fmt.Sprintf("%d", p.MaxBytesPerURL)}
+		return errInvalidValue{Field: HyperlinkKeyMaxBytesPerURL, Value: fmt.Sprintf("%d", p.MaxBytesPerURL)}
 	}
 	if p.MaxTotalBytes < 1 || p.MaxTotalBytes > hyperlinkMaxTotalBytesLimit {
-		return errInvalidValue{Field: "max_total_bytes", Value: fmt.Sprintf("%d", p.MaxTotalBytes)}
+		return errInvalidValue{Field: HyperlinkKeyMaxTotalBytes, Value: fmt.Sprintf("%d", p.MaxTotalBytes)}
 	}
 	if p.TimeoutSeconds < 1 || p.TimeoutSeconds > hyperlinkTimeoutSecondsLimit {
-		return errInvalidValue{Field: "timeout_s", Value: fmt.Sprintf("%d", p.TimeoutSeconds)}
+		return errInvalidValue{Field: HyperlinkKeyTimeoutSeconds, Value: fmt.Sprintf("%d", p.TimeoutSeconds)}
 	}
 	return nil
 }
