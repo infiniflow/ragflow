@@ -254,6 +254,64 @@ func TestHyperlinkRemainingBudgetCapsRead(t *testing.T) {
 	}
 }
 
+func TestHyperlinkDeduplicatesRedirectTargets(t *testing.T) {
+	allowTestHosts(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/final", http.StatusFound)
+	})
+	mux.HandleFunc("/b", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/final", http.StatusFound)
+	})
+	mux.HandleFunc("/final", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>redirect target</p></body></html>"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)")
+	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+	})
+	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, setups, "doc1")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	if len(got) != len(parent)+1 {
+		t.Fatalf("len = %d, want only one copy of the redirect target", len(got))
+	}
+}
+
+func TestHyperlinkChargesRejectedResponsesToBudget(t *testing.T) {
+	allowTestHosts(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>" + strings.Repeat("x", 200) + "</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)")
+	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+		"max_bytes_per_url": 1 << 20, "max_total_bytes": 64,
+	})
+	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, setups, "doc1")
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
+	}
+	// First page rejected at the 64-byte cap but its bytes are charged, so
+	// the second URL never gets a fresh budget.
+	if len(warnings) != 2 || !strings.Contains(warnings[0], "byte limit") ||
+		!strings.Contains(warnings[1], "budget exhausted") {
+		t.Fatalf("warnings = %v, want reject then budget exhaustion", warnings)
+	}
+}
+
 func TestHyperlinkOverallDeadline(t *testing.T) {
 	base := schema.HyperlinkFetchParam{MaxURLs: 5, TimeoutSeconds: 10}
 	if got := hyperlinkOverallDeadline(base); got != 50*time.Second {

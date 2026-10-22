@@ -78,9 +78,12 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 	// budget is derived from the same parameters and capped at five minutes.
 	fetchCtx, cancel := context.WithTimeout(ctx, hyperlinkOverallDeadline(param))
 	defer cancel()
-	// total counts fetched bytes after the fact, so exhaustion can overshoot
-	// by at most one already-fetched page (bounded by MaxBytesPerURL).
+	// total counts bytes consumed including rejected oversized responses, so
+	// a document cannot download far past MaxTotalBytes through the reject
+	// path. reading caps at remaining+1, so exhaustion can overshoot by one
+	// byte before the loop stops.
 	var total int64
+	parsedFinal := map[string]bool{}
 	out := parent
 	for _, url := range urls {
 		if fetchCtx.Err() != nil {
@@ -96,12 +99,17 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 		if remaining < readCap {
 			readCap = remaining
 		}
-		body, finalURL, warn := fetchHyperlinkPage(fetchCtx, client, url, param.TimeoutSeconds, readCap)
+		body, finalURL, consumed, warn := fetchHyperlinkPage(fetchCtx, client, url, param.TimeoutSeconds, readCap)
+		total += consumed
 		if warn != "" {
 			warnings = append(warnings, warn)
 			continue
 		}
-		total += int64(len(body))
+		// Distinct links can redirect to the same page; index it once.
+		if parsedFinal[finalURL] {
+			continue
+		}
+		parsedFinal[finalURL] = true
 		sub := dispatchParse(ctx, utility.FileTypeHTML, finalURL, body, setups, progress.Window{})
 		if sub.Err != nil {
 			warnings = append(warnings, fmt.Sprintf("hyperlink: parse %s failed (%v)", finalURL, sub.Err))
@@ -159,37 +167,38 @@ func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) 
 // fetchHyperlinkPage GETs one page through the guarded SSRF client with a
 // per-URL timeout and a hard response cap (readCap, the smaller of the
 // per-page and remaining document budgets). It returns the body, the final
-// URL after redirects, or a warning (empty body on warning).
-func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, timeoutSeconds int, readCap int64) (body []byte, finalURL string, warning string) {
+// URL after redirects, the bytes consumed (charged to the document budget
+// even when the response is rejected), or a warning (empty body on warning).
+func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, timeoutSeconds int, readCap int64) (body []byte, finalURL string, consumed int64, warning string) {
 	urlCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(urlCtx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, "", fmt.Sprintf("hyperlink: skip %s (%v)", url, err)
+		return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (%v)", url, err)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", fmt.Sprintf("hyperlink: fetch %s failed (%v)", url, err)
+		return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s failed (%v)", url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", fmt.Sprintf("hyperlink: fetch %s returned status %s", url, resp.Status)
+		return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s returned status %s", url, resp.Status)
 	}
 	contentType := resp.Header.Get("Content-Type")
 	if !isFetchableContentType(contentType) {
-		return nil, "", fmt.Sprintf("hyperlink: skip %s (content type %q is not a page)", url, contentType)
+		return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (content type %q is not a page)", url, contentType)
 	}
 	capped, err := io.ReadAll(io.LimitReader(resp.Body, readCap+1))
 	if err != nil {
-		return nil, "", fmt.Sprintf("hyperlink: read %s failed (%v)", url, err)
+		return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: read %s failed (%v)", url, err)
 	}
 	if int64(len(capped)) > readCap {
-		return nil, "", fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", url, readCap)
+		return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", url, readCap)
 	}
 	if resp.Request != nil && resp.Request.URL != nil {
-		return capped, resp.Request.URL.String(), ""
+		return capped, resp.Request.URL.String(), int64(len(capped)), ""
 	}
-	return capped, url, ""
+	return capped, url, int64(len(capped)), ""
 }
 
 func isFetchableContentType(contentType string) bool {
