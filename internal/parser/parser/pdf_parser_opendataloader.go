@@ -64,11 +64,11 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	if payload.JSONDoc != nil {
 		items := openDataLoaderItems(payload.JSONDoc)
 		if len(items) > 0 {
-			return pdfItemsToResult(filename, items, parser.OutputFormat, openDataLoaderPageCount(payload.JSONDoc))
+			return pdfItemsToResult(filename, items, openDataLoaderPageCount(payload.JSONDoc))
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return pdfMarkdownToResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
+		return pdfMarkdownToResult(ctx, filename, payload.MDText, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }

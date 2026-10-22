@@ -394,15 +394,11 @@ func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":          "deepdoc",
-		"output_format":         "json",
 		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
 		"flatten_media_to_text": false,
 	})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want %q", p.OutputFormat, "json")
 	}
 	if p.VLM == nil {
 		t.Fatal("VLM is nil; want map")

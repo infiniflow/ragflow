@@ -45,25 +45,11 @@ func TestNewPictureParser(t *testing.T) {
 	if p == nil {
 		t.Fatal("NewPictureParser returned nil")
 	}
-	if p.OutputFormat != "" {
-		t.Errorf("OutputFormat = %q, want empty", p.OutputFormat)
-	}
-}
-
-func TestPictureParser_ConfigureFromSetup(t *testing.T) {
-	p := NewPictureParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-	})
-	if p.OutputFormat != "text" {
-		t.Errorf("OutputFormat = %q, want text", p.OutputFormat)
-	}
 }
 
 func TestPictureParser_ParseWithResult_NilSetup(t *testing.T) {
 	ctx := t.Context()
 	p := NewPictureParser()
-	p.ConfigureFromSetup(nil)
 	res := p.ParseWithResult(ctx, "photo.png", []byte("\x89PNG"))
 	if res.Err != nil {
 		t.Errorf("unexpected error for nil setup: %v", res.Err)
@@ -120,9 +106,6 @@ func TestPictureParser_ParseWithResult_VideoExtension(t *testing.T) {
 func TestPictureParser_ParseWithResult_OutputFormat(t *testing.T) {
 	ctx := t.Context()
 	p := NewPictureParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 	res := p.ParseWithResult(ctx, "photo.jpg", []byte{1, 2, 3})
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)

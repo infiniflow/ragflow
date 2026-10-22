@@ -54,8 +54,7 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
+		"fields": []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -223,8 +222,7 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
+		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
 	})
 
 	result := p.ParseWithResult(ctx, "sample.msg", data)
@@ -314,8 +312,7 @@ func TestEmailParser_MsgMetadataAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "subject"}, // "metadata" intentionally absent
+		"fields": []string{"from", "subject"}, // "metadata" intentionally absent
 	})
 
 	result := p.ParseWithResult(ctx, "sample.msg", data)
@@ -418,8 +415,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -496,8 +492,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -553,8 +548,7 @@ func TestEmailParser_Multipart(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body"},
+		"fields": []string{"from", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -590,7 +584,6 @@ func TestEmailParser_MetadataAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
 		// Note: "metadata" is intentionally NOT in fields.
 		"fields": []string{"from", "subject", "body"},
 	})
@@ -651,8 +644,7 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body"},
+		"fields": []string{"from", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -713,8 +705,7 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -775,8 +766,7 @@ func TestEmailParser_AttachmentEmptyPayloadSkipped(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -831,8 +821,7 @@ func TestEmailParser_AttachmentUnknownExtSkipped(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -877,7 +866,6 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
 		// NOTE: "body" is intentionally NOT in fields.
 		"fields": []string{"from", "attachments"},
 	})
@@ -1301,7 +1289,6 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 				"Subject: Q3\r\n" + tt.headers + "\r\n\r\n" + tt.body + "\r\n"
 
 			p := NewEmailParser()
-			p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 			result := p.ParseWithResult(t.Context(), "test.eml", []byte(raw))
 			if result.Err != nil {
 				t.Fatalf("unexpected error: %v", result.Err)
