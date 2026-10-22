@@ -35,3 +35,19 @@ func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (Resp
 func (p *Parser) parseAdminListUserDatasetsEE(userName string) (*Command, error) {
 	return nil, errors.New("listing user datasets is only available in the enterprise edition")
 }
+
+func (c *CLI) ListAdminIngestionTasks(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("listing admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
+	return nil, errors.New("listing admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("listing user ingestion tasks in admin mode is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, error) {
+	return nil, errors.New("listing user ingestion tasks in admin mode is not supported in the open-source edition")
+}

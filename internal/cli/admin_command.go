@@ -1085,19 +1085,6 @@ func (c *CLI) ListAdminIngestors(commandCount int, cmd *Command) (ResponseIf, er
 	return HandleCommonResponse(resp, "list ingestors")
 }
 
-func (c *CLI) ListAdminIngestionTasks(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ingestion/tasks", "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "list admin tasks")
-}
-
 func (c *CLI) AdminStopIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2193,50 +2180,6 @@ func (c *CLI) AdminPurgeUsersCommand(commandCount int, cmd *Command) (ResponseIf
 	}
 
 	return HandleCommonDataResponse(resp, "purge users data")
-}
-
-func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("plan_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s ingestion tasks: %w", userName, err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result OrderedCommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
 }
 
 func (c *CLI) AdminListUserChatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {

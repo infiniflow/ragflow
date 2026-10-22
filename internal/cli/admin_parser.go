@@ -255,24 +255,6 @@ func (p *Parser) parseAdminListIngestors() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
-	p.nextToken() // consume Ingestion
-
-	if p.curToken.Type != TokenTasks {
-		return nil, fmt.Errorf("expected TASKS")
-	}
-	p.nextToken() // consume TASKS
-
-	cmd := NewCommand("list_admin_ingestion_tasks")
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
 // LIST PROVIDER 'provider_name' MODELS;
 func (p *Parser) parseAdminListProviderCommands() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -3297,31 +3279,6 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	}
 
 	cmd.Params["user_name"] = userName
-	return cmd, nil
-}
-
-// LIST USER 'user@example.com' INGESTION TASKS 'status';
-func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, error) {
-	p.nextToken() // consume INGESTION
-
-	if p.curToken.Type != TokenTasks {
-		return nil, fmt.Errorf("expected TASKS after INGESTION")
-	}
-	p.nextToken()
-
-	cmd := NewCommand("admin_list_user_ingestion_tasks")
-	cmd.Params["user_name"] = userName
-
-	if p.curToken.Type == TokenQuotedString {
-		var status string
-		var err error
-		status, err = p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["status"] = status
-		p.nextToken()
-	}
 	return cmd, nil
 }
 
