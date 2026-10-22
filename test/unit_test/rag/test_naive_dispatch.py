@@ -47,7 +47,6 @@ from common.parser_config_utils import (
     normalize_layout_recognizer,
 )
 
-
 # --------------------------------------------------------------------------- #
 # has_mineru_options
 # --------------------------------------------------------------------------- #
@@ -243,6 +242,7 @@ def naive_module():
             doc_tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_table=lambda *a, **k: [],
+            merge_chunks_by_reading_order=lambda media, text: list(media or []) + list(text),
             append_context2table_image4pdf=lambda *a, **k: [],
         )
 
