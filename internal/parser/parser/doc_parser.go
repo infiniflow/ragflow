@@ -27,14 +27,10 @@ import (
 // docExtract is the native office_oxide extraction seam for the DOC family.
 var docExtract = deepdocoffice.OpenAndExtract
 
-type DOCParser struct {
-	OutputFormat string
-}
+type DOCParser struct{}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{
-		OutputFormat: "json",
-	}
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {
@@ -42,12 +38,9 @@ func (p *DOCParser) String() string {
 }
 
 func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
+	// DOC always emits JSON (the DSL hardcodes output_format to "json" via
+	// normalizeParserOutputFormats); the legacy text/markdown output paths were
+	// removed with the dead ParseResult.Text field.
 }
 
 // ParseWithResult extracts text for the DOC family and converts it to the
@@ -61,42 +54,17 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, mdPayload, err := extractDocText(irJSON, mdText, plainText)
+	text, _, err := extractDocText(irJSON, mdText, plainText)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "json"
-	}
-
-	markdownPayload := text
-	if strings.TrimSpace(mdPayload) != "" {
-		markdownPayload = mdPayload
-	}
-
-	res := ParseResult{
-		OutputFormat: outFmt,
-		File:         map[string]any{"name": filename, "format": "doc"},
-		Text:         text,
-		Markdown:     markdownPayload,
-	}
-
-	if strings.EqualFold(outFmt, "markdown") {
-		return res
-	}
-	if strings.EqualFold(outFmt, "text") {
-		return res
-	}
-
-	// JSON path: prefer the structured IR, which office_oxide recovers table
-	// (and list) structure for. Emitting structured sections lets the chunker
-	// render tables as HTML (#20918) instead of losing them to plain text — the
-	// legacy path flattened the whole document (tables included) into a single
-	// text item. Fall back to the flattened text only when the IR yields no
-	// usable sections, so a document whose IR is empty/unusable still keeps its
-	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
+	// The DSL hardcodes output_format to "json" (normalizeParserOutputFormats),
+	// so the DOC parser always emits structured JSON items. Prefer the IR
+	// sections, which recover table/list structure for the chunker's HTML-table
+	// rendering (#20918); fall back to the flattened text only when the IR yields
+	// no usable sections, so a document whose IR is empty/unusable still keeps
+	// its content rather than silently producing 0 chunks.
 	if strings.TrimSpace(irJSON) != "" {
 		budget := newEmbeddedMediaBudget()
 		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {

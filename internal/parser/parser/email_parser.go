@@ -44,23 +44,20 @@ import (
 // into structured JSON or plain-text output. Mirrors Python's _email()
 // method in rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
 type EmailParser struct {
-	fields       []string
-	outputFormat string
+	fields []string
 }
 
 func NewEmailParser() *EmailParser {
-	return &EmailParser{
-		outputFormat: "json",
-	}
+	return &EmailParser{}
 }
 
 func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.outputFormat = v
-	}
+	// Email always emits JSON (the DSL hardcodes output_format to "json" via
+	// normalizeParserOutputFormats); the legacy text output path was removed with
+	// the dead ParseResult.Text field.
 	if raw, ok := setup["fields"]; ok {
 		switch list := raw.(type) {
 		case []string:
@@ -121,82 +118,17 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 	}
 
-	outputFormat := p.outputFormat
-	if outputFormat == "" {
-		outputFormat = "json"
-	}
-
 	// Re-chunk attachments so their content becomes retrievable within the
 	// same document (user-oriented; mirrors Python legacy rag/app/email.py
 	// naive_chunk). Each attachment is re-parsed by its file extension via
 	// the shared parser registry; a single unparseable/skipped attachment
 	// never breaks the whole email.
-	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
+	extraItems, _ := p.rechunkEmailAttachments(ctx, content, depth)
 
 	// Attachments have been consumed by rechunkEmailAttachments, which
 	// re-parses each one by extension into a searchable item. Keeping their
 	// raw payloads in the parent item would only bloat the parser result.
 	delete(content, "attachments")
-
-	// Text representation: flatten fields into a single string for explicit
-	// text output and callers that need a display representation.
-	var sb strings.Builder
-	for _, k := range emailTextKeys(content) {
-		v := content[k]
-		// The metadata map (every non-basic header: Received chains,
-		// DKIM/ARC signatures, …) stays available in the JSON output, but
-		// flattening it into chunkable text buries the message under
-		// transport noise, so it is excluded from the text output.
-		if k == "metadata" {
-			continue
-		}
-		switch val := v.(type) {
-		case string:
-			if k == "text_html" {
-				// Text output feeds the chunker directly; emit the
-				// visible text of the HTML part instead of raw markup,
-				// which otherwise lands in chunks as tag soup.
-				val = htmlBodyToText(val)
-			}
-			sb.WriteString(k)
-			sb.WriteString(":")
-			sb.WriteString(val)
-			sb.WriteString("\n")
-		case map[string]any:
-			sb.WriteString(k)
-			sb.WriteString(":{")
-			for mk, mv := range val {
-				if ms, ok := mv.(string); ok {
-					sb.WriteString(mk)
-					sb.WriteString(":")
-					sb.WriteString(ms)
-					sb.WriteString(", ")
-				}
-			}
-			sb.WriteString("}\n")
-		case []string:
-			sb.WriteString(strings.Join(val, "\n"))
-		}
-	}
-	// Attachment text (re-parsed by extension) replaces the old crude
-	// "filename:payload" flatten, so binary attachments no longer leak
-	// mojibake into the searchable (indexed) text. The raw attachment
-	// payloads themselves are dropped after rechunk (see parseEmail), so the
-	// JSON output path carries only the re-parsed attachment text, never the
-	// original payload bytes.
-	if attachmentText != "" {
-		sb.WriteString(attachmentText)
-		sb.WriteString("\n")
-	}
-	text := sb.String()
-
-	if outputFormat == "text" {
-		return ParseResult{
-			OutputFormat: "text",
-			File:         map[string]any{"name": filename},
-			Text:         text,
-		}
-	}
 
 	content["doc_type_kwd"] = "text"
 	items := []map[string]any{content}
@@ -842,8 +774,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// path would otherwise also flatten metadata into the result).
 			ep := NewEmailParser()
 			ep.ConfigureFromSetup(map[string]any{
-				"fields":        p.fields,
-				"output_format": "json",
+				"fields": p.fields,
 			})
 			res, panicked = recoverParse(func() ParseResult {
 				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
@@ -876,10 +807,6 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 						texts = append(texts, t)
 					}
 				}
-			}
-		} else if res.Text != "" {
-			if t := strings.TrimSpace(res.Text); t != "" {
-				texts = append(texts, t)
 			}
 		}
 

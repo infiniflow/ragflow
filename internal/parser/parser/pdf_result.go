@@ -55,8 +55,6 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 					result.JSON = parsed.JSON
 				}
 			}
-		case result.Text != "":
-			result.JSON = []DocItem{NewTextJSONItem(result.Text)}
 		}
 	}
 	items := make([]DocItem, 0, len(result.JSON))
@@ -139,7 +137,7 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 			zap.Int("dropped_rows", droppedPositions))
 	}
 	result.JSON = items
-	result.OutputFormat, result.Markdown, result.Text = "json", "", ""
+	result.OutputFormat, result.Markdown = "json", ""
 	result.File = ensurePDFResultFile(result.File, filename)
 	return result
 }

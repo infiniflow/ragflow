@@ -111,44 +111,6 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
-// TestEmailParser_EmlTextFieldOrder pins the order of the text output: the
-// headers first, in the order of the JSON header item, then the body. The
-// fields used to come out in Go's map order, a different one on every parse.
-func TestEmailParser_EmlTextFieldOrder(t *testing.T) {
-	raw := strings.Join([]string{
-		"From: a@example.com",
-		"To: b@example.com",
-		"Cc: c@example.com",
-		"Subject: Quarterly numbers",
-		"Date: Mon, 1 Sep 2026 10:00:00 +0000",
-		"Content-Type: text/plain; charset=utf-8",
-		"",
-		"Revenue grew.",
-	}, "\r\n")
-	want := strings.Join([]string{
-		"from:a@example.com",
-		"to:b@example.com",
-		"cc:c@example.com",
-		"date:Mon, 1 Sep 2026 10:00:00 +0000",
-		"subject:Quarterly numbers",
-		"text:Revenue grew.",
-		"text_html:",
-		"",
-	}, "\n")
-
-	for i := 0; i < 20; i++ {
-		p := NewEmailParser()
-		p.ConfigureFromSetup(map[string]any{"output_format": "text"})
-		result := p.ParseWithResult(t.Context(), "order.eml", []byte(raw))
-		if result.Err != nil {
-			t.Fatalf("unexpected error: %v", result.Err)
-		}
-		if result.Text != want {
-			t.Fatalf("parse %d: text output\n got: %q\nwant: %q", i, result.Text, want)
-		}
-	}
-}
-
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
@@ -157,46 +119,15 @@ func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	}
 }
 
-func TestEmailParser_EmlText(t *testing.T) {
-	ctx := t.Context()
-	raw := strings.Join([]string{
-		"From: sender@test.com",
-		"To: recipient@test.com",
-		"Subject: Hello",
-		"Content-Type: text/plain; charset=utf-8",
-		"",
-		"Hello, world!",
-	}, "\r\n")
-
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "to", "subject", "body"},
-	})
-
-	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-	if result.OutputFormat != "text" {
-		t.Fatalf("expected output_format text, got %q", result.OutputFormat)
-	}
-	if !strings.Contains(result.Text, "Hello, world!") {
-		t.Errorf("text missing body: %q", result.Text)
-	}
-	if !strings.Contains(result.Text, "sender@test.com") {
-		t.Errorf("text missing from: %q", result.Text)
-	}
-}
-
 // TestEmailParser_EmlTextChunkText covers the KB chunk-quality bug behind
-// Feishu issue om_x100b675dcd7a18a4c2cbfff662a404e: the text output of an
-// .eml with an RFC 2047 encoded subject, transport headers (DKIM/ARC/
-// Received) and an HTML part used to carry (1) the flattened metadata dump,
-// (2) the raw "=?utf-8?B?...?=" subject blob and (3) shredded HTML markup —
-// all of which ended up in chunks. The text output must instead skip the
-// metadata dump, decode the subject, and flatten the HTML part to its
-// visible text. The JSON output keeps metadata and raw text_html unchanged.
+// Feishu issue om_x100b675dcd7a18a4c2cbfff662a404e: an .eml with an RFC 2047
+// encoded subject, transport headers (DKIM/ARC/Received) and an HTML part used
+// to carry (1) the flattened metadata dump, (2) the raw "=?utf-8?B?...?="
+// subject blob and (3) shredded HTML markup — all of which ended up in chunks.
+// The chunkable body text (the JSON item's "text" field) must instead skip the
+// metadata/transport-header dump, decode the subject, and flatten the HTML part
+// to its visible text. The JSON output keeps metadata and raw text_html
+// unchanged.
 func TestEmailParser_EmlTextChunkText(t *testing.T) {
 	ctx := t.Context()
 	// "=?utf-8?B?5bim6ZmE5Lu255qEZW1haWw=?=" decodes to "带附件的email";
@@ -224,64 +155,58 @@ func TestEmailParser_EmlTextChunkText(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "to", "subject", "body"},
+		"fields": []string{"from", "to", "subject", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
+	if result.OutputFormat != "json" {
+		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	}
 
-	// (1) No transport-header dump.
+	item := result.JSON[0].ToMap()
+	bodyText, _ := item["text"].(string)
+
+	// (1) No transport-header dump in the chunkable body text.
 	for _, noise := range []string{"metadata:", "dkim-signature", "arc-seal", "received:"} {
-		if strings.Contains(strings.ToLower(result.Text), noise) {
-			t.Errorf("text output contains header noise %q: %q", noise, result.Text)
+		if strings.Contains(strings.ToLower(bodyText), noise) {
+			t.Errorf("body text contains header noise %q: %q", noise, bodyText)
 		}
 	}
-	// (2) Subject/from decoded from RFC 2047.
-	if !strings.Contains(result.Text, "subject:带附件的email") {
-		t.Errorf("subject not decoded: %q", result.Text)
+	// (2) Subject/from decoded from RFC 2047 into the item fields.
+	if v, _ := item["subject"].(string); v != "带附件的email" {
+		t.Errorf("subject not decoded: %q", v)
 	}
-	if !strings.Contains(result.Text, "from:安 <asiro@qq.com>") {
-		t.Errorf("from not decoded: %q", result.Text)
+	if v, _ := item["from"].(string); v != "安 <asiro@qq.com>" {
+		t.Errorf("from not decoded: %q", v)
 	}
-	if strings.Contains(result.Text, "=?utf-8?") {
-		t.Errorf("raw encoded-word leaked into text: %q", result.Text)
+	if strings.Contains(bodyText, "=?utf-8?") {
+		t.Errorf("raw encoded-word leaked into text: %q", bodyText)
 	}
 	// (3) HTML part flattened to visible text, no markup.
 	for _, tag := range []string{"<div", "<img", "style="} {
-		if strings.Contains(result.Text, tag) {
-			t.Errorf("raw HTML markup %q leaked into text: %q", tag, result.Text)
+		if strings.Contains(bodyText, tag) {
+			t.Errorf("raw HTML markup %q leaked into text: %q", tag, bodyText)
 		}
 	}
-	// HTML part must actually contribute its visible text: subject + plain
-	// body + html body = exactly 3 occurrences of the body string.
-	if c := strings.Count(result.Text, "带附件的email"); c != 3 {
-		t.Errorf("expected subject+plain+html body text, got %d occurrences in: %q", c, result.Text)
+	// The plain body text must be present exactly once in the body text.
+	if c := strings.Count(bodyText, "带附件的email"); c != 1 {
+		t.Errorf("expected plain body text once, got %d occurrences in: %q", c, bodyText)
 	}
-	if !strings.Contains(result.Text, "text_html:带附件的email") {
-		t.Errorf("html body text missing from text_html: %q", result.Text)
+	// The HTML part is kept separately as raw text_html (the chunkable body
+	// text never carries shredded HTML markup).
+	if v, _ := item["text_html"].(string); !strings.Contains(v, "带附件的email") {
+		t.Errorf("html body text missing from text_html: %q", v)
 	}
 
-	// JSON output keeps the full metadata and raw text_html.
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "to", "subject", "body"},
-	})
-	jres := p.ParseWithResult(ctx, "test.eml", []byte(raw))
-	if jres.Err != nil {
-		t.Fatalf("unexpected error: %v", jres.Err)
-	}
-	item := jres.JSON[0].ToMap()
+	// (4) The JSON output keeps the full metadata and raw text_html.
 	if _, ok := item["metadata"].(map[string]any); !ok {
 		t.Errorf("json output must keep metadata: %#v", item)
 	}
 	if v, _ := item["text_html"].(string); !strings.Contains(v, "<img") {
 		t.Errorf("json output must keep raw text_html: %q", v)
-	}
-	if v, _ := item["subject"].(string); v != "带附件的email" {
-		t.Errorf("json subject not decoded: %q", v)
 	}
 }
 
@@ -814,50 +739,6 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 	}
 }
 
-// TestEmailParser_AttachmentSearchableText is the text-output equivalent:
-// the re-parsed attachment text must be present in result.Text.
-func TestEmailParser_AttachmentSearchableText(t *testing.T) {
-	ctx := t.Context()
-	attachmentContent := "QUOTE: the quick brown fox jumps over the lazy dog."
-	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
-	boundary := "attachboundary"
-	raw := strings.Join([]string{
-		"From: sender@test.com",
-		"To: receiver@test.com",
-		"Subject: Attachment Test",
-		"Content-Type: multipart/mixed; boundary=" + boundary,
-		"",
-		"--" + boundary,
-		"Content-Type: text/plain; charset=utf-8",
-		"",
-		"Email body text.",
-		"--" + boundary,
-		"Content-Type: text/plain; charset=utf-8",
-		"Content-Disposition: attachment; filename=\"note.txt\"",
-		"Content-Transfer-Encoding: base64",
-		"",
-		encoded,
-		"--" + boundary + "--",
-	}, "\r\n")
-
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "body", "attachments"},
-	})
-
-	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-	if !strings.Contains(result.Text, "quick brown fox") {
-		t.Errorf("attachment text missing from text output: %q", result.Text)
-	}
-	if !strings.Contains(result.Text, "Email body text") {
-		t.Errorf("email body missing from text output: %q", result.Text)
-	}
-}
-
 // TestEmailParser_AttachmentEmptyPayloadSkipped verifies error isolation:
 // an attachment with an empty payload (the legacy .msg nested-attachment
 // case, where gomsg exposes no raw bytes) is skipped without breaking the
@@ -1076,64 +957,46 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 		"--" + boundary + "--",
 	}, "\r\n")
 
-	for _, format := range []string{"json", "text"} {
-		p := NewEmailParser()
-		p.ConfigureFromSetup(map[string]any{
-			"output_format": format,
-			"fields":        []string{"from", "to", "subject", "body", "attachments", "metadata"},
-		})
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "to", "subject", "body", "attachments", "metadata"},
+	})
 
-		result := p.ParseWithResult(ctx, "outer.eml", []byte(raw))
-		if result.Err != nil {
-			t.Fatalf("[%s] unexpected error: %v", format, result.Err)
-		}
+	result := p.ParseWithResult(ctx, "outer.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
 
-		// Collect all indexed text for this output mode (JSON populates
-		// result.JSON; text populates result.Text).
-		var indexed strings.Builder
-		if format == "json" {
-			for _, it := range ItemsToMaps(result.JSON) {
-				if txt, ok := it["text"].(string); ok {
-					indexed.WriteString(txt)
-					indexed.WriteString("\n")
-				}
-			}
-		} else {
-			indexed.WriteString(result.Text)
+	// Collect all indexed text across JSON items.
+	var indexed strings.Builder
+	for _, it := range ItemsToMaps(result.JSON) {
+		if txt, ok := it["text"].(string); ok {
+			indexed.WriteString(txt)
+			indexed.WriteString("\n")
 		}
+	}
 
-		// The nested email body must be retrievable.
-		if !strings.Contains(indexed.String(), "INNER BODY SECRET") {
-			t.Errorf("[%s] nested body not indexed: %q", format, indexed.String())
-		}
-		if !strings.Contains(indexed.String(), "OUTER BODY VISIBLE") {
-			t.Errorf("[%s] outer body missing: %q", format, indexed.String())
-		}
+	// The nested email body must be retrievable.
+	if !strings.Contains(indexed.String(), "INNER BODY SECRET") {
+		t.Errorf("nested body not indexed: %q", indexed.String())
+	}
+	if !strings.Contains(indexed.String(), "OUTER BODY VISIBLE") {
+		t.Errorf("outer body missing: %q", indexed.String())
+	}
 
-		if format == "json" {
-			// The nested email must be a distinct, clean item, carrying no
-			// metadata key (the old bug leaked a "metadata:{...}" string as
-			// its text).
-			found := false
-			for _, it := range ItemsToMaps(result.JSON) {
-				if txt, ok := it["text"].(string); ok && strings.Contains(txt, "INNER BODY SECRET") {
-					found = true
-					if _, hasMeta := it["metadata"]; hasMeta {
-						t.Errorf("[json] nested item must not carry metadata key: %#v", it)
-					}
-				}
-			}
-			if !found {
-				t.Errorf("[json] nested body not found as separate item: %#v", result.JSON)
-			}
-		} else {
-			// Text mode: metadata (transport headers) is never flattened
-			// into chunkable text — not for the outer email, and not for
-			// the nested re-parse (which always requests JSON output).
-			if strings.Contains(result.Text, "metadata:") {
-				t.Errorf("[text] metadata must not leak into text output: %q", result.Text)
+	// The nested email must be a distinct, clean item, carrying no metadata
+	// key (the old bug leaked a "metadata:{...}" string as its text).
+	found := false
+	for _, it := range ItemsToMaps(result.JSON) {
+		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "INNER BODY SECRET") {
+			found = true
+			if _, hasMeta := it["metadata"]; hasMeta {
+				t.Errorf("nested item must not carry metadata key: %#v", it)
 			}
 		}
+	}
+	if !found {
+		t.Errorf("nested body not found as separate item: %#v", result.JSON)
 	}
 }
 
@@ -1209,7 +1072,7 @@ func TestRecoverParse_IsolatesPanic(t *testing.T) {
 	if !panicked {
 		t.Error("expected panicked=true")
 	}
-	if res.Err != nil || res.JSON != nil || res.Text != "" {
+	if res.Err != nil || res.JSON != nil {
 		t.Errorf("panic should yield a zero ParseResult, got %#v", res)
 	}
 }
@@ -1217,14 +1080,14 @@ func TestRecoverParse_IsolatesPanic(t *testing.T) {
 // TestRecoverParse_PassesThrough verifies a normal parser result is returned
 // unchanged with panicked=false.
 func TestRecoverParse_PassesThrough(t *testing.T) {
-	want := ParseResult{OutputFormat: "text", Text: "hello"}
+	want := ParseResult{OutputFormat: "json", JSON: []DocItem{NewTextJSONItem("hello")}}
 	res, panicked := recoverParse(func() ParseResult {
 		return want
 	})
 	if panicked {
 		t.Error("expected panicked=false for a normal result")
 	}
-	if res.Text != "hello" {
+	if txt, ok := res.JSON[0].ToMap()["text"].(string); !ok || txt != "hello" {
 		t.Errorf("result not passed through: %#v", res)
 	}
 }
@@ -1405,45 +1268,32 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 		body     string
 		wantText string
 		wantHTML string
-		// encoded is the payload as it appears on the wire. The text output
-		// feeds the chunker, so it must never carry these bytes.
-		encoded string
-		// wantInText is the visible text the flattened output must carry.
-		wantInText string
 	}{
 		{
-			name:       "base64 text/plain",
-			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
-			body:       b64,
-			wantText:   plain,
-			encoded:    b64,
-			wantInText: "Quarterly revenue was 12.5 million.",
+			name:     "base64 text/plain",
+			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:     b64,
+			wantText: plain,
 		},
 		{
-			name:       "quoted-printable text/plain",
-			headers:    "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
-			body:       "Quarterly revenue was 12=2E5 million=2E",
-			wantText:   "Quarterly revenue was 12.5 million.",
-			encoded:    "12=2E5",
-			wantInText: "Quarterly revenue was 12.5 million.",
+			name:     "quoted-printable text/plain",
+			headers:  "Content-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: quoted-printable",
+			body:     "Quarterly revenue was 12=2E5 million=2E",
+			wantText: "Quarterly revenue was 12.5 million.",
 		},
 		{
-			name:       "base64 text/html",
-			headers:    "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
-			body:       htmlB64,
-			wantHTML:   html,
-			encoded:    htmlB64,
-			wantInText: "Quarterly revenue",
+			name:     "base64 text/html",
+			headers:  "Content-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64",
+			body:     htmlB64,
+			wantHTML: html,
 		},
 		{
 			// Positive control: the multipart path already decodes the same
 			// body, so the two paths must agree.
-			name:       "base64 in multipart/alternative",
-			headers:    "Content-Type: multipart/alternative; boundary=\"BB\"",
-			body:       "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
-			wantText:   plain,
-			encoded:    b64,
-			wantInText: "Quarterly revenue was 12.5 million.",
+			name:     "base64 in multipart/alternative",
+			headers:  "Content-Type: multipart/alternative; boundary=\"BB\"",
+			body:     "--BB\r\nContent-Type: text/plain; charset=\"utf-8\"\r\nContent-Transfer-Encoding: base64\r\n\r\n" + b64 + "\r\n--BB--",
+			wantText: plain,
 		},
 	}
 
@@ -1467,22 +1317,6 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 			gotHTML, _ := item["text_html"].(string)
 			if strings.TrimRight(gotHTML, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
 				t.Errorf("text_html = %q, want %q", gotHTML, tt.wantHTML)
-			}
-
-			// The text output is what reaches the chunker, and the JSON
-			// output returns before it is built, so assert it separately.
-			pt := NewEmailParser()
-			pt.ConfigureFromSetup(map[string]any{"output_format": "text"})
-			textResult := pt.ParseWithResult(t.Context(), "test.eml", []byte(raw))
-			if textResult.Err != nil {
-				t.Fatalf("unexpected error on the text path: %v", textResult.Err)
-			}
-			flat := textResult.Text
-			if !strings.Contains(flat, tt.wantInText) {
-				t.Errorf("text output = %q, want it to contain %q", flat, tt.wantInText)
-			}
-			if strings.Contains(flat, tt.encoded) {
-				t.Errorf("text output still carries the encoded payload %q: %q", tt.encoded, flat)
 			}
 		})
 	}
@@ -1517,15 +1351,14 @@ func TestHTMLBodyToText(t *testing.T) {
 	}
 }
 
-// TestEmailParserJSONPathOmitsDuplicateText verifies that the JSON output
-// path no longer duplicates the flattened email body into result.Text.
-// result.Text is only populated on the "text" output_format branch; on the
-// JSON branch the searchable text lives in the JSON items (body + the
-// header text item from searchableEmailHeaders), so the redundant json-path
-// Text is intentionally empty. This guards the removal of the json-path
-// Text assignment in parseEmail.
-func TestEmailParserJSONPathOmitsDuplicateText(t *testing.T) {
-	p := NewEmailParser() // default output_format -> "json"
+// TestEmailParserJSONOmitsDuplicateHeaderText verifies the JSON output keeps
+// the decoded body text without duplicating the flattened header text that the
+// legacy single-string path used to carry. The body text lives in the body
+// item's "text" field; the header fields (from/to/subject/...) are separate
+// top-level keys, so the body text must not re-contain a "from:..." header
+// line.
+func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
+	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
 		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
 	})
@@ -1543,32 +1376,8 @@ func TestEmailParserJSONPathOmitsDuplicateText(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON: want non-empty items")
 	}
-	if res.Text != "" {
-		t.Errorf("JSON-path Email result.Text = %q, want empty (text lives in JSON items)", res.Text)
-	}
-}
-
-// TestEmailParserTextPathKeepsText guards that the explicit "text"
-// output_format branch still populates result.Text — the only place the
-// field is read downstream (sys.files parseResultText, document preview,
-// and nested attachment re-parse).
-func TestEmailParserTextPathKeepsText(t *testing.T) {
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "text"})
-	const eml = "From: a@example.com\r\n" +
-		"To: b@example.com\r\n" +
-		"Subject: Hi\r\n" +
-		"Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n" +
-		"\r\n" +
-		"Hello body.\r\n"
-	res := p.ParseWithResult(t.Context(), "msg.eml", []byte(eml))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "text" {
-		t.Fatalf("OutputFormat = %q, want text", res.OutputFormat)
-	}
-	if res.Text == "" {
-		t.Error("text-path Email result.Text empty, want body text")
+	bodyText, _ := res.JSON[0].ToMap()["text"].(string)
+	if strings.Contains(bodyText, "from:") || strings.Contains(bodyText, "subject:") {
+		t.Errorf("JSON body text must not duplicate flattened header lines: %q", bodyText)
 	}
 }

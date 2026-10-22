@@ -314,11 +314,21 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 }
 
 // extractDOCPreviewText extracts plain text from a legacy .doc
-// document via the office_oxide-backed DOCParser.
+// document via the office_oxide-backed DOCParser. The parser only emits JSON
+// payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
 	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return "", res.Err
 	}
-	return res.Text, nil
+	if len(res.JSON) == 0 {
+		return "", fmt.Errorf("doc preview: no content extracted")
+	}
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
 }
