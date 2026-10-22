@@ -43,7 +43,8 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	t.Cleanup(func() { common.LookupHost = lookup })
 	var dispatched atomic.Bool
 	const authToken = "ragflow-secret"
-	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS server: CallTool refuses to send credential headers over http.
+	mcp := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
 			t.Error("MCP authentication unexpectedly appeared in the URL")
 		}
