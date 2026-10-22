@@ -15,8 +15,8 @@ Build RAGFlow from source into a local Docker image for development and testing.
 ## Prerequisites
 
 - A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the selected document engine, local models, build concurrency, and data volume.
-- Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
-- Access to `infiniflow/ragflow_deps:latest` and the build image for your target architecture: `infiniflow/github_action_runner:latest` for x86-64 or `infiniflow/github_action_runner:latest-arm64` for ARM64
+- Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit.
+- Access to `infiniflow/ragflow_deps:latest` and the build image for your target architecture: `infiniflow/github_action_runner:latest` for x86-64 or `infiniflow/github_action_runner:latest-arm64` for ARM64.
 - Internet access during the build to download system packages, fonts, tokenizer resources, npm dependencies, and Go modules. Pulling the dependency images in advance is not sufficient for an offline build.
 
 RAGFlow provides prebuilt Docker images for Linux x86-64 and ARM64 starting with v1.0.0-rc2. To deploy a published image, follow the [Quickstart](../quickstart.mdx). The instructions below cover building a Docker image from source on a Linux host matching the target architecture.
@@ -109,6 +109,4 @@ After signing in, add an LLM, embedding, and reranker on the model provider page
 
 ## Docker configuration and adjustment
 
-Docker deployment uses `docker/.env` and `docker/docker-compose.yml`. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](../../docker/README.md).
-
-For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
+Docker deployment uses `docker/.env` and `docker/docker-compose.yml`. See the [Docker configuration guide](../../docker/README.md) for configuring the RAGFlow image, ports, passwords, document engine, and embedding service image, as well as restarting services and retaining or removing existing data.
