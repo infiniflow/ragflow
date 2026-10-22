@@ -64,7 +64,7 @@ func SetAdminStatus(status int, reason string) {
 	adminStatusMu.Lock()
 	defer adminStatusMu.Unlock()
 	if adminStatus == nil {
-		adminStatus = &AdminStatus{}
+		common.Fatal("Admin server status not initialized")
 	}
 	adminStatus.Status = status
 	adminStatus.Reason = reason
