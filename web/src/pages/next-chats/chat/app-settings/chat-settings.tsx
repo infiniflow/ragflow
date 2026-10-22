@@ -23,7 +23,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -76,11 +76,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   type FormSchemaType = z.infer<typeof formSchema>;
 
   // The same prompt the create dialog seeds, so an assistant that arrives
-  // without one is still valid to save. Memoised on `t`, which the callback
-  // already depends on.
-  const defaultPromptConfig = useMemo(
-    () => promptConfigDefaults(t('chat.systemInitialValue')),
-    [t],
+  // without one is still valid to save. Initialised once: `t` is replaced when
+  // the header switches language, and re-deriving this would change the value
+  // the reset effect depends on, wiping unsaved edits with no data change.
+  const [defaultPromptConfig] = useState(() =>
+    promptConfigDefaults(t('chat.systemInitialValue')),
   );
 
   const form = useForm<FormSchemaType>({

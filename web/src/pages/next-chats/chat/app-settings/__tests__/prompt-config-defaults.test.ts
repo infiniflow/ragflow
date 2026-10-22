@@ -84,6 +84,30 @@ describe('withPromptConfigDefaults', () => {
     );
   });
 
+  it('treats null as missing for keys that have a default', () => {
+    // The API can persist `keyword: null`, which the schema rejects just like a
+    // missing key, so keeping it verbatim would leave the form unvalidatable.
+    const merged = withPromptConfigDefaults(
+      { keyword: null, tts: null, parameters: null } as any,
+      SYSTEM_PROMPT,
+    );
+
+    expect(merged.keyword).toBe(false);
+    expect(merged.tts).toBe(false);
+    expect(merged.parameters).toEqual([]);
+  });
+
+  it('keeps null for keys that have no default', () => {
+    // `agentic_rag: null` means "no per-chat override" — rewriting it would
+    // change what the assistant inherits.
+    const merged = withPromptConfigDefaults(
+      { agentic_rag: null } as any,
+      SYSTEM_PROMPT,
+    );
+
+    expect(merged.agentic_rag).toBeNull();
+  });
+
   it('handles a missing or null prompt_config', () => {
     for (const input of [undefined, null]) {
       const merged = withPromptConfigDefaults(input, SYSTEM_PROMPT);

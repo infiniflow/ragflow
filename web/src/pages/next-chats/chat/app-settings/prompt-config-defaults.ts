@@ -47,15 +47,29 @@ export function promptConfigDefaults(
   };
 }
 
+/**
+ * Fills in the keys `useChatSettingSchema` requires, so a chat persisted with an
+ * incomplete `prompt_config` becomes editable instead of failing validation on
+ * every save.
+ *
+ * A `null` is treated as missing for keys that have a default — the API can
+ * persist `keyword: null`, which the schema rejects just like a missing key.
+ * Keys without a default keep their `null`: `agentic_rag: null` means "no
+ * override", and rewriting it would change what the chat inherits. An
+ * explicitly empty `system` is likewise kept, so validation points at the field
+ * the user needs to fill rather than at a value we substituted.
+ */
 export function withPromptConfigDefaults(
   promptConfig: Partial<PromptConfig> | null | undefined,
   systemPrompt: string,
 ): Partial<PromptConfig> {
-  const merged: Partial<PromptConfig> = { ...promptConfigDefaults(systemPrompt) };
+  const defaults = promptConfigDefaults(systemPrompt);
+  const merged: Partial<PromptConfig> = { ...defaults };
   for (const [key, value] of Object.entries(promptConfig ?? {})) {
-    // A key that is present but `undefined` must not clobber its default:
-    // spreading it verbatim is exactly how the backfill would silently fail.
-    if (value !== undefined) {
+    const isDefaultedKey = Object.prototype.hasOwnProperty.call(defaults, key);
+    // `undefined` never clobbers a default; for a defaulted key neither does
+    // `null`. Spreading either one verbatim is how the backfill silently fails.
+    if (value !== undefined && (value !== null || !isDefaultedKey)) {
       (merged as Record<string, unknown>)[key] = value;
     }
   }
