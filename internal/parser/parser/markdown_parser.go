@@ -188,7 +188,8 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			i++
 			continue
 		}
-		if !inFence && i+1 < len(lines) && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
+		// Four or more leading spaces make an indented code block, whose pipe rows are code.
+		if !inFence && i+1 < len(lines) && len(line)-len(strings.TrimLeft(line, " \t")) <= 3 && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
 			start := i
 			i += 2
 			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
@@ -197,7 +198,14 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
 				i++
 			}
-			tableHTML := markdownlib.ToHTML([]byte(strings.Join(balanceTableColumns(lines[start:i]), "")), markdownNew(), nil)
+			// gomarkdown reads a table only from column 0. A table indented by up to three
+			// spaces (inside a list item, say) came back as a <p> of its source with "---"
+			// turned into &mdash;, and that markup was then indexed as text.
+			tableLines := make([]string, i-start)
+			for k, tableLine := range lines[start:i] {
+				tableLines[k] = strings.TrimLeft(tableLine, " \t")
+			}
+			tableHTML := markdownlib.ToHTML([]byte(strings.Join(balanceTableColumns(tableLines), "")), markdownNew(), nil)
 			// Wrap the inlined <table> HTML in blank lines so gomarkdown
 			// keeps it as a single HTML block (one item) instead of
 			// re-parsing it into scattered cell text. See
