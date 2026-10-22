@@ -40,7 +40,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
             mkdir -p "/ragflow/deps/huggingface.co/$(dirname "$asset")" && \
             cp "/huggingface.co/$asset" "/ragflow/deps/huggingface.co/$asset" ; \
         else \
-            echo "ERROR: tokenizer asset $asset is missing from the infiniflow/deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
+            echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
             exit 1 ; \
         fi ; \
     done

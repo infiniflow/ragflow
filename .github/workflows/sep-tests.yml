@@ -286,14 +286,14 @@ jobs:
           # openai blob first (small ~1.6MB, reachable from the CI runner — the
           # pre-PR code downloaded it on the fly, so the network path is known
           # good). If the direct fetch fails (e.g. GFW), fall back to extracting
-          # it from the local infiniflow/deps image *if already present*
+          # it from the local infiniflow/ragflow_deps image *if already present*
           # on the runner (no `docker pull`, since that huge image is first
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
           # tiktoken is already installed in runner
           mkdir -p deps
-          cp /opt/deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
           if [ ! -f deps/cl100k_base.tiktoken ]; then
             mkdir -p deps
             if command -v curl >/dev/null 2>&1; then
@@ -308,7 +308,7 @@ jobs:
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
                 if docker cp "$CID":/cl100k_base.tiktoken deps/cl100k_base.tiktoken 2>/dev/null; then
-                  echo "tiktoken: cl100k table copied from cached infiniflow/deps image"
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
                 fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
@@ -322,7 +322,7 @@ jobs:
 
           # Provide the tokenizer assets the four non-cl100k counters load
           # (deps/huggingface.co/<repo>/<file>). Their only no-network source
-          # is the infiniflow/deps image — the runtime images read them from
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
           # exactly the same path — so this is the same "if the image is already
           # cached" fallback the table above uses (again, no `docker pull`). Without
           # them counter_properties_test / asset_dir_test silently drop their
@@ -343,7 +343,7 @@ jobs:
                 fi
                 mkdir -p "$(dirname "$target")"
                 if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
-                  echo "tokenizer: $asset copied from cached infiniflow/deps image"
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
                 else
                   echo "tokenizer: $asset absent from the cached image — its counter will skip"
                 fi
@@ -351,7 +351,7 @@ jobs:
               docker rm -f "$CID" >/dev/null 2>&1 || true
             fi
           else
-            echo "tokenizer: infiniflow/deps not cached on this runner — non-cl100k counters will skip"
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
           fi
 
           # Keep Go module/build caches OFF the runner container's writable layer
@@ -832,14 +832,14 @@ jobs:
           # openai blob first (small ~1.6MB, reachable from the CI runner — the
           # pre-PR code downloaded it on the fly, so the network path is known
           # good). If the direct fetch fails (e.g. GFW), fall back to extracting
-          # it from the local infiniflow/deps image *if already present*
+          # it from the local infiniflow/ragflow_deps image *if already present*
           # on the runner (no `docker pull`, since that huge image is first
           # fetched at the later "Build ragflow:nightly" step). Best-effort: if
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
           # tiktoken is already installed in runner
           mkdir -p deps
-          cp /opt/deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
           if [ ! -f deps/cl100k_base.tiktoken ]; then
             mkdir -p deps
             if command -v curl >/dev/null 2>&1; then
@@ -854,7 +854,7 @@ jobs:
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
                 if docker cp "$CID":/cl100k_base.tiktoken deps/cl100k_base.tiktoken 2>/dev/null; then
-                  echo "tiktoken: cl100k table copied from cached infiniflow/deps image"
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
                 fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
@@ -868,7 +868,7 @@ jobs:
 
           # Provide the tokenizer assets the four non-cl100k counters load
           # (deps/huggingface.co/<repo>/<file>). Their only no-network source
-          # is the infiniflow/deps image — the runtime images read them from
+          # is the infiniflow/ragflow_deps image — the runtime images read them from
           # exactly the same path — so this is the same "if the image is already
           # cached" fallback the table above uses (again, no `docker pull`). Without
           # them counter_properties_test / asset_dir_test silently drop their
@@ -889,7 +889,7 @@ jobs:
                 fi
                 mkdir -p "$(dirname "$target")"
                 if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
-                  echo "tokenizer: $asset copied from cached infiniflow/deps image"
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
                 else
                   echo "tokenizer: $asset absent from the cached image — its counter will skip"
                 fi
@@ -897,7 +897,7 @@ jobs:
               docker rm -f "$CID" >/dev/null 2>&1 || true
             fi
           else
-            echo "tokenizer: infiniflow/deps not cached on this runner — non-cl100k counters will skip"
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
           fi
 
           # Keep Go module/build caches OFF the runner container's writable layer
@@ -1789,13 +1789,13 @@ jobs:
       - name: Provide cl100k_base tiktoken vocabulary
         # The Go integration tests (tokenizer / service / graph) panic without the
         # cl100k_base BPE table. The runner already bakes it at
-        # /opt/deps/cl100k_base.tiktoken, so copy from there first; fall
+        # /opt/ragflow_deps/cl100k_base.tiktoken, so copy from there first; fall
         # back to the upstream openai blob only if the local copy is missing
         # (e.g. a non-standard runner). Mirrors the ragflow_native_backend job.
         run: |
           set -euo pipefail
           mkdir -p deps
-          cp /opt/deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
           if [ ! -f deps/cl100k_base.tiktoken ] && command -v curl >/dev/null 2>&1; then
             curl -fsSL -o deps/cl100k_base.tiktoken \
               https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || \
