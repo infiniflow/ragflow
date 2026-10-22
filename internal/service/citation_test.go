@@ -391,3 +391,26 @@ func TestCitationStreamFilter(t *testing.T) {
 		t.Fatalf("filtered answer=%q, want %q", got, want)
 	}
 }
+
+// TestHistoryMessageContent pins what a history message keeps on its way back
+// to the model: a previous answer loses its [ID:n] markers in every spelling,
+// so the model cannot reuse that turn's numbering in a new answer, while user
+// messages keep their text and only lose the ##n$$ markers.
+func TestHistoryMessageContent(t *testing.T) {
+	cases := []struct {
+		name, role, in, want string
+	}{
+		{"answer markers", "assistant", "Delibera n. 815 sugli elicotteri [ID:20] e [ID: 21].", "Delibera n. 815 sugli elicotteri  e ."},
+		{"answer legacy markers", "assistant", "testo ##3$$ fine", "testo  fine"},
+		{"answer without markers", "assistant", "nessuna citazione", "nessuna citazione"},
+		{"user keeps brackets", "user", "cosa dice [ID:3]?", "cosa dice [ID:3]?"},
+		{"user legacy markers", "user", "testo ##3$$ fine", "testo  fine"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := historyMessageContent(c.role, c.in); got != c.want {
+				t.Fatalf("historyMessageContent(%q, %q) = %q, want %q", c.role, c.in, got, c.want)
+			}
+		})
+	}
+}
