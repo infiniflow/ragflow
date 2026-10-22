@@ -56,21 +56,6 @@ func extractParserComponent(dsl []byte, parserComponentName string) (string, map
 	return "", nil
 }
 
-// dslParserFamily returns the DSL-authored setup for one parser family, reading
-// both the flat shape (families at the params top level) and the legacy shape
-// that nests them under "setups".
-func dslParserFamily(params map[string]any, family string) map[string]any {
-	if setup, ok := params[family].(map[string]any); ok {
-		return setup
-	}
-	if nested, ok := params["setups"].(map[string]any); ok {
-		if setup, ok := nested[family].(map[string]any); ok {
-			return setup
-		}
-	}
-	return nil
-}
-
 // BuildParserPageCapOverride returns parserConfig with a page cap injected for
 // the Parser component, keyed by its cpnID and the document's filetype family.
 //
@@ -90,10 +75,10 @@ func dslParserFamily(params map[string]any, family string) map[string]any {
 // deepdoc/pdf parser's NormalizePDFPages consumes via
 // ParserConfig[cpnID][family]["pages"].
 //
-// The injected family map is seeded from the DSL's own settings for that family:
-// the runtime merges this map over the DSL params with override-wins on the
-// top-level key, and a parser family IS a top-level key, so a pages-only entry
-// would replace the authored family and drop its other options.
+// The injected family map is seeded from the DSL's own settings for that family
+// in both paths: the runtime merges this map over the DSL params with
+// override-wins on the top-level key, and a parser family IS a top-level key, so
+// an entry carrying only the cap would replace the authored family wholesale.
 func BuildParserPageCapOverride(
 	parserConfig map[string]any,
 	dsl []byte,
@@ -113,14 +98,6 @@ func BuildParserPageCapOverride(
 	if family == "" {
 		return parserConfig
 	}
-	// Respect an explicit page cap already present under cpnID + family.
-	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
-		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
-			if _, has := famEntry["pages"]; has {
-				return parserConfig
-			}
-		}
-	}
 	cpnEntry, ok := parserConfig[parserCpnID].(map[string]any)
 	if !ok {
 		cpnEntry = map[string]any{}
@@ -131,17 +108,20 @@ func BuildParserPageCapOverride(
 		famEntry = map[string]any{}
 		cpnEntry[family] = famEntry
 	}
-	// The runtime merges this map over the DSL's params with override-wins on
-	// the TOP-LEVEL key, and a parser family IS a top-level key: a map holding
-	// only "pages" would replace the authored family wholesale and silently drop
-	// every other option it carried (a family's linked-content switches,
-	// page-range defaults, preprocessing choices). Carry the DSL's settings
-	// forward, letting an explicit ParserConfig value win (#21032).
-	for key, value := range dslParserFamily(parserParams, family) {
+	// An explicit page cap supplied by the caller wins; the injected cap is only
+	// a fallback. Read before the carry-forward below so the DSL's own "pages"
+	// cannot be mistaken for a caller-supplied cap.
+	_, explicitPages := famEntry["pages"]
+	// ExtractAllComponentParams already lifted any legacy "setups" nesting, so
+	// the authored setup sits at the params top level here.
+	dslFamily, _ := parserParams[family].(map[string]any)
+	for key, value := range dslFamily {
 		if _, exists := famEntry[key]; !exists {
 			famEntry[key] = value
 		}
 	}
-	famEntry["pages"] = []any{[]any{1, capPages}}
+	if !explicitPages {
+		famEntry["pages"] = []any{[]any{1, capPages}}
+	}
 	return parserConfig
 }

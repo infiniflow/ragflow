@@ -86,10 +86,10 @@ func TestBuildParserPageCapOverride(t *testing.T) {
 	}
 }
 
-// A debug run merges its parser_config over the DSL with override-wins on the
-// top-level key, and a parser family is a top-level key: the pages-only entry
-// used to replace the authored family wholesale, so a markdown document's
-// linked-content switches never reached the Parser (#21032).
+// The debug run's parser_config merges over the DSL params with override-wins on
+// the top-level key, and a parser family is a top-level key, so the injection
+// must carry the authored family settings forward — otherwise a markdown
+// document's linked-content switches never reach the Parser (#21032).
 func TestBuildParserPageCapOverrideKeepsDSLFamilySettings(t *testing.T) {
 	familyOf := func(ext string) string { return ext }
 	dsl := envelopedDSL(`{"Parser:Abc": {"obj": {"component_name": "Parser", "params": {
@@ -103,6 +103,7 @@ func TestBuildParserPageCapOverrideKeepsDSLFamilySettings(t *testing.T) {
 	}
 	for key, want := range map[string]any{
 		"fetch_links": true, "collect_markdown_links": true, "max_urls": float64(7),
+		"preprocess": []any{"main_content"},
 	} {
 		if !reflect.DeepEqual(fam[key], want) {
 			t.Errorf("%s = %#v, want %#v (authored setting lost to the page-cap injection)", key, fam[key], want)
@@ -121,6 +122,20 @@ func TestBuildParserPageCapOverrideKeepsDSLFamilySettings(t *testing.T) {
 	}
 	if famMerged["fetch_links"] != true {
 		t.Errorf("fetch_links = %#v, want the DSL value preserved alongside it", famMerged["fetch_links"])
+	}
+
+	// A caller-supplied page cap is left alone, and the DSL's other settings are
+	// still carried forward next to it.
+	pcPages := map[string]any{"Parser:Abc": map[string]any{"markdown": map[string]any{
+		"pages": []any{[]any{3, 4}},
+	}}}
+	withPages := BuildParserPageCapOverride(pcPages, dsl, "markdown", 2, testParserComponentName, familyOf)
+	famPages := withPages["Parser:Abc"].(map[string]any)["markdown"].(map[string]any)
+	if !reflect.DeepEqual(famPages["pages"], []any{[]any{3, 4}}) {
+		t.Errorf("pages = %#v, want the caller's explicit cap preserved", famPages["pages"])
+	}
+	if famPages["fetch_links"] != true {
+		t.Errorf("fetch_links = %#v, want the DSL value carried next to an explicit cap", famPages["fetch_links"])
 	}
 }
 
