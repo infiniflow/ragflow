@@ -1,5 +1,10 @@
 import { FileType } from '@/constants/file';
-import { ParserFields } from '../../constant/pipeline';
+import en from '@/locales/en';
+import {
+  HyperlinkDefaultSetup,
+  HyperlinkLimits,
+  ParserFields,
+} from '../../constant/pipeline';
 import { FormSchema } from './schema';
 
 describe('parser FormSchema', () => {
@@ -133,5 +138,42 @@ describe('parser FormSchema', () => {
       setups: [{ fileFormat: FileType.Image, ocr_enabled: true }],
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe('parser FormSchema linked-content budgets', () => {
+  it.each([
+    ['max_urls', HyperlinkLimits.maxUrls],
+    ['max_bytes_per_url', HyperlinkLimits.maxBytesPerUrl],
+    ['max_total_bytes', HyperlinkLimits.maxTotalBytes],
+    ['timeout_s', HyperlinkLimits.timeoutSeconds],
+  ])('accepts the defaults and rejects %s outside its range', (key, max) => {
+    const parse = (setup: Record<string, unknown>) =>
+      FormSchema.safeParse({
+        setups: [{ fileFormat: FileType.PDF, ...setup }],
+      });
+
+    expect(
+      parse({
+        [key]: HyperlinkDefaultSetup[key as keyof typeof HyperlinkDefaultSetup],
+      }).success,
+    ).toBe(true);
+    // z.coerce accepts a numeric string: the input is a number field and the
+    // API stores a JSON number, so the form normalizes rather than rejects.
+    for (const value of [0, -1, max + 1, 1.5]) {
+      expect(parse({ [key]: value }).success).toBe(false);
+    }
+  });
+
+  it('reports the localized message rather than zod defaults', () => {
+    const result = FormSchema.safeParse({
+      setups: [
+        { fileFormat: FileType.PDF, max_urls: HyperlinkLimits.maxUrls + 1 },
+      ],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error!.issues[0].message).toBe(
+      en.translation.flow.hyperlinkBudgetInvalid,
+    );
   });
 });

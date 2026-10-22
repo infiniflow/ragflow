@@ -5,6 +5,7 @@ import {
   transformApiConfigToForm,
   transformSavedParserConfigToForm,
 } from '@/utils/pipeline-operator';
+import { HyperlinkDefaultSetup } from './constant/pipeline';
 import { Operator } from './constant';
 import { FormSchema } from './form/parser-form/schema';
 import {
@@ -239,11 +240,12 @@ describe('transformParserParams vision settings', () => {
 });
 
 describe('transformParserParams linked-content settings', () => {
+  // Only the budgets: fetch_links is what each case sets or asserts.
   const hyperlinkBudgets = {
-    max_urls: 5,
-    max_bytes_per_url: 1048576,
-    max_total_bytes: 5242880,
-    timeout_s: 10,
+    max_urls: HyperlinkDefaultSetup.max_urls,
+    max_bytes_per_url: HyperlinkDefaultSetup.max_bytes_per_url,
+    max_total_bytes: HyperlinkDefaultSetup.max_total_bytes,
+    timeout_s: HyperlinkDefaultSetup.timeout_s,
   };
 
   it.each([FileType.PDF, FileType.Docx])(

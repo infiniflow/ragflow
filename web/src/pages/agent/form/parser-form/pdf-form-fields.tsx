@@ -39,12 +39,12 @@ export function PdfFormFields({ prefix }: CommonProps) {
       <TwoColumnCheckFormField prefix={prefix} />
       <RmdirFormField prefix={prefix} />
       <RemoveHeaderFooterFormField prefix={prefix} />
-      <HyperlinkFormFields prefix={prefix} />
       <ParserMethodFormField prefix={prefix} showMineruOptions />
       <DynamicPageRange prefix={prefix} />
 
       {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
       <TcadpFormFields prefix={prefix} />
+      <HyperlinkFormFields prefix={prefix} />
     </>
   );
 }

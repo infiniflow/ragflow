@@ -1,19 +1,18 @@
 import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { initialParserValues } from '../../constant/pipeline';
+import {
+  HyperlinkDefaultSetup,
+  initialParserValues,
+} from '../../constant/pipeline';
 import {
   buildInitialParserSetup,
   buildInitialParserValues,
   normalizeParserFormValues,
 } from './utils';
 
-const HyperlinkDefaults = {
-  fetch_links: false,
-  max_urls: 5,
-  max_bytes_per_url: 1048576,
-  max_total_bytes: 5242880,
-  timeout_s: 10,
-};
+// The numbers come from the same constant the form seeds, so a change there
+// cannot leave this expectation quietly stale.
+const HyperlinkDefaults = HyperlinkDefaultSetup;
 
 describe('parser-form utils', () => {
   describe('buildInitialParserSetup', () => {

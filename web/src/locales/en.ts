@@ -2713,11 +2713,17 @@ Best for: Documents with flowing, contextually connected content — such as boo
       collectMarkdownLinks: 'Collect links from the document body',
       collectMarkdownLinksTip:
         'Collect link destinations from the Markdown body. Links are only fetched when linked-content fetching is enabled.',
+      hyperlinkBudgetInvalid: 'Enter a whole number within the allowed range.',
       hyperlinkMaxUrls: 'Maximum number of links',
       hyperlinkMaxUrlsTip: 'How many links are fetched per document.',
       hyperlinkMaxBytesPerUrl: 'Maximum bytes per linked page',
+      hyperlinkMaxBytesPerUrlTip:
+        'A page larger than this is skipped without being indexed.',
       hyperlinkMaxTotalBytes: 'Total bytes for linked content',
+      hyperlinkMaxTotalBytesTip:
+        'One document stops fetching once this many bytes are consumed.',
       hyperlinkTimeout: 'Per-link timeout (seconds)',
+      hyperlinkTimeoutTip: 'How long one link may take to respond.',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',

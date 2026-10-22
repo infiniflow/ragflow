@@ -3,6 +3,10 @@ import i18n from '@/locales/config';
 import { z } from 'zod';
 import { HyperlinkLimits } from '../../constant/pipeline';
 
+// One message for every budget field, as the page-range checks do: the
+// allowed range differs per field and the input's min/max already shows it.
+const hyperlinkBudgetMessage = i18n.t('flow.hyperlinkBudgetInvalid');
+
 export const SetupSchema = z
   .object({
     fileFormat: z.string().nullish(),
@@ -37,27 +41,27 @@ export const SetupSchema = z
     collect_markdown_links: z.boolean().optional(),
     max_urls: z.coerce
       .number()
-      .int()
-      .min(1)
-      .max(HyperlinkLimits.maxUrls)
+      .int(hyperlinkBudgetMessage)
+      .min(1, hyperlinkBudgetMessage)
+      .max(HyperlinkLimits.maxUrls, hyperlinkBudgetMessage)
       .optional(),
     max_bytes_per_url: z.coerce
       .number()
-      .int()
-      .min(1)
-      .max(HyperlinkLimits.maxBytesPerUrl)
+      .int(hyperlinkBudgetMessage)
+      .min(1, hyperlinkBudgetMessage)
+      .max(HyperlinkLimits.maxBytesPerUrl, hyperlinkBudgetMessage)
       .optional(),
     max_total_bytes: z.coerce
       .number()
-      .int()
-      .min(1)
-      .max(HyperlinkLimits.maxTotalBytes)
+      .int(hyperlinkBudgetMessage)
+      .min(1, hyperlinkBudgetMessage)
+      .max(HyperlinkLimits.maxTotalBytes, hyperlinkBudgetMessage)
       .optional(),
     timeout_s: z.coerce
       .number()
-      .int()
-      .min(1)
-      .max(HyperlinkLimits.timeoutSeconds)
+      .int(hyperlinkBudgetMessage)
+      .min(1, hyperlinkBudgetMessage)
+      .max(HyperlinkLimits.timeoutSeconds, hyperlinkBudgetMessage)
       .optional(),
     pages: z
       .array(

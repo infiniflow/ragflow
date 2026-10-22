@@ -1,6 +1,6 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { HyperlinkLimits } from '../../constant/pipeline';
@@ -13,6 +13,62 @@ type HyperlinkFormFieldsProps = CommonProps & {
   showMarkdownLinks?: boolean;
 };
 
+type HyperlinkSwitchProps = CommonProps & {
+  name: string;
+  label: string;
+  tooltip: string;
+};
+
+function HyperlinkSwitchFormField({
+  prefix,
+  name,
+  label,
+  tooltip,
+}: HyperlinkSwitchProps) {
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(name, prefix)}
+      label={label}
+      tooltip={tooltip}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={!!field.value}
+          onCheckedChange={(checked) => field.onChange?.(checked)}
+        />
+      )}
+    </RAGFlowFormItem>
+  );
+}
+
+type HyperlinkBudgetProps = CommonProps & {
+  name: string;
+  label: string;
+  tooltip: string;
+  max: number;
+};
+
+function HyperlinkBudgetFormField({
+  prefix,
+  name,
+  label,
+  tooltip,
+  max,
+}: HyperlinkBudgetProps) {
+  return (
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix(name, prefix)}
+      label={label}
+      tooltip={tooltip}
+    >
+      <Input type="number" min={1} max={max} step={1} />
+    </RAGFlowFormItem>
+  );
+}
+
 export function HyperlinkFormFields({
   prefix,
   showMarkdownLinks = false,
@@ -24,85 +80,50 @@ export function HyperlinkFormFields({
 
   return (
     <>
-      <RAGFlowFormItem
-        name={buildFieldNameWithPrefix('fetch_links', prefix)}
+      <HyperlinkSwitchFormField
+        prefix={prefix}
+        name="fetch_links"
         label={t('flow.fetchLinks')}
         tooltip={t('flow.fetchLinksTip')}
-        horizontal={true}
-        labelClassName="w-full"
-        valueClassName="w-8"
-      >
-        {(field) => (
-          <Switch
-            checked={!!field.value}
-            onCheckedChange={(checked) => field.onChange?.(checked)}
-          />
-        )}
-      </RAGFlowFormItem>
+      />
       {enabled && (
         <div className="space-y-4">
           {showMarkdownLinks && (
-            <RAGFlowFormItem
-              name={buildFieldNameWithPrefix('collect_markdown_links', prefix)}
+            <HyperlinkSwitchFormField
+              prefix={prefix}
+              name="collect_markdown_links"
               label={t('flow.collectMarkdownLinks')}
               tooltip={t('flow.collectMarkdownLinksTip')}
-              horizontal={true}
-              labelClassName="w-full"
-              valueClassName="w-8"
-            >
-              {(field) => (
-                <Switch
-                  checked={!!field.value}
-                  onCheckedChange={(checked) => field.onChange?.(checked)}
-                />
-              )}
-            </RAGFlowFormItem>
+            />
           )}
-          <RAGFlowFormItem
-            name={buildFieldNameWithPrefix('max_urls', prefix)}
+          <HyperlinkBudgetFormField
+            prefix={prefix}
+            name="max_urls"
             label={t('flow.hyperlinkMaxUrls')}
-            description={t('flow.hyperlinkMaxUrlsTip')}
-          >
-            <Input
-              type="number"
-              min={1}
-              max={HyperlinkLimits.maxUrls}
-              step={1}
-            />
-          </RAGFlowFormItem>
-          <RAGFlowFormItem
-            name={buildFieldNameWithPrefix('max_bytes_per_url', prefix)}
+            tooltip={t('flow.hyperlinkMaxUrlsTip')}
+            max={HyperlinkLimits.maxUrls}
+          />
+          <HyperlinkBudgetFormField
+            prefix={prefix}
+            name="max_bytes_per_url"
             label={t('flow.hyperlinkMaxBytesPerUrl')}
-          >
-            <Input
-              type="number"
-              min={1}
-              max={HyperlinkLimits.maxBytesPerUrl}
-              step={1}
-            />
-          </RAGFlowFormItem>
-          <RAGFlowFormItem
-            name={buildFieldNameWithPrefix('max_total_bytes', prefix)}
+            tooltip={t('flow.hyperlinkMaxBytesPerUrlTip')}
+            max={HyperlinkLimits.maxBytesPerUrl}
+          />
+          <HyperlinkBudgetFormField
+            prefix={prefix}
+            name="max_total_bytes"
             label={t('flow.hyperlinkMaxTotalBytes')}
-          >
-            <Input
-              type="number"
-              min={1}
-              max={HyperlinkLimits.maxTotalBytes}
-              step={1}
-            />
-          </RAGFlowFormItem>
-          <RAGFlowFormItem
-            name={buildFieldNameWithPrefix('timeout_s', prefix)}
+            tooltip={t('flow.hyperlinkMaxTotalBytesTip')}
+            max={HyperlinkLimits.maxTotalBytes}
+          />
+          <HyperlinkBudgetFormField
+            prefix={prefix}
+            name="timeout_s"
             label={t('flow.hyperlinkTimeout')}
-          >
-            <Input
-              type="number"
-              min={1}
-              max={HyperlinkLimits.timeoutSeconds}
-              step={1}
-            />
-          </RAGFlowFormItem>
+            tooltip={t('flow.hyperlinkTimeoutTip')}
+            max={HyperlinkLimits.timeoutSeconds}
+          />
         </div>
       )}
     </>
