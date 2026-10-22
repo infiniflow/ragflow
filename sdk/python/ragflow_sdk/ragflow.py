@@ -13,7 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import Optional, Any
+import math
+from typing import Any, Optional
 
 import requests
 
@@ -25,32 +26,50 @@ from .modules.memory import Memory
 
 
 class RAGFlow:
-    def __init__(self, api_key, base_url, version="v1"):
+    def __init__(self, api_key, base_url, version="v1", *, timeout=None):
         """
-        api_url: http://<host_address>/api/v1
+        Configure the API endpoint and an optional Requests timeout in seconds.
+
+        timeout is None, a positive finite number, or a (connect, read) tuple
+        of positive finite numbers. Read timeouts bound socket inactivity,
+        not total request or streaming duration.
         """
+        if timeout is not None:
+            values = timeout if isinstance(timeout, tuple) else (timeout, timeout)
+            try:
+                valid_timeout = len(values) == 2 and all(not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value) and value > 0 for value in values)
+            except OverflowError:
+                valid_timeout = False
+            if not valid_timeout:
+                raise ValueError("timeout must be None, a positive finite number, or a (connect, read) tuple of positive finite numbers")
+        self._timeout = timeout
         self.user_key = api_key
         self.api_url = f"{base_url}/api/{version}"
         self.authorization_header = {"Authorization": "{} {}".format("Bearer", self.user_key)}
 
     def post(self, path, json=None, stream=False, files=None):
-        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files)
+        """Send a POST request using the client timeout."""
+        res = requests.post(url=self.api_url + path, json=json, headers=self.authorization_header, stream=stream, files=files, timeout=self._timeout)
         return res
 
     def get(self, path, params=None, json=None):
-        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json)
+        """Send a GET request using the client timeout."""
+        res = requests.get(url=self.api_url + path, params=params, headers=self.authorization_header, json=json, timeout=self._timeout)
         return res
 
     def delete(self, path, json):
-        res = requests.delete(url=self.api_url + path, json=json, headers=self.authorization_header)
+        """Send a DELETE request using the client timeout."""
+        res = requests.delete(url=self.api_url + path, json=json, headers=self.authorization_header, timeout=self._timeout)
         return res
 
     def put(self, path, json):
-        res = requests.put(url=self.api_url + path, json=json, headers=self.authorization_header)
+        """Send a PUT request using the client timeout."""
+        res = requests.put(url=self.api_url + path, json=json, headers=self.authorization_header, timeout=self._timeout)
         return res
 
     def patch(self, path, json):
-        res = requests.patch(url=self.api_url + path, json=json, headers=self.authorization_header)
+        """Send a PATCH request using the client timeout."""
+        res = requests.patch(url=self.api_url + path, json=json, headers=self.authorization_header, timeout=self._timeout)
         return res
 
     def create_dataset(
