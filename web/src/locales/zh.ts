@@ -2284,6 +2284,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       removeTocTip:
         '移除原始PDF中包含的目录，这样它就不会被解析为常规内容或作为检索块。',
       removeHeaderFooter: '移除页眉页脚',
+      fetchLinks: '抓取链接内容',
+      fetchLinksTip:
+        '下载文档中链接指向的页面，并与文档一起索引。默认关闭。',
+      collectMarkdownLinks: '采集文档正文中的链接',
+      collectMarkdownLinksTip:
+        '除 docx/pdf 中嵌入的链接外，还从 Markdown 正文采集链接。',
+      hyperlinkBudget: '链接内容限制',
+      hyperlinkMaxUrls: '最多抓取链接数',
+      hyperlinkMaxUrlsTip: '每个文档最多抓取的链接数。',
+      hyperlinkMaxBytesPerUrl: '单个链接页最大字节',
+      hyperlinkMaxTotalBytes: '链接内容总字节上限',
+      hyperlinkTimeout: '单个链接超时（秒）',
       autoPlay: '自动播放',
       downloadFileTypeTip: '文件下载的类型',
       downloadFileType: '文件类型',

@@ -2707,6 +2707,18 @@ Best for: Documents with flowing, contextually connected content — such as boo
       removeTocTip:
         'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
       removeHeaderFooter: 'Remove header and footer',
+      fetchLinks: 'Fetch linked content',
+      fetchLinksTip:
+        'Download the pages referenced by links in the document and index them together with the document. Off by default.',
+      collectMarkdownLinks: 'Collect links from the document body',
+      collectMarkdownLinksTip:
+        'Also gather links from the Markdown body (in addition to links embedded in docx/pdf files).',
+      hyperlinkBudget: 'Linked content limits',
+      hyperlinkMaxUrls: 'Maximum number of links',
+      hyperlinkMaxUrlsTip: 'How many links are fetched per document.',
+      hyperlinkMaxBytesPerUrl: 'Maximum bytes per linked page',
+      hyperlinkMaxTotalBytes: 'Total bytes for linked content',
+      hyperlinkTimeout: 'Per-link timeout (seconds)',
       autoPlay: 'Auto play audio',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',

@@ -29,6 +29,25 @@ export const SetupSchema = z
     enable_multi_column: z.boolean().optional(),
     remove_toc: z.boolean().optional(),
     remove_header_footer: z.boolean().optional(),
+    // Opt-in linked-content ingestion (#21032). Present on pdf, docx and
+    // markdown only; collect_markdown_links is markdown-only. Budget bounds
+    // mirror the backend HyperlinkFetchParam.Validate ranges.
+    fetch_links: z.boolean().optional(),
+    collect_markdown_links: z.boolean().optional(),
+    max_urls: z.coerce.number().int().min(1).max(50).optional(),
+    max_bytes_per_url: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(64 * 1024 * 1024)
+      .optional(),
+    max_total_bytes: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(256 * 1024 * 1024)
+      .optional(),
+    timeout_s: z.coerce.number().int().min(1).max(120).optional(),
     pages: z
       .array(
         z

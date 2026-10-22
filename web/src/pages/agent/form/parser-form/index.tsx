@@ -29,6 +29,7 @@ import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { HtmlFormFields } from './html-form-fields';
 import { ImageFormFields } from './image-form-fields';
+import { MarkdownFormFields } from './markdown-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
 import { FormSchema, ParserFormSchemaType } from './schema';
@@ -51,6 +52,7 @@ const FileFormatWidgetMap = {
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
+  [FileType.TextMarkdown]: MarkdownFormFields,
   [FileType.Html]: HtmlFormFields,
 };
 

@@ -246,6 +246,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
+            fetch_links: cur.fetch_links || false,
+            max_urls: cur.max_urls,
+            max_bytes_per_url: cur.max_bytes_per_url,
+            max_total_bytes: cur.max_total_bytes,
+            timeout_s: cur.timeout_s,
             pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
           };
           // Only include TCADP parameters if TCADP Parser is selected
@@ -302,6 +307,22 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             remove_header_footer: cur.remove_header_footer || false,
+            fetch_links: cur.fetch_links || false,
+            max_urls: cur.max_urls,
+            max_bytes_per_url: cur.max_bytes_per_url,
+            max_total_bytes: cur.max_total_bytes,
+            timeout_s: cur.timeout_s,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            fetch_links: cur.fetch_links || false,
+            collect_markdown_links: cur.collect_markdown_links || false,
+            max_urls: cur.max_urls,
+            max_bytes_per_url: cur.max_bytes_per_url,
+            max_total_bytes: cur.max_total_bytes,
+            timeout_s: cur.timeout_s,
           };
           break;
         case FileType.Html:
