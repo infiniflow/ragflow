@@ -5,6 +5,7 @@ import isEmpty from 'lodash/isEmpty';
 import omit from 'lodash/omit';
 import {
   FileTypeDefaultModelFieldMap,
+  HyperlinkDefaultSetup,
   initialParserValues,
 } from '../../constant/pipeline';
 
@@ -30,14 +31,6 @@ const HyperlinkSetupFileTypes = [
   FileType.TextMarkdown,
 ];
 
-const HyperlinkSetupKeys = [
-  'fetch_links',
-  'max_urls',
-  'max_bytes_per_url',
-  'max_total_bytes',
-  'timeout_s',
-] as const;
-
 // Materializes the linked-content defaults (#21032) on setups saved before
 // those keys existed. The backend applies the same defaults at parse time, so
 // this only makes the form show the budgets the run will actually use instead
@@ -49,20 +42,14 @@ function materializeHyperlinkDefaults<T extends Record<string, any>>(
   if (!HyperlinkSetupFileTypes.includes(setup?.fileFormat)) {
     return setup;
   }
-  const defaults = initialParserValues.setups.find(
-    (x) => x.fileFormat === setup.fileFormat,
-  ) as Record<string, any> | undefined;
-  if (!defaults) {
-    return setup;
-  }
-  const keys: string[] = [...HyperlinkSetupKeys];
+  const defaults: Record<string, any> = { ...HyperlinkDefaultSetup };
   if (setup.fileFormat === FileType.TextMarkdown) {
-    keys.push('collect_markdown_links');
+    defaults.collect_markdown_links = false;
   }
   const next: Record<string, any> = { ...setup };
-  for (const key of keys) {
+  for (const [key, value] of Object.entries(defaults)) {
     if (next[key] === undefined) {
-      next[key] = defaults[key];
+      next[key] = value;
     }
   }
   return next as T;

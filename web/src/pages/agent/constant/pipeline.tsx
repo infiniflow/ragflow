@@ -156,6 +156,26 @@ export const PreprocessLabelKeyMap: Record<PreprocessValue, string> = {
   abstract: 'abstract',
   author: 'author',
 };
+// Linked-content ingestion (#21032). HyperlinkDefaultSetup is the value set a
+// new node starts from and what the form re-materializes on setups saved before
+// the keys existed; HyperlinkLimits mirrors the backend
+// HyperlinkFetchParam.Validate ranges, so the form schema and the inputs share
+// one source.
+export const HyperlinkDefaultSetup = {
+  fetch_links: false,
+  max_urls: 5,
+  max_bytes_per_url: 1048576,
+  max_total_bytes: 5242880,
+  timeout_s: 10,
+};
+
+export const HyperlinkLimits = {
+  maxUrls: 50,
+  maxBytesPerUrl: 64 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
+  timeoutSeconds: 120,
+};
+
 export const initialParserValues = {
   outputs: {
     markdown: { type: 'string', value: '' },
@@ -175,11 +195,7 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
-      fetch_links: false,
-      max_urls: 5,
-      max_bytes_per_url: 1048576,
-      max_total_bytes: 5242880,
-      timeout_s: 10,
+      ...HyperlinkDefaultSetup,
       pages: [{ from: 1, to: 100000 }],
     },
     {
@@ -204,12 +220,8 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
-      fetch_links: false,
+      ...HyperlinkDefaultSetup,
       collect_markdown_links: false,
-      max_urls: 5,
-      max_bytes_per_url: 1048576,
-      max_total_bytes: 5242880,
-      timeout_s: 10,
     },
     {
       fileFormat: FileType.Code,
@@ -233,11 +245,7 @@ export const initialParserValues = {
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
-      fetch_links: false,
-      max_urls: 5,
-      max_bytes_per_url: 1048576,
-      max_total_bytes: 5242880,
-      timeout_s: 10,
+      ...HyperlinkDefaultSetup,
     },
     {
       fileFormat: FileType.PowerPoint,

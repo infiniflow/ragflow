@@ -3,6 +3,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { HyperlinkLimits } from '../../constant/pipeline';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
@@ -62,25 +63,45 @@ export function HyperlinkFormFields({
             label={t('flow.hyperlinkMaxUrls')}
             description={t('flow.hyperlinkMaxUrlsTip')}
           >
-            <Input type="number" min={1} max={50} step={1} />
+            <Input
+              type="number"
+              min={1}
+              max={HyperlinkLimits.maxUrls}
+              step={1}
+            />
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('max_bytes_per_url', prefix)}
             label={t('flow.hyperlinkMaxBytesPerUrl')}
           >
-            <Input type="number" min={1} max={64 * 1024 * 1024} step={1} />
+            <Input
+              type="number"
+              min={1}
+              max={HyperlinkLimits.maxBytesPerUrl}
+              step={1}
+            />
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('max_total_bytes', prefix)}
             label={t('flow.hyperlinkMaxTotalBytes')}
           >
-            <Input type="number" min={1} max={256 * 1024 * 1024} step={1} />
+            <Input
+              type="number"
+              min={1}
+              max={HyperlinkLimits.maxTotalBytes}
+              step={1}
+            />
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('timeout_s', prefix)}
             label={t('flow.hyperlinkTimeout')}
           >
-            <Input type="number" min={1} max={120} step={1} />
+            <Input
+              type="number"
+              min={1}
+              max={HyperlinkLimits.timeoutSeconds}
+              step={1}
+            />
           </RAGFlowFormItem>
         </div>
       )}

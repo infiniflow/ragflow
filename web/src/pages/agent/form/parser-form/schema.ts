@@ -1,6 +1,7 @@
 import { FileType } from '@/constants/file';
 import i18n from '@/locales/config';
 import { z } from 'zod';
+import { HyperlinkLimits } from '../../constant/pipeline';
 
 export const SetupSchema = z
   .object({
@@ -34,20 +35,30 @@ export const SetupSchema = z
     // mirror the backend HyperlinkFetchParam.Validate ranges.
     fetch_links: z.boolean().optional(),
     collect_markdown_links: z.boolean().optional(),
-    max_urls: z.coerce.number().int().min(1).max(50).optional(),
+    max_urls: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(HyperlinkLimits.maxUrls)
+      .optional(),
     max_bytes_per_url: z.coerce
       .number()
       .int()
       .min(1)
-      .max(64 * 1024 * 1024)
+      .max(HyperlinkLimits.maxBytesPerUrl)
       .optional(),
     max_total_bytes: z.coerce
       .number()
       .int()
       .min(1)
-      .max(256 * 1024 * 1024)
+      .max(HyperlinkLimits.maxTotalBytes)
       .optional(),
-    timeout_s: z.coerce.number().int().min(1).max(120).optional(),
+    timeout_s: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(HyperlinkLimits.timeoutSeconds)
+      .optional(),
     pages: z
       .array(
         z
