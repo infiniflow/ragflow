@@ -36,7 +36,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
+func TestMonkeyOCRv2ExtractItemsUsesNativeJSON(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	file, err := writer.Create("sample/sample.json")
@@ -46,16 +46,16 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	items, err := monkeyOCRv2ExtractItems(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 2 || sections[0] != "Heading" || sections[1] != "x^2" {
-		t.Fatalf("sections=%v", sections)
+	if len(items) != 2 || items[0]["text"] != "Heading" || items[0]["layout"] != "title" || items[1]["text"] != "x^2" || items[1]["layout"] != "equation" {
+		t.Fatalf("items=%v", items)
 	}
 }
 
-func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
+func TestMonkeyOCRv2ExtractItemsEmbedsZIPImage(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	jsonFile, _ := writer.Create("sample/sample.json")
@@ -64,12 +64,12 @@ func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	items, err := monkeyOCRv2ExtractItems(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || !strings.HasPrefix(sections[0], "![figure](data:image/png;base64,") {
-		t.Fatalf("sections=%v", sections)
+	if len(items) != 1 || items[0]["doc_type_kwd"] != "image" || !strings.HasPrefix(items[0]["image"].(string), "data:image/png;base64,") {
+		t.Fatalf("items=%v", items)
 	}
 }
 
@@ -107,7 +107,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
+	if result.OutputFormat != "json" || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "hello" {
 		t.Fatalf("result=%+v", result)
 	}
 
@@ -115,7 +115,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+	if resultMD.OutputFormat != "json" || len(resultMD.JSON) != 1 || resultMD.JSON[0].ToMap()["text"] != "hello" {
 		t.Fatalf("resultMD=%+v", resultMD)
 	}
 }
@@ -151,7 +151,7 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Markdown != "selected" {
+	if len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "selected" {
 		t.Fatalf("result=%+v", result)
 	}
 }
