@@ -1202,6 +1202,8 @@ Failure:
 
 Updates configurations for a specified document.
 
+Saving parser settings preserves existing chunks, chunk images, counters, and parsing progress. The saved settings take effect on the next parse; this update does not start parsing or delete existing results. Use the document parse action to clear existing chunks and re-parse with the saved settings.
+
 #### Request
 
 - Method: PATCH

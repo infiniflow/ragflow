@@ -1,7 +1,6 @@
 package knowledge_compiler
 
 import (
-	"encoding/json"
 	"testing"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -38,12 +37,8 @@ func TestProductsToChunkDocsCanonicalKinds(t *testing.T) {
 				}
 			}
 			if test.variant == common.VariantStructure {
-				var extra map[string]string
-				if err := json.Unmarshal([]byte(row["extra"].(string)), &extra); err != nil {
-					t.Fatal(err)
-				}
-				if extra["compile_type"] != "list" {
-					t.Fatalf("compile type = %v", extra)
+				if _, exists := row["extra"]; exists {
+					t.Fatalf("compiler must not write extra: %#v", row["extra"])
 				}
 			}
 			if test.variant == common.VariantWiki && (row["type_kwd"] != "wiki_entity" || row["entity_type_kwd"] != "concept") {

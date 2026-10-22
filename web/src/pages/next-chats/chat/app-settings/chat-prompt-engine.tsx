@@ -17,25 +17,39 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { WebSearchFormField } from '@/components/web-search-form-field';
+import { useFetchAgenticRagConfig } from '@/hooks/use-chat-request';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+import { AgenticTemplateFormField } from './agentic-template-form-field';
 import { DynamicVariableForm } from './dynamic-variable';
 
 interface ChatPromptEngineProps {
   prefix?: string;
-  collapseOpen?: boolean;
-  onCollapseOpenChange?: (open: boolean) => void;
+  advancedSettingOpen?: boolean;
+  onAdvancedSettingOpenChange?: (open: boolean) => void;
+  naiveSettingOpen?: boolean;
+  onNaiveSettingOpenChange?: (open: boolean) => void;
+  agenticSettingOpen?: boolean;
+  onAgenticSettingOpenChange?: (open: boolean) => void;
 }
 
 export function ChatPromptEngine({
   prefix = '',
-  collapseOpen,
-  onCollapseOpenChange,
+  advancedSettingOpen,
+  onAdvancedSettingOpenChange,
+  naiveSettingOpen,
+  onNaiveSettingOpenChange,
+  agenticSettingOpen,
+  onAgenticSettingOpenChange,
 }: ChatPromptEngineProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const { id } = useParams();
+  // Keep the default config available even when the advanced panel is collapsed.
+  const { data: agenticConfig } = useFetchAgenticRagConfig(id);
   const systemPromptValue = form.watch(
     prefixName(prefix, 'prompt_config.system'),
   );
@@ -43,41 +57,18 @@ export function ChatPromptEngine({
   const emptyResponseValue = form.watch(
     prefixName(prefix, 'prompt_config.empty_response'),
   );
+
   return (
     <Collapse
       title={t('flow.advancedSettings')}
-      open={collapseOpen}
-      onOpenChange={onCollapseOpenChange}
+      open={advancedSettingOpen}
+      onOpenChange={onAdvancedSettingOpenChange}
     >
       <div className="space-y-8">
-        <FormField
-          control={form.control}
-          name={prefixName(prefix, 'prompt_config.empty_response')}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.emptyResponseTip')}>
-                {t('chat.emptyResponse')}
-              </FormLabel>
-              <FormControl>
-                <Textarea
-                  {...field}
-                  placeholder={t('chat.emptyResponsePlaceholder')}
-                  dir={getDirAttribute(emptyResponseValue || '')}
-                ></Textarea>
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         <SwitchFormField
           name={prefixName(prefix, 'prompt_config.quote')}
           label={t('chat.quote')}
           tooltip={t('chat.quoteTip')}
-        ></SwitchFormField>
-        <SwitchFormField
-          name={prefixName(prefix, 'prompt_config.keyword')}
-          label={t('chat.keyword')}
-          tooltip={t('chat.keywordTip')}
         ></SwitchFormField>
         <SwitchFormField
           name={prefixName(prefix, 'prompt_config.tts')}
@@ -86,50 +77,94 @@ export function ChatPromptEngine({
         ></SwitchFormField>
         <WebSearchFormField prefix={prefix} />
         <MetadataFilter></MetadataFilter>
-        <FormField
-          control={form.control}
-          name={prefixName(prefix, 'prompt_config.system')}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('chat.system')}</FormLabel>
-              <FormControl>
-                <Textarea
-                  {...field}
-                  rows={8}
-                  placeholder={t('chat.systemPlaceholder')}
-                  className="overflow-y-auto"
-                  dir={getDirAttribute(systemPromptValue || '')}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <SimilaritySliderFormField
-          isTooltipShown
-          similarityName={prefixName(prefix, 'similarity_threshold')}
-          similarityWeightName={prefixName(
-            prefix,
-            'keywords_similarity_weight',
-          )}
-        ></SimilaritySliderFormField>
-        <RerankCandidatesCountFormField
-          name={prefixName(prefix, 'rerank_candidates_count')}
-        ></RerankCandidatesCountFormField>
-        <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
 
-        <RerankFormFields prefix={prefix}></RerankFormFields>
-        <CrossLanguageFormField
-          name={prefixName(prefix, 'prompt_config.cross_languages')}
-        ></CrossLanguageFormField>
-        <SwitchFormField
-          name={prefixName(prefix, 'prompt_config.refine_multiturn')}
-          label={t('chat.multiTurn')}
-          tooltip={t('chat.multiTurnTip')}
-        ></SwitchFormField>
-        <DynamicVariableForm
-          name={prefixName(prefix, 'prompt_config.parameters')}
-        ></DynamicVariableForm>
+        <Collapse
+          title={t('chat.naiveSettings')}
+          open={naiveSettingOpen}
+          onOpenChange={onNaiveSettingOpenChange}
+        >
+          <div className="space-y-8">
+            <FormField
+              control={form.control}
+              name={prefixName(prefix, 'prompt_config.empty_response')}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel tooltip={t('chat.emptyResponseTip')}>
+                    {t('chat.emptyResponse')}
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      placeholder={t('chat.emptyResponsePlaceholder')}
+                      dir={getDirAttribute(emptyResponseValue || '')}
+                    ></Textarea>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <SwitchFormField
+              name={prefixName(prefix, 'prompt_config.keyword')}
+              label={t('chat.keyword')}
+              tooltip={t('chat.keywordTip')}
+            ></SwitchFormField>
+            <FormField
+              control={form.control}
+              name={prefixName(prefix, 'prompt_config.system')}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('chat.system')}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      rows={8}
+                      placeholder={t('chat.systemPlaceholder')}
+                      className="overflow-y-auto"
+                      dir={getDirAttribute(systemPromptValue || '')}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <SimilaritySliderFormField
+              isTooltipShown
+              similarityName={prefixName(prefix, 'similarity_threshold')}
+              similarityWeightName={prefixName(
+                prefix,
+                'keywords_similarity_weight',
+              )}
+            ></SimilaritySliderFormField>
+            <RerankCandidatesCountFormField
+              name={prefixName(prefix, 'rerank_candidates_count')}
+            ></RerankCandidatesCountFormField>
+            <TopNFormField name={prefixName(prefix, 'top_n')}></TopNFormField>
+
+            <RerankFormFields prefix={prefix}></RerankFormFields>
+            <CrossLanguageFormField
+              name={prefixName(prefix, 'prompt_config.cross_languages')}
+            ></CrossLanguageFormField>
+            <SwitchFormField
+              name={prefixName(prefix, 'prompt_config.refine_multiturn')}
+              label={t('chat.multiTurn')}
+              tooltip={t('chat.multiTurnTip')}
+            ></SwitchFormField>
+            <DynamicVariableForm
+              name={prefixName(prefix, 'prompt_config.parameters')}
+            ></DynamicVariableForm>
+          </div>
+        </Collapse>
+
+        <Collapse
+          title={t('chat.agenticSettings')}
+          open={agenticSettingOpen}
+          onOpenChange={onAgenticSettingOpenChange}
+        >
+          <AgenticTemplateFormField
+            name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
+            config={agenticConfig}
+          />
+        </Collapse>
       </div>
     </Collapse>
   );

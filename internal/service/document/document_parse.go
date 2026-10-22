@@ -428,48 +428,6 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 	return nil
 }
 
-func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
-	updates := map[string]interface{}{
-		"progress": 0,
-	}
-	if parserID != nil {
-		updates["parser_id"] = *parserID
-	}
-	if pipelineID != nil {
-		updates["pipeline_id"] = *pipelineID
-	}
-
-	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
-		return errors.New("document not found")
-	}
-
-	if doc.TokenNum > 0 {
-		decremented, err := s.decrementDocumentAndKBCountersForReparse(doc)
-		if err != nil {
-			return errors.New("document not found")
-		}
-		if !decremented {
-			return nil
-		}
-		if s.docEngine != nil {
-			indexName := fmt.Sprintf("ragflow_%s", tenantID)
-			s.deleteChunkImages(ctx, doc, indexName)
-			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
-	if doc == nil {
-		return
-	}
-	_ = s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID)
-}
-
 // deleteDocumentChunkImages removes source chunk image objects in bounded
 // search batches. Repeating the operation is safe because deleting an absent
 // object is a no-op.
@@ -547,34 +505,6 @@ func firstStringField(m map[string]interface{}, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.Document) (bool, error) {
-	decremented := false
-	err := dao.DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&entity.Document{}).
-			Where("id = ? AND kb_id = ? AND token_num = ? AND chunk_num = ?", doc.ID, doc.KbID, doc.TokenNum, doc.ChunkNum).
-			Updates(map[string]interface{}{
-				"token_num":        gorm.Expr("token_num - ?", doc.TokenNum),
-				"chunk_num":        gorm.Expr("chunk_num - ?", doc.ChunkNum),
-				"process_duration": gorm.Expr("process_duration - ?", doc.ProcessDuration),
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-		decremented = true
-
-		return tx.Model(&entity.Knowledgebase{}).
-			Where("id = ?", doc.KbID).
-			Updates(map[string]interface{}{
-				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
-			}).Error
-	})
-	return decremented, err
 }
 
 func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {

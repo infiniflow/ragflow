@@ -1087,6 +1087,7 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 
 func (h *Handler) ListIngestors(c *gin.Context) {
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	var ingestorResults []map[string]string
 	now := time.Now()
 	for _, ingestorServer := range serverList {

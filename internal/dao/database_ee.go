@@ -16,7 +16,17 @@
 
 package dao
 
-// permissionDataModelsEE returns the entities included in the enterprise schema.
+import (
+	"context"
+
+	"gorm.io/gorm"
+)
+
+// permissionDataModelsEE returns no additional entities in the community edition.
 func permissionDataModelsEE() []interface{} {
+	return nil
+}
+
+func initializeSystemSettingsEE(context.Context, *gorm.DB) error {
 	return nil
 }

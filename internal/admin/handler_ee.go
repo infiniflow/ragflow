@@ -1101,46 +1101,14 @@ func (h *Handler) ShowUserPermission(c *gin.Context) {
 	common.SuccessWithData(c, permissions, "")
 }
 
-// ListUserDatasets handle show user datasets
+// ListUserDatasets requires the enterprise edition.
 func (h *Handler) ListUserDatasets(c *gin.Context) {
-	username, err := getUserName(c)
-	if err != nil {
-		return
-	}
-	ctx := c.Request.Context()
-
-	datasets, err := h.service.ListUserDatasets(ctx, username)
-	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, datasets, "")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, "listing user datasets is only available in the enterprise edition")
 }
 
-// ListUserAgents handle show user agents
+// ListUserAgents requires the enterprise edition.
 func (h *Handler) ListUserAgents(c *gin.Context) {
-	username, err := getUserName(c)
-	if err != nil {
-		return
-	}
-	ctx := c.Request.Context()
-
-	agents, err := h.service.ListUserAgents(ctx, username)
-	if err != nil {
-		if errors.Is(err, common.ErrUserNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
-			return
-		}
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, agents, "")
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, "listing user agents is only available in the enterprise edition")
 }
 
 // ListUserChats handle show user chats

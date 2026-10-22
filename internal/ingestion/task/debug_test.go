@@ -75,7 +75,7 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 
 	insertCalled := false
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestExecute_DebugViaEntry_NoKnowledgeCompilePublish(t *testing.T) {
 
 	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

@@ -30,6 +30,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -278,27 +279,43 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // region (Python restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
 //
-// CKType is the chunker-layer refinement (heading/text/image/table/
-// image/table). General and token chunkers always set it before cropping, so
-// they are handled by the CKType branch above. Group and hierarchy chunkers
-// forward the parser's output verbatim, which carries only the coarser
-// doc_type_kwd (no ck_type). For those, fall back to DocType so image/table/
-// text regions are still cropped on demand — otherwise every figure/table/
-// text preview in group/hierarchy would be silently skipped. When CKType is
-// set (general/token) it takes priority, so headings (CKType "heading") stay
-// excluded from preview cropping.
+// The content type on doc_type_kwd alone decides the crop kind. Headings are
+// text chunks and get the same text preview as any other body text, matching
+// the historical behavior.
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch cropChunkType(ck) {
 	case "image", "table", "text":
-		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
+		return hasCropRegion(ck)
 	default:
 		return false
 	}
 }
 
-func cropChunkType(ck schema.ChunkDoc) string {
-	if ck.CKType != "" {
-		return ck.CKType
+// hasCropRegion reports whether the chunk carries a position with a
+// positive-area box. A page-only position (page number, no geometry) carries
+// page identity for the indexer but no region, so it must not trigger a crop.
+//
+// Every row of the matrix is inspected: mergePositionMatrix sorts page-only
+// rows first, so a page-only first row must not hide a real region in a later
+// row. The matrix is read exactly as the crop path reads it (the canonical
+// _pdf_positions first, the legacy positions key as fallback).
+func hasCropRegion(ck schema.ChunkDoc) bool {
+	raw := ck.PDFPositions
+	if len(raw) == 0 {
+		raw = ck.Positions
 	}
-	return ck.DocType
+	for _, row := range parser.PDFPositionRowsFromJSON(raw) {
+		if row[2] > row[1] && row[4] > row[3] {
+			return true
+		}
+	}
+	return false
+}
+
+// cropChunkType returns the content type that selects the crop. Callers must
+// pass normalized chunks: General/Token clear structural layout before
+// cropping, so passing raw parser items would lose their block-kind
+// distinction here.
+func cropChunkType(ck schema.ChunkDoc) string {
+	return itemDocType(ck)
 }

@@ -23,6 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { ModelTypeProviderMap } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
@@ -34,6 +35,7 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
   llm_id: ['chat', 'vision'],
+  decision_id: ['decision'],
   embd_id: ['embedding'],
   img2txt_id: ['vision'],
   asr_id: ['asr'],
@@ -48,9 +50,12 @@ export function buildModelTree(
     node: TreeSelectNode,
     model: IAddedModel,
   ) => React.ReactNode,
+  providers?: string[],
 ): TreeSelectNode[] {
-  const filtered = allModels.filter((m) =>
-    m.model_type?.some((t) => modelTypes.includes(t)),
+  const filtered = allModels.filter(
+    (m) =>
+      m.model_type?.some((t) => modelTypes.includes(t)) &&
+      (!providers?.length || providers.includes(m.provider_name)),
   );
 
   const seenLeafIds = new Set<string>();
@@ -120,6 +125,12 @@ export function buildModelTree(
 
 export interface ModelTreeSelectProps {
   modelTypes?: string[];
+  /**
+   * Restricts the tree to these providers. Defaults to whatever
+   * ModelTypeProviderMap declares for the selected types, so a caller that
+   * picks modelTypes automatically inherits the provider restriction.
+   */
+  providers?: string[];
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
@@ -138,6 +149,7 @@ export const ModelTreeSelect = forwardRef<
 >(function ModelTreeSelect(
   {
     modelTypes = ModelTypeMap.llm_id,
+    providers,
     value,
     onChange,
     disabled,
@@ -157,9 +169,22 @@ export const ModelTreeSelect = forwardRef<
     isError: modelsError,
   } = useFetchAllAddedModels(undefined, ownerTenantId);
 
+  // An explicit prop wins; otherwise inherit the restriction declared for the
+  // type, so the default-model page and the chat settings agree without each
+  // call site having to remember.
+  const allowedProviders = useMemo(() => {
+    if (providers) return providers;
+    for (const type of modelTypes) {
+      const declared = ModelTypeProviderMap[type];
+      if (declared) return declared;
+    }
+    return undefined;
+  }, [providers, modelTypes]);
+
   const treeData = useMemo(
-    () => buildModelTree(allAddedModels, modelTypes),
-    [allAddedModels, modelTypes],
+    () =>
+      buildModelTree(allAddedModels, modelTypes, undefined, allowedProviders),
+    [allAddedModels, modelTypes, allowedProviders],
   );
 
   // Backward compatibility: map legacy concatenated ids

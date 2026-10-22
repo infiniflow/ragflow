@@ -599,7 +599,7 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 			"doc_type_kwd": "text",
 		}
 		if heading {
-			item["ck_type"] = "heading"
+			item["layout"] = "heading"
 		}
 		sections = append(sections, item)
 	}

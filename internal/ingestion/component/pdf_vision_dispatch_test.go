@@ -120,19 +120,6 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	}
 }
 
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
-	if result.OutputFormat != "markdown" {
-		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
-	}
-	if result.Markdown != "# Heading" {
-		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
-	}
-	if result.JSON != nil {
-		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
-	}
-}
-
 type monkeyOCRv2FakeDriver struct {
 	modelModule.ModelDriver
 }
@@ -214,6 +201,36 @@ func TestDispatchPaddleOCRPDFRejectsMissingBlocks(t *testing.T) {
 	}
 	if res.OutputFormat != "" || res.Markdown != "" {
 		t.Errorf("expected zero-value result on error, got %+v", res)
+	}
+}
+
+func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		item        map[string]any
+		wantLayout  string
+		wantDocType string
+	}{
+		{"list", map[string]any{"type": "list", "list_items": []any{"a", "b"}}, "list", "text"},
+		{"code", map[string]any{"type": "code", "code_body": "x"}, "code", "text"},
+		{"title", map[string]any{"type": "title", "text": "T"}, "title", "text"},
+		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
+		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
+		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
+		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mineruContentItemToJSON(tc.item, nil)
+			if got == nil {
+				t.Fatal("item was dropped")
+			}
+			if got["layout"] != tc.wantLayout {
+				t.Errorf("layout = %v, want %q", got["layout"], tc.wantLayout)
+			}
+			if got["doc_type_kwd"] != tc.wantDocType {
+				t.Errorf("doc_type_kwd = %v, want %q", got["doc_type_kwd"], tc.wantDocType)
+			}
+		})
 	}
 }
 

@@ -117,6 +117,5 @@ func NewTableDataJSONItem(td *entity.TableData, sheet string, positions Position
 		Table:     td,
 		Sheet:     sheet,
 		Positions: positions,
-		CKType:    DocTypeTable,
 	}
 }
