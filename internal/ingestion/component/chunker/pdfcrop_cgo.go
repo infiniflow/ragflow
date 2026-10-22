@@ -177,8 +177,8 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 
 			ck := out[chunkIdx]
 			raw := cropPositionMatrix(ck)
-			var matrix [][]any
-			if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+			matrix, ok := decodePositionRows(raw)
+			if !ok || len(matrix) == 0 {
 				return
 			}
 			positions := util.PositionsFromMatrix(matrix)

@@ -23,6 +23,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component"
+	"ragflow/internal/tokenizer"
 )
 
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
@@ -198,6 +200,54 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component)
 						t.Errorf("figure %d must reference its uploaded preview and drop inline bytes", i)
 					}
 				}
+			}
+		})
+	}
+}
+
+// Without a root heading or other text, a position-only figure still separates
+// neighboring text records, but is not cropped/uploaded and the tokenizer drops it.
+func TestCropTitleChunks_PositionOnlyImageWithoutHeading(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	t.Cleanup(func() { tokenizer.SetEngineType("") })
+	tok, err := component.NewTokenizerComponent(map[string]any{"search_method": []any{"full_text"}})
+	if err != nil {
+		t.Fatalf("new tokenizer: %v", err)
+	}
+	for _, tc := range titleFamilyComponents(t) {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := withIngestionGlobals(t, "kb1", "doc1")
+			rec := &recordingUploader{}
+			orig := ChunkImageUploader
+			ChunkImageUploader = rec.upload
+			t.Cleanup(func() { ChunkImageUploader = orig })
+			chunks := titleFamilyChunks(t, tc.comp, []map[string]any{
+				{"text": "before figure", "doc_type_kwd": "text"},
+				{"text": "", "doc_type_kwd": "image", "positions": [][]float64{{1, 10, 100, 10, 100}}},
+				{"text": "after figure", "doc_type_kwd": "text"},
+			})
+			if len(chunks) != 3 || chunks[1]["doc_type_kwd"] != "image" || chunks[1]["text"] != "" {
+				t.Fatalf("chunks = %#v, want text, textless figure, text", chunks)
+			}
+			chunks = cropTitleChunks(ctx, mockCropEngine{}, chunks)
+			decorated := &imageUploadDecorator{inner: &stubChunker{chunks: chunks}}
+			out, err := decorated.Invoke(ctx, nil, nil)
+			if err != nil {
+				t.Fatalf("decorator Invoke: %v", err)
+			}
+			if len(rec.calls) != 0 || toString(chunks[1]["image"]) != "" || toString(chunks[1]["img_id"]) != "" {
+				t.Fatalf("textless figure must not be cropped or uploaded: %#v, uploads=%d", chunks[1], len(rec.calls))
+			}
+			out["name"] = "doc.pdf"
+			out["output_format"] = "chunks"
+			final, err := tok.Invoke(ctx, nil, out)
+			if err != nil {
+				t.Fatalf("tokenizer Invoke: %v", err)
+			}
+			got, _ := final["chunks"].([]map[string]any)
+			if len(got) != 2 || strings.TrimSpace(toString(got[0]["text"])) != "before figure" ||
+				strings.TrimSpace(toString(got[1]["text"])) != "after figure" {
+				t.Fatalf("tokenizer chunks = %#v, want only the two separate text chunks", got)
 			}
 		})
 	}

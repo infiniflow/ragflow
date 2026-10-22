@@ -131,6 +131,7 @@ func TestNeedsCrop(t *testing.T) {
 
 func TestCropImageChunks_PositionFallback(t *testing.T) {
 	region := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	flatRegion := jsonFlatPosition(t, []float64{1, 10, 100, 10, 100})
 	otherPage := jsonPositions(t, []float64{2, 20, 200, 20, 200})
 	cases := []struct {
 		name         string
@@ -143,6 +144,9 @@ func TestCropImageChunks_PositionFallback(t *testing.T) {
 		{"empty", json.RawMessage(`[]`), region},
 		{"null", json.RawMessage(`null`), region},
 		{"short-row", json.RawMessage(`[[2,10,100,5]]`), region},
+		{"page-only-with-flat-fallback", jsonPositions(t, []float64{2, 0, 0, 0, 0}), flatRegion},
+		{"flat-positions-only", nil, flatRegion},
+		{"prefer-flat-PDF-region", flatRegion, otherPage},
 		{"prefer-PDF-region", region, otherPage},
 		{"PDF-region-after-page-only-row", jsonPositions(t, []float64{1, 0, 0, 0, 0}, []float64{1, 10, 100, 10, 100}), otherPage},
 	}
