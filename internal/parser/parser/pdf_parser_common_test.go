@@ -139,9 +139,9 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 
 	// A figure caption with an inlined image but NO positions is NOT promoted
 	// to image: positions are the sole classifier now. (In the PDF JSON path
-	// an inlined image without positions does not occur — cropMediaSections was
-	// removed — so this documents that the presence of a stray image alone is
-	// insufficient.)
+	// media are not cropped — the chunker crops on demand from positions — so
+	// an inlined image without positions does not occur; this documents that
+	// the presence of a stray image alone is insufficient.)
 	withImageNoPos := &deepdoctype.ParseResult{
 		Sections: []deepdoctype.Section{{
 			Text:       "小灰灰",
