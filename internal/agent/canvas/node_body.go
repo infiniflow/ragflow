@@ -364,6 +364,7 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 		}
 		if runtime.IsDeferredStream(out["content"]) {
 			runtime.RegisterDeferredNode(ctx, cpnID, func() {
+				copyDeferredNodeOutput(ctx, state, cpnID)
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 			})
 		} else {
