@@ -70,15 +70,17 @@ class RAGFlow:
         ``"general"``. ``parse_type=2`` selects an ingestion pipeline and requires
         ``pipeline_id``.
         """
-        parser_id = (parser_id or "").strip() or None
-        pipeline_id = (pipeline_id or "").strip() or None
+        parser_id = parser_id.strip() if parser_id is not None else None
+        pipeline_id = pipeline_id.strip() if pipeline_id is not None else None
 
         if parse_type == 1:
-            if pipeline_id is not None:
+            if pipeline_id:
                 raise ValueError("pipeline_id must not be set when parse_type is 1 (BuiltIn)")
+            if parser_id == "":
+                raise ValueError("parser_id must not be empty when parse_type is 1 (BuiltIn)")
             selection = {"parser_id": parser_id or "general"}
         elif parse_type == 2:
-            if parser_id is not None:
+            if parser_id:
                 raise ValueError("parser_id must not be set when parse_type is 2 (Pipeline)")
             if not pipeline_id:
                 raise ValueError("pipeline_id is required when parse_type is 2 (Pipeline)")

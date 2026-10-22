@@ -659,8 +659,8 @@ Success:
         "pagerank": 0,
         "parser_config": {
             "GeneralChunker:SixApplesFall": {
-                "chunk_token_num": 128,
-                "delimiter": "\\n!?;。；！？",
+                "chunk_token_size": 128,
+                "delimiters": ["\n", "!?;。；！？"],
                 "parent_child": {
                     "use_parent_child": false,
                     "children_delimiter": "\n"
@@ -934,15 +934,10 @@ Success:
             "name": "mysql",
             "parser_id": "general",
             "parser_config": {
-                "chunk_token_num": 8192,
-                "delimiter": "\\n",
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "location",
-                    "event",
-                    "time"
-                ]
+                "GeneralChunker:SixApplesFall": {
+                    "chunk_token_size": 8192,
+                    "delimiters": ["\n"]
+                }
             },
             "permission": "me",
             "similarity_threshold": 0.2,
@@ -981,7 +976,9 @@ Success (with `include_parsing_status=true`):
             "language": "English",
             "name": "Test Dataset",
             "parser_config": {
-                "llm_id": "deepseek-chat@DeepSeek"
+                "Extractor:AutoExtractDefault": {
+                    "llm_id": "deepseek-chat@DeepSeek"
+                }
             },
             "permission": "me",
             "running_count": 0,

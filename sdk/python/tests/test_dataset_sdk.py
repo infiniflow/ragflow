@@ -59,7 +59,7 @@ def test_create_dataset_builtin_payload_uses_parser_fields():
             "language": "English",
         }
     )
-    parser_config = DataSet.ParserConfig(rag, {"chunk_token_num": 512})
+    parser_config = DataSet.ParserConfig(rag, {"GeneralChunker:SixApplesFall": {"chunk_token_size": 512}})
 
     dataset = rag.create_dataset(
         name="kb",
@@ -75,24 +75,26 @@ def test_create_dataset_builtin_payload_uses_parser_fields():
         "permission": "me",
         "parser_id": "table",
         "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
-        "parser_config": {"chunk_token_num": 512},
+        "parser_config": {"GeneralChunker:SixApplesFall": {"chunk_token_size": 512}},
         "language": "English",
     }
     assert dataset.parser_id == "table"
     assert dataset.language == "English"
 
 
-def test_create_dataset_treats_blank_pipeline_id_as_absent():
+@pytest.mark.parametrize("pipeline_id", ["", "  "])
+def test_create_dataset_treats_blank_pipeline_id_as_absent(pipeline_id):
     rag = RecordingRAGFlow({"id": "ds-1", "name": "kb", "parser_id": "general"})
 
-    rag.create_dataset(name="kb", pipeline_id="  ")
+    rag.create_dataset(name="kb", pipeline_id=pipeline_id)
 
     payload = rag.calls[0][2]
     assert payload["parser_id"] == "general"
     assert "pipeline_id" not in payload
 
 
-def test_create_dataset_treats_blank_parser_id_as_absent_for_pipeline():
+@pytest.mark.parametrize("parser_id", ["", "  "])
+def test_create_dataset_treats_blank_parser_id_as_absent_for_pipeline(parser_id):
     rag = RecordingRAGFlow(
         {
             "id": "ds-1",
@@ -105,13 +107,23 @@ def test_create_dataset_treats_blank_parser_id_as_absent_for_pipeline():
     rag.create_dataset(
         name="kb",
         parse_type=2,
-        parser_id=" ",
+        parser_id=parser_id,
         pipeline_id="0123456789abcdef0123456789abcdef",
     )
 
     payload = rag.calls[0][2]
     assert "parser_id" not in payload
     assert payload["pipeline_id"] == "0123456789abcdef0123456789abcdef"
+
+
+@pytest.mark.parametrize("parser_id", ["", "  "])
+def test_create_dataset_rejects_blank_parser_id_for_builtin(parser_id):
+    rag = RecordingRAGFlow({})
+
+    with pytest.raises(ValueError, match="parser_id must not be empty"):
+        rag.create_dataset(name="kb", parser_id=parser_id)
+
+    assert rag.calls == []
 
 
 def test_create_dataset_pipeline_payload():
