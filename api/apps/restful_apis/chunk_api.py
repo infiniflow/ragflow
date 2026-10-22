@@ -17,12 +17,17 @@
 # is not part of the current change and is intentionally suppressed file-wide.
 # Re-enable per-line once the relevant paths are touched.
 # ruff: noqa: BLE001, C403, C419, DTZ005, I001, S112, SIM102, SIM118
+import asyncio
 import base64
 import binascii
+import contextvars
 import datetime
 import json
 import logging
+import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import xxhash
 from pydantic import BaseModel, Field, validator
@@ -56,6 +61,7 @@ from api.utils.api_utils import (
 )
 from api.utils.image_utils import (
     IMAGE_UPDATE_MODE_REMOVE,
+    IMAGE_UPDATE_MODE_REPLACE,
     IMAGE_UPDATE_MODES,
     remove_chunk_image,
     store_chunk_image,
@@ -76,6 +82,7 @@ from common.tag_feature_utils import validate_tag_features
 from rag.app.tag import label_question
 from rag.nlp import search
 from rag.prompts.generator import cross_languages, keyword_extraction
+from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
 
 
 def _encode_with_request_user(embd_mdl, texts, req):
@@ -84,6 +91,24 @@ def _encode_with_request_user(embd_mdl, texts, req):
         return embd_mdl.encode(texts)
     finally:
         reset_llm_request_context(token)
+
+
+_ADD_CHUNK_TIMEOUT_SECONDS = float(os.getenv("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS", "60"))
+# A worker that outlives its request may still be inside the doc-store insert,
+# so its chunk lock must outlive the request deadline by a wide margin.
+_ADD_CHUNK_LOCK_TTL_SECONDS = 10 * _ADD_CHUNK_TIMEOUT_SECONDS
+# How long a retry can still count a chunk whose insert succeeded but whose
+# count did not.
+_ADD_CHUNK_PENDING_COUNT_TTL_SECONDS = 24 * 3600
+# add_chunk stores the chunk image, embeds and indexes in this pool so a stalled
+# object store, model provider or doc store cannot freeze the event loop. Python
+# cannot stop a worker that outlives its request, so the pool also bounds how
+# many of those can pile up.
+_ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("RAGFLOW_ADD_CHUNK_WORKERS", "4")), thread_name_prefix="add-chunk")
+
+
+class _ChunkBeingAdded(Exception):
+    pass
 
 
 DOC_STOP_PARSING_INVALID_STATE_MESSAGE = "Can't stop parsing document that has not started or already completed"
@@ -1312,29 +1337,83 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             code=RetCode.SERVER_ERROR,
         )
 
+    image_binary = None
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
             return get_error_data_result(message=image_err)
-        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
-        if store_err:
-            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
     embd_id = DocumentService.get_embd_id(document_id)
     model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
     embd_mdl = TenantLLMService.model_instance(model_config)
-    v, c = _encode_with_request_user(
-        embd_mdl,
-        [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
-        req,
-    )
-    v = 0.1 * v[0] + 0.9 * v[1]
-    d[f"q_{len(v)}_vec"] = v.tolist()
-    settings.docStoreConn.insert([d], search.index_name(dataset_tenant_id), dataset_id)
+    index_name = search.index_name(dataset_tenant_id)
+    abandoned = threading.Event()
 
-    DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+    def _write_chunk():
+        v, c = _encode_with_request_user(
+            embd_mdl,
+            [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
+            req,
+        )
+        v = 0.1 * v[0] + 0.9 * v[1]
+        d[f"q_{len(v)}_vec"] = v.tolist()
+        if abandoned.is_set():
+            return None
+        # The chunk id derives from its content, so a client retrying a timed-out
+        # request targets the same chunk. Writes for one chunk are serialized, and
+        # a retry overwrites the chunk and its image instead of duplicating them.
+        lock = RedisDistributedLock(f"add_chunk:{chunk_id}", timeout=_ADD_CHUNK_LOCK_TTL_SECONDS, blocking_timeout=_ADD_CHUNK_TIMEOUT_SECONDS)
+        if not lock.acquire():
+            raise _ChunkBeingAdded
+        try:
+            if abandoned.is_set():
+                return None
+            exists = settings.docStoreConn.get(chunk_id, index_name, [dataset_id]) is not None
+            # The read can itself stall past the deadline.
+            if abandoned.is_set():
+                return None
+            if image_binary is not None:
+                store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, mode=IMAGE_UPDATE_MODE_REPLACE)
+                if store_err:
+                    return store_err
+                if abandoned.is_set():
+                    return None
+            # Count the chunk when it is new, or when an earlier attempt inserted
+            # it but failed to count it. The pending marker is set before the
+            # insert and cleared only once the count is recorded.
+            pending_count_key = f"add_chunk_pending_count:{chunk_id}"
+            needs_count = not exists or bool(REDIS_CONN.exist(pending_count_key))
+            if needs_count and not REDIS_CONN.set(pending_count_key, "1", _ADD_CHUNK_PENDING_COUNT_TTL_SECONDS):
+                raise RuntimeError(f"Failed to record the pending count for chunk {chunk_id}")
+            settings.docStoreConn.insert([d], index_name, dataset_id)
+            if needs_count:
+                DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
+                REDIS_CONN.delete(pending_count_key)
+        finally:
+            lock.release()
+        return None
+
+    loop = asyncio.get_running_loop()
+    ctx = contextvars.copy_context()
+    try:
+        async with asyncio.timeout(_ADD_CHUNK_TIMEOUT_SECONDS) as deadline:
+            store_err = await loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, _write_chunk)
+    except TimeoutError:
+        if not deadline.expired():
+            raise
+        abandoned.set()
+        logging.warning("add_chunk timed out after %gs. dataset_id=%s document_id=%s chunk_id=%s", _ADD_CHUNK_TIMEOUT_SECONDS, dataset_id, document_id, chunk_id)
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=f"Adding the chunk timed out after {_ADD_CHUNK_TIMEOUT_SECONDS:g} seconds")
+    except asyncio.CancelledError:
+        abandoned.set()
+        raise
+    except _ChunkBeingAdded:
+        return get_result(code=RetCode.EXCEPTION_ERROR, message=f"Chunk {chunk_id} is being added by another request")
+    if store_err:
+        return get_error_data_result(message=store_err)
+
     key_mapping = {
         "id": "id",
         "content_with_weight": "content",
