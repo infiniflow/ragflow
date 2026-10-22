@@ -230,7 +230,7 @@ class Graph:
         return ComponentBase._replace_template_matches(pat, value, replace)
 
     def get_variable_value(self, exp: str) -> Any:
-        exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
+        exp = exp.strip().strip("{}").strip()
         if exp.find("@") < 0:
             return self.globals[exp]
         # Split from the left with maxsplit=1 so the trailing var_nm can
@@ -282,7 +282,7 @@ class Graph:
         return cur
 
     def set_variable_value(self, exp: str, value):
-        exp = exp.strip("{").strip("}").strip(" ").strip("{").strip("}")
+        exp = exp.strip().strip("{}").strip()
         if exp.find("@") < 0:
             self.globals[exp] = value
             return
