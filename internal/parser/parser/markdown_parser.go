@@ -188,11 +188,12 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			i++
 			continue
 		}
-		// Four or more leading spaces make an indented code block, whose pipe rows are code.
-		if !inFence && i+1 < len(lines) && len(line)-len(strings.TrimLeft(line, " \t")) <= 3 && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
+		// Four or more columns of indentation make an indented code block, whose pipe rows are code.
+		if !inFence && i+1 < len(lines) && markdownIndentWidth(line) <= 3 && isMarkdownTableRow(line) &&
+			markdownIndentWidth(lines[i+1]) <= 3 && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
 			start := i
 			i += 2
-			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
+			for i < len(lines) && markdownIndentWidth(lines[i]) <= 3 && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
 				i++
 			}
 			for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
@@ -324,6 +325,23 @@ func ensureTrailingBlankLine(b *strings.Builder) {
 	default:
 		b.WriteString("\n\n")
 	}
+}
+
+// markdownIndentWidth returns the indentation of a line in columns. A tab advances to the next
+// multiple of four columns, as CommonMark counts it, so a tab alone is a code-block indent.
+func markdownIndentWidth(line string) int {
+	width := 0
+	for _, r := range line {
+		switch r {
+		case ' ':
+			width++
+		case '\t':
+			width += 4 - width%4
+		default:
+			return width
+		}
+	}
+	return width
 }
 
 func markdownFenceMarker(line string) (byte, int, bool) {

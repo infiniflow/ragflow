@@ -832,26 +832,31 @@ func TestMarkdownParser_IndentedTables(t *testing.T) {
 		}
 	}
 
-	md := "Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n"
-	res := p.ParseWithResult(ctx, "test.md", []byte(md))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
-	}
-	sawCode := false
-	for _, item := range ItemsToMaps(res.JSON) {
-		text, _ := item["text"].(string)
-		if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
-			t.Fatalf("indented code block emitted as a table item: %q", text)
+	for _, md := range []string{
+		"Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"Code:\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+		"Code:\n\n  | a | b |\n      |---|---|\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
 		}
-		if strings.Contains(text, "| a | b |") {
-			sawCode = true
-			if strings.Contains(text, "<pre>") || strings.Contains(text, "<table") {
-				t.Fatalf("indented code block text was rewritten into HTML: %q", text)
+		sawCode := false
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				t.Fatalf("ParseWithResult(%q): code emitted as a table item: %q", md, text)
+			}
+			if strings.Contains(text, "| a | b |") {
+				sawCode = true
+				if strings.Contains(text, "<pre>") || strings.Contains(text, "<table") {
+					t.Fatalf("ParseWithResult(%q): code text was rewritten into HTML: %q", md, text)
+				}
 			}
 		}
-	}
-	if !sawCode {
-		t.Fatal("indented code block with pipe rows not found in output")
+		if !sawCode {
+			t.Fatalf("ParseWithResult(%q): the pipe rows are missing from the output", md)
+		}
 	}
 }
 
