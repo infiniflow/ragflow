@@ -111,11 +111,7 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
     // setups to JSON, so a stored value is dead config that must not survive
     // a load/save round-trip.
     if (x?.fileFormat === FileType.Audio) return omit(x, ['output_format']);
-    const stripped = omit(x, [
-      'vlm',
-      'flatten_media_to_text',
-      'output_format',
-    ]);
+    const stripped = omit(x, ['vlm', 'flatten_media_to_text', 'output_format']);
     if (x?.fileFormat !== FileType.Image) {
       return materializeHyperlinkDefaults(stripped);
     }
