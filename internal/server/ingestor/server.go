@@ -220,7 +220,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
 	// Init admin client status in ingestor
-	local.InitAdminStatus(1, "admin server not connected")
+	local.InitAdminStatus()
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)

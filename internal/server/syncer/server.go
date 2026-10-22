@@ -53,7 +53,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
 	// Init admin client status in syncer
-	local.InitAdminStatus(1, "admin server not connected")
+	local.InitAdminStatus()
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
