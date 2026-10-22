@@ -24,8 +24,8 @@ func TestCompile_OverrideParams(t *testing.T) {
 					ComponentName: "Parser",
 					Params: map[string]any{
 						"pdf": map[string]any{
-							"lang": "one",
-							"parse_method":  "naive",
+							"lang":         "one",
+							"parse_method": "naive",
 						},
 						"doc": map[string]any{
 							"lang": "one",

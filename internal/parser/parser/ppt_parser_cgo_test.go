@@ -159,7 +159,7 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	// PPTParser delegates to PPTXParser{format:"ppt"}.
 	p := NewPPTParser()
 	setup := map[string]any{
-		"parse_method":  "tcadp",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 
@@ -181,7 +181,7 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 		t.Fatalf("NewPPTXParser().format = %q, want pptx", p.format)
 	}
 	setup := map[string]any{
-		"parse_method":  "tcadp",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
