@@ -1190,8 +1190,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
-      naiveSettings: 'Naive settings',
-      agenticSettings: 'Agentic settings',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
       agenticTemplate: 'Agentic template',
       agenticTemplateTip:
         'The system template the agentic RAG agent runs with. Editing it overrides the shipped default for this chat; reset to restore it.',
