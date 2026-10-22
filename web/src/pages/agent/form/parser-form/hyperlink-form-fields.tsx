@@ -6,7 +6,16 @@ import { useTranslation } from 'react-i18next';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
-export function HyperlinkFormFields({ prefix }: CommonProps) {
+type HyperlinkFormFieldsProps = CommonProps & {
+  // collect_markdown_links is rejected by the backend outside the markdown
+  // family, so only the markdown form may render the switch.
+  showMarkdownLinks?: boolean;
+};
+
+export function HyperlinkFormFields({
+  prefix,
+  showMarkdownLinks = false,
+}: HyperlinkFormFieldsProps) {
   const { t } = useTranslation();
   const enabled = useWatch({
     name: buildFieldNameWithPrefix('fetch_links', prefix),
@@ -31,21 +40,23 @@ export function HyperlinkFormFields({ prefix }: CommonProps) {
       </RAGFlowFormItem>
       {enabled && (
         <div className="space-y-4">
-          <RAGFlowFormItem
-            name={buildFieldNameWithPrefix('collect_markdown_links', prefix)}
-            label={t('flow.collectMarkdownLinks')}
-            tooltip={t('flow.collectMarkdownLinksTip')}
-            horizontal={true}
-            labelClassName="w-full"
-            valueClassName="w-8"
-          >
-            {(field) => (
-              <Switch
-                checked={!!field.value}
-                onCheckedChange={(checked) => field.onChange?.(checked)}
-              />
-            )}
-          </RAGFlowFormItem>
+          {showMarkdownLinks && (
+            <RAGFlowFormItem
+              name={buildFieldNameWithPrefix('collect_markdown_links', prefix)}
+              label={t('flow.collectMarkdownLinks')}
+              tooltip={t('flow.collectMarkdownLinksTip')}
+              horizontal={true}
+              labelClassName="w-full"
+              valueClassName="w-8"
+            >
+              {(field) => (
+                <Switch
+                  checked={!!field.value}
+                  onCheckedChange={(checked) => field.onChange?.(checked)}
+                />
+              )}
+            </RAGFlowFormItem>
+          )}
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('max_urls', prefix)}
             label={t('flow.hyperlinkMaxUrls')}
@@ -57,13 +68,13 @@ export function HyperlinkFormFields({ prefix }: CommonProps) {
             name={buildFieldNameWithPrefix('max_bytes_per_url', prefix)}
             label={t('flow.hyperlinkMaxBytesPerUrl')}
           >
-            <Input type="number" min={1} step={1} />
+            <Input type="number" min={1} max={64 * 1024 * 1024} step={1} />
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('max_total_bytes', prefix)}
             label={t('flow.hyperlinkMaxTotalBytes')}
           >
-            <Input type="number" min={1} step={1} />
+            <Input type="number" min={1} max={256 * 1024 * 1024} step={1} />
           </RAGFlowFormItem>
           <RAGFlowFormItem
             name={buildFieldNameWithPrefix('timeout_s', prefix)}

@@ -24,6 +24,50 @@ export const VisionEnhancementFileTypes: FileType[] = [
   FileType.Video,
 ];
 
+const HyperlinkSetupFileTypes = [
+  FileType.PDF,
+  FileType.Docx,
+  FileType.TextMarkdown,
+];
+
+const HyperlinkSetupKeys = [
+  'fetch_links',
+  'max_urls',
+  'max_bytes_per_url',
+  'max_total_bytes',
+  'timeout_s',
+] as const;
+
+// Materializes the linked-content defaults (#21032) on setups saved before
+// those keys existed. The backend applies the same defaults at parse time, so
+// this only makes the form show the budgets the run will actually use instead
+// of empty inputs. collect_markdown_links is markdown-only: the backend
+// rejects it on the other families.
+function materializeHyperlinkDefaults<T extends Record<string, any>>(
+  setup: T,
+): T {
+  if (!HyperlinkSetupFileTypes.includes(setup?.fileFormat)) {
+    return setup;
+  }
+  const defaults = initialParserValues.setups.find(
+    (x) => x.fileFormat === setup.fileFormat,
+  ) as Record<string, any> | undefined;
+  if (!defaults) {
+    return setup;
+  }
+  const keys: string[] = [...HyperlinkSetupKeys];
+  if (setup.fileFormat === FileType.TextMarkdown) {
+    keys.push('collect_markdown_links');
+  }
+  const next: Record<string, any> = { ...setup };
+  for (const key of keys) {
+    if (next[key] === undefined) {
+      next[key] = defaults[key];
+    }
+  }
+  return next as T;
+}
+
 // Lifts the legacy per-setup vision options (vlm.llm_id / flatten_media_to_text)
 // onto the top level and migrates the image family onto its own contract:
 // `ocr_enabled` replaces parse_method, and the prompt the image setup used to
@@ -78,7 +122,9 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
   const nextSetups = setups.map((x) => {
     if (x?.fileFormat === FileType.Audio) return x;
     const stripped = omit(x, ['vlm', 'flatten_media_to_text']);
-    if (x?.fileFormat !== FileType.Image) return stripped;
+    if (x?.fileFormat !== FileType.Image) {
+      return materializeHyperlinkDefaults(stripped);
+    }
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local
     // OCR", matching the backend's legacy inference, so the toggle can never

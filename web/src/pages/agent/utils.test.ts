@@ -238,6 +238,56 @@ describe('transformParserParams vision settings', () => {
   });
 });
 
+describe('transformParserParams linked-content settings', () => {
+  const hyperlinkBudgets = {
+    max_urls: 5,
+    max_bytes_per_url: 1048576,
+    max_total_bytes: 5242880,
+    timeout_s: 10,
+  };
+
+  it.each([FileType.PDF, FileType.Docx])(
+    'emits budgets without collect_markdown_links for %s',
+    (fileFormat) => {
+      const result: Record<string, any> = transformParserParams({
+        setups: [{ fileFormat, fetch_links: true }],
+      } as any);
+
+      expect(result[fileFormat]).toMatchObject({
+        fetch_links: true,
+        ...hyperlinkBudgets,
+      });
+      expect(result[fileFormat]).not.toHaveProperty('collect_markdown_links');
+    },
+  );
+
+  it('emits collect_markdown_links for markdown', () => {
+    const result: Record<string, any> = transformParserParams({
+      setups: [
+        {
+          fileFormat: FileType.TextMarkdown,
+          fetch_links: true,
+          collect_markdown_links: true,
+        },
+      ],
+    } as any);
+
+    expect(result.markdown).toMatchObject({
+      fetch_links: true,
+      collect_markdown_links: true,
+      ...hyperlinkBudgets,
+    });
+  });
+
+  it('drops linked-content keys for doc', () => {
+    const result: Record<string, any> = transformParserParams({
+      setups: [{ fileFormat: FileType.Doc, fetch_links: true }],
+    } as any);
+
+    expect(result.doc).not.toHaveProperty('fetch_links');
+  });
+});
+
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {
     // Regression: saving with delimiter_mode='one' used to zero these fields,

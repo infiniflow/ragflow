@@ -2712,8 +2712,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Download the pages referenced by links in the document and index them together with the document. Off by default.',
       collectMarkdownLinks: 'Collect links from the document body',
       collectMarkdownLinksTip:
-        'Also gather links from the Markdown body (in addition to links embedded in docx/pdf files).',
-      hyperlinkBudget: 'Linked content limits',
+        'Collect link destinations from the Markdown body. Links are only fetched when linked-content fetching is enabled.',
       hyperlinkMaxUrls: 'Maximum number of links',
       hyperlinkMaxUrlsTip: 'How many links are fetched per document.',
       hyperlinkMaxBytesPerUrl: 'Maximum bytes per linked page',
