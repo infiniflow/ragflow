@@ -32,6 +32,7 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
 import {
+  mergePromptConfigForSubmit,
   promptConfigDefaults,
   withPromptConfigDefaults,
 } from './prompt-config-defaults';
@@ -123,7 +124,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     );
 
     nextValues.prompt_config = {
-      ...nextValues.prompt_config,
+      // promptConfigSchema strips fields the form does not render (`use_kg`,
+      // `toc_enhance`), and the PUT replaces the whole object — spread the
+      // persisted config first so those survive a save.
+      ...mergePromptConfigForSubmit(
+        data.prompt_config,
+        nextValues.prompt_config,
+      ),
       agentic_rag: agenticRag,
     };
 

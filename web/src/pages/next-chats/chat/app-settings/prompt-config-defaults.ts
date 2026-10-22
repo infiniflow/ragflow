@@ -45,3 +45,21 @@ export function withPromptConfigDefaults(
 ): Partial<PromptConfig> {
   return { ...promptConfigDefaults, ...(promptConfig ?? {}) };
 }
+
+/**
+ * Builds the `prompt_config` sent on save.
+ *
+ * `promptConfigSchema` only declares the fields the form renders, and zod
+ * strips everything else — so `use_kg` and `toc_enhance` are gone by the time
+ * the submit handler runs. Because the PUT replaces the whole object, sending
+ * the parsed values alone would silently delete them. Starting from the
+ * persisted config keeps undeclared fields, while the submitted values still
+ * win for every field the form does own.
+ */
+export function mergePromptConfigForSubmit(
+  persisted?: Partial<PromptConfig> | null,
+  submitted?: Partial<PromptConfig> | null,
+): Partial<PromptConfig> {
+  return { ...(persisted ?? {}), ...(submitted ?? {}) };
+}
+

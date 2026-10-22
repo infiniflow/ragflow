@@ -15,6 +15,7 @@
  */
 
 import {
+  mergePromptConfigForSubmit,
   promptConfigDefaults,
   withPromptConfigDefaults,
 } from '../prompt-config-defaults';
@@ -84,5 +85,38 @@ describe('withPromptConfigDefaults', () => {
     merged.keyword = true;
 
     expect(promptConfigDefaults.keyword).toBe(false);
+  });
+});
+
+describe('mergePromptConfigForSubmit', () => {
+  it('keeps undeclared fields that zod stripped from the submitted values', () => {
+    // `use_kg` and `toc_enhance` are part of PromptConfig but not of
+    // promptConfigSchema, so the form values never carry them.
+    const persisted = {
+      use_kg: true,
+      toc_enhance: true,
+      keyword: false,
+      system: 'persisted prompt',
+    };
+    const submitted = { keyword: true, system: 'edited prompt' };
+
+    const merged = mergePromptConfigForSubmit(persisted, submitted);
+
+    expect(merged).toMatchObject({
+      use_kg: true,
+      toc_enhance: true,
+      keyword: true,
+      system: 'edited prompt',
+    });
+  });
+
+  it('handles a missing persisted or submitted config', () => {
+    expect(mergePromptConfigForSubmit(undefined, { keyword: true })).toEqual({
+      keyword: true,
+    });
+    expect(mergePromptConfigForSubmit({ use_kg: true }, null)).toEqual({
+      use_kg: true,
+    });
+    expect(mergePromptConfigForSubmit(null, undefined)).toEqual({});
   });
 });
