@@ -120,14 +120,6 @@ func (s *Service) Logout(ctx context.Context, user interface{}) error {
 	return nil
 }
 
-func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
-}
-
-func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
-}
-
 // GetUserByToken get user by access token
 func (s *Service) GetUserByToken(ctx context.Context, token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, token)

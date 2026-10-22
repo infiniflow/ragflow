@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/handler"
 	"strconv"
 	"strings"
 	"time"
@@ -1590,6 +1591,75 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, tasks, "Get all tasks")
+}
+
+type RemoveIngestionTaskRequest struct {
+	Tasks  []string `json:"tasks"`
+	Email  *string  `json:"email"`
+	Status *string  `json:"status"`
+}
+
+func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
+	var req RemoveIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
+		return
+	}
+	ctx := c.Request.Context()
+	if req.Email == nil && req.Status == nil {
+		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
+		if err != nil {
+			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
+			return
+		}
+
+		common.SuccessWithData(c, tasks, "Remove tasks successfully")
+	} else {
+		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
+		if err != nil {
+			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
+			return
+		}
+		common.SuccessWithData(c, tasks, "Remove tasks successfully")
+	}
+}
+
+type StopIngestionTaskRequest struct {
+	Tasks  []string `json:"tasks"`
+	Email  *string  `json:"email"`
+	Status *string  `json:"status"`
+}
+
+func (h *Handler) StopIngestionTasks(c *gin.Context) {
+	var req StopIngestionTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
+		return
+	}
+	ctx := c.Request.Context()
+	if req.Email == nil && req.Status == nil {
+		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
+		if err != nil {
+			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
+			return
+		}
+		var result []map[string]string
+		for _, task := range tasks {
+			result = append(result, map[string]string{
+				"task_id": task.ID,
+				"status":  task.Status,
+			})
+		}
+
+		common.SuccessWithData(c, result, "Stop tasks successfully")
+	} else {
+		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			return
+		}
+		common.SuccessWithData(c, tasks, "Stop tasks successfully")
+	}
 }
 
 // ShowDataSummary handle show data summary

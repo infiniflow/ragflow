@@ -122,10 +122,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.GET("/all-models", r.handler.ListAllModels)
 			protected.GET("/all-models/:model_name", r.handler.ShowModel)
 
-			// Ingestion tasks
-			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
-			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
-
 			RegisterEERouter(protected, r)
 		}
 	}

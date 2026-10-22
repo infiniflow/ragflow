@@ -51,3 +51,35 @@ func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command)
 func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, error) {
 	return nil, errors.New("listing user ingestion tasks in admin mode is not supported in the open-source edition")
 }
+
+func (c *CLI) AdminStopIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("stopping admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (c *CLI) AdminRemoveIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("removing admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (c *CLI) AdminStopUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("stopping user ingestion tasks in admin mode is not supported in the open-source edition")
+}
+
+func (c *CLI) AdminRemoveUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("removing user ingestion tasks in admin mode is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
+	return nil, errors.New("stopping admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
+	return nil, errors.New("removing admin ingestion tasks is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminStopUserIngestionTasks(userName string) (*Command, error) {
+	return nil, errors.New("stopping user ingestion tasks in admin mode is not supported in the open-source edition")
+}
+
+func (p *Parser) parseAdminRemoveUserIngestionTasks(userName string) (*Command, error) {
+	return nil, errors.New("removing user ingestion tasks in admin mode is not supported in the open-source edition")
+}

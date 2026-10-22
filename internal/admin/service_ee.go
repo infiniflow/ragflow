@@ -1128,6 +1128,16 @@ func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[s
 	return result, nil
 }
 
+// RemoveIngestionTasks reports that admin task removal is not supported.
+func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	return nil, errors.New("removing admin ingestion tasks is not supported in the open-source edition")
+}
+
+// StopIngestionTasks reports that admin task stopping is not supported.
+func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	return nil, errors.New("stopping admin ingestion tasks is not supported in the open-source edition")
+}
+
 // ListIngestionTasks reports that admin task listing is not supported.
 func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{

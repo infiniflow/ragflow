@@ -1085,48 +1085,6 @@ func (c *CLI) ListAdminIngestors(commandCount int, cmd *Command) (ResponseIf, er
 	return HandleCommonResponse(resp, "list ingestors")
 }
 
-func (c *CLI) AdminStopIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	tasks, ok := cmd.Params["tasks"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("uri not provided")
-	}
-	payload := map[string]interface{}{
-		"tasks": tasks,
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/ingestion/tasks", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "stop ingestion")
-}
-
-func (c *CLI) AdminRemoveIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	tasks, ok := cmd.Params["tasks"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("uri not provided")
-	}
-	payload := map[string]interface{}{
-		"tasks": tasks,
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove ingestion: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "remove ingestion")
-}
-
 func (c *CLI) AdminShutdownIngestor(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
@@ -2445,66 +2403,6 @@ func (c *CLI) AdminListUserLogsCommand(commandCount int, cmd *Command) (Response
 	}
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s logs", userName))
-}
-
-func (c *CLI) AdminStopUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("stop user %s ingestion tasks", userName))
-}
-
-func (c *CLI) AdminRemoveUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("remove user %s ingestion tasks", userName))
 }
 
 // AdminAddProviderCommand add provider
