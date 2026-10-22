@@ -843,6 +843,10 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 
 const mineruMaxImageBytes = 20 << 20
 
+// mineruMaxDocumentImageBytes caps the total bytes of zip images inlined as
+// data URIs for one document, so a image-heavy document cannot exhaust memory.
+const mineruMaxDocumentImageBytes = 64 << 20
+
 // mineruExtractJSONItems reads MinerU content_list.json from a zip and
 // emits JSON parser items with captions, embedded zip images, and
 // 1-indexed _pdf_positions so jump-to-source works like DeepDoc.
@@ -886,8 +890,9 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	}
 
 	out := make([]map[string]any, 0, len(rawItems))
+	imageBudget := mineruMaxDocumentImageBytes
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images)
+		converted := mineruContentItemToJSONBudget(item, images, &imageBudget)
 		if converted != nil {
 			out = append(out, converted)
 		}
@@ -899,6 +904,14 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 }
 
 func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) map[string]any {
+	return mineruContentItemToJSONBudget(item, images, nil)
+}
+
+// mineruContentItemToJSONBudget converts one content_list item. When budget is
+// non-nil it is the remaining number of image bytes that may still be inlined;
+// images that do not fit are left out of the item but the item itself (and its
+// positions) is kept.
+func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, budget *int) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -908,6 +921,7 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 
 	text := mineruItemText(item, typ)
 	imageURI := ""
+	hasImageFile := false
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -926,9 +940,10 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 		docType = "image"
 		layout = "figure"
 		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			imageURI = mineruZipImageDataURI(images, imgPath)
+			imageURI = mineruZipImageDataURI(images, imgPath, budget)
+			hasImageFile = mineruZipImageFile(images, imgPath) != nil
 		}
-		if text == "" && imageURI == "" {
+		if text == "" && imageURI == "" && !hasImageFile {
 			return nil
 		}
 	case "table":
@@ -1109,20 +1124,31 @@ func mineruJSONFloatSlice(raw any) []float64 {
 	}
 }
 
-func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
+// mineruZipImageFile looks up an image member of the MinerU zip by its
+// content_list img_path.
+func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
-		return ""
+		return nil
 	}
 	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
-	var file *zip.File
 	for _, key := range candidates {
 		if f, ok := images[key]; ok {
-			file = f
-			break
+			return f
 		}
 	}
+	return nil
+}
+
+// mineruZipImageDataURI inlines a zip image as a data URI. When imageBudget is
+// non-nil, an image larger than the remaining budget is skipped and an inlined
+// image's size is deducted from it.
+func mineruZipImageDataURI(images map[string]*zip.File, imgPath string, imageBudget *int) string {
+	file := mineruZipImageFile(images, imgPath)
 	if file == nil || file.UncompressedSize64 > mineruMaxImageBytes {
+		return ""
+	}
+	if imageBudget != nil && file.UncompressedSize64 > uint64(max(*imageBudget, 0)) {
 		return ""
 	}
 	rc, err := file.Open()
@@ -1133,6 +1159,12 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 	rc.Close()
 	if err != nil || len(data) == 0 || len(data) > mineruMaxImageBytes {
 		return ""
+	}
+	if imageBudget != nil {
+		if len(data) > *imageBudget {
+			return ""
+		}
+		*imageBudget -= len(data)
 	}
 	mediaType := mime.TypeByExtension(path.Ext(file.Name))
 	if mediaType == "" {
