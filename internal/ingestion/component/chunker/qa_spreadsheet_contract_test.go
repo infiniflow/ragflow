@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -28,7 +29,7 @@ func TestCSVQAFirstRowIsData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("expected both QA rows, got %d chunks: %#v", len(chunks), chunks)
 	}
@@ -53,7 +54,7 @@ func TestCSVTypedRowsFoldMalformedRowIntoPreviousAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("malformed row created or removed a pair: %#v", chunks)
 	}
@@ -80,7 +81,7 @@ func TestCSVJSONHTMLTableUsesStrictContinuationRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("malformed HTML row created a QA pair: %#v", chunks)
 	}

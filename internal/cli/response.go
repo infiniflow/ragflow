@@ -1281,7 +1281,7 @@ func (r *QuotaSummaryResponse) PrintOut() {
 //
 // JSON shape:
 //
-//	{"code":0,"data":{"answer":"...","reference":...},"message":""}
+//	{"code":0,"data":{"answer":"...","reference":...},"message":"success"}
 type ChatCompletionsResponse struct {
 	Code         int                 `json:"code"`
 	Data         *chatCompletionData `json:"data"`

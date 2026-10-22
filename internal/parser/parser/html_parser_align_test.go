@@ -9,7 +9,7 @@ import (
 
 // TestHTMLParser_TableProducesStructuredItems asserts the HTML table contract:
 // a <table> is emitted as exactly ONE structured doc_type_kwd:"table"/
-// ck_type:"table" item, in its original document position (not relocated to
+// layout-free structured table item, in its original document position (not relocated to
 // the end), with NO duplicate doc_type_kwd:"text" copy carrying the <table>
 // markup. Keeping the full <table>…</table> markup (not flattened) preserves
 // row/column structure for embedding/retrieval/LLM rendering, and the single
@@ -60,9 +60,6 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	}
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
-	}
-	if got, want := res.JSON[tableIdx].ToMap()["ck_type"], "table"; got != want {
-		t.Errorf("structured table item ck_type = %v, want %v", got, want)
 	}
 	if !strings.Contains(tableText, "<table") ||
 		!strings.Contains(tableText, "Name") ||
@@ -143,9 +140,6 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	}
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
-	}
-	if got, want := res.JSON[tableIdx].ToMap()["ck_type"], "table"; got != want {
-		t.Errorf("structured nested table item ck_type = %v, want %v", got, want)
 	}
 	if !strings.Contains(tableText, "<table") ||
 		!strings.Contains(tableText, "Name") ||
@@ -383,25 +377,24 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 	}
 
 	// The whole top-level <ul> is emitted as ONE text item tagged
-	// ck_type:"list" (Go's "one item per block-level element" model). Guard
+	// layout:"list" (Go's "one item per block-level element" model). Guard
 	// against a regression that would drop the list tag or split it
 	// unexpectedly. Note: a list nested inside a non-list container
 	// (div/section/…) is folded into that container's single text item and
-	// therefore loses ck_type:"list" (becomes "text") — a fidelity nuance,
-	// not a collapse, since downstream chunking reads doc_type_kwd not ck_type.
+	// therefore loses layout:"list" — a fidelity nuance, not a collapse.
 	var listText string
 	for _, it := range ItemsToMaps(res.JSON) {
-		if it["ck_type"] == "list" {
+		if it["layout"] == "list" {
 			listText, _ = it["text"].(string)
 			break
 		}
 	}
 	if listText == "" {
-		t.Fatalf("top-level <ul> not tagged ck_type:\"list\"; got items: %#v", res.JSON)
+		t.Fatalf("top-level <ul> not tagged layout:\"list\"; got items: %#v", res.JSON)
 	}
 	for _, want := range []string{"Item 1", "Item 2", "Sub A", "Sub B"} {
 		if !strings.Contains(listText, want) {
-			t.Errorf("ck_type:\"list\" item missing %q: %q", want, listText)
+			t.Errorf("layout:\"list\" item missing %q: %q", want, listText)
 		}
 	}
 }
@@ -413,7 +406,7 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 // structure and the LLM / user would see broken code. This mirrors Python's
 // RAGFlowHtmlParser, which keeps pre/textarea verbatim (_PRE_TAGS in
 // deepdoc/parser/html_parser.py). Both blocks keep doc_type_kwd:"text"; <pre>
-// is tagged ck_type:"code" while <textarea> falls back to ck_type:"text"
+// is tagged layout:"code" while <textarea> has no structural layout
 // (htmlTagToCkType has no textarea case) — a labeling nuance, not a content
 // divergence. Note: the single leading newline immediately after <pre>/<textarea>
 // is dropped by the HTML parser per spec (pre/textarea eat one leading newline);
@@ -453,8 +446,8 @@ SELECT * FROM t
 	if preItem == nil {
 		t.Fatalf("no <pre> item found; got items: %#v", res.JSON)
 	}
-	if preItem["ck_type"] != "code" {
-		t.Errorf("<pre> item ck_type = %v, want code", preItem["ck_type"])
+	if preItem["layout"] != "code" {
+		t.Errorf("<pre> item layout = %v, want code", preItem["layout"])
 	}
 	preText, _ := preItem["text"].(string)
 	// 4-space and 8-space indents must survive verbatim (a folded path would

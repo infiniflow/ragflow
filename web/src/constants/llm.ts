@@ -108,10 +108,14 @@ export enum LLMFactory {
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
+  RadeonCloud = 'Radeon Cloud',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
   Opper = 'Opper',
   DemonRoute = 'Demon Route',
+  TrustedRouter = 'TrustedRouter',
+  EmpirioLabs = 'EmpirioLabs AI',
+  AIStupidLevel = 'AI Stupid Level',
 }
 
 // Please lowercase the file name
@@ -202,14 +206,34 @@ export const IconMap = {
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
   [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.RadeonCloud]: 'radeon-cloud',
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
   [LLMFactory.Opper]: 'opper',
+  [LLMFactory.TrustedRouter]: 'trustedrouter',
+  [LLMFactory.EmpirioLabs]: 'empiriolabs',
+  [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+};
+
+/**
+ * Providers that may serve a given model type.
+ *
+ * The decision model is spoken to in the TypeSafe System One protocol, which
+ * only the SystemOne provider implements. Another provider's model would be
+ * accepted by the picker and then fail on the first call, so the choice is
+ * narrowed at selection time rather than at request time.
+ *
+ * Types without an entry are unrestricted — listing every chat provider here
+ * would be a second copy of the catalog that goes stale.
+ */
+export const ModelTypeProviderMap: Record<string, string[]> = {
+  decision: ['SystemOne'],
 };
 
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
+  decision: 'decision_id',
   embedding: 'embd_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
@@ -219,6 +243,7 @@ export const ModelTypeToField: Record<string, string> = {
 
 export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
+  decision_id: 'decision',
   embd_id: 'embedding',
   img2txt_id: 'vision',
   asr_id: 'asr',
@@ -235,6 +260,10 @@ export const APIMapUrl = {
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
   [LLMFactory.Opper]: 'https://platform.opper.ai',
+  [LLMFactory.TrustedRouter]: 'https://trustedrouter.com/keys',
+  [LLMFactory.EmpirioLabs]:
+    'https://platform.empiriolabs.ai/dashboard/api-keys',
+  [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -284,7 +313,7 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
-  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -319,7 +348,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

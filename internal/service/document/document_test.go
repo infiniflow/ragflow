@@ -2540,68 +2540,86 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
+	builtin, pipeline := 1, 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	cases := []struct {
+		name         string
+		request      UpdateDatasetDocumentRequest
+		present      map[string]bool
+		wantParser   string
+		wantPipeline string
+	}{
+		{name: "config only", wantParser: "naive"},
+		{name: "same builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("naive")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "naive"},
+		{name: "different builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("manual")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "manual"},
+		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID}, present: map[string]bool{"parse_type": true, "pipeline_id": true}, wantParser: "naive", wantPipeline: pipelineID},
+		{name: "chunk method", request: UpdateDatasetDocumentRequest{ChunkMethod: sptr("manual")}, present: map[string]bool{"chunk_method": true}, wantParser: "manual"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+			insertTestCanvas(t, pipelineID, "user-1")
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_duration", 42).Error; err != nil {
+				t.Fatalf("prepare document: %v", err)
+			}
 
-	parseType := 1
-	chunkMethod := "manual"
-	svc := testDocumentService(t)
-	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID:  &chunkMethod,
-		ParseType: &parseType,
-	}, map[string]bool{"parser_id": true, "parse_type": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
-	}
-	if resp.ParserID != chunkMethod || resp.IngestionStatus != "UNSTART" || resp.TokenCount != 0 || resp.ChunkCount != 0 {
-		t.Fatalf("response = %+v, want method=%s ingestion_status=UNSTART counts=0", resp, chunkMethod)
-	}
-
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc.ParserID != chunkMethod {
-		t.Fatalf("parser_id = %q, want %q", doc.ParserID, chunkMethod)
-	}
-	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.Progress != 0 {
-		t.Fatalf("doc counters/progress = token:%d chunk:%d progress:%f, want zero", doc.TokenNum, doc.ChunkNum, doc.Progress)
-	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
-	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
-		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
-	}
-}
-
-func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
-
-	ctx := t.Context()
-	staleDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if err != nil {
-		t.Fatalf("get doc: %v", err)
-	}
-
-	svc := testDocumentService(t)
-	parserID := "manual"
-	if err = svc.resetDocumentForReparse(ctx, staleDoc, "tenant-1", &parserID, nil); err != nil {
-		t.Fatalf("first resetDocumentForReparse failed: %v", err)
-	}
-	if err = svc.resetDocumentForReparse(ctx, staleDoc, "tenant-1", &parserID, nil); err != nil {
-		t.Fatalf("second resetDocumentForReparse failed: %v", err)
-	}
-
-	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
-	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
-		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
-	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
-	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
-		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate reset", kb.TokenNum, kb.ChunkNum)
+			request := tc.request
+			request.ParserConfig = map[string]any{
+				"Extractor:AutoExtractDefault": map[string]any{"keywords": map[string]any{"top_n": 5}},
+			}
+			present := tc.present
+			if present == nil {
+				present = map[string]bool{}
+			}
+			present["parser_config"] = true
+			engine := &rerunDeleteDocEngine{}
+			svc := testDocumentService(t)
+			svc.docEngine = engine
+			resp, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &request, present)
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+			}
+			if resp.ParserID != tc.wantParser || resp.IngestionStatus != string(common.COMPLETED) || resp.TokenCount != 10 || resp.ChunkCount != 5 || resp.Progress != 0.75 || resp.ProcessDuration != 42 {
+				t.Fatalf("response changed parse results: %+v", resp)
+			}
+			if tc.wantPipeline != "" && (resp.PipelineID == nil || *resp.PipelineID != tc.wantPipeline) {
+				t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, tc.wantPipeline)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("get document: %v", err)
+			}
+			if doc.TokenNum != 10 || doc.ChunkNum != 5 || doc.Progress != 0.75 || doc.ProcessDuration != 42 {
+				t.Fatalf("persisted parse results changed: %+v", doc)
+			}
+			extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
+			}
+			keywords, ok := extractor["keywords"].(map[string]interface{})
+			if !ok || keywords["top_n"] != float64(5) {
+				t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
+			}
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+			if err != nil {
+				t.Fatalf("get dataset: %v", err)
+			}
+			if kb.TokenNum != 10 || kb.ChunkNum != 5 {
+				t.Fatalf("dataset counters changed: token=%d chunk=%d", kb.TokenNum, kb.ChunkNum)
+			}
+			if engine.deleteCalls != 0 || engine.search != nil {
+				t.Fatalf("existing chunks accessed during settings update: deletes=%d search=%+v", engine.deleteCalls, engine.search)
+			}
+			task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1")
+			if err != nil || task == nil || task.ID != "task-1" || task.Status != common.COMPLETED {
+				t.Fatalf("existing ingestion task changed: task=%+v err=%v", task, err)
+			}
+		})
 	}
 }
 

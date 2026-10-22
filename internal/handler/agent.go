@@ -35,7 +35,9 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
@@ -114,7 +116,12 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
 		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
-			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
+			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize, &ingestion.Deps{
+				Engine: engine.Get(),
+				DB:     dao.DB,
+				MQ:     engine.GetMessageQueueEngine(),
+				KV:     kvrocks.Get(),
+			})
 		},
 	}
 }
@@ -808,6 +815,30 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.DeleteVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, true, "success")
+}
+
+// ApplyVersion restores a saved workflow as the current agent draft.
+// @Summary Apply Agent Version
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Param version_id path string true "version id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/versions/{version_id}/apply [post]
+func (h *AgentHandler) ApplyVersion(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	versionID := c.Param("version_id")
+	if err := h.agentService.ApplyVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return

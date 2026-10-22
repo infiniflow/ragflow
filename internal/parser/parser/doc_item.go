@@ -39,13 +39,11 @@ type DocItem interface {
 	ToMap() map[string]any
 }
 
-// TextItem is a body/heading/list/code span. CKType optionally carries the
-// legacy ck_type discriminator (heading/list/code/...); it is omitted from
-// ToMap when empty. Extra carries layout/page_number/level/... passthrough.
+// TextItem is a body/heading/list/code span. Extra carries
+// layout/page_number/level/... passthrough.
 type TextItem struct {
-	Text   string
-	CKType string
-	Extra  map[string]any
+	Text  string
+	Extra map[string]any
 }
 
 func (t TextItem) ToMap() map[string]any {
@@ -53,20 +51,14 @@ func (t TextItem) ToMap() map[string]any {
 		"text":     t.Text,
 		DocTypeKey: DocTypeText,
 	}
-	if t.CKType != "" {
-		m["ck_type"] = t.CKType
-	}
 	return mergeExtra(m, t.Extra)
 }
 
-// TableItem carries a parsed TableData. CKType is the legacy ck_type
-// discriminator (always "table" today, mirroring NewTableDataJSONItem); it is
-// emitted for pipeline compatibility and will be dropped in a later pass.
+// TableItem carries a parsed TableData.
 type TableItem struct {
 	Table     *entity.TableData
 	Sheet     string
 	Positions Positions
-	CKType    string
 	Extra     map[string]any
 }
 
@@ -74,7 +66,6 @@ func (t TableItem) ToMap() map[string]any {
 	m := map[string]any{
 		"table":    t.Table,
 		DocTypeKey: DocTypeTable,
-		"ck_type":  firstNonEmptyStr(t.CKType, DocTypeTable),
 	}
 	if t.Sheet != "" {
 		m["sheet"] = t.Sheet
@@ -86,15 +77,13 @@ func (t TableItem) ToMap() map[string]any {
 }
 
 // ImageItem is an embedded image. Text is the alt text, Image the data
-// URL/base64 payload (possibly empty when omitted). CKType carries the legacy
-// ck_type discriminator ("image" for xlsx/pptx/html/markdown, empty for docx);
-// it is omitted from ToMap when empty.
+// URL/base64 payload (possibly empty when omitted). Parsers emit standard
+// base64 with padding and no CR/LF in the payload.
 type ImageItem struct {
 	Text      string
 	Image     string
 	Sheet     string
 	Positions Positions
-	CKType    string
 	Extra     map[string]any
 }
 
@@ -103,9 +92,6 @@ func (i ImageItem) ToMap() map[string]any {
 		"text":     i.Text,
 		"image":    i.Image,
 		DocTypeKey: DocTypeImage,
-	}
-	if i.CKType != "" {
-		m["ck_type"] = i.CKType
 	}
 	if i.Sheet != "" {
 		m["sheet"] = i.Sheet
@@ -188,26 +174,24 @@ func DocItemFromMap(m map[string]any) DocItem {
 
 func textItemFromMap(m map[string]any) DocItem {
 	return TextItem{
-		Text:   stringField(m, "text"),
-		CKType: stringField(m, "ck_type"),
-		Extra:  extraFromMap(m, "text", DocTypeKey, "ck_type"),
+		Text:  stringField(m, "text"),
+		Extra: extraFromMap(m, "text", DocTypeKey),
 	}
 }
 
 func imageItemFromMap(m map[string]any) DocItem {
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"text", "image", DocTypeKey, "ck_type", "sheet"}
+	skip := []string{"text", "image", DocTypeKey, "sheet"}
 	if pos != nil {
 		// Parsed into the typed field: it owns "positions", so strip it from
 		// Extra. Both [][]float64 (office/xlsx) and [][]any (PDF crop regions
-		// from normalizePDFPositions) parse here, so the old [][]any-only
+		// from normalizeDeepDocPositions) parse here, so the old [][]any-only
 		// Extra fallback is gone.
 		skip = append(skip, "positions")
 	}
 	return ImageItem{
 		Text:      stringField(m, "text"),
 		Image:     stringField(m, "image"),
-		CKType:    stringField(m, "ck_type"),
 		Sheet:     stringField(m, "sheet"),
 		Positions: pos,
 		Extra:     extraFromMap(m, skip...),
@@ -225,7 +209,7 @@ func tableItemFromMap(m map[string]any) DocItem {
 		return RawItem{M: m}
 	}
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"table", DocTypeKey, "ck_type", "sheet"}
+	skip := []string{"table", DocTypeKey, "sheet"}
 	if pos != nil {
 		skip = append(skip, "positions")
 	}
@@ -233,7 +217,6 @@ func tableItemFromMap(m map[string]any) DocItem {
 		Table:     td,
 		Sheet:     stringField(m, "sheet"),
 		Positions: pos,
-		CKType:    stringField(m, "ck_type"),
 		Extra:     extraFromMap(m, skip...),
 	}
 }
@@ -292,15 +275,6 @@ func mergeExtra(m, extra map[string]any) map[string]any {
 		}
 	}
 	return m
-}
-
-func firstNonEmptyStr(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // ---------------------------------------------------------------------------
@@ -408,7 +382,7 @@ func wireToPositions(raw any, hasSheet bool) Positions {
 // into the historical wire form for ToMap. The wire container type is preserved
 // per vocabulary so the parser output is byte-for-byte unchanged:
 //   - AbsoluteBox (PDF)  -> [][]any  (int page + float64 coords), matching the
-//     shape normalizePDFPositions already emitted and keeping the page a
+//     shape normalizeDeepDocPositions already emitted and keeping the page a
 //     genuine int (a [][]float64 container would coerce it to float64).
 //   - RowColumnBox (xlsx/csv) -> [][]float64, matching the historical
 //     spreadsheet wire the ingestion indexer consumes.

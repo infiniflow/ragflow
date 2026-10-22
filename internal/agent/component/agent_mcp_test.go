@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/utility"
 	"strings"
 	"sync/atomic"
@@ -80,7 +81,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	pinned := utility.PinnedHTTPClient
 	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client { return mcp.Client() }
 	t.Cleanup(func() { utility.PinnedHTTPClient = pinned })
-	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: utility.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
+	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: mcpclient.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	addAgentMCPPermissionFixtures(t, db)
@@ -177,7 +178,7 @@ func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
 	}
 	pushComponentDB(t, db)
 	for _, id := range []string{"first", "second"} {
-		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: mcpclient.TransportStreamableHTTP}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}

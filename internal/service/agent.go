@@ -1338,13 +1338,12 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:           common.GenerateUUID(),
-		UserCanvasID:    canvasID,
-		Title:           &versionTitle,
-		Description:     description,
-		DSL:             dsl,
-		Release:         release,
-		KeepUnpublished: 20,
+		NewID:        common.GenerateUUID(),
+		UserCanvasID: canvasID,
+		Title:        &versionTitle,
+		Description:  description,
+		DSL:          dsl,
+		Release:      release,
 		SameDSL: func(latestDSL entity.JSONMap) bool {
 			return reflect.DeepEqual(
 				entity.JSONMap(dslpkg.NormalizeForCanvas(latestDSL)),
@@ -1420,6 +1419,22 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		return s.versionDAO.DeleteTx(ctx, tx, versionID)
 	})
+}
+
+// ApplyVersion restores a saved version's DSL through the normal draft-save
+// path, preserving the agent's metadata and version history.
+func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
+	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+			return err
+		}
+		return fmt.Errorf("load agent version: %w: %w", err, ErrAgentStorageError)
+	}
+	if version.DSL == nil {
+		return errors.New("agent version has no DSL to apply")
+	}
+	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL})
 }
 
 // RunAgent starts a run for the given canvas and returns a channel of

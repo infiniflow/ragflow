@@ -194,6 +194,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
+	//
+	// Agentic: no dense-only rescue — a row the query's own words never
+	// matched is not evidence the model asked for.
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -204,6 +207,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
 		TOCEnhance:               args.TOCEnhance,

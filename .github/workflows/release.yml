@@ -24,29 +24,23 @@ concurrency:
 
 jobs:
   prepare:
-    runs-on: [ "self-hosted", "ragflow-release" ]
+    runs-on: ubuntu-24.04
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
       prerelease: ${{ steps.release.outputs.prerelease }}
 
     steps:
-      - name: Ensure workspace ownership
-        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
-
       # https://github.com/actions/checkout/blob/v6/README.md
+      # Keep `token` so the move-mutable-tag step (schedule/nightly) can
+      # `git push -f` via the persisted GITHUB_TOKEN (persist-credentials
+      # defaults to true). Workflow-level `permissions: contents: write`
+      # grants the push.
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use the secret as an environment variable
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
-
-      # https://github.com/actions/setup-go
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
 
       - name: Prepare release metadata
         id: release
@@ -203,17 +197,13 @@ jobs:
     needs:
       - prepare
       - build_cli
-    runs-on: [ "self-hosted", "ragflow-release" ]
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Ensure workspace ownership
-        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
-
       # https://github.com/actions/checkout/blob/v6/README.md
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
 
@@ -252,60 +242,91 @@ jobs:
             tools/scripts/install.sh
             tools/scripts/install.ps1
 
-  release:
+  # Publish the ragflow Python SDK to PyPI. Runs on a GitHub-hosted runner so
+  # it no longer depends on the self-hosted release runner. Only stable v* tags
+  # (not nightly/prerelease) publish, gated by the `if` on this job.
+  publish_sdk:
     needs:
       - prepare
-      - publish_cli_assets
-    runs-on: [ "self-hosted", "ragflow-release" ]
-    env:
-      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
-
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
     steps:
-      - name: Ensure workspace ownership
-        run: echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
-
       # https://github.com/actions/checkout/blob/v6/README.md
       - name: Check out code
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           fetch-tags: true
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
-      # Hybrid publishing strategy:
-      #  - Push the version-specific tag :${RELEASE_TAG} (amd64-only) here, so the
-      #    new release is always pullable on amd64 even if the ARM64 job fails.
-      #    Each release uses a unique version tag, so this never clobbers a
-      #    different version's image.
-      #  - Do NOT push :latest here; the existing (possibly multi-arch) :latest
-      #    must not be overwritten with an amd64-only image before ARM64 is ready.
-      #    :latest is created as a multi-arch tag by the `build-arm64` job's
-      #    manifest step once both arches are pushed.
-      #  - Arch-specific tags (-amd64/:amd64) are also pushed for direct pulls.
-      - name: Build and push image
+      - name: Run Python SDK unit tests
         run: |
-          sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG}-amd64 -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:amd64
-          sudo docker push infiniflow/ragflow:${RELEASE_TAG}-amd64
-          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:amd64
+          uv venv --python 3.13
+          uv pip install -e sdk/python pytest
+          .venv/bin/python -m pytest sdk/python/tests -q
 
       - name: Build and push ragflow-sdk
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
 
+  # Build the linux/amd64 image on a GitHub-hosted runner, mirroring
+  # `build-arm64`. Pushes the version tag (amd64-only) so amd64 pulls always
+  # work even if the ARM64 job fails, plus the arch-specific -amd64/:amd64 tags
+  # for direct pulls. The multi-arch manifest is created by the `build-arm64`
+  # job once both arches are pushed.
+  build-amd64:
+    needs:
+      - prepare
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: infiniflow
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push amd64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          # Disable build attestations (provenance/SBOM) for the same reason as
+          # build-arm64: keep a clean manifest so the multi-arch index merged
+          # below contains only amd64 + arm64 image manifests.
+          provenance: false
+          sbom: false
+          # Use a Go proxy that is reliable from GitHub-hosted runners; the
+          # Dockerfile default (goproxy.cn) is flaky here (HTTP/2 GOAWAY).
+          build-args: |
+            GOPROXY=https://proxy.golang.org,direct
+          tags: |
+            infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-amd64
+            infiniflow/ragflow:amd64
+            infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}
+
   # Build the linux/arm64 image on a GitHub-hosted ARM64 runner and merge it
-  # with the amd64 image (pushed by the `release` job above) into a single
+  # with the amd64 image (pushed by the `build-amd64` job above) into a single
   # multi-arch manifest list for infiniflow/ragflow:${RELEASE_TAG} and :latest,
   # so `docker pull infiniflow/ragflow:${RELEASE_TAG}` resolves per-arch on both
-  # platforms. Runs after `release` so the amd64 (-amd64/:amd64) tags exist.
+  # platforms. Runs after `build-amd64` so the amd64 (-amd64/:amd64) tags exist.
   build-arm64:
     needs:
-      - release
+      - build-amd64
       - prepare
     runs-on: ubuntu-24.04-arm
     env:
@@ -334,6 +355,16 @@ jobs:
           file: ./Dockerfile
           platforms: linux/arm64
           push: true
+          # Disable build attestations (provenance/SBOM). build-push-action v6
+          # otherwise attaches an application/vnd.docker.attestation.manifest.v1+json
+          # artifact to the image. That artifact is not supported by some registries
+          # (e.g. Alibaba Cloud personal OCR), and skopeo sync then fails with
+          # "unsupported image-specific operation on artifact with type
+          # application/vnd.docker.attestation.manifest.v1+json". Disabling it keeps
+          # the pushed image a clean manifest so the multi-arch index merged below
+          # contains only amd64 + arm64 image manifests.
+          provenance: false
+          sbom: false
           # Use a Go proxy that is reliable from GitHub-hosted runners; the
           # Dockerfile default (goproxy.cn) is flaky here (HTTP/2 GOAWAY).
           build-args: |
@@ -343,11 +374,11 @@ jobs:
             infiniflow/ragflow:arm64
 
       # Create/upgrade the public multi-arch tags now that both arch-specific
-      # images (-amd64/:amd64 from the `release` job, -arm64/:arm64 from this
+      # images (-amd64/:amd64 from the `build-amd64` job, -arm64/:arm64 from this
       # job) are pushed. :${RELEASE_TAG} was already pushed amd64-only by the
-      # release job (so amd64 pulls always work); this upgrades it to multi-arch.
+      # build-amd64 job (so amd64 pulls always work); this upgrades it to multi-arch.
       # :latest is created here for the first time this release (it is NOT pushed
-      # by the release job), so the previous, possibly multi-arch, :latest is
+      # by the build-amd64 job), so the previous, possibly multi-arch, :latest is
       # never overwritten with an amd64-only image before ARM64 is ready.
       - name: Create multi-arch manifest
         run: |

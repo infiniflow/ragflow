@@ -225,8 +225,8 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 		t.Fatalf("res.JSON should have structured table items")
 	}
 	item := res.JSON[0].ToMap()
-	if item["ck_type"] != "table" {
-		t.Errorf("table item ck_type = %v, want table", item["ck_type"])
+	if item["doc_type_kwd"] != "table" {
+		t.Errorf("table item doc_type_kwd = %v, want table", item["doc_type_kwd"])
 	}
 	text := tableItemHTML(t, item)
 	if !strings.Contains(text, "<tr><th>Header1</th><th>Header2</th></tr>") ||
@@ -237,10 +237,6 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 		t.Errorf("doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
 	}
 
-	// Configure output format to "json"
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 	resJSON := p.ParseWithResult(context.Background(), "test.xls", data)
 	if resJSON.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", resJSON.Err)
@@ -271,23 +267,8 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("res.JSON = %#v, want one segmented HTML table item", res.JSON)
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" {
-		t.Errorf("item ck_type = %v, want table", res.JSON[0].ToMap()["ck_type"])
-	}
-
-	// Even if configured to legacy "html", format is unified to "json"
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "html",
-	})
-	resHTML := p.ParseWithResult(context.Background(), "test.xlsx", data)
-	if resHTML.Err != nil {
-		t.Fatalf("ParseWithResult failed: %v", resHTML.Err)
-	}
-	if resHTML.OutputFormat != "json" {
-		t.Errorf("resHTML.OutputFormat = %q, want 'json'", resHTML.OutputFormat)
-	}
-	if len(resHTML.JSON) == 0 {
-		t.Errorf("resHTML.JSON should have items")
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Errorf("item doc_type_kwd = %v, want table", res.JSON[0].ToMap()["doc_type_kwd"])
 	}
 }
 

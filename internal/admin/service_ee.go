@@ -21,16 +21,19 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"sort"
-	"strings"
+	"ragflow/internal/server"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-
-	"gorm.io/gorm"
 )
+
+func CheckServicePeriodically() {
+	globalConfig := server.GetConfig()
+
+	// By default, if no heartbeat is received for 10 times, then the server is considered as stale
+	GlobalServerStore.CleanupStaleStatuses(globalConfig.GetHeartbeatInterval() * 10)
+}
 
 func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
 	err := GlobalServerStore.UpdateServerInfo(serverName, status)
@@ -589,96 +592,14 @@ func (s *Service) ShowUserPermission(ctx context.Context, email string) (map[str
 	return result, nil
 }
 
-// ListUserDatasets show user datasets for enterprise edition
+// ListUserDatasets requires the enterprise edition.
 func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: user.ID}, permission.ScopeQuery{
-		Kind: permission.ResourceKindDataset, Operation: permission.OperationRead,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve user dataset permissions: %w", err)
-	}
-
-	var datasets []*entity.Knowledgebase
-	if scope.Mode == permission.ScopeIDs {
-		datasets, err = s.kbDAO.GetByIDs(ctx, dao.DB, scope.ResourceIDs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user datasets: %w", err)
-		}
-		sort.SliceStable(datasets, func(i, j int) bool {
-			if datasets[i].CreateTime == nil {
-				return datasets[j].CreateTime != nil
-			}
-			if datasets[j].CreateTime == nil {
-				return false
-			}
-			return *datasets[i].CreateTime < *datasets[j].CreateTime
-		})
-	}
-
-	result := make([]map[string]interface{}, 0, len(datasets))
-	for _, dataset := range datasets {
-		status := ""
-		if dataset.Status != nil {
-			status = *dataset.Status
-		}
-		result = append(result, map[string]interface{}{
-			"name":        dataset.Name,
-			"avatar":      dataset.Avatar,
-			"language":    dataset.Language,
-			"permission":  dataset.Permission,
-			"doc_num":     dataset.DocNum,
-			"token_num":   dataset.TokenNum,
-			"chunk_num":   dataset.ChunkNum,
-			"status":      status,
-			"create_date": dataset.CreateDate,
-			"update_date": dataset.UpdateDate,
-		})
-	}
-	return result, nil
+	return nil, errors.New("listing user datasets is only available in the enterprise edition")
 }
 
-// ListUserAgents show user agents for enterprise edition
-func (s *Service) ListUserAgents(ctx context.Context, email string) ([]map[string]interface{}, error) {
-	user, err := s.userDAO.GetByEmail(ctx, dao.DB, email)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.ErrUserNotFound
-		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-
-	agents, err := s.canvasDAO.GetAllCanvasesByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user agents: %w", err)
-	}
-
-	result := make([]map[string]interface{}, 0, len(agents))
-	for _, agent := range agents {
-		title := ""
-		if agent.Title != nil {
-			title = *agent.Title
-		}
-		result = append(result, map[string]interface{}{
-			"title":           title,
-			"permission":      agent.Permission,
-			"canvas_category": strings.SplitN(agent.CanvasCategory, "_", 2)[0],
-			"avatar":          agent.Avatar,
-		})
-	}
-	return result, nil
+// ListUserAgents requires the enterprise edition.
+func (s *Service) ListUserAgents(ctx context.Context, email, canvasCategory string, page, pageSize int) ([]map[string]interface{}, int64, error) {
+	return nil, 0, errors.New("listing user agents is only available in the enterprise edition")
 }
 
 // ListUserChats show user chats for enterprise edition
@@ -1207,69 +1128,30 @@ func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[s
 	return result, nil
 }
 
-func (s *Service) ListIngestionTasksByCondition(ctx context.Context, email, status *string) ([]map[string]interface{}, error) {
-
-	if email == nil && status == nil {
-		return nil, fmt.Errorf("email or status are required")
-	}
-
-	element := map[string]interface{}{
-		"command": "list_ingestion_tasks_by_condition",
-		"error":   "'List ingestion tasks by condition' is not supported",
-	}
-
-	if email != nil {
-		element["email"] = *email
-	}
-	if status != nil {
-		element["status"] = *status
-	}
-
-	return []map[string]interface{}{element}, nil
+// ListIngestionTasks reports that admin task listing is not supported.
+func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{
+		{
+			"command": "list_ingestion_tasks",
+			"error":   "'list ingestion tasks' is not supported",
+		},
+	}, nil
 }
 
-func (s *Service) StopIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
-	if email == nil && status == nil {
-		return nil, fmt.Errorf("email or status are required")
-	}
-
-	element := map[string]interface{}{
-		"command": "stop_ingestion_tasks_by_condition",
-		"tasks":   tasks,
-		"error":   "'Stop ingestion tasks by condition' is not supported",
-	}
-
-	if email != nil {
-		element["email"] = *email
-	}
-	if status != nil {
-		element["status"] = *status
-	}
-
-	return []map[string]interface{}{element}, nil
+// RemoveIngestionTasks reports that admin task removal is not supported.
+func (s *Service) RemoveIngestionTasks(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command": "remove_ingestion_tasks",
+		"error":   "'remove ingestion tasks' is not supported",
+	}, nil
 }
 
-func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
-	if email == nil && status == nil {
-		return nil, fmt.Errorf("email or status are required")
-	}
-
-	element := map[string]interface{}{
-		"command": "remove_ingestion_tasks_by_condition",
-		"tasks":   tasks,
-		"error":   "'Remove ingestion tasks by condition' is not supported",
-	}
-
-	if email != nil {
-		element["email"] = *email
-	}
-	if status != nil {
-		element["status"] = *status
-	}
-
-	return []map[string]interface{}{element}, nil
+// StopIngestionTasks reports that admin task stopping is not supported.
+func (s *Service) StopIngestionTasks(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command": "stop_ingestion_tasks",
+		"error":   "'stop ingestion tasks' is not supported",
+	}, nil
 }
 
 func CheckClientStatus(serverName string, status *common.BaseMessage) error {

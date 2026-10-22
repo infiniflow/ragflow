@@ -27,31 +27,17 @@ import (
 // docExtract is the native office_oxide extraction seam for the DOC family.
 var docExtract = deepdocoffice.OpenAndExtract
 
-type DOCParser struct {
-	OutputFormat string
-}
+type DOCParser struct{}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{
-		OutputFormat: "json",
-	}
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-}
-
-// ParseWithResult extracts text for the DOC family and converts it to the
-// requested output format (defaulting to "json" to match Python's default).
+// ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
@@ -61,38 +47,37 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, mdPayload, err := extractDocText(irJSON, mdText, plainText)
+	text, _, err := extractDocText(irJSON, mdText, plainText)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "json"
+	// Prefer the structured IR, which office_oxide recovers table
+	// (and list) structure for. Emitting structured sections lets the chunker
+	// render tables as HTML (#20918) instead of losing them to plain text — the
+	// legacy path flattened the whole document (tables included) into a single
+	// text item. Fall back to the flattened text only when the IR yields no
+	// usable sections, so a document whose IR is empty/unusable still keeps its
+	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
+	if strings.TrimSpace(irJSON) != "" {
+		budget := newEmbeddedMediaBudget()
+		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
+			return ParseResult{
+				OutputFormat: "json",
+				File:         map[string]any{"name": filename, "format": "doc"},
+				JSON:         MapsToItems(sections),
+				Warnings:     budget.warnings(),
+			}
+		}
 	}
-
-	markdownPayload := text
-	if strings.TrimSpace(mdPayload) != "" {
-		markdownPayload = mdPayload
+	if strings.TrimSpace(text) == "" {
+		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
 	}
-
-	res := ParseResult{
-		OutputFormat: outFmt,
+	return ParseResult{
+		OutputFormat: "json",
 		File:         map[string]any{"name": filename, "format": "doc"},
-		Text:         text,
-		Markdown:     markdownPayload,
+		JSON:         []DocItem{NewTextJSONItem(text)},
 	}
-
-	if strings.EqualFold(outFmt, "markdown") {
-		return res
-	}
-	if strings.EqualFold(outFmt, "text") {
-		return res
-	}
-
-	res.OutputFormat = "json"
-	res.JSON = []DocItem{NewTextJSONItem(text)}
-	return res
 }
 
 // extractDocText returns the best-effort plain text for a legacy .doc

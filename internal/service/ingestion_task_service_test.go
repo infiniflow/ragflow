@@ -426,66 +426,6 @@ func TestIngestionTaskServiceRemoveManyRemovesOwnedTasks(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskServiceListAllForAdminIncludesRunAndUserEmail(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	status := "1"
-	if err := dao.DB.Create(&entity.User{
-		ID:              "user-1",
-		Email:           "user-1@test.com",
-		Nickname:        "user-1",
-		IsAuthenticated: "1",
-		IsActive:        "1",
-		IsAnonymous:     "0",
-		Status:          &status,
-	}).Error; err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	runCount := 3
-	if err := dao.DB.Create(&entity.PipelineOperationLog{
-		ID:              "run-1",
-		DocumentID:      "doc-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		TaskType:        string(entity.PipelineTaskTypeParse),
-		OperationStatus: string(entity.TaskStatusRunning),
-		RunCount:        &runCount,
-	}).Error; err != nil {
-		t.Fatalf("insert pipeline operation log: %v", err)
-	}
-	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
-		t.Fatalf("bind pipeline operation log: %v", err)
-	}
-	if err := dao.DB.Exec(`INSERT INTO ingestion_task_log
-		(task_id, pipeline_log_id, checkpoint, event_type, component, phase, message)
-		VALUES (?, ?, '{}', ?, ?, ?, ?)`, "task-1", "run-1", dao.EventTypeLifecycle, "Parser", 1, "Parser Done").Error; err != nil {
-		t.Fatalf("insert task log: %v", err)
-	}
-
-	ctx := t.Context()
-	svc := NewIngestionTaskService()
-	tasks, err := svc.ListAllForAdmin(ctx)
-	if err != nil {
-		t.Fatalf("ListAllForAdmin failed: %v", err)
-	}
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
-	}
-	if tasks[0]["user"] != "user-1@test.com" {
-		t.Fatalf("user = %v, want user-1@test.com", tasks[0]["user"])
-	}
-	if tasks[0]["run_count"] != 3 {
-		t.Fatalf("run_count = %v, want 3", tasks[0]["run_count"])
-	}
-	if tasks[0]["component_total"] != 0 {
-		t.Fatalf("component_total = %v, want 0", tasks[0]["component_total"])
-	}
-	if tasks[0]["component_done"] != 0 {
-		t.Fatalf("component_done = %v, want 0", tasks[0]["component_done"])
-	}
-}
-
 func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

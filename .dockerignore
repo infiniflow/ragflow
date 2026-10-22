@@ -32,16 +32,16 @@ internal/binding/cpp/cmake-build-release/
 internal/binding/cpp/cmake-build-debug/
 target/
 
-# ── ragflow_deps build context (built as a separate image, mounted ──
+# ── deps build context (built as a separate image, mounted ──
 # ── from infiniflow/ragflow_deps:latest by the main Dockerfile)     ──
 # Excluding the directory contents keeps the main build context small
 # regardless of which resources are prepared for the dependency image.
 # The deps image is built from this directory with:
-#   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
+#   cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
 # The native downloader tools/scripts/download_dev_deps.py is copied by the
 # main Dockerfile (not excluded here) so build.sh can read its ORT version pin
 # when running `./build.sh --go`.
-ragflow_deps/*
+deps/*
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/

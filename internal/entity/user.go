@@ -35,6 +35,7 @@ type User struct {
 	IsAnonymous     string     `gorm:"column:is_anonymous;size:1;not null;default:0;index" json:"is_anonymous"`
 	LoginChannel    *string    `gorm:"column:login_channel;index" json:"login_channel,omitempty"`
 	Status          *string    `gorm:"column:status;size:1;default:1;index" json:"status"`
+	RoleID          *int32     `gorm:"column:role_id;index" json:"role_id,omitempty"`
 	IsSuperuser     *bool      `gorm:"column:is_superuser;index" json:"is_superuser,omitempty"`
 	BaseModel
 }

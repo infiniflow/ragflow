@@ -213,10 +213,10 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` mengunduh dan mengekstrak pdfium, pdf_oxide, office_oxide, dan onnxruntime ke `~/ragflow-native-libs`; `download_deps.py` mengunduh kosakata cl100k, model DeepDoc, dan aset tokenizer embedding ke `ragflow_deps/`. Keduanya adalah skrip Python; `uv run` memasang dependensi yang dideklarasikan secara otomatis (`requests`, plus `huggingface-hub` untuk unduhan model dan tokenizer). Lewati langkah ini jika Anda sudah menyiapkan sumber daya yang sama dengan cara lain. Saat dijalankan dari akar repositori, layanan Go secara otomatis menemukan `internal/rag/res/deepdoc`; untuk menjalankan dari direktori lain, tetapkan `DEEPDOC_MODEL_DIR` ke jalur absolutnya.
+   `download_dev_deps.py` mengunduh dan mengekstrak pdfium, pdf_oxide, office_oxide, dan onnxruntime ke `~/ragflow-native-libs`; `download_deps.py` mengunduh kosakata cl100k, model DeepDoc, dan aset tokenizer embedding ke `deps/`. Keduanya adalah skrip Python; `uv run` memasang dependensi yang dideklarasikan secara otomatis (`requests`, plus `huggingface-hub` untuk unduhan model dan tokenizer). Lewati langkah ini jika Anda sudah menyiapkan sumber daya yang sama dengan cara lain. Saat dijalankan dari akar repositori, layanan Go secara otomatis menemukan `internal/rag/res/deepdoc`; untuk menjalankan dari direktori lain, tetapkan `DEEPDOC_MODEL_DIR` ke jalur absolutnya.
 
 3. Build layanan:
 

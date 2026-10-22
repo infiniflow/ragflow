@@ -82,6 +82,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}
 	if err = db.Create(&entity.TenantModelProvider{
 		ID:           "prov-1",
+		UserID:       "user-1",
 		ProviderName: "SILICONFLOW",
 		TenantID:     "user-1",
 	}).Error; err != nil {

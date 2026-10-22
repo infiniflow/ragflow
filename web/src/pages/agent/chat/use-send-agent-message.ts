@@ -392,8 +392,9 @@ export const useSendAgentMessage = ({
           // useSendMessageBySSE already reports application errors from
           // streamed code != 0 frames. Only HTTP failures need a second
           // layer's notification because the SSE hook cannot parse them.
-          if (res?.response?.status !== 200) {
-            sonnerMessage.error(res?.data?.message);
+          const msg = res?.data?.message;
+          if (res?.response?.status !== 200 && msg) {
+            sonnerMessage.error(msg);
           }
 
           // cancel loading

@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // manualChunkerInput is a small builder for a structured (output_format=chunks)
@@ -76,7 +77,7 @@ func mustManual(t *testing.T, params map[string]any) *ManualChunkerComponent {
 
 // manualChunkTexts pulls the ordered chunk texts out of a chunker output map.
 func manualChunkTexts(out map[string]any) []string {
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	out2 := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		if s, _ := ck["text"].(string); s != "" {
@@ -118,7 +119,7 @@ func TestManualChunker_Empty(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -155,8 +156,8 @@ func TestManualChunker_NoPositionsEqualsGroupChunker(t *testing.T) {
 		t.Fatalf("manual Invoke: %v", err)
 	}
 
-	gChunks, _ := gOut["chunks"].([]map[string]any)
-	mChunks, _ := mOut["chunks"].([]map[string]any)
+	gChunks, _ := schema.ChunkCarrierToMaps(gOut["chunks"])
+	mChunks, _ := schema.ChunkCarrierToMaps(mOut["chunks"])
 	if !reflect.DeepEqual(gChunks, mChunks) {
 		t.Fatalf("ManualChunker output diverges from GroupTitleChunker on no-coordinate input\n group: %#v\n manual: %#v", gChunks, mChunks)
 	}
@@ -253,7 +254,7 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	found := false
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -264,7 +265,7 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 		if strings.Contains(text, "@@") {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
-		pos, ok := ck["_pdf_positions"].([][]float64)
+		pos, ok := ck["_pdf_positions"].([][]any)
 		if !ok {
 			t.Fatalf("_pdf_positions missing or wrong type %T on merged group chunk", ck["_pdf_positions"])
 		}
@@ -274,8 +275,8 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 			t.Fatalf("merged _pdf_positions = %d rows, want 2 (both records)", len(pos))
 		}
 		// Merged matrix must itself be sorted by (page, top, left) — the
-		// same key pdfPosRowLess uses when merging.
-		if pdfPosRowLess(pos[1], pos[0]) {
+		// same key positionRowLess uses when merging.
+		if positionRowLess(pos[1], pos[0]) {
 			t.Errorf("merged _pdf_positions not sorted by (page, top, left): %v", pos)
 		}
 	}
@@ -427,5 +428,99 @@ func TestManualChunker_MixedPositionedAndPlain(t *testing.T) {
 	// Coordinate-free records keep their original relative order.
 	if i, j := strings.Index(joined, "plain A"), strings.Index(joined, "plain B"); i < 0 || j < 0 || i > j {
 		t.Fatalf("coordinate-free records lost original order in %q", joined)
+	}
+}
+
+// TestNewManualChunker_StripsUnsupportedTitleParams pins the issue #20139
+// contract: the three title-family params that the operator form accepts but
+// ManualChunker cannot honour (`method`, `chunk_token_cap`,
+// `include_heading_content`) must not be propagated to `c.param`, regardless
+// of what the caller passed. The fix strips them inside NewManualChunker
+// with a `common.Warn` so the silent-ignore failure mode becomes a visible
+// log line. Runtime semantics are unchanged because the group path would
+// have ignored them anyway.
+func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
+	cases := []struct {
+		name   string
+		params map[string]any
+	}{
+		{
+			name: "method downgrade attempt is dropped",
+			params: map[string]any{
+				"method":                  "naive",
+				"levels":                  [][]string{{`^# `}},
+				"chunk_token_cap":         128,
+				"include_heading_content": true,
+			},
+		},
+		{
+			name: "method upgrade attempt is dropped",
+			params: map[string]any{
+				"method":                  "hierarchy",
+				"levels":                  [][]string{{`^# `}},
+				"chunk_token_cap":         256,
+				"include_heading_content": false,
+			},
+		},
+		{
+			name: "only cap and heading flag set",
+			params: map[string]any{
+				"levels":                  [][]string{{`^# `}},
+				"chunk_token_cap":         1024,
+				"include_heading_content": true,
+			},
+		},
+		{
+			name:   "no unsupported params is the baseline",
+			params: map[string]any{"levels": [][]string{{`^# `}}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := mustManual(t, tc.params)
+			if got, want := c.param.TitleChunkerParam.Method, "group"; got != want {
+				t.Errorf("Method = %q, want %q (ManualChunker pins method=group)", got, want)
+			}
+			if got := c.param.TitleChunkerParam.ChunkTokenCap; got != 0 {
+				t.Errorf("ChunkTokenCap = %d, want 0 (stripped before Update)", got)
+			}
+			if got := c.param.TitleChunkerParam.IncludeHeadingContent; got != false {
+				t.Errorf("IncludeHeadingContent = %v, want false (stripped before Update)", got)
+			}
+		})
+	}
+}
+
+// TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes pins that the
+// three pinned keys do not bleed into the rest of the conf: levels, hierarchy
+// and root_chunk_as_heading still flow through to `c.param` exactly as before.
+func TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes(t *testing.T) {
+	c := mustManual(t, map[string]any{
+		"method":                  "naive", // dropped
+		"chunk_token_cap":         999,     // dropped
+		"include_heading_content": true,    // dropped
+		"levels":                  [][]string{{`^# `}, {`^## `}},
+		"hierarchy":               2,
+		"root_chunk_as_heading":   true,
+	})
+	if len(c.param.TitleChunkerParam.Levels) != 2 {
+		t.Errorf("Levels len = %d, want 2", len(c.param.TitleChunkerParam.Levels))
+	} else {
+		if got := c.param.TitleChunkerParam.Levels[0]; len(got) == 0 || got[0] != "^# " {
+			t.Errorf("Levels[0] = %#v, want [\"^# \"]", got)
+		}
+		if got := c.param.TitleChunkerParam.Levels[1]; len(got) == 0 || got[0] != "^## " {
+			t.Errorf("Levels[1] = %#v, want [\"^## \"]", got)
+		}
+	}
+	if c.param.TitleChunkerParam.Hierarchy == nil || *c.param.TitleChunkerParam.Hierarchy != 2 {
+		t.Errorf("Hierarchy = %v, want pointer to 2", c.param.TitleChunkerParam.Hierarchy)
+	}
+	if !c.param.TitleChunkerParam.RootChunkAsHeading {
+		t.Errorf("RootChunkAsHeading = false, want true")
+	}
+	if c.param.TitleChunkerParam.Method != "group" {
+		t.Errorf("Method = %q, want group (still pinned even with other params set)", c.param.TitleChunkerParam.Method)
 	}
 }

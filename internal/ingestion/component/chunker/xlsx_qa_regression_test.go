@@ -8,6 +8,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -59,7 +60,7 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 

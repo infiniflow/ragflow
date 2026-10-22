@@ -30,8 +30,8 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 		t.Fatalf("items = %d, want one segmented HTML table item", len(res.JSON))
 	}
 	item := res.JSON[0].ToMap()
-	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
-		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
+	if item["doc_type_kwd"] != "table" {
+		t.Fatalf("item doc_type_kwd = %v, want table", item["doc_type_kwd"])
 	}
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>ID</th><th>Status</th></tr>\n" +
@@ -81,7 +81,7 @@ func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" || res.JSON[0].ToMap()["table"] == nil {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" || res.JSON[0].ToMap()["table"] == nil {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {

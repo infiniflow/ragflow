@@ -447,6 +447,6 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		}
 	}
 	if !hadError {
-		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		writer.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 	}
 }

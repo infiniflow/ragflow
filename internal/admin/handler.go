@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -60,15 +59,9 @@ type ErrorResponse struct {
 func (h *Handler) Healthz(c *gin.Context) {
 	result, allOK := service.GetComponentsHealthz(c.Request.Context())
 	if allOK {
-		c.JSON(http.StatusOK, gin.H{
-			"code": 0,
-			"data": result,
-		})
+		common.SuccessWithData(c, result, "success")
 	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": common.CodeServerError,
-			"data": result,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, result, "")
 	}
 }
 
@@ -119,7 +112,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, "", secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -821,8 +814,7 @@ func writeSandboxError(c *gin.Context, err error) {
 	common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware authenticates system administrators for admin routes.
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -834,14 +826,15 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(ctx, token)
+		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
-		if !*user.IsSuperuser {
+		user := identity.User
+		if user.IsSuperuser == nil || !*user.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			c.Abort()
 			return
@@ -849,6 +842,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
+		c.Set("tenant_id", identity.TenantID)
 		c.Set("email", user.Email)
 		c.Next()
 	}
@@ -1021,101 +1015,9 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	common.SuccessWithData(c, result, "show message queue successfully")
 }
 
-type RemoveIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
-	var req RemoveIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	} else {
-		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	}
-}
-
-type StopIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) StopIngestionTasks(c *gin.Context) {
-	var req StopIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		var result []map[string]string
-		for _, task := range tasks {
-			result = append(result, map[string]string{
-				"task_id": task.ID,
-				"status":  task.Status,
-			})
-		}
-
-		common.SuccessWithData(c, result, "Stop tasks successfully")
-	} else {
-		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Stop tasks successfully")
-	}
-}
-
-type ListIngestionTasksRequest struct {
-	Email  *string `json:"email"`
-	Status *string `json:"status"`
-}
-
-// ListIngestionTasks handle list ingestion tasks
-func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	var err error
-	var tasks []map[string]interface{}
-	var req ListIngestionTasksRequest
-	ctx := c.Request.Context()
-
-	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks(ctx)
-	} else {
-		tasks, err = h.service.ListIngestionTasksByCondition(ctx, req.Email, req.Status)
-	}
-
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-	}
-	common.SuccessWithData(c, tasks, "Get all tasks")
-}
-
 func (h *Handler) ListIngestors(c *gin.Context) {
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	var ingestorResults []map[string]string
 	now := time.Now()
 	for _, ingestorServer := range serverList {
@@ -1243,7 +1145,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1253,7 +1155,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1274,7 +1176,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, "SUCCESS")
+	common.SuccessWithData(c, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {
