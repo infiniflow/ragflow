@@ -1015,7 +1015,7 @@ func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
 	}
 
 	p := NewEmailParser()
-	extra, text := p.rechunkEmailAttachments(ctx, content, 0)
+	extra := p.rechunkEmailAttachments(ctx, content, 0)
 
 	if len(extra) != 1 {
 		t.Fatalf("expected 1 indexed attachment, got %d: %#v", len(extra), extra)
@@ -1023,11 +1023,12 @@ func TestEmailParser_RechunkAttachmentTextPath(t *testing.T) {
 	if v, _ := extra[0]["text"].(string); v != "hello from attachment" {
 		t.Errorf("text = %q, want hello from attachment", v)
 	}
-	if !strings.Contains(text, "hello from attachment") {
-		t.Errorf("indexed text missing attachment: %q", text)
-	}
-	if strings.Contains(text, "<binary bytes>") {
-		t.Errorf("binary payload leaked into indexed text: %q", text)
+	// The flat text return was removed; verify the binary attachment is not
+	// indexed as a separate text item (only the .txt attachment should appear).
+	for _, item := range extra {
+		if s, _ := item["text"].(string); strings.Contains(s, "<binary bytes>") {
+			t.Errorf("binary payload leaked into indexed text: %q", s)
+		}
 	}
 }
 
@@ -1055,9 +1056,9 @@ func TestRechunkEmailAttachments_ContextCancelled(t *testing.T) {
 			{"filename": "note.txt", "payload": "must not be re-chunked"},
 		},
 	}
-	extra, text := NewEmailParser().rechunkEmailAttachments(ctx, content, 0)
-	if len(extra) != 0 || text != "" {
-		t.Errorf("cancelled context should short-circuit re-chunk: extra=%#v text=%q", extra, text)
+	extra := NewEmailParser().rechunkEmailAttachments(ctx, content, 0)
+	if len(extra) != 0 {
+		t.Errorf("cancelled context should short-circuit re-chunk: extra=%#v", extra)
 	}
 }
 
@@ -1099,25 +1100,22 @@ func TestEmailParser_RechunkPrefersRaw(t *testing.T) {
 	ctx := t.Context()
 	p := NewEmailParser()
 
-	withRaw, textRaw := p.rechunkEmailAttachments(ctx, map[string]any{
+	withRaw := p.rechunkEmailAttachments(ctx, map[string]any{
 		"attachments": []map[string]any{
 			{"filename": "note.txt", "payload": "WORLD", "raw": "HELLO"},
 		},
 	}, 0)
 	if len(withRaw) != 1 || withRaw[0]["text"] != "HELLO" {
-		t.Fatalf("raw not preferred: extra=%#v text=%q", withRaw, textRaw)
-	}
-	if strings.Contains(textRaw, "WORLD") {
-		t.Errorf("re-chunk used payload instead of raw: %q", textRaw)
+		t.Fatalf("raw not preferred: extra=%#v", withRaw)
 	}
 
-	fallback, textFallback := p.rechunkEmailAttachments(ctx, map[string]any{
+	fallback := p.rechunkEmailAttachments(ctx, map[string]any{
 		"attachments": []map[string]any{
 			{"filename": "note.txt", "payload": "WORLD"},
 		},
 	}, 0)
 	if len(fallback) != 1 || fallback[0]["text"] != "WORLD" {
-		t.Fatalf("payload fallback broken: extra=%#v text=%q", fallback, textFallback)
+		t.Fatalf("payload fallback broken: extra=%#v", fallback)
 	}
 }
 
@@ -1317,35 +1315,6 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 			gotHTML, _ := item["text_html"].(string)
 			if strings.TrimRight(gotHTML, "\r\n") != strings.TrimRight(tt.wantHTML, "\r\n") {
 				t.Errorf("text_html = %q, want %q", gotHTML, tt.wantHTML)
-			}
-		})
-	}
-}
-
-// TestHTMLBodyToText verifies the visible-text flattening of email HTML
-// bodies, above all that text preceding a nested block-level element starts
-// a new line instead of fusing with the block's own text.
-func TestHTMLBodyToText(t *testing.T) {
-	tests := []struct {
-		name string
-		body string
-		want string
-	}{
-		{"text before nested block", `<div>prefix<p>paragraph</p></div>`, "prefix\nparagraph"},
-		{"nested divs", `<div>outer<div>inner</div></div>`, "outer\ninner"},
-		{"sibling blocks", `<p>one</p><p>two</p>`, "one\ntwo"},
-		{"layout table cells", `<table><tr><td>a</td><td>b</td></tr></table>`, "a\nb"},
-		{"multi-row layout table stays line-separated", `<p>intro</p><table><tr><td>a</td><td>b</td></tr><tr><td>c</td></tr></table><p>outro</p>`, "intro\na\nb\nc\noutro"},
-		{"inline tags stay on one line", `<p>Hello <b>world</b></p>`, "Hello world"},
-		{"definition list and rule", `<div>A<dl><dt>Term</dt><dd>Def</dd></dl>B<hr>C</div>`, "A\nTerm\nDef\nB\nC"},
-		{"br forces a break", `one<br>two`, "one\ntwo"},
-		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
-		{"template content skipped", `<p>visible</p><template><p>Hello {{name}}</p></template>`, "visible"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := htmlBodyToText(tt.body); got != tt.want {
-				t.Errorf("htmlBodyToText(%q) = %q, want %q", tt.body, got, tt.want)
 			}
 		})
 	}

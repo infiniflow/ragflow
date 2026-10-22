@@ -27,13 +27,11 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
-	"golang.org/x/net/html"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
@@ -123,7 +121,7 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	// naive_chunk). Each attachment is re-parsed by its file extension via
 	// the shared parser registry; a single unparseable/skipped attachment
 	// never breaks the whole email.
-	extraItems, _ := p.rechunkEmailAttachments(ctx, content, depth)
+	extraItems := p.rechunkEmailAttachments(ctx, content, depth)
 
 	// Attachments have been consumed by rechunkEmailAttachments, which
 	// re-parses each one by extension into a searchable item. Keeping their
@@ -141,30 +139,6 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		File:         map[string]any{"name": filename},
 		JSON:         MapsToItems(items),
 	}
-}
-
-// emailTextFields is the order the text output writes an email's fields in:
-// the headers in the order searchableEmailHeaders gives them, then the body.
-var emailTextFields = []string{"from", "to", "cc", "bcc", "date", "subject", "text", "text_html"}
-
-// emailTextKeys returns content's keys in emailTextFields order, followed by
-// any other key in sorted order. Ranging over the map instead wrote the
-// fields in a different order on every parse of the same message.
-func emailTextKeys(content map[string]any) []string {
-	keys := make([]string, 0, len(content))
-	for _, k := range emailTextFields {
-		if _, ok := content[k]; ok {
-			keys = append(keys, k)
-		}
-	}
-	var rest []string
-	for k := range content {
-		if !slices.Contains(emailTextFields, k) {
-			rest = append(rest, k)
-		}
-	}
-	slices.Sort(rest)
-	return append(keys, rest...)
 }
 
 // searchableEmailHeaders returns the user-facing headers as a separate JSON
@@ -434,71 +408,6 @@ func attachmentFilename(part *multipart.Part) string {
 
 // -- HTML body → visible text (text output only) --
 
-// htmlBodyToText flattens an email HTML body to its visible text. Unlike the
-// structured HTML parser (which keeps table markup for the dedicated HTML
-// chunk method), email bodies use tables for layout, so this walker descends
-// into tables and emits cell text instead. <head>/<script>/<style> subtrees
-// are skipped; whitespace folding is shared with the standalone HTML parser
-// via leafWriter.
-func htmlBodyToText(body string) string {
-	if strings.TrimSpace(body) == "" {
-		return ""
-	}
-	doc, err := html.Parse(strings.NewReader(body))
-	if err != nil {
-		return body
-	}
-	var b bytes.Buffer
-	w := &leafWriter{b: &b, lineStart: true}
-	walkHTMLBodyText(doc, w)
-	return strings.TrimSpace(b.String())
-}
-
-// isEmailBlockTag reports whether tag delimits a line in flattened email
-// body text: the standard block tags plus table tags, since email uses
-// tables for layout and their cells/rows must not fuse either.
-func isEmailBlockTag(tag string) bool {
-	return isBlockTag(tag) || tag == "table" || tag == "td" || tag == "th"
-}
-
-func walkHTMLBodyText(n *html.Node, w *leafWriter) {
-	switch n.Type {
-	case html.TextNode:
-		w.writeText(n.Data)
-	case html.DocumentNode:
-		// html.Parse always wraps the fragment in a Document node holding an
-		// <html><body> skeleton; the walker relies on descending through those
-		// transparent containers (head/script/style subtrees are skipped by the
-		// ElementNode case), so without descending here the whole body would
-		// be dropped.
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLBodyText(child, w)
-		}
-	case html.ElementNode:
-		switch n.Data {
-		case "head", "script", "style", "noscript", "template":
-			return
-		case "br":
-			w.hardBreak()
-			return
-		}
-		// A nested block starts on a new line when text already precedes
-		// it, so outer text and inner block text stay separate
-		// ("<div>a<p>b</p></div>" flattens to "a\nb", not "ab").
-		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
-			w.hardBreak()
-		}
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLBodyText(child, w)
-		}
-		// Block-level tags and table cells/rows end the current line so
-		// adjacent block/cell text does not fuse together.
-		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
-			w.hardBreak()
-		}
-	}
-}
-
 // decodeMailPayload attempts charset decoding using the unified DecodeToUTF8 helper.
 func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
@@ -718,23 +627,22 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // avoid unbounded recursion through attachments-of-attachments.
 const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
 
-func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, string) {
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) []map[string]any {
 	if depth > 0 {
-		return nil, ""
+		return nil
 	}
 	// Honor task cancellation so a long attachment list does not keep
 	// re-parsing after the ingestion task has been stopped/aborted.
 	if ctx.Err() != nil {
-		return nil, ""
+		return nil
 	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
-		return nil, ""
+		return nil
 	}
 
 	var extra []map[string]any
-	var sb strings.Builder
 	for _, att := range raw {
 		fn, _ := att["filename"].(string)
 		payload, _ := att["payload"].(string)
@@ -815,11 +723,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				"text":         t,
 				"doc_type_kwd": "text",
 			})
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(t)
 		}
 	}
-	return extra, sb.String()
+	return extra
 }
