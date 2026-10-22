@@ -342,12 +342,12 @@ const mediaChunkIDPrefix = "\x00media:"
 // bypassed the streamed crop-upload path; the two routes cannot disagree
 // because a chunk is either stamped by crop-upload (and the decorator reuses
 // that id) or computed by the decorator fallback — never both. Position-only
-// title media instead reuses the coordinate-based id stamped before headings
+// title media instead reuses the coordinate-and-text id finalized after headings
 // are applied.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	// Title-family position-only media is stamped before a root heading can
-	// replace its empty caption with text shared by multiple figures. Keep
-	// that identity through crop uploads, including failed-upload retries.
+	// Title-family position-only media is stamped with both coordinates and
+	// finalized heading text. Keep that identity through crop uploads,
+	// including failed-upload retries.
 	if isMediaChunk(ck) && ck.ID != "" {
 		return ck.ID
 	}

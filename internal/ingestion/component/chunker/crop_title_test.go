@@ -78,7 +78,8 @@ func TestCropTitleChunks_CropsImageWithPageList(t *testing.T) {
 
 // Position-only figures must keep distinct identities even when the root
 // heading supplies identical text. Streamed uploads, decorator retries and
-// the no-engine fallback must agree on the same per-figure IDs.
+// the no-engine fallback must agree on the same per-figure IDs. Changing only
+// the heading text must invalidate those IDs for downstream extraction caches.
 func TestCropTitleChunks_PositionOnlyImagesWithRootHeading(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -97,12 +98,29 @@ func TestCropTitleChunks_PositionOnlyImagesWithRootHeading(t *testing.T) {
 			if err != nil {
 				t.Fatalf("new chunker: %v", err)
 			}
-			testPositionOnlyImagesWithRootHeading(t, comp)
+			var originalIDs, changedIDs, repeatedIDs [2]string
+			t.Run("original-heading", func(t *testing.T) {
+				originalIDs = testPositionOnlyImagesWithRootHeading(t, comp, "# Figure context")
+			})
+			t.Run("changed-heading", func(t *testing.T) {
+				changedIDs = testPositionOnlyImagesWithRootHeading(t, comp, "# Updated figure context")
+			})
+			t.Run("repeated-heading", func(t *testing.T) {
+				repeatedIDs = testPositionOnlyImagesWithRootHeading(t, comp, "# Figure context")
+			})
+			for i := range originalIDs {
+				if originalIDs[i] == changedIDs[i] {
+					t.Errorf("figure %d ID %q unchanged after heading text changed at the same coordinates", i, originalIDs[i])
+				}
+				if originalIDs[i] != repeatedIDs[i] {
+					t.Errorf("figure %d ID = %q, want repeatable ID %q", i, repeatedIDs[i], originalIDs[i])
+				}
+			}
 		})
 	}
 }
 
-func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component) {
+func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component, heading string) [2]string {
 	t.Helper()
 	ctx := withIngestionGlobals(t, "kb1", "doc1")
 	var wantIDs [2]string
@@ -112,7 +130,7 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component)
 				"name":          "doc.pdf",
 				"output_format": "json",
 				"json": []map[string]any{
-					{"text": "# Figure context", "doc_type_kwd": "text"},
+					{"text": heading, "doc_type_kwd": "text"},
 					// _pdf_positions carries only page identity; positions supplies the crop.
 					{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{2, 0, 0, 0, 0}}, "positions": [][]float64{{1, 10, 100, 10, 100}}},
 					{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{2, 0, 0, 0, 0}}, "positions": [][]float64{{1, 200, 300, 200, 300}}},
@@ -126,13 +144,14 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component)
 				t.Fatalf("chunks = %#v, want two positioned images", chunks)
 			}
 			for _, ck := range chunks {
-				if ck["doc_type_kwd"] != "image" || !strings.Contains(toString(ck["text"]), "# Figure context") {
+				if ck["doc_type_kwd"] != "image" || !strings.Contains(toString(ck["text"]), heading) {
 					t.Fatalf("root heading not applied to image: %#v", ck)
 				}
 			}
 			if chunks[0]["text"] != chunks[1]["text"] {
 				t.Fatal("fixture must give both figures identical heading-only text")
 			}
+			builtIDs := [2]string{toString(chunks[0]["id"]), toString(chunks[1]["id"])}
 
 			rec := &recordingUploader{}
 			orig := ChunkImageUploader
@@ -170,6 +189,9 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component)
 				t.Errorf("ordinary text ID changed: %v", text["id"])
 			}
 			ids := [2]string{toString(chunks[0]["id"]), toString(chunks[1]["id"])}
+			if ids != builtIDs {
+				t.Errorf("IDs changed during crop/upload: built %q, decorated %q", builtIDs, ids)
+			}
 			if ids[0] == "" || ids[1] == "" || ids[0] == ids[1] {
 				t.Fatalf("figure IDs must be nonempty and distinct: %q", ids)
 			}
@@ -203,6 +225,7 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component)
 			}
 		})
 	}
+	return wantIDs
 }
 
 // Without a root heading or other text, a position-only figure still separates

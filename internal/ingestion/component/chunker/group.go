@@ -372,9 +372,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		if !plain && (first.docType == "image" || first.docType == "table") &&
 			chunkText == "" && first.image == "" && first.imgID == nil {
 			if positions := mergePositionMatrix(first.pdfPositions, first.positions); positions != nil {
-				// Stamp position-only media before root_chunk_as_heading adds
-				// identical text to different figures. The normalized JSON rows
-				// contain only decoded JSON values, so marshaling cannot fail.
+				// Seed position-only media identity with coordinates so figures
+				// sharing a root heading stay distinct. The heading text is folded
+				// in below before cropping. These decoded JSON rows always marshal.
 				identity, _ := json.Marshal(positions)
 				chunk["id"] = common.ChunkID(docID, mediaChunkIDPrefix+first.docType+":"+string(identity))
 			}
@@ -388,6 +388,10 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if id := toString(chunks[i]["id"]); id != "" {
+				// Extractor caches key on id, so it must also identify the final text.
+				chunks[i]["id"] = common.ChunkID(docID, mediaChunkIDPrefix+id+":"+toString(chunks[i]["text"]))
+			}
 			if prefixes != nil {
 				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
 			}
