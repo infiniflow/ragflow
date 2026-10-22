@@ -52,7 +52,7 @@ func allowTestHosts(t *testing.T) {
 func TestHyperlinkDisabledByDefault(t *testing.T) {
 	parent := []parser.DocItem{parser.TextItem{Text: "see [x](https://example.com/x)"}}
 	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", nil, parent, defaultSetups(), "English", "doc1")
+		"doc.md", nil, parent, defaultSetups(), "doc1")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -74,7 +74,7 @@ func TestHyperlinkMarkdownFetchAppendsTaggedItems(t *testing.T) {
 		"fetch_links": true, "collect_markdown_links": true,
 	})
 	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", nil, parent, setups, "English", "doc1")
+		"doc.md", nil, parent, setups, "doc1")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -108,7 +108,7 @@ func TestHyperlinkSkipsNonHTMLAndFailures(t *testing.T) {
 		"fetch_links": true, "collect_markdown_links": true,
 	})
 	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", nil, parent, setups, "English", "doc1")
+		"doc.md", nil, parent, setups, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only %d", len(got), len(parent))
 	}
@@ -130,7 +130,7 @@ func TestHyperlinkOverSizeSkipped(t *testing.T) {
 		"fetch_links": true, "collect_markdown_links": true, "max_bytes_per_url": 8,
 	})
 	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", nil, parent, setups, "English", "doc1")
+		"doc.md", nil, parent, setups, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only", len(got))
 	}
@@ -147,8 +147,92 @@ func TestHyperlinkTruncationWarns(t *testing.T) {
 		"fetch_links": true, "collect_markdown_links": true, "max_urls": 1,
 	})
 	_, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", nil, parent, setups, "English", "doc1")
+		"doc.md", nil, parent, setups, "doc1")
 	if len(warnings) != 2 {
 		t.Fatalf("warnings = %v, want truncation + fetch failure", warnings)
+	}
+}
+
+func TestCheckRejectsMisplacedHyperlinkKey(t *testing.T) {
+	if _, err := NewParserComponent(map[string]any{"html": map[string]any{"fetch_links": true}}); err == nil {
+		t.Fatal("want error when a family without hyperlink support carries fetch_links")
+	}
+}
+
+func TestCheckRejectsInvalidHyperlinkBudget(t *testing.T) {
+	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"fetch_links": true, "max_urls": 0}}); err == nil {
+		t.Fatal("want error for out-of-range max_urls")
+	}
+	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"fetch_links": "yes"}}); err == nil {
+		t.Fatal("want error for non-boolean fetch_links")
+	}
+}
+
+func TestHyperlinkDocxEndToEnd(t *testing.T) {
+	allowTestHosts(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><body><p>docx linked page</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	rels := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+		`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="` + srv.URL + `"/>` +
+		`</Relationships>`
+	binary := buildDocxWithRels(t, rels)
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	setups := hyperlinkTestSetups(t, "docx", map[string]any{"fetch_links": true})
+
+	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeDOCX,
+		"doc.docx", binary, parent, setups, "doc-42")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want parent + 1 linked item", len(got))
+	}
+	child := got[1].ToMap()
+	if child["parent_doc_id"] != "doc-42" || child["source_url"] != srv.URL {
+		t.Fatalf("child untagged: %v", child)
+	}
+}
+
+func TestHyperlinkCancelledContextSkipsFetch(t *testing.T) {
+	parent := []parser.DocItem{parser.TextItem{Text: "[p](https://example.com/p)"}}
+	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got, warnings := maybeFetchHyperlinkContents(ctx, utility.FileTypeMarkdown,
+		"doc.md", nil, parent, setups, "doc1")
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
+	}
+	if len(warnings) != 1 || warnings[0] != "hyperlink: fetch cancelled; remaining links skipped" {
+		t.Fatalf("warnings = %v, want cancellation warning", warnings)
+	}
+}
+
+func TestHyperlinkTotalBudgetExhausted(t *testing.T) {
+	allowTestHosts(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>page body larger than one byte</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)"}}
+	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true, "max_total_bytes": 1,
+	})
+	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", nil, parent, setups, "doc1")
+	// first page fetched (over the 1-byte budget), second skipped
+	if len(got) != len(parent)+1 {
+		t.Fatalf("len = %d, want parent + first page only", len(got))
+	}
+	if len(warnings) != 1 || warnings[0] != "hyperlink: total fetch budget exhausted; remaining links skipped" {
+		t.Fatalf("warnings = %v, want budget warning", warnings)
 	}
 }

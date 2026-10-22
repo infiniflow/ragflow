@@ -39,9 +39,9 @@ import (
 //
 // Failures never fail the run: every skip is reported as a warning so the
 // parent document still indexes.
-func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType, filename string, binary []byte, parent []parser.DocItem, setups map[string]schema.ParserSetup, lang, docID string) ([]parser.DocItem, []string) {
+func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType, filename string, binary []byte, parent []parser.DocItem, setups map[string]schema.ParserSetup, docID string) ([]parser.DocItem, []string) {
 	family := resolveParserFamily(fileType)
-	if family != "pdf" && family != "docx" && family != "markdown" {
+	if !hyperlinkFamilies[family] {
 		return parent, nil
 	}
 	setup, ok := setups[family]
@@ -73,6 +73,8 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 		parentID = filename
 	}
 	client := common.GetSSRFHTTPClient()
+	// total counts fetched bytes after the fact, so exhaustion can overshoot
+	// by at most one already-fetched page (bounded by MaxBytesPerURL).
 	var total int64
 	out := parent
 	for _, url := range urls {

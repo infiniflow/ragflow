@@ -255,6 +255,11 @@ func cloneParserSetupValue(value any) any {
 	}
 }
 
+// hyperlinkFamilies are the Parser families that carry the opt-in
+// linked-content switches (#21032). Single source of truth for both the
+// constructor-time Check and the fetch post-step.
+var hyperlinkFamilies = map[string]bool{"pdf": true, "docx": true, "markdown": true}
+
 // Check validates parser methods at construction time so a malformed DSL
 // surfaces as a canvas compile failure rather than a mid-run error.
 //
@@ -302,15 +307,11 @@ func (c *ParserComponent) Check() error {
 	// Hyperlink switches live under the pdf/docx/markdown families only;
 	// the same keys anywhere else are rejected so a misplaced setting
 	// cannot silently do nothing (#20139 class).
-	for _, family := range []string{"pdf", "docx", "markdown"} {
-		if setup, ok := c.setups[family]; ok {
+	for family, setup := range c.setups {
+		if hyperlinkFamilies[family] {
 			if _, err := schema.HyperlinkFetchParamFromSetup(setup); err != nil {
 				return fmt.Errorf("parser: %s %w", family, err)
 			}
-		}
-	}
-	for family, setup := range c.setups {
-		if family == "pdf" || family == "docx" || family == "markdown" {
 			continue
 		}
 		for _, key := range []string{"fetch_links", "collect_markdown_links", "max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
@@ -623,7 +624,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// fetched pages are parsed as plain HTML and appended after the parent
 	// items. Failures are warnings only, never run errors.
 	if items, ok := out["json"].([]parser.DocItem); ok {
-		fetched, linkWarnings := maybeFetchHyperlinkContents(ctx, fileTypeExt, filename, binary, items, c.setups, lang, docID)
+		fetched, linkWarnings := maybeFetchHyperlinkContents(ctx, fileTypeExt, filename, binary, items, c.setups, docID)
 		out["json"] = fetched
 		reportParserWarnings(ctx, linkWarnings)
 	}
