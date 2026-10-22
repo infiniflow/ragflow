@@ -1,18 +1,23 @@
 //
-// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
 //
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
 //
+
+// Linked-content extraction reads the outbound links a source document declares:
+// DOCX relationship targets, PDF /URI strings, and the link destinations a
+// CommonMark parser resolves from Markdown. The fetch post-step
+// (hyperlink_fetch.go) turns what it returns into indexed pages.
 
 package component
 
@@ -28,6 +33,10 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/text"
 )
 
 // Hyperlink source tags carried in chunk Extra by the fetch post-step
@@ -56,18 +65,9 @@ const (
 	hyperlinkMaxURLCandidates = 4096
 )
 
-var (
-	// The label group allows one nested bracket pair so a badge link
-	// `[![alt](img.png)](https://x)` still yields its destination.
-	markdownLinkRe = regexp.MustCompile(`(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\(\s*([^\s)]+)`)
-	// `[label][ref]` / `[label][]` reference usages, and the `[ref]: <dest>`
-	// definitions they resolve to. A definition nobody references is prose, not
-	// a link in the document, so only referenced definitions are collected.
-	markdownRefUseRe = regexp.MustCompile(`(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\[([^\]]*)\]`)
-	markdownRefDefRe = regexp.MustCompile(`(?m)^[ \t]*\[([^\]]+)\]:[ \t]*<?([^\s>]+)`)
-	markdownAutolink = regexp.MustCompile(`(?i)<(https?://[^>\s]+)>`)
-	htmlAnchorHrefRe = regexp.MustCompile(`(?i)<a\s[^>]*?href\s*=\s*["']([^"']+)["']`)
-)
+// htmlAnchorHrefRe reads hrefs out of raw HTML that a Markdown document
+// carries verbatim; the AST keeps those as raw-HTML nodes rather than links.
+var htmlAnchorHrefRe = regexp.MustCompile(`(?i)<a\s[^>]*?href\s*=\s*["']([^"']+)["']`)
 
 // extractLinksFromDocx returns the raw hyperlink targets declared in the
 // .docx relationships part. It mirrors Python's extract_links_from_docx
@@ -122,13 +122,16 @@ func extractLinksFromDocx(binary []byte) ([]string, error) {
 
 // extractLinksFromPDF returns the raw link URIs embedded in a PDF.
 //
-// It scans the same /A -> /URI annotation objects Python's
-// extract_links_from_pdf (PyPDF2) reads, covering literal (paren) and hex
-// (<hex>) string forms. It is stdlib-only on purpose: the Go pdfium
-// bindings expose no annotation API, and binding one is out of scope.
+// It is a byte-level scan: every "/URI" followed by a literal (paren) or hex
+// (<hex>) string is collected. That is where a link annotation writes its
+// destination, but the scan does not verify the occurrence belongs to an
+// annotation's /A action — reading the real /Annots -> /A -> /URI graph needs a
+// PDF object parser, and the Go pdfium bindings expose no annotation API.
 //
-// Known gaps: encrypted PDFs and URIs split across objects are missed;
-// the caller treats that as "no links", never as an error.
+// Every gap degrades to "fewer links", never to an error: URIs inside
+// compressed object streams or encrypted PDFs are missed, a URI split across
+// objects is missed, and an uncompressed content stream that happens to contain
+// "/URI(" or "/URI<" is collected as though it were an annotation.
 func extractLinksFromPDF(binary []byte) []string {
 	var out []string
 	rest := binary
@@ -288,76 +291,67 @@ func pdfBytesToString(raw []byte) string {
 	return string(raw)
 }
 
-// extractLinksFromMarkdownText returns link destinations from the Markdown
-// source: inline links (including badge links wrapping an image), inline
-// <a href>, CommonMark autolinks, and reference-style links resolved through
-// their definitions. Image embeds (![...](...)) are not links and are skipped.
-// Python collected these by rendering Markdown to HTML first; reading the
-// source directly keeps the Parser free of a second renderer.
-func extractLinksFromMarkdownText(text string) []string {
+// extractLinksFromMarkdownText returns the link destinations the CommonMark
+// parser resolves from the Markdown source: inline links, badge links wrapping
+// an image, reference-style links through their definitions, angle autolinks,
+// and inline or block-level <a href>. Parsing the AST instead of scanning the
+// text is what keeps the answer honest about what the document links to: code
+// spans and fenced or indented code blocks hold no link nodes, [a](<b c>)
+// destinations survive, and a reference definition nobody uses stays prose.
+// Image embeds are not links, so a standalone ![alt](i.png) contributes
+// nothing.
+func extractLinksFromMarkdownText(source string) []string {
+	src := []byte(source)
+	doc := goldmark.DefaultParser().Parse(text.NewReader(src))
 	var out []string
 	seen := map[string]bool{}
-	add := func(url string) {
-		url = strings.TrimSpace(url)
-		if url == "" || seen[url] {
-			return
+	add := func(dest string) bool {
+		dest = strings.TrimSpace(dest)
+		if dest != "" && !seen[dest] {
+			seen[dest] = true
+			out = append(out, dest)
 		}
-		seen[url] = true
-		out = append(out, url)
+		return len(out) < hyperlinkMaxURLCandidates
 	}
-	capped := func() bool { return len(out) >= hyperlinkMaxURLCandidates }
-
-	for _, m := range markdownLinkRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
-		if m[1] == "!" {
-			continue
-		}
-		dest := m[3]
-		if i := strings.IndexAny(dest, " \t\n\"'"); i >= 0 {
-			dest = dest[:i]
-		}
-		add(dest)
-		if capped() {
-			return out
-		}
-	}
-	for _, m := range htmlAnchorHrefRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
-		add(m[1])
-		if capped() {
-			return out
-		}
-	}
-	for _, m := range markdownAutolink.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
-		add(m[1])
-		if capped() {
-			return out
-		}
-	}
-
-	// Reference-style links resolve through a definition list, matched
-	// case-insensitively as CommonMark requires. A definition no label uses is
-	// prose, not a link in the document, so it is not fetched.
-	defs := map[string]string{}
-	for _, m := range markdownRefDefRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
-		defs[strings.ToLower(strings.TrimSpace(m[1]))] = strings.Trim(m[2], `"'`)
-	}
-	if len(defs) == 0 {
-		return out
-	}
-	for _, m := range markdownRefUseRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
-		if m[1] == "!" {
-			continue
-		}
-		id := strings.ToLower(strings.TrimSpace(m[3]))
-		if id == "" {
-			id = strings.ToLower(strings.TrimSpace(m[2]))
-		}
-		if dest, ok := defs[id]; ok {
-			add(dest)
-			if capped() {
-				break
+	addAnchors := func(chunk string) bool {
+		for _, m := range htmlAnchorHrefRe.FindAllStringSubmatch(chunk, hyperlinkMaxURLCandidates) {
+			if !add(m[1]) {
+				return false
 			}
 		}
+		return true
 	}
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch node := n.(type) {
+		case *ast.Link:
+			if !add(string(node.Destination)) {
+				return ast.WalkStop, nil
+			}
+		case *ast.AutoLink:
+			if !add(string(node.URL(src))) {
+				return ast.WalkStop, nil
+			}
+		case *ast.RawHTML:
+			for i := 0; i < node.Segments.Len(); i++ {
+				segment := node.Segments.At(i)
+				if !addAnchors(string(segment.Value(src))) {
+					return ast.WalkStop, nil
+				}
+			}
+		case *ast.HTMLBlock:
+			lines := node.Lines()
+			for i := 0; i < lines.Len(); i++ {
+				segment := lines.At(i)
+				if !addAnchors(string(segment.Value(src))) {
+					return ast.WalkStop, nil
+				}
+			}
+		}
+		return ast.WalkContinue, nil
+	})
 	return out
 }
 
@@ -417,7 +411,7 @@ var hyperlinkTargetCollectors = map[string]func([]byte) ([]string, []string){
 	"docx": func(binary []byte) ([]string, []string) {
 		links, err := extractLinksFromDocx(binary)
 		if err != nil {
-			return nil, []string{fmt.Sprintf("hyperlink: docx link extraction failed (%v)", err)}
+			return nil, []string{fmt.Sprintf("hyperlink: docx link extraction failed: %v", err)}
 		}
 		return links, nil
 	},

@@ -1,17 +1,17 @@
 //
-// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
 //
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
 //
 
 package component
@@ -19,9 +19,11 @@ package component
 import (
 	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -104,6 +106,37 @@ func TestExtractLinksFromPDF(t *testing.T) {
 	}
 }
 
+// The two-sided error of the byte scan is part of its contract, documented on
+// extractLinksFromPDF: an occurrence that is not an annotation action still
+// matches, and a destination inside a compressed object stream does not.
+func TestExtractLinksFromPDFScanBoundaries(t *testing.T) {
+	// A content stream that merely contains the token is collected: a false
+	// positive, bounded by the fetch budgets and the SSRF guard.
+	inStream := []byte("%PDF-1.7\n4 0 obj <</Length 44>>\nstream\nBT (/URI(https://example.com/in-content) Tj) ET\nendstream\nendobj")
+	if got := extractLinksFromPDF(inStream); len(got) != 1 || got[0] != "https://example.com/in-content" {
+		t.Fatalf("got %v, want the documented content-stream match", got)
+	}
+
+	// A /URI that is not followed by a string is not a destination.
+	if got := extractLinksFromPDF([]byte("%PDF-1.7\n<</S/URI/Type/Pagetree>>")); len(got) != 0 {
+		t.Fatalf("got %v, want empty", got)
+	}
+
+	// Object streams are never inflated, so links living in one are missed.
+	var buf bytes.Buffer
+	w, _ := flate.NewWriter(&buf, flate.BestCompression)
+	_, _ = w.Write([]byte("0 40 <</A <</S/URI/URI (https://example.com/hidden)>>>"))
+	_ = w.Close()
+	compressed := append([]byte("%PDF-1.7\n5 0 obj <</Type/ObjStm/N 1/First 9/Filter/FlateDecode/Length "),
+		strconv.Itoa(buf.Len())...)
+	compressed = append(compressed, ">>\nstream\n"...)
+	compressed = append(compressed, buf.Bytes()...)
+	compressed = append(compressed, "\nendstream\nendobj"...)
+	if got := extractLinksFromPDF(compressed); len(got) != 0 {
+		t.Fatalf("got %v, want no links from a compressed object stream", got)
+	}
+}
+
 func TestExtractLinksFromMarkdownText(t *testing.T) {
 	text := "see [docs](https://example.com/docs \"Title\") and ![img](https://example.com/i.png)\n" +
 		`<a href="https://example.com/anchor">x</a> [dup](https://example.com/docs)`
@@ -115,14 +148,14 @@ func TestExtractLinksFromMarkdownText(t *testing.T) {
 	}
 }
 
-// Python collected Markdown links by rendering to HTML first, which resolves
-// every link form. Reading the source has to cover the same ground: badge links
-// wrapping an image, reference-style links, autolinks and inline anchors — while
-// a definition nothing references stays prose.
+// The parser resolves every link form a renderer would: badge links wrapping an
+// image, reference-style links through their definitions, angle autolinks and
+// inline anchors — while a definition nothing references stays prose, and a bare
+// URL is not a link in CommonMark.
 func TestExtractLinksFromMarkdownTextLinkForms(t *testing.T) {
 	text := "[![badge](badge.svg)](https://example.com/badge)\n" +
 		"see [the docs][docs-ref], [empty][] and bare https://example.com/not-a-link\n" +
-		"<https://example.com/auto>\n" +
+		"<https://example.com/auto>\n\n" +
 		"[docs-ref]: https://example.com/docs\n" +
 		"[empty]: https://example.com/empty\n" +
 		"[orphan]: https://example.com/orphan\n"
@@ -147,6 +180,40 @@ func TestExtractLinksFromMarkdownTextLinkForms(t *testing.T) {
 		if url == "https://example.com/not-a-link" {
 			t.Fatalf("bare URL is not a link in CommonMark: %v", got)
 		}
+	}
+}
+
+// A destination wrapped in angle brackets is a link, and its brackets are not
+// part of the URL; a link written inside code is prose, not a link.
+func TestExtractLinksFromMarkdownTextCodeAndAngleBrackets(t *testing.T) {
+	text := "real [doc](<https://example.com/wrapped>) and [q](https://example.com/title \"why\")\n\n" +
+		"[ref]: <https://example.com/def-angle>\n" +
+		"see [ref][]\n\n" +
+		"```\n[fenced](https://example.com/fenced)\n<a href=\"https://example.com/fenced-anchor\">a</a>\n```\n\n" +
+		"~~~python\n[fenced2](https://example.com/fenced2)\n~~~\n\n" +
+		"inline `[span](https://example.com/span)` here\n\n" +
+		"    [indented](https://example.com/indented)\n"
+	got := extractLinksFromMarkdownText(text)
+	for _, url := range got {
+		for _, bad := range []string{
+			"https://example.com/fenced", "https://example.com/fenced-anchor",
+			"https://example.com/fenced2", "https://example.com/span",
+			"https://example.com/indented",
+		} {
+			if url == bad {
+				t.Fatalf("a link inside code was collected as %q: %v", bad, got)
+			}
+		}
+	}
+	want := []string{
+		"https://example.com/def-angle",
+		"https://example.com/title",
+		"https://example.com/wrapped",
+	}
+	sorted := append([]string(nil), got...)
+	sort.Strings(sorted)
+	if !reflect.DeepEqual(sorted, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 
@@ -293,5 +360,23 @@ func TestExtractLinksFromMarkdownTextCapsCandidates(t *testing.T) {
 	got := extractLinksFromMarkdownText(b.String())
 	if len(got) != hyperlinkMaxURLCandidates {
 		t.Fatalf("got %d links, want %d", len(got), hyperlinkMaxURLCandidates)
+	}
+}
+
+func TestHyperlinkDocxCapsCandidates(t *testing.T) {
+	seg := `<Relationship Id="r%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/%d"/>`
+	var b strings.Builder
+	b.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
+	for i := 0; i < hyperlinkMaxURLCandidates+5; i++ {
+		fmt.Fprintf(&b, seg, i, i)
+	}
+	b.WriteString(`</Relationships>`)
+
+	links, err := extractLinksFromDocx(buildDocxWithRels(t, b.String()))
+	if err != nil {
+		t.Fatalf("extractLinksFromDocx: %v", err)
+	}
+	if len(links) != hyperlinkMaxURLCandidates {
+		t.Fatalf("got %d links, want the %d candidate cap", len(links), hyperlinkMaxURLCandidates)
 	}
 }
