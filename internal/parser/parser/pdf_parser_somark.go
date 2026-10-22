@@ -160,10 +160,14 @@ func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
 	items := make([]map[string]any, 0)
-	for _, pageRaw := range pages {
+	for pageIdx, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
 			continue
+		}
+		pageNum := pageIdx
+		if raw, ok := numericAny(page["page_num"]); ok && raw >= 0 {
+			pageNum = int(raw)
 		}
 		blocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range blocks {
@@ -172,11 +176,41 @@ func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any
 				continue
 			}
 			if item := soMarkBlockToItem(block, keepHeaderFooter); item != nil {
+				if pos := soMarkBlockPosition(block, pageNum); pos != nil {
+					item["positions"] = [][]any{pos}
+					item["_pdf_positions"] = [][]any{pos}
+				}
 				items = append(items, item)
 			}
 		}
 	}
 	return items, len(pages)
+}
+
+// soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
+// its 0-based page number into the 1-based [page, left, right, top, bottom]
+// position row used by _pdf_positions.
+func soMarkBlockPosition(block map[string]any, pageNum int) []any {
+	bbox, _ := block["bbox"].([]any)
+	if len(bbox) != 4 {
+		return nil
+	}
+	var v [4]float64
+	for i, raw := range bbox {
+		n, ok := numericAny(raw)
+		if !ok {
+			return nil
+		}
+		v[i] = n
+	}
+	x0, top, x1, bott := v[0], v[1], v[2], v[3]
+	if x0 > x1 {
+		x0, x1 = x1, x0
+	}
+	if top > bott {
+		top, bott = bott, top
+	}
+	return []any{float64(pageNum + 1), x0, x1, top, bott}
 }
 
 func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]any {
