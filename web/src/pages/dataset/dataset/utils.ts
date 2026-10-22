@@ -445,9 +445,13 @@ export function isAutoMetadataEnabled(
     if (group?.enabled !== undefined) {
       return Boolean(group.enabled);
     }
-    return extractor.enable_metadata === 1 || extractor.enable_metadata === true;
+    return (
+      extractor.enable_metadata === 1 || extractor.enable_metadata === true
+    );
   }
-  return parserConfig.enable_metadata === 1 || parserConfig.enable_metadata === true;
+  return (
+    parserConfig.enable_metadata === 1 || parserConfig.enable_metadata === true
+  );
 }
 
 export function findParserGap(
