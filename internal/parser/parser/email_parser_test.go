@@ -1506,6 +1506,7 @@ func TestHTMLBodyToText(t *testing.T) {
 		{"definition list and rule", `<div>A<dl><dt>Term</dt><dd>Def</dd></dl>B<hr>C</div>`, "A\nTerm\nDef\nB\nC"},
 		{"br forces a break", `one<br>two`, "one\ntwo"},
 		{"head script style skipped", `<html><head><title>t</title><style>.x{color:red}</style></head><body><p>visible</p><script>var x=1;</script></body></html>`, "visible"},
+		{"template content skipped", `<p>visible</p><template><p>Hello {{name}}</p></template>`, "visible"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

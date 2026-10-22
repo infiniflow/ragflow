@@ -82,9 +82,9 @@ func StartHeartbeat(serverType common.ServerType, serverID string, port int, hea
 
 	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
 		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-			local.SetAdminStatus(0, "")
+			local.SetAdminStatus(local.Available, "")
 		} else {
-			local.SetAdminStatus(1, err.Error())
+			local.SetAdminStatus(local.Unavailable, err.Error())
 		}
 	})
 	heartbeatReporter.Start()

@@ -128,10 +128,6 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 			}
 			fields["doc_type_kwd"] = "text"
 		}
-		// ck_type is retired: the content type lives on doc_type_kwd and the
-		// block kind on layout. A legacy raw item can still carry the key, so
-		// drop it here as well — the typed conversion already does.
-		delete(fields, "ck_type")
 		items = appendPDFItem(items, fields)
 	}
 	if droppedPositions > 0 {

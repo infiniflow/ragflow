@@ -27,8 +27,7 @@ import (
 // Group/Hierarchy output: it carries doc_type_kwd + positions and no
 // block-kind field. cropImageChunks derives the crop type from doc_type_kwd.
 // A text chunk with positions gets a rendered preview; a chunk without
-// positions is left untouched; and the retired ck_type must not appear in
-// the returned chunk shape.
+// positions is left untouched.
 func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	ctx := context.Background()
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
@@ -47,9 +46,6 @@ func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	}
 	if got[1]["image"] != nil {
 		t.Errorf("chunk without positions should not be cropped, got %v", got[1]["image"])
-	}
-	if _, ok := got[0]["ck_type"]; ok {
-		t.Errorf("retired ck_type must not appear in output chunk: %v", got[0])
 	}
 }
 

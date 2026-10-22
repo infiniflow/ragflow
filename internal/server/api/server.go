@@ -62,9 +62,6 @@ import (
 )
 
 func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	// Initialize admin status (default: unavailable=1)
-	local.InitAdminStatus(1, "admin server not connected")
-
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init fills DictPath from env var or default, so
 	// tokenizerCfg.DictPath carries the resolved path for downstream use.
@@ -454,6 +451,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	)
 	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
+
+	// Initialize admin status (default: unavailable=1)
+	local.InitAdminStatus()
 
 	// Set log level
 	bootstrap.SetLogger(serverName, arguments)

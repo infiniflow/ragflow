@@ -142,9 +142,6 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 		if fields["doc_type_kwd"] != "text" {
 			t.Fatalf("flattened item %d still has media type: %#v", i, fields)
 		}
-		if _, ok := fields["ck_type"]; ok {
-			t.Fatalf("flattened item %d still carries the retired ck_type: %#v", i, fields)
-		}
 	}
 	text, _ := result.JSON[0].ToMap()["text"].(string)
 	for _, want := range []string{"Cell", "Caption", "Footnote"} {
@@ -165,7 +162,7 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 
 func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
-		"doc_type_kwd": "table", "ck_type": "table", "layout": "table", "text": "Recognized text without cells",
+		"doc_type_kwd": "table", "layout": "table", "text": "Recognized text without cells",
 	}})})
 	if result.Err != nil {
 		t.Fatal(result.Err)
@@ -174,9 +171,6 @@ func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 	if item["doc_type_kwd"] != "text" || item["text"] != "Recognized text without cells" {
 		t.Fatalf("unstructured table kept an inconsistent subtype: %#v", item)
 	}
-	if _, ok := item["ck_type"]; ok {
-		t.Fatalf("retired ck_type survived normalization: %#v", item)
-	}
 }
 
 func TestPDFNormalizeResultKeepsPositionedUnstructuredTables(t *testing.T) {
@@ -184,7 +178,7 @@ func TestPDFNormalizeResultKeepsPositionedUnstructuredTables(t *testing.T) {
 		p := NewPDFParser()
 		p.FlattenMediaToText = flatten
 		result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
-			"doc_type_kwd": "table", "ck_type": "table", "text": "Recognized table without cells",
+			"doc_type_kwd": "table", "text": "Recognized table without cells",
 			"positions": [][]any{{2, 10, 30, 20, 40}},
 		}})})
 		if result.Err != nil || len(result.JSON) != 1 {

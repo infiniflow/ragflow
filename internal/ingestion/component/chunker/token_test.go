@@ -405,9 +405,6 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 		if got != wantTypes[i] {
 			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
 		}
-		if _, ok := ch["ck_type"]; ok {
-			t.Errorf("chunk %d must not emit the retired ck_type: %+v", i, ch)
-		}
 	}
 	// The two text segments on either side of the table/image must remain
 	// distinct — they must NOT be merged across the non-text segments.
