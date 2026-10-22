@@ -35,6 +35,25 @@ function parseSettings(
 }
 
 describe('buildChatSettingFormSchema', () => {
+  it.each([null, undefined, ''])(
+    'allows saving one dataset without a decision model (%s)',
+    (decisionId) => {
+      const result = parseSettings(
+        {},
+        { dataset_ids: ['kb1'], decision_id: decisionId },
+      );
+      expect(result.success).toBe(true);
+      expect(result.data?.decision_id).toBe('');
+      expect(result.data?.dataset_ids).toEqual(['kb1']);
+    },
+  );
+
+  it('preserves the selected decision model', () => {
+    const result = parseSettings({}, { decision_id: 'decision-model-id' });
+    expect(result.success).toBe(true);
+    expect(result.data?.decision_id).toBe('decision-model-id');
+  });
+
   it('rejects a blank system prompt', () => {
     const result = parseSettings({ system: '' });
     expect(result.success).toBe(false);
