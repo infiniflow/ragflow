@@ -197,6 +197,40 @@ def test_unpositioned_text_keeps_the_historical_order():
 
 
 @pytest.mark.p2
+def test_unpositioned_media_keeps_the_lead_while_the_others_interleave():
+    text = [_chunk("t1", 1, 10), _chunk("t2", 2, 900)]
+    media = [_chunk("img-no-position"), _chunk("img-p2", 2, 40)]
+
+    merged = nlp.merge_chunks_by_reading_order(media, text)
+
+    assert [ck["content_with_weight"] for ck in merged] == ["img-no-position", "t1", "img-p2", "t2"]
+
+
+@pytest.mark.p2
+def test_unpositioned_text_stays_while_the_others_interleave():
+    text = [_chunk("t1", 1, 10), _chunk("t2"), _chunk("t3", 2, 900)]
+    media = [_chunk("img-p2", 2, 40)]
+
+    merged = nlp.merge_chunks_by_reading_order(media, text)
+
+    assert [ck["content_with_weight"] for ck in merged] == ["t1", "t2", "img-p2", "t3"]
+
+
+@pytest.mark.p2
+def test_malformed_position_only_costs_its_own_chunk():
+    # A short position tuple costs the chunk that carries it, not the document:
+    # the well-formed media chunk still interleaves.
+    text = [_chunk("t1", 1, 10), _chunk("t2", 2, 900)]
+    broken = _chunk("img-broken")
+    broken["position_int"] = [(2, 50, 300)]
+    media = [broken, _chunk("img-p2", 2, 40)]
+
+    merged = nlp.merge_chunks_by_reading_order(media, text)
+
+    assert [ck["content_with_weight"] for ck in merged] == ["img-broken", "t1", "img-p2", "t2"]
+
+
+@pytest.mark.p2
 def test_equal_position_places_media_ahead_of_text():
     text = [_chunk("t1", 2, 40)]
     media = [_chunk("img", 2, 40)]
@@ -219,7 +253,17 @@ def test_empty_stream_passes_through():
 
 
 @pytest.mark.p2
-def test_reading_order_key_reads_the_first_position():
+def test_reading_order_key_reads_the_first_readable_position():
     assert nlp.reading_order_key(_chunk("t", 3, 42)) == (3, 50, 300, 42)
     assert nlp.reading_order_key(_chunk("t")) is None
     assert nlp.reading_order_key(_chunk("t", 3, None)) == (3, 50, 300, 0)
+
+    # A block spanning a column break anchors at the position it starts at, not
+    # at the geometrically leftmost one: page-text starts in the right column
+    # (444) and still carries a left-column position at 515.
+    spanning = _chunk("t", 1, 444, left=308, right=546)
+    spanning["position_int"].append((1, 50, 286, 515, 524))
+    assert nlp.reading_order_key(spanning) == (1, 308, 546, 444)
+
+    # A malformed leading entry costs itself only; the next one anchors.
+    assert nlp.reading_order_key({"position_int": [(1, 50, 300), (2, 60, 320, 40, 50)]}) == (2, 60, 320, 40)

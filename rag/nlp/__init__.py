@@ -586,19 +586,29 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
 def reading_order_key(chunk):
     """Return ``(page, left, right, top)`` of the chunk's first source position.
 
-    ``None`` when the chunk carries no ``position_int`` (parsers without
+    A chunk can carry several positions — a block spanning a column or page
+    break — and the first one is where it starts being read: parsers emit
+    ``position_int`` in tag order, so it is used as is rather than re-derived
+    from geometry. Anchoring a chunk that covers both columns at its
+    geometrically leftmost position instead would place it behind media that
+    sits above its own right-column start.
+
+    Unreadable entries are skipped, so a malformed leading entry costs only
+    itself and the rest of the chunk's positions still anchor it. ``None`` when
+    the chunk carries no readable ``position_int`` (parsers without
     coordinates).
     """
     if not isinstance(chunk, dict):
         return None
-    positions = chunk.get("position_int") or []
-    if not positions:
-        return None
-    try:
-        page, left, right, top = positions[0][:4]
-        return int(page), int(left), int(right), int(top)
-    except (IndexError, TypeError, ValueError):
-        return None
+    for position in chunk.get("position_int") or []:
+        if not isinstance(position, (list, tuple)):
+            continue
+        try:
+            page, left, right, top = position[:4]
+            return int(page), int(left), int(right), int(top)
+        except (IndexError, TypeError, ValueError):
+            continue
+    return None
 
 
 def read_before(box, other):
@@ -669,25 +679,41 @@ def merge_chunks_by_reading_order(media_chunks, text_chunks):
     re-sorted — it carries the parser's order and is not monotonic across
     columns — so each media chunk goes in front of the first text chunk read
     after it, ordered by (anchor, page, column, top). A chunk spanning several
-    columns is atomic, and streams without positions keep the historical
-    ``media then text`` order.
+    columns is atomic.
+
+    Missing coordinates degrade per chunk, not per document: a media chunk
+    without ``position_int`` keeps the historical lead position while the
+    others still interleave, and a text chunk without one keeps its slot in the
+    text stream — it cannot anchor a media chunk, so one may land ahead of it.
+    Only a document whose whole text stream carries no coordinates falls back
+    to ``media then text``, because there is nothing to anchor against.
     """
     if not media_chunks:
         return list(text_chunks)
     if not text_chunks:
         return list(media_chunks)
 
-    media_boxes = [reading_order_key(ck) for ck in media_chunks]
     text_boxes = [reading_order_key(ck) for ck in text_chunks]
-    if any(box is None for box in media_boxes) or any(box is None for box in text_boxes):
+    if all(box is None for box in text_boxes):
+        # No coordinates to anchor against: keep the historical media-then-text order.
+        logging.info(
+            "merge_chunks_by_reading_order: none of the %d text chunks carries a position; keeping media-first order for %d media chunks",
+            len(text_chunks),
+            len(media_chunks),
+        )
         return list(media_chunks) + list(text_chunks)
 
     bands = _text_column_bands(text_chunks)
+    unpositioned_media = []
     placed = []
-    for box, chunk in zip(media_boxes, media_chunks):
+    for chunk in media_chunks:
+        box = reading_order_key(chunk)
+        if box is None:
+            unpositioned_media.append(chunk)
+            continue
         # A media chunk starting where a text chunk starts goes first.
         index = next(
-            (i for i, text_box in enumerate(text_boxes) if text_box == box or read_before(box, text_box)),
+            (i for i, text_box in enumerate(text_boxes) if text_box is not None and (text_box == box or read_before(box, text_box))),
             len(text_chunks),
         )
         column = _column_index(box, bands.get(box[0], []))
@@ -704,7 +730,7 @@ def merge_chunks_by_reading_order(media_chunks, text_chunks):
         cursor = max(cursor, index)
         merged.append(chunk)
     merged.extend(text_chunks[cursor:])
-    return merged
+    return unpositioned_media + merged
 
 
 def attach_media_context(chunks, table_context_size=0, image_context_size=0):
