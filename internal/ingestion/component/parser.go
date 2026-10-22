@@ -309,6 +309,11 @@ func (c *ParserComponent) Check() error {
 	// cannot silently do nothing (#20139 class).
 	for family, setup := range c.setups {
 		if hyperlinkFamilies[family] {
+			if family != "markdown" {
+				if _, exists := setup["collect_markdown_links"]; exists {
+					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, "collect_markdown_links")
+				}
+			}
 			if _, err := schema.HyperlinkFetchParamFromSetup(setup); err != nil {
 				return fmt.Errorf("parser: %s %w", family, err)
 			}

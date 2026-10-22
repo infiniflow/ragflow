@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -137,5 +138,31 @@ func TestNormalizeAndDedupeLinks(t *testing.T) {
 	b, _ := normalizeAndDedupeLinks([]string{"https://x/1", "https://x/2"}, 10)
 	if !reflect.DeepEqual(a, b) {
 		t.Fatalf("order-dependent: %v vs %v", a, b)
+	}
+	// anchors collapse to one fetchable URL
+	anchors, _ := normalizeAndDedupeLinks([]string{"https://x/a#s1", "https://x/a#s2"}, 10)
+	if !reflect.DeepEqual(anchors, []string{"https://x/a"}) {
+		t.Fatalf("anchors = %v, want one stripped URL", anchors)
+	}
+}
+
+func TestExtractLinksFromDocxRejectsOversizedRels(t *testing.T) {
+	seg := `<Relationship Id="r" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com"/>`
+	huge := `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+		strings.Repeat(seg, hyperlinkMaxRelsBytes/len(seg)+2) +
+		`</Relationships>`
+	if _, err := extractLinksFromDocx(buildDocxWithRels(t, huge)); err == nil {
+		t.Fatal("want error for oversized rels part")
+	}
+}
+
+func TestExtractLinksFromPDFSkipsOversizedURI(t *testing.T) {
+	long := strings.Repeat("a", hyperlinkMaxURIBytes+10)
+	pdf := []byte(`%PDF-1.7
+1 0 obj <</Type/Annot/Subtype/Link/A <</S/URI/URI (` + long + `)>>>>
+2 0 obj <</Type/Annot/Subtype/Link/A <</S/URI/URI (https://example.com/ok)>>>>>`)
+	got := extractLinksFromPDF(pdf)
+	if !reflect.DeepEqual(got, []string{"https://example.com/ok"}) {
+		t.Fatalf("got %d links, want only the normal one", len(got))
 	}
 }

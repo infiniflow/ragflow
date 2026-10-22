@@ -20,7 +20,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
@@ -86,8 +88,12 @@ func TestHyperlinkMarkdownFetchAppendsTaggedItems(t *testing.T) {
 		t.Fatalf("parent moved: %v", got[0].ToMap())
 	}
 	child := got[len(got)-1].ToMap()
-	if child["source_url"] == nil || child["parent_doc_id"] != "doc1" {
-		t.Fatalf("child untagged: %v", child)
+	extra, _ := child["extra"].(map[string]any)
+	if extra[hyperlinkSourceURLKey] == nil || extra[hyperlinkParentDocKey] != "doc1" {
+		t.Fatalf("child provenance missing from extra: %v", child)
+	}
+	if _, topLevel := child[hyperlinkSourceURLKey]; topLevel {
+		t.Fatalf("provenance must not be a top-level key: %v", child)
 	}
 }
 
@@ -157,6 +163,9 @@ func TestCheckRejectsMisplacedHyperlinkKey(t *testing.T) {
 	if _, err := NewParserComponent(map[string]any{"html": map[string]any{"fetch_links": true}}); err == nil {
 		t.Fatal("want error when a family without hyperlink support carries fetch_links")
 	}
+	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"collect_markdown_links": true}}); err == nil {
+		t.Fatal("want error for collect_markdown_links outside markdown")
+	}
 }
 
 func TestCheckRejectsInvalidHyperlinkBudget(t *testing.T) {
@@ -192,8 +201,9 @@ func TestHyperlinkDocxEndToEnd(t *testing.T) {
 		t.Fatalf("len = %d, want parent + 1 linked item", len(got))
 	}
 	child := got[1].ToMap()
-	if child["parent_doc_id"] != "doc-42" || child["source_url"] != srv.URL {
-		t.Fatalf("child untagged: %v", child)
+	extra, _ := child["extra"].(map[string]any)
+	if extra[hyperlinkParentDocKey] != "doc-42" || extra[hyperlinkSourceURLKey] != srv.URL {
+		t.Fatalf("child provenance missing from extra: %v", child)
 	}
 }
 
@@ -214,25 +224,36 @@ func TestHyperlinkCancelledContextSkipsFetch(t *testing.T) {
 	}
 }
 
-func TestHyperlinkTotalBudgetExhausted(t *testing.T) {
+func TestHyperlinkRemainingBudgetCapsRead(t *testing.T) {
 	allowTestHosts(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<html><body><p>page body larger than one byte</p></body></html>"))
+		_, _ = w.Write([]byte("<html><body><p>body over remaining budget</p></body></html>"))
 	}))
 	defer srv.Close()
 
-	parent := []parser.DocItem{parser.TextItem{Text: "[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)"}}
+	parent := []parser.DocItem{parser.TextItem{Text: "[a](" + srv.URL + ")"}}
 	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
-		"fetch_links": true, "collect_markdown_links": true, "max_total_bytes": 1,
+		"fetch_links": true, "collect_markdown_links": true,
+		"max_bytes_per_url": 1 << 20, "max_total_bytes": 32,
 	})
 	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
 		"doc.md", nil, parent, setups, "doc1")
-	// first page fetched (over the 1-byte budget), second skipped
-	if len(got) != len(parent)+1 {
-		t.Fatalf("len = %d, want parent + first page only", len(got))
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
 	}
-	if len(warnings) != 1 || warnings[0] != "hyperlink: total fetch budget exhausted; remaining links skipped" {
-		t.Fatalf("warnings = %v, want budget warning", warnings)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "over 32 byte limit") {
+		t.Fatalf("warnings = %v, want rejection at the remaining 32-byte budget", warnings)
+	}
+}
+
+func TestHyperlinkOverallDeadline(t *testing.T) {
+	base := schema.HyperlinkFetchParam{MaxURLs: 5, TimeoutSeconds: 10}
+	if got := hyperlinkOverallDeadline(base); got != 50*time.Second {
+		t.Fatalf("deadline = %v, want 50s", got)
+	}
+	maxed := schema.HyperlinkFetchParam{MaxURLs: 50, TimeoutSeconds: 120}
+	if got := hyperlinkOverallDeadline(maxed); got != 5*time.Minute {
+		t.Fatalf("deadline = %v, want the 5m cap", got)
 	}
 }

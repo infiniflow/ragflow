@@ -35,6 +35,13 @@ const (
 	hyperlinkSourceURLKey  = "source_url"
 	hyperlinkParentDocKey  = "parent_doc_id"
 	hyperlinkRelTypeSuffix = "/hyperlink"
+
+	// hyperlinkMaxRelsBytes caps the decompressed .rels part: a crafted docx
+	// can compress a gigabyte into a tiny zip entry.
+	hyperlinkMaxRelsBytes = 1 << 20
+	// hyperlinkMaxURIBytes caps a single extracted URI; PDF string readers
+	// otherwise allocate proportional to the remaining file size.
+	hyperlinkMaxURIBytes = 8 << 10
 )
 
 var (
@@ -59,10 +66,13 @@ func extractLinksFromDocx(binary []byte) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("hyperlink docx: open rels: %w", err)
 		}
-		relsXML, err = io.ReadAll(rc)
+		relsXML, err = io.ReadAll(io.LimitReader(rc, hyperlinkMaxRelsBytes+1))
 		_ = rc.Close()
 		if err != nil {
 			return nil, fmt.Errorf("hyperlink docx: read rels: %w", err)
+		}
+		if len(relsXML) > hyperlinkMaxRelsBytes {
+			return nil, fmt.Errorf("hyperlink docx: rels part exceeds %d bytes", hyperlinkMaxRelsBytes)
 		}
 		break
 	}
@@ -138,9 +148,13 @@ func skipPDFWhitespace(b []byte) []byte {
 
 // readPDFLiteralString parses a (...) PDF string starting at b[0].
 // It resolves the escape sequences relevant to URIs (\\, \), \(, \r, \n).
+// Strings longer than hyperlinkMaxURIBytes are rejected without allocating;
+// scanning still advances to the closing paren so the caller keeps making
+// progress through the file.
 func readPDFLiteralString(b []byte) (string, []byte, bool) {
 	var sb strings.Builder
 	depth := 0
+	truncated := false
 	for i := 1; i < len(b); i++ {
 		c := b[i]
 		switch c {
@@ -150,42 +164,63 @@ func readPDFLiteralString(b []byte) (string, []byte, bool) {
 			}
 			i++
 			e := b[i]
-			switch e {
-			case 'n':
-				sb.WriteByte('\n')
-			case 'r':
-				sb.WriteByte('\r')
-			case 't':
-				sb.WriteByte('\t')
-			case '\n':
-			case '\r':
-				if i+1 < len(b) && b[i+1] == '\n' {
-					i++
+			if sb.Len() < hyperlinkMaxURIBytes {
+				switch e {
+				case 'n':
+					sb.WriteByte('\n')
+				case 'r':
+					sb.WriteByte('\r')
+				case 't':
+					sb.WriteByte('\t')
+				case '\n':
+				case '\r':
+					if i+1 < len(b) && b[i+1] == '\n' {
+						i++
+					}
+				default:
+					sb.WriteByte(e)
 				}
-			default:
-				sb.WriteByte(e)
 			}
 		case '(':
 			depth++
-			sb.WriteByte(c)
+			if sb.Len() < hyperlinkMaxURIBytes {
+				sb.WriteByte(c)
+			} else {
+				truncated = true
+			}
 		case ')':
 			if depth == 0 {
+				if truncated || sb.Len() > hyperlinkMaxURIBytes {
+					return "", b[i+1:], false
+				}
 				return sb.String(), b[i+1:], true
 			}
 			depth--
-			sb.WriteByte(c)
+			if sb.Len() < hyperlinkMaxURIBytes {
+				sb.WriteByte(c)
+			} else {
+				truncated = true
+			}
 		default:
-			sb.WriteByte(c)
+			if sb.Len() < hyperlinkMaxURIBytes {
+				sb.WriteByte(c)
+			} else {
+				truncated = true
+			}
 		}
 	}
 	return "", b, false
 }
 
-// readPDFHexString parses a <hex> PDF string starting at b[0].
+// readPDFHexString parses a <hex> PDF string starting at b[0]. A hex string
+// longer than the URI cap is rejected without building the decoded buffer.
 func readPDFHexString(b []byte) (string, []byte, bool) {
 	end := bytes.IndexByte(b, '>')
 	if end < 0 {
 		return "", b, false
+	}
+	if end-1 > hyperlinkMaxURIBytes*2 {
+		return "", b[end+1:], false
 	}
 	clean := make([]byte, 0, end)
 	for _, c := range b[1:end] {
@@ -248,14 +283,18 @@ func extractLinksFromMarkdownText(text string) []string {
 	return out
 }
 
-// normalizeAndDedupeLinks trims, drops non-fetchable targets (only http(s)
-// is ever fetched — the SSRF guard re-checks at request time), dedupes and
-// sorts for a deterministic fetch order. maxURLs caps the result; truncated
-// reports whether input was cut.
+// normalizeAndDedupeLinks trims, drops fragments (same page behind different
+// anchors must not be fetched and indexed twice), rejects non-fetchable
+// targets (only http(s) is ever fetched — the SSRF guard re-checks at request
+// time), dedupes and sorts for a deterministic fetch order. maxURLs caps the
+// result; truncated reports whether input was cut.
 func normalizeAndDedupeLinks(urls []string, maxURLs int) (kept []string, truncated bool) {
 	seen := map[string]bool{}
 	for _, raw := range urls {
 		u := strings.TrimSpace(raw)
+		if i := strings.IndexByte(u, '#'); i >= 0 {
+			u = u[:i]
+		}
 		if u == "" || seen[u] {
 			continue
 		}

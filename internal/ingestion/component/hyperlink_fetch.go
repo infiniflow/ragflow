@@ -73,20 +73,30 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 		parentID = filename
 	}
 	client := common.GetSSRFHTTPClient()
+	// Document-level deadline: per-URL timeouts alone allow maxURLs*timeout
+	// worker occupancy (100 minutes at the configuration maxima). The overall
+	// budget is derived from the same parameters and capped at five minutes.
+	fetchCtx, cancel := context.WithTimeout(ctx, hyperlinkOverallDeadline(param))
+	defer cancel()
 	// total counts fetched bytes after the fact, so exhaustion can overshoot
 	// by at most one already-fetched page (bounded by MaxBytesPerURL).
 	var total int64
 	out := parent
 	for _, url := range urls {
-		if ctx.Err() != nil {
+		if fetchCtx.Err() != nil {
 			warnings = append(warnings, "hyperlink: fetch cancelled; remaining links skipped")
 			break
 		}
-		if total >= int64(param.MaxTotalBytes) {
+		remaining := int64(param.MaxTotalBytes) - total
+		if remaining <= 0 {
 			warnings = append(warnings, "hyperlink: total fetch budget exhausted; remaining links skipped")
 			break
 		}
-		body, finalURL, warn := fetchHyperlinkPage(ctx, client, url, param)
+		readCap := int64(param.MaxBytesPerURL)
+		if remaining < readCap {
+			readCap = remaining
+		}
+		body, finalURL, warn := fetchHyperlinkPage(fetchCtx, client, url, param.TimeoutSeconds, readCap)
 		if warn != "" {
 			warnings = append(warnings, warn)
 			continue
@@ -99,12 +109,30 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 		}
 		for _, it := range sub.JSON {
 			m := it.ToMap()
-			m[hyperlinkSourceURLKey] = finalURL
-			m[hyperlinkParentDocKey] = parentID
+			// Provenance goes into the declared "extra" chunk column rather
+			// than new top-level keys: Infinity drops undeclared columns, so
+			// top-level tags would survive on Elasticsearch only.
+			extra, _ := m["extra"].(map[string]any)
+			if extra == nil {
+				extra = map[string]any{}
+			}
+			extra[hyperlinkSourceURLKey] = finalURL
+			extra[hyperlinkParentDocKey] = parentID
+			m["extra"] = extra
 			out = append(out, parser.DocItemFromMap(m))
 		}
 	}
 	return out, warnings
+}
+
+// hyperlinkOverallDeadline bounds one document's linked fetching. It derives
+// from the per-URL timeout and URL count so no extra config knob is needed.
+func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
+	total := time.Duration(param.MaxURLs) * time.Duration(param.TimeoutSeconds) * time.Second
+	if total > 5*time.Minute {
+		total = 5 * time.Minute
+	}
+	return total
 }
 
 // collectHyperlinkTargets extracts raw link targets for the family:
@@ -132,10 +160,11 @@ func collectHyperlinkTargets(family string, binary []byte, parent []parser.DocIt
 }
 
 // fetchHyperlinkPage GETs one page through the guarded SSRF client with a
-// per-URL timeout and a hard response cap. It returns the body, the final
+// per-URL timeout and a hard response cap (readCap, the smaller of the
+// per-page and remaining document budgets). It returns the body, the final
 // URL after redirects, or a warning (empty body on warning).
-func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, param schema.HyperlinkFetchParam) (body []byte, finalURL string, warning string) {
-	urlCtx, cancel := context.WithTimeout(ctx, time.Duration(param.TimeoutSeconds)*time.Second)
+func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, timeoutSeconds int, readCap int64) (body []byte, finalURL string, warning string) {
+	urlCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(urlCtx, http.MethodGet, url, nil)
 	if err != nil {
@@ -153,12 +182,12 @@ func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, pa
 	if !isFetchableContentType(contentType) {
 		return nil, "", fmt.Sprintf("hyperlink: skip %s (content type %q is not a page)", url, contentType)
 	}
-	capped, err := io.ReadAll(io.LimitReader(resp.Body, int64(param.MaxBytesPerURL)+1))
+	capped, err := io.ReadAll(io.LimitReader(resp.Body, readCap+1))
 	if err != nil {
 		return nil, "", fmt.Sprintf("hyperlink: read %s failed (%v)", url, err)
 	}
-	if len(capped) > param.MaxBytesPerURL {
-		return nil, "", fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", url, param.MaxBytesPerURL)
+	if int64(len(capped)) > readCap {
+		return nil, "", fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", url, readCap)
 	}
 	if resp.Request != nil && resp.Request.URL != nil {
 		return capped, resp.Request.URL.String(), ""
