@@ -186,11 +186,41 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			warnings = append(warnings, blockWarnings...)
 			for _, item := range blockItems {
 				item["page_number"] = pageNumber
+				if pos := soMarkBlockPosition(block, pageNumber); pos != nil {
+					item["positions"] = [][]any{pos}
+					item["_pdf_positions"] = [][]any{pos}
+				}
 				items = append(items, item)
 			}
 		}
 	}
 	return items, len(pages), append(state.warnings(), warnings...)
+}
+
+// soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
+// its 1-based page number into the [page, left, right, top, bottom] position
+// row used by _pdf_positions.
+func soMarkBlockPosition(block map[string]any, pageNumber int) []any {
+	bbox, _ := block["bbox"].([]any)
+	if len(bbox) != 4 {
+		return nil
+	}
+	var v [4]float64
+	for i, raw := range bbox {
+		n, ok := numericAny(raw)
+		if !ok {
+			return nil
+		}
+		v[i] = n
+	}
+	x0, top, x1, bott := v[0], v[1], v[2], v[3]
+	if x0 > x1 {
+		x0, x1 = x1, x0
+	}
+	if top > bott {
+		top, bott = bott, top
+	}
+	return []any{float64(pageNumber), x0, x1, top, bott}
 }
 
 func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) ([]map[string]any, []string) {
