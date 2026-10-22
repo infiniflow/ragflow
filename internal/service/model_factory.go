@@ -530,6 +530,8 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
 	case entity.ModelTypeDecision:
 		return ptrStringValue(tenant.DecisionID), ptrStringValue(tenant.TenantDecisionID)
+	case entity.ModelTypeScoring:
+		return ptrStringValue(tenant.ScoringID), ptrStringValue(tenant.TenantScoringID)
 	default:
 		return "", ""
 	}
@@ -1090,6 +1092,7 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		entity.ModelTypeTTS,
 		entity.ModelTypeOCR,
 		entity.ModelTypeDecision,
+		entity.ModelTypeScoring,
 	} {
 		if modelType.Has(candidate) {
 			modelTypes = append(modelTypes, candidate)

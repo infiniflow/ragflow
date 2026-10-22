@@ -391,6 +391,8 @@ func tenantDefaultModelFields(modelType string) (string, string, entity.ModelTyp
 		// spoken to in the System One protocol (one request, several questions)
 		// and is chosen independently of the answering model.
 		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
+	case "scoring":
+		return "scoring_id", "tenant_scoring_id", entity.ModelTypeScoring, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -433,6 +435,8 @@ func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string
 		if tenant.DecisionID != nil {
 			modelID = *tenant.DecisionID
 		}
+	case entity.ModelTypeScoring:
+		modelID = ptrStringValue(tenant.ScoringID)
 	default:
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}
@@ -616,6 +620,20 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 				ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
 				ModelType:     "ocr",
 				Enable:        defaultOCRModelEnable,
+			})
+		}
+	}
+
+	if ownedTenant.ScoringID != "" {
+		defaultScoringProvider, defaultScoringInstance, defaultScoringName, defaultScoringEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.ScoringID, "scoring")
+		if err == nil {
+			result = append(result, ModelItem{
+				ModelProvider: defaultScoringProvider,
+				ModelInstance: defaultScoringInstance,
+				ModelName:     defaultScoringName,
+				ModelID:       ptrStringValue(ownedTenant.TenantScoringID),
+				ModelType:     "scoring",
+				Enable:        defaultScoringEnable,
 			})
 		}
 	}

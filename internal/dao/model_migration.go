@@ -59,6 +59,8 @@ var modelTypeStringToBit = map[string]int{
 	"rerank":      16,
 	"tts":         32,
 	"ocr":         64,
+	"decision":    128,
+	"scoring":     256,
 }
 
 // ensureTenantModelTables creates the tenant model tables the base step backfills
@@ -1113,7 +1115,7 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 // Model id normalization ports ModelIdConfigStage.
 
 var modelIDStringColumns = map[string][]string{
-	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id"},
+	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id", "scoring_id"},
 	"knowledgebase": {"embd_id"},
 	"dialog":        {"llm_id", "rerank_id", "decision_id"},
 	"memory":        {"embd_id", "llm_id"},
@@ -1142,6 +1144,7 @@ var modelIDFieldSet = map[string]bool{
 	"tts_id":          true,
 	"ocr_id":          true,
 	"decision_id":     true,
+	"scoring_id":      true,
 }
 
 var searchConfigModelIDFieldSet = map[string]bool{"chat_id": true}

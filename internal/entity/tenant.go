@@ -36,6 +36,8 @@ type Tenant struct {
 	ParserIDs       string  `gorm:"column:parser_ids;size:256;not null;index" json:"parser_ids"`
 	OCRID           *string `gorm:"column:ocr_id;size:256;index" json:"ocr_id,omitempty"`
 	TenantOCRID     *string `gorm:"column:tenant_ocr_id;size:32;index" json:"tenant_ocr_id,omitempty"`
+	ScoringID       *string `gorm:"column:scoring_id;size:256;index" json:"scoring_id,omitempty"`
+	TenantScoringID *string `gorm:"column:tenant_scoring_id;size:32;index" json:"tenant_scoring_id,omitempty"`
 	// DecisionID is the tenant's default decision model: the one that judges
 	// whether a retrieved passage is worth showing the chat model. Nullable
 	// because the decision gate is optional — a tenant that never sets it runs

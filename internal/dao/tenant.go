@@ -73,6 +73,8 @@ type TenantInfo struct {
 	TenantTTSID      *string `gorm:"column:tenant_tts_id" json:"tenant_tts_id,omitempty"`
 	OCRID            string  `gorm:"column:ocr_id" json:"ocr_id,omitempty"`
 	TenantOCRID      *string `gorm:"column:tenant_ocr_id" json:"tenant_ocr_id,omitempty"`
+	ScoringID        string  `gorm:"column:scoring_id" json:"scoring_id,omitempty"`
+	TenantScoringID  *string `gorm:"column:tenant_scoring_id" json:"tenant_scoring_id,omitempty"`
 	DecisionID       *string `gorm:"column:decision_id" json:"decision_id,omitempty"`
 	TenantDecisionID *string `gorm:"column:tenant_decision_id" json:"tenant_decision_id,omitempty"`
 	ParserIDs        string  `gorm:"column:parser_ids" json:"parser_ids"`
@@ -84,7 +86,7 @@ func (dao *TenantDAO) GetInfoByUserID(ctx context.Context, db *gorm.DB, userID s
 	var results []*TenantInfo
 
 	err := db.WithContext(ctx).Model(&entity.Tenant{}).
-		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.tenant_llm_id, tenant.embd_id, tenant.tenant_embd_id, tenant.rerank_id, tenant.tenant_rerank_id, tenant.asr_id, tenant.tenant_asr_id, tenant.img2txt_id, tenant.tenant_img2txt_id, tenant.tts_id, tenant.tenant_tts_id, tenant.ocr_id, tenant.tenant_ocr_id, tenant.decision_id, tenant.tenant_decision_id, tenant.parser_ids, user_tenant.role").
+		Select("tenant.id as tenant_id, tenant.name, tenant.llm_id, tenant.tenant_llm_id, tenant.embd_id, tenant.tenant_embd_id, tenant.rerank_id, tenant.tenant_rerank_id, tenant.asr_id, tenant.tenant_asr_id, tenant.img2txt_id, tenant.tenant_img2txt_id, tenant.tts_id, tenant.tenant_tts_id, tenant.ocr_id, tenant.tenant_ocr_id, tenant.scoring_id, tenant.tenant_scoring_id, tenant.decision_id, tenant.tenant_decision_id, tenant.parser_ids, user_tenant.role").
 		Joins("INNER JOIN user_tenant ON user_tenant.tenant_id = tenant.id").
 		Where("user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role = ? AND tenant.status = ?", userID, "1", "owner", "1").
 		Scan(&results).Error

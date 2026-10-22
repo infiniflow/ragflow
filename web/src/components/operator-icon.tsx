@@ -33,9 +33,9 @@ import {
   LucideFileStack,
   LucideHeading,
   LucideListPlus,
-} from 'lucide-react';
-import { Component } from 'react';
-import { Operator } from '../constants/agent';
+} from "lucide-react";
+import { Component } from "react";
+import { Operator } from "../constants/agent";
 
 interface IProps {
   name: Operator;
@@ -102,6 +102,26 @@ export const LucideIconMap = {
   [Operator.Extractor]: LucideFileStack,
 };
 
+function ScoredSwitchMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={cn('size-5', className)}
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" fill="currentColor" />
+      <path
+        d="M7 12.2 10.3 15.6 17 8.4"
+        fill="none"
+        stroke="var(--bg-base, #fff)"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 const Empty = () => {
   return <div className="hidden"></div>;
 };
@@ -150,6 +170,10 @@ const OperatorIcon = ({ name, className }: IProps) => {
     );
   }
 
+  if (name === Operator.ScoredSwitch) {
+    return <ScoredSwitchMark className={className} />;
+  }
+
   if (name === Operator.Begin) {
     return (
       <div
@@ -168,7 +192,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
       <SvgErrorBoundary fallback={<Empty />}>
         <IconFontFill
           name={Icon}
-          className={cn('size-5 ', className)}
+          className={cn("size-5 ", className)}
         ></IconFontFill>
       </SvgErrorBoundary>
     );
@@ -177,7 +201,7 @@ const OperatorIcon = ({ name, className }: IProps) => {
   if (LucideIcon) {
     return (
       <SvgErrorBoundary fallback={<Empty />}>
-        <LucideIcon className={cn('size-5', className)} />
+        <LucideIcon className={cn("size-5", className)} />
       </SvgErrorBoundary>
     );
   }
@@ -187,8 +211,8 @@ const OperatorIcon = ({ name, className }: IProps) => {
       <SvgErrorBoundary fallback={<Empty />}>
         <SvgIcon
           name={svgIcon}
-          width={'100%'}
-          className={cn('size-5 fill-current', className)}
+          width={"100%"}
+          className={cn("size-5 fill-current", className)}
         ></SvgIcon>
       </SvgErrorBoundary>
     );

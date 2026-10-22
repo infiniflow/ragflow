@@ -1959,6 +1959,14 @@ Exemple : Virtual Hosted Style`,
         'Un composant qui demande au LLM de générer des réponses. Assurez-vous que le prompt est correctement configuré.',
       categorizeDescription:
         'Un composant qui utilise le LLM pour classer les entrées utilisateur en catégories prédéfinies. Assurez-vous de spécifier le nom, la description et les exemples pour chaque catégorie, ainsi que le composant suivant correspondant.',
+      scoredSwitchQuestionRequired: 'Chaque question supplémentaire doit avoir des instructions',
+      scoredSwitchLevelMinimum: 'Ajoutez au moins deux niveaux',
+      scoredSwitchFieldMinimum: 'Ajoutez au moins un champ',
+      scoredSwitchFieldNameInvalid: 'Le nom du champ doit commencer par une lettre ou un tiret bas',
+      scoredSwitchListItemsRequired: 'Une liste doit indiquer le type de ses elements',
+      scoredSwitchEstimateBoundsRequired: 'Une estimation doit avoir un minimum et un maximum',
+      scoredSwitchForecastRequired: 'Une prevision doit avoir un horizon et un intervalle',
+      scoredSwitchDecimalsRange: 'Les décimales doivent être comprises entre 0 et 6',
       relevantDescription:
         "Un composant qui utilise le LLM pour évaluer si la sortie en amont est pertinente par rapport à la dernière requête de l'utilisateur. Assurez-vous de spécifier le composant suivant pour chaque résultat de jugement.",
       rewriteQuestionDescription:

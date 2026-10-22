@@ -55,13 +55,13 @@ import (
 // branchableControlNames is the case-insensitive set of component
 // names that produce a runtime `_next` field and therefore qualify
 // for MultiBranch wiring. Switch emits _next as a single cpn_id
-// string; Categorize emits it as a list (see the package comment
-// above for the current status). The set is small on purpose: adding
-// a new entry requires the component body to emit outputs["_next"]
-// in a shape wireMultiBranches can consume.
+// string; Categorize and ScoredSwitch emit it as a list. The set is
+// small on purpose: adding a new entry requires the component body
+// to emit outputs["_next"] in a shape wireMultiBranches can consume.
 var branchableControlNames = map[string]bool{
-	"switch":     true,
-	"categorize": true,
+	"switch":       true,
+	"categorize":   true,
+	"scoredswitch": true,
 }
 
 // isBranchableControl reports whether the component name is one of
@@ -128,7 +128,8 @@ func wireMultiBranches(
 		for n := range endNodes {
 			endNodesList = append(endNodesList, n)
 		}
-		cond := makeSwitchBranchCondition(endNodes, branchTargetDependencies(c, cpnID, endNodes))
+		fallbackAll := strings.EqualFold(comp.Obj.ComponentName, "ScoredSwitch")
+		cond := makeBranchCondition(endNodes, fallbackAll, branchTargetDependencies(c, cpnID, endNodes))
 		wf.AddBranch(cpnID, compose.NewGraphMultiBranch(cond, endNodes))
 		out = append(out, branchRegistration{
 			Parent:   cpnID,
@@ -162,16 +163,21 @@ type branchRegistration struct {
 //     a single-entry map.
 //  4. Falls back to an empty map when `_next` is absent, empty, or
 //     contains no whitelisted entries. eino treats an empty chosen
-//     set as "no successor" — the workflow simply doesn't continue
-//     past the parent on this path.
+//     set as "no successor". ScoredSwitch is the exception: an empty
+//     `_next` continues to every declared downstream child so a
+//     field-extraction run can still deliver its answers.
 func makeSwitchBranchCondition(endNodes map[string]bool, dependencySets ...map[string]map[string]bool) compose.GraphMultiBranchCondition[map[string]any] {
+	return makeBranchCondition(endNodes, false, dependencySets...)
+}
+
+func makeBranchCondition(endNodes map[string]bool, fallbackAll bool, dependencySets ...map[string]map[string]bool) compose.GraphMultiBranchCondition[map[string]any] {
 	var dependencies map[string]map[string]bool
 	if len(dependencySets) > 0 {
 		dependencies = dependencySets[0]
 	}
 	return func(_ context.Context, in map[string]any) (map[string]bool, error) {
 		raw, ok := in["_next"]
-		if !ok {
+		if !ok && !fallbackAll {
 			return nil, nil
 		}
 		requested := make(map[string]bool, 1)
@@ -198,6 +204,11 @@ func makeSwitchBranchCondition(endNodes map[string]bool, dependencySets ...map[s
 				if endNodes[s] {
 					requested[s] = true
 				}
+			}
+		}
+		if len(requested) == 0 && fallbackAll {
+			for target := range endNodes {
+				requested[target] = true
 			}
 		}
 		chosen := make(map[string]bool, len(requested))
