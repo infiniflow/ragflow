@@ -290,8 +290,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
-            remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Docx:
@@ -303,19 +301,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
-        case FileType.Html:
-          filteredSetup = {
-            ...filteredSetup,
-            remove_toc: cur.remove_toc,
-            remove_header_footer: cur.remove_header_footer || false,
-          };
-          break;
         case FileType.TextMarkdown:
           filteredSetup = {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
             flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Video:

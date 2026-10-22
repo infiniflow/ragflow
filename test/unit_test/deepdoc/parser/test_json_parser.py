@@ -118,6 +118,15 @@ def test_top_level_null_yields_no_chunk():
     assert parser._parse_json("[]") == []
 
 
+def test_jsonl_keeps_zero_and_false_records():
+    # A JSONL record of 0 or false is content. null and empty containers are not.
+    content = '0\nfalse\nnull\n""\n{}\n[]\n{"a": 1}'
+    parser = RAGFlowJsonParser()
+
+    assert parser.is_jsonl_format(content)
+    assert parser(content.encode("utf-8")) == ["0", "false", '{"a": 1}']
+
+
 def test_objects_and_arrays_still_chunk():
     parser = RAGFlowJsonParser()
     assert parser._parse_json('{"a": 1}') == ['{"a": 1}']

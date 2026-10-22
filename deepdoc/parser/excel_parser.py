@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 
+import csv
 import logging
 import re
 import sys
@@ -25,6 +26,66 @@ from rag.utils.lazy_image import LazyImage
 # copied from `/openpyxl/cell/cell.py`
 ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 
+# The separators a spreadsheet actually writes into a file named ".csv". Excel
+# writes the list separator of the machine's locale, which is a semicolon across
+# most of Europe, and a tab separated export is routinely saved as .csv.
+CSV_DELIMITERS = (",", ";", "\t", "|")
+
+# How much of the file the detection looks at. A separator that holds for the
+# first rows holds for the file.
+CSV_SAMPLE_CHARS = 64 * 1024
+CSV_SAMPLE_ROWS = 20
+
+
+def _consistent_column_count(sample, delimiter, truncated):
+    """Columns per row under `delimiter`, or 0 when the rows disagree.
+
+    A separator the file was not written with either does not occur at all (one
+    column) or occurs by accident, and then the rows do not line up. Requiring
+    the same count on every row is what keeps a comma inside a sentence, or a
+    semicolon inside a quoted field, from being read as a separator.
+
+    When `truncated` is set, the sample is a prefix of a longer file, so the row
+    it ends in stops wherever the read did, between two fields or inside a
+    quoted one. That row is left out rather than counted as having fewer columns,
+    also when it is the last of the CSV_SAMPLE_ROWS rows sampled.
+    """
+    rows = []
+    reader = csv.reader(StringIO(sample, newline=""), delimiter=delimiter)
+    try:
+        for row in reader:
+            if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                rows.append(row)
+                if len(rows) == CSV_SAMPLE_ROWS:
+                    break
+    except csv.Error:
+        return 0
+    if truncated and len(rows) > 1 and reader.line_num == len(StringIO(sample, newline="").readlines()):
+        rows.pop()
+    count = 0
+    for row in rows:
+        if count and len(row) != count:
+            return 0
+        count = len(row)
+    return count if count > 1 else 0
+
+
+def detect_csv_delimiter(text):
+    """The separator `text` was written with, defaulting to a comma.
+
+    `pandas.read_csv` and `csv.reader` both default to a comma, and reading a
+    semicolon separated export with one does not fail: it returns a single
+    column holding the whole row, separators included.
+    """
+    truncated = len(text) > CSV_SAMPLE_CHARS
+    sample = text[:CSV_SAMPLE_CHARS]
+    best_delimiter, best_columns = ",", 0
+    for delimiter in CSV_DELIMITERS:
+        columns = _consistent_column_count(sample, delimiter, truncated)
+        if columns > best_columns:
+            best_delimiter, best_columns = delimiter, columns
+    return best_delimiter
+
 
 class RAGFlowExcelParser:
     @staticmethod
@@ -36,7 +97,7 @@ class RAGFlowExcelParser:
             file_like_object.seek(0)
             binary = file_like_object.read()
         text, _ = decode_text(binary, document_type="CSV document")
-        return pd.read_csv(StringIO(text), on_bad_lines="skip")
+        return pd.read_csv(StringIO(text), sep=detect_csv_delimiter(text), on_bad_lines="skip")
 
     @staticmethod
     def _load_excel_to_workbook(file_like_object):
