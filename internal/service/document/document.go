@@ -227,8 +227,10 @@ type IngestDocumentRequest struct {
 
 // StartParseOptions controls StartParseDocuments behavior.
 type StartParseOptions struct {
-	// ApplyKB merges the knowledge base's parser_config (llm_id, metadata)
-	// into the document before parsing.
+	// ApplyKB merges the knowledge base's parser_config (llm_id,
+	// enable_metadata, metadata) into the document before parsing. When the
+	// dataset does not set them, enable_metadata defaults to false and
+	// metadata defaults to an empty map.
 	ApplyKB bool
 	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool

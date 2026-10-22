@@ -117,7 +117,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 // persists the merged result before parsing when ApplyKB is requested.
 func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase) error {
 	if doc == nil || kb == nil {
-		return nil
+		return fmt.Errorf("apply dataset parser config: document and dataset are required")
 	}
 	merged := doc.ParserConfig
 	if merged == nil {
@@ -137,7 +137,7 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),
 	}); err != nil {
-		return err
+		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
 	}
 	doc.ParserConfig = merged
 	return nil

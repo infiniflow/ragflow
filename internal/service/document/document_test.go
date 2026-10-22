@@ -1419,6 +1419,267 @@ func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 	}
 }
 
+// TestIngest_ApplyKBPersistsDatasetParserConfig drives the request path the
+// future UI will use (Ingest -> StartParseDocuments ->
+// applyKnowledgebaseParserConfig) and asserts the merged dataset config is
+// what the database holds afterwards. A regression where Ingest stops
+// forwarding ApplyKB leaves the document's own llm_id in place and fails here.
+func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"llm_id":          "kb-llm",
+		"enable_metadata": true,
+		"metadata":        map[string]interface{}{"author": "team"},
+	}).Error; err != nil {
+		t.Fatalf("set kb parser_config: %v", err)
+	}
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location":      "loc-1",
+		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs:  []string{"doc-1"},
+		Run:     string(entity.TaskStatusRunning),
+		Delete:  true,
+		ApplyKB: true,
+	})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// Read the config back from the database, not from the in-memory struct.
+	got, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if got.ParserConfig["llm_id"] != "kb-llm" {
+		t.Fatalf("persisted llm_id = %v, want kb-llm", got.ParserConfig["llm_id"])
+	}
+	if got.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("persisted enable_metadata = %v, want true", got.ParserConfig["enable_metadata"])
+	}
+	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
+	if !ok || meta["author"] != "team" {
+		t.Fatalf("persisted metadata = %#v, want author=team", got.ParserConfig["metadata"])
+	}
+	// A document-only key must survive the merge.
+	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
+		t.Fatalf("chunk_token_num dropped from persisted parser_config: %#v", got.ParserConfig)
+	}
+}
+
+// TestStartParseDocuments_ApplyKBUsesDatasetDefaults covers a dataset whose
+// parser_config sets none of llm_id / enable_metadata / metadata: the merged
+// document config must fall back to llm_id nil, enable_metadata false and an
+// empty metadata map, matching the Python apply_kb branch.
+func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location":      "loc-1",
+		"parser_config": entity.JSONMap{"chunk_token_num": 128},
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true}); err != nil {
+		t.Fatalf("StartParseDocuments: %v", err)
+	}
+
+	got, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if v, ok := got.ParserConfig["llm_id"]; !ok || v != nil {
+		t.Fatalf("llm_id = %#v, want nil", got.ParserConfig["llm_id"])
+	}
+	if got.ParserConfig["enable_metadata"] != false {
+		t.Fatalf("enable_metadata = %#v, want false", got.ParserConfig["enable_metadata"])
+	}
+	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
+	if !ok || len(meta) != 0 {
+		t.Fatalf("metadata = %#v, want empty map", got.ParserConfig["metadata"])
+	}
+	// A document-only key must survive the merge.
+	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
+		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
+	}
+}
+
+// TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged pins the default
+// behaviour: without apply_kb the document keeps its own parser_config and
+// the dataset keys are not merged in.
+func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"llm_id":          "kb-llm",
+		"enable_metadata": true,
+		"metadata":        map[string]interface{}{"author": "team"},
+	}).Error; err != nil {
+		t.Fatalf("set kb parser_config: %v", err)
+	}
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location":      "loc-1",
+		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs:  []string{"doc-1"},
+		Run:     string(entity.TaskStatusRunning),
+		Delete:  true,
+		ApplyKB: false,
+	})
+	if err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	got, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload doc: %v", err)
+	}
+	if got.ParserConfig["llm_id"] != "doc-llm" {
+		t.Fatalf("persisted llm_id = %v, want doc-llm", got.ParserConfig["llm_id"])
+	}
+	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
+		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
+	}
+	if _, ok := got.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("enable_metadata merged without apply_kb: %#v", got.ParserConfig)
+	}
+	if _, ok := got.ParserConfig["metadata"]; ok {
+		t.Fatalf("metadata merged without apply_kb: %#v", got.ParserConfig)
+	}
+}
+
+// TestStartParseDocuments_ApplyKBPersistFailureNamesDocument makes the
+// persistence step fail and checks the caller gets a locatable error instead
+// of a bare DAO failure.
+func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"llm_id": "kb-llm",
+	}).Error; err != nil {
+		t.Fatalf("set kb parser_config: %v", err)
+	}
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location":      "loc-1",
+		"parser_config": entity.JSONMap{"llm_id": "doc-llm"},
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+	// Any write to the document table now fails, so the merge cannot be persisted.
+	if err := dao.DB.Exec("CREATE TRIGGER fail_document_update BEFORE UPDATE ON document BEGIN SELECT RAISE(ABORT, 'boom'); END;").Error; err != nil {
+		t.Fatalf("install failing trigger: %v", err)
+	}
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+
+	err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true})
+	if err == nil {
+		t.Fatal("expected an error when the merged parser config cannot be persisted")
+	}
+	if !strings.Contains(err.Error(), "doc-1") {
+		t.Fatalf("error %q does not name the document", err.Error())
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("expected no ingestion task to be published, got %d", len(publisher.messages))
+	}
+}
+
+// TestApplyKnowledgebaseParserConfig_NilInputReturnsError pins the guard: a
+// nil document or nil dataset must surface an error instead of silently
+// skipping the merge.
+func TestApplyKnowledgebaseParserConfig_NilInputReturnsError(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load kb: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load doc: %v", err)
+	}
+
+	if err := svc.applyKnowledgebaseParserConfig(ctx, nil, kb); err == nil {
+		t.Fatal("expected an error for a nil document")
+	}
+	if err := svc.applyKnowledgebaseParserConfig(ctx, doc, nil); err == nil {
+		t.Fatal("expected an error for a nil dataset")
+	}
+}
+
 func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
