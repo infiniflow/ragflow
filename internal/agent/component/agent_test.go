@@ -71,6 +71,92 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 }
 
+func TestAgent_PublishesStructuredOutput(t *testing.T) {
+	outputSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"sop_question": map[string]any{"type": "string"},
+		},
+		"required": []any{"sop_question"},
+	}
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		if !strings.Contains(p.SystemPrompt, "sop_question") {
+			t.Errorf("system prompt does not include structured output schema: %q", p.SystemPrompt)
+		}
+		return &schema.Message{Role: schema.Assistant, Content: `{"sop_question":"How do I reset my password?"}`}, nil
+	})
+
+	c, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "Extract a search question",
+		"outputs": map[string]any{
+			"structured": outputSchema,
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	out, err := c.Invoke(t.Context(), nil, nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	structured, ok := out["structured"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured output missing or wrong type: %T", out["structured"])
+	}
+	if got, want := structured["sop_question"], "How do I reset my password?"; got != want {
+		t.Errorf("structured.sop_question=%v, want %q", got, want)
+	}
+}
+
+func TestAgent_RejectsInvalidStructuredOutput(t *testing.T) {
+	calls := 0
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		calls++
+		return &schema.Message{Role: schema.Assistant, Content: `{"sop_question":42}`}, nil
+	})
+
+	c := NewAgentComponent(AgentParam{
+		ModelID:    "stub",
+		UserPrompt: "Extract a search question",
+		OutputStructure: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"sop_question": map[string]any{"type": "string"},
+			},
+			"required": []any{"sop_question"},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "response does not match schema") {
+		t.Fatalf("Invoke error = %v, want structured field validation error", err)
+	}
+	if calls != 1 {
+		t.Fatalf("agent runner called %d times, want one call", calls)
+	}
+}
+
+func TestAgent_RejectsStructuredOutputWhenDatasetIsMissing(t *testing.T) {
+	calls := 0
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		calls++
+		return &schema.Message{Role: schema.Assistant, Content: `{"answer":"unexpected"}`}, nil
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	agent := NewAgentComponent(AgentParam{
+		ModelID:         "stub",
+		UserPrompt:      "hello",
+		OutputStructure: map[string]any{"type": "object", "properties": map[string]any{"answer": map[string]any{"type": "string"}}},
+	})
+	_, err := agent.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{"_ERROR": "No dataset is selected."})
+	if err == nil || !strings.Contains(err.Error(), "cannot generate output: No dataset is selected.") {
+		t.Fatalf("Invoke error = %v, want structured generation error", err)
+	}
+	if calls != 0 {
+		t.Fatalf("agent runner called %d times, want no call", calls)
+	}
+}
+
 func TestScanAllStreamForToolCallWaitsPastTextChunks(t *testing.T) {
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{Role: schema.Assistant, Content: "I will calculate this."},
@@ -416,14 +502,22 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 	calls := 0
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
 		calls++
-		return &schema.Message{Role: schema.Assistant, Content: "lazy answer"}, nil
+		return &schema.Message{Role: schema.Assistant, Content: `{"answer":"lazy answer"}`}, nil
 	})
 
 	ctx := runtime.WithComponentExecutionOptions(t.Context(), runtime.ComponentExecutionOptions{
 		DeferAgentToMessage: true,
 	})
 	ctx = runtime.WithAgentMessageEmitter(ctx, func(string, string) {})
-	agent := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	agent := NewAgentComponent(AgentParam{
+		ModelID:   "stub",
+		MaxRounds: 1,
+		OutputStructure: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{"answer": map[string]any{"type": "string"}},
+			"required":   []any{"answer"},
+		},
+	})
 	out, err := agent.Invoke(ctx, nil, map[string]any{"user_prompt": "hello"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -442,11 +536,14 @@ func TestAgent_DefersExecutionForDownstreamMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if calls != 1 || got.String() != "lazy answer" {
-		t.Fatalf("calls=%d streamed=%q, want 1 / %q", calls, got.String(), "lazy answer")
+	if calls != 1 || got.String() != `{"answer":"lazy answer"}` {
+		t.Fatalf("calls=%d streamed=%q, want 1 / JSON answer", calls, got.String())
 	}
-	if final["content"] != "lazy answer" {
-		t.Fatalf("final content=%v, want lazy answer", final["content"])
+	if final["content"] != `{"answer":"lazy answer"}` {
+		t.Fatalf("final content=%v, want JSON answer", final["content"])
+	}
+	if structured, ok := final["structured"].(map[string]any); !ok || structured["answer"] != "lazy answer" {
+		t.Fatalf("final structured output=%v, want answer field", final["structured"])
 	}
 }
 
