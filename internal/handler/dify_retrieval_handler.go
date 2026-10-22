@@ -57,7 +57,7 @@ type ModelCreator interface {
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
 type MetadataServiceIface interface {
 	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
-	SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	SearchMetadataByKBs(ctx context.Context, kbIDs []string) (*service.SearchMetadataResponse, error)
 	LabelQuestion(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
@@ -340,7 +340,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	metaMap := make(map[string]map[string]interface{})
-	metaResult, err := h.metadataSvc.SearchMetadataByKBs(ctx, []string{kb.ID}, 10000)
+	metaResult, err := h.metadataSvc.SearchMetadataByKBs(ctx, []string{kb.ID})
 	if err == nil {
 		for _, metadata := range metaResult.MetadataRecords {
 			docID, ok := service.ExtractDocumentID(metadata)

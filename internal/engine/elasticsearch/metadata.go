@@ -570,16 +570,41 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	}
 
 	// Add sorting if order_by specified
+	hasExplicitSort := false
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
 		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
+			hasExplicitSort = true
 		}
 	}
 
 	// Add _source for field filtering if specified
 	if len(req.SelectFields) > 0 {
 		queryBody["_source"] = req.SelectFields
+	}
+
+	// ES rejects from+size past index.max_result_window. A sorted request that
+	// reaches past it is walked with search_after, as Search does. An unsorted
+	// one has no cursor to walk with, so it is cut at the window instead of
+	// failing: the rows past it are left out, with a warning.
+	if offset+limit > common.MAX_RESULT_WINDOW {
+		if hasExplicitSort {
+			fetch := e.buildSearchAfterFetcher(&types.SearchRequest{IndexNames: []string{indexName}})
+			records, total, err := searchAfterPaginate(ctx, queryBody, offset, limit, fetch)
+			if err != nil {
+				common.Warn("Elasticsearch SearchMetadata search_after failed", zap.String("index", indexName), zap.Error(err))
+				return nil, fmt.Errorf("search failed: %w", err)
+			}
+			return &types.SearchMetadataResult{MetadataRecords: records, Total: total}, nil
+		}
+		common.Warn("Elasticsearch SearchMetadata cut at the result window: an unsorted request cannot page past it",
+			zap.String("index", indexName), zap.Int("offset", offset), zap.Int("limit", limit),
+			zap.Int("window", common.MAX_RESULT_WINDOW))
+		limit = max(common.MAX_RESULT_WINDOW-offset, 0)
+		if limit == 0 {
+			offset = 0
+		}
 	}
 
 	// Apply offset/limit

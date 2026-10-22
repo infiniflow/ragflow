@@ -78,7 +78,7 @@ func (mockModelFactory) NewDefaultChatModel(context.Context, service.ModelAccess
 type mockMetadataService struct {
 	MetadataServiceIface
 	getFlattedMetaFn    func(ctx context.Context, kbIDs []string) (common.MetaData, error)
-	searchMetadataByKBs func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	searchMetadataByKBs func(ctx context.Context, kbIDs []string) (*service.SearchMetadataResponse, error)
 	labelQuestionFn     func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
@@ -89,9 +89,9 @@ func (m *mockMetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []s
 	return common.MetaData{}, nil
 }
 
-func (m *mockMetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+func (m *mockMetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string) (*service.SearchMetadataResponse, error) {
 	if m.searchMetadataByKBs != nil {
-		return m.searchMetadataByKBs(ctx, kbIDs, size)
+		return m.searchMetadataByKBs(ctx, kbIDs)
 	}
 	return &service.SearchMetadataResponse{
 		MetadataRecords: []map[string]interface{}{
@@ -234,7 +234,7 @@ func TestDifyRetrieval_Basic(t *testing.T) {
 func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.metadataSvc = &mockMetadataService{
-		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+		searchMetadataByKBs: func(ctx context.Context, kbIDs []string) (*service.SearchMetadataResponse, error) {
 			return &service.SearchMetadataResponse{
 				MetadataRecords: []map[string]interface{}{
 					{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
@@ -269,7 +269,7 @@ func TestDifyRetrieval_IncludesCustomDocumentMetadata(t *testing.T) {
 func TestDifyRetrieval_DocumentIDsOverrideCustomMetadata(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.metadataSvc = &mockMetadataService{
-		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+		searchMetadataByKBs: func(ctx context.Context, kbIDs []string) (*service.SearchMetadataResponse, error) {
 			return &service.SearchMetadataResponse{
 				MetadataRecords: []map[string]interface{}{
 					{"id": "doc1", "meta_fields": map[string]interface{}{
