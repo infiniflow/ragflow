@@ -119,9 +119,9 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	if doc == nil || kb == nil {
 		return fmt.Errorf("apply dataset parser config: document and dataset are required")
 	}
-	merged := doc.ParserConfig
-	if merged == nil {
-		merged = entity.JSONMap{}
+	merged := entity.JSONMap{}
+	for k, v := range doc.ParserConfig {
+		merged[k] = v
 	}
 	merged["llm_id"] = kb.ParserConfig["llm_id"]
 	if v, ok := kb.ParserConfig["enable_metadata"]; ok {

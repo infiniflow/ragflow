@@ -1648,6 +1648,16 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 	if len(publisher.messages) != 0 {
 		t.Fatalf("expected no ingestion task to be published, got %d", len(publisher.messages))
 	}
+	// The caller's original parser_config must be untouched when the persist fails.
+	if doc.ParserConfig["llm_id"] != "doc-llm" {
+		t.Fatalf("input doc.ParserConfig mutated on failure: %#v", doc.ParserConfig)
+	}
+	if _, ok := doc.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("enable_metadata leaked into input doc.ParserConfig on failure: %#v", doc.ParserConfig)
+	}
+	if _, ok := doc.ParserConfig["metadata"]; ok {
+		t.Fatalf("metadata leaked into input doc.ParserConfig on failure: %#v", doc.ParserConfig)
+	}
 }
 
 // TestApplyKnowledgebaseParserConfig_NilInputReturnsError pins the guard: a
