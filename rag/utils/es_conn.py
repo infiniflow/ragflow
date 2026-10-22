@@ -189,9 +189,12 @@ class ESConnection(ESConnectionBase):
         knowledgebase_ids: list[str],
         agg_fields: list[str] | None = None,
         rank_feature: dict | None = None,
+        search_after: list | None = None,
     ):
         """
         Refers to https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl.html
+
+        search_after is an ES-only cursor for sequential, explicitly sorted pages.
         """
         if isinstance(index_names, str):
             index_names = index_names.split(",")
@@ -288,9 +291,15 @@ class ESConnection(ESConnectionBase):
                     order_info = {"order": order, "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
-                elif field == "id":
-                    continue  # id as "text", not a "keyword", order by it will cause error
                 else:
+                    # ``id`` is mapped as ``keyword`` in both the content
+                    # index (via the dynamic ``kwd`` template) and the
+                    # doc-meta index, so it must be sortable here. Silently
+                    # dropping it would let callers that rely on
+                    # ``search_after`` (e.g. ``get_flatted_meta_by_kbs``
+                    # over a KB with > 10k documents) get back only the
+                    # first page and silently lose the rest past
+                    # ``MAX_RESULT_WINDOW``.
                     order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
             s = s.sort(*orders)
@@ -300,16 +309,28 @@ class ESConnection(ESConnectionBase):
 
         has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
         has_explicit_sort = bool(order_by and order_by.fields)
-        use_search_after = limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
+        if search_after is not None:
+            if not has_explicit_sort or has_dense or offset != 0 or limit <= 0:
+                raise ValueError("search_after requires an explicit sort, offset=0 and a positive limit without dense matching")
+            # Without a point-in-time search, the final sort field needs to
+            # distinguish documents tied on every preceding field.
+            if order_by.fields[-1][0] != "id":
+                raise ValueError("search_after requires id as the final unique sort field")
+            if not isinstance(search_after, (list, tuple)) or len(search_after) != len(order_by.fields):
+                raise ValueError("search_after must contain every returned sort value")
+        use_search_after = search_after is None and limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
 
         if limit > 0 and not use_search_after:
-            s = s[offset : offset + limit]
+            s = s[0:limit] if search_after is not None else s[offset : offset + limit]
         # Filter _source to only requested fields for efficiency, and add vector
         # fields to "fields" param so they appear in hit.fields when ES 9.x
         # exclude_source_vectors is enabled (dense_vector not in _source).
         if select_fields:
             s = s.source(select_fields)
         q = s.to_dict()
+        if search_after is not None:
+            q.pop("from", None)
+            q["search_after"] = search_after
         # ES 9.x: dense_vector fields excluded from _source; request them via fields.
         # Note: knn does NOT have a "fields" parameter - adding it inside the knn
         # object causes BadRequestError on ES 9.x. We add "fields" at top level.
