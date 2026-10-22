@@ -22,8 +22,7 @@ import (
 
 // parserSetupParamsKeys are the Parser params keys that are NOT per-family
 // setups: the wire-format declaration, the global vision settings and the
-// legacy allow-list. Every other object-valued params key is a file family
-// whose setup map may carry output_format.
+// legacy allow-list. Every other object-valued params key is a file family.
 var parserSetupParamsKeys = map[string]bool{
 	"outputs":                   true,
 	"allowed_output_format":     true,
@@ -34,12 +33,9 @@ var parserSetupParamsKeys = map[string]bool{
 // TestBuiltinTemplatesCarryNoParserOutputFormat pins that no builtin
 // ingestion template declares a Parser family's output_format.
 //
-// The Go Parser component exposes JSON only: the Parser runtime overwrites
-// every family's output_format with "json" when the component is built, so a
-// template-baked value never reaches the parser that would read it. The key
-// is therefore dead configuration in the templates: it states an intent the
-// runtime discards, and leaving it in place invites a reader to believe the
-// value is honoured.
+// The Go Parser component exposes JSON only: no parser reads the key, so a
+// template-baked value states an intent that is never honoured. Leaving it in
+// place invites a reader to believe the value matters.
 //
 // Both copies are checked. dsl.components holds the params the runtime
 // builds the Parser component from; dsl.graph.nodes holds the per-family

@@ -49,7 +49,6 @@ var ssrfAllowLoopback bool
 type MarkdownParser struct {
 	libType            string
 	ParseMethod        string
-	OutputFormat       string
 	VLM                map[string]any
 	FlattenMediaToText bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
@@ -77,9 +76,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 	if v, ok := setup["vlm"].(map[string]any); ok {
 		p.VLM = v
 	}
@@ -89,8 +85,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
-// returns a structured Markdown payload that mirrors the Python
-// parser's `output_format == "json"` shape. Each top-level block
+// returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
 // data is resolved and the item carries `doc_type_kwd: "image"` with

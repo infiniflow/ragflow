@@ -12,7 +12,6 @@ import (
 func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
-	p.outputFormat = "json"
 	data := minimalDOCX(t, "Hello from JSON path")
 	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
@@ -34,47 +33,17 @@ func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 	}
 }
 
-func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
-	ctx := t.Context()
+func TestDOCXParser_ConfigureFromSetup_Options(t *testing.T) {
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
-	if p.outputFormat != "json" {
-		t.Fatalf("After ConfigureFromSetup, outputFormat = %q, want %q", p.outputFormat, "json")
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true, "remove_header_footer": true})
+	if !p.RemoveTOC {
+		t.Error("RemoveTOC not configured")
+	}
+	if !p.RemoveHeaderFooter {
+		t.Error("RemoveHeaderFooter not configured")
 	}
 	if p.libType != "" {
 		t.Errorf("libType unexpectedly = %q", p.libType)
-	}
-	// Full round-trip: json config → json output
-	data := minimalDOCX(t, "Config test")
-	res := p.ParseWithResult(ctx, "sample.docx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
-	}
-	if len(res.JSON) == 0 {
-		t.Error("JSON items is empty")
-	}
-}
-
-func TestDOCXParser_ConfigureFromSetup_Markdown(t *testing.T) {
-	ctx := t.Context()
-	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
-	if p.outputFormat != "markdown" {
-		t.Fatalf("After ConfigureFromSetup, outputFormat = %q, want %q", p.outputFormat, "markdown")
-	}
-	data := minimalDOCX(t, "Config md test")
-	res := p.ParseWithResult(ctx, "sample.docx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "markdown")
-	}
-	if res.Markdown == "" {
-		t.Error("Markdown is empty")
 	}
 }
 
@@ -86,11 +55,11 @@ func TestDOCXParser_ParseWithResult_CGOMinimalDocument(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if res.Markdown == "" {
-		t.Fatal("Markdown is empty; want parsed content")
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON items is empty; want parsed content")
 	}
 }
 
@@ -139,40 +108,28 @@ func writeZipFile(t *testing.T, zw *zip.Writer, name, body string) {
 // that fixed this defect class; v0.1.12 is the pinned version.
 func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
 	cases := []struct {
-		name         string
-		run          string // run text as it appears inside <w:t>, entities unescaped
-		want         string
-		wantMarkdown string
+		name string
+		run  string // run text as it appears inside <w:t>, entities unescaped
+		want string
 	}{
-		{"named", "&lt;SEP&gt;", "<SEP>", `\<SEP\>`},
-		{"decimal", "&#60;SEP&#62;", "<SEP>", `\<SEP\>`},
-		{"hex", "&#x3C;SEP&#x3E;", "<SEP>", `\<SEP\>`},
-		{"ampersand", "A&amp;B", "A&B", "A&B"},
-		{"apostrophe", "it&apos;s", "it's", "it's"},
-		{"emdash", "a&#8212;b", "a—b", "a—b"},
+		{"named", "&lt;SEP&gt;", "<SEP>"},
+		{"decimal", "&#60;SEP&#62;", "<SEP>"},
+		{"hex", "&#x3C;SEP&#x3E;", "<SEP>"},
+		{"ampersand", "A&amp;B", "A&B"},
+		{"apostrophe", "it&apos;s", "it's"},
+		{"emdash", "a&#8212;b", "a—b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			data := minimalDOCX(t, tc.run)
 
-			jsonParser := NewDOCXParser()
-			jsonParser.ConfigureFromSetup(map[string]any{"output_format": "json"})
-			jsonRes := jsonParser.ParseWithResult(t.Context(), "entities.docx", data)
-			if jsonRes.Err != nil {
-				t.Fatalf("ParseWithResult(json): %v", jsonRes.Err)
+			p := NewDOCXParser()
+			res := p.ParseWithResult(t.Context(), "entities.docx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
 			}
-			if got := joinItemTexts(ItemsToMaps(jsonRes.JSON)); !strings.Contains(got, tc.want) {
+			if got := joinItemTexts(ItemsToMaps(res.JSON)); !strings.Contains(got, tc.want) {
 				t.Errorf("json text = %q, want it to contain %q", got, tc.want)
-			}
-
-			mdParser := NewDOCXParser()
-			mdParser.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
-			mdRes := mdParser.ParseWithResult(t.Context(), "entities.docx", data)
-			if mdRes.Err != nil {
-				t.Fatalf("ParseWithResult(markdown): %v", mdRes.Err)
-			}
-			if !strings.Contains(mdRes.Markdown, tc.wantMarkdown) {
-				t.Errorf("markdown = %q, want it to contain %q", mdRes.Markdown, tc.wantMarkdown)
 			}
 		})
 	}

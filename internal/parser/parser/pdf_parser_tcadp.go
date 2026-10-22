@@ -17,8 +17,7 @@ import (
 func parsePDFWithTCADP(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	return parseWithTCADP(ctx, filename, data, "PDF",
 		parser.TCADPAPIServer, parser.TCADPAPIKey,
-		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
-		parser.OutputFormat)
+		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType)
 }
 
 func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {

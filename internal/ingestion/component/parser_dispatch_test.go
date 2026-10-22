@@ -2147,16 +2147,13 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 	}
 }
 
-// TestConfigureParserFromSetups_VisualAural pins that image and audio
-// files pick up their setup (parse_method / lang / vlm) via the family
-// mapping. Before the fix, configureParserFromSetups silently skipped
-// configuration because resolveParserFamily returned "picture" / "aural",
-// neither of which existed in defaultSetups.
-func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+// TestConfigureParserFromSetups_Visual pins that image files pick up their
+// setup (parse_method / lang / vlm) via the family mapping. Before the fix,
+// configureParserFromSetups silently skipped configuration because
+// resolveParserFamily returned "picture", which did not exist in
+// defaultSetups.
+func TestConfigureParserFromSetups_Visual(t *testing.T) {
 	setups := defaultSetups()
-	// The component normalizes output_format onto every family before the
-	// dispatch layer sees the setups, so mirror that here.
-	normalizeParserOutputFormats(setups)
 
 	t.Run("visual resolves to image setup", func(t *testing.T) {
 		got := &captureSetupConfigurer{}
@@ -2170,15 +2167,4 @@ func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
 		}
 	})
 
-	t.Run("aural resolves to audio setup", func(t *testing.T) {
-		got := &captureSetupConfigurer{}
-		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
-		want := map[string]any(setups["audio"])
-		if got.setup == nil {
-			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
-		}
-		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
-			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
-		}
-	})
 }

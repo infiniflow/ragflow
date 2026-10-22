@@ -49,7 +49,6 @@ const (
 // CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
-	OutputFormat                   string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -73,9 +72,6 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
 	}
 	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
@@ -105,7 +101,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "csv":
 		// Continue with the local CSV parser.

@@ -160,7 +160,6 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	p := NewPPTParser()
 	setup := map[string]any{
 		"parse_method":  "tcadp",
-		"output_format": "json",
 	}
 	p.ConfigureFromSetup(setup)
 
@@ -171,9 +170,6 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	}
 	if p.pptx.ParseMethod != "tcadp" {
 		t.Errorf("PPTParser.pptx.ParseMethod = %q, want %q", p.pptx.ParseMethod, "tcadp")
-	}
-	if p.pptx.OutputFormat != "json" {
-		t.Errorf("PPTParser.pptx.OutputFormat = %q, want %q", p.pptx.OutputFormat, "json")
 	}
 }
 
@@ -186,7 +182,6 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 	}
 	setup := map[string]any{
 		"parse_method":  "tcadp",
-		"output_format": "json",
 	}
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
@@ -248,7 +243,6 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -288,7 +282,6 @@ func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
 	p := NewPPTXParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()

@@ -102,9 +102,6 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 	csvData := []byte("col1,col2\nval1,val2\n")
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "test.csv", csvData)
 	if res.Err != nil {
@@ -127,9 +124,6 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 
 func TestCSVParser_EmptyContent(t *testing.T) {
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "empty.csv", []byte("   \n\n  "))
 	if res.Err != nil {
