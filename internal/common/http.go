@@ -428,6 +428,10 @@ var LookupHost = net.LookupHost
 // process memory only, so it cannot be enabled by an env var or
 // a deployment mistake. The explicit "_ForTest" suffix is the
 // signal that production code must never touch it.
+//
+// Host-based database and connector dials are a separate opt-in.
+// AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those dials
+// only. This function stays limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private
@@ -667,49 +671,51 @@ func allZero(b []byte) bool {
 type response struct {
 	Code    ErrorCode   `json:"code"`
 	Data    interface{} `json:"data"`
-	Message interface{} `json:"message"`
+	Message string      `json:"message"`
 	Total   interface{} `json:"total,omitempty"`
 }
 
 // errorResponse error response
 type errorResponse struct {
-	Code    ErrorCode   `json:"code"`
-	Message interface{} `json:"message"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+}
+
+func responseMessage(code ErrorCode, message string) string {
+	if message != "" {
+		return message
+	}
+	if code == CodeSuccess {
+		return "success"
+	}
+	return code.Message()
 }
 
 // SuccessWithData returns success response with data
-func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
+func SuccessWithData(c *gin.Context, data interface{}, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
 // SuccessWithDataAndTotal returns success response with data and total number
-func SuccessWithDataAndTotal(c *gin.Context, data, total, message interface{}) {
+func SuccessWithDataAndTotal(c *gin.Context, data, total interface{}, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    data,
 		Total:   total,
-		Message: message,
-	})
-}
-
-// SuccessNoMessage returns success response without message
-func SuccessNoMessage(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, response{
-		Code: CodeSuccess,
-		Data: data,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
 // SuccessNoData returns success response without data
-func SuccessNoData(c *gin.Context, message interface{}) {
+func SuccessNoData(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    nil,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
@@ -717,7 +723,7 @@ func SuccessNoData(c *gin.Context, message interface{}) {
 func SuccessWithMessage(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
@@ -725,7 +731,7 @@ func SuccessWithMessage(c *gin.Context, message string) {
 func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
 	c.JSON(http.StatusOK, errorResponse{
 		Code:    code,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 
@@ -733,7 +739,7 @@ func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, mess
 	c.JSON(http.StatusOK, response{
 		Code:    code,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 
@@ -741,7 +747,7 @@ func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data
 	c.JSON(httpCode, response{
 		Code:    code,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 

@@ -10,11 +10,14 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/utility"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
@@ -39,7 +42,14 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	common.LookupHost = func(string) ([]string, error) { return []string{"8.8.8.8"}, nil }
 	t.Cleanup(func() { common.LookupHost = lookup })
 	var dispatched atomic.Bool
+	const authToken = "ragflow-secret"
 	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Error("MCP authentication unexpectedly appeared in the URL")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+authToken {
+			t.Errorf("Authorization = %q, want MCP bearer token", got)
+		}
 		if r.Method == "DELETE" {
 			w.WriteHeader(204)
 			return
@@ -71,11 +81,14 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	pinned := utility.PinnedHTTPClient
 	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client { return mcp.Client() }
 	t.Cleanup(func() { utility.PinnedHTTPClient = pinned })
-	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: mcpclient.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
 		t.Fatal(err)
 	}
+	addAgentMCPPermissionFixtures(t, db)
 	state := runtime.NewCanvasState("run", "task")
 	state.Sys["tenant_id"] = "tenant"
+	state.Sys["user_id"] = "tenant"
+	state.Sys["canvas_id"] = "canvas"
 	ctx := withStateForTest(t.Context(), state)
 	p := mergeAgentParam(AgentParam{}, map[string]any{"mcp": []any{map[string]any{"mcp_id": "mcp", "tools": map[string]any{"route": map[string]any{"name": "route", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"origin": map[string]any{"type": "string"}}, "required": []string{"origin"}}}}}}})
 	tools, err := buildAgentTools(ctx, p)
@@ -84,6 +97,14 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	}
 	var requests atomic.Int32
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if strings.Contains(string(body), authToken) || strings.Contains(string(body), mcp.URL) {
+			t.Error("MCP connection credentials leaked into the model request")
+		}
 		var req struct {
 			Tools []struct {
 				Function struct {
@@ -94,7 +115,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 			ToolChoice string           `json:"tool_choice"`
 			Messages   []models.Message `json:"messages"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		json.Unmarshal(body, &req)
 		if len(req.Tools) != 1 || req.Tools[0].Function.Name != "route_0" || req.ToolChoice != "auto" {
 			t.Errorf("tools missing from model request: %+v", req)
 		}
@@ -143,9 +164,10 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	if !dispatched.Load() || content != "metro answer" {
 		t.Fatalf("dispatch=%v content=%q", dispatched.Load(), content)
 	}
+	state.Sys["user_id"] = "outsider"
 	state.Sys["tenant_id"] = "other-tenant"
 	if _, err := buildAgentTools(ctx, p); err == nil {
-		t.Fatal("cross-tenant MCP access allowed")
+		t.Fatal("MCP dependency access without canvas permission was allowed")
 	}
 }
 
@@ -156,12 +178,15 @@ func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
 	}
 	pushComponentDB(t, db)
 	for _, id := range []string{"first", "second"} {
-		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: mcpclient.TransportStreamableHTTP}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
+	addAgentMCPPermissionFixtures(t, db)
 	state := runtime.NewCanvasState("run", "task")
 	state.Sys["tenant_id"] = "tenant"
+	state.Sys["user_id"] = "tenant"
+	state.Sys["canvas_id"] = "canvas"
 	ctx := withStateForTest(t.Context(), state)
 	p := AgentParam{Tools: nil, MCP: []any{
 		map[string]any{"mcp_id": "first", "tools": map[string]any{"search": map[string]any{"name": "web_search"}}},
@@ -183,5 +208,21 @@ func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
 		if info.Name != want[i] {
 			t.Errorf("tool %d name = %q, want %q", i, info.Name, want[i])
 		}
+	}
+}
+
+func addAgentMCPPermissionFixtures(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-owner-membership", UserID: "tenant", TenantID: "tenant",
+		Role: "owner", InvitedBy: "tenant", Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP owner membership: %v", err)
+	}
+	if err := db.Create(&entity.UserCanvas{
+		ID: "canvas", UserID: "tenant", Permission: string(entity.TenantPermissionMe),
+	}).Error; err != nil {
+		t.Fatalf("create canvas permission fixture: %v", err)
 	}
 }

@@ -51,7 +51,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil,
+				"", nil, "", userID, nil, "",
 			)
 			return data, total, err
 		}, maxPageSize)
@@ -122,9 +122,6 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		}
 		name, _ := info["name"].(string)
 		datasetNames[id] = name
-		if !ds.Accessible(ctx, id, userID) {
-			continue
-		}
 		// Read only documents returned by retrieval, through the existing listing
 		// and metadata services. This avoids loading entire document collections.
 		for _, chunk := range resp.Chunks {
@@ -136,7 +133,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if _, ok := documentMetadata[docID]; ok {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}}, 1, 1)
+			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
 			if err != nil || len(docs) == 0 {
 				continue
 			}

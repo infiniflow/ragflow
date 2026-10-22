@@ -24,6 +24,7 @@ import (
 	"github.com/xuri/excelize/v2"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 )
 
 func TestReportParserWarningsAsProgressMessages(t *testing.T) {
@@ -266,7 +267,8 @@ func TestParserComponent_Invoke_TextInput(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) != 1 {
 		t.Fatalf("json: got %T (len %d), want 1 item", out["json"], len(jsonItems))
 	}
@@ -297,7 +299,8 @@ func TestParserComponent_EmptyXLSXDoesNotBecomeRawText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	items, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json = %T, want []map[string]any", out["json"])
 	}
@@ -317,7 +320,8 @@ func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json: got %T, want []map[string]any", out["json"])
 	}
@@ -491,7 +495,8 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) != 2 {
 		t.Fatalf("json = %T/%v, want 2 items", out["json"], out["json"])
 	}
@@ -518,7 +523,8 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) != 1 {
 		t.Fatalf("json = %T/%v, want 1 item", out["json"], out["json"])
 	}
@@ -557,7 +563,8 @@ func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json: got %T", out["json"])
 	}
@@ -566,5 +573,14 @@ func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 	}
 	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
 		t.Errorf("json = %+v, want [alpha beta]", jsonItems)
+	}
+}
+
+func TestReportParserWarningsDeduplicatesMessages(t *testing.T) {
+	var got []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) { got = append(got, component+": "+message) })
+	reportParserWarnings(ctx, []string{"repeated", "repeated", "distinct", "repeated"})
+	if len(got) != 2 || got[0] != "Parser: WARNING: repeated" || got[1] != "Parser: WARNING: distinct" {
+		t.Fatalf("warnings=%v", got)
 	}
 }

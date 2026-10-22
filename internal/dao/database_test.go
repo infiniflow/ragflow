@@ -127,14 +127,14 @@ func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
 		t.Fatalf("create legacy table: %v", err)
 	}
 	migrator := db.Migrator()
-	if migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+	if migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
 		t.Fatal("precondition failed: column already present")
 	}
 
 	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
 		t.Fatalf("migrateIngestionTaskPipelineLogID: %v", err)
 	}
-	if !migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+	if !migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
 		t.Fatal("expected pipeline_log_id to be added")
 	}
 

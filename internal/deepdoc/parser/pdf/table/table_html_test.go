@@ -1,101 +1,37 @@
 package table
 
 import (
-	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-func TestRowsToHTML(t *testing.T) {
-	// rowsToHTML takes [][]pdf.TSRCell instead of [][]string (tableToHTML removed).
-	toCells := func(rows [][]string) [][]pdf.TSRCell {
-		out := make([][]pdf.TSRCell, len(rows))
-		for ri, row := range rows {
-			out[ri] = make([]pdf.TSRCell, len(row))
-			for ci, s := range row {
-				out[ri][ci] = pdf.TSRCell{Text: s}
-			}
-		}
-		return out
-	}
-
-	t.Run("simple 2x2 table", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"姓名", "年龄"},
-			{"张三", "25"},
-		})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >姓名</td><td >年龄</td></tr><tr><td >张三</td><td >25</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("empty table", func(t *testing.T) {
-		html := RowsToHTML(nil, "", nil, nil, nil)
-		if html != "<table></table>" {
-			t.Errorf("expected '<table></table>', got %q", html)
-		}
-	})
-
-	t.Run("single cell", func(t *testing.T) {
-		rows := toCells([][]string{{"X"}})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		expected := "<table><tr><td >X</td></tr></table>"
-		if html != expected {
-			t.Errorf("got  %q\nwant %q", html, expected)
-		}
-	})
-
-	t.Run("matches Python format for 公司差旅费", func(t *testing.T) {
-		rows := toCells([][]string{
-			{"标职务", "飞机", "火车", "轮船", "其他交通工具（不含的士）"},
-			{"公司级领导人员", "经济舱位", "火车软席", "二等舱位", "按实报销"},
-			{"其他工作人员", "经济舱位", "火车硬席", "三等舱位", "按实报销"},
-		})
-		html := RowsToHTML(rows, "", nil, nil, nil)
-		if !strings.HasPrefix(html, "<table>") || !strings.HasSuffix(html, "</table>") {
-			t.Errorf("not valid HTML: %s", html)
-		}
-		if !strings.Contains(html, "<td >标职务</td>") {
-			t.Errorf("missing cell '标职务': %s", html)
-		}
-		if strings.Count(html, "<tr>") != 3 {
-			t.Errorf("expected 3 rows, got %d", strings.Count(html, "<tr>"))
-		}
-	})
-}
-
-func TestRowsToHTML_HeaderRows(t *testing.T) {
+// TestConstructTable_HeaderRowDetected pins that a TSR row whose cells carry
+// the "table column header" block type is counted as the header row
+// (HeaderRows) in the produced TableData.
+func TestConstructTable_HeaderRowDetected(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 30, Text: "Name", Label: "table column header"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 30, Text: "Age", Label: "table column header"},
 		{X0: 0, Y0: 35, X1: 100, Y1: 65, Text: "John", Label: "table row"},
 		{X0: 101, Y0: 35, X1: 200, Y1: 65, Text: "30", Label: "table row"},
 	}
-	// constructTable should produce <th > for header row.
-	item := &pdf.TableItem{}
-	html := ConstructTable(cells, nil, "", item)
-	// Header row should use <th >, data row <td >.
-	if !strings.Contains(html, "<th >") {
-		t.Errorf("expected <th > for header row. HTML: %s", html)
+	td := constructTableData(t, cells, nil, "", &pdf.TableItem{})
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	if strings.Count(html, "<th ") != 2 {
-		t.Errorf("expected 2 <th > cells, got %d. HTML: %s", strings.Count(html, "<th "), html)
+	if td.HeaderRows != 1 {
+		t.Errorf("expected 1 header row, got %d", td.HeaderRows)
 	}
-	if strings.Count(html, "<td ") != 2 {
-		t.Errorf("expected 2 <td > cells (data row), got %d", strings.Count(html, "<td "))
+	if cellTextAt(td, 0, 0) != "Name" || cellTextAt(td, 1, 0) != "John" {
+		t.Errorf("unexpected cell text: %v", td.Grid)
 	}
 }
 
-func TestRowsToHTML_Colspan(t *testing.T) {
-	// Python's __cal_spans only spans boxes carrying an "SP" annotation
-	// (TSR "table spanning cell"). Here the SP box at column 1 has an X range
-	// (X0=10, X1=190) that covers column 0's center, so CalSpans must fold the
-	// covered "Name" cell into a colspan=2. This mirrors the real pipeline
-	// where GroupBoxesByRC labels an SP box "table spanning cell"; a plain
-	// "table header" must NOT trigger a span (see icbccs cross-page merge).
+// TestToTableData_ColspanFromCalSpans verifies that a span derived from CalSpans
+// (an "SP"-annotated box covering two columns) produces a colspan origin in the
+// produced TableData — the same geometry the removed RowsToHTML emitted.
+func TestToTableData_ColspanFromCalSpans(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "Name", R: 0, C: 0},
 		{X0: 10, X1: 190, Top: 0, Bottom: 30, Text: "", R: 0, C: 1, SP: 1},
@@ -103,10 +39,15 @@ func TestRowsToHTML_Colspan(t *testing.T) {
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "30", R: 1, C: 1},
 	}
 	rows := GroupBoxesByRC(boxes)
-	spans, covered := CalSpans(rows)
-	html := RowsToHTML(rows, "", nil, spans, covered)
-	if !strings.Contains(html, "colspan") {
-		t.Errorf("expected colspan attribute, got: %s", html)
+	spanInfo, covered := CalSpans(rows)
+	td := ToTableData(rows, "", nil, spanInfo, covered)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	t.Logf("HTML: %s", html)
+	if td.Grid[0][0].ColSpan != 2 {
+		t.Errorf("expected colspan=2 origin, got %d", td.Grid[0][0].ColSpan)
+	}
+	if !td.Grid[0][1].Covered {
+		t.Errorf("expected covered cell at [0][1]")
+	}
 }

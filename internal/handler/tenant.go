@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 
@@ -159,7 +160,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Tags tenants
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/list [get]
+// @Router /api/v1/tenants [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -265,8 +266,8 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -313,8 +314,8 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -342,6 +343,10 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		return
+	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
 		return
 	}
 
@@ -501,6 +506,10 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		return
+	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -551,6 +560,10 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		return
+	}
 
 	var body struct {
 		UserID string `json:"user_id"`
@@ -587,6 +600,10 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		return
+	}
 
 	ctx := c.Request.Context()
 	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
@@ -595,4 +612,9 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, true, "success")
+}
+
+func matchesActiveTenant(c *gin.Context, tenantID string) bool {
+	activeTenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	return activeTenantID == "" || activeTenantID == tenantID
 }

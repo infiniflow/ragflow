@@ -55,11 +55,35 @@ type engineWikiContributionStore struct {
 	engine engine.DocEngine
 }
 
+// newWikiContributionStore returns the engine-backed store. A nil engine is a
+// wiring mistake: the store then fails fast on every access instead of
+// silently degrading to an in-memory map, which would diff contributions
+// against empty state and ack a batch that merged nothing.
 func newWikiContributionStore(docEngine engine.DocEngine) wikiContributionStore {
 	if docEngine == nil {
-		return &memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}
+		return unconfiguredWikiContributionStore{}
 	}
 	return &engineWikiContributionStore{engine: docEngine}
+}
+
+// unconfiguredWikiContributionStore fails fast when the consumer was assembled
+// without a doc engine (see WithDocEngine).
+type unconfiguredWikiContributionStore struct{}
+
+func (unconfiguredWikiContributionStore) Get(context.Context, string, string, string) (wikiDocumentContribution, bool, error) {
+	return wikiDocumentContribution{}, false, errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) Put(context.Context, string, string, wikiDocumentContribution) error {
+	return errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) Delete(context.Context, string, string, string) error {
+	return errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) ClearDataset(context.Context, string, string) error {
+	return errEngineNotConfigured
 }
 
 func (s *engineWikiContributionStore) Get(ctx context.Context, tenantID, datasetID, documentID string) (wikiDocumentContribution, bool, error) {
@@ -68,10 +92,10 @@ func (s *engineWikiContributionStore) Get(ctx context.Context, tenantID, dataset
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "compile_kwd", "content_with_weight"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
 		Filter: map[string]any{
 			"id":            []string{key},
-			"compile_kwd":   wikiContributionCompileKWD,
+			"type_kwd":      wikiContributionCompileKWD,
 			"available_int": 0,
 		},
 	})
@@ -100,13 +124,14 @@ func (s *engineWikiContributionStore) Put(ctx context.Context, tenantID, dataset
 		"id":                  wikiContributionStateID(datasetID, contribution.DocumentID),
 		"doc_id":              "wiki_contribution:" + contribution.DocumentID,
 		"kb_id":               datasetID,
-		"compile_kwd":         wikiContributionCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiContributionCompileKWD,
 		"scope_kwd":           "doc",
 		"source_doc_ids":      []string{contribution.DocumentID},
 		"content_with_weight": string(payload),
 		"available_int":       0,
 	}
-	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
+	_, err = s.engine.InsertChunks(ctx, []map[string]any{row}, fmt.Sprintf("ragflow_%s", tenantID), datasetID, "")
 	return err
 }
 
@@ -121,7 +146,7 @@ func (s *engineWikiContributionStore) Delete(ctx context.Context, tenantID, data
 func (s *engineWikiContributionStore) ClearDataset(ctx context.Context, tenantID, datasetID string) error {
 	_, err := s.engine.DeleteChunks(ctx, map[string]any{
 		"kb_id":         datasetID,
-		"compile_kwd":   wikiContributionCompileKWD,
+		"type_kwd":      wikiContributionCompileKWD,
 		"available_int": 0,
 	}, fmt.Sprintf("ragflow_%s", tenantID), datasetID)
 	return err
@@ -279,7 +304,11 @@ type wikiContributionDiffResult struct {
 
 func (c *Consumer) prepareWikiContributionDiff(ctx context.Context, tenantID, datasetID string, completed []BacklogEntry, deleted []string) (wikiContributionDiffResult, error) {
 	if c.contributions == nil {
-		c.contributions = newWikiContributionStore(nil)
+		// NewConsumer always installs a store (the unconfigured sentinel when
+		// WithDocEngine was not passed); a nil here means the Consumer struct
+		// was assembled by hand. Fail fast rather than silently diffing
+		// against empty state.
+		return wikiContributionDiffResult{}, errEngineNotConfigured
 	}
 	result := wikiContributionDiffResult{
 		productsByDoc: make(map[string][]kccommon.Product, len(completed)),

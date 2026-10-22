@@ -8,6 +8,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -20,8 +22,8 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("no authorization")
+	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 	return file, nil
 }
@@ -137,6 +139,13 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 
 		ft := utility.FilenameType(name)
+		if utility.IsVideoFilename(name) {
+			// Uploads accept video, but no parser implements video analysis.
+			// Report that instead of inlining the container as a bogus image
+			// data URI (the old visual classification) or dumping raw bytes.
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n(video content is not supported)\n", name))
+			continue
+		}
 		if ft == utility.FileTypeVISUAL {
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 			if mediaType == "" {
@@ -179,6 +188,14 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 		}
 		if len(data) == 0 {
 			return nil, fmt.Errorf("file %q: upload is empty", name)
+		}
+
+		// Reject video filenames before the MIME-based image branch: a
+		// mislabeled video (e.g. clip.mp4 declaring image/png) would otherwise
+		// be inlined as a bogus image data URI without ever reaching the
+		// parser-level video check.
+		if utility.IsVideoFilename(name) {
+			return nil, fmt.Errorf("file %q: video content is not supported", name)
 		}
 
 		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
@@ -229,17 +246,20 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		return res.Text, nil
 	case "markdown":
 		return res.Markdown, nil
-	case "html":
-		return res.HTML, nil
 	case "json":
 		if len(res.JSON) > 0 {
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
-				if text, ok := item["text"].(string); ok {
+				m := item.ToMap()
+				if text, ok := m["text"].(string); ok {
 					parts = append(parts, text)
 					continue
 				}
-				raw, err := json.Marshal(item)
+				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
+					parts = append(parts, tableutil.RenderTableHTML(td))
+					continue
+				}
+				raw, err := json.Marshal(m)
 				if err != nil {
 					return "", err
 				}
@@ -250,7 +270,7 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		// Some legacy parsers mark the result as JSON while only populating a
 		// rendered companion field. Preserve that content instead of returning
 		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+		for _, fallback := range []string{res.Markdown, res.Text} {
 			if fallback != "" {
 				return fallback, nil
 			}

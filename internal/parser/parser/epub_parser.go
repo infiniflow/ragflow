@@ -34,7 +34,9 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
+	"html"
 	"io"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -63,7 +65,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 				"size":     0,
 				"encoding": "utf-8",
 			},
-			JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
@@ -96,7 +98,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 			"size":     len(data),
 			"encoding": detectedEnc,
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -193,8 +195,10 @@ var (
 	epubScriptRe = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
 	epubStyleRe  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 	epubTagRe    = regexp.MustCompile(`<[^>]+>`)
-	epubEntityRe = regexp.MustCompile(`&[a-zA-Z]+;`)
+	epubEntityRe = regexp.MustCompile(`&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);`)
 	epubWSRe     = regexp.MustCompile(`\s+`)
+	// Closing tags of block elements, or a void <hr>, that end a run of text.
+	epubBlockEndRe = regexp.MustCompile(`^(?:</(?:title|main|section|article|header|footer|aside|nav|figure|figcaption|caption|table|pre|address|dl|dt|dd|ul|ol)[\s>]|<hr[\s/>])`)
 )
 
 // extractEPUBTextItems reads every spine item and returns one text item per
@@ -239,6 +243,14 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 // readEPUBContentFile resolves a spine href (relative to the OPF
 // directory) inside the ZIP and returns the item's raw bytes.
 func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
+	// Manifest hrefs are URLs: drop the fragment and decode %-escapes to get
+	// the ZIP entry name.
+	if i := strings.IndexByte(href, '#'); i >= 0 {
+		href = href[:i]
+	}
+	if unescaped, err := url.PathUnescape(href); err == nil {
+		href = unescaped
+	}
 	// Resolve href relative to the directory containing the OPF.
 	// Use path.Join/Dir (slash separator) because ZIP entry paths are always POSIX.
 	resolved := path.Join(path.Dir(opfDir), href)
@@ -282,7 +294,11 @@ func stripHTMLTags(s string) string {
 			strings.HasPrefix(lower, "</h6"),
 			strings.HasPrefix(lower, "</tr"),
 			strings.HasPrefix(lower, "</li"),
-			strings.HasPrefix(lower, "</blockquote"):
+			strings.HasPrefix(lower, "</blockquote"),
+			// Other elements a reader shows as blocks. Without a break, the
+			// head's <title> ran into the first word of the body, and a term
+			// into its definition ("TermDefinition").
+			epubBlockEndRe.MatchString(lower):
 			return "\n"
 		case strings.HasPrefix(lower, "</td"),
 			strings.HasPrefix(lower, "</th"):
@@ -328,6 +344,13 @@ func xmlEntityValue(entity string) string {
 	case "&hellip;":
 		return "…"
 	default:
-		return entity
+		// Numeric references (&#8217;, &#x2014;, and &#160; for a
+		// non-breaking space, which XHTML has no named entity for) and the
+		// other HTML named entities. One html cannot resolve stays as written.
+		decoded := html.UnescapeString(entity)
+		if decoded == "\u00a0" {
+			return " "
+		}
+		return decoded
 	}
 }

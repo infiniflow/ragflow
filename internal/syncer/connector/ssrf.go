@@ -49,6 +49,10 @@ var connectorAssertHostSafe = common.AssertHostSafe
 // validated public IP so callers can pin the dial, preventing DNS rebinding
 // between validation and the connection.
 //
+// When ALLOW_ANY_HOST is set, the public-address check is skipped for this
+// host dial (MySQL, PostgreSQL, IMAP). The hostname is still resolved and
+// the dial stays pinned to that address. URL connectors do not use this path.
+//
 // When connectorAllowLoopbackForTest is set, loopback-only hosts are allowed
 // (unit tests run against local listeners); anything else falls through to the
 // strict guard, so a mixed private address is still rejected.
@@ -68,6 +72,16 @@ func assertConnectorHostSafe(host string) (net.IP, error) {
 			}
 		}
 		// Not allowed by the test hook — fall through to the strict guard.
+	}
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		if err != nil {
+			return nil, err
+		}
+		ip := net.ParseIP(pinned)
+		if ip == nil {
+			return nil, fmt.Errorf("Could not parse validated address %q for host %q", pinned, host)
+		}
+		return ip, nil
 	}
 	ipStr, err := connectorAssertHostSafe(host)
 	if err != nil {
@@ -159,16 +173,27 @@ func loopbackTestAllow(hostname string) (string, net.IP, bool) {
 // TLS so credentials in request headers are never sent in the clear.
 func assertConnectorURLSafeHTTPS(rawURL string) (string, net.IP, error) {
 	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil {
-		if scheme := strings.ToLower(parsed.Scheme); scheme != "https" {
-			if !connectorAllowLoopbackForTest {
-				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
-			}
-			if _, _, ok := loopbackTestAllow(parsed.Hostname()); !ok {
-				return "", nil, fmt.Errorf("URL must use HTTPS (got %q)", scheme)
-			}
+		if err := assertConnectorSchemeHTTPS(parsed); err != nil {
+			return "", nil, err
 		}
 	}
 	return assertConnectorURLSafe(rawURL)
+}
+
+// assertConnectorSchemeHTTPS is the scheme half of assertConnectorURLSafeHTTPS
+// for callers that already hold a parsed URL and whose host is validated
+// elsewhere (the S3 transport pins every dial).
+func assertConnectorSchemeHTTPS(parsed *url.URL) error {
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme == "https" {
+		return nil
+	}
+	if connectorAllowLoopbackForTest {
+		if _, _, ok := loopbackTestAllow(parsed.Hostname()); ok {
+			return nil
+		}
+	}
+	return fmt.Errorf("URL must use HTTPS (got %q)", scheme)
 }
 
 // validateConnectorURL is the config-time SSRF check used by connector

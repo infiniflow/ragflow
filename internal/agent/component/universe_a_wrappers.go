@@ -34,7 +34,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"github.com/google/uuid"
@@ -117,10 +117,10 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.UserID = v
 	}
 	if v, ok := params["top_n"]; ok {
-		out.TopN = toIntParam(v)
+		out.TopN, _ = common.ToInt(v)
 	}
 	if v, ok := params["top_k"]; ok {
-		out.TopK = toIntParam(v)
+		out.TopK, _ = common.ToInt(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
 		value := toFloatParam(v)
@@ -203,6 +203,9 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	if err := checkCanvasRetrievalDependencies(ctx, db, merged); err != nil {
+		return nil, fmt.Errorf("agent Retrieval dependency permission: %w", err)
+	}
 	query, _ := merged["query"].(string)
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
@@ -240,6 +243,30 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
 
+}
+
+func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.Sys["user_id"].(string)
+		if strings.TrimSpace(canvasID) == "" && strings.TrimSpace(userID) != "" {
+			return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
+		}
+		if strings.TrimSpace(canvasID) != "" && strings.TrimSpace(userID) == "" {
+			return permission.ErrUnauthenticated
+		}
+	}
+	datasetIDs := toStringSlice(inputs["dataset_ids"])
+	memoryIDs := toStringSlice(inputs["memory_ids"])
+	retrievalFrom, _ := inputs["retrieval_from"].(string)
+	switch {
+	case strings.EqualFold(strings.TrimSpace(retrievalFrom), "memory"):
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	case strings.TrimSpace(retrievalFrom) == "" && len(datasetIDs) == 0 && len(memoryIDs) > 0:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	default:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasetIDs)
+	}
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -460,19 +487,30 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
-			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(ctx, db, kbName, userID); lookupErr == nil && len(kbs) > 0 {
-				for _, kb := range kbs {
-					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
-						continue
-					}
-					common.Debug("agent retrieval component: resolved dataset id by user visibility")
-					return kb.ID
-				}
-			} else if lookupErr != nil {
-				common.Warn("agent retrieval component: resolve dataset id by name failed",
+			kbs, lookupErr := dao.NewKnowledgebaseDAO().GetByNameInUserTenants(ctx, db, kbName, userID)
+			if lookupErr != nil {
+				common.Warn("agent retrieval component: resolve dataset id by tenant membership failed",
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: user visibility lookup missed")
+				refs := make([]permission.ResourceRef, 0, len(kbs))
+				for _, kb := range kbs {
+					if kb != nil {
+						refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+					}
+				}
+				accessible, accessErr := permission.NewDatabaseChecker(db).FilterResources(
+					ctx,
+					permission.Subject{UserID: userID},
+					refs,
+					permission.OperationUse,
+				)
+				if accessErr != nil {
+					common.Warn("agent retrieval component: check dataset use permission failed",
+						zap.Error(accessErr))
+				} else if len(accessible) > 0 {
+					common.Debug("agent retrieval component: resolved dataset id by permission")
+					return accessible[0].ID
+				}
 			}
 		}
 	} else {
@@ -520,8 +558,9 @@ func (c *codeExecComponent) Inputs() map[string]string {
 }
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
-	res := make(map[string]any, len(c.params))
-	for k := range c.params {
+	arguments := asAnyMap(c.params["arguments"])
+	res := make(map[string]any, len(arguments))
+	for k := range arguments {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
@@ -547,12 +586,21 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	for k, v := range c.params {
 		merged[k] = v
 	}
+	arguments := asAnyMap(c.params["arguments"])
 	for k, v := range inputs {
-		merged[k] = v
+		if _, ok := arguments[k]; !ok {
+			merged[k] = v
+		}
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
 		state, _ := runtime.GetStateFromContext(ctx)
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
+		resolvedArgs := resolveCodeExecArguments(rawArgs, merged, state)
+		for k := range rawArgs {
+			if v, ok := inputs[k]; ok {
+				resolvedArgs[k] = v
+			}
+		}
+		merged["arguments"] = resolvedArgs
 	}
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),
@@ -756,26 +804,6 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 	return nil, false
 }
 
-// toIntParam coerces a node-param int value to int. JSON-decoded
-// values come in as float64 when numeric, so we tolerate that
-// case explicitly. Strings that parse as int also work.
-// (Renamed from toInt to avoid colliding with
-// list_operations.go's same-name helper.)
-func toIntParam(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	}
-	return 0
-}
-
 // toFloatParam coerces a node-param float value to float64. Same
 // JSON-float64 / numeric-string tolerance as toIntParam.
 func toFloatParam(v any) float64 {
@@ -805,8 +833,11 @@ var (
 // attachCodeExecArtifacts uploads the `_ARTIFACTS` produced by the
 // CodeExec tool to object storage and populates the message-facing
 // `attachments` / `_ATTACHMENT_CONTENT` outputs plus a content
-// appendix. It is a no-op when the tool returned no artifacts.
+// appendix. The attachments output remains an empty list when no files exist.
 func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
+	if _, ok := decoded["attachments"]; !ok {
+		decoded["attachments"] = []string{}
+	}
 	raw, ok := decoded["_ARTIFACTS"].([]any)
 	if !ok || len(raw) == 0 {
 		return

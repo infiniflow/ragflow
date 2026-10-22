@@ -1459,6 +1459,7 @@ func (c *CLI) CommonUseAPIServerCommand(commandCount int, cmd *Command) (Respons
 
 	c.Config.APIClientConfig.CurrentAPIServer = serverName
 	c.Config.CLIMode = APIMode
+	c.setFilesystemClient(httpClient)
 
 	var result SimpleResponse
 	result.Code = 0
@@ -1564,9 +1565,12 @@ func (c *CLI) getMemoryIDByName(memoryName string) (string, error) {
 		return "", err
 	}
 	listMemoriesResponse, ok := response.(*ListMemoriesResponse)
-	memories := listMemoriesResponse.Data["memory_list"].([]interface{})
 	if !ok {
 		return "", fmt.Errorf("invalid response")
+	}
+	memories, ok := listMemoriesResponse.Data["memory_list"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid memory_list in response")
 	}
 	for _, memory := range memories {
 		var memoryMap map[string]interface{}

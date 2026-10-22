@@ -14,13 +14,19 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
@@ -108,8 +114,11 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	tenantID := userID
-	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenantID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("you don't own the dataset")
@@ -136,25 +145,40 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
-		if err = s.updateDocumentNameOnly(ctx, doc, kb.TenantID, *req.Name); err != nil {
+		if err = s.updateDocumentNameOnly(ctx, doc, kb, *req.Name); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
-	// Resolve the effective parse mode once: parse_type is authoritative when
-	// present, otherwise inherit the dataset's current mode. Both the
-	// parser_config cleaning and the reparse targeting derive from this single
-	// resolution so they can never disagree. (See service.ResolveParseMode.)
-	isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
-		req.ParseType, req.ParserID, req.PipelineID,
-		service.ParseModeState{ParserID: kb.ParserID, PipelineID: kb.PipelineID})
+	// Resolve the effective parse mode once via the shared selection value
+	// object. sel is the request selection (nil when the whole selection block
+	// was omitted); current is the dataset's persisted selection. Resolve applies
+	// PATCH semantics: an omitted block inherits the current mode. Both the
+	// parser_config cleaning and the parser selection derive from this single
+	// resolution so they can never disagree.
+	sel, selErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if selErr != nil {
+		return nil, common.CodeDataError, selErr
+	}
+	current := service.CurrentSelection(kb.ParserID, kb.PipelineID)
+	eff, _ := service.Resolve(current, sel)
+	isPipeline, effParserID, effPipelineID := eff.Effective()
+	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
+			ctx,
+			permission.Subject{UserID: userID, TenantID: kb.TenantID},
+			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID},
+			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
+			permission.OperationUpdate,
+			permission.OperationUse,
+		)
+		if accessErr != nil {
+			code, permissionErr := permissionresponse.Normalize(accessErr)
+			return nil, code, permissionErr
+		}
+	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
-		// Normalize "pages" ranges before persistence. Invalid ranges are
-		// rejected (fail-fast) — the request is aborted with a clear error.
-		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
-		}
 		var dslJSON []byte
 		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
@@ -181,41 +205,36 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	// Apply parser_id / pipeline_id changes. parse_type is validated earlier
-	// (in validateDatasetDocumentUpdate); reparse only fires when parse_type
-	// explicitly selects a mode. The mode direction comes from the same
-	// isPipeline resolution above.
-	var reparseParserID, reparsePipelineID *string
+	// Save the selection without changing existing parse results. Cleanup is
+	// owned by the explicit reparse request.
+	parserUpdates := map[string]interface{}{}
 	if req.ParseType != nil {
 		switch {
 		case !isPipeline: // BuiltIn
 			if present["parser_id"] && req.ParserID != nil {
 				if p := strings.TrimSpace(*req.ParserID); p != "" {
-					reparseParserID = &p
+					parserUpdates["parser_id"] = p
 				}
 			}
 			// Drop any prior canvas so the worker falls back to the builtin template.
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["pipeline_id"] = ""
 		case isPipeline: // Pipeline
 			if present["pipeline_id"] && req.PipelineID != nil {
-				reparsePipelineID = req.PipelineID
+				parserUpdates["pipeline_id"] = *req.PipelineID
 			}
 		}
 	} else if present["chunk_method"] && req.ChunkMethod != nil {
 		// chunk_method is the public alias for a direct parser change; it does
 		// not require parse_type (mirrors Python's update_chunk_method).
 		if p := strings.TrimSpace(*req.ChunkMethod); !strings.EqualFold(p, doc.ParserID) {
-			reparseParserID = &p
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["parser_id"] = p
+			parserUpdates["pipeline_id"] = ""
 		} else if doc.PipelineID != nil && *doc.PipelineID != "" {
-			empty := ""
-			reparsePipelineID = &empty
+			parserUpdates["pipeline_id"] = ""
 		}
 	}
-	if reparseParserID != nil || reparsePipelineID != nil {
-		if err = s.resetDocumentForReparse(ctx, doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
+	if len(parserUpdates) > 0 {
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, parserUpdates); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -322,13 +341,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 
 	if present["parse_type"] || present["parser_id"] || present["pipeline_id"] {
-		isBuiltin, _, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
 		if err != nil {
 			return common.CodeDataError, err
 		}
 		// The parser_id type constraint (visual/presentation) only applies in
 		// builtin mode — in pipeline mode parser_id is not applicable.
-		if isBuiltin && present["parser_id"] && req.ParserID != nil {
+		if sel != nil && sel.IsBuiltIn() && present["parser_id"] && req.ParserID != nil {
 			parserID := strings.TrimSpace(*req.ParserID)
 			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
 				return common.CodeDataError, errors.New("not supported yet")
@@ -347,6 +366,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 
 	if present["meta_fields"] {
 		if err := validateMetaFields(req.MetaFields); err != nil {
+			return common.CodeDataError, err
+		}
+	}
+	if present["parser_config"] && req.ParserConfig != nil {
+		// Reject invalid page ranges before any names or metadata are persisted.
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return common.CodeDataError, err
 		}
 	}
@@ -377,14 +402,14 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 		return common.CodeArgumentError, errors.New("the extension of file can't be changed")
 	}
 
-	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
+	available, err := common.NameAvailable(oldName, newName, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, doc.KbID, candidate)
+	})
 	if err != nil {
 		return common.CodeServerError, err
 	}
-	for _, d := range docs {
-		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
-		}
+	if !available {
+		return common.CodeDataError, errors.New("duplicated document name in the same dataset")
 	}
 
 	return common.CodeSuccess, nil
@@ -395,7 +420,7 @@ func isPresentationFile(name *string) bool {
 		return false
 	}
 	ext := strings.ToLower(filepath.Ext(*name))
-	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages" || ext == ".dps" || ext == ".dpt"
 }
 
 func validateMetaFields(meta map[string]any) error {
@@ -424,7 +449,9 @@ func validateMetaFields(meta map[string]any) error {
 	return nil
 }
 
-func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, tenantID, newName string) error {
+// updateDocumentNameOnly renames a document and re-tokenizes its chunks' title
+// fields with the dataset language, the way ingestion tokenized them.
+func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
 		return errors.New("database error (Document rename)")
 	}
@@ -441,9 +468,14 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		return nil
 	}
 
-	titleTks, _ := tokenizer.Tokenize(newName)
-	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+	tok := tokenizer.New(language)
+	titleTks, _ := tok.Tokenize(newName)
+	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	return s.docEngine.UpdateChunks(
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},

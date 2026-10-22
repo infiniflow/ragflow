@@ -264,7 +264,7 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 		if strings.Contains(text, "@@") {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
-		pos, ok := ck["_pdf_positions"].([][]float64)
+		pos, ok := ck["_pdf_positions"].([][]any)
 		if !ok {
 			t.Fatalf("_pdf_positions missing or wrong type %T on merged group chunk", ck["_pdf_positions"])
 		}
@@ -274,8 +274,8 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 			t.Fatalf("merged _pdf_positions = %d rows, want 2 (both records)", len(pos))
 		}
 		// Merged matrix must itself be sorted by (page, top, left) — the
-		// same key pdfPosRowLess uses when merging.
-		if pdfPosRowLess(pos[1], pos[0]) {
+		// same key positionRowLess uses when merging.
+		if positionRowLess(pos[1], pos[0]) {
 			t.Errorf("merged _pdf_positions not sorted by (page, top, left): %v", pos)
 		}
 	}
@@ -322,7 +322,7 @@ func TestHasPdfPositions(t *testing.T) {
 // with 1-based page numbers, accompanied by layout / page_number /
 // doc_type_kwd. Using [][]any — not [][]float64 — matters: that is the concrete
 // in-memory type the parser produces, and recordsFromStructured must consume it
-// after the chunksFromInputs JSON round-trip.
+// after the decodeChunkerFromUpstream JSON round-trip.
 func parserShapedItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
 		"text":           text,

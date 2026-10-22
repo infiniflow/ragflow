@@ -65,6 +65,7 @@ func insertAggregateTagsKB(t *testing.T, datasetID, tenantID, permission, tagFil
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func insertAggregateTagsMembership(t *testing.T, tenantID, userID string) {
@@ -73,7 +74,7 @@ func insertAggregateTagsMembership(t *testing.T, tenantID, userID string) {
 		ID:        tenantID + "-" + userID,
 		UserID:    userID,
 		TenantID:  tenantID,
-		Role:      "member",
+		Role:      "normal",
 		InvitedBy: tenantID,
 		Status:    sptr(string(entity.StatusValid)),
 	}
@@ -222,10 +223,10 @@ func TestDatasetServiceAggregateTagsRejectsUnauthorizedDataset(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("code=%d want=%d", code, common.CodeDataError)
+	if code != common.CodeForbidden {
+		t.Fatalf("code=%d want=%d", code, common.CodeForbidden)
 	}
-	if err.Error() != "No authorization for dataset '"+kbID+"'" {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -421,7 +422,7 @@ func TestDatasetServiceAggregateTagsCountsSharedFileOnce(t *testing.T) {
 // loader, so the error carries the production sentinel rather than a stub's
 // approximation of it.
 func missingTagSourceLoader(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
-	return component.TagVocabularyFromTagFileID(ctx, tagFileID, ownerTenantID)
+	return component.TagVocabularyFromTagFileID(ctx, dao.DB, tagFileID, ownerTenantID)
 }
 
 // TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource is the

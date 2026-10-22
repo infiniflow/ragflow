@@ -74,7 +74,7 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -182,6 +182,24 @@ func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 	if name := trimmed["name"]; name != "gpt-4o-mini" {
 		t.Errorf("name = %v, want trimmed gpt-4o-mini", name)
+	}
+}
+
+func TestMergeProviderModelsDoesNotUseMaxOutputAsContextWindow(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "chat-model", "model_types": []string{"chat"}, "context_length": 128000, "max_output": 4096},
+	}
+	remote := []map[string]interface{}{
+		{"name": "CHAT-MODEL", "model_types": []string{"chat"}, "context_length": 256000, "max_output": 8192},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	model := got["chat-model"]
+	if model["max_tokens"] != 128000 {
+		t.Fatalf("legacy max_tokens = %v, want catalog context length 128000", model["max_tokens"])
+	}
+	if model["max_output"] != 8192 {
+		t.Fatalf("max_output = %v, want remote output ceiling 8192", model["max_output"])
 	}
 }
 

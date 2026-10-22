@@ -105,6 +105,13 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 	if len(docScope) > 10 {
 		docScope = docScope[:10]
 	}
+	docScope, err = resolveDocumentScope(ctx, docScope)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", spec.tool, err)
+	}
+	if docScope != nil && len(docScope) == 0 {
+		return formatLocateResultsXML(ctx, spec.tool, strings.Join(queries, " | "), nil), nil
+	}
 
 	svc := runtime.GetRetrievalService()
 	tenantID := spec.tenantID
@@ -141,7 +148,9 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 			DocScope:                 docScope,
 			TenantID:                 tenantID,
 			VectorOnly:               spec.vectorOnly,
-			SelectFields:             grepChunksSelectFields,
+			// Agentic, so no dense-only rescue.
+			AllowDenseFallback: new(false),
+			SelectFields:       grepChunksSelectFields,
 			// Same "only ordinary prose" filter as grep_chunks: exclude
 			// compiled products so the model reads original document text, not
 			// derived graph content.

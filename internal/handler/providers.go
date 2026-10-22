@@ -186,10 +186,20 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	}
 
 	// 2. Attempt live API fetch when the provider has enough connection data.
-	apiKey := c.Query("api_key")
-	baseURL := c.Query("base_url")
+	// Both are trimmed: a key pasted from a console routinely carries a trailing
+	// newline, and the upstream answers that with 401 "invalid key" rather than
+	// with anything that points at the whitespace.
+	apiKey := strings.TrimSpace(c.Query("api_key"))
+	baseURL := strings.TrimSpace(c.Query("base_url"))
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
+	// remoteFetchErr records why a requested live fetch produced nothing, so it
+	// can be reported when the catalog has no fallback. For a provider that
+	// bundles models an unreachable upstream is not worth failing the request
+	// over — the catalog is still usable — but for one whose whole model list
+	// comes from the live call, an empty result with a swallowed error is
+	// indistinguishable from "this provider serves nothing".
+	var remoteFetchErr error
 
 	bedrockProvider := strings.EqualFold(providerName, "Bedrock")
 	bedrockAPIKeyAuth := false
@@ -200,6 +210,37 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		if err := json.Unmarshal([]byte(apiKey), &key); err == nil {
 			bedrockAPIKeyAuth = key.AuthMode == "bedrock_api_key"
 		}
+	}
+
+	// A refresh on an already-saved instance carries no credential: the browser
+	// never sees the stored key. Resolve the instance server-side and list from
+	// it, so the picker behaves the same before and after saving. Without this,
+	// a provider with no static catalog (SystemOne) lists nothing once saved,
+	// and there is no model left to pick.
+	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+		if err == nil {
+			for _, m := range instanceModels {
+				// Keep the response shape identical to the credentials-based
+				// branch below: the picker reads max_tokens and would show an
+				// empty context window otherwise.
+				if _, ok := m["max_tokens"]; !ok {
+					if contextLength, ok := m["context_length"]; ok && contextLength != nil {
+						m["max_tokens"] = contextLength
+					}
+				}
+			}
+			common.SuccessWithData(c, instanceModels, "success")
+			return
+		}
+		if apiKey == "" && baseURL == "" {
+			// Nothing else to try: the instance is the only source of
+			// credentials, so its failure is the answer.
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		// The name may belong to a draft that is not saved yet. Fall through and
+		// use the credentials sent with this request instead.
 	}
 
 	canFetchRemote := baseURL != ""
@@ -222,19 +263,23 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
-						maxTokens := 8192
-						if m.MaxOutput != nil {
-							maxTokens = *m.MaxOutput
+						legacyMaxTokens := 0
+						if m.ContextLength != nil {
+							legacyMaxTokens = *m.ContextLength
 						}
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":        m.Name,
-							"model_types": m.ModelTypes,
-							"max_tokens":  maxTokens,
+							"name":           m.Name,
+							"model_types":    m.ModelTypes,
+							"context_length": m.ContextLength,
+							"max_output":     m.MaxOutput,
+							"max_tokens":     legacyMaxTokens,
 						})
 					}
 				} else if bedrockAPIKeyAuth {
 					common.ErrorWithCode(c, common.CodeServerError, err.Error())
 					return
+				} else {
+					remoteFetchErr = err
 				}
 			}
 		}
@@ -261,8 +306,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		staticModels = filtered
 	}
 
-	// 3. Both empty — return empty success
+	// 3. Nothing to show. A failed live fetch is reported here rather than being
+	// flattened into an empty list: the model list callback is the only signal
+	// the user gets about whether the base URL and key are right, and an empty
+	// success makes a wrong credential look like a provider with no models.
 	if len(staticModels) == 0 && len(remoteModels) == 0 {
+		if remoteFetchErr != nil {
+			common.ErrorWithCode(c, common.CodeDataError, remoteFetchErr.Error())
+			return
+		}
 		common.SuccessWithData(c, []map[string]interface{}{}, "success")
 		return
 	}
@@ -285,16 +337,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types inherits the catalog's types, and
-// `max_tokens` always comes from the catalog when the catalog declares one —
-// an upstream listing reports the provider's ceiling, which is not the value
-// RAGFlow is configured to send.
+// entry that carries no model types inherits the catalog's types, and the
+// legacy `max_tokens` alias remains the input/context window. `max_output` is
+// kept as a separate provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
 	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
 		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
-			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
-				m["max_tokens"] = maxOutput
+			if contextLength, ok := m["context_length"]; ok && contextLength != nil {
+				m["max_tokens"] = contextLength
 			}
 		}
 		name, ok := m["name"].(string)
@@ -418,22 +469,6 @@ type CreateProviderInstanceRequest struct {
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
-// instanceNamePattern restricts an instance name to digits, underscores,
-// hyphens, and ASCII letters in both cases.
-var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
-
-// validateInstanceName rejects an empty instance name or one carrying any
-// character outside digits, underscores, hyphens, and ASCII letters.
-func validateInstanceName(instanceName string) error {
-	if instanceName == "" {
-		return errors.New("instance name is required")
-	}
-	if !instanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
-	}
-	return nil
-}
-
 // normalizeAPIKey accepts api_key as either a JSON string or a JSON object
 // (credential bundles such as XunFei Spark's
 // {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
@@ -452,6 +487,22 @@ func normalizeAPIKey(raw json.RawMessage) string {
 		return trimmed
 	}
 	return buf.String()
+}
+
+// instanceNamePattern restricts an instance name to digits, underscores,
+// hyphens, and ASCII letters in both cases.
+var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
+
+// validateInstanceName rejects an empty instance name or one carrying any
+// character outside digits, underscores, hyphens, and ASCII letters.
+func validateInstanceName(instanceName string) error {
+	if instanceName == "" {
+		return errors.New("instance name is required")
+	}
+	if !instanceNamePattern.MatchString(instanceName) {
+		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
+	}
+	return nil
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
@@ -1659,10 +1710,10 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	}
 
 	modelType := c.Query("type")
-	ownerTenantID := c.Query("owner_tenant_id")
+	tenantID := c.Query("tenant_id")
 	ctx := c.Request.Context()
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, ownerTenantID, modelType)
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, tenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

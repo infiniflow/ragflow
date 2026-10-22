@@ -1,4 +1,5 @@
 import { Modal } from '@/components/ui/modal/modal';
+import { FileType } from '@/constants/file';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -17,11 +18,11 @@ import {
   LucideToggleRight,
   LucideTrash2,
 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { DocumentType } from './constant';
+import { DocumentType, ParserGapReason } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
@@ -46,7 +47,7 @@ export function useBulkOperateDataset({
   const { findDocumentParseGaps } = useParserGapValidation();
 
   const runDocument = useCallback(
-    async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
+    async (run: number) => {
       const nonVirtualKeys = selectedRowKeys.filter(
         (x) =>
           !documents.some((y) => x === y.id && y.type === DocumentType.Virtual),
@@ -66,21 +67,32 @@ export function useBulkOperateDataset({
         );
         const gaps = findDocumentParseGaps(selectedDocuments);
         if (gaps.length > 0) {
-          hideModal();
           const failingNames = new Set(gaps.map((gap) => gap.name));
           const validIds = selectedDocuments
             .filter((x) => !failingNames.has(x.name))
             .map((x) => x.id);
 
           if (validIds.length === 0) {
+            // Pure-video selections have no parser that can process them, so
+            // offering anything that implies a fix would mislead. Acknowledge
+            // instead, mirroring the single-document run path. The reason
+            // check keeps this narrow: a future gap kind on a parseable file
+            // must keep the actionable dialog.
+            const videoOnly =
+              gaps.length > 0 &&
+              gaps.every(
+                (gap) =>
+                  gap.fileType === FileType.Video &&
+                  gap.reason === ParserGapReason.UnsupportedType,
+              );
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
               content: buildParserGapModalContent(t, gaps, {
                 missingModel: 'knowledgeDetails.addModelToParseHint',
                 unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
               }),
-              showCancel: false,
-              okText: t('common.cancel'),
+              showCancel: !videoOnly,
+              okText: t(videoOnly ? 'common.ok' : 'common.cancel'),
               closable: false,
             });
             return;
@@ -105,7 +117,7 @@ export function useBulkOperateDataset({
             cancelText: t('common.cancel'),
             closable: false,
             onOk: async () => {
-              await runDocumentByIds({ documentIds: validIds, run, option });
+              await runDocumentByIds({ documentIds: validIds, run });
             },
           });
           return;
@@ -115,18 +127,16 @@ export function useBulkOperateDataset({
       await runDocumentByIds({
         documentIds: nonVirtualKeys,
         run,
-        option,
       });
     },
     [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
-  const handleRunClick = useCallback(
-    (option?: { delete: boolean; apply_kb: boolean }) => {
-      runDocument(1, option);
-    },
-    [runDocument],
-  );
+  // Wired straight to the run button's onClick: keep it parameterless so the
+  // click event is never mistaken for run options (it is not serializable).
+  const handleRunClick = useCallback(() => {
+    runDocument(1);
+  }, [runDocument]);
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -209,5 +219,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { list, handleRunClick };
+  return { list };
 }

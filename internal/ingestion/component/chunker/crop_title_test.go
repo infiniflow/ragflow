@@ -24,12 +24,10 @@ import (
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
 // produced by the Title/Group/Hierarchy chunkers must be cropped on demand
 // (mirroring the TokenChunker JSON path). The chunk shape mirrors the real
-// Group/Hierarchy output: it carries doc_type_kwd + positions but NO ck_type
-// (buildChunksFromRecordGroups never sets ck_type). cropTitleChunks must
-// derive ck_type from doc_type_kwd so needsCrop (pdfcrop_cgo.go:151) fires.
+// Group/Hierarchy output: it carries doc_type_kwd + positions and no
+// block-kind field. cropImageChunks derives the crop type from doc_type_kwd.
 // A text chunk with positions gets a rendered preview; a chunk without
-// positions is left untouched; and the derived ck_type must not leak into
-// the returned chunk shape.
+// positions is left untouched.
 func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	ctx := context.Background()
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
@@ -49,8 +47,22 @@ func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	if got[1]["image"] != nil {
 		t.Errorf("chunk without positions should not be cropped, got %v", got[1]["image"])
 	}
-	if _, ok := got[0]["ck_type"]; ok {
-		t.Errorf("derived ck_type must not leak into output chunk: %v", got[0])
+}
+
+// TestCropTitleChunks_CropsImageWithPageList covers the image variant: a
+// title-family image chunk whose page cell is a list must still be cropped.
+func TestCropTitleChunks_CropsImageWithPageList(t *testing.T) {
+	pos := [][]any{{[]any{1}, 10, 100, 10, 100}}
+	in := []map[string]any{
+		{"text": "Figure 1: caption", "doc_type_kwd": "image", "positions": pos, "_pdf_positions": pos},
+	}
+	got := cropTitleChunks(context.Background(), mockCropEngine{}, in)
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+	img, _ := got[0]["image"].(string)
+	if !strings.HasPrefix(img, "data:image/png;base64,") {
+		t.Errorf("image = %q, want a cropped data URL", img)
 	}
 }
 

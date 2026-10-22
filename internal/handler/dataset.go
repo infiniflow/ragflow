@@ -30,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -73,12 +74,12 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 	if c.Query("type") == "filter" {
 		ctx := c.Request.Context()
-		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID)
+		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID, c.Query("canvas_id"))
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 
@@ -213,6 +214,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		parserID,
 		user.ID,
 		ids,
+		c.Query("canvas_id"),
 	)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -222,6 +224,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code":           common.CodeSuccess,
 		"data":           data,
+		"message":        "success",
 		"total_datasets": total,
 	})
 }
@@ -265,13 +268,16 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetDataset handles GET /api/v1/datasets/:dataset_id.
@@ -291,7 +297,7 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // UpdateDataset Update a dataset.
@@ -374,6 +380,7 @@ var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+	"canvas_id": true,
 }
 
 var createDatasetAllowedFields = map[string]bool{
@@ -461,7 +468,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
@@ -480,7 +487,7 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
@@ -505,7 +512,7 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
@@ -527,6 +534,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
+// The log_type=datasource query returns logs for connectors linked to the dataset.
 func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -558,6 +566,17 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 		pageSize = ps
 	}
 
+	ctx := c.Request.Context()
+	if strings.EqualFold(strings.TrimSpace(c.Query("log_type")), "datasource") {
+		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, user.ID, page, pageSize)
+		if err != nil {
+			common.ErrorWithCode(c, code, err.Error())
+			return
+		}
+		common.SuccessWithData(c, result, "success")
+		return
+	}
+
 	orderby := c.DefaultQuery("orderby", "create_time")
 	// desc defaults to true and is only disabled by the literal value "false".
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
@@ -570,8 +589,6 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	// Exact per-document filter for the file-log list. Python's endpoint has no
 	// equivalent; the frontend only sends it on the Go backend.
 	documentID := c.Query("document_id")
-
-	ctx := c.Request.Context()
 
 	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {
@@ -706,13 +723,16 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.SuccessWithData(c, result, "success")
 }
 
 // GetKnowledgeGraph handles GET /api/v1/datasets/:dataset_id/graph.
@@ -948,9 +968,8 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
-// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
-// Python-era TraceIndex task-progress endpoint for the Go backend. The optional
-// `kind` query parameter scopes the status to one compile type.
+// state. The optional `kind` query parameter scopes the status to one compile
+// type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -1011,8 +1030,8 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
+		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+			respondPermissionError(c, err, false)
 			return
 		}
 	}
@@ -1112,12 +1131,12 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if req.DatasetIDs == nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids is required")
 		return
 	}
 
 	if len(req.DatasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id array cannot be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids array cannot be empty")
 		return
 	}
 	if err := validateSearchDatasetsRequest(&req); err != nil {
@@ -1138,11 +1157,14 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.SuccessWithData(c, resp, "success")
 }
 
 // SearchDataset searches chunks within a single dataset based on a question.
@@ -1194,14 +1216,20 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 
 	resp, err := searchService.SearchDataset(ctx, datasetID, user.ID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.SuccessWithData(c, resp, "success")
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err
@@ -1211,6 +1239,9 @@ func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err

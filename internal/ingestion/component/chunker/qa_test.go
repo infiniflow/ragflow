@@ -22,8 +22,21 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 )
+
+// mustTableData parses markup into the structured TableData contract a
+// post-migration producer emits, failing the test on error.
+func mustTableData(t *testing.T, html string) *entity.TableData {
+	t.Helper()
+	td, err := tableutil.ParseTableHTML(html)
+	if err != nil {
+		t.Fatalf("ParseTableHTML(%q): %v", html, err)
+	}
+	return td
+}
 
 func TestQAChunker_Registered(t *testing.T) {
 	factory, _, _, ok := runtime.DefaultRegistry.Lookup("QAChunker")
@@ -184,7 +197,6 @@ func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
 		"json": []map[string]any{{
 			"text":         "<table><tr><td>question</td><td></td><td>unexpected</td></tr></table>",
 			"doc_type_kwd": "table",
-			"ck_type":      "table",
 		}},
 	}
 	out, err := comp.Invoke(t.Context(), nil, inputs)
@@ -394,7 +406,7 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			{
-				"text":         "<table><caption>Sheet1</caption><tr><th>question</th><th>answer</th></tr><tr><td>What is RAGFlow?</td><td>A RAG engine.</td></tr><tr><td>Where are the docs?</td><td>On the website.</td></tr></table>",
+				"table":        mustTableData(t, "<table><caption>Sheet1</caption><tr><th>question</th><th>answer</th></tr><tr><td>What is RAGFlow?</td><td>A RAG engine.</td></tr><tr><td>Where are the docs?</td><td>On the website.</td></tr></table>"),
 				"doc_type_kwd": "table",
 			},
 		},
@@ -493,7 +505,7 @@ func TestQAChunker_PlainTablePayloadNotSwallowed(t *testing.T) {
 // genuinely holds table markup is now read as a table.
 func TestQAChunker_TextLabelledHTMLTableReadAsTable(t *testing.T) {
 	items := []schema.ChunkDoc{
-		{Text: "<table><tr><td>q1</td><td>a1</td></tr><tr><td>q2</td><td>a2</td></tr></table>", DocType: "text"},
+		{TableData: mustTableData(t, "<table><tr><td>q1</td><td>a1</td></tr><tr><td>q2</td><td>a2</td></tr></table>"), DocType: "text"},
 	}
 	pairs := extractQAJSON(items, "")
 	if len(pairs) != 2 {
@@ -545,7 +557,7 @@ func TestQAChunkerPositionsRequireSpreadsheetIdentityAndFiveFields(t *testing.T)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			item := schema.ChunkDoc{
-				Text:       table,
+				TableData:  mustTableData(t, table),
 				DocType:    "table",
 				Positions:  json.RawMessage(tc.positions),
 				SheetIndex: tc.sheetIndex,

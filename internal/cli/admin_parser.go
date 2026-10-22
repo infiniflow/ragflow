@@ -1133,13 +1133,29 @@ func (p *Parser) parseAdminCheck() (*Command, error) {
 // CHECK LICENSE;
 func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	p.nextToken() // consume LICENSE
-	cmd := NewCommand("admin_check_license")
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
+	switch p.curToken.Type {
+	case TokenSemicolon:
 		p.nextToken()
+		return NewCommand("admin_check_license"), nil
+	case TokenEOF:
+		return NewCommand("admin_check_license"), nil
+	case TokenQuotedString:
+		licenseStr, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd := NewCommand("admin_verify_license")
+		cmd.Params["license"] = licenseStr
+		p.nextToken()
+		// Semicolon is optional
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("error check license command")
 	}
-	return cmd, nil
 }
 
 // CHECK PROVIDER 'provider_name' REGION 'region_name' KEY 'api_key' [URL 'base_url'];
@@ -2690,9 +2706,11 @@ func (p *Parser) parseMessageQueueCommand() (*Command, error) {
 
 		cmd = NewCommand("user_list_message_queue_command")
 		if p.curToken.Type == TokenPending {
+			cmd.Params["pending"] = true
 			p.nextToken() // consume PENDING
+		} else {
+			cmd.Params["pending"] = false
 		}
-
 	case TokenPublish:
 		p.nextToken() // consume PUBLISH
 
@@ -3221,8 +3239,6 @@ commandLoop:
 }
 
 // LIST USER 'user@example.com' INGESTION TASKS;
-// LIST USER 'user@example.com' DATASETS;
-// LIST USER 'user@example.com' AGENTS;
 // LIST USER 'user@example.com' CHATS;
 // LIST USER 'user@example.com' SEARCHES;
 // LIST USER 'user@example.com' MODELS; // all added models
@@ -3244,11 +3260,9 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	case TokenIngestion:
 		return p.parseAdminListUserIngestionTasks(userName)
 	case TokenDatasets:
-		p.nextToken()
-		cmd = NewCommand("admin_list_user_datasets")
+		return p.parseAdminListUserDatasetsEE(userName)
 	case TokenAgents:
-		p.nextToken()
-		cmd = NewCommand("admin_list_user_agents")
+		return p.parseAdminListUserAgentsEE(userName)
 	case TokenChats:
 		p.nextToken()
 		cmd = NewCommand("admin_list_user_chats")

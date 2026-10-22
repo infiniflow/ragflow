@@ -110,7 +110,11 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 // shared chunkFromRecords pipeline (which ManualChunker also uses,
 // after a physical-position resort).
 func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
-	records := extractLineRecords(inputs)
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return inputErrorOutput(err), nil
+	}
+	records := extractLineRecords(upstream)
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "group"),
@@ -119,7 +123,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	return chunkFromRecords(parentCtx, db, inputs, p, records, p.ChunkTokenCap)
+	return chunkFromRecords(parentCtx, db, upstream, p, records, p.ChunkTokenCap)
 }
 
 // chunkFromRecords runs the shared GroupTitle / Manual grouping pipeline over
@@ -136,8 +140,8 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // must stay exempt from #18455's cap, so it passes 0; GroupTitleChunker passes
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
 // on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
-func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
-	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
+func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
+	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
 	headingCounts := make(map[int]int)
@@ -173,33 +177,31 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream))
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
 	// tokenCap=0, so this is a no-op there.
 	if tokenCap > 0 {
-		chunks = enforceTitleTokenCap(chunks, tokenCap)
+		chunks = enforceTitleTokenCap(chunks, nil, tokenCap)
 	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "group"),
 		zap.Int("chunks", len(chunks)),
-		zap.Bool("plain_text", isPlainTextFormat(inputs)),
+		zap.Bool("plain_text", isPlainTextFormat(upstream)),
 	)
 
 	// On-demand PDF preview cropping for image/table/text chunks,
 	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
 	// a missing or unreadable PDF simply skips cropping.
-	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
-		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
-		if eErr != nil {
-			common.Warn("chunker: could not open PDF for on-demand cropping", zap.Error(eErr))
-		}
-		if engine != nil {
-			defer engine.Close()
-			chunks = cropTitleChunks(parentCtx, engine, chunks)
-		}
+	engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
+	if eErr != nil {
+		common.Warn("chunker: could not open PDF for on-demand cropping", zap.Error(eErr))
+	}
+	if engine != nil {
+		defer engine.Close()
+		chunks = cropTitleChunks(parentCtx, engine, chunks)
 	}
 
 	if len(chunks) == 0 {
@@ -278,9 +280,10 @@ func joinGroupText(g []lineRecord) string {
 // "html"]` branch of common.py:build_chunks_from_record_groups. Plain
 // payloads emit only "text"; structured payloads (chunks/json) also
 // carry doc_type_kwd and img_id.
-func isPlainTextFormat(inputs map[string]any) bool {
-	if f, ok := inputs["output_format"].(string); ok {
-		return f == "markdown" || f == "text" || f == "html"
+func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatMarkdown, schema.PayloadFormatText, schema.PayloadFormatHTML:
+		return true
 	}
 	return false
 }
@@ -294,16 +297,37 @@ func isPlainTextFormat(inputs map[string]any) bool {
 // root_chunk_as_heading is applied here, exactly as python does (post
 // materialisation): the root chunk's text is prepended to every
 // following chunk and the root chunk is dropped.
-func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+//
+// prefixes is optional and, when non-nil, is aligned 1:1 with groups:
+// prefixes[i] is the ancestor heading chain group i starts with (the
+// hierarchy strategy sets it; group/manual pass nil). The returned prefixes
+// stay aligned with the returned chunks after empty groups are dropped and
+// root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
+// chunk's chain to every piece it splits off.
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
-	for _, g := range groups {
+	var outPrefixes []string
+	if prefixes != nil {
+		outPrefixes = make([]string, 0, len(groups))
+	}
+	for i, g := range groups {
 		if len(g) == 0 {
 			continue
 		}
-		// Strip parser-emitted position tags (`@@...##`) from the
-		// joined text (diff 1.6 / 2.8). Mirrors common.py:255
-		// `RAGFlowPdfParser.remove_tag("".join(...))`.
-		chunk := map[string]any{"text": removeTag(joinGroupText(g))}
+		// Strip parser-emitted position tags (`@@...##`) from the joined text
+		// (diff 1.6 / 2.8). Mirrors common.py:255
+		// `RAGFlowPdfParser.remove_tag("".join(...))`. A non-text group is a
+		// single atomic record (table/image): its text is taken verbatim —
+		// Python emits records[0]["text"] unchanged (common.py:419) — instead
+		// of the group join, which would append a trailing newline.
+		chunkText := removeTag(joinGroupText(g))
+		if !g[0].isText() {
+			chunkText = removeTag(g[0].text)
+		}
+		chunk := map[string]any{"text": chunkText}
+		if g[0].preserveOrder {
+			chunk["_preserve_order"] = true
+		}
 		if !plain {
 			first := g[0]
 			if first.docType != "" {
@@ -311,6 +335,18 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 			}
 			if first.imgID != nil {
 				chunk["img_id"] = *first.imgID
+			}
+			if first.image != "" {
+				chunk["image"] = first.image
+			}
+			if first.sheet != "" {
+				chunk["sheet"] = first.sheet
+			}
+			if first.sheetIndex != nil {
+				// Numbers on the chunk wire are float64 (every other
+				// chunker's maps pass through a JSON round trip);
+				// indexdoc.isSpreadsheetChunk keys on presence, not type.
+				chunk["sheet_index"] = float64(*first.sheetIndex)
 			}
 		}
 		// Merge PDF coordinate matrices across the merged records
@@ -332,15 +368,24 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 			chunk["positions"] = m
 		}
 		chunks = append(chunks, chunk)
+		if prefixes != nil {
+			outPrefixes = append(outPrefixes, prefixes[i])
+		}
 	}
 	if p.RootChunkAsHeading && len(chunks) > 1 {
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if prefixes != nil {
+				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
+			}
 		}
 		chunks = chunks[1:]
+		if prefixes != nil {
+			outPrefixes = outPrefixes[1:]
+		}
 	}
-	return chunks
+	return chunks, outPrefixes
 }
 
 // posTagRemove matches parser-emitted position tags of the form
@@ -375,22 +420,29 @@ func pdfPosRowLess(a, b []float64) bool {
 // [page,left,right,top,bottom]; duplicates (by the first five columns)
 // are dropped and rows are sorted by (page, top, left). Returns nil when
 // no source carries any usable coordinates.
-func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
-	var out [][]float64
+//
+// The page cell may be a scalar (deepdoc's normalized form) or a list (the
+// raw layout.SectionsToJSON form, also seen in external/historical payloads);
+// both are preserved verbatim so the downstream PositionsFromMatrix can decode
+// either. A source may also be a single flat 5-tuple rather than a list of
+// rows (TCADP and some external producers emit that shape).
+//
+// Rows stay []any because a page cell may itself be a list; the generic shape
+// is what ChunkDoc.ToMap emits for such a matrix, so one representation flows
+// through the chunker and the index boundary.
+func mergePositionMatrix(sources ...json.RawMessage) [][]any {
+	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
-		if len(src) == 0 {
+		rows, ok := decodePositionRows(src)
+		if !ok {
 			continue
 		}
-		var mat [][]float64
-		if err := json.Unmarshal(src, &mat); err != nil {
-			continue
-		}
-		for _, row := range mat {
+		for _, row := range rows {
 			if len(row) < 5 {
 				continue
 			}
-			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			key := fmt.Sprint(row[:5])
 			if seen[key] {
 				continue
 			}
@@ -401,43 +453,170 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 	if len(out) == 0 {
 		return nil
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return pdfPosRowLess(out[i], out[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return positionRowLess(out[i], out[j])
 	})
 	return out
 }
 
-// extractLineRecords reads the chunker inputs in the same order the
-// python BaseTitleChunker.extract_line_records uses:
+// decodePositionRows accepts the nested matrix form, a single flat 5-tuple,
+// and a flat sequence of multiple 5-tuples (TCADP/external producers emit a
+// flat array). JSON-decoded numbers are float64, and a page cell may itself
+// be a list, so the rows stay []any rather than being coerced to [][]float64.
 //
-//  1. If upstream emitted chunks (output_format == "chunks") OR
-//     upstream emitted JSON, normalize from the list payload.
-//  2. Otherwise, treat text/markdown/html as a "one record per line"
-//     stream (preserving indentation for non-text formats, strip-only
-//     for the text format).
-func extractLineRecords(inputs map[string]any) []lineRecord {
-	if docs := chunksFromInputs(inputs); docs != nil {
-		return recordsFromStructured(docs)
+// A flat sequence whose length is a multiple of five is grouped by five so
+// every tuple survives; a flat length that is not a multiple of five has
+// ambiguous tuple boundaries and is preserved verbatim as one row so the
+// first tuple still reaches cropping (sorting abstains via firstPositionRow).
+func decodePositionRows(src json.RawMessage) ([][]any, bool) {
+	if len(src) == 0 {
+		return nil, false
 	}
-	text, _ := stringFromInputs(inputs, "text", "content", "markdown", "html")
-	if text == "" {
-		return nil
+	var rows [][]any
+	if err := json.Unmarshal(src, &rows); err == nil {
+		return rows, true
 	}
-	return lineRecordsFromText(text)
+	var flat []any
+	if err := json.Unmarshal(src, &flat); err != nil || len(flat) < 5 {
+		return nil, false
+	}
+	if len(flat)%5 != 0 {
+		return [][]any{flat}, true
+	}
+	grouped := make([][]any, 0, len(flat)/5)
+	for i := 0; i < len(flat); i += 5 {
+		grouped = append(grouped, flat[i:i+5])
+	}
+	return grouped, true
 }
 
+// positionRowLess orders rows by (first page, top, left), matching
+// pdfPosRowLess for scalar page numbers while tolerating a list page cell.
+func positionRowLess(a, b []any) bool {
+	ap, bp := positionRowPage(a), positionRowPage(b)
+	if ap != bp {
+		return ap < bp
+	}
+	at, bt := positionRowFloat(a, 3), positionRowFloat(b, 3)
+	if at != bt {
+		return at < bt
+	}
+	return positionRowFloat(a, 1) < positionRowFloat(b, 1)
+}
+
+// positionRowPage decodes the page cell for ordering only; the original cell
+// is kept in the emitted row. A list page uses its first entry.
+func positionRowPage(row []any) float64 {
+	if len(row) == 0 {
+		return 0
+	}
+	switch v := row[0].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case []any:
+		if len(v) == 0 {
+			return 0
+		}
+		return positionRowPage([]any{v[0]})
+	default:
+		return 0
+	}
+}
+
+func positionRowFloat(row []any, index int) float64 {
+	if index >= len(row) {
+		return 0
+	}
+	value, _ := positionRowNumber(row[index])
+	return value
+}
+
+// positionRowNumber decodes one numeric matrix element. JSON-decoded numbers
+// are float64; Go-constructed callers may use int/int64.
+func positionRowNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
+// extractLineRecords converts the decoded upstream payload into records in the
+// same order the python BaseTitleChunker.extract_line_records uses: the field
+// named by output_format selects the payload (chunks / json / markdown / text
+// / html), mirroring python's branch on output_format rather than key
+// presence alone — a declared "markdown" payload is read even when a stray
+// empty "text" key is also present. When output_format is unset the first
+// present payload wins (chunks, json, then text/markdown/html), preserving
+// the legacy key scan.
+//
+// The payload is consumed from the decoded upstream — never from the raw
+// inputs — so every chunker variant shares the one normalization entry
+// (decodeChunkerFromUpstream).
+func extractLineRecords(upstream schema.ChunkerFromUpstream) []lineRecord {
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatChunks:
+		return recordsFromStructured(upstream.Chunks)
+	case schema.PayloadFormatJSON:
+		return recordsFromStructured(upstream.JSONResult)
+	case schema.PayloadFormatMarkdown:
+		return lineRecordsFromPayload(upstream.MarkdownResult)
+	case schema.PayloadFormatText:
+		return lineRecordsFromPayload(upstream.TextResult)
+	case schema.PayloadFormatHTML:
+		return lineRecordsFromPayload(upstream.HTMLResult)
+	}
+	// output_format unset: first present payload wins.
+	if upstream.Chunks != nil {
+		return recordsFromStructured(upstream.Chunks)
+	}
+	if upstream.JSONResult != nil {
+		return recordsFromStructured(upstream.JSONResult)
+	}
+	for _, candidate := range []*string{upstream.TextResult, upstream.MarkdownResult, upstream.HTMLResult} {
+		if candidate != nil {
+			return lineRecordsFromPayload(candidate)
+		}
+	}
+	return nil
+}
+
+// lineRecordsFromPayload splits a plain-text payload into one record per line.
+// An absent or empty payload yields no records.
+func lineRecordsFromPayload(payload *string) []lineRecord {
+	if payload == nil || *payload == "" {
+		return nil
+	}
+	return lineRecordsFromText(*payload)
+}
+
+// recordsFromStructured converts parser-shaped items into records: text items
+// keep their text, and media items — tables whose TableData has already been
+// rendered to HTML by materializeTableText, images carrying an image payload
+// or reference — pass through as single records. Only an item with none of
+// text, image and img_id is dropped.
 func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {
 		text := itemTextOrFallback(it)
-		if text == "" {
+		// A structured table arrives with Text already rendered from TableData
+		// (materializeTableText); an image item legitimately carries no text —
+		// its payload is the image field. Only a truly empty item is skipped.
+		if text == "" && it.Image == "" && it.ImgID == "" {
 			continue
 		}
 		dt := it.DocType
 		if dt == "" {
 			dt = "text"
 		}
-		appendRecord := func(recordText string) {
+		appendRecord := func(recordText, image string) {
 			var imgID *string
 			if it.ImgID != "" {
 				img := it.ImgID
@@ -460,31 +639,35 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				meta[k] = json.RawMessage(v)
 			}
 			out = append(out, lineRecord{
-				text:         recordText,
-				docType:      dt,
-				imgID:        imgID,
-				layout:       it.Layout,
-				ckType:       it.CKType,
-				pdfPositions: it.PDFPositions,
-				positions:    it.Positions,
-				parentMeta:   meta,
+				text:          recordText,
+				docType:       dt,
+				imgID:         imgID,
+				image:         image,
+				layout:        it.Layout,
+				pdfPositions:  it.PDFPositions,
+				positions:     it.Positions,
+				preserveOrder: it.PreserveOrder,
+				sheet:         it.Sheet,
+				sheetIndex:    it.SheetIndex,
+				parentMeta:    meta,
 			})
 		}
 		// TextParser intentionally emits one coordinate-free text item for the
 		// whole document. Title-family chunkers still need one record per line
 		// so heading regexes can see headings after the first line. Structured
-		// media/table items and positioned text remain atomic.
-		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
+		// media/table items and positioned text remain atomic, and the image
+		// payload stays out of per-line records so a blob is never duplicated.
+		plainText := itemDocType(it) == "text" && !isStructuralLayout(it.Layout)
 		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
 		if plainText && unpositioned && strings.Contains(text, "\n") {
 			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {
 				if trim(line) != "" {
-					appendRecord(line)
+					appendRecord(line, "")
 				}
 			}
 			continue
 		}
-		appendRecord(text)
+		appendRecord(text, it.Image)
 	}
 	return out
 }

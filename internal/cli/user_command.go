@@ -661,7 +661,9 @@ func (c *CLI) APICreateDatasetCommand(commandCount int, cmd *Command) (ResponseI
 	}
 
 	payload := map[string]interface{}{
-		"name": datasetName,
+		"name":       datasetName,
+		"parse_type": 1,
+		"parser_id":  "general",
 	}
 
 	resp, err := httpClient.Request(commandCount, "POST", "/datasets", httpClient.AuthKind(), nil, payload)
@@ -2621,12 +2623,7 @@ func (c *CLI) DevUpdateChunkCommand(commandCount int, cmd *Command) (ResponseIf,
 		return nil, fmt.Errorf("invalid JSON body: %w", err)
 	}
 
-	// Add IDs to payload
-	payload["dataset_id"] = datasetID
-	payload["document_id"] = docID
-	payload["chunk_id"] = chunkID
-
-	resp, err := httpClient.Request(commandCount, "POST", "/chunk/update", httpClient.AuthKind(), nil, payload)
+	resp, err := httpClient.Request(commandCount, "PATCH", utils.APIPath("/datasets", datasetID, "documents", docID, "chunks", chunkID), httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to update chunk: %w", err)
 	}
@@ -2994,9 +2991,18 @@ func (c *CLI) APIListIngestionTasks(commandCount int, cmd *Command) (ResponseIf,
 		return nil, err
 	}
 
-	datasetID, ok := cmd.Params["dataset_id"].(*string)
-	if !ok {
-		datasetID = nil
+	// The parser stores dataset_id as a plain string (parseQuotedString returns
+	// string), so assert string — not *string. The previous .(*string)
+	// assertion always failed, silently sending dataset_id: null and making
+	// the server return tasks across ALL datasets instead of the requested one.
+	// Send the id only when the caller actually provided one; the backend's
+	// ListIngestionsRequest.DatasetID is *string and filters only when non-nil,
+	// so keep nil (omitted) when no id was given instead of sending "".
+	var datasetID any
+	if rawID, ok := cmd.Params["dataset_id"].(string); ok {
+		if trimmed := strings.TrimSpace(rawID); trimmed != "" {
+			datasetID = trimmed
+		}
 	}
 
 	payload := map[string]interface{}{
@@ -3923,4 +3929,18 @@ func (c *CLI) APIShowConcurrencyCommand(commandCount int, cmd *Command) (Respons
 	}
 
 	return HandleCommonDataResponse(resp, "get concurrency")
+}
+
+func (c *CLI) APIShowQuotaCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", "/system/quota", httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get quota: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "get quota")
 }

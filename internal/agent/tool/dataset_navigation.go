@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nav"
 )
 
@@ -153,6 +154,9 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			Error:    "dataset navigation requires a tenant and dataset context",
 		}), nil
 	}
+	if err := CheckCanvasDependencies(ctx, dao.DB, permission.ResourceKindDataset, datasetIDs); err != nil {
+		return "", err
+	}
 
 	// Route RELEVANT docs by querying the nav tree with the topic (semantic KNN).
 	// The topic is the routing signal — we must not return arbitrary doc ids.
@@ -233,6 +237,8 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			TenantID:                 tenantID,
 			DocScope:                 docScope,
 			RetrievalFrom:            "dataset",
+			// Agentic, so no dense-only rescue.
+			AllowDenseFallback: new(false),
 		})
 		if err != nil {
 			common.Warn("dataset navigation: content-recall retrieval failed", zap.Error(err))

@@ -123,8 +123,6 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminSetLogLevelCommand(commandCount, cmd)
 	case "admin_reset_role_default_model":
 		return c.AdminResetRoleDefaultModelsCommand(commandCount, cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(commandCount, cmd)
 	case "admin_list_resources_command":
 		return c.AdminListResourcesCommand(commandCount, cmd)
 	case "admin_list_roles_command":
@@ -173,6 +171,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.UserShowMessageQueueCommand(commandCount, cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(commandCount, cmd)
+	case "admin_verify_license":
+		return c.AdminVerifyLicenseCommand(commandCount, cmd)
 	case "admin_check_provider_with_key":
 		return c.CommonCheckProviderWithKeyCommand(commandCount, cmd)
 	case "admin_check_provider_instance":
@@ -512,6 +512,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowMemoryCommand(commandCount, cmd)
 	case "api_show_concurrency":
 		return c.APIShowConcurrencyCommand(commandCount, cmd)
+	case "api_show_quota":
+		return c.APIShowQuotaCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":

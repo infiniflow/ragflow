@@ -1,11 +1,18 @@
+import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDocumentPipelineParser } from '@/hooks/use-document-request';
+import {
+  useRunDocument,
+  useSetDocumentPipelineParser,
+} from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export const useChangeDocumentParser = () => {
+  const { t } = useTranslation();
   const { setDocumentPipelineParser, loading } = useSetDocumentPipelineParser();
+  const { runDocumentByIds } = useRunDocument();
   const [record, setRecord] = useState<IDocumentInfo>({} as IDocumentInfo);
 
   const {
@@ -25,18 +32,40 @@ export const useChangeDocumentParser = () => {
           documentId: record?.id,
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
-          parseType: parserConfigInfo.parseType,
+          parse_type: parserConfigInfo.parse_type,
         });
         if (ret === 0) {
           hideChangeParserModal();
+          if (record.chunk_count > 0) {
+            Modal.confirm({
+              title: t('knowledgeDetails.parseFile'),
+              content: t('knowledgeDetails.parserConfigReparseTip'),
+              okText: t('common.yes'),
+              cancelText: t('common.no'),
+              onOk: async () => {
+                try {
+                  await runDocumentByIds({
+                    documentIds: [record.id],
+                    run: 1,
+                    option: { delete: true, apply_kb: false },
+                  });
+                } catch (error) {
+                  console.warn(error);
+                }
+              },
+            });
+          }
         }
       }
     },
     [
       record?.id,
       record?.dataset_id,
+      record?.chunk_count,
+      runDocumentByIds,
       setDocumentPipelineParser,
       hideChangeParserModal,
+      t,
     ],
   );
 

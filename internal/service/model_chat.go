@@ -24,7 +24,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -34,25 +33,6 @@ const streamDoneSentinel = "[DONE]"
 
 // errStreamDone aborts the driver loop once the terminal sentinel arrives.
 var errStreamDone = errors.New("chat stream done")
-
-func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
-	if err != nil {
-		return nil, err
-	}
-	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
-	return chatModel.ChatWithMessages(ctx, messages, config, nil)
-}
-
-func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	target, err := m.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, modelID)
-	if err != nil {
-		return nil, nil, err
-	}
-	chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
-	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
-	return ch, errCh, nil
-}
 
 func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error) {
 	ch := make(chan string, 256)
@@ -85,16 +65,22 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 	return ch, errCh
 }
 
-// TenantStreamAdapter adapts tenant/model-aware chat streaming to AskService.
+// TenantStreamAdapter adapts a factory-created chat model to AskService's
+// channel-based streaming interface.
 type TenantStreamAdapter struct {
-	LLM      *ModelProviderService
+	Factory  *ModelFactory
 	TenantID string
 	ModelID  string
 }
 
 func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	if a.LLM == nil {
-		return nil, nil, fmt.Errorf("streaming LLM not configured")
+	if a.Factory == nil {
+		return nil, nil, fmt.Errorf("model factory not configured")
 	}
-	return a.LLM.ChatStream(ctx, a.TenantID, a.ModelID, messages, config)
+	chatModel, err := a.Factory.NewChatModel(ctx, ModelAccess{TenantID: a.TenantID}, a.ModelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
+	return ch, errCh, nil
 }

@@ -30,6 +30,7 @@ import (
 // stored as a Deflate entry whose data is not a valid Deflate stream.
 type epubTestChapter struct {
 	name    string
+	entry   string // ZIP entry under OEBPS/ when it differs from the manifest href
 	content string
 	missing bool
 	damaged bool
@@ -73,6 +74,8 @@ func buildTestEPUB(t *testing.T, chapters []epubTestChapter) []byte {
 			if _, err := w.Write([]byte{0xff, 0xff, 0xff, 0xff}); err != nil {
 				t.Fatalf("write raw %s: %v", ch.name, err)
 			}
+		case ch.entry != "":
+			write("OEBPS/"+ch.entry, ch.content)
 		default:
 			write("OEBPS/"+ch.name, ch.content)
 		}
@@ -90,7 +93,7 @@ func parseTestEPUB(t *testing.T, chapters []epubTestChapter) ParseResult {
 
 func epubTestText(res ParseResult) string {
 	var parts []string
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		parts = append(parts, text)
 	}
@@ -183,5 +186,56 @@ func TestEPUBParser_OnlyEmptyChaptersIsNotAnError(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{{name: "ch1.xhtml", content: ""}})
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+}
+
+// Manifest hrefs are URLs, so non-ASCII and space file names are
+// percent-encoded and may carry a fragment.
+func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "Text/%E7%AC%AC%E4%B8%80%E7%AB%A0.xhtml", entry: "Text/第一章.xhtml", content: epubTestHTML("<p>ALPHA chapter</p>")},
+		{name: "Text/chapter%202.xhtml#start", entry: "Text/chapter 2.xhtml", content: epubTestHTML("<p>BRAVO chapter</p>")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := epubTestText(res)
+	for _, want := range []string{"ALPHA", "BRAVO"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %q", want, text)
+		}
+	}
+}
+
+// The head's <title> and block elements outside the old list ended without a
+// break, so their text ran into the next word: "Testchapter text" and
+// "TermDefinition".
+func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			"<section>chapter text</section><dl><dt>Term</dt><dd>Definition</dd></dl>" +
+				"<figure><figcaption>Figure 1</figcaption></figure><main>Afterword</main>Epilogue")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// XHTML has no &nbsp; and EPUB tools often write numeric character
+// references; only a fixed list of named entities was decoded, so
+// "don&#8217;t" reached the index as written.
+func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			"<p>don&#8217;t&#160;stop &#x2014; caf&eacute; &frac12; cup &hellip; &amp; &#38; &bogus;</p>")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
+		t.Errorf("text = %q, want it to contain %q", text, want)
 	}
 }
