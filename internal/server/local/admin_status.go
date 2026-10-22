@@ -93,13 +93,3 @@ func SetAdminStatus(statusCode AdminStatusCode, reason string) {
 	adminStatus.Status = statusCode
 	adminStatus.Reason = reason
 }
-
-// IsAdminAvailable returns true if admin is valid (Status == 0)
-func IsAdminAvailable() bool {
-	adminStatusMu.RLock()
-	defer adminStatusMu.RUnlock()
-	if adminStatus == nil {
-		return false
-	}
-	return adminStatus.Status == Available
-}
