@@ -544,6 +544,44 @@ def _wiki_mode_meta_id(kb_id: str) -> str:
     return f"wiki_mode_meta_{kb_id}"
 
 
+#: Columns the ``wiki_mode_meta`` row stores. Only fixed-schema engines need
+#: them declared; ES/OpenSearch map ``*_kwd`` through ``dynamic_templates``.
+_WIKI_MODE_META_COLUMNS = {
+    "mode_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+    "embedding_model_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+}
+
+#: Chunk tables already upgraded in this process, keyed by (index, kb_id).
+_WIKI_MODE_COLUMNS_ENSURED: set[tuple[str, str]] = set()
+
+
+async def _wiki_ensure_mode_columns(kb_id: str, index: str) -> None:
+    """Add the mode-meta columns to a chunk table created before they existed.
+
+    New tables inherit them from ``conf/infinity_mapping.json``; on an older
+    table both reading and writing the meta row fail until it is upgraded in
+    place. Best-effort — mode reuse only saves work, so a failed upgrade is
+    logged and the build continues.
+    """
+    key = (index, kb_id)
+    if key in _WIKI_MODE_COLUMNS_ENSURED:
+        return
+    ensure_fn = getattr(settings.docStoreConn, "ensure_columns", None)
+    if not callable(ensure_fn):
+        _WIKI_MODE_COLUMNS_ENSURED.add(key)
+        return
+    try:
+        # ``ensure_columns`` no-ops on a missing table, so caching the upgrade
+        # there would skip it for the table a later insert creates.
+        if not await thread_pool_exec(settings.docStoreConn.index_exist, index, kb_id):
+            return
+        await thread_pool_exec(ensure_fn, index, kb_id, _WIKI_MODE_META_COLUMNS)
+    except Exception:
+        logging.exception("wiki: failed to ensure mode meta columns for kb=%s", kb_id)
+        return
+    _WIKI_MODE_COLUMNS_ENSURED.add(key)
+
+
 async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
     """Return the mode value recorded by the previous build, or None
     if this KB has never recorded a mode (e.g. first ever build)."""
@@ -552,6 +590,7 @@ async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return None
+    await _wiki_ensure_mode_columns(kb_id, index)
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -582,6 +621,7 @@ async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return None
+    await _wiki_ensure_mode_columns(kb_id, index)
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -616,6 +656,7 @@ async def _wiki_save_mode(tenant_id: str, kb_id: str, mode: str, embedding_finge
     if mode not in ("entity", "topic"):
         raise ValueError(f"Unsupported wiki mode: {mode}")
     index = search.index_name(tenant_id)
+    await _wiki_ensure_mode_columns(kb_id, index)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
@@ -640,7 +681,13 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
     entities, plan/draft/reduce, topics, doc_page_source, mode meta). Used when
     the plan (mode) setting toggles: Mode A and Mode B pages are structurally
     different and cannot be merged incrementally, so a mode switch must rebuild
-    from a clean slate."""
+    from a clean slate.
+
+    MAP extracts are deliberately left alone: their identity is
+    ``hash(doc_id, chunk_id, chunk_hash)`` and ``chunk_hash`` depends only on the
+    chunk content and the pipeline rev, so they still match after a mode or
+    embedding switch. Dropping them would turn a page rebuild into a full
+    re-extraction."""
 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
@@ -1255,4 +1302,9 @@ async def run_wiki_incremental(
         logging.warning("wiki: incomplete compilation errors: %s", summary["errors"])
         progress(-1, f"Wiki incomplete: {len(summary['errors'])} page(s) failed; retry required.")
     else:
-        progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
+        skipped = len(summary.get("pages_skipped") or [])
+        suffix = f" ({skipped} skipped)" if skipped else ""
+        progress(
+            1.0,
+            f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}{suffix}",
+        )
