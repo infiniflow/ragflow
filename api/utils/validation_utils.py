@@ -1006,11 +1006,8 @@ class ListDatasetReq(BaseListReq):
         for v in v_list:
             ids_list.append(validate_uuid1_hex(v))
 
-        duplicates = [item for item, count in Counter(ids_list).items() if count > 1]
-        if duplicates:
-            raise PydanticCustomError("duplicate_uuids", "Duplicate ids: '{duplicate_ids}'", {"duplicate_ids": ", ".join(duplicates)})
-
-        return ids_list
+        # A metadata lookup may include the same dataset from independent Retrieval blocks.
+        return list(dict.fromkeys(ids_list))
 
 
 # ---- File Management Request Models ----
