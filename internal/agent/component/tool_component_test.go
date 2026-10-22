@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -124,6 +126,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 		outputKey string
 		inputKey  string
 	}{
+		{
+			name:      "AnySearchSearch",
+			toolName:  "AnySearchSearch",
+			params:    map[string]any{"api_key": "stored-key", "top_n": float64(3), "zone": "intl", "language": "en", "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
 		{
 			name:      "ArXiv",
 			toolName:  "ArXiv",
@@ -311,7 +320,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"AnySearchSearch", "ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{
@@ -455,6 +464,213 @@ func TestToolBackedComponentGitHubIntegration(t *testing.T) {
 	chunks := state.GetRetrievalChunks()
 	if len(chunks) != 1 || chunks[0]["document_name"] != "ragflow" {
 		t.Fatalf("recorded references = %#v", chunks)
+	}
+}
+
+func TestToolBackedComponentAnySearchPartialFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, _ := io.ReadAll(request.Body)
+		writer.Header().Set("Content-Type", "application/json")
+		if strings.Contains(string(body), `"tag":"x.y"`) {
+			writer.WriteHeader(http.StatusBadRequest)
+			_, _ = writer.Write([]byte(`{"code":-1,"message":"Invalid tag: x.y.","request_id":"rid-bad"}`))
+			return
+		}
+		_, _ = writer.Write([]byte(`{"code":0,"request_id":"rid-ok","data":{"results":[{"title":"RAGFlow","url":"https://ragflow.io","content":"RAG engine"}]}}`))
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	helper := agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	anySearch := agenttool.NewAnySearchToolWith(helper, "")
+	component := &ToolBackedComponent{name: "AnySearchSearch", tool: anySearch, spec: anySearch.ComponentSpec()}
+
+	state := runtime.NewCanvasState("run-anysearch", "task-anysearch")
+	out, err := component.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{
+		"queries": []any{map[string]any{"query": "good"}, map[string]any{"query": "bad", "tag": "x.y"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if failure, exists := out["_ERROR"]; exists {
+		t.Fatalf("partial failure set _ERROR %q, which would drop the successful query's references", failure)
+	}
+	records, _ := out["json"].([]any)
+	if len(records) != 2 {
+		t.Fatalf("json output = %#v, want both per-query records", out["json"])
+	}
+	if failed, _ := records[1].(map[string]any); !strings.Contains(failed["_ERROR"].(string), "Invalid tag: x.y.") || failed["request_id"] != "rid-bad" {
+		t.Fatalf("failed record = %#v, want its own vendor error and request id", records[1])
+	}
+	rendered, _ := out["formalized_content"].(string)
+	if !strings.Contains(rendered, "RAG engine") || !strings.Contains(rendered, "Error: anysearch: HTTP 400") {
+		t.Fatalf("formalized_content = %q", rendered)
+	}
+	chunks := state.GetRetrievalChunks()
+	if len(chunks) != 1 || chunks[0]["document_name"] != "RAGFlow" {
+		t.Fatalf("recorded references = %#v, want the successful query's hit", chunks)
+	}
+
+	allFailed := runtime.NewCanvasState("run-anysearch-failed", "task-anysearch-failed")
+	out, err = component.Invoke(runtime.WithState(t.Context(), allFailed), nil, map[string]any{
+		"queries": []any{map[string]any{"query": "a", "tag": "x.y"}, map[string]any{"query": "b", "tag": "x.y"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke(all failed): %v", err)
+	}
+	if failure, _ := out["_ERROR"].(string); failure == "" {
+		t.Fatalf("all queries failed but outputs = %#v", out)
+	}
+	if len(allFailed.GetRetrievalChunks()) != 0 {
+		t.Fatalf("error path recorded references: %#v", allFailed.GetRetrievalChunks())
+	}
+}
+
+// TestToolBackedComponentAnySearchRealCanvasRun compiles and runs a real
+// Begin -> AnySearchSearch workflow. It proves that a standalone tool node
+// receives the workflow query through the canvas runtime, and that its results
+// and references land in the run state.
+func TestToolBackedComponentAnySearchRealCanvasRun(t *testing.T) {
+	var requests atomic.Int32
+	var gotQuery atomic.Value
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		body, _ := io.ReadAll(request.Body)
+		var sent struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(body, &sent)
+		gotQuery.Store(sent.Query)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"code":0,"request_id":"rid-canvas","data":{"results":[{"title":"RAGFlow","url":"https://ragflow.io","content":"RAG engine"}]}}`))
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	helper := agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	anySearch := agenttool.NewAnySearchToolWith(helper, "")
+	factory := func(name string, params map[string]any) (runtime.Component, error) {
+		if name == "AnySearchSearch" {
+			return &ToolBackedComponent{name: name, tool: anySearch, spec: anySearch.ComponentSpec()}, nil
+		}
+		return New(name, params)
+	}
+	c := &canvas.Canvas{
+		Components: map[string]canvas.CanvasComponent{
+			"begin_0": {
+				Obj:        canvas.CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"search_0"},
+			},
+			"search_0": {
+				Obj: canvas.CanvasComponentObj{ComponentName: "AnySearchSearch", Params: map[string]any{
+					"query":   "{sys.query}",
+					"outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}},
+				}},
+				Upstream: []string{"begin_0"},
+			},
+		},
+		Path: []string{"begin_0", "search_0"},
+	}
+
+	state := runtime.NewCanvasState("run-anysearch-canvas", "task-anysearch-canvas")
+	ctx := runtime.WithState(canvas.WithComponentFactory(t.Context(), factory), state)
+	compiled, err := canvas.Compile(ctx, c)
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	if _, err = compiled.Workflow.Invoke(ctx, map[string]any{"query": "canvas nonce query"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	if n := requests.Load(); n != 1 {
+		t.Fatalf("%d upstream requests, want exactly 1", n)
+	}
+	if query, _ := gotQuery.Load().(string); query != "canvas nonce query" {
+		t.Fatalf("the tool node searched %q, want the workflow query", query)
+	}
+	records, err := state.GetVar("search_0@json")
+	if err != nil {
+		t.Fatalf("search_0@json: %v", err)
+	}
+	if list, ok := records.([]any); !ok || len(list) != 1 {
+		t.Fatalf("search_0@json = %#v, want one per-query record", records)
+	}
+	if chunks := state.GetRetrievalChunks(); len(chunks) != 1 || chunks[0]["document_name"] != "RAGFlow" {
+		t.Fatalf("recorded references = %#v", chunks)
+	}
+}
+
+// TestToolBackedComponentAnySearchKeepsEveryReferenceOfALargeBatch guards the
+// run state's per-id dedupe: 5 queries of 10 distinct results must all survive.
+func TestToolBackedComponentAnySearchKeepsEveryReferenceOfALargeBatch(t *testing.T) {
+	var records []any
+	for q := 0; q < 5; q++ {
+		var results []any
+		for r := 0; r < 10; r++ {
+			results = append(results, map[string]any{
+				"title":   fmt.Sprintf("Result %d-%d", q, r),
+				"url":     fmt.Sprintf("https://example.com/%d/%d", q, r),
+				"content": fmt.Sprintf("distinct page text number %d-%d", q, r),
+			})
+		}
+		records = append(records, map[string]any{"index": float64(q), "query": fmt.Sprintf("q%d", q), "results": results})
+	}
+	envelope := map[string]any{"queries": records}
+	anySearch := agenttool.NewAnySearchTool()
+
+	chunks, docAggs := anySearch.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 50 || len(docAggs) != 50 {
+		t.Fatalf("built %d chunks / %d docs, want 50 / 50", len(chunks), len(docAggs))
+	}
+	state := runtime.NewCanvasState("run-anysearch-ids", "task-anysearch-ids")
+	state.SetRetrievalReferences(chunks, docAggs)
+	if got := len(state.GetRetrievalChunks()); got != 50 {
+		t.Fatalf("the run state kept %d of 50 references: ids collide and the state dedupes on id", got)
+	}
+	ids := map[string]bool{}
+	for _, chunk := range chunks {
+		id, _ := chunk["id"].(string)
+		if id == "" || ids[id] {
+			t.Fatalf("chunk id %q is empty or repeated", id)
+		}
+		ids[id] = true
+	}
+}
+
+// TestToolBackedComponentAnySearchKeepsReferencesWhoseOldHashesCollided uses two
+// results that an 8-digit hash bucket maps to the same id (44273655): the run
+// state dedupes on id, so with that bucket the second reference was dropped.
+func TestToolBackedComponentAnySearchKeepsReferencesWhoseOldHashesCollided(t *testing.T) {
+	envelope := map[string]any{"queries": []any{map[string]any{"index": float64(0), "query": "q", "results": []any{
+		map[string]any{"title": "First", "url": "https://example.com/page", "content": "collision probe 9995"},
+		map[string]any{"title": "Second", "url": "https://example.com/page", "content": "collision probe 27050"},
+	}}}}
+
+	chunks, docAggs := agenttool.NewAnySearchTool().BuildReferences(t.Context(), envelope)
+	if len(chunks) != 2 || len(docAggs) != 2 {
+		t.Fatalf("built %d chunks / %d docs, want 2 / 2", len(chunks), len(docAggs))
+	}
+	if chunks[0]["id"] == chunks[1]["id"] {
+		t.Fatalf("distinct results share the id %v", chunks[0]["id"])
+	}
+	state := runtime.NewCanvasState("run-anysearch-collision", "task-anysearch-collision")
+	state.SetRetrievalReferences(chunks, docAggs)
+	if got := len(state.GetRetrievalChunks()); got != 2 {
+		t.Fatalf("the run state kept %d of 2 references", got)
 	}
 }
 

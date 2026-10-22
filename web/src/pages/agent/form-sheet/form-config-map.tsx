@@ -25,6 +25,7 @@ import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
 import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
+import AnySearchSearchForm from '../form/anysearch-search-form';
 import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
@@ -97,6 +98,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.Search1APICrawl]: {
     component: Search1APICrawlForm,
+  },
+  [Operator.AnySearchSearch]: {
+    component: AnySearchSearchForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
