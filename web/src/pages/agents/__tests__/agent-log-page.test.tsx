@@ -104,7 +104,9 @@ describe('AgentLogPage reset button (#17050)', () => {
   it('resets the keyword input back to empty when Reset is clicked', () => {
     render(<AgentLogPage />);
 
-    const searchInput = screen.getByPlaceholderText('common.search') as HTMLInputElement;
+    const searchInput = screen.getByPlaceholderText(
+      'common.search',
+    ) as HTMLInputElement;
     fireEvent.change(searchInput, { target: { value: 'hello' } });
     expect(searchInput.value).toBe('hello');
 
@@ -152,5 +154,4 @@ describe('AgentLogPage reset button (#17050)', () => {
     );
     expect(mockRefetchAgentLog).not.toHaveBeenCalled();
   });
-
 });
