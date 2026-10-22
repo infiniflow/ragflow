@@ -29,6 +29,8 @@ from common.float_utils import format_minimum_should_match_percent, get_float
 
 DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD = 0.8
 DEFAULT_VECTOR_SIMILARITY_WEIGHT = 0.5
+# Infinity: "Insert batch row limit shouldn't more than 8192" (error 3032).
+_INFINITY_MAX_INSERT_ROWS = 8192
 _JSON_LIST_FIELDS = frozenset(
     (
         "source_chunk_ids",
@@ -628,7 +630,9 @@ class InfinityConnection(InfinityConnectionBase):
             # for doc in documents:
             #     logger.info(f"insert position_int: {doc['position_int']}")
             # logger.info(f"InfinityConnection.insert {json.dumps(documents)}")
-            table_instance.insert(docs)
+            # The row limit applies to INSERT only, so the delete stays one statement.
+            for start in range(0, len(docs), _INFINITY_MAX_INSERT_ROWS):
+                table_instance.insert(docs[start : start + _INFINITY_MAX_INSERT_ROWS])
         finally:
             self.connPool.release_conn(inf_conn)
         self.logger.debug(f"INFINITY inserted into {table_name} {str_ids}.")
