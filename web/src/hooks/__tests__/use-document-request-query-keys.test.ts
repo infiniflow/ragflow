@@ -29,7 +29,7 @@ describe('DocumentKeys', () => {
   });
 
   it('matches parameterized document filters with the filter prefix', () => {
-    const actual = DocumentKeys.filter('keyword', 'dataset-id');
+    const actual = DocumentKeys.filter('dataset-id');
 
     expect(partialMatchKey(actual, DocumentKeys.allFilters())).toBe(true);
   });

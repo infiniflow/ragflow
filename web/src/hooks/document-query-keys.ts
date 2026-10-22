@@ -33,8 +33,9 @@ export const DocumentKeys = {
   list: (searchString: string, pagination: unknown, filter: unknown) =>
     [...DocumentKeys.all(), searchString, pagination, filter] as const,
   allFilters: () => [DocumentApiAction.FetchDocumentFilter] as const,
-  filter: (searchString: string, knowledgeId?: string) =>
-    [...DocumentKeys.allFilters(), searchString, knowledgeId] as const,
+  // The counts cover the whole dataset and ignore the list's search text.
+  filter: (datasetId?: string) =>
+    [...DocumentKeys.allFilters(), datasetId] as const,
   thumbnails: (ids: string[]) =>
     [DocumentApiAction.FetchDocumentThumbnails, ids] as const,
   byIds: (ids: string[]) =>
