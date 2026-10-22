@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// RetrievalMode 指定检索候选的召回路径。
+// RetrievalMode selects the recall path for retrieval candidates.
 type RetrievalMode string
 
 const (

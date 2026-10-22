@@ -252,7 +252,8 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	// Get valid indices where score >= postThreshold
 	validIdx := make([]int, 0)
 	for _, is := range idxScores {
-		// 单路召回保留引擎业务排序，向量门槛已在召回时执行，词法分数使用引擎尺度。
+		// Preserve engine business ordering and the engine's lexical score scale.
+		// Vector thresholds have already been applied during recall.
 		if singleMode || is.score >= postThreshold {
 			validIdx = append(validIdx, is.idx)
 		}
@@ -491,14 +492,14 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 				if field == nil {
 					continue
 				}
-				// 保留引擎原始特征类型，避免字段投影将标签映射转成非 JSON 字符串。
+				// Preserve raw feature types so field projection does not stringify tag maps.
 				for _, key := range []string{common.PAGERANK_FLD, common.TAG_FLD} {
 					if value, ok := chunk[key]; ok {
 						field[key] = value
 					}
 				}
 			}
-			// 单路召回后的重排只使用模型相关性，同时保留既有业务排序特征。
+			// Rerank single-path candidates with model relevance and business features.
 			sim, _, modelSim, err := RerankByModel(ctx, req.RerankModel, searchResult.Chunks, searchResult.IDs, searchResult.Field,
 				req.Question, 0, 1, "content_ltks", qb, *req.RankFeature, req.Language)
 			return sim, make([]float64, len(sim)), modelSim, err
