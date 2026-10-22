@@ -269,8 +269,15 @@ def test_table_transformer_maps_tsr_crop_coordinates_to_page_coordinates(monkeyp
     module = _load_pdf_parser(monkeypatch)
     parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
     parser.page_from = 0
-    parser.page_cum_height = [0] if page_index == 0 else [0, page_offset]
     parser.page_images = [_FakeImage() for _ in range(page_index + 1)]
+    if page_index:
+        # The first page contributes page_offset pre-zoom units.
+        parser.page_images[0] = _FakeImage(height=page_offset * zoom)
+    parser.page_cum_height = [0]
+    for page in parser.page_images:
+        parser.page_cum_height.append(parser.page_cum_height[-1] + page.size[1] / zoom)
+    assert len(parser.page_cum_height) == len(parser.page_images) + 1
+    assert parser.page_cum_height[page_index] == page_offset
     parser.page_layout = [[] for _ in range(page_index + 1)]
     parser.page_layout[page_index] = [{"type": "table", "x0": 100, "top": 200, "x1": 220, "bottom": 270}]
     parser.tbl_det = _FakeTableDetector(zoom)

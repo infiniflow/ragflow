@@ -174,7 +174,9 @@ class Pdf(PdfParser):
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
             return 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
-        tbl_pn = tbls[tbl_index][1][0][0] + 1
+        # cropout returns global 0-based pages. QA line tags and crop input
+        # are window-local 1-based; crop adds page_from back on output.
+        tbl_pn = tbls[tbl_index][1][0][0] - self.page_from + 1
         tbl_left = tbls[tbl_index][1][0][1]
         tbl_right = tbls[tbl_index][1][0][2]
         tbl_top = tbls[tbl_index][1][0][3]
