@@ -156,11 +156,7 @@ class Categorize(LLM, ABC):
         tied = [c for c, n in counts.items() if n == top]
         # Drop less-specific names whose counts are inflated by a containing
         # tied category, then preserve declaration order among the remainder.
-        specific = [
-            category
-            for category in tied
-            if not any(category.lower() in other.lower() and category.lower() != other.lower() for other in tied if other != category)
-        ]
+        specific = [category for category in tied if not any(category.lower() in other.lower() and category.lower() != other.lower() for other in tied if other != category)]
         return specific[0] if specific else tied[0]
 
     @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))

@@ -101,9 +101,7 @@ def _load_categorize_module(monkeypatch):
     llm_mod.LLM = _LLM
     monkeypatch.setitem(sys.modules, "agent.component.llm", llm_mod)
 
-    spec = importlib.util.spec_from_file_location(
-        "agent.component.categorize", repo_root / "agent" / "component" / "categorize.py"
-    )
+    spec = importlib.util.spec_from_file_location("agent.component.categorize", repo_root / "agent" / "component" / "categorize.py")
     mod = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "agent.component.categorize", mod)
     spec.loader.exec_module(mod)
@@ -127,6 +125,7 @@ def test_distinct_names_keep_count_winner(monkeypatch):
     mod = _load_categorize_module(monkeypatch)
     categories = ["Refund", "Exchange"]
     assert mod.Categorize._select_category("Refund, refund, but not exchange", categories) == "Refund"
+
 
 @pytest.mark.parametrize(
     ("categories", "answer", "expected"),
