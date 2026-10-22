@@ -41,7 +41,7 @@ import (
 // parent document still indexes.
 func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType, filename string, binary []byte, parent []parser.DocItem, setups map[string]schema.ParserSetup, docID string) ([]parser.DocItem, []string) {
 	family := resolveParserFamily(fileType)
-	if !hyperlinkFamilies[family] {
+	if _, ok := hyperlinkTargetCollectors[family]; !ok {
 		return parent, nil
 	}
 	setup, ok := setups[family]
@@ -143,25 +143,35 @@ func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
 	return total
 }
 
-// collectHyperlinkTargets extracts raw link targets for the family from the
-// source bytes. Markdown uses the raw document rather than the parsed items:
-// the markdown parser resolves links to their label, so the URL is already
-// gone by the time items exist.
-func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) {
-	switch family {
-	case "pdf":
+// hyperlinkTargetCollectors is the single list of families that support
+// linked-content ingestion and the extractor for each. Check and the fetch
+// post-step both read it, so a family cannot be accepted without an extractor.
+var hyperlinkTargetCollectors = map[string]func([]byte) ([]string, []string){
+	"pdf": func(binary []byte) ([]string, []string) {
 		return extractLinksFromPDF(binary), nil
-	case "docx":
+	},
+	"docx": func(binary []byte) ([]string, []string) {
 		links, err := extractLinksFromDocx(binary)
 		if err != nil {
 			return nil, []string{fmt.Sprintf("hyperlink: docx link extraction failed (%v)", err)}
 		}
 		return links, nil
-	case "markdown":
+	},
+	"markdown": func(binary []byte) ([]string, []string) {
 		return extractLinksFromMarkdownText(string(binary)), nil
-	default:
+	},
+}
+
+// collectHyperlinkTargets extracts raw link targets for the family from the
+// source bytes. Markdown uses the raw document rather than the parsed items:
+// the markdown parser resolves links to their label, so the URL is already
+// gone by the time items exist.
+func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) {
+	collector, ok := hyperlinkTargetCollectors[family]
+	if !ok {
 		return nil, nil
 	}
+	return collector(binary)
 }
 
 // fetchHyperlinkPage GETs one page through the guarded SSRF client with a

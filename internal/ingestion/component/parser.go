@@ -255,11 +255,6 @@ func cloneParserSetupValue(value any) any {
 	}
 }
 
-// hyperlinkFamilies are the Parser families that carry the opt-in
-// linked-content switches (#21032). Single source of truth for both the
-// constructor-time Check and the fetch post-step.
-var hyperlinkFamilies = map[string]bool{"pdf": true, "docx": true, "markdown": true}
-
 // Check validates parser methods at construction time so a malformed DSL
 // surfaces as a canvas compile failure rather than a mid-run error.
 //
@@ -308,7 +303,7 @@ func (c *ParserComponent) Check() error {
 	// the same keys anywhere else are rejected so a misplaced setting
 	// cannot silently do nothing (#20139 class).
 	for family, setup := range c.setups {
-		if hyperlinkFamilies[family] {
+		if _, ok := hyperlinkTargetCollectors[family]; ok {
 			if family != "markdown" {
 				if _, exists := setup["collect_markdown_links"]; exists {
 					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, "collect_markdown_links")
