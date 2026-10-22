@@ -33,6 +33,9 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
 	"akshare":                    buildAkShareTool,
+	"anysearch_discover":         buildAnySearchDiscoverTool,
+	"anysearch_extract":          buildAnySearchExtractTool,
+	"anysearch_search":           buildAnySearchTool,
 	"arxiv":                      buildArxivTool,
 	"bgpt":                       buildBGPTTool,
 	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
@@ -80,17 +83,20 @@ var registry = map[string]Factory{
 // names such as "CodeExec" and "GoogleScholar", while the tool registry uses
 // snake_case names for several tools.
 var canvasToolNames = map[string]string{
-	"codeexec":         "code_exec",
-	"googlescholar":    "google_scholar",
-	"keenablesearch":   "keenable",
-	"queritcontents":   "querit_contents",
-	"queritsearch":     "querit_search",
-	"search1apicrawl":  "search1api_crawl",
-	"search1apisearch": "search1api",
-	"sofyasearch":      "sofya",
-	"tavilyextract":    "tavily_extract",
-	"tavilysearch":     "tavily",
-	"yahoofinance":     "yahoo_finance",
+	"anysearchdiscover": "anysearch_discover",
+	"anysearchextract":  "anysearch_extract",
+	"anysearchsearch":   "anysearch_search",
+	"codeexec":          "code_exec",
+	"googlescholar":     "google_scholar",
+	"keenablesearch":    "keenable",
+	"queritcontents":    "querit_contents",
+	"queritsearch":      "querit_search",
+	"search1apicrawl":   "search1api_crawl",
+	"search1apisearch":  "search1api",
+	"sofyasearch":       "sofya",
+	"tavilyextract":     "tavily_extract",
+	"tavilysearch":      "tavily",
+	"yahoofinance":      "yahoo_finance",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -832,6 +838,79 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+// anySearchAPIKeyParam reads the node-level api_key. AnySearch works without a
+// key, so a missing, null or blank value means anonymous access.
+func anySearchAPIKeyParam(params map[string]any, toolName string) (string, error) {
+	value, ok := params["api_key"]
+	if !ok || value == nil {
+		return "", nil
+	}
+	apiKey, valid := value.(string)
+	if !valid {
+		return "", fmt.Errorf("agent tool: tool %q requires string node-level param api_key", toolName)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+	if strings.ContainsAny(apiKey, "\r\n") {
+		return "", fmt.Errorf("agent tool: tool %q has an invalid api_key", toolName)
+	}
+	return apiKey, nil
+}
+
+func buildAnySearchTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchToolName)
+	if err != nil {
+		return nil, err
+	}
+	defaults := anySearchDefaults{}
+	if value, ok := params["top_n"]; ok && value != nil {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > anySearchMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", anySearchToolName, anySearchMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	if value, ok := params["zone"]; ok && value != nil {
+		zone, valid := value.(string)
+		zone = strings.ToLower(strings.TrimSpace(zone))
+		if !valid || (zone != "" && !slices.Contains(anySearchZones, zone)) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported zone %v, it should be one of %v", anySearchToolName, value, anySearchZones)
+		}
+		defaults.Zone = zone
+	}
+	if value, ok := params["language"]; ok && value != nil {
+		language, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param language", anySearchToolName)
+		}
+		defaults.Language = strings.TrimSpace(language)
+	}
+	return newAnySearchTool(nil, apiKey, defaults), nil
+}
+
+func buildAnySearchDiscoverTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchDiscoverToolName)
+	if err != nil {
+		return nil, err
+	}
+	return NewAnySearchDiscoverToolWith(nil, apiKey), nil
+}
+
+func buildAnySearchExtractTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchExtractToolName)
+	if err != nil {
+		return nil, err
+	}
+	defaultURL := ""
+	if value, ok := params["url"]; ok && value != nil {
+		var valid bool
+		defaultURL, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param url", anySearchExtractToolName)
+		}
+	}
+	return newAnySearchExtractTool(nil, apiKey, defaultURL), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
