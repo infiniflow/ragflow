@@ -173,21 +173,70 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 }
 
 func (d ChunkDoc) MarshalJSON() ([]byte, error) {
-	type alias ChunkDoc
-	base, err := json.Marshal(alias(d))
+	// Delegate to wireMap so the typed []ChunkDoc form and the []map[string]any
+	// wire form (ToMap / ChunkDocsToMaps) serialize identically by construction.
+	// Propagate marshal failures (e.g. invalid JSON in the RawMessage position
+	// fields) instead of silently emitting an empty object.
+	m, err := d.wireMapErr()
 	if err != nil {
 		return nil, err
 	}
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(base, &raw); err != nil {
+	return json.Marshal(m)
+}
+
+// wireMap is the error-tolerant wrapper used by ToMap, which cannot return an
+// error. On a marshal/unmarshal failure it falls back to an empty map,
+// preserving the historical ToMap behavior.
+func (d ChunkDoc) wireMap() map[string]any {
+	m, err := d.wireMapErr()
+	if err != nil {
+		return map[string]any{}
+	}
+	return m
+}
+
+// wireMapErr is the single source of truth for a ChunkDoc's wire representation,
+// shared by ToMap and MarshalJSON. It marshals the alias (a distinct type
+// without a MarshalJSON method) to avoid infinite recursion, then applies the
+// canonical normalization: Extra values are decoded, "text" is always emitted
+// (even for media-only chunks, so chunk identity/image upload share one wire
+// contract), the stale content_with_weight key is dropped, and structured
+// positions are decoded to their canonical Go form.
+func (d ChunkDoc) wireMapErr() (map[string]any, error) {
+	type alias ChunkDoc
+	b, err := json.Marshal(alias(d))
+	if err != nil {
 		return nil, err
 	}
-	for k, v := range d.Extra {
-		if _, exists := raw[k]; !exists {
-			raw[k] = v
-		}
+	var out map[string]any
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
 	}
-	return json.Marshal(raw)
+	for k, raw := range d.Extra {
+		// ck_type is a retired parser key (#21259); a stray Extra entry must
+		// not resurrect it through the wire form.
+		if k == "ck_type" {
+			continue
+		}
+		// Fill-missing-only: typed fields already emitted by the alias marshal
+		// (id, doc_type_kwd, table, ...) take precedence over a colliding Extra
+		// key. UnmarshalJSON copies the incoming "id" into Extra (its deletion
+		// whitelist omits "id"), so an unconditional assignment would let a stale
+		// Extra copy shadow the real typed value through the GetChunks bridge.
+		if _, exists := out[k]; exists {
+			continue
+		}
+		out[k] = decodeExtraValue(raw)
+	}
+	out["text"] = d.Text
+	delete(out, "content_with_weight")
+	if len(d.PDFPositions) > 0 {
+		out["_pdf_positions"] = decodeStructuredValue(d.PDFPositions)
+	}
+	if len(d.Positions) > 0 {
+		out["positions"] = decodeStructuredValue(d.Positions)
+	}
+	return out, nil
 }
 
 // ChunkDocFromMap decodes a free-form map into a typed ChunkDoc.
@@ -284,29 +333,7 @@ func chunkDocFromDocItem(it parser.DocItem) (ChunkDoc, error) {
 // ToMap converts a typed chunk back to the generic map form used by
 // runtime.Component boundaries.
 func (d ChunkDoc) ToMap() map[string]any {
-	b, err := json.Marshal(d)
-	if err != nil {
-		return map[string]any{}
-	}
-	var out map[string]any
-	if err := json.Unmarshal(b, &out); err != nil {
-		return map[string]any{}
-	}
-	for k, raw := range d.Extra {
-		out[k] = decodeExtraValue(raw)
-	}
-	// Every pre-index chunk has one canonical text field. Keep the key even
-	// for media-only chunks so chunk identity and image upload use the same
-	// wire contract; contextual text remains explicit retrieval metadata.
-	out["text"] = d.Text
-	delete(out, "content_with_weight")
-	if len(d.PDFPositions) > 0 {
-		out["_pdf_positions"] = decodeStructuredValue(d.PDFPositions)
-	}
-	if len(d.Positions) > 0 {
-		out["positions"] = decodeStructuredValue(d.Positions)
-	}
-	return out
+	return d.wireMap()
 }
 
 // ChunkDocsToMaps converts a typed chunk slice to the generic map form.

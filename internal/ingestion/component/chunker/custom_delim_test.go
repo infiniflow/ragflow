@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"slices"
 	"testing"
 )
@@ -31,7 +32,7 @@ func invokeTokenChunks(t *testing.T, params, input map[string]any) []map[string]
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("Go returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 

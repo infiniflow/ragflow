@@ -150,7 +150,7 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks key missing or wrong shape: %T", out["chunks"])
 	}
@@ -186,7 +186,7 @@ func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing
 	if calls := stub.Calls(); calls != 1 {
 		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
 	}
@@ -265,7 +265,7 @@ func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if s, _ := chunks[0]["summary"].(string); s != "recovered" {
 		t.Errorf("summary = %q, want recovered", s)
 	}
@@ -306,7 +306,7 @@ func TestExtractorComponent_Invoke_EmptyChunksReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks missing or wrong shape")
 	}
@@ -331,7 +331,7 @@ func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks malformed: %v", out["chunks"])
 	}
@@ -536,7 +536,7 @@ func TestExtractorComponent_Invoke_ToggleOffSkipsExtraction(t *testing.T) {
 	if calls := stub.Calls(); calls != 0 {
 		t.Errorf("LLM calls = %d, want 0 for a switched-off keywords group", calls)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if _, exists := chunks[0]["important_kwd"]; exists {
 		t.Errorf("switched-off keywords should not enrich the chunk: %#v", chunks[0])
 	}
@@ -1191,7 +1191,7 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %v", out["chunks"])
 	}
@@ -1601,7 +1601,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1714,7 +1714,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1758,7 +1758,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1813,7 +1813,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1871,7 +1871,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -2016,7 +2016,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 		t.Errorf("expected 0 LLM calls when summary is disabled, got %d", stub.Calls())
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -2166,7 +2166,7 @@ func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
@@ -2201,7 +2201,7 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
 	}
-	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+	if chunks, _ := schema.ChunkCarrierToMaps(out["chunks"]); len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
 }
@@ -2234,7 +2234,7 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
@@ -2318,7 +2318,8 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 	if calls := stub.Calls(); calls != 3 {
 		t.Fatalf("Expected 3 LLM calls, got %d", calls)
 	}
-	ck := out["chunks"].([]map[string]any)[0]
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	ck := chunks[0]
 	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}

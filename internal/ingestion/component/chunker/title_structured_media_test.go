@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -79,7 +80,7 @@ func titleFamilyChunks(t *testing.T, comp runtime.Component, items []map[string]
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 
@@ -204,7 +205,7 @@ func TestTitleFamilyEmptyTextImageUploadsThroughDecorator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1", len(chunks))
 	}
@@ -255,7 +256,7 @@ func TestTitleFamilyCaptionlessImagesGetDistinctIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %d, want 2", len(chunks))
 	}
@@ -288,7 +289,7 @@ func TestTitleFamilyReportsDecodeFailure(t *testing.T) {
 			if msg, _ := out["_ERROR"].(string); !strings.HasPrefix(msg, "Input error:") {
 				t.Fatalf("_ERROR = %v, want an input error", out["_ERROR"])
 			}
-			if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 0 {
+			if chunks, _ := schema.ChunkCarrierToMaps(out["chunks"]); len(chunks) != 0 {
 				t.Fatalf("chunks = %#v, want none", chunks)
 			}
 		})

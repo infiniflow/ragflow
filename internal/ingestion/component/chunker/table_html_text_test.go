@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // generalTableChunksOf drives GeneralChunker.Invoke over structured TableData
@@ -41,7 +42,7 @@ func generalTableChunksOf(t *testing.T, params map[string]any, items ...map[stri
 	if err != nil {
 		t.Fatalf("GeneralChunker.Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("output chunks type = %T, want []map[string]any", out["chunks"])
 	}

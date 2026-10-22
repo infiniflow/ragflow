@@ -86,7 +86,7 @@ func TestTokenChunkerPreservesSpreadsheetSegmentBoundaries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
 	}
@@ -119,7 +119,7 @@ func TestTokenChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want data segment and header-only segment", chunks)
 	}
@@ -148,7 +148,7 @@ func TestTokenChunker_InvokeDelimMode_BasicChunking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -182,7 +182,7 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %d, want 2: %v", len(chunks), chunks)
 	}
@@ -228,7 +228,7 @@ func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 1 {
 		t.Errorf("chunks = %d, want >=1", len(chunks))
 	}
@@ -254,7 +254,7 @@ func TestTokenChunker_InvokeChildrenDelim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -284,7 +284,7 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -340,7 +340,7 @@ func TestTokenChunker_InvokeJSONPayload_IndexesHeaderOnlyEmail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatalf("chunks missing: %#v", out["chunks"])
 	}
@@ -390,7 +390,7 @@ func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks: want []map[string]any, got %T", out["chunks"])
 	}
@@ -650,7 +650,7 @@ func TestTokenChunker_InvokeDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		fp := fingerprint{count: len(chunks)}
 		if len(chunks) > 0 {
 			fp.first, _ = chunks[0]["text"].(string)
@@ -703,7 +703,7 @@ func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want one unsplit table item", len(chunks))
 	}
@@ -776,7 +776,7 @@ func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -970,7 +970,7 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 		c.param.ChunkTokenSize = 128
 		c.param.OverlappedPercent = 0
 		out := c.mergeByTokenSize(text, nil, nil)
-		raw, ok := out["chunks"].([]map[string]any)
+		raw, ok := schema.ChunkCarrierToMaps(out["chunks"])
 		if !ok {
 			t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
 		}
@@ -1015,7 +1015,7 @@ func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	c.param.ChunkTokenSize = 128
 	c.param.OverlappedPercent = 0
 	out := c.mergeByTokenSize("A\n\n\nB", nil, nil)
-	raw, ok := out["chunks"].([]map[string]any)
+	raw, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
 	}
@@ -1044,7 +1044,7 @@ func TestMergeByTokenSize_OversizeDropsDelimiters(t *testing.T) {
 	c.param.OverlappedPercent = 0
 	text := "第一句。第二句。第三句。第四句。第五句。"
 	out := c.mergeByTokenSize(text, nil, nil)
-	raw, ok := out["chunks"].([]map[string]any)
+	raw, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
 	}
@@ -1075,7 +1075,7 @@ func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
 	block := strings.Repeat("知识库检索增强生成技术", 7) // 70 chars
 	text := block + "\n\n" + block
 	out := c.mergeByTokenSize(text, nil, nil)
-	raw, ok := out["chunks"].([]map[string]any)
+	raw, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
 	}
