@@ -3,6 +3,7 @@
 #include <vector>
 #include <cassert>
 #include <cstring>
+#include <string>
 #include "rag_analyzer_c_api.h"
 
 // Test case 1: Single thread, loop 1000 times
@@ -109,12 +110,80 @@ void test_multi_thread() {
     }
 }
 
+// Test case 3: tokens longer than the analyzer's 12 KB lowercase buffer.
+// ToLower() used to memcpy them into that fixed buffer, corrupting the heap.
+// Build with -DENABLE_ASAN=ON for this test to catch an overflow, not just a
+// wrong result.
+void test_long_tokens() {
+    std::cout << "Test 3: tokens longer than the lowercase buffer..." << std::endl;
+
+    RAGAnalyzerHandle base = RAGAnalyzer_Create("./resource");
+    assert(base != nullptr && "Failed to create RAGAnalyzer");
+    int result = RAGAnalyzer_Load(base);
+    assert(result == 0 && "Failed to load RAGAnalyzer");
+    // Pool instances are copies of the loaded base, as in internal/tokenizer.
+    RAGAnalyzerHandle handle = RAGAnalyzer_Copy(base);
+    assert(handle != nullptr && "Failed to copy RAGAnalyzer");
+
+    std::string accented;
+    for (int i = 0; i < 6000; ++i) {
+        accented += "ŠÔ";
+    }
+    const std::string ascii(20000, 'A');
+    // Ends in the lead byte of a 2-byte sequence: StrQ2B read past the end.
+    // Invalid UTF-8 tokenizes to nothing, so only the absence of a crash counts.
+    const std::string truncated = "pôdorys \xC3";
+
+    bool all_passed = true;
+    const struct {
+        const char* language;
+        std::string text;
+        std::string expected; // empty: only the absence of a crash is checked
+    } cases[] = {
+        {"English", ascii, std::string(20000, 'a')},
+        {"English", accented, ""},
+        {"English", truncated, ""},
+    };
+    for (const auto& c : cases) {
+        RAGAnalyzer_SetLanguage(handle, c.language);
+
+        char* tokens = RAGAnalyzer_Tokenize(handle, c.text.c_str());
+        if (tokens == nullptr) {
+            std::cerr << c.language << " Tokenize(" << c.text.size() << " bytes): null result" << std::endl;
+            all_passed = false;
+        } else if (!c.expected.empty() && c.expected != tokens) {
+            std::cerr << c.language << " Tokenize(" << c.text.size() << " bytes): got " << strlen(tokens)
+                      << " bytes, want the whole token lowercased (" << c.expected.size() << " bytes)" << std::endl;
+            all_passed = false;
+        }
+        free(tokens);
+
+        RAGTokenList* list = RAGAnalyzer_TokenizeWithPosition(handle, c.text.c_str());
+        if (list == nullptr) {
+            std::cerr << c.language << " TokenizeWithPosition(" << c.text.size() << " bytes): null result" << std::endl;
+            all_passed = false;
+        }
+        RAGAnalyzer_FreeTokenList(list);
+    }
+
+    RAGAnalyzer_Destroy(handle);
+    RAGAnalyzer_Destroy(base);
+
+    if (all_passed) {
+        std::cout << "Test 3: PASSED" << std::endl;
+    } else {
+        std::cout << "Test 3: FAILED" << std::endl;
+        exit(1);
+    }
+}
+
 int main() {
     std::cout << "Please make sure the './resource' directory exists and is accessible." << std::endl;
     std::cout << "=== RAGAnalyzer C API Test ===" << std::endl;
 
     test_single_thread();
     // test_multi_thread();
+    test_long_tokens();
 
     std::cout << "=== All tests PASSED ===" << std::endl;
     return 0;
