@@ -202,7 +202,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			// A hyperlink switch sitting at the params root is a misplaced
 			// setting: it would never reach a family setup, so fail rather than
 			// silently do nothing (#21032).
-			if slices.Contains(schema.HyperlinkSetupKeys, k) {
+			if slices.Contains(hyperlinkSetupKeys, k) {
 				return nil, fmt.Errorf("parser: %q must be set inside a file-format setup, not at the top level", k)
 			}
 			continue
@@ -266,6 +266,18 @@ func cloneParserSetupValue(value any) any {
 	}
 }
 
+// hyperlinkSetupKeys is the setup-key set the linked-content ingestion owns.
+// Families outside hyperlinkTargetCollectors must not carry any of them, and
+// none may sit at the params root (#21032).
+var hyperlinkSetupKeys = []string{
+	schema.HyperlinkKeyFetchLinks,
+	schema.HyperlinkKeyCollectMarkdownLinks,
+	schema.HyperlinkKeyMaxURLs,
+	schema.HyperlinkKeyMaxBytesPerURL,
+	schema.HyperlinkKeyMaxTotalBytes,
+	schema.HyperlinkKeyTimeoutSeconds,
+}
+
 // Check validates parser methods at construction time so a malformed DSL
 // surfaces as a canvas compile failure rather than a mid-run error.
 //
@@ -319,8 +331,8 @@ func (c *ParserComponent) Check() error {
 	for family, setup := range c.setups {
 		if _, ok := hyperlinkTargetCollectors[family]; ok {
 			if family != "markdown" {
-				if _, exists := setup["collect_markdown_links"]; exists {
-					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, "collect_markdown_links")
+				if _, exists := setup[schema.HyperlinkKeyCollectMarkdownLinks]; exists {
+					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, schema.HyperlinkKeyCollectMarkdownLinks)
 				}
 			}
 			param, err := schema.HyperlinkFetchParamFromSetup(setup)
@@ -330,7 +342,7 @@ func (c *ParserComponent) Check() error {
 			hyperlinkParams[family] = param
 			continue
 		}
-		for _, key := range schema.HyperlinkSetupKeys {
+		for _, key := range hyperlinkSetupKeys {
 			if _, exists := setup[key]; exists {
 				return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, key)
 			}
