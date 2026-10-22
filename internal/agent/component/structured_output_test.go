@@ -1,224 +1,206 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Licensed under the Apache License, Version 2.0.
 
 package component
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 )
 
-// TestMatchOutputStructure_ValidJSON_AllKeysPresent: response has all
-// expected keys → ok.
-func TestMatchOutputStructure_ValidJSON_AllKeysPresent(t *testing.T) {
-	resp := `{"name":"Alice","age":30}`
-	parsed, ok := matchOutputStructure(resp, map[string]any{"name": "", "age": 0})
-	if !ok {
-		t.Fatalf("expected match")
-	}
-	if parsed["name"] != "Alice" {
-		t.Errorf("name=%v, want Alice", parsed["name"])
-	}
-	if parsed["age"].(float64) != 30 {
-		t.Errorf("age=%v, want 30", parsed["age"])
+func llmStructuredSchema() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": map[string]any{"name": map[string]any{"type": "string"}},
+		"required":   []any{"name"}, "additionalProperties": false,
 	}
 }
 
-// TestMatchOutputStructure_ValidJSON_MissingKey: parse OK but a key
-// is missing → not ok.
-func TestMatchOutputStructure_ValidJSON_MissingKey(t *testing.T) {
-	resp := `{"name":"Alice"}`
-	_, ok := matchOutputStructure(resp, map[string]any{"name": "", "age": 0})
-	if ok {
-		t.Fatalf("expected mismatch (age key missing)")
-	}
-}
-
-// TestMatchOutputStructure_NotJSON: invalid JSON → not ok.
-func TestMatchOutputStructure_NotJSON(t *testing.T) {
-	resp := "this is not json"
-	_, ok := matchOutputStructure(resp, map[string]any{"x": 0})
-	if ok {
-		t.Fatalf("expected mismatch (not valid JSON)")
-	}
-}
-
-// TestMatchOutputStructure_EmptyExpected: no expected keys → any
-// JSON object passes (vacuous truth).
-func TestMatchOutputStructure_EmptyExpected(t *testing.T) {
-	resp := `{"anything":1}`
-	_, ok := matchOutputStructure(resp, map[string]any{})
-	if !ok {
-		t.Fatalf("expected match with empty expected set")
-	}
-}
-
-// TestBuildStructuredRetryMessages_AppendsRetryTurn: the returned
-// message list's last message is the retry user turn, and the system
-// message still reflects the citation prompt (when cite=true).
-func TestBuildStructuredRetryMessages_AppendsRetryTurn(t *testing.T) {
-	msgs := buildStructuredRetryMessages("sys", "user", nil, true,
-		map[string]any{"name": "", "age": 0},
-		"first response was not JSON")
-	if len(msgs) < 1 {
-		t.Fatalf("expected at least 1 message, got %d", len(msgs))
-	}
-	last := msgs[len(msgs)-1]
-	if last.Role != "user" {
-		t.Fatalf("expected last role=user, got %v", last.Role)
-	}
-	if !strings.Contains(last.Content, "name") || !strings.Contains(last.Content, "age") {
-		t.Errorf("retry prompt missing expected keys; got: %s", last.Content)
-	}
-	if !strings.Contains(last.Content, "first response was not JSON") {
-		t.Errorf("retry prompt should reference the previous response; got: %s", last.Content[:200])
-	}
-	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "[ID:") {
-		t.Errorf("system message lost; got role=%v content[:80]=%q", msgs[0].Role, msgs[0].Content[:80])
-	}
-}
-
-// TestLLM_Invoke_OutputStructure_ValidFirstTry: stub returns valid
-// JSON on the first call → no retry; outputs["structured"] populated.
-func TestLLM_Invoke_OutputStructure_ValidFirstTry(t *testing.T) {
-	stub := &stubInvoker{resp: &ChatInvokeResponse{
-		Content: `{"name":"Alice","age":30}`,
-		Model:   "echo",
-	}}
-	withStubInvoker(t, stub)
-	ctx := t.Context()
-
-	c := NewLLMComponent(LLMParam{
-		ModelID:         "echo",
-		OutputStructure: map[string]any{"name": "", "age": 0},
-	})
-	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "who?"})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if stub.calls != 1 {
-		t.Errorf("expected 1 call (no retry), got %d", stub.calls)
-	}
-	structured, ok := out["structured"].(map[string]any)
-	if !ok {
-		t.Fatalf("structured not populated; out=%+v", out)
-	}
-	if structured["name"] != "Alice" {
-		t.Errorf("name=%v, want Alice", structured["name"])
-	}
-}
-
-// TestLLM_Invoke_OutputStructure_RetryOnInvalid: stub returns
-// non-JSON first, then valid JSON → retry happens; outputs["structured"]
-// populated from second call.
-func TestLLM_Invoke_OutputStructure_RetryOnInvalid(t *testing.T) {
-	calls := 0
-	inv := &callCountingInvoker{
-		responses: []*ChatInvokeResponse{
-			{Content: "not json at all", Model: "echo"},
-			{Content: `{"name":"Bob"}`, Model: "echo"},
-		},
-		onCall: func() { calls++ },
-	}
-	withStubInvoker(t, inv)
-	ctx := t.Context()
-
-	c := NewLLMComponent(LLMParam{
-		ModelID:         "echo",
-		OutputStructure: map[string]any{"name": ""},
-	})
-	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "who?"})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if calls != 2 {
-		t.Errorf("expected 2 calls (first + retry), got %d", calls)
-	}
-	structured, ok := out["structured"].(map[string]any)
-	if !ok {
-		t.Fatalf("structured not populated after retry; out=%+v", out)
-	}
-	if structured["name"] != "Bob" {
-		t.Errorf("name=%v, want Bob", structured["name"])
-	}
-	if out["content"] != `{"name":"Bob"}` {
-		t.Errorf("content not updated to validated response; got %q", out["content"])
-	}
-}
-
-// TestLLM_Invoke_OutputStructure_RetryStillFails: stub returns
-// non-JSON both times → no structured output, content kept as first
-// response (caller can still see it), no error.
-func TestLLM_Invoke_OutputStructure_RetryStillFails(t *testing.T) {
-	calls := 0
-	inv := &callCountingInvoker{
-		responses: []*ChatInvokeResponse{
-			{Content: "not json", Model: "echo"},
-			{Content: "still not json", Model: "echo"},
-		},
-		onCall: func() { calls++ },
-	}
-	withStubInvoker(t, inv)
-	ctx := t.Context()
-
-	c := NewLLMComponent(LLMParam{
-		ModelID:         "echo",
-		OutputStructure: map[string]any{"x": 0},
-	})
-	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "go"})
-	if err != nil {
-		t.Fatalf("Invoke should not error on parse failure: %v", err)
-	}
-	if calls != 2 {
-		t.Errorf("expected 2 calls (first + 1 retry), got %d", calls)
-	}
-	if _, hasStructured := out["structured"]; hasStructured {
-		t.Errorf("structured should be absent after failed retry; out=%+v", out)
-	}
-	// content stays as the original (failed) first response
-	if out["content"] != "not json" {
-		t.Errorf("content should remain the first response; got %q", out["content"])
-	}
-}
-
-// callCountingInvoker is a test-only ChatInvoker that returns
-// pre-programmed responses in sequence and counts invocations.
-type callCountingInvoker struct {
-	responses []*ChatInvokeResponse
+type structuredLLMInvoker struct {
+	responses []string
+	requests  []ChatInvokeRequest
+	err       error
 	onCall    func()
-	calls     int
 }
 
-func (c *callCountingInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
-	if c.onCall != nil {
-		c.onCall()
+func (s *structuredLLMInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	s.requests = append(s.requests, req)
+	if s.onCall != nil {
+		s.onCall()
 	}
-	c.calls++
-	if c.calls-1 < len(c.responses) {
-		return c.responses[c.calls-1], nil
+	if s.err != nil {
+		return nil, s.err
 	}
-	return &ChatInvokeResponse{Content: "exhausted"}, nil
+	i := len(s.requests) - 1
+	if i >= len(s.responses) {
+		return nil, errors.New("unexpected model call")
+	}
+	return &ChatInvokeResponse{Content: s.responses[i], Model: "echo", Tokens: i + 1, Stopped: true}, nil
 }
 
-func (c *callCountingInvoker) Stream(_ context.Context, _ ChatInvokeRequest) (<-chan map[string]any, error) {
-	return nil, nil
+func TestLLMStructuredOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		responses []string
+		retries   int
+		want      string
+		wantError bool
+	}{
+		{"valid", []string{`{"name":"Alice"}`}, 0, `{"name":"Alice"}`, false},
+		{"markers inside JSON", []string{"{\"name\":\"</think>```json\"}"}, 0, "{\"name\":\"</think>```json\"}", false},
+		{"fenced", []string{"<think>private</think>```json\n{\"name\":\"Alice\"}\n```"}, 0, `{"name":"Alice"}`, false},
+		{"wrong type repaired", []string{`{"name":123}`, `{"name":"Bob"}`}, 1, `{"name":"Bob"}`, false},
+		{"missing required", []string{`{}`}, 0, "", true},
+		{"extra field", []string{`{"name":"Alice","secret":true}`}, 0, "", true},
+		{"budget exhausted", []string{"not JSON", `{"name":12}`}, 1, "", true},
+		{"two repairs", []string{"not JSON", `{}`, `{"name":"Bob"}`}, 2, `{"name":"Bob"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := &structuredLLMInvoker{responses: tc.responses}
+			withStubInvoker(t, inv)
+			c := NewLLMComponent(LLMParam{ModelID: "echo", SystemPrompt: "keep instruction", UserPrompt: "who?", OutputStructure: llmStructuredSchema(), MaxRetries: tc.retries})
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if tc.wantError {
+				if err == nil || out != nil {
+					t.Fatalf("invalid output published: out=%v err=%v", out, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.TrimSpace(out["content"].(string)) != tc.want {
+					t.Fatalf("content=%v", out["content"])
+				}
+				if _, ok := out["structured"].(map[string]any); !ok {
+					t.Fatalf("structured=%v", out["structured"])
+				}
+				if out["tokens"] != len(tc.responses) {
+					t.Fatalf("stale response metadata: %v", out)
+				}
+			}
+			if len(inv.requests) != len(tc.responses) {
+				t.Fatalf("calls=%d want=%d", len(inv.requests), len(tc.responses))
+			}
+			for _, req := range inv.requests {
+				if len(req.Tools) != 0 {
+					t.Fatal("format correction bound tools")
+				}
+				if len(req.Messages) == 0 || !strings.Contains(req.Messages[0].Content, "keep instruction") || !strings.Contains(req.Messages[0].Content, "additionalProperties") {
+					t.Fatalf("prompt lost: %+v", req.Messages)
+				}
+			}
+			if len(inv.requests) > 1 {
+				msgs := inv.requests[1].Messages
+				if msgs[len(msgs)-2].Role != schema.Assistant || msgs[len(msgs)-2].Content != tc.responses[0] {
+					t.Fatalf("failed response absent: %+v", msgs)
+				}
+			}
+		})
+	}
 }
 
-func (c *callCountingInvoker) Inputs() map[string]string  { return nil }
-func (c *callCountingInvoker) Outputs() map[string]string { return nil }
+func TestLLMStructuredOutputConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		config  any
+		enabled bool
+		fail    bool
+	}{
+		{"schema", llmStructuredSchema(), true, false},
+		{"empty", map[string]any{}, false, false},
+		{"runtime only", map[string]any{"value": map[string]any{"old": true}}, false, false},
+		{"array root", map[string]any{"type": "array"}, false, true},
+		{"boolean schema", false, false, true},
+		{"invalid schema", map[string]any{"properties": map[string]any{"name": map[string]any{"type": "wrong"}}}, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := &structuredLLMInvoker{responses: []string{`{"name":"Alice"}`}}
+			withStubInvoker(t, inv)
+			c, err := New("LLM", map[string]any{"llm_id": "echo", "user_prompt": "who?", "outputs": map[string]any{"structured": tc.config}, "max_retries": 0})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if tc.fail {
+				if err == nil || len(inv.requests) != 0 || out != nil {
+					t.Fatalf("invalid schema executed: %v %v calls=%d", out, err, len(inv.requests))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, ok := out["structured"]
+			if ok != tc.enabled {
+				t.Fatalf("structured enabled=%v want=%v", ok, tc.enabled)
+			}
+		})
+	}
+}
+
+func TestLLMStructuredOutputCancellationAndProviderErrors(t *testing.T) {
+	providerErr := errors.New("provider unavailable")
+	for _, kind := range []string{"before", "after", "provider"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			inv := &structuredLLMInvoker{responses: []string{`{"name":"Alice"}`}}
+			if kind == "before" {
+				cancel()
+			}
+			if kind == "after" {
+				inv.onCall = cancel
+			}
+			if kind == "provider" {
+				inv.err = providerErr
+			}
+			withStubInvoker(t, inv)
+			c := NewLLMComponent(LLMParam{ModelID: "echo", UserPrompt: "who?", OutputStructure: llmStructuredSchema()})
+			out, err := c.Invoke(ctx, nil, nil)
+			wantErr := context.Canceled
+			if kind == "provider" {
+				wantErr = providerErr
+			}
+			if !errors.Is(err, wantErr) || out != nil {
+				t.Fatalf("out=%v err=%v", out, err)
+			}
+			wantCalls := 1
+			if kind == "before" {
+				wantCalls = 0
+			}
+			if len(inv.requests) != wantCalls {
+				t.Fatalf("calls=%d", len(inv.requests))
+			}
+		})
+	}
+}
+
+func TestLLMStructuredOutputStreamDoesNotPublishInvalidContent(t *testing.T) {
+	inv := &structuredLLMInvoker{responses: []string{`{"name":123}`}}
+	withStubInvoker(t, inv)
+	c := NewLLMComponent(LLMParam{ModelID: "echo", UserPrompt: "who?", OutputStructure: llmStructuredSchema()})
+	ch, err := c.Stream(t.Context(), nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenError := false
+	for chunk := range ch {
+		if _, ok := chunk["content"]; ok {
+			t.Fatalf("invalid content emitted: %v", chunk)
+		}
+		if _, ok := chunk["done"]; ok {
+			t.Fatalf("failed stream completed: %v", chunk)
+		}
+		if _, ok := chunk["error"]; ok {
+			seenError = true
+		}
+	}
+	if !seenError {
+		t.Fatal("missing stream failure")
+	}
+}
