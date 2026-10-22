@@ -16,6 +16,71 @@
 
 package schema
 
+import (
+	"fmt"
+
+	"ragflow/internal/common"
+)
+
+// Hyperlink fetch bounds for the opt-in linked-content ingestion (#21032).
+// Budgets are shared by the pdf, docx and markdown families; each family
+// carries its own copy under its setup so one model serves all types
+// without repeating the numbers in code.
+const (
+	HyperlinkDefaultMaxURLs        = 5
+	HyperlinkDefaultMaxBytesPerURL = 1 << 20
+	HyperlinkDefaultMaxTotalBytes  = 5 << 20
+	HyperlinkDefaultTimeoutSeconds = 10
+
+	HyperlinkMaxURLsLimit        = 50
+	HyperlinkMaxBytesPerURLLimit = 64 << 20
+	HyperlinkMaxTotalBytesLimit  = 256 << 20
+	HyperlinkTimeoutSecondsLimit = 120
+)
+
+// HyperlinkFetchParam is the per-family linked-content switch (#21032).
+// FetchLinks gates fetching; CollectMarkdownLinks (markdown only) gates
+// collecting section links, mirroring Python's analyze_hyperlink /
+// hyperlink_urls split. Budgets bound a single document's fetch.
+type HyperlinkFetchParam struct {
+	FetchLinks           bool `json:"fetch_links"`
+	CollectMarkdownLinks bool `json:"collect_markdown_links,omitempty"`
+	MaxURLs              int  `json:"max_urls"`
+	MaxBytesPerURL       int  `json:"max_bytes_per_url"`
+	MaxTotalBytes        int  `json:"max_total_bytes"`
+	TimeoutSeconds       int  `json:"timeout_s"`
+}
+
+// Defaults returns the disabled-by-default hyperlink param.
+func (HyperlinkFetchParam) Defaults() HyperlinkFetchParam {
+	return HyperlinkFetchParam{
+		FetchLinks:           false,
+		CollectMarkdownLinks: false,
+		MaxURLs:              HyperlinkDefaultMaxURLs,
+		MaxBytesPerURL:       HyperlinkDefaultMaxBytesPerURL,
+		MaxTotalBytes:        HyperlinkDefaultMaxTotalBytes,
+		TimeoutSeconds:       HyperlinkDefaultTimeoutSeconds,
+	}
+}
+
+// Validate enforces ranges; a disabled param still validates its budgets
+// so a later enable cannot silently pick up nonsense.
+func (p *HyperlinkFetchParam) Validate() error {
+	if p.MaxURLs < 1 || p.MaxURLs > HyperlinkMaxURLsLimit {
+		return errInvalidValue{Field: "max_urls", Value: fmt.Sprintf("%d", p.MaxURLs)}
+	}
+	if p.MaxBytesPerURL < 1 || p.MaxBytesPerURL > HyperlinkMaxBytesPerURLLimit {
+		return errInvalidValue{Field: "max_bytes_per_url", Value: fmt.Sprintf("%d", p.MaxBytesPerURL)}
+	}
+	if p.MaxTotalBytes < 1 || p.MaxTotalBytes > HyperlinkMaxTotalBytesLimit {
+		return errInvalidValue{Field: "max_total_bytes", Value: fmt.Sprintf("%d", p.MaxTotalBytes)}
+	}
+	if p.TimeoutSeconds < 1 || p.TimeoutSeconds > HyperlinkTimeoutSecondsLimit {
+		return errInvalidValue{Field: "timeout_s", Value: fmt.Sprintf("%d", p.TimeoutSeconds)}
+	}
+	return nil
+}
+
 // ParserSetup is a per-filetype parser configuration block. The keys are heterogeneous (e.g.,
 // `parse_method`, `lang`, `output_format`, `suffix`, `fields`, `vlm`),
 // so a free-form map best mirrors the Python dict literal.
@@ -66,6 +131,51 @@ func mergeSetupEntry(nested, top any) any {
 		merged[k] = v
 	}
 	return merged
+}
+
+// HyperlinkFetchParamFromSetup reads the per-family hyperlink param,
+// starting from Defaults and overlaying the setup's keys. Unknown types
+// are errors so a misconfigured canvas fails at build time.
+func HyperlinkFetchParamFromSetup(setup ParserSetup) (HyperlinkFetchParam, error) {
+	p := HyperlinkFetchParam{}.Defaults()
+	if raw, exists := setup["fetch_links"]; exists {
+		v, ok := raw.(bool)
+		if !ok {
+			return p, errInvalidValue{Field: "fetch_links", Value: fmt.Sprintf("%v", raw)}
+		}
+		p.FetchLinks = v
+	}
+	if raw, exists := setup["collect_markdown_links"]; exists {
+		v, ok := raw.(bool)
+		if !ok {
+			return p, errInvalidValue{Field: "collect_markdown_links", Value: fmt.Sprintf("%v", raw)}
+		}
+		p.CollectMarkdownLinks = v
+	}
+	for _, key := range []string{"max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
+		raw, exists := setup[key]
+		if !exists {
+			continue
+		}
+		v, ok := common.ToInt(raw)
+		if !ok {
+			return p, errInvalidValue{Field: key, Value: fmt.Sprintf("%v", raw)}
+		}
+		switch key {
+		case "max_urls":
+			p.MaxURLs = v
+		case "max_bytes_per_url":
+			p.MaxBytesPerURL = v
+		case "max_total_bytes":
+			p.MaxTotalBytes = v
+		case "timeout_s":
+			p.TimeoutSeconds = v
+		}
+	}
+	if err := p.Validate(); err != nil {
+		return p, err
+	}
+	return p, nil
 }
 
 // ParserOutputs is the result of invoking the Parser component. The

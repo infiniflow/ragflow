@@ -216,7 +216,10 @@ var ingestionRetiredFlatKeys = []string{
 	// Splits one parse into several ingestion jobs; it is not a page range and
 	// not a chunk size.
 	"task_page_size",
-	// Follows hyperlinks and indexes the linked content; unimplemented in Go.
+	// Follows hyperlinks and indexes the linked content; configured per
+	// family under the Parser setups (pdf/docx fetch_links, markdown
+	// fetch_links + collect_markdown_links, #21032) instead of these
+	// flat keys, which are retired.
 	"analyze_hyperlink",
 	"hyperlink_urls",
 	// Video parsing is rejected at dispatch

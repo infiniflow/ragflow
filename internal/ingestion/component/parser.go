@@ -141,8 +141,14 @@ type visionSettings struct {
 //	  "vlm":                  {"llm_id": string, "system_prompt": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
+//	  "markdown":             map[string]any,
 //	  ...
 //	}
+//
+// The pdf, docx and markdown families accept the opt-in hyperlink
+// switches fetch_links (+ collect_markdown_links on markdown) with
+// max_urls/max_bytes_per_url/max_total_bytes/timeout_s budgets (#21032).
+// Any of those keys elsewhere is rejected by Check.
 //
 // Errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
@@ -293,6 +299,26 @@ func (c *ParserComponent) Check() error {
 			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
 		}
 	}
+	// Hyperlink switches live under the pdf/docx/markdown families only;
+	// the same keys anywhere else are rejected so a misplaced setting
+	// cannot silently do nothing (#20139 class).
+	for _, family := range []string{"pdf", "docx", "markdown"} {
+		if setup, ok := c.setups[family]; ok {
+			if _, err := schema.HyperlinkFetchParamFromSetup(setup); err != nil {
+				return fmt.Errorf("parser: %s %w", family, err)
+			}
+		}
+	}
+	for family, setup := range c.setups {
+		if family == "pdf" || family == "docx" || family == "markdown" {
+			continue
+		}
+		for _, key := range []string{"fetch_links", "collect_markdown_links", "max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
+			if _, exists := setup[key]; exists {
+				return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, key)
+			}
+		}
+	}
 	return nil
 }
 
@@ -320,6 +346,11 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
+			"fetch_links":           false,
+			"max_urls":              schema.HyperlinkDefaultMaxURLs,
+			"max_bytes_per_url":     schema.HyperlinkDefaultMaxBytesPerURL,
+			"max_total_bytes":       schema.HyperlinkDefaultMaxTotalBytes,
+			"timeout_s":             schema.HyperlinkDefaultTimeoutSeconds,
 			"suffix":                []string{"pdf"},
 		},
 		"spreadsheet": {
@@ -337,12 +368,23 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
+			"fetch_links":           false,
+			"max_urls":              schema.HyperlinkDefaultMaxURLs,
+			"max_bytes_per_url":     schema.HyperlinkDefaultMaxBytesPerURL,
+			"max_total_bytes":       schema.HyperlinkDefaultMaxTotalBytes,
+			"timeout_s":             schema.HyperlinkDefaultTimeoutSeconds,
 			"suffix":                []string{"docx"},
 		},
 		"markdown": {
-			"flatten_media_to_text": false,
-			"suffix":                []string{"md", "markdown", "mdx"},
-			"remove_toc":            false,
+			"flatten_media_to_text":  false,
+			"suffix":                 []string{"md", "markdown", "mdx"},
+			"remove_toc":             false,
+			"fetch_links":            false,
+			"collect_markdown_links": false,
+			"max_urls":               schema.HyperlinkDefaultMaxURLs,
+			"max_bytes_per_url":      schema.HyperlinkDefaultMaxBytesPerURL,
+			"max_total_bytes":        schema.HyperlinkDefaultMaxTotalBytes,
+			"timeout_s":              schema.HyperlinkDefaultTimeoutSeconds,
 		},
 		"text&code": {
 			"suffix": []string{
@@ -577,6 +619,14 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	lang, _ := getString(inputs, "lang")
 	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
+	// Opt-in linked-content ingestion (#21032): the parent result is final;
+	// fetched pages are parsed as plain HTML and appended after the parent
+	// items. Failures are warnings only, never run errors.
+	if items, ok := out["json"].([]parser.DocItem); ok {
+		fetched, linkWarnings := maybeFetchHyperlinkContents(ctx, fileTypeExt, filename, binary, items, c.setups, lang, docID)
+		out["json"] = fetched
+		reportParserWarnings(ctx, linkWarnings)
+	}
 	out["file_type"] = string(fileTypeExt)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
