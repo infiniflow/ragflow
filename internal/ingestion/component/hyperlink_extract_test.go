@@ -166,3 +166,41 @@ func TestExtractLinksFromPDFSkipsOversizedURI(t *testing.T) {
 		t.Fatalf("got %d links, want only the normal one", len(got))
 	}
 }
+
+// An unterminated literal must not consume the rest of the file: the scan
+// window is bounded, so a later valid /URI marker is still found. Before the
+// bound existed, the first reader ran to the file's end and swallowed the
+// valid marker's closing paren.
+func TestExtractLinksFromPDFBoundsUnterminatedLiteral(t *testing.T) {
+	pdf := []byte("/URI (" +
+		strings.Repeat("a", hyperlinkMaxPDFScanBytes+10) +
+		" /URI (https://example.com/ok)")
+	got := extractLinksFromPDF(pdf)
+	if !reflect.DeepEqual(got, []string{"https://example.com/ok"}) {
+		t.Fatalf("got %v, want only the URI after the unterminated literal", got)
+	}
+}
+
+// Same bound for the hex form: an unterminated <...> must not search the rest
+// of the file and swallow a later valid marker.
+func TestExtractLinksFromPDFBoundsUnterminatedHex(t *testing.T) {
+	pdf := []byte("/URI <" +
+		strings.Repeat("41", hyperlinkMaxPDFScanBytes) +
+		" /URI <68747470733a2f2f6578616d706c652e636f6d2f6f6b>")
+	got := extractLinksFromPDF(pdf)
+	if !reflect.DeepEqual(got, []string{"https://example.com/ok"}) {
+		t.Fatalf("got %v, want only the URI after the unterminated hex string", got)
+	}
+}
+
+// Repeated malformed markers keep the scan bounded and still reach the valid
+// marker that follows them.
+func TestExtractLinksFromPDFRepeatedUnterminatedMarkers(t *testing.T) {
+	pdf := []byte(strings.Repeat("/URI (", 200) +
+		strings.Repeat("a", hyperlinkMaxPDFScanBytes+10) +
+		" /URI (https://example.com/ok)")
+	got := extractLinksFromPDF(pdf)
+	if !reflect.DeepEqual(got, []string{"https://example.com/ok"}) {
+		t.Fatalf("got %v, want the trailing URI", got)
+	}
+}

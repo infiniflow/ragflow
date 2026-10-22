@@ -42,6 +42,10 @@ const (
 	// hyperlinkMaxURIBytes caps a single extracted URI; PDF string readers
 	// otherwise allocate proportional to the remaining file size.
 	hyperlinkMaxURIBytes = 8 << 10
+	// hyperlinkMaxPDFScanBytes caps the raw bytes examined for one PDF URI
+	// string. Without it, a crafted PDF full of unterminated /URI markers
+	// makes every marker rescan the rest of the file (quadratic CPU).
+	hyperlinkMaxPDFScanBytes = hyperlinkMaxURIBytes * 2
 )
 
 var (
@@ -148,18 +152,22 @@ func skipPDFWhitespace(b []byte) []byte {
 
 // readPDFLiteralString parses a (...) PDF string starting at b[0].
 // It resolves the escape sequences relevant to URIs (\\, \), \(, \r, \n).
-// Strings longer than hyperlinkMaxURIBytes are rejected without allocating;
-// scanning still advances to the closing paren so the caller keeps making
-// progress through the file.
+// Strings longer than hyperlinkMaxURIBytes are rejected without allocating
+// past the cap. The raw scan is bounded by hyperlinkMaxPDFScanBytes so a
+// malformed file cannot force repeated scans to EOF.
 func readPDFLiteralString(b []byte) (string, []byte, bool) {
 	var sb strings.Builder
 	depth := 0
 	truncated := false
-	for i := 1; i < len(b); i++ {
+	limit := len(b)
+	if limit > hyperlinkMaxPDFScanBytes {
+		limit = hyperlinkMaxPDFScanBytes
+	}
+	for i := 1; i < limit; i++ {
 		c := b[i]
 		switch c {
 		case '\\':
-			if i+1 >= len(b) {
+			if i+1 >= limit {
 				return "", b, false
 			}
 			i++
@@ -174,12 +182,14 @@ func readPDFLiteralString(b []byte) (string, []byte, bool) {
 					sb.WriteByte('\t')
 				case '\n':
 				case '\r':
-					if i+1 < len(b) && b[i+1] == '\n' {
+					if i+1 < limit && b[i+1] == '\n' {
 						i++
 					}
 				default:
 					sb.WriteByte(e)
 				}
+			} else {
+				truncated = true
 			}
 		case '(':
 			depth++
@@ -190,7 +200,7 @@ func readPDFLiteralString(b []byte) (string, []byte, bool) {
 			}
 		case ')':
 			if depth == 0 {
-				if truncated || sb.Len() > hyperlinkMaxURIBytes {
+				if truncated {
 					return "", b[i+1:], false
 				}
 				return sb.String(), b[i+1:], true
@@ -212,15 +222,17 @@ func readPDFLiteralString(b []byte) (string, []byte, bool) {
 	return "", b, false
 }
 
-// readPDFHexString parses a <hex> PDF string starting at b[0]. A hex string
-// longer than the URI cap is rejected without building the decoded buffer.
+// readPDFHexString parses a <hex> PDF string starting at b[0]. The search
+// window is bounded by hyperlinkMaxPDFScanBytes so an unterminated marker
+// cannot rescan the whole file.
 func readPDFHexString(b []byte) (string, []byte, bool) {
-	end := bytes.IndexByte(b, '>')
+	window := b
+	if len(window) > hyperlinkMaxPDFScanBytes+1 {
+		window = window[:hyperlinkMaxPDFScanBytes+1]
+	}
+	end := bytes.IndexByte(window, '>')
 	if end < 0 {
 		return "", b, false
-	}
-	if end-1 > hyperlinkMaxURIBytes*2 {
-		return "", b[end+1:], false
 	}
 	clean := make([]byte, 0, end)
 	for _, c := range b[1:end] {

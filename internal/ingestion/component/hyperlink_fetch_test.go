@@ -18,9 +18,11 @@ package component
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -325,10 +327,11 @@ func TestHyperlinkOverallDeadline(t *testing.T) {
 
 func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
 	allowTestHosts(t)
+	started := make(chan struct{})
+	var signalOnce sync.Once
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(300 * time.Millisecond)
-		w.Header().Set("Content-Type", "text/html")
-		_, _ = w.Write([]byte("<html><body><p>late</p></body></html>"))
+		signalOnce.Do(func() { close(started) })
+		<-r.Context().Done()
 	}))
 	defer slow.Close()
 
@@ -345,17 +348,31 @@ func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
 	go func() {
-		time.Sleep(50 * time.Millisecond)
-		cancel()
+		_, err := comp.Invoke(ctx, nil, map[string]any{
+			"binary":    []byte("[p](" + slow.URL + ")"),
+			"name":      "doc.md",
+			"file_type": "md",
+			"doc_id":    "doc1",
+		})
+		errCh <- err
 	}()
-	out, err := comp.Invoke(ctx, nil, map[string]any{
-		"binary":    []byte("[p](" + slow.URL + ")"),
-		"name":      "doc.md",
-		"file_type": "md",
-		"doc_id":    "doc1",
-	})
-	if err == nil {
-		t.Fatalf("want cancellation error from Invoke, out=%v ctxErr=%v setup=%v", out, ctx.Err(), comp.(*ParserComponent).setups["markdown"])
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("linked-page fetch never started")
+	}
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Invoke did not return after cancellation")
 	}
 }
