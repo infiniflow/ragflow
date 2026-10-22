@@ -20,13 +20,14 @@ import {
   withPromptConfigDefaults,
 } from '../prompt-config-defaults';
 
-// Mirrors the required keys of `promptConfigSchema` in use-chat-setting-schema,
-// minus `system` — the schema demands a non-empty value there and inventing a
-// prompt is worse than letting validation point at the empty field.
+const SYSTEM_PROMPT = 'You are an intelligent assistant.';
+
+// Mirrors the required keys of `promptConfigSchema` in use-chat-setting-schema.
 const BACKFILLED_PROMPT_CONFIG_KEYS = [
   'quote',
   'keyword',
   'tts',
+  'system',
   'refine_multiturn',
 ] as const;
 
@@ -38,7 +39,7 @@ describe('withPromptConfigDefaults', () => {
       quote: true,
     };
 
-    const merged = withPromptConfigDefaults(apiCreated);
+    const merged = withPromptConfigDefaults(apiCreated, SYSTEM_PROMPT);
 
     for (const key of BACKFILLED_PROMPT_CONFIG_KEYS) {
       expect(merged).toHaveProperty(key);
@@ -58,21 +59,35 @@ describe('withPromptConfigDefaults', () => {
       parameters: [{ key: 'knowledge', optional: true }],
     };
 
-    const merged = withPromptConfigDefaults(existing);
+    const merged = withPromptConfigDefaults(existing, SYSTEM_PROMPT);
 
     // Every persisted value wins over the default of the same key.
     expect(merged).toMatchObject(existing);
   });
 
-  it('leaves `system` alone so an empty prompt still fails validation', () => {
-    expect(withPromptConfigDefaults({})).not.toHaveProperty('system');
-    expect(withPromptConfigDefaults({ system: '' }).system).toBe('');
+  it('backfills a missing system prompt so the form can validate', () => {
+    // `system` is `z.string().min(1)`, so leaving it undefined fails validation
+    // just as an empty string does.
+    expect(withPromptConfigDefaults({}, SYSTEM_PROMPT).system).toBe(
+      SYSTEM_PROMPT,
+    );
+    expect(
+      withPromptConfigDefaults({ system: undefined }, SYSTEM_PROMPT).system,
+    ).toBe(SYSTEM_PROMPT);
+  });
+
+  it('keeps a persisted system prompt that is present but empty', () => {
+    // The spread is a backfill, not a repair: an explicitly empty prompt is the
+    // user's own state, and validation should point at it.
+    expect(withPromptConfigDefaults({ system: '' }, SYSTEM_PROMPT).system).toBe(
+      '',
+    );
   });
 
   it('handles a missing or null prompt_config', () => {
     for (const input of [undefined, null]) {
-      const merged = withPromptConfigDefaults(input as any);
-      expect(merged).toEqual(promptConfigDefaults);
+      const merged = withPromptConfigDefaults(input, SYSTEM_PROMPT);
+      expect(merged).toEqual(promptConfigDefaults(SYSTEM_PROMPT));
       for (const key of BACKFILLED_PROMPT_CONFIG_KEYS) {
         expect(merged).toHaveProperty(key);
       }
@@ -80,11 +95,11 @@ describe('withPromptConfigDefaults', () => {
   });
 
   it('returns a new object rather than sharing the defaults', () => {
-    const merged = withPromptConfigDefaults();
+    const merged = withPromptConfigDefaults({}, SYSTEM_PROMPT);
 
     merged.keyword = true;
 
-    expect(promptConfigDefaults.keyword).toBe(false);
+    expect(promptConfigDefaults(SYSTEM_PROMPT).keyword).toBe(false);
   });
 });
 

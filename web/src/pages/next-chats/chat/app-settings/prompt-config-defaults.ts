@@ -19,31 +19,47 @@ import { PromptConfig } from '@/interfaces/database/chat';
 /**
  * Chat assistants created through the REST API / SDK may carry a
  * `prompt_config` that omits keys `useChatSettingSchema` marks as required
- * (`keyword`, `tts`, `refine_multiturn`, ...). Such a chat can never pass
- * form validation, so the settings panel's Save button silently does nothing —
- * the user has no way to change the model, prompt or retrieval settings.
+ * (`keyword`, `tts`, `system`, `refine_multiturn`, ...). Such a chat can never
+ * pass form validation, so the settings panel's Save button silently does
+ * nothing — the user has no way to change the model, prompt or retrieval
+ * settings.
  *
  * These defaults backfill only the missing keys, leaving every value the chat
  * already has untouched, so an API-created chat becomes editable.
  *
- * `system` is deliberately left out: the schema requires a non-empty value,
- * and inventing a prompt would be worse than letting validation point at the
- * empty field.
+ * `system` is required by the schema and must be non-empty, so it cannot simply
+ * be skipped. It falls back to the same prompt the UI puts on a newly created
+ * assistant, which keeps the save valid without inventing a prompt of our own;
+ * a chat that already has one never sees this value.
  */
-export const promptConfigDefaults: Partial<PromptConfig> = {
-  quote: true,
-  keyword: false,
-  tts: false,
-  refine_multiturn: true,
-  parameters: [],
-  reasoning: false,
-  cross_languages: [],
-};
+export function promptConfigDefaults(
+  systemPrompt: string,
+): Partial<PromptConfig> {
+  return {
+    quote: true,
+    keyword: false,
+    tts: false,
+    system: systemPrompt,
+    refine_multiturn: true,
+    parameters: [],
+    reasoning: false,
+    cross_languages: [],
+  };
+}
 
 export function withPromptConfigDefaults(
-  promptConfig?: Partial<PromptConfig> | null,
+  promptConfig: Partial<PromptConfig> | null | undefined,
+  systemPrompt: string,
 ): Partial<PromptConfig> {
-  return { ...promptConfigDefaults, ...(promptConfig ?? {}) };
+  const merged: Partial<PromptConfig> = { ...promptConfigDefaults(systemPrompt) };
+  for (const [key, value] of Object.entries(promptConfig ?? {})) {
+    // A key that is present but `undefined` must not clobber its default:
+    // spreading it verbatim is exactly how the backfill would silently fail.
+    if (value !== undefined) {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
 }
 
 /**
@@ -62,4 +78,3 @@ export function mergePromptConfigForSubmit(
 ): Partial<PromptConfig> {
   return { ...(persisted ?? {}), ...(submitted ?? {}) };
 }
-

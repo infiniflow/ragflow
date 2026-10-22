@@ -23,7 +23,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -75,6 +75,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
   type FormSchemaType = z.infer<typeof formSchema>;
 
+  // The same prompt the create dialog seeds, so an assistant that arrives
+  // without one is still valid to save. Memoised on `t`, which the callback
+  // already depends on.
+  const defaultPromptConfig = useMemo(
+    () => promptConfigDefaults(t('chat.systemInitialValue')),
+    [t],
+  );
+
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     // shouldUnregister: false keeps every field mounted in the form state, which
@@ -89,7 +97,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       icon: '',
       description: '',
       dataset_ids: [],
-      prompt_config: { ...promptConfigDefaults },
+      prompt_config: defaultPromptConfig,
       top_n: 8,
       rerank_candidates_count: 64,
       similarity_threshold: 0.2,
@@ -166,9 +174,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       ...omit(data, ['top_k']),
       prompt_config: {
         // Chats created through the REST API / SDK may omit keys the schema
-        // treats as required (e.g. `keyword`, `tts`, `refine_multiturn`).
+        // treats as required (`keyword`, `tts`, `system`, `refine_multiturn`).
         // Without them the form never validates and Save does nothing.
-        ...withPromptConfigDefaults(data.prompt_config),
+        ...withPromptConfigDefaults(
+          data.prompt_config,
+          defaultPromptConfig.system ?? '',
+        ),
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
       },
@@ -179,7 +190,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     if (!isEmpty(data)) {
       form.reset(nextData as FormSchemaType);
     }
-  }, [data, form]);
+  }, [data, form, defaultPromptConfig]);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
