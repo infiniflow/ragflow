@@ -223,10 +223,10 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py`는 pdfium, pdf_oxide, office_oxide, onnxruntime을 `~/ragflow-native-libs`에 내려받아 압축 해제합니다. `download_deps.py`는 cl100k 어휘집, DeepDoc 모델, 임베딩 토크나이저 리소스를 `ragflow_deps/`에 내려받습니다. 두 스크립트 모두 Python 스크립트이며, `uv run`이 선언된 종속성(`requests`, 모델 및 토크나이저 다운로드에는 `huggingface-hub` 추가)을 자동으로 설치합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛰세요. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+   `download_dev_deps.py`는 pdfium, pdf_oxide, office_oxide, onnxruntime을 `~/ragflow-native-libs`에 내려받아 압축 해제합니다. `download_deps.py`는 cl100k 어휘집, DeepDoc 모델, 임베딩 토크나이저 리소스를 `deps/`에 내려받습니다. 두 스크립트 모두 Python 스크립트이며, `uv run`이 선언된 종속성(`requests`, 모델 및 토크나이저 다운로드에는 `huggingface-hub` 추가)을 자동으로 설치합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛰세요. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
 
 3. 서비스를 빌드합니다:
 
