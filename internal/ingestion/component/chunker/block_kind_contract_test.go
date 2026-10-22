@@ -145,9 +145,9 @@ func TestChunkOutputBoundaryClearsStructuralLayout(t *testing.T) {
 	}
 }
 
-// TestTitleReadsLayoutNotRetiredCKType pins that a legacy ck_type alone no
-// longer promotes a line to a heading; only layout does.
-func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
+// TestTitleDoesNotPromotePlainTextToHeading pins that heading detection
+// requires parser layout metadata.
+func TestTitleDoesNotPromotePlainTextToHeading(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
@@ -165,7 +165,7 @@ func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if chunks := outputChunks(t, out); len(chunks) != 1 {
-		t.Fatalf("legacy ck_type must not create headings: got %d chunks, want 1", len(chunks))
+		t.Fatalf("plain text created headings: got %d chunks, want 1", len(chunks))
 	}
 }
 

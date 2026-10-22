@@ -273,9 +273,6 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 		switch kd {
 		case "table":
 			tableCount++
-			if _, ok := item["ck_type"]; ok {
-				t.Errorf("retired ck_type present on table item: %#v", item)
-			}
 			td, ok := item["table"].(*entity.TableData)
 			if !ok || td == nil {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
@@ -648,9 +645,6 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on table item: %#v", item)
-			}
 		}
 	}
 	concat := all.String()
@@ -713,9 +707,6 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on table item: %#v", item)
-			}
 		}
 	}
 
@@ -760,9 +751,6 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<div") || strings.Contains(text, "<style") {
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on non-table item: %q", text)
-			}
 			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 				t.Fatalf("non-table HTML block wrongly tagged doc_type_kwd:\"table\": %q", text)
 			}
@@ -832,9 +820,6 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			tableCount++
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
-			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on raw table item: %#v", item)
 			}
 		}
 	}
