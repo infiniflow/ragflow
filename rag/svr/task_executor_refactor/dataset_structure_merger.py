@@ -221,6 +221,42 @@ async def _disabled_doc_ids(kb_id: str) -> set[str]:
 # ---------------------------------------------------------------------------
 _UPGRADED_TABLES: set[tuple[str, str]] = set()
 
+#: Chunk tables already upgraded with the build-timestamp column, keyed by
+#: (index, kb_id). Kept separate from :data:`_UPGRADED_TABLES` because that set
+#: only guarantees ``deleted_doc_id``.
+_TIMESTAMP_UPGRADED_TABLES: set[tuple[str, str]] = set()
+
+
+async def _ensure_build_timestamp_column(index: str, kb_id: str) -> None:
+    """Add ``build_timestamp_flt`` to a chunk table created before it existed.
+
+    The merge stores its build time in this column, so on an older table the
+    write is rejected and every run falls back to a full build. Best-effort —
+    the column only decides whether a build is incremental.
+    """
+    key = (index, kb_id)
+    if key in _TIMESTAMP_UPGRADED_TABLES:
+        return
+    ensure_fn = getattr(settings.docStoreConn, "ensure_columns", None)
+    if not callable(ensure_fn):
+        _TIMESTAMP_UPGRADED_TABLES.add(key)
+        return
+    try:
+        # ``ensure_columns`` no-ops on a missing table, so caching the upgrade
+        # there would skip it for the table a later insert creates.
+        if not await thread_pool_exec(settings.docStoreConn.index_exist, index, kb_id):
+            return
+        await thread_pool_exec(
+            ensure_fn,
+            index,
+            kb_id,
+            {"build_timestamp_flt": {"type": "float", "default": 0.0}},
+        )
+    except Exception:
+        logging.exception("structure_merge: failed to ensure build_timestamp_flt for kb=%s", kb_id)
+        return
+    _TIMESTAMP_UPGRADED_TABLES.add(key)
+
 
 def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
     """Write a deletion-marker row into the chunk table.
@@ -297,6 +333,7 @@ async def _save_build_time(tenant_id: str, kb_id: str, compile_kwd: str, templat
 
     meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
     index = _index_name(tenant_id)
+    await _ensure_build_timestamp_column(index, kb_id)
     payload = {
         "id": meta_id,
         "kb_id": kb_id,

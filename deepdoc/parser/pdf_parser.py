@@ -665,7 +665,7 @@ class RAGFlowPdfParser:
                 i
                 for i, b in enumerate(self.boxes)
                 if (
-                    b.get("page_number") == page_index + self.page_from
+                    b.get("page_number") == page_index + 1
                     and b.get("layout_type") == "table"
                     and b["x0"] >= table_x0 - 5
                     and b["x1"] <= table_x1 + 5
@@ -688,22 +688,33 @@ class RAGFlowPdfParser:
         def _insert_ocr_boxes(ocr_results, page_index, crop_left, crop_top, insert_at, table_index, layoutno, best_angle, table_w_px, table_h_px):
             added = 0
             for bbox, (text, conf) in ocr_results:
-                if conf < 0.5:
+                if not math.isfinite(conf) or conf < 0.5:
                     continue
                 mapped = [self._map_clockwise_rotated_point_to_original(p[0], p[1], best_angle, table_w_px, table_h_px) for p in bbox]
+                if not mapped or not all(math.isfinite(value) for point in mapped for value in point):
+                    logging.warning("Skipping invalid rotated OCR coordinates on local page %s.", page_index + 1)
+                    continue
                 x_coords = [p[0] for p in mapped]
                 y_coords = [p[1] for p in mapped]
                 box_x0 = min(x_coords) / ZM
                 box_x1 = max(x_coords) / ZM
                 box_top = min(y_coords) / ZM
                 box_bottom = max(y_coords) / ZM
+                page_width, page_height = self.page_images[page_index].size
+                page_x0 = max(0, min(box_x0 + crop_left / ZM, page_width / ZM))
+                page_x1 = max(0, min(box_x1 + crop_left / ZM, page_width / ZM))
+                page_top = max(0, min(box_top + crop_top / ZM, page_height / ZM))
+                page_bottom = max(0, min(box_bottom + crop_top / ZM, page_height / ZM))
+                if page_x1 <= page_x0 or page_bottom <= page_top:
+                    logging.warning("Skipping empty rotated OCR box on local page %s after clamping.", page_index + 1)
+                    continue
                 new_box = {
                     "text": text,
-                    "x0": box_x0 + crop_left / ZM,
-                    "x1": box_x1 + crop_left / ZM,
-                    "top": box_top + crop_top / ZM + self.page_cum_height[page_index],
-                    "bottom": box_bottom + crop_top / ZM + self.page_cum_height[page_index],
-                    "page_number": page_index + self.page_from,
+                    "x0": page_x0,
+                    "x1": page_x1,
+                    "top": page_top + self.page_cum_height[page_index],
+                    "bottom": page_bottom + self.page_cum_height[page_index],
+                    "page_number": page_index + 1,
                     "layout_type": "table",
                     "layoutno": layoutno,
                     "_rotated": True,
@@ -769,6 +780,9 @@ class RAGFlowPdfParser:
                 table_w_px,
                 table_h_px,
             )
+            if not added:
+                logging.warning("No valid rotated OCR boxes for table %s; restoring originals.", table_index)
+                _restore_boxes(original_boxes, insert_at)
 
             logging.info(f"Added {added} OCR results from rotated table {table_index}")
 
@@ -1526,19 +1540,24 @@ class RAGFlowPdfParser:
         return
 
     def _line_tag(self, bx, ZM):
-        pn = [bx["page_number"]]
-        top = bx["top"] - self.page_cum_height[pn[0] - 1]
-        bott = bx["bottom"] - self.page_cum_height[pn[0] - 1]
-        page_images_cnt = len(self.page_images)
-        if pn[-1] - 1 >= page_images_cnt:
-            return ""
-        while bott * ZM > self.page_images[pn[-1] - 1].size[1]:
-            bott -= self.page_images[pn[-1] - 1].size[1] / ZM
-            pn.append(pn[-1] + 1)
-            if pn[-1] - 1 >= page_images_cnt:
-                return ""
+        """Serialize valid page-local positions without losing per-page bounds."""
+        tags = []
+        group = []
 
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join([str(p) for p in pn]), bx["x0"], bx["x1"], top, bott)
+        def append_tag():
+            first, last = group[0], group[-1]
+            tags.append("@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format("-".join(str(pos[0]) for pos in group), first[1], first[2], first[3], last[4]))
+
+        for pos in self.get_position(bx, ZM):
+            # A single tag has one horizontal interval for every page. Split
+            # when different page widths produce different clipped bounds.
+            if group and (pos[0] != group[-1][0] + 1 or pos[1:3] != group[-1][1:3]):
+                append_tag()
+                group = []
+            group.append(pos)
+        if group:
+            append_tag()
+        return "".join(tags)
 
     def __filterout_scraps(self, boxes, ZM):
         def width(b):
@@ -1893,14 +1912,14 @@ class RAGFlowPdfParser:
                         "layout_type": layout_type,
                         "text": txt,
                         "image": img,
-                        "positions": [[pn + 1, int(left), int(right), int(top), int(bott)]],
+                        "positions": [[page + 1, int(x0), int(x1), int(y0), int(y1)] for page, x0, x1, y0, y1 in local_poss],
                     },
                 )
 
         for b in self.boxes:
             b["position_tag"] = self._line_tag(b, zoomin)
             b["image"] = self.crop(b["position_tag"], zoomin)
-            b["positions"] = [[pos[0][-1] + 1, *pos[1:]] for pos in RAGFlowPdfParser.extract_positions(b["position_tag"])]
+            b["positions"] = [list(pos) for pos in self.get_position(b, zoomin)]
 
         insert_table_figures(tbls, "table")
         insert_table_figures(figs, "figure")
@@ -2076,16 +2095,40 @@ class RAGFlowPdfParser:
         return pic
 
     def get_position(self, bx, ZM):
+        """Map a cumulative box to bounded, window-local 1-based page slices."""
         poss = []
-        pn = bx["page_number"]
-        top = bx["top"] - self.page_cum_height[pn - 1]
-        bott = bx["bottom"] - self.page_cum_height[pn - 1]
-        poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
-        while bott * ZM > self.page_images[pn - 1].size[1]:
-            bott -= self.page_images[pn - 1].size[1] / ZM
-            top = 0
-            pn += 1
-            poss.append((pn, bx["x0"], bx["x1"], top, min(bott, self.page_images[pn - 1].size[1] / ZM)))
+        pn = bx.get("page_number")
+        images = getattr(self, "page_images", None)
+        cumulative = getattr(self, "page_cum_height", None)
+        if not images or cumulative is None or isinstance(pn, bool) or not isinstance(pn, (int, np.integer)) or not 1 <= pn <= len(images) or len(cumulative) < len(images):
+            logging.warning("Skipping position with invalid local page number %s or missing page geometry.", pn)
+            return poss
+        try:
+            coordinates = [float(bx[key]) for key in ("x0", "x1", "top", "bottom")]
+            if not math.isfinite(ZM) or ZM <= 0 or not all(math.isfinite(value) for value in coordinates):
+                raise ValueError("non-finite coordinates or invalid zoom")
+        except (KeyError, TypeError, ValueError, OverflowError):
+            logging.warning("Skipping invalid position coordinates on local page %s.", pn)
+            return poss
+
+        left, right = sorted(coordinates[:2])
+        top, bottom = sorted(coordinates[2:])
+        # Validate the local page number before indexing cumulative heights.
+        # page_from is added only at the external/global conversion boundary.
+        start = (top - cumulative[pn - 1]) * ZM
+        end = (bottom - cumulative[pn - 1]) * ZM
+        offset = 0
+        for index in range(pn - 1, len(images)):
+            width, height = images[index].size
+            x0, x1 = max(0, min(left * ZM, width)), max(0, min(right * ZM, width))
+            y0, y1 = max(0, min(start - offset, height)), max(0, min(end - offset, height))
+            if x1 > x0 and y1 > y0:
+                poss.append((index + 1, x0 / ZM, x1 / ZM, y0 / ZM, y1 / ZM))
+            offset += height
+            if offset >= end:
+                break
+        if not poss:
+            logging.warning("Skipping empty position on local page %s after clamping.", pn)
         return poss
 
 

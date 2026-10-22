@@ -26,7 +26,6 @@ from docx import Document
 from markdown import markdown
 
 from common.constants import MAXIMUM_PAGE_NUMBER
-from common.float_utils import get_float
 from deepdoc.parser import DocxParser, ExcelParser, PdfParser
 from deepdoc.parser.utils import get_text
 from rag.nlp import add_positions, concat_img, docx_question_level, has_qbullet, is_english, qbullets_category, rag_tokenizer, random_choices, tokenize_table
@@ -119,21 +118,26 @@ class Pdf(PdfParser):
         tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
         for box in self.boxes:
             section, line_tag = box["text"], self._line_tag(box, zoomin)
+            line_positions = self.extract_positions(line_tag)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
             last_box, last_index, last_bull = box, index, has_bull
-            line_pn = get_float(line_tag.lstrip("@@").split("\t")[0])
-            line_top = get_float(line_tag.rstrip("##").split("\t")[3])
+            # Tags may be split across pages, or absent for invalid geometry.
+            # Keep unpositioned text, but do not use it to advance table cursors.
+            line_pn, line_top = (line_positions[0][0][0] + 1, line_positions[0][3]) if line_positions else (last_pn, last_bottom)
             tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
             if not has_bull:  # No question bullet
                 if not last_q:
-                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):  # image passed
+                    if line_positions and (tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top)):  # image passed
                         tbl_index += 1
                     continue
                 else:
                     sum_tag = line_tag
                     sum_section = section
-                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
-                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    while (
+                        line_positions
+                        and tbl_index < len(tbls)
+                        and ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn))
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn))
                     ):  # add image at the middle of current answer
                         sum_tag = f"{tbl_tag}{sum_tag}"
                         sum_section = f"{tbl_text}{sum_section}"
@@ -143,8 +147,11 @@ class Pdf(PdfParser):
                     last_tag = f"{last_tag}{sum_tag}"
             else:
                 if last_q:
-                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
-                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    while (
+                        line_positions
+                        and tbl_index < len(tbls)
+                        and ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn))
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn))
                     ):  # add image at the end of last answer
                         last_tag = f"{last_tag}{tbl_tag}"
                         last_a = f"{last_a}{tbl_text}"
@@ -157,8 +164,9 @@ class Pdf(PdfParser):
                 _, end = has_bull.span()
                 last_a = section[end:]
                 last_tag = line_tag
-            last_bottom = float(line_tag.rstrip("##").split("\t")[4])
-            last_pn = line_pn
+            if line_positions:
+                last_pn = line_positions[-1][0][-1] + 1
+                last_bottom = line_positions[-1][4]
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls

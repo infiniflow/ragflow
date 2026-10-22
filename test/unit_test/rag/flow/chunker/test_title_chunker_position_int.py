@@ -23,7 +23,7 @@ chunker. Mirrors rag/flow/tests/test_token_chunker.py's
 
 @contextmanager
 def _load_title_chunker_with_stubs():
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[5]
     original_modules = {}
 
     def _install(name: str, module: types.ModuleType):
@@ -64,6 +64,7 @@ def _load_title_chunker_with_stubs():
         _install("common.token_utils", common_token_utils)
 
         rag_nlp = types.ModuleType("rag.nlp")
+        rag_nlp.__path__ = [str(root / "rag" / "nlp")]
         rag_nlp.naive_merge = lambda *args, **kwargs: []
         rag_nlp.not_bullet = lambda text: False
         rag_nlp.not_title = lambda text: True
