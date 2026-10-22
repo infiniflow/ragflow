@@ -1613,6 +1613,17 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 	common.SuccessWithData(c, ingestionTasksSummary, "")
 }
 
+// ListIngestionTasks handles the admin ingestion task list.
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+	ctx := c.Request.Context()
+	tasks, err := h.service.ListIngestionTasks(ctx)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, tasks, "Get all tasks")
+}
+
 // ShowDataSummary handle show data summary
 func (h *Handler) ShowDataSummary(c *gin.Context) {
 	ctx := c.Request.Context()

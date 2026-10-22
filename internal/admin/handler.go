@@ -1085,30 +1085,6 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	}
 }
 
-type ListIngestionTasksRequest struct {
-	Email  *string `json:"email"`
-	Status *string `json:"status"`
-}
-
-// ListIngestionTasks handle list ingestion tasks
-func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	var err error
-	var tasks []map[string]interface{}
-	var req ListIngestionTasksRequest
-	ctx := c.Request.Context()
-
-	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks(ctx)
-	} else {
-		tasks, err = h.service.ListIngestionTasksByCondition(ctx, req.Email, req.Status)
-	}
-
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-	}
-	common.SuccessWithData(c, tasks, "Get all tasks")
-}
-
 func (h *Handler) ListIngestors(c *gin.Context) {
 	serverList := GlobalServerStore.ListInfos()
 	var ingestorResults []map[string]string

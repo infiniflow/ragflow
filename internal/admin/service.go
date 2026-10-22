@@ -115,11 +115,6 @@ func (s *Service) Logout(ctx context.Context, user interface{}) error {
 	return nil
 }
 
-// ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
-}
-
 func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
 	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
 }
