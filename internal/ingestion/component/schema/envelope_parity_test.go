@@ -22,8 +22,9 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestChunksSerializationParity is the R1 regression gate: once producers emit
-// typed []ChunkDoc through PutChunks, the envelope value is a []ChunkDoc. Any
+// TestChunksSerializationParity is the R1 regression gate: the []ChunkDoc wire
+// form and the []map[string]any wire form (ChunkDocsToMaps) must serialize
+// byte-semantically identically. Any
 // code that json.Marshal's the envelope (e.g. the agent canvas marshalling
 // node outputs) must produce JSON byte-semantically identical to the historical
 // []map[string]any wire form produced by ChunkDocsToMaps. If this drifts,

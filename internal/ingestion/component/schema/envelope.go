@@ -14,18 +14,12 @@
 
 package schema
 
-import (
-	"ragflow/internal/parser/parser"
-)
-
 // Canonical envelope keys. The canvas Component.Invoke contract keeps the
 // envelope as map[string]any, but each well-known key carries a single typed
-// payload. These accessors make that convention explicit and let downstream
-// components read typed values instead of bare type assertions, eliminating
-// the silent type-mismatch skips that the untyped map form allowed.
-//
-//	"json"   -> []parser.DocItem  (parser output)
-//	"chunks" -> []ChunkDoc        (chunker/tokenizer output)
+// payload. The "chunks" key (chunker/tokenizer output) has a typed accessor,
+// GetChunks, so downstream components read []ChunkDoc instead of bare type
+// assertions, eliminating the silent type-mismatch skips that the untyped map
+// form allowed. The "json" key (parser output) remains a plain wire key.
 //
 // These live in the schema package because it owns ChunkDoc and is imported by
 // every component subpackage (component, chunker, knowledge_compiler) without
@@ -34,15 +28,6 @@ const (
 	KeyParseItems = "json"
 	KeyChunks     = "chunks"
 )
-
-// PutChunks stores a typed chunk slice under the canonical "chunks" envelope
-// key.
-func PutChunks(out map[string]any, chunks []ChunkDoc) {
-	if out == nil {
-		return
-	}
-	out[KeyChunks] = chunks
-}
 
 // GetChunks reads the canonical "chunks" envelope key. It accepts either a
 // typed []ChunkDoc or the legacy []map[string]any / []any form via
@@ -64,23 +49,6 @@ func GetChunks(in map[string]any) ([]ChunkDoc, bool) {
 		return nil, false
 	}
 	return docs, true
-}
-
-// PutParseItems stores parser items under the canonical "json" envelope key.
-func PutParseItems(out map[string]any, items []parser.DocItem) {
-	if out == nil {
-		return
-	}
-	out[KeyParseItems] = items
-}
-
-// GetParseItems reads the canonical "json" envelope key as []parser.DocItem.
-func GetParseItems(in map[string]any) ([]parser.DocItem, bool) {
-	if in == nil {
-		return nil, false
-	}
-	items, ok := in[KeyParseItems].([]parser.DocItem)
-	return items, ok
 }
 
 // ChunkCarrierToMaps returns a "chunks" carrier value as []map[string]any,

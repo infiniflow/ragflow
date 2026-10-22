@@ -16,14 +16,11 @@ package schema
 
 import (
 	"testing"
-
-	"ragflow/internal/parser/parser"
 )
 
 func TestPutGetChunks_RoundTrip(t *testing.T) {
 	docs := []ChunkDoc{{Text: "a", ID: "1"}, {Text: "b", ID: "2"}}
-	out := map[string]any{}
-	PutChunks(out, docs)
+	out := map[string]any{KeyChunks: docs}
 
 	got, ok := GetChunks(out)
 	if !ok {
@@ -69,8 +66,7 @@ func TestGetChunks_EmptyAndNil(t *testing.T) {
 		t.Fatal("absent key should return ok=false")
 	}
 	// typed empty slice -> ok=true, len 0
-	out := map[string]any{}
-	PutChunks(out, []ChunkDoc{})
+	out := map[string]any{KeyChunks: []ChunkDoc{}}
 	got, ok := GetChunks(out)
 	if !ok {
 		t.Fatal("empty typed []ChunkDoc should return ok=true")
@@ -133,25 +129,5 @@ func TestChunkCarrierToMaps(t *testing.T) {
 	// A scalar / unrelated value is not a chunk carrier.
 	if _, ok5 := ChunkCarrierToMaps(42); ok5 {
 		t.Fatal("scalar value should be ok=false")
-	}
-}
-
-func TestPutGetParseItems(t *testing.T) {
-	items := []parser.DocItem{
-		parser.TextItem{Text: "x"},
-		parser.TextItem{Text: "y"},
-	}
-	out := map[string]any{}
-	PutParseItems(out, items)
-
-	got, ok := GetParseItems(out)
-	if !ok {
-		t.Fatal("GetParseItems ok=false, want true")
-	}
-	if len(got) != 2 {
-		t.Fatalf("len=%d, want 2", len(got))
-	}
-	if got[0].ToMap()["text"] != "x" {
-		t.Fatalf("content mismatch: %+v", got[0])
 	}
 }
