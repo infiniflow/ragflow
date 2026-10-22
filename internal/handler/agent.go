@@ -822,6 +822,30 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
+// ApplyVersion restores a saved workflow as the current agent draft.
+// @Summary Apply Agent Version
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Param version_id path string true "version id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/versions/{version_id}/apply [post]
+func (h *AgentHandler) ApplyVersion(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	versionID := c.Param("version_id")
+	if err := h.agentService.ApplyVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, true, "success")
+}
+
 // --- PR2: missing routes wired up to the existing service layer ---
 
 // ListAgentTemplates GET /api/v1/agents/templates

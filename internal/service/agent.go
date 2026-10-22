@@ -1421,6 +1421,22 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 	})
 }
 
+// ApplyVersion restores a saved version's DSL through the normal draft-save
+// path, preserving the agent's metadata and version history.
+func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
+	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+			return err
+		}
+		return fmt.Errorf("load agent version: %w: %w", err, ErrAgentStorageError)
+	}
+	if version.DSL == nil {
+		return errors.New("agent version has no DSL to apply")
+	}
+	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL})
+}
+
 // RunAgent starts a run for the given canvas and returns a channel of
 // orchestrator events the HTTP layer streams back as SSE. The driver owns
 // the wait-for-user cycle (eino interrupt, gap-analysis §11.6.4): the
