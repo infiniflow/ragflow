@@ -388,6 +388,12 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
+	// Agent→Message defer only parks the stream on @content. Templates that
+	// read other Agent outputs (e.g. @structured) must open that stream first
+	// so ResolveTemplate can see the materialized keys.
+	if err := materializeDeferredAgentOutputs(ctx, state, text, matches); err != nil {
+		return "", true, err
+	}
 	if _, err := runtime.ResolveTemplate(text, state); err != nil {
 		if !optionalMissingAttachmentRefs(text, state) {
 			return "", false, err
@@ -472,10 +478,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 				finalText = completedContent
 			}
 		}
-		if strings.Contains(ref, "@") {
-			parts := strings.SplitN(ref, "@", 2)
-			state.SetVar(parts[0], parts[1], finalText)
-			runtime.CompleteDeferredNode(ctx, parts[0])
+		if cpnID, _, ok := splitComponentParamRef(ref); ok {
+			applyDeferredAgentResult(state, cpnID, result, finalText)
+			runtime.CompleteDeferredNode(ctx, cpnID)
 		}
 		out.WriteString(finalText)
 		last = end
@@ -503,6 +508,84 @@ func optionalMissingAttachmentRefs(text string, state *runtime.CanvasState) bool
 		}
 	}
 	return true
+}
+
+// materializeDeferredAgentOutputs opens Agent DeferredStreams parked on
+// @content when the Message template references a non-content output of the
+// same component (commonly @structured). Without this, ResolveTemplate fails
+// with "Can't find variable" before the stream is ever opened.
+func materializeDeferredAgentOutputs(ctx context.Context, state *runtime.CanvasState, text string, matches [][]int) error {
+	if state == nil {
+		return nil
+	}
+	need := map[string]struct{}{}
+	for _, match := range matches {
+		ref := text[match[2]:match[3]]
+		cpnID, param, ok := splitComponentParamRef(ref)
+		if !ok || param == "content" {
+			continue
+		}
+		contentVal, _ := state.GetVar(cpnID + "@content")
+		if runtime.IsDeferredStream(contentVal) {
+			need[cpnID] = struct{}{}
+		}
+	}
+	for cpnID := range need {
+		contentVal, _ := state.GetVar(cpnID + "@content")
+		deferred, ok := contentVal.(*runtime.DeferredStream)
+		if !ok || deferred == nil || deferred.Open == nil {
+			continue
+		}
+		// Silent sink: the Message will emit the resolved non-content value
+		// (e.g. structured JSON) once, rather than streaming prose then
+		// replacing it.
+		result, err := deferred.Open(ctx, func(string, string) {})
+		if err != nil {
+			return &runtime.DeferredStreamError{Err: err}
+		}
+		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			return &runtime.DeferredStreamError{Text: resultErr}
+		}
+		contentFallback := ""
+		if result != nil {
+			if completedContent, ok := result["content"].(string); ok {
+				contentFallback = completedContent
+			}
+		}
+		applyDeferredAgentResult(state, cpnID, result, contentFallback)
+		runtime.CompleteDeferredNode(ctx, cpnID)
+	}
+	return nil
+}
+
+func splitComponentParamRef(ref string) (cpnID, param string, ok bool) {
+	cpnID, param, found := strings.Cut(ref, "@")
+	if !found || cpnID == "" || param == "" {
+		return "", "", false
+	}
+	return cpnID, param, true
+}
+
+// applyDeferredAgentResult writes every Agent output key into state so
+// downstream refs like @structured resolve after a deferred Open.
+func applyDeferredAgentResult(state *runtime.CanvasState, cpnID string, result map[string]any, contentFallback string) {
+	if state == nil || cpnID == "" {
+		return
+	}
+	if result != nil {
+		for k, v := range result {
+			if k == "_ERROR" || k == "__cpn_id__" || k == "state" {
+				continue
+			}
+			state.SetVar(cpnID, k, v)
+		}
+	}
+	if contentFallback == "" {
+		return
+	}
+	if v, _ := state.GetVar(cpnID + "@content"); runtime.IsDeferredStream(v) || v == nil {
+		state.SetVar(cpnID, "content", contentFallback)
+	}
 }
 
 // extractMemoryIDs normalises a memory_ids value from inputs /
@@ -537,7 +620,6 @@ func formalizedContentFallback(inputs map[string]any) string {
 	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
 		return text
 	}
-
 	return ""
 }
 
