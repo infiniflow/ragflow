@@ -149,9 +149,7 @@ def test_dataset_response_keeps_parser_fields():
 
 
 def test_update_sends_parser_selection_and_refreshes_mode():
-    rag = RecordingRAGFlow(
-        update_data={"id": "ds-1", "name": "kb", "parser_id": "table"}
-    )
+    rag = RecordingRAGFlow(update_data={"id": "ds-1", "name": "kb", "parser_id": "table"})
     dataset = DataSet(
         rag,
         {
@@ -164,9 +162,7 @@ def test_update_sends_parser_selection_and_refreshes_mode():
 
     dataset.update({"parse_type": 1, "parser_id": "table"})
 
-    assert rag.calls == [
-        ("PUT", "/datasets/ds-1", {"parse_type": 1, "parser_id": "table"})
-    ]
+    assert rag.calls == [("PUT", "/datasets/ds-1", {"parse_type": 1, "parser_id": "table"})]
     assert dataset.parser_id == "table"
     assert dataset.pipeline_id is None
     assert dataset.parse_type == 1
