@@ -114,7 +114,7 @@ func (f tocChatFunc) Chat(_ context.Context, req extractorChatRequest) (*extract
 func TestExtractorTOC_KeepsChunkIndexesAcrossBatches(t *testing.T) {
 	useWhitespaceTokenizer(t)
 	chunks := tocTestChunks("doc1", "Part one", "text a", "Part two", "text b")
-	ids := []string{chunks[0]["id"].(string), chunks[1]["id"].(string), chunks[2]["id"].(string)}
+	ids := []string{chunks[0]["id"].(string), chunks[1]["id"].(string), chunks[2]["id"].(string), chunks[3]["id"].(string)}
 
 	// Size the context so one batch holds exactly two chunks.
 	loader := prompts.EmbeddedPromptLoader{}
@@ -162,7 +162,7 @@ func TestExtractorTOC_KeepsChunkIndexesAcrossBatches(t *testing.T) {
 	}
 	got := out["chunks"].([]map[string]any)
 	want := `[{"level":"1","title":"Part one","ids":["` + ids[0] + `","` + ids[1] + `","` + ids[2] + `"]},` +
-		`{"level":"1","title":"Part two","ids":["` + ids[2] + `"]}]`
+		`{"level":"1","title":"Part two","ids":["` + ids[2] + `","` + ids[3] + `"]}]`
 	if got[len(got)-1]["text"] != want {
 		t.Errorf("TOC text\n got: %v\nwant: %s", got[len(got)-1]["text"], want)
 	}
@@ -284,7 +284,21 @@ func TestMergeTOCLevels_BadInput(t *testing.T) {
 	want := []tocEntry{
 		{Level: "1", Title: "From a list", IDs: []string{chunks[1]["id"].(string)}},
 		{Level: "2", Title: "Out of range"},
-		{Level: "1", Title: "No title in reply", IDs: []string{chunks[0]["id"].(string)}},
+		{Level: "1", Title: "No title in reply", IDs: []string{chunks[0]["id"].(string), chunks[1]["id"].(string)}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("mergeTOCLevels\n got: %+v\nwant: %+v", got, want)
+	}
+}
+
+// The body chunks after the last heading belong to the last entry.
+func TestMergeTOCLevels_LastEntryRunsToLastChunk(t *testing.T) {
+	chunks := tocTestChunks("doc1", "Intro", "body one", "body two")
+	levels := []any{map[string]any{"level": "1", "title": "Intro"}}
+	titles := []tocTitle{{title: "Intro", chunkID: "0"}}
+	got := mergeTOCLevels(levels, titles, chunks)
+	want := []tocEntry{
+		{Level: "1", Title: "Intro", IDs: []string{chunks[0]["id"].(string), chunks[1]["id"].(string), chunks[2]["id"].(string)}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("mergeTOCLevels\n got: %+v\nwant: %+v", got, want)

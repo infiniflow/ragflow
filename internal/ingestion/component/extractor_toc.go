@@ -101,7 +101,8 @@ func (c *ExtractorComponent) buildTOCChunk(ctx context.Context, db *gorm.DB, in 
 
 // runTOCFromText finds the headings in batches of chunks, then asks the model
 // for the level of each heading. Each entry covers the chunks from its own
-// chunk up to the chunk of the next entry.
+// chunk up to the chunk of the next entry. The last entry runs to the last
+// chunk.
 func (c *ExtractorComponent) runTOCFromText(ctx context.Context, db *gorm.DB, in extractorInputs, texts []string, w progress.Window) ([]tocEntry, error) {
 	loader := prompts.EmbeddedPromptLoader{}
 	systemPrompt, err := loader.Load("toc_from_text_system")
@@ -334,14 +335,15 @@ func mergeTOCLevels(levels []any, titles []tocTitle, chunks []map[string]any) []
 			continue
 		}
 		entries[i].IDs = appendChunkID(nil, chunks[idx])
-		if i == len(kept)-1 {
-			break
+		end := len(chunks) - 1
+		if i < len(kept)-1 {
+			next, ok := tocInt(kept[i+1].src.chunkID)
+			if !ok {
+				continue
+			}
+			end = next
 		}
-		next, ok := tocInt(kept[i+1].src.chunkID)
-		if !ok {
-			continue
-		}
-		for j := idx + 1; j <= next && j < len(chunks); j++ {
+		for j := idx + 1; j <= end && j < len(chunks); j++ {
 			entries[i].IDs = appendChunkID(entries[i].IDs, chunks[j])
 		}
 	}
