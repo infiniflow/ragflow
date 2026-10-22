@@ -109,6 +109,10 @@ func openDataLoaderItems(root any) []map[string]any {
 		switch v := node.(type) {
 		case map[string]any:
 			if item := openDataLoaderNodeToItem(v); item != nil {
+				if pos := openDataLoaderElementPosition(v); pos != nil {
+					item["positions"] = [][]any{pos}
+					item["_pdf_positions"] = [][]any{pos}
+				}
 				items = append(items, item)
 			}
 			for _, child := range v {
@@ -122,6 +126,49 @@ func openDataLoaderItems(root any) []map[string]any {
 	}
 	walk(root)
 	return items
+}
+
+// openDataLoaderElementPosition converts an OpenDataLoader element's page and
+// bounding box ([left, bottom, right, top]) into a 1-based
+// [page, left, right, top, bottom] position row. It returns nil when the
+// element has no usable page or box.
+func openDataLoaderElementPosition(el map[string]any) []any {
+	var bbox []any
+	for _, key := range []string{"bounding box", "bounding_box", "bbox"} {
+		if b, ok := el[key].([]any); ok && len(b) == 4 {
+			bbox = b
+			break
+		}
+	}
+	if bbox == nil {
+		return nil
+	}
+	page := 0.0
+	for _, key := range []string{"page number", "page_number", "page"} {
+		if n, ok := numericAny(el[key]); ok {
+			page = n
+			break
+		}
+	}
+	if page < 1 {
+		return nil
+	}
+	var v [4]float64
+	for i, raw := range bbox {
+		n, ok := numericAny(raw)
+		if !ok {
+			return nil
+		}
+		v[i] = n
+	}
+	left, bottom, right, top := v[0], v[1], v[2], v[3]
+	if left > right {
+		left, right = right, left
+	}
+	if top < bottom {
+		top, bottom = bottom, top
+	}
+	return []any{page, left, right, top, bottom}
 }
 
 func openDataLoaderNodeToItem(el map[string]any) map[string]any {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -166,5 +167,45 @@ func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
 	}
 	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "z") {
 		t.Fatalf("item = %s, want sparse row text", string(got))
+	}
+}
+
+func TestOpenDataLoaderItems_EmitPositions(t *testing.T) {
+	root := map[string]any{"kids": []any{
+		map[string]any{"type": "paragraph", "content": "hello", "page number": float64(2), "bounding box": []any{10.0, 700.0, 110.0, 720.0}},
+	}}
+	items := openDataLoaderItems(root)
+	if len(items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(items))
+	}
+	want := []any{float64(2), 10.0, 110.0, 720.0, 700.0}
+	for _, key := range []string{"positions", "_pdf_positions"} {
+		rows, _ := items[0][key].([][]any)
+		if len(rows) != 1 || !reflect.DeepEqual(rows[0], want) {
+			t.Fatalf("%s = %#v, want %#v", key, items[0][key], want)
+		}
+	}
+}
+
+func TestOpenDataLoaderElementPosition_KeyVariants(t *testing.T) {
+	cases := []struct {
+		name string
+		el   map[string]any
+		want []any
+	}{
+		{"snake case", map[string]any{"page_number": 3, "bounding_box": []any{1.0, 2.0, 5.0, 9.0}}, []any{float64(3), 1.0, 5.0, 9.0, 2.0}},
+		{"short keys", map[string]any{"page": 1.0, "bbox": []any{1.0, 2.0, 5.0, 9.0}}, []any{float64(1), 1.0, 5.0, 9.0, 2.0}},
+		{"swapped corners", map[string]any{"page": 1.0, "bbox": []any{5.0, 9.0, 1.0, 2.0}}, []any{float64(1), 1.0, 5.0, 9.0, 2.0}},
+		{"missing page", map[string]any{"bbox": []any{1.0, 2.0, 5.0, 9.0}}, nil},
+		{"page zero", map[string]any{"page": 0.0, "bbox": []any{1.0, 2.0, 5.0, 9.0}}, nil},
+		{"short bbox", map[string]any{"page": 1.0, "bbox": []any{1.0, 2.0}}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := openDataLoaderElementPosition(tc.el)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v, want %#v", got, tc.want)
+			}
+		})
 	}
 }
