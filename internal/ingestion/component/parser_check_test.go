@@ -164,6 +164,37 @@ func TestParserComponent_Check(t *testing.T) {
 			name:   "only unrelated family → pass",
 			setups: map[string]schema.ParserSetup{"markdown": {"output_format": "json"}},
 		},
+		// --- linked-content ingestion (#21032): switches live under the
+		// families that own a collector, nowhere else ---
+		{
+			name:    "html carries fetch_links → rejected",
+			setups:  map[string]schema.ParserSetup{"html": {"fetch_links": true}},
+			wantErr: "html has no hyperlink parameter",
+		},
+		{
+			name:    "pdf carries collect_markdown_links → rejected",
+			setups:  map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc", "collect_markdown_links": true}},
+			wantErr: "pdf has no hyperlink parameter",
+		},
+		{
+			name:    "pdf budget out of range → rejected",
+			setups:  map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc", "fetch_links": true, "max_urls": 0}},
+			wantErr: "has invalid value",
+		},
+		{
+			name:    "pdf budget wrong type → rejected",
+			setups:  map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc", "fetch_links": "yes"}},
+			wantErr: "has invalid value",
+		},
+		{
+			name:    "timeout_s true is not a number → rejected",
+			setups:  map[string]schema.ParserSetup{"docx": {"timeout_s": true}},
+			wantErr: "has invalid value",
+		},
+		{
+			name:   "markdown budgets in range → pass",
+			setups: map[string]schema.ParserSetup{"markdown": {"fetch_links": true, "collect_markdown_links": true, "max_urls": 5, "timeout_s": 10}},
+		},
 	}
 
 	for _, tc := range cases {
@@ -211,6 +242,20 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 	}
 	if c != nil {
 		t.Errorf("want nil component on error, got %T", c)
+	}
+}
+
+// A hyperlink switch left at the params root never reaches a family setup, so it
+// must fail at compile time instead of doing nothing (#21032).
+func TestNewParserComponentRejectsTopLevelHyperlinkKey(t *testing.T) {
+	for _, key := range []string{"fetch_links", "max_urls", "timeout_s"} {
+		if _, err := NewParserComponent(map[string]any{key: 1}); err == nil {
+			t.Errorf("NewParserComponent with top-level %q: want error, got nil", key)
+		}
+	}
+	// An unrelated non-map key keeps the legacy lenient behaviour.
+	if _, err := NewParserComponent(map[string]any{"outputs": 1}); err != nil {
+		t.Errorf("NewParserComponent with unrelated scalar: want no error, got %v", err)
 	}
 }
 

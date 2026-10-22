@@ -115,6 +115,41 @@ func TestExtractLinksFromMarkdownText(t *testing.T) {
 	}
 }
 
+// Python collected Markdown links by rendering to HTML first, which resolves
+// every link form. Reading the source has to cover the same ground: badge links
+// wrapping an image, reference-style links, autolinks and inline anchors — while
+// a definition nothing references stays prose.
+func TestExtractLinksFromMarkdownTextLinkForms(t *testing.T) {
+	text := "[![badge](badge.svg)](https://example.com/badge)\n" +
+		"see [the docs][docs-ref], [empty][] and bare https://example.com/not-a-link\n" +
+		"<https://example.com/auto>\n" +
+		"[docs-ref]: https://example.com/docs\n" +
+		"[empty]: https://example.com/empty\n" +
+		"[orphan]: https://example.com/orphan\n"
+	got := extractLinksFromMarkdownText(text)
+	want := []string{
+		"https://example.com/badge",
+		"https://example.com/docs",
+		"https://example.com/empty",
+		"https://example.com/auto",
+	}
+	sorted := append([]string(nil), got...)
+	sort.Strings(sorted)
+	sortedWant := append([]string(nil), want...)
+	sort.Strings(sortedWant)
+	if !reflect.DeepEqual(sorted, sortedWant) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for _, url := range got {
+		if url == "https://example.com/orphan" {
+			t.Fatalf("unreferenced definition was collected: %v", got)
+		}
+		if url == "https://example.com/not-a-link" {
+			t.Fatalf("bare URL is not a link in CommonMark: %v", got)
+		}
+	}
+}
+
 func TestNormalizeAndDedupeLinks(t *testing.T) {
 	in := []string{
 		"  https://example.com/b ",
@@ -126,24 +161,29 @@ func TestNormalizeAndDedupeLinks(t *testing.T) {
 		"ftp://example.com/f",
 		"",
 	}
-	got, truncated := normalizeAndDedupeLinks(in, 10)
+	got, distinct, truncated := normalizeAndDedupeLinks(in, 10)
 	want := []string{"https://example.com/a", "https://example.com/b"}
-	if truncated || !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v truncated=%v, want %v truncated=false", got, truncated, want)
+	if truncated || distinct != 2 || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v distinct=%d truncated=%v, want %v distinct=2 truncated=false", got, distinct, truncated, want)
 	}
-	if _, truncated := normalizeAndDedupeLinks(in, 1); !truncated {
+	if _, _, truncated := normalizeAndDedupeLinks(in, 1); !truncated {
 		t.Fatal("want truncated=true when capped")
 	}
 	// determinism across input orders
-	a, _ := normalizeAndDedupeLinks([]string{"https://x/2", "https://x/1"}, 10)
-	b, _ := normalizeAndDedupeLinks([]string{"https://x/1", "https://x/2"}, 10)
+	a, _, _ := normalizeAndDedupeLinks([]string{"https://x/2", "https://x/1"}, 10)
+	b, _, _ := normalizeAndDedupeLinks([]string{"https://x/1", "https://x/2"}, 10)
 	if !reflect.DeepEqual(a, b) {
 		t.Fatalf("order-dependent: %v vs %v", a, b)
 	}
 	// anchors collapse to one fetchable URL
-	anchors, _ := normalizeAndDedupeLinks([]string{"https://x/a#s1", "https://x/a#s2"}, 10)
+	anchors, _, _ := normalizeAndDedupeLinks([]string{"https://x/a#s1", "https://x/a#s2"}, 10)
 	if !reflect.DeepEqual(anchors, []string{"https://x/a"}) {
 		t.Fatalf("anchors = %v, want one stripped URL", anchors)
+	}
+	// scheme and host are case-insensitive: one page must be fetched once
+	cases, distinct, _ := normalizeAndDedupeLinks([]string{"HTTPS://X.A.com/p", "https://x.a.com/p", "https://x.a.com/P"}, 10)
+	if distinct != 2 || !reflect.DeepEqual(cases, []string{"HTTPS://X.A.com/p", "https://x.a.com/P"}) {
+		t.Fatalf("cases = %v distinct=%d, want two (same page, differing path case is a different page)", cases, distinct)
 	}
 }
 

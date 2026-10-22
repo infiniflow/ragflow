@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
@@ -31,26 +33,22 @@ import (
 	"ragflow/internal/utility"
 )
 
-// maybeFetchHyperlinkContents is the Parser post-step for the opt-in
-// linked-content ingestion (#21032). The parent result is final; fetched
-// pages are parsed as plain HTML (no nested fetching — depth is one by
-// construction, mirroring Python's is_root=False) and appended after the
-// parent items with source_url/parent_doc_id tags.
+// fetchHyperlinkedContent is the Parser post-step for the opt-in linked-content
+// ingestion (#21032). The parent result is final; fetched pages are parsed as
+// plain HTML (no nested fetching — depth is one by construction, mirroring
+// Python's is_root=False) and appended after the parent items with
+// source_url/parent_doc_id tags.
+//
+// Budgets come from the map Check validated at compile time, so a run can never
+// disagree with the canvas it was built from.
 //
 // Failures never fail the run: every skip is reported as a warning so the
 // parent document still indexes.
-func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType, filename string, binary []byte, parent []parser.DocItem, setups map[string]schema.ParserSetup, docID string) ([]parser.DocItem, []string) {
+func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType utility.FileType, filename string, binary []byte, parent []parser.DocItem, docID string) ([]parser.DocItem, []string) {
 	family := resolveParserFamily(fileType)
-	if _, ok := hyperlinkTargetCollectors[family]; !ok {
-		return parent, nil
-	}
-	setup, ok := setups[family]
+	param, ok := c.hyperlinkParams[family]
 	if !ok {
 		return parent, nil
-	}
-	param, err := schema.HyperlinkFetchParamFromSetup(setup)
-	if err != nil {
-		return parent, []string{fmt.Sprintf("hyperlink: invalid %s config (%v); linked content skipped", family, err)}
 	}
 	if !param.FetchLinks {
 		return parent, nil
@@ -60,9 +58,12 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 	}
 
 	raw, warnings := collectHyperlinkTargets(family, binary)
-	urls, truncated := normalizeAndDedupeLinks(raw, param.MaxURLs)
+	if len(raw) >= hyperlinkMaxURLCandidates {
+		warnings = append(warnings, fmt.Sprintf("hyperlink: document holds more links than %d; the rest were not examined", hyperlinkMaxURLCandidates))
+	}
+	urls, distinct, truncated := normalizeAndDedupeLinks(raw, param.MaxURLs)
 	if truncated {
-		warnings = append(warnings, fmt.Sprintf("hyperlink: %d links found, fetching first %d", len(raw), param.MaxURLs))
+		warnings = append(warnings, fmt.Sprintf("hyperlink: %d distinct links found, fetching first %d", distinct, param.MaxURLs))
 	}
 	if len(urls) == 0 {
 		return parent, warnings
@@ -84,10 +85,20 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 	// byte before the loop stops.
 	var total int64
 	parsedFinal := map[string]bool{}
-	out := parent
+	// Clone so appending linked items can never write into the parent slice's
+	// spare capacity, which `dispatched.JSON` still aliases.
+	out := slices.Clone(parent)
+	var (
+		fetched  int
+		appended int
+	)
 	for _, url := range urls {
-		if fetchCtx.Err() != nil {
-			warnings = append(warnings, "hyperlink: fetch cancelled; remaining links skipped")
+		if err := fetchCtx.Err(); err != nil {
+			if ctx.Err() != nil {
+				warnings = append(warnings, "hyperlink: run cancelled; remaining links skipped")
+			} else {
+				warnings = append(warnings, fmt.Sprintf("hyperlink: %s document fetch deadline reached; remaining links skipped", hyperlinkOverallDeadline(param)))
+			}
 			break
 		}
 		remaining := int64(param.MaxTotalBytes) - total
@@ -105,16 +116,22 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 			warnings = append(warnings, warn)
 			continue
 		}
-		// Distinct links can redirect to the same page; index it once.
-		if parsedFinal[finalURL] {
+		// Distinct links can redirect to the same page; index it once. Keyed the
+		// same way normalization keys links, so case variants fold together.
+		key := finalURL
+		if _, canonical, ok := canonicalLink(finalURL); ok {
+			key = canonical
+		}
+		if parsedFinal[key] {
 			continue
 		}
-		parsedFinal[finalURL] = true
-		sub := dispatchParse(ctx, utility.FileTypeHTML, finalURL, body, setups, progress.Window{})
+		parsedFinal[key] = true
+		sub := dispatchParse(fetchCtx, utility.FileTypeHTML, finalURL, body, c.setups, progress.Window{})
 		if sub.Err != nil {
 			warnings = append(warnings, fmt.Sprintf("hyperlink: parse %s failed (%v)", finalURL, sub.Err))
 			continue
 		}
+		fetched++
 		for _, it := range sub.JSON {
 			m := it.ToMap()
 			// Provenance goes into the declared "extra" chunk column rather
@@ -128,7 +145,14 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 			extra[hyperlinkParentDocKey] = parentID
 			m["extra"] = extra
 			out = append(out, parser.DocItemFromMap(m))
+			appended++
 		}
+	}
+	if len(urls) > 0 {
+		// Without this the progress stream cannot tell "linked fetching ran and
+		// found nothing" apart from "it indexed a dozen pages".
+		runtime.ReportProgressMessage(ctx, "Parser", fmt.Sprintf(
+			"linked content: %d of %d links fetched, %d items appended", fetched, len(urls), appended))
 	}
 	return out, warnings
 }
@@ -141,37 +165,6 @@ func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
 		total = 5 * time.Minute
 	}
 	return total
-}
-
-// hyperlinkTargetCollectors is the single list of families that support
-// linked-content ingestion and the extractor for each. Check and the fetch
-// post-step both read it, so a family cannot be accepted without an extractor.
-var hyperlinkTargetCollectors = map[string]func([]byte) ([]string, []string){
-	"pdf": func(binary []byte) ([]string, []string) {
-		return extractLinksFromPDF(binary), nil
-	},
-	"docx": func(binary []byte) ([]string, []string) {
-		links, err := extractLinksFromDocx(binary)
-		if err != nil {
-			return nil, []string{fmt.Sprintf("hyperlink: docx link extraction failed (%v)", err)}
-		}
-		return links, nil
-	},
-	"markdown": func(binary []byte) ([]string, []string) {
-		return extractLinksFromMarkdownText(string(binary)), nil
-	},
-}
-
-// collectHyperlinkTargets extracts raw link targets for the family from the
-// source bytes. Markdown uses the raw document rather than the parsed items:
-// the markdown parser resolves links to their label, so the URL is already
-// gone by the time items exist.
-func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) {
-	collector, ok := hyperlinkTargetCollectors[family]
-	if !ok {
-		return nil, nil
-	}
-	return collector(binary)
 }
 
 // fetchHyperlinkPage GETs one page through the guarded SSRF client with a

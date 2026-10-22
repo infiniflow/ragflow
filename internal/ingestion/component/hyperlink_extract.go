@@ -23,14 +23,16 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf16"
 )
 
-// Hyperlink source tags carried in chunk Extra. Shared by the fetch
-// post-step (hyperlink_fetch.go) and the chunker passthrough.
+// Hyperlink source tags carried in chunk Extra by the fetch post-step
+// (hyperlink_fetch.go). Chunkers carry the whole `extra` slot generically; they
+// never name these keys.
 const (
 	hyperlinkSourceURLKey  = "source_url"
 	hyperlinkParentDocKey  = "parent_doc_id"
@@ -55,7 +57,15 @@ const (
 )
 
 var (
-	markdownLinkRe   = regexp.MustCompile(`(!?)\[[^\]]*\]\(\s*([^\s)]+)`)
+	// The label group allows one nested bracket pair so a badge link
+	// `[![alt](img.png)](https://x)` still yields its destination.
+	markdownLinkRe = regexp.MustCompile(`(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\(\s*([^\s)]+)`)
+	// `[label][ref]` / `[label][]` reference usages, and the `[ref]: <dest>`
+	// definitions they resolve to. A definition nobody references is prose, not
+	// a link in the document, so only referenced definitions are collected.
+	markdownRefUseRe = regexp.MustCompile(`(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\[([^\]]*)\]`)
+	markdownRefDefRe = regexp.MustCompile(`(?m)^[ \t]*\[([^\]]+)\]:[ \t]*<?([^\s>]+)`)
+	markdownAutolink = regexp.MustCompile(`(?i)<(https?://[^>\s]+)>`)
 	htmlAnchorHrefRe = regexp.MustCompile(`(?i)<a\s[^>]*?href\s*=\s*["']([^"']+)["']`)
 )
 
@@ -278,10 +288,12 @@ func pdfBytesToString(raw []byte) string {
 	return string(raw)
 }
 
-// extractLinksFromMarkdownText returns link destinations from Markdown
-// link syntax and inline <a href>, mirroring Python's hyperlink_urls
-// collection (Markdown.md_to_html + get_hyperlink_urls). Image embeds
-// (![...](...)) are not links and are skipped.
+// extractLinksFromMarkdownText returns link destinations from the Markdown
+// source: inline links (including badge links wrapping an image), inline
+// <a href>, CommonMark autolinks, and reference-style links resolved through
+// their definitions. Image embeds (![...](...)) are not links and are skipped.
+// Python collected these by rendering Markdown to HTML first; reading the
+// source directly keeps the Parser free of a second renderer.
 func extractLinksFromMarkdownText(text string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -293,54 +305,135 @@ func extractLinksFromMarkdownText(text string) []string {
 		seen[url] = true
 		out = append(out, url)
 	}
+	capped := func() bool { return len(out) >= hyperlinkMaxURLCandidates }
+
 	for _, m := range markdownLinkRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
 		if m[1] == "!" {
 			continue
 		}
-		dest := m[2]
+		dest := m[3]
 		if i := strings.IndexAny(dest, " \t\n\"'"); i >= 0 {
 			dest = dest[:i]
 		}
 		add(dest)
-		if len(out) >= hyperlinkMaxURLCandidates {
+		if capped() {
 			return out
 		}
 	}
 	for _, m := range htmlAnchorHrefRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
 		add(m[1])
-		if len(out) >= hyperlinkMaxURLCandidates {
+		if capped() {
 			return out
+		}
+	}
+	for _, m := range markdownAutolink.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
+		add(m[1])
+		if capped() {
+			return out
+		}
+	}
+
+	// Reference-style links resolve through a definition list, matched
+	// case-insensitively as CommonMark requires. A definition no label uses is
+	// prose, not a link in the document, so it is not fetched.
+	defs := map[string]string{}
+	for _, m := range markdownRefDefRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
+		defs[strings.ToLower(strings.TrimSpace(m[1]))] = strings.Trim(m[2], `"'`)
+	}
+	if len(defs) == 0 {
+		return out
+	}
+	for _, m := range markdownRefUseRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
+		if m[1] == "!" {
+			continue
+		}
+		id := strings.ToLower(strings.TrimSpace(m[3]))
+		if id == "" {
+			id = strings.ToLower(strings.TrimSpace(m[2]))
+		}
+		if dest, ok := defs[id]; ok {
+			add(dest)
+			if capped() {
+				break
+			}
 		}
 	}
 	return out
 }
 
-// normalizeAndDedupeLinks trims, drops fragments (same page behind different
-// anchors must not be fetched and indexed twice), rejects non-fetchable
-// targets (only http(s) is ever fetched — the SSRF guard re-checks at request
-// time), dedupes and sorts for a deterministic fetch order. maxURLs caps the
-// result; truncated reports whether input was cut.
-func normalizeAndDedupeLinks(urls []string, maxURLs int) (kept []string, truncated bool) {
+// canonicalLink trims one raw link target into a fetchable URL plus a dedupe
+// key. The fragment is dropped (the same page behind different anchors must not
+// be fetched and indexed twice) and the scheme/host are case-folded, because
+// they are case-insensitive while the path and query are not. ok is false for
+// anything that is not an absolute http(s) URL: the SSRF guard re-checks the
+// destination at request time.
+func canonicalLink(raw string) (value, key string, ok bool) {
+	value = strings.TrimSpace(raw)
+	if i := strings.IndexByte(value, '#'); i >= 0 {
+		value = value[:i]
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", "", false
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if (scheme != "http" && scheme != "https") || parsed.Host == "" {
+		return "", "", false
+	}
+	return value, scheme + "://" + strings.ToLower(parsed.Host) + parsed.RequestURI(), true
+}
+
+// normalizeAndDedupeLinks canonicalizes, drops non-fetchable targets, removes
+// duplicates (case-insensitive host/scheme, fragment-insensitive) and sorts for
+// a deterministic fetch order. maxURLs caps the result; distinct reports how
+// many unique fetchable targets the input held and truncated says whether the
+// cap cut any.
+func normalizeAndDedupeLinks(urls []string, maxURLs int) (kept []string, distinct int, truncated bool) {
 	seen := map[string]bool{}
 	for _, raw := range urls {
-		u := strings.TrimSpace(raw)
-		if i := strings.IndexByte(u, '#'); i >= 0 {
-			u = u[:i]
-		}
-		if u == "" || seen[u] {
+		value, key, ok := canonicalLink(raw)
+		if !ok || seen[key] {
 			continue
 		}
-		lower := strings.ToLower(u)
-		if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-			continue
-		}
-		seen[u] = true
-		kept = append(kept, u)
+		seen[key] = true
+		kept = append(kept, value)
 	}
 	sort.Strings(kept)
 	if maxURLs > 0 && len(kept) > maxURLs {
 		kept = kept[:maxURLs]
 		truncated = true
 	}
-	return kept, truncated
+	return kept, len(seen), truncated
+}
+
+// hyperlinkTargetCollectors is the single list of families that support
+// linked-content ingestion and the extractor for each. Parser Check and the
+// fetch post-step both read it, so a family cannot be accepted without an
+// extractor.
+var hyperlinkTargetCollectors = map[string]func([]byte) ([]string, []string){
+	"pdf": func(binary []byte) ([]string, []string) {
+		return extractLinksFromPDF(binary), nil
+	},
+	"docx": func(binary []byte) ([]string, []string) {
+		links, err := extractLinksFromDocx(binary)
+		if err != nil {
+			return nil, []string{fmt.Sprintf("hyperlink: docx link extraction failed (%v)", err)}
+		}
+		return links, nil
+	},
+	"markdown": func(binary []byte) ([]string, []string) {
+		return extractLinksFromMarkdownText(string(binary)), nil
+	},
+}
+
+// collectHyperlinkTargets extracts raw link targets for the family from the
+// source bytes. Markdown uses the raw document rather than the parsed items:
+// the markdown parser resolves links to their label, so the URL is already
+// gone by the time items exist.
+func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) {
+	collector, ok := hyperlinkTargetCollectors[family]
+	if !ok {
+		return nil, nil
+	}
+	return collector(binary)
 }

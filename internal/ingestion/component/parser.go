@@ -79,6 +79,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -115,6 +116,10 @@ type ParserComponent struct {
 	setups                  map[string]schema.ParserSetup
 	enableVisionEnhancement bool
 	vision                  visionSettings
+	// hyperlinkParams holds the linked-content budgets Check validated, keyed
+	// by family. Populating it here is what makes one document's run read the
+	// config it was compiled with instead of re-parsing the setup map.
+	hyperlinkParams map[string]schema.HyperlinkFetchParam
 }
 
 // visionSettings carries the global vision-enhancement choices. They sit at the
@@ -194,6 +199,12 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 		ftCfg, ok := raw.(map[string]any)
 		if !ok {
+			// A hyperlink switch sitting at the params root is a misplaced
+			// setting: it would never reach a family setup, so fail rather than
+			// silently do nothing (#21032).
+			if slices.Contains(schema.HyperlinkSetupKeys, k) {
+				return nil, fmt.Errorf("parser: %q must be set inside a file-format setup, not at the top level", k)
+			}
 			continue
 		}
 		if _, exists := s[k]; !exists {
@@ -299,9 +310,12 @@ func (c *ParserComponent) Check() error {
 			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
 		}
 	}
-	// Hyperlink switches live under the pdf/docx/markdown families only;
-	// the same keys anywhere else are rejected so a misplaced setting
-	// cannot silently do nothing (#20139 class).
+	// Hyperlink switches live under the families in hyperlinkTargetCollectors
+	// only; the same keys anywhere else are rejected so a misplaced setting
+	// cannot silently do nothing (#20139 class). This is also where the
+	// validated per-family budgets are cached, so a run reads the configuration
+	// it was compiled with instead of re-parsing the setup map (#21032).
+	hyperlinkParams := make(map[string]schema.HyperlinkFetchParam, len(hyperlinkTargetCollectors))
 	for family, setup := range c.setups {
 		if _, ok := hyperlinkTargetCollectors[family]; ok {
 			if family != "markdown" {
@@ -309,17 +323,20 @@ func (c *ParserComponent) Check() error {
 					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, "collect_markdown_links")
 				}
 			}
-			if _, err := schema.HyperlinkFetchParamFromSetup(setup); err != nil {
+			param, err := schema.HyperlinkFetchParamFromSetup(setup)
+			if err != nil {
 				return fmt.Errorf("parser: %s %w", family, err)
 			}
+			hyperlinkParams[family] = param
 			continue
 		}
-		for _, key := range []string{"fetch_links", "collect_markdown_links", "max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
+		for _, key := range schema.HyperlinkSetupKeys {
 			if _, exists := setup[key]; exists {
 				return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, key)
 			}
 		}
 	}
+	c.hyperlinkParams = hyperlinkParams
 	return nil
 }
 
@@ -624,7 +641,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// fetched pages are parsed as plain HTML and appended after the parent
 	// items. Failures are warnings only, never run errors.
 	if items, ok := out["json"].([]parser.DocItem); ok {
-		fetched, linkWarnings := maybeFetchHyperlinkContents(ctx, fileTypeExt, filename, binary, items, c.setups, docID)
+		fetched, linkWarnings := c.fetchHyperlinkedContent(ctx, fileTypeExt, filename, binary, items, docID)
 		out["json"] = fetched
 		reportParserWarnings(ctx, linkWarnings)
 	}

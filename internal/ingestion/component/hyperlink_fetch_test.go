@@ -19,19 +19,23 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"ragflow/internal/common"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
+// hyperlinkTestSetups returns the default Parser setups with `overrides`
+// applied to one family.
 func hyperlinkTestSetups(t *testing.T, family string, overrides map[string]any) map[string]schema.ParserSetup {
 	t.Helper()
 	setups := defaultSetups()
@@ -46,18 +50,27 @@ func hyperlinkTestSetups(t *testing.T, family string, overrides map[string]any) 
 	return setups
 }
 
-func allowTestHosts(t *testing.T) {
+// newHyperlinkComponent builds a ParserComponent the way the canvas does, so the
+// post-step reads budgets that Check validated rather than a hand-fed map.
+func newHyperlinkComponent(t *testing.T, family string, overrides map[string]any) *ParserComponent {
 	t.Helper()
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	params := map[string]any{}
+	for name, setup := range hyperlinkTestSetups(t, family, overrides) {
+		params[name] = map[string]any(setup)
+	}
+	comp, err := NewParserComponent(params)
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	return comp.(*ParserComponent)
 }
 
 func TestHyperlinkDisabledByDefault(t *testing.T) {
+	c := newHyperlinkComponent(t, "markdown", nil)
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("see [x](https://example.com/x)")
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, defaultSetups(), "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -67,7 +80,7 @@ func TestHyperlinkDisabledByDefault(t *testing.T) {
 }
 
 func TestHyperlinkMarkdownFetchAppendsTaggedItems(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<html><body><p>linked page body text</p></body></html>"))
@@ -76,11 +89,11 @@ func TestHyperlinkMarkdownFetchAppendsTaggedItems(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("see [page](" + srv.URL + "/p)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -102,7 +115,7 @@ func TestHyperlinkMarkdownFetchAppendsTaggedItems(t *testing.T) {
 }
 
 func TestHyperlinkSkipsNonHTMLAndFailures(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/bin" {
 			w.Header().Set("Content-Type", "application/octet-stream")
@@ -115,11 +128,11 @@ func TestHyperlinkSkipsNonHTMLAndFailures(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("a [b](" + srv.URL + "/bin) c [d](" + srv.URL + "/missing)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only %d", len(got), len(parent))
 	}
@@ -129,7 +142,7 @@ func TestHyperlinkSkipsNonHTMLAndFailures(t *testing.T) {
 }
 
 func TestHyperlinkOverSizeSkipped(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<html><body><p>0123456789abcdef</p></body></html>"))
@@ -138,11 +151,11 @@ func TestHyperlinkOverSizeSkipped(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[p](" + srv.URL + ")")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true, "max_bytes_per_url": 8,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only", len(got))
 	}
@@ -156,36 +169,18 @@ func TestHyperlinkTruncationWarns(t *testing.T) {
 	// so both the truncation and the single kept-URL failure are hermetic.
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[a](http://127.0.0.1:1/a) [b](http://127.0.0.1:1/b)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true, "max_urls": 1,
 	})
-	_, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	_, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(warnings) != 2 {
 		t.Fatalf("warnings = %v, want truncation + fetch failure", warnings)
 	}
 }
 
-func TestCheckRejectsMisplacedHyperlinkKey(t *testing.T) {
-	if _, err := NewParserComponent(map[string]any{"html": map[string]any{"fetch_links": true}}); err == nil {
-		t.Fatal("want error when a family without hyperlink support carries fetch_links")
-	}
-	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"collect_markdown_links": true}}); err == nil {
-		t.Fatal("want error for collect_markdown_links outside markdown")
-	}
-}
-
-func TestCheckRejectsInvalidHyperlinkBudget(t *testing.T) {
-	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"fetch_links": true, "max_urls": 0}}); err == nil {
-		t.Fatal("want error for out-of-range max_urls")
-	}
-	if _, err := NewParserComponent(map[string]any{"pdf": map[string]any{"fetch_links": "yes"}}); err == nil {
-		t.Fatal("want error for non-boolean fetch_links")
-	}
-}
-
 func TestHyperlinkDocxEndToEnd(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte("<html><body><p>docx linked page</p></body></html>"))
@@ -197,10 +192,10 @@ func TestHyperlinkDocxEndToEnd(t *testing.T) {
 		`</Relationships>`
 	binary := buildDocxWithRels(t, rels)
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
-	setups := hyperlinkTestSetups(t, "docx", map[string]any{"fetch_links": true})
+	c := newHyperlinkComponent(t, "docx", map[string]any{"fetch_links": true})
 
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeDOCX,
-		"doc.docx", binary, parent, setups, "doc-42")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeDOCX,
+		"doc.docx", binary, parent, "doc-42")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -217,23 +212,23 @@ func TestHyperlinkDocxEndToEnd(t *testing.T) {
 func TestHyperlinkCancelledContextSkipsFetch(t *testing.T) {
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[p](https://example.com/p)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	got, warnings := maybeFetchHyperlinkContents(ctx, utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(ctx, utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only", len(got))
 	}
-	if len(warnings) != 1 || warnings[0] != "hyperlink: fetch cancelled; remaining links skipped" {
-		t.Fatalf("warnings = %v, want cancellation warning", warnings)
+	if len(warnings) != 1 || warnings[0] != "hyperlink: run cancelled; remaining links skipped" {
+		t.Fatalf("warnings = %v, want the cancellation warning", warnings)
 	}
 }
 
 func TestHyperlinkRemainingBudgetCapsRead(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<html><body><p>body over remaining budget</p></body></html>"))
@@ -242,12 +237,12 @@ func TestHyperlinkRemainingBudgetCapsRead(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[a](" + srv.URL + ")")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 		"max_bytes_per_url": 1 << 20, "max_total_bytes": 32,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only", len(got))
 	}
@@ -257,7 +252,7 @@ func TestHyperlinkRemainingBudgetCapsRead(t *testing.T) {
 }
 
 func TestHyperlinkDeduplicatesRedirectTargets(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/a", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/final", http.StatusFound)
@@ -274,11 +269,11 @@ func TestHyperlinkDeduplicatesRedirectTargets(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
 	}
@@ -288,7 +283,7 @@ func TestHyperlinkDeduplicatesRedirectTargets(t *testing.T) {
 }
 
 func TestHyperlinkChargesRejectedResponsesToBudget(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = w.Write([]byte("<html><body><p>" + strings.Repeat("x", 200) + "</p></body></html>"))
@@ -297,12 +292,12 @@ func TestHyperlinkChargesRejectedResponsesToBudget(t *testing.T) {
 
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	binary := []byte("[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)")
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 		"max_bytes_per_url": 1 << 20, "max_total_bytes": 64,
 	})
-	got, warnings := maybeFetchHyperlinkContents(context.Background(), utility.FileTypeMarkdown,
-		"doc.md", binary, parent, setups, "doc1")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
 	if len(got) != len(parent) {
 		t.Fatalf("len = %d, want parent only", len(got))
 	}
@@ -326,7 +321,7 @@ func TestHyperlinkOverallDeadline(t *testing.T) {
 }
 
 func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
-	allowTestHosts(t)
+	withSSRFBypass(t)
 	started := make(chan struct{})
 	var signalOnce sync.Once
 	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -335,23 +330,15 @@ func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
 	}))
 	defer slow.Close()
 
-	setups := hyperlinkTestSetups(t, "markdown", map[string]any{
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
 		"fetch_links": true, "collect_markdown_links": true,
 	})
-	params := map[string]any{}
-	for family, setup := range setups {
-		params[family] = map[string]any(setup)
-	}
-	comp, err := NewParserComponent(params)
-	if err != nil {
-		t.Fatalf("NewParserComponent: %v", err)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := comp.Invoke(ctx, nil, map[string]any{
+		_, err := c.Invoke(ctx, nil, map[string]any{
 			"binary":    []byte("[p](" + slow.URL + ")"),
 			"name":      "doc.md",
 			"file_type": "md",
@@ -374,5 +361,149 @@ func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Invoke did not return after cancellation")
+	}
+}
+
+// The markdown contract is two switches: fetching without collecting links has
+// nothing to fetch, and must say nothing rather than half-work.
+func TestHyperlinkMarkdownCollectSwitchOffSkipsFetch(t *testing.T) {
+	withSSRFBypass(t)
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>unseen</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	c := newHyperlinkComponent(t, "markdown", map[string]any{"fetch_links": true})
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", []byte("[p]("+srv.URL+"/p)"), parent, "doc1")
+	if len(got) != len(parent) || atomic.LoadInt32(&hits) != 0 || len(warnings) != 0 {
+		t.Fatalf("got=%d hits=%d warnings=%v, want parent only, no request, no warning", len(got), hits, warnings)
+	}
+}
+
+// The PDF family has to reach the fetch stage through its own collector, not
+// just the markdown/docx ones.
+func TestHyperlinkPDFFetchEndToEnd(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>pdf linked page</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	c := newHyperlinkComponent(t, "pdf", map[string]any{"fetch_links": true})
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("%PDF-1.7 <</S/URI/URI (" + srv.URL + "/p)>>")
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypePDF,
+		"doc.pdf", binary, parent, "doc1")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	if len(got) <= len(parent) {
+		t.Fatalf("len = %d, want linked items appended after the parent", len(got))
+	}
+	extra, _ := got[len(got)-1].ToMap()["extra"].(map[string]any)
+	if extra[hyperlinkSourceURLKey] != srv.URL+"/p" {
+		t.Fatalf("source_url = %#v, want the fetched page", extra[hyperlinkSourceURLKey])
+	}
+}
+
+// Without a document id the provenance falls back to the filename, so an item
+// is never attributed to the empty string.
+func TestHyperlinkParentIDFallsBackToFilename(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body><p>linked</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	c := newHyperlinkComponent(t, "markdown", map[string]any{"fetch_links": true, "collect_markdown_links": true})
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", []byte("[p]("+srv.URL+"/p)"), parent, "")
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", warnings)
+	}
+	extra, _ := got[len(got)-1].ToMap()["extra"].(map[string]any)
+	if extra[hyperlinkParentDocKey] != "doc.md" {
+		t.Fatalf("parent_doc_id = %#v, want the filename fallback", extra[hyperlinkParentDocKey])
+	}
+}
+
+// A server that omits Content-Type still yields a page: the guard only rejects
+// content types it can positively identify as non-HTML.
+func TestHyperlinkFetchesResponseWithoutContentType(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<html><body><p>typeless page</p></body></html>"))
+	}))
+	defer srv.Close()
+
+	c := newHyperlinkComponent(t, "markdown", map[string]any{"fetch_links": true, "collect_markdown_links": true})
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	got, warnings := c.fetchHyperlinkedContent(context.Background(), utility.FileTypeMarkdown,
+		"doc.md", []byte("[p]("+srv.URL+"/p)"), parent, "doc1")
+	if len(warnings) != 0 || len(got) <= len(parent) {
+		t.Fatalf("warnings = %v len = %d, want the page indexed", warnings, len(got))
+	}
+}
+
+func TestHyperlinkDocxCapsCandidates(t *testing.T) {
+	seg := `<Relationship Id="r%d" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/%d"/>`
+	var b strings.Builder
+	b.WriteString(`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`)
+	for i := 0; i < hyperlinkMaxURLCandidates+5; i++ {
+		fmt.Fprintf(&b, seg, i, i)
+	}
+	b.WriteString(`</Relationships>`)
+
+	links, err := extractLinksFromDocx(buildDocxWithRels(t, b.String()))
+	if err != nil {
+		t.Fatalf("extractLinksFromDocx: %v", err)
+	}
+	if len(links) != hyperlinkMaxURLCandidates {
+		t.Fatalf("got %d links, want the %d candidate cap", len(links), hyperlinkMaxURLCandidates)
+	}
+}
+
+// Invoke is the production entry point: the post-step's warnings and its run
+// summary have to reach the progress sink or an operator sees nothing.
+func TestParserInvokeReportsLinkedContentProgress(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("not a page"))
+	}))
+	defer srv.Close()
+
+	c := newHyperlinkComponent(t, "markdown", map[string]any{"fetch_links": true, "collect_markdown_links": true})
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(context.Background(), func(_, message string) {
+		messages = append(messages, message)
+	})
+	if _, err := c.Invoke(ctx, nil, map[string]any{
+		"binary":    []byte("[a](" + srv.URL + "/a) [b](" + srv.URL + "/b)"),
+		"name":      "doc.md",
+		"file_type": "md",
+		"doc_id":    "doc1",
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	var sawSkip, sawSummary bool
+	for _, m := range messages {
+		if strings.Contains(m, "is not a page") {
+			sawSkip = true
+		}
+		if strings.Contains(m, "linked content: 0 of 2 links fetched") {
+			sawSummary = true
+		}
+	}
+	if !sawSkip || !sawSummary {
+		t.Fatalf("messages = %v, want the per-URL skip warning and the run summary", messages)
 	}
 }

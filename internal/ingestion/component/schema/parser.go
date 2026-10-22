@@ -18,9 +18,52 @@ package schema
 
 import (
 	"fmt"
-
-	"ragflow/internal/common"
+	"math"
+	"strconv"
+	"strings"
 )
+
+// HyperlinkSetupKeys lists every Parser setup key the linked-content
+// ingestion reads. Check rejects them under families that do not support
+// fetching, so this list and HyperlinkFetchParam move together.
+var HyperlinkSetupKeys = []string{
+	"fetch_links",
+	"collect_markdown_links",
+	"max_urls",
+	"max_bytes_per_url",
+	"max_total_bytes",
+	"timeout_s",
+}
+
+// hyperlinkBudgetKeys are the numeric members of HyperlinkSetupKeys.
+var hyperlinkBudgetKeys = []string{"max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"}
+
+// hyperlinkBudgetValue coerces a setup budget to an int. JSON numbers decode as
+// float64, so an integral float is accepted; a fractional float, a bool or
+// anything else is rejected instead of being silently truncated or counted as 1.
+func hyperlinkBudgetValue(raw any) (int, bool) {
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float32:
+		return hyperlinkWholeNumber(float64(v))
+	case float64:
+		return hyperlinkWholeNumber(v)
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(v))
+		return i, err == nil
+	}
+	return 0, false
+}
+
+func hyperlinkWholeNumber(f float64) (int, bool) {
+	if f != math.Trunc(f) || f < math.MinInt32 || f > math.MaxInt32 {
+		return 0, false
+	}
+	return int(f), true
+}
 
 // Hyperlink fetch bounds for the opt-in linked-content ingestion (#21032).
 // Budgets are shared by the pdf, docx and markdown families; each family
@@ -152,12 +195,12 @@ func HyperlinkFetchParamFromSetup(setup ParserSetup) (HyperlinkFetchParam, error
 		}
 		p.CollectMarkdownLinks = v
 	}
-	for _, key := range []string{"max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
+	for _, key := range hyperlinkBudgetKeys {
 		raw, exists := setup[key]
 		if !exists {
 			continue
 		}
-		v, ok := common.ToInt(raw)
+		v, ok := hyperlinkBudgetValue(raw)
 		if !ok {
 			return p, errInvalidValue{Field: key, Value: fmt.Sprintf("%v", raw)}
 		}
