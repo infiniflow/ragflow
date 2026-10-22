@@ -9,7 +9,6 @@ import { chain, sum } from 'lodash';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from './input';
-import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import message from './message';
 
 const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
