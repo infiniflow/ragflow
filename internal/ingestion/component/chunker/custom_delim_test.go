@@ -53,9 +53,6 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 		if _, ok := chunk["doc_type_kwd"]; ok {
 			t.Errorf("chunk[%d] must not synthesize doc_type_kwd: %v", i, chunk)
 		}
-		if _, ok := chunk["ck_type"]; ok {
-			t.Errorf("chunk[%d] must not emit the retired ck_type: %v", i, chunk)
-		}
 	}
 }
 

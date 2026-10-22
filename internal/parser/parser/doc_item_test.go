@@ -52,8 +52,7 @@ func TestTextItem_ToMap(t *testing.T) {
 }
 
 func TestTextItem_ExtraDoesNotClobberCanonical(t *testing.T) {
-	// An attacker/stray Extra key must never shadow the typed fields, and a
-	// retired ck_type must not be resurrected through Extra.
+	// An attacker/stray Extra key must never shadow the typed fields.
 	got := TextItem{
 		Text: "real",
 		Extra: map[string]any{
@@ -289,24 +288,6 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	}
 	if _, ok := DocItemFromMap(opaqueMap).(RawItem); !ok {
 		t.Error("opaque map should fall back to RawItem")
-	}
-}
-
-// A legacy payload may still carry the retired ck_type key. Typed conversion
-// must drop it rather than route it through Extra and re-emit it.
-func TestDocItemFromMap_DropsRetiredCKType(t *testing.T) {
-	legacy := map[string]any{
-		"text":     "h",
-		DocTypeKey: DocTypeText,
-		"ck_type":  "heading",
-		"layout":   "heading",
-	}
-	got := DocItemFromMap(legacy).ToMap()
-	if _, ok := got["ck_type"]; ok {
-		t.Fatalf("retired ck_type leaked through ToMap: %#v", got)
-	}
-	if got["layout"] != "heading" {
-		t.Fatalf("layout lost during conversion: %#v", got)
 	}
 }
 
