@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -1931,7 +1932,7 @@ func TestUpdateAgentAllowsCaseOnlyTitleChange(t *testing.T) {
 
 func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 	setupAgentSessionServiceTest(t)
-	ctx := t.Context()
+	ctx := seedAgentServiceCreateContext(t)
 
 	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
 		ID:             "canvas-dup-title",
@@ -1961,6 +1962,40 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 	if err := dao.DB.WithContext(ctx).Where("user_id = ? AND title = ?", "user-1", "Dup Title(1)").First(&created).Error; err != nil {
 		t.Fatalf("expected a persisted agent named %q: %v", "Dup Title(1)", err)
 	}
+}
+
+func seedAgentServiceCreateContext(t *testing.T) context.Context {
+	t.Helper()
+	active := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.User{ID: "user-1", Email: "user-1@example.test", Nickname: "user-1"}).Error; err != nil {
+		t.Fatalf("create agent owner: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "agent-owner-link", UserID: "user-1", TenantID: "tenant-agent", Role: string(permission.RoleOwner), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create agent owner membership: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE permission (
+			id TEXT PRIMARY KEY, member_id TEXT, group_id TEXT, tenant_id TEXT NOT NULL,
+			resource_type TEXT NOT NULL, resource_id TEXT, permission INTEGER NOT NULL DEFAULT 0,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+		`CREATE TABLE permission_change_log (
+			id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, operator_id TEXT NOT NULL,
+			target_type TEXT NOT NULL, target_id TEXT NOT NULL, resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL, old_permission INTEGER NOT NULL DEFAULT 0,
+			new_permission INTEGER NOT NULL DEFAULT 0, action_type TEXT NOT NULL, reason TEXT,
+			event_type TEXT NOT NULL DEFAULT '', actor_user_id TEXT,
+			scope_type TEXT NOT NULL DEFAULT 'tenant', before_data TEXT, after_data TEXT,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+	} {
+		if err := dao.DB.Exec(statement).Error; err != nil {
+			t.Fatalf("create Agent permission test table: %v", err)
+		}
+	}
+	return permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-agent"})
 }
 
 func TestCreateAgentRequiresAuthenticatedUserID(t *testing.T) {

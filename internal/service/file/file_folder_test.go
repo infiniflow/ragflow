@@ -204,7 +204,7 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 		ID:        id,
 		ParentID:  parentID,
 		TenantID:  "tenant-1",
-		CreatedBy: "user-1",
+		CreatedBy: "tenant-1",
 		Name:      name,
 		Location:  sptr(name),
 		Type:      "pdf",
