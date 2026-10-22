@@ -84,9 +84,12 @@ def test_resume_after_failed_batch_succeeds(tmp_path, batches):
 
     assert result["success"] is True
     assert result["error"] is None
+    assert result["migrated_documents"] == 6
     assert result["failed_documents"] == 0
     progress = migrator.progress_manager.load_progress("ragflow_idx", "ragflow_tbl")
     assert progress.status == "completed"
+    assert progress.migrated_documents == 6
+    assert progress.failed_documents == 0
 
 
 def test_all_batches_inserted_marks_completed(tmp_path, batches):

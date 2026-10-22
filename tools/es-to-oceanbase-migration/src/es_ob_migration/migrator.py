@@ -127,6 +127,10 @@ class ESToOceanBaseMigrator:
                 console.print("\n[bold yellow]Resuming from previous progress...[/]")
                 progress = self.progress_manager.load_progress(es_index, ob_table)
                 console.print(f"  Previously migrated: {progress.migrated_documents:,} documents")
+                # The scan restarts from the first document and inserts are upserts, so a
+                # resumed run counts every document again instead of adding to the old count.
+                progress.migrated_documents = 0
+                progress.failed_documents = 0
             else:
                 # Fresh start - check if table already exists
                 if self.ob_client.table_exists(ob_table):
