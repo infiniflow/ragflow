@@ -46,6 +46,19 @@ var ErrPipelineVersionMissing = errors.New("pipeline version missing or not owne
 // parse path can surface a human-readable instruction (design section 6.2, C4).
 const userFacingVersionHint = "pipeline 版本不存在，请重新选择版本"
 
+// MaxCanvasVersions is the per-canvas cap on the number of DSL versions (K=64,
+// design: limit the number of versions of a DSL). When a canvas already holds
+// this many versions, any write that would create a NEW version row is rejected
+// so the user is forced to delete old unused versions first. The cap counts
+// every version row (published or not); in-place DSL refreshes never consume
+// the budget because they do not insert a row.
+const MaxCanvasVersions = 64
+
+// ErrCanvasVersionLimitExceeded is returned by SaveOrReplaceLatestTx when a new
+// version write would exceed MaxCanvasVersions. The handler surfaces it to the
+// frontend as a data error with this user-facing hint.
+var ErrCanvasVersionLimitExceeded = errors.New("版本数已达上限（最多 64 个），请删除旧的不再使用的版本")
+
 // LoadCanvasVersionDSL resolves the DSL for a dataflow canvas version. When
 // versionID is non-empty it pins that exact version; when empty it resolves the
 // latest published version. A missing, mis-owned, or empty-DSL version returns
@@ -374,6 +387,21 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 			}
 			return &latest, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
 		}
+	}
+	// Reaching this point means we are about to INSERT a NEW version row (the
+	// in-place refresh branch above never gets here). Enforce the per-canvas
+	// version cap: reject the write once the canvas already holds MaxCanvasVersions
+	// rows so the user must delete old unused versions first. Counting all rows
+	// (published and unpublished) keeps the budget honest -- the unpublished
+	// excess trim below only ever removes unpublished rows and never frees the cap.
+	var existing int64
+	if err = tx.WithContext(ctx).Model(&entity.UserCanvasVersion{}).
+		Where("user_canvas_id = ?", opts.UserCanvasID).
+		Count(&existing).Error; err != nil {
+		return nil, err
+	}
+	if existing >= MaxCanvasVersions {
+		return nil, ErrCanvasVersionLimitExceeded
 	}
 	row := &entity.UserCanvasVersion{
 		ID:           opts.NewID,
