@@ -111,7 +111,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 		t.Fatalf("result=%+v", result)
 	}
 
-	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,14 +175,12 @@ func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
 	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		return &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "# Heading\n\nBody"}}}}}, "ocr-model", &modelModule.APIConfig{}, nil
 	}
-	for _, format := range []string{"json", "markdown", ""} {
-		result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{"output_format": format}, "model")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.OutputFormat != "json" || len(result.JSON) == 0 {
-			t.Fatalf("result=%+v", result)
-		}
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{}, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.OutputFormat != "json" || len(result.JSON) == 0 {
+		t.Fatalf("result=%+v", result)
 	}
 }
 

@@ -17,15 +17,17 @@ package pipeline
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // parserSetupParamsKeys are the Parser params keys that are NOT per-family
-// setups: the wire-format declaration, the global vision settings and the
-// legacy allow-list. Every other object-valued params key is a file family.
+// setups: the wire-format declaration and the global vision settings. Every
+// other object-valued params key is a file family.
 var parserSetupParamsKeys = map[string]bool{
 	"outputs":                   true,
-	"allowed_output_format":     true,
 	"enable_vision_enhancement": true,
 	"vlm":                       true,
 }
@@ -89,7 +91,7 @@ func assertNoParserOutputFormatInParams(t *testing.T, ref string, root map[strin
 				continue
 			}
 			if value, found := setup["output_format"]; found {
-				t.Errorf("%s: Parser %s family %q declares output_format = %v; the Parser runtime overwrites it with \"json\", so the key is dead configuration", ref, cpnID, family, value)
+				t.Errorf("%s: Parser %s family %q declares output_format = %v; no parser reads the key", ref, cpnID, family, value)
 			}
 		}
 	}
@@ -116,8 +118,50 @@ func assertNoParserOutputFormatInGraph(t *testing.T, ref string, root map[string
 			setup, _ := rawSetup.(map[string]any)
 			fileFormat, _ := setup["fileFormat"].(string)
 			if value, found := setup["output_format"]; found {
-				t.Errorf("%s: Parser node %s family %q declares output_format = %v; the Parser runtime overwrites it with \"json\", so the key is dead configuration", ref, id, fileFormat, value)
+				t.Errorf("%s: Parser node %s family %q declares output_format = %v; no parser reads the key", ref, id, fileFormat, value)
 			}
 		}
+	}
+}
+
+// TestAgentTemplatesCarryNoParserOutputFormat extends the pin to the seeded
+// canvas templates under internal/agent/templates. The ingestion-pipeline
+// canvases there (title_chunker, chunk_summary, advanced_ingestion_pipeline)
+// carry Parser nodes too, and the dao seeder copies their DSL verbatim into
+// the canvas_template table, so a baked key there reaches live canvases.
+// compiler.json is a bare DSL fixture without the metadata wrapper, so the
+// "dsl" key is optional.
+func TestAgentTemplatesCarryNoParserOutputFormat(t *testing.T) {
+	dir := filepath.Join("..", "..", "agent", "templates")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read agent templates: %v", err)
+	}
+	checked := 0
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		var wrapper map[string]any
+		if err := json.Unmarshal(raw, &wrapper); err != nil {
+			t.Fatalf("decode %s: %v", name, err)
+		}
+		root, ok := wrapper["dsl"].(map[string]any)
+		if !ok {
+			root = wrapper
+		}
+		checked++
+		t.Run(name, func(t *testing.T) {
+			assertNoParserOutputFormatInParams(t, name, root)
+			assertNoParserOutputFormatInGraph(t, name, root)
+		})
+	}
+	if checked == 0 {
+		t.Fatal("no agent templates found")
 	}
 }
