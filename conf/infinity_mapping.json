@@ -55,6 +55,9 @@
 	"chunk_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"input_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"wiki_slug_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"mode_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"embedding_model_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"build_timestamp_flt": {"type": "float", "default": 0.0},
 	"md_with_weight": {"type": "varchar", "default": ""},
 	"summary_with_weight": {"type": "varchar", "default": ""},
 	"skill_with_weight": {"type": "varchar", "default": ""},
@@ -77,7 +80,6 @@
 	"claims": {"type": "json", "default": "[]", "enabled": false},
 	"page_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"page_id": {"type": "varchar", "default": ""},
-	"deleted_doc_id": {"type": "varchar", "default": ""},
 	"source_chunk_hashes": {"type": "json", "default": "{}", "enabled": false},
 	"map_checksum": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 

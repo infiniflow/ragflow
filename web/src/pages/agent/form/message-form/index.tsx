@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { WebHookResponseStatusFormField } from '@/components/webhook-response-status';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,6 +18,7 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { ExportFileType } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
 import { PromptEditor } from '../components/prompt-editor';
@@ -28,6 +29,7 @@ import { useWatchFormChange } from './use-watch-change';
 
 function MessageForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
 
@@ -123,7 +125,7 @@ function MessageForm({ node }: INextOperatorForm) {
                 render={({ field }) => (
                   <FormItem className="flex-1">
                     <FormControl>
-                      <RAGFlowSelect
+                      <SelectWithSearch
                         options={Object.keys(ExportFileType).map(
                           (key: string) => {
                             return {
@@ -136,10 +138,9 @@ function MessageForm({ node }: INextOperatorForm) {
                           },
                         )}
                         {...field}
-                        onValueChange={field.onChange}
                         placeholder={t('common.selectPlaceholder')}
                         allowClear
-                      ></RAGFlowSelect>
+                      ></SelectWithSearch>
                     </FormControl>
                   </FormItem>
                 )}
@@ -164,7 +165,10 @@ function MessageForm({ node }: INextOperatorForm) {
             </FormItem>
           </>
         )}
-        <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
+        <MemoriesFormField
+          label={t('flow.saveToMemory')}
+          ownerTenantId={ownerTenantId}
+        ></MemoriesFormField>
         <UserIdFormField></UserIdFormField>
       </FormWrapper>
     </Form>

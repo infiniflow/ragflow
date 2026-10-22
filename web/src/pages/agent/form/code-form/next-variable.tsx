@@ -10,7 +10,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { BlurInput } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { X } from 'lucide-react';
@@ -77,11 +76,11 @@ export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
                 <FormItem className="flex-1 overflow-hidden">
                   <FormControl>
                     {isOutputs ? (
-                      <RAGFlowSelect
+                      <SelectWithSearch
                         placeholder={t('common.pleaseSelect')}
                         options={TypeOptions}
                         {...field}
-                      ></RAGFlowSelect>
+                      ></SelectWithSearch>
                     ) : (
                       <SelectWithSearch
                         options={nextOptions}

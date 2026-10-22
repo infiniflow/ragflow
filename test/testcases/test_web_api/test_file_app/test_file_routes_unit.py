@@ -131,7 +131,7 @@ def _load_file_api_module(monkeypatch):
     file_api_service_mod.move_files = _move_files
     file_api_service_mod.get_file_content = lambda _tenant_id, _file_id: (
         True,
-        SimpleNamespace(parent_id="bucket1", location="path1", name="doc.txt", type="doc"),
+        SimpleNamespace(parent_id="bucket1", location="path1", name="doc.txt", type="doc", source_type=""),
     )
     file_api_service_mod.get_parent_folder = lambda _file_id, user_id=None: (True, {"parent_folder": {"id": "parent1"}})
     file_api_service_mod.get_all_parent_folders = lambda _file_id, user_id=None: (True, {"parent_folders": [{"id": "root"}]})

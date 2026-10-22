@@ -16,7 +16,10 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect, RAGFlowSelectOptionType } from '@/components/ui/select';
+import {
+  SelectWithSearch,
+  SelectWithSearchOptionType,
+} from '@/components/originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
@@ -75,7 +78,7 @@ function ParameterForm({
   });
 
   const options = useMemo(() => {
-    return Object.values(BeginQueryType).reduce<RAGFlowSelectOptionType[]>(
+    return Object.values(BeginQueryType).reduce<SelectWithSearchOptionType[]>(
       (pre, cur) => {
         const Icon = BeginQueryTypeIconMap[cur];
 
@@ -140,7 +143,7 @@ function ParameterForm({
             <FormItem>
               <FormLabel>{t('type')}</FormLabel>
               <FormControl>
-                <RAGFlowSelect {...field} options={options} />
+                <SelectWithSearch {...field} options={options} />
               </FormControl>
               <FormMessage />
             </FormItem>

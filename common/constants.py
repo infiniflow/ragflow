@@ -171,6 +171,7 @@ class FileSource(StrEnum):
     BITBUCKET = "bitbucket"
     AZURE_DEVOPS = "azure_devops"
     ZENDESK = "zendesk"
+    ZOTERO = "zotero"
     SEAFILE = "seafile"
     MYSQL = "mysql"
     POSTGRESQL = "postgresql"

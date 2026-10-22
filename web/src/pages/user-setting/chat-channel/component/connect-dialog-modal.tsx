@@ -16,7 +16,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useFetchAllAgentList } from '@/hooks/use-agent-request';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -101,7 +101,7 @@ const ConnectDialogModal = ({
         <label className="text-sm text-text-secondary">
           {t('setting.selectDialog')}
         </label>
-        <RAGFlowSelect
+        <SelectWithSearch
           value={targetValue}
           onChange={(val: string) => setTargetValue(val || undefined)}
           options={options}

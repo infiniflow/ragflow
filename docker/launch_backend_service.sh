@@ -104,7 +104,7 @@ task_exe(){
         task_name="ragflow_server --ingestor"
         task_cmd=("bin/ragflow_server" "--ingestor")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            task_cmd+=("--debug")
+            task_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0
@@ -140,8 +140,10 @@ run_server(){
         prepare_for_go
         server_name="ragflow_server"
         server_cmd=("bin/ragflow_server" "--api")
-    fi
-    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        if [[ "$DEBUG_MODE" -eq 1 ]]; then
+            server_cmd+=("--log-level" "debug")
+        fi
+    elif [[ "$DEBUG_MODE" -eq 1 ]]; then
         server_cmd+=("--debug")
     fi
     local retry_count=0
@@ -174,7 +176,7 @@ run_admin_server(){
         server_name="admin_server"
         server_cmd=("bin/ragflow_server" "--admin")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            server_cmd+=("--debug")
+            server_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0
@@ -206,7 +208,7 @@ run_data_sync(){
         server_name="ragflow_server --syncer"
         sync_cmd=("bin/ragflow_server" "--syncer")
         if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            sync_cmd+=("--debug")
+            sync_cmd+=("--log-level" "debug")
         fi
     fi
     local retry_count=0
@@ -240,8 +242,6 @@ run_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # The migrations contain MySQL-only SQL and cannot run against a GaussDB
-        # metadata database.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
@@ -253,6 +253,8 @@ run_migrations() {
         echo "Running model provider table migrations (go)..."
         bin/ragflow_server --migrate
     else
+        # run_migrations.sh selects mysql_migration.py or postgres_migration.py
+        # from DB_TYPE for postgres in-place upgrades (#18755 / #18756).
         tools/scripts/run_migrations.sh
     fi
 }

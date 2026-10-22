@@ -28,6 +28,7 @@ import aiohttp
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
+from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -175,6 +176,26 @@ def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None
         logging.warning("Claude sampling policy: dropped top_p for model %s (temperature and top_p cannot both be specified)", model_name_lower)
 
 
+def _is_bedrock_openai_gpt(model_name_lower: str) -> bool:
+    """OpenAI GPT-5.x / GPT-6 on Bedrock (``us.openai.gpt-6-sol``); gpt-oss is a different family."""
+    return "openai.gpt-" in model_name_lower and "gpt-oss" not in model_name_lower
+
+
+def _bedrock_litellm_model(model_name: str) -> str:
+    """Return the LiteLLM model string for a Bedrock model.
+
+    LiteLLM sends a Bedrock model it does not find in its bundled model map to InvokeModel, and its
+    InvokeModel parser cannot read the chat-completions reply of OpenAI GPT-5.x / GPT-6, so every call
+    errors out and streams come back empty. Those models are sent through Converse instead, and only
+    while LiteLLM would pick InvokeModel, so a LiteLLM version that knows the model keeps its own route.
+    """
+    model = f"bedrock/{model_name}"
+    if "/" not in model_name and _is_bedrock_openai_gpt(model_name.lower()) and BedrockModelInfo.get_bedrock_route(model) == "invoke":
+        logger.debug("Bedrock model %s is not in LiteLLM's model map, routing it through Converse", model_name)
+        return f"bedrock/converse/{model_name}"
+    return model
+
+
 def _apply_model_family_policies(
     model_name: str,
     *,
@@ -266,6 +287,12 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Bedrock and _is_bedrock_openai_gpt(model_name_lower):
+            # Converse rejects these fields at any value (HTTP 400 "This model doesn't support the
+            # temperature field. Remove temperature and try again."; same for topP and stopSequences).
+            removed = [key for key in ("temperature", "top_p", "stop") for target in (sanitized_gen_conf, sanitized_kwargs) if target.pop(key, None) is not None]
+            if removed:
+                logger.warning("Bedrock OpenAI GPT policy: dropped %s for model %s (not accepted by the model)", "/".join(sorted(set(removed))), model_name_lower)
         elif provider in {SupportedLiteLLMProvider.Anthropic, SupportedLiteLLMProvider.Bedrock}:
             _apply_claude_sampling_policy(model_name_lower, sanitized_gen_conf, sanitized_kwargs)
 
@@ -613,8 +640,16 @@ class Base(ABC):
             return {}
         return {"tools": tools, "tool_choice": "auto"}
 
+    def _tool_request_messages(self, history: list) -> list:
+        return history
+
     async def async_chat_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
+        if not self.tools:
+            return await self.async_chat(system, history, gen_conf)
+
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -622,8 +657,6 @@ class Base(ABC):
             gen_conf=gen_conf,
             request_kwargs={},
         )
-        gen_conf.pop("tools", None)
-        gen_conf.pop("tool_choice", None)
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
 
@@ -647,17 +680,31 @@ class Base(ABC):
             try:
                 for _ in range(self.max_rounds + 1):
                     logging.info(f"{self.tools=}")
-                    response = await self.async_client.chat.completions.create(model=self.model_name, messages=history, **self._tool_request_kwargs(), **gen_conf, **extra_request_kwargs)
+                    response = await self.async_client.chat.completions.create(
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        **self._tool_request_kwargs(),
+                        **gen_conf,
+                        **extra_request_kwargs,
+                    )
                     _add_round_usage(response)
                     if not response.choices or not response.choices[0].message:
                         raise Exception(f"500 response structure error. Response: {response}")
 
                     if not hasattr(response.choices[0].message, "tool_calls") or not response.choices[0].message.tool_calls:
+                        content = response.choices[0].message.content
+                        if not content or not content.strip():
+                            if not ans.strip():
+                                return (
+                                    (f"{ERROR_PREFIX}: {LLMErrorCode.ERROR_MODEL} - Model returned an empty final answer without tool calls (finish_reason={response.choices[0].finish_reason})."),
+                                    tk_count,
+                                )
+                            content = ""
                         _reasoning = getattr(response.choices[0].message, "reasoning_content", None) or getattr(response.choices[0].message, "reasoning", None)
                         if _reasoning:
                             ans += "<think>" + _reasoning + "</think>"
 
-                        ans += response.choices[0].message.content
+                        ans += content
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
 
@@ -722,6 +769,13 @@ class Base(ABC):
 
     async def async_chat_streamly_with_tools(self, system: str, history: list, gen_conf: dict | None = None):
         gen_conf = dict(gen_conf or {})
+        gen_conf.pop("tools", None)
+        gen_conf.pop("tool_choice", None)
+        if not self.tools:
+            async for chunk in self.async_chat_streamly(system, history, gen_conf):
+                yield chunk
+            return
+
         gen_conf = self._clean_conf(gen_conf)
         gen_conf, extra_request_kwargs = _apply_model_family_policies(
             self.model_name,
@@ -761,7 +815,12 @@ class Base(ABC):
                     logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
-                        model=self.model_name, messages=history, stream=True, **self._tool_request_kwargs(tools), **gen_conf, **extra_request_kwargs
+                        model=self.model_name,
+                        messages=self._tool_request_messages(history),
+                        stream=True,
+                        **self._tool_request_kwargs(tools),
+                        **gen_conf,
+                        **extra_request_kwargs,
                     )
 
                     final_tool_calls = {}
@@ -884,7 +943,7 @@ class Base(ABC):
 
                 response = await self.async_client.chat.completions.create(
                     model=self.model_name,
-                    messages=history,
+                    messages=self._tool_request_messages(history),
                     stream=True,
                     **self._tool_request_kwargs(tools),
                     **gen_conf,
@@ -1308,14 +1367,72 @@ class MWSChat(Base):
         return cleaned
 
     def _request_body(self, history, gen_conf, *, stream):
-        """Build a strict MWS chat request from RAGFlow messages and options."""
+        """Build an MWS request and flatten unsupported tool-history messages."""
         messages = []
         for message in history:
-            role = message.get("role") if isinstance(message, dict) else None
-            content = message.get("content") if isinstance(message, dict) else None
-            if role not in self._ROLES or not isinstance(content, str):
-                raise ValueError("MWS chat messages must contain only a system, user, or assistant role and string content")
-            messages.append({"role": role, "content": content})
+            if not isinstance(message, dict):
+                raise ValueError("MWS chat message must be a dictionary")
+
+            role = message.get("role")
+            if role not in self._ROLES and role != "tool":
+                raise ValueError(f"Unsupported MWS chat role: {role}")
+
+            content = message.get("content")
+            if role in {"system", "user"}:
+                if not isinstance(content, str):
+                    raise ValueError(f"MWS {role} message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            if role == "assistant":
+                tool_calls = message.get("tool_calls")
+                if tool_calls is not None and not isinstance(tool_calls, list):
+                    raise ValueError("MWS assistant message tool_calls must be a list")
+                if tool_calls:
+                    if content is not None and not isinstance(content, str):
+                        raise ValueError("MWS assistant message content must be a string")
+                    normalized_calls = deepcopy(tool_calls)
+                    for tool_call in normalized_calls:
+                        function = tool_call.get("function") if isinstance(tool_call, dict) else None
+                        arguments = function.get("arguments") if isinstance(function, dict) else None
+                        if not isinstance(arguments, str):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
+                        parsed_arguments = json_repair.loads(arguments)
+                        if not isinstance(parsed_arguments, dict):
+                            raise ValueError("MWS tool call function.arguments must be a JSON object string")
+                        function["arguments"] = json.dumps(parsed_arguments, ensure_ascii=False, separators=(",", ":"))
+                    serialized_calls = json.dumps(normalized_calls, ensure_ascii=False, separators=(",", ":"))
+                    serialized_content = f"<tool_calls>{serialized_calls}</tool_calls>"
+                    if isinstance(content, str) and content:
+                        serialized_content = f"{content}\n{serialized_content}"
+                    messages.append(
+                        {
+                            "role": role,
+                            "content": serialized_content,
+                        }
+                    )
+                    continue
+                if not isinstance(content, str):
+                    raise ValueError("MWS assistant message content must be a string")
+                messages.append({"role": role, "content": content})
+                continue
+
+            tool_call_id = message.get("tool_call_id")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                raise ValueError("MWS tool message requires tool_call_id")
+            if not isinstance(content, str):
+                raise ValueError("MWS tool message content must be a string")
+            serialized_result = json.dumps(
+                {"tool_call_id": tool_call_id, "content": content},
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"<tool_result>{serialized_result}</tool_result>",
+                }
+            )
         if not messages:
             raise ValueError("MWS chat messages are required")
 
@@ -1325,6 +1442,9 @@ class MWSChat(Base):
             body["stream"] = True
             body["stream_options"] = {"include_usage": True}
         return body
+
+    def _tool_request_messages(self, history: list) -> list:
+        return self._request_body(history, {}, stream=False)["messages"]
 
     async def _post_json(self, body):
         """Send a non-streaming MWS chat request and decode its JSON response."""
@@ -2014,6 +2134,13 @@ class AIMLAPIChat(Base):
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
 
 
+class RadeonCloudChat(Base):
+    _FACTORY_NAME = "Radeon Cloud"
+
+    def __init__(self, key, model_name, base_url="https://developer.amd.com.cn/radeon/api/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://developer.amd.com.cn/radeon/api/v1", **kwargs)
+
+
 class GreenPTChat(Base):
     """GreenPT OpenAI-compatible chat adapter."""
 
@@ -2185,7 +2312,7 @@ class LiteLLMBase(ABC):
             self.prefix = ""
         else:
             self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
-        self.model_name = f"{self.prefix}{model_name}"
+        self.model_name = _bedrock_litellm_model(model_name) if self.provider == SupportedLiteLLMProvider.Bedrock else f"{self.prefix}{model_name}"
         self.api_key = key
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
@@ -2369,10 +2496,10 @@ class LiteLLMBase(ABC):
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
-            completion_args["stop"] = stop
+            gen_conf["stop"] = stop
+        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         # Ask the provider to include authoritative usage in the final streaming chunk.
         # drop_params=True ensures this is silently ignored by providers that don't support it.
         completion_args.setdefault("stream_options", {})["include_usage"] = True
@@ -3071,6 +3198,51 @@ class RAGconChat(Base):
             base_url = "https://connect.ragcon.com/v1"
 
         super().__init__(key, model_name, base_url, **kwargs)
+
+
+class CheaperInferenceChat(Base):
+    """Cheaper Inference OpenAI-compatible chat adapter.
+
+    Cheaper Inference is a hosted OpenAI-compatible gateway, so the standard
+    OpenAI client path covers every call. A reply carries an extra ``provider``
+    member naming the upstream that served it; the OpenAI client keeps it out of
+    the way of answer and usage extraction, so it needs no handling here. The
+    base URL stays tenant-configurable because the gateway is also reachable
+    through per-account domains.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+    def __init__(self, key, model_name, base_url, **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        model_name = model_name.split("___")[0]
+        super().__init__(key, model_name, base_url, **kwargs)
+
+    def _clean_conf(self, gen_conf):
+        """Map the thinking selection onto the field the gateway reads.
+
+        The gateway reads the OpenAI ``reasoning_effort`` field and ignores
+        ``thinking`` and ``enable_thinking``. Measured on claude-opus-5 with
+        one prompt: no field gives 78-80 reasoning tokens, ``high`` 44-63,
+        ``medium`` 31-41, ``low`` 24-25 and ``none`` 0, while
+        ``thinking={"type": "disabled"}`` keeps the default 56. ``none`` is
+        accepted by every model family the gateway serves. ``Base._clean_conf``
+        drops all three keys, so the translation happens here.
+        """
+        thinking = gen_conf.get("thinking")
+        if isinstance(thinking, dict):
+            thinking = thinking.get("type")
+        enable_thinking = gen_conf.get("enable_thinking")
+        reasoning_effort = gen_conf.get("reasoning_effort")
+
+        gen_conf = super()._clean_conf(gen_conf)
+
+        if thinking == "disabled" or enable_thinking is False:
+            reasoning_effort = "none"
+        if reasoning_effort:
+            gen_conf["reasoning_effort"] = reasoning_effort
+        return gen_conf
 
 
 class DaoXEChat(Base):

@@ -16,10 +16,13 @@ import json
 import logging
 import random
 from copy import deepcopy
+from functools import partial
 
 import xxhash
 
-from agent.component.llm import LLMParam, LLM
+from agent.component.base import ComponentBase
+from agent.component.llm import LLM, LLMParam
+from common.chunk_order import TOC_CHUNK_ORDER_BASE, drop_parent_link
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.prompts.generator import run_toc_from_text
 
@@ -30,12 +33,31 @@ class ExtractorParam(ProcessParamBase, LLMParam):
         self.field_name = ""
 
     def check(self):
+        if self.is_passthrough():
+            return
         super().check()
         self.check_empty(self.field_name, "Result Destination")
+
+    def is_passthrough(self):
+        if self.field_name:
+            return False
+        for feature, key, disabled in [("keywords", "top_n", 0), ("questions", "top_n", 0), ("tags", "top_n", 0), ("summary", "enabled", False), ("metadata", "enabled", False)]:
+            config = getattr(self, feature, None)
+            if not isinstance(config, dict) or type(config.get(key)) is not type(disabled) or config[key] != disabled:
+                return False
+        return True
 
 
 class Extractor(ProcessBase, LLM):
     component_name = "Extractor"
+
+    def __init__(self, canvas, id, param):
+        if param.is_passthrough():
+            # Inactive modular extraction needs neither a prompt nor an LLM.
+            ComponentBase.__init__(self, canvas, id, param)
+            self.callback = partial(getattr(canvas, "callback", lambda *args, **kwargs: None), id)
+        else:
+            super().__init__(canvas, id, param)
 
     async def _build_TOC(self, docs):
         self.callback(0.2, message="Start to generate table of content ...")
@@ -64,20 +86,26 @@ class Extractor(ProcessBase, LLM):
 
         if toc:
             d = deepcopy(docs[-1])
+            # The TOC row only borrows the last chunk's position columns. Its
+            # parent link must go, or insert_chunks derives a duplicate parent.
+            drop_parent_link(d)
             d["doc_id"] = self._canvas._doc_id
             d["toc"] = json.dumps(toc, ensure_ascii=False)
             d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
             d["toc_kwd"] = "toc"
             d["available_int"] = 0
             d["page_num_int"] = [100000000]
+            # Only number the TOC when the pipeline numbered the chunks too: a
+            # docstore that sorts missing values last would otherwise list the
+            # TOC before them.
+            if d.get("chunk_order_int") is not None:
+                d["chunk_order_int"] = TOC_CHUNK_ORDER_BASE
             d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
             return d
         return None
 
     async def _invoke(self, **kwargs):
         self.set_output("output_format", "chunks")
-        self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
-        inputs = self.get_input_elements()
         output_format = kwargs.get("output_format")
         if output_format == "chunks":
             chunks = deepcopy(kwargs.get("chunks") or [])
@@ -88,6 +116,11 @@ class Extractor(ProcessBase, LLM):
             chunks = [{"text": payload}] if payload else []
         else:
             chunks = []
+        if self._param.is_passthrough():
+            self.set_output("chunks", chunks)
+            return
+        self.callback(random.randint(1, 5) / 100.0, "Start to generate.")
+        inputs = self.get_input_elements()
         chunks_key = ""
         args = {}
         for k, v in inputs.items():

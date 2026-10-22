@@ -27,6 +27,11 @@ import authorizationUtil, {
 } from '@/utils/authorization-util';
 import { convertTheKeysOfTheObjectToSnake } from '@/utils/common-util';
 import { ResultCode, RetcodeMessage } from '@/utils/request';
+import {
+  adaptServiceDetail,
+  adaptServiceList,
+  GoServiceStatus,
+} from './admin-service-adapter';
 
 const request = axios.create({
   timeout: 300000,
@@ -201,12 +206,19 @@ export const updateUserPassword = (email: string, password: string) =>
 export const deleteUser = (email: string) =>
   request.delete(adminDeleteUser(email));
 
-export const listServices = () =>
-  request.get<ResponseData<AdminService.ListServicesItem[]>>(adminListServices);
-export const showServiceDetails = (serviceId: number) =>
-  request.get<ResponseData<AdminService.ServiceDetail>>(
-    adminShowServiceDetails(String(serviceId)),
-  );
+export const listServices = async () => {
+  const { data } =
+    await request.get<
+      ResponseData<AdminService.ListServicesItem[] | GoServiceStatus[]>
+    >(adminListServices);
+  return data.code === 0 ? adaptServiceList(data.data) : [];
+};
+export const showServiceDetails = async (serviceId: number | string) => {
+  const { data } = await request.get<
+    ResponseData<AdminService.ServiceDetail | GoServiceStatus>
+  >(adminShowServiceDetails(encodeURIComponent(String(serviceId))));
+  return data.code === 0 ? adaptServiceDetail(data.data) : undefined;
+};
 
 export const createRole = (params: {
   roleName: string;

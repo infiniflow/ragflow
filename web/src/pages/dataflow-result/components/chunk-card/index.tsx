@@ -77,7 +77,11 @@ const ChunkCard = ({
               onMouseLeave={() => setOpen(false)}
             >
               <div>
-                <Image id={item.image_id} className={styles.image}></Image>
+                <Image
+                  id={item.image_id}
+                  documentId={item.doc_id}
+                  className={styles.image}
+                ></Image>
               </div>
             </PopoverTrigger>
             <PopoverContent
@@ -89,6 +93,7 @@ const ChunkCard = ({
               <div>
                 <Image
                   id={item.image_id}
+                  documentId={item.doc_id}
                   className={styles.imagePreview}
                 ></Image>
               </div>

@@ -57,15 +57,28 @@ export enum DatasetMetadata {
 }
 
 export enum WebSearchProvider {
-  Tavily = 'tavily',
+  Brave = 'brave',
+  Exa = 'exa',
+  Firecrawl = 'firecrawl',
+  Linkup = 'linkup',
+  Parallel = 'parallel',
   Querit = 'querit',
   Serply = 'serply',
+  Tavily = 'tavily',
   YouCom = 'youcom',
 }
 
 /**
- * Providers usable with no credentials at all. You.com serves a rate-limited
- * keyless endpoint; every other provider requires a key before it can be used.
+ * Providers usable with no credentials at all — the key field is optional for
+ * these, and the Internet switch stays available when it is left blank.
+ *
+ * You.com serves a dedicated keyless ENDPOINT: a different path from the keyed
+ * one, the same response shape, rate-limited per source IP. Adding a key
+ * switches to the keyed endpoint and lifts that limit.
+ *
+ * "Free tier" is not the same as "keyless". Exa's free tier (1,000
+ * requests/month, no credit card) still requires a key on every request, so it
+ * is deliberately absent from this list.
  */
 export const KEYLESS_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
   WebSearchProvider.YouCom,

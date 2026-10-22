@@ -10,7 +10,6 @@ Reference:
 import asyncio
 import logging
 import json
-import os
 import re
 from typing import Any, Awaitable, Callable
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ import pandas as pd
 
 from api.db.services.task_service import has_canceled
 from common.exceptions import TaskCanceledException
+from common.misc_utils import env_flag
 from rag.graphrag.general import leiden
 from rag.graphrag.general.community_report_prompt import COMMUNITY_REPORT_PROMPT
 from rag.graphrag.general.extractor import Extractor
@@ -63,7 +63,7 @@ class CommunityReportsExtractor(Extractor):
         checkpoints: dict[str, Any] | None = None,
         save_checkpoint: Callable[[str, Any], Awaitable[bool]] | None = None,
     ):
-        enable_timeout_assertion = os.environ.get("ENABLE_TIMEOUT_ASSERTION")
+        enable_timeout_assertion = env_flag("ENABLE_TIMEOUT_ASSERTION", False)
         for node_degree in graph.degree:
             graph.nodes[str(node_degree[0])]["rank"] = int(node_degree[1])
 

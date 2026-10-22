@@ -1220,10 +1220,11 @@ async def update_agent(agent_id, tenant_id):
 
     if req.get("dsl") is not None:
         try:
-            from agent.canvas import Canvas
-
             req["dsl"] = CanvasReplicaService.normalize_dsl(req["dsl"])
-            Canvas.validate_component_parameters(req["dsl"])
+            if req["release"]:
+                from agent.canvas import Canvas
+
+                Canvas.validate_component_parameters(req["dsl"])
         except ValueError as exc:
             return get_json_result(
                 data=False,
@@ -1486,6 +1487,14 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         if workflow_session:
             workflow_conv = conv.to_dict()
 
+    if not session_id:
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Make sure you have permission to access the agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
+
     if openai_compatible:
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
         messages = req.get("messages", [])
@@ -1582,13 +1591,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         )
 
     if not session_id:
-        if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
-                data=False,
-                message="Make sure you have permission to access the agent.",
-                code=RetCode.OPERATING_ERROR,
-            )
-
         # Load the caller's runtime replica as the workflow template. Session-owned
         # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")

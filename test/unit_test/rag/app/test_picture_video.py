@@ -138,12 +138,8 @@ def _jpeg_bytes():
     return buffer.getvalue()
 
 
-def test_short_ocr_text_is_kept_when_vision_model_is_missing():
-    """OCR text under the CV LLM threshold is indexed when no image2text model
-    is configured, instead of being dropped and leaving the image with no chunk.
-
-    Guards https://github.com/infiniflow/ragflow/issues/17941.
-    """
+def test_short_ocr_text_does_not_hide_missing_vision_model():
+    """Short OCR text must not turn a missing vision model into a successful parse."""
 
     tokenized_texts = []
     picture = _load_picture_module(
@@ -153,23 +149,22 @@ def test_short_ocr_text_is_kept_when_vision_model_is_missing():
     )
 
     callback_calls = []
-    chunks = picture.chunk(
-        "scan.jpg",
-        _jpeg_bytes(),
-        "tenant",
-        "English",
-        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
-    )
+    with pytest.raises(Exception, match="No default image2text model is set"):
+        picture.chunk(
+            "scan.jpg",
+            _jpeg_bytes(),
+            "tenant",
+            "English",
+            callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+        )
 
-    assert len(chunks) == 1, "OCR text was discarded, leaving the image with no chunk"
-    assert chunks[0]["doc_type_kwd"] == "image"
-    assert tokenized_texts == ["工流宛转绕芳甸"]
+    assert not tokenized_texts
+    assert [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == ["No default image2text model is set."]
 
 
 @pytest.mark.parametrize("ocr_text", ["", " \n"])
 def test_parser_reports_failure_when_ocr_finds_no_text(ocr_text):
-    """With no usable OCR text and no vision model there is nothing to index, so
-    chunk() returns no chunks and reports the failure through the callback."""
+    """With no usable OCR text and no vision model, report and raise the failure."""
 
     tokenized_texts = []
     picture = _load_picture_module(
@@ -179,23 +174,21 @@ def test_parser_reports_failure_when_ocr_finds_no_text(ocr_text):
     )
 
     callback_calls = []
-    chunks = picture.chunk(
-        "blank.jpg",
-        _jpeg_bytes(),
-        "tenant",
-        "English",
-        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
-    )
+    with pytest.raises(Exception, match="No default image2text model is set"):
+        picture.chunk(
+            "blank.jpg",
+            _jpeg_bytes(),
+            "tenant",
+            "English",
+            callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+        )
 
-    assert chunks == []
     assert not tokenized_texts
     assert [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == ["No default image2text model is set."]
 
 
-def test_ocr_only_fallback_is_reported_as_degraded():
-    """The OCR-only fallback keeps the task successful but must not report a clean
-    parse: the vision failure is surfaced as a [WARN] message instead of prog=-1,
-    so a misconfigured model stays visible to the operator."""
+def test_short_ocr_vision_failure_is_reported_as_error():
+    """A vision failure must be reported as an error even when short OCR text exists."""
 
     tokenized_texts = []
     picture = _load_picture_module(
@@ -205,20 +198,44 @@ def test_ocr_only_fallback_is_reported_as_degraded():
     )
 
     callback_calls = []
-    chunks = picture.chunk(
-        "scan.jpg",
-        _jpeg_bytes(),
-        "tenant",
-        "English",
-        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
-    )
+    with pytest.raises(Exception, match="No default image2text model is set"):
+        picture.chunk(
+            "scan.jpg",
+            _jpeg_bytes(),
+            "tenant",
+            "English",
+            callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+        )
 
-    assert len(chunks) == 1
-    assert [kwargs.get("prog") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == []
+    assert not tokenized_texts
+    assert [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == ["No default image2text model is set."]
 
     warnings = [kwargs["msg"] for _args, kwargs in callback_calls if "msg" in kwargs and kwargs["msg"].startswith("[WARN]")]
-    assert len(warnings) == 1, "the vision failure was not reported as a degraded parse"
-    assert "No default image2text model is set." in warnings[0]
+    assert not warnings
 
     progressed = [args[0] for args, _kwargs in callback_calls if args]
     assert 0.8 not in progressed, "the fallback still reports a clean 0.8 success"
+
+
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_vision_markdown_preserves_code_fences(wrapped):
+    """Keep a model's code example intact when cleaning image-derived text."""
+    from common.string_utils import clean_markdown_block
+
+    picture = _load_picture_module([])
+    picture.clean_markdown_block = clean_markdown_block
+    content = "Example:\n```python\nprint('hello')\n```"
+    model_text = f"```markdown\n{content}\n```" if wrapped else content
+    calls = []
+
+    def describe(binary, prompt):
+        """Check that the real image encoding path reached the model boundary."""
+        with Image.open(io.BytesIO(binary)) as decoded:
+            assert decoded.size == (64, 64)
+        calls.append(prompt)
+        return model_text
+
+    with Image.new("RGB", (64, 64), "white") as image:
+        text = picture.vision_llm_chunk(image, SimpleNamespace(describe_with_prompt=describe), prompt="Read this image")
+    assert text == "\n" + content
+    assert calls == ["Read this image"]

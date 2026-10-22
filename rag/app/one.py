@@ -57,7 +57,15 @@ class Pdf(PdfParser):
         self._concat_downward()
 
         sections = [(b["text"], self.get_position(b, zoomin)) for i, b in enumerate(self.boxes)]
-        return [(txt, "") for txt, _ in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))], tbls
+
+        def _section_sort_key(section):
+            poss = section[-1]
+            if poss:
+                first = poss[0]
+                return (first[0], first[3], first[1])
+            return (float("inf"), float("inf"), float("inf"))
+
+        return [(txt, "") for txt, _ in sorted(sections, key=_section_sort_key)], tbls
 
 
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
@@ -176,7 +184,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [s for s in sections if s]
-        callback(0.8, "Finish parsing.")
+            callback(0.8, "Finish parsing.")
+        else:
+            error_msg = f"tika.parser got empty content from {filename}."
+            callback(0.8, error_msg)
+            logging.warning(error_msg)
+            return []
 
     else:
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
