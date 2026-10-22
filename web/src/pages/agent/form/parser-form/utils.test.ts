@@ -390,7 +390,10 @@ describe('parser-form utils', () => {
           },
         ],
       });
-      expect(normalized.setups[0]).toEqual({ fileFormat: FileType.PDF });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.PDF,
+        ...HyperlinkDefaultSetup,
+      });
       // Audio keeps its per-setup ASR model; only output_format goes.
       expect(normalized.setups[1]).toEqual({
         fileFormat: FileType.Audio,
