@@ -246,6 +246,20 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	if err != nil {
 		return nil, err
 	}
+	fileTenantIDs := make([]string, 0, len(filesByID))
+	for _, file := range filesByID {
+		fileTenantIDs = append(fileTenantIDs, file.TenantID)
+	}
+	fileOwnerIDsByTenant, err := s.loadTenantOwnerIDs(ctx, fileTenantIDs)
+	if err != nil {
+		return nil, err
+	}
+	if linkedOwnerIDsByTenant == nil {
+		linkedOwnerIDsByTenant = make(map[string]string, len(fileOwnerIDsByTenant))
+	}
+	for tenantID, ownerUserID := range fileOwnerIDsByTenant {
+		linkedOwnerIDsByTenant[tenantID] = ownerUserID
+	}
 	searchAppsByID, err := s.loadSearchApps(ctx, searchAppIDs)
 	if err != nil {
 		return nil, err
@@ -504,7 +518,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		}
 		ownerIDs := append(append(make([]string, 0, len(tenantIDs)+1), tenantIDs...), subject.UserID)
 		if err := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).
-			Where("user_id IN ?", ownerIDs).
+			Where("user_id IN ? OR tenant_id IN ?", ownerIDs, tenantIDs).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
