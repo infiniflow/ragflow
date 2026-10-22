@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -68,8 +69,25 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if err != nil {
 		return nil, err
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) == 0 {
+	// Accept the legacy []map[string]any carrier verbatim (no round-trip, so
+	// the id-stamp/upload logic below sees the exact maps the chunker emitted).
+	// The typed []ChunkDoc carrier is normalized via GetChunks, which also
+	// bridges []any-of-map, so this choke point no longer silently skips the
+	// whole id-stamp/upload pass on a carrier-type mismatch.
+	var chunks []map[string]any
+	switch v := out["chunks"].(type) {
+	case []map[string]any:
+		chunks = v
+	default:
+		if typed, ok := schema.GetChunks(out); ok {
+			chunks = schema.ChunkDocsToMaps(typed)
+			// Write the normalized carrier back so the in-place id-stamp and
+			// image-drop mutations below propagate to the emitted envelope
+			// (the legacy []map[string]any path shares the reference already).
+			out["chunks"] = chunks
+		}
+	}
+	if len(chunks) == 0 {
 		return out, nil
 	}
 

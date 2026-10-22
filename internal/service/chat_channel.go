@@ -259,7 +259,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", err
 	}
 
-	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID)
+	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID, msg.Text, channel.Name)
 	if err != nil {
 		return "", err
 	}

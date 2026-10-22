@@ -288,7 +288,7 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 // the Title/Group/Hierarchy chunkers, mirroring the TokenChunker JSON path
 // (cropImageChunks at token.go:513). A nil engine (or an undecodable payload)
 // skips cropping, but the returned maps are still normalized so retired
-// ck_type and chunker-internal structural layout never leave the component.
+// chunker-internal structural layout never leaves the component.
 func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
 	if len(chunks) == 0 {
 		return chunks
@@ -310,11 +310,10 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 }
 
 // normalizeTitleChunkMaps keeps the Title-family output shape independent of
-// whether a PDF engine is available: retired ck_type and chunker-internal
-// structural layout never leave the component.
+// whether a PDF engine is available: chunker-internal structural layout
+// never leaves the component.
 func normalizeTitleChunkMaps(chunks []map[string]any) {
 	for _, chunk := range chunks {
-		delete(chunk, "ck_type")
 		if layout, _ := chunk["layout"].(string); isStructuralLayout(layout) {
 			delete(chunk, "layout")
 		}

@@ -83,6 +83,7 @@ type AgentParam struct {
 	Description              string
 	SystemPrompt             string
 	UserPrompt               string
+	OutputStructure          map[string]any
 	Thinking                 string
 	MaxTokens                *int
 	TopP                     *float64
@@ -1020,6 +1021,14 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = query
 		}
 	}
+	if len(p.OutputStructure) > 0 {
+		keys := make([]string, 0, len(p.OutputStructure))
+		for key := range p.OutputStructure {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, "Return your final answer as a single valid JSON object containing these keys: "+strings.Join(keys, ", ")+". Do not include markdown fences or prose outside the JSON object.")
+	}
 
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
@@ -1118,6 +1127,11 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
+	if len(p.OutputStructure) > 0 {
+		if parsed, ok := matchOutputStructure(cleanFormattedAnswer(content), p.OutputStructure); ok {
+			out["structured"] = parsed
+		}
+	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
@@ -1176,6 +1190,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"structured":       "Parsed structured output when configured.",
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
@@ -1572,6 +1587,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := stringFrom(inputs, "description"); ok {
 		p.Description = v
+	}
+	if outputs, ok := inputs["outputs"].(map[string]any); ok {
+		if structured, ok := outputs["structured"].(map[string]any); ok {
+			p.OutputStructure, _ = structured["properties"].(map[string]any)
+		}
 	}
 	if v, ok := stringFrom(inputs, "system_prompt"); ok {
 		p.SystemPrompt = v

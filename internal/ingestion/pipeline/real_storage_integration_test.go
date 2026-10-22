@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
@@ -118,7 +119,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
 
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
@@ -187,7 +188,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}

@@ -154,11 +154,8 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 // persist fields — but Go's chunker hands them on, and the write boundary is
 // where they stop: Elasticsearch and Vastbase would add a field for each key,
 // and Infinity would drop each key at insert with a warning.
-//
-// ck_type is retired but stays here as a tombstone: a legacy producer can still
-// hand it on, and no engine has a column for it.
 var pipelineOnlyFields = []string{
-	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
+	"tk_nums", "layout", "layout_type", "layoutno", "image",
 	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",

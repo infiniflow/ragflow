@@ -1539,7 +1539,7 @@ func TestTestDBConnectionMissingFields(t *testing.T) {
 func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
 	ctx := t.Context()
 	code, err := NewAgentService().TestDBConnection(ctx, "user-1", &TestDBConnectionRequest{
-		DBType:   "postgres",
+		DBType:   "unsupported",
 		Database: "rag_flow",
 		Username: "root",
 		Host:     "8.8.8.8",

@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 	parserlib "ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
@@ -295,7 +296,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatalf("no chunks in output")
 	}
@@ -372,7 +373,7 @@ func TestImageUploadDecorator_DebugSkipsUpload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatalf("expected chunks in output, got %#v", out)
 	}
@@ -426,7 +427,7 @@ func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks missing or wrong type: %#v", out["chunks"])
 	}
@@ -463,7 +464,7 @@ func TestImageUploadDecorator_NoCapKeepsAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 5 {
 		t.Fatalf("len(chunks) = %d, want 5 (no cap should keep all)", len(chunks))
 	}
