@@ -1335,7 +1335,7 @@ def build_agentic_graph(
             "kbinfos": {"chunks": [], "doc_aggs": []},
             "partial_answer": False,
             "abstain": False,
-            "empty_result": True,
+            "empty_result": False,
             "current_queries": [],
             "research_feedback": [],
             "rag_answer": "",

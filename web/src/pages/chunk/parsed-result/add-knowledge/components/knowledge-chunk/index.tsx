@@ -47,6 +47,7 @@ import {
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { getExtension } from '@/utils/document-util';
+import { useMemoizedFn } from 'ahooks';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
@@ -68,6 +69,7 @@ function Chunk() {
     handleInputChange,
     available,
     handleSetAvailable,
+    dataUpdatedAt,
   } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
@@ -130,15 +132,11 @@ function Chunk() {
     [],
   );
 
-  const handleChunkIdsChange = useCallback(
-    (chunkIds: string[]) => {
-      setFilterChunkIds(chunkIds);
-      if (chunkIds.length === 0) {
-        pagination.onChange?.(1, pagination.pageSize);
-      }
-    },
-    [pagination],
-  );
+  const handleChunkIdsChange = useMemoizedFn((chunkIds: string[]) => {
+    setFilterChunkIds(chunkIds);
+    clearSelectedChunkIds();
+    pagination.onChange?.(1, pagination.pageSize);
+  });
 
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
@@ -368,6 +366,10 @@ function Chunk() {
                       handleCheckboxClick={handleSingleCheckboxClick}
                       switchChunk={handleSwitchChunk}
                       clickChunkCard={handleChunkCardClick}
+                      // Changes on every refetch, so a chunk whose image was
+                      // replaced in place re-fetches it instead of reusing the
+                      // cached bytes.
+                      imageCacheKey={dataUpdatedAt}
                     />
 
                     <footer className="mt-5">
@@ -410,6 +412,7 @@ interface ChunkVirtualListProps {
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
   switchChunk: (available?: number, chunkIds?: string[]) => void;
   clickChunkCard: (chunkId: string) => void;
+  imageCacheKey?: string | number;
 }
 
 // Owned by a separate component so each result set can remount it (key from
@@ -425,6 +428,7 @@ function ChunkVirtualList({
   handleCheckboxClick,
   switchChunk,
   clickChunkCard,
+  imageCacheKey,
 }: ChunkVirtualListProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -436,10 +440,7 @@ function ChunkVirtualList({
   });
 
   return (
-    <div
-      ref={scrollContainerRef}
-      className="flex-1 overflow-y-auto min-h-0"
-    >
+    <div ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -472,6 +473,7 @@ function ChunkVirtualList({
                 clickChunkCard={clickChunkCard}
                 selected={item.chunk_id === selectedChunkId}
                 textMode={textMode}
+                t={imageCacheKey}
               />
             </div>
           );

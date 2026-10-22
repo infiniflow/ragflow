@@ -82,6 +82,61 @@ describe('collectCanvasIssues: orphan steps', () => {
       expect.objectContaining({ nodeId: 'File', type: CanvasIssueType.Orphan }),
     );
   });
+
+  it('flags pipeline node groups wired to each other but detached from File', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Compiler:cp1', 'Compiler'),
+        makeNode('Indexer:i1', 'Indexer'),
+        makeNode('Extractor:e1', 'Extractor'),
+        makeNode('Extractor:e2', 'Extractor'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Compiler:cp1', 'Indexer:i1'),
+        makeEdge('Extractor:e1', 'Extractor:e2'),
+      ],
+    });
+
+    const orphans = issues
+      .filter((x) => x.type === CanvasIssueType.Orphan)
+      .map((x) => x.nodeId);
+    expect(orphans).toEqual(
+      expect.arrayContaining([
+        'Compiler:cp1',
+        'Indexer:i1',
+        'Extractor:e1',
+        'Extractor:e2',
+      ]),
+    );
+    expect(orphans).not.toContain('File');
+    expect(orphans).not.toContain('Parser:p1');
+    expect(orphans).not.toContain('Chunker:c1');
+  });
+
+  it('flags no orphan on a fully connected pipeline', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Indexer:i1', 'Indexer'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Chunker:c1', 'Indexer:i1'),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.Orphan),
+    ).toHaveLength(0);
+  });
 });
 
 describe('collectCanvasIssues: dangling variable references', () => {
@@ -354,6 +409,107 @@ describe('collectCanvasIssues: iteration/loop children references', () => {
       issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
     ).toHaveLength(0);
   });
+
+  it('lets a Loop reference its own variables and child outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', {
+          loop_termination_condition: [
+            { variable: 'UserFillUp:u1@value', operator: 'is', value: '1' },
+            { variable: 'Loop:p1@count', operator: '≥', value: 3 },
+          ],
+          outputs: { count: { type: 'number' } },
+        }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('lets an Iteration reference child outputs in its output map', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'StringTransform:s1@result' },
+          },
+        }),
+        makeNode(
+          'StringTransform:s1',
+          'StringTransform',
+          { outputs: { result: { type: 'string' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('flags an Iteration referencing the per-item IterationStart outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'IterationStart:s1@item' },
+          },
+        }),
+        makeNode(
+          'IterationStart:s1',
+          'IterationItem',
+          { outputs: { item: { type: 'unknown' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Iteration:p1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'IterationStart:s1@item' },
+      }),
+    );
+  });
+
+  it('still flags an outsider referencing a container child', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', { outputs: {} }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+        makeNode('Message:m1', 'Message', {
+          content: ['{UserFillUp:u1@value}'],
+        }),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'UserFillUp:u1@value' },
+      }),
+    );
+  });
 });
 
 describe('collectCanvasIssues: missing required fields', () => {
@@ -407,6 +563,20 @@ describe('collectCanvasIssues: missing required fields', () => {
         nodeId: 'Agent:a1',
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.agentModelMissing',
+      }),
+    );
+  });
+
+  it('flags an Extractor node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Extractor:e1', 'Extractor', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Extractor:e1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorModelMissing',
       }),
     );
   });

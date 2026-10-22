@@ -1,6 +1,8 @@
 import { Operator } from '@/constants/agent';
 import {
+  buildPipelineNextOperators,
   isChunkerOperator,
+  isSingleInstanceOperator,
   isValidGoPipelineConnection,
 } from './pipeline-connection';
 
@@ -82,5 +84,72 @@ describe('isValidGoPipelineConnection', () => {
     expect(
       isValidGoPipelineConnection(Operator.Extractor, Operator.Compiler),
     ).toBe(true);
+  });
+});
+
+describe('isSingleInstanceOperator', () => {
+  it('marks the one-instance pipeline operators', () => {
+    expect(isSingleInstanceOperator(Operator.Parser)).toBe(true);
+    expect(isSingleInstanceOperator(Operator.Tokenizer)).toBe(true);
+    expect(isSingleInstanceOperator(Operator.Compiler)).toBe(true);
+    expect(isSingleInstanceOperator(Operator.TokenChunker)).toBe(true);
+    expect(isSingleInstanceOperator(Operator.TitleChunker)).toBe(true);
+    expect(isSingleInstanceOperator(Operator.GeneralChunker)).toBe(true);
+  });
+
+  it('leaves multi-instance operators unchecked', () => {
+    expect(isSingleInstanceOperator(Operator.Extractor)).toBe(false);
+    expect(isSingleInstanceOperator(Operator.Agent)).toBe(false);
+  });
+});
+
+describe('buildPipelineNextOperators', () => {
+  const noOperator = () => false;
+
+  it('always offers Extractor, which is multi-instance', () => {
+    const hasExtractor = (operator: Operator) =>
+      operator === Operator.Extractor;
+    expect(
+      buildPipelineNextOperators(undefined, true, hasExtractor).operators,
+    ).toContain(Operator.Extractor);
+  });
+
+  it('offers Compiler only when none is on the canvas', () => {
+    const offered = buildPipelineNextOperators(
+      undefined,
+      true,
+      noOperator,
+    ).operators;
+    expect(offered).toContain(Operator.Compiler);
+
+    const hasCompiler = (operator: Operator) => operator === Operator.Compiler;
+    expect(
+      buildPipelineNextOperators(undefined, true, hasCompiler).operators,
+    ).not.toContain(Operator.Compiler);
+  });
+
+  it('hides the whole chunker group once any chunker is on the canvas', () => {
+    const hasTokenChunker = (operator: Operator) =>
+      operator === Operator.TokenChunker;
+    const result = buildPipelineNextOperators(
+      Operator.TokenChunker,
+      false,
+      hasTokenChunker,
+    );
+    expect(result.showChunker).toBe(false);
+    expect(result.chunkerOperators).toEqual([]);
+  });
+
+  it('offers both chunker variants while the chunker slot is free', () => {
+    const result = buildPipelineNextOperators(
+      Operator.Tokenizer,
+      true,
+      noOperator,
+    );
+    expect(result.showChunker).toBe(true);
+    expect(result.chunkerOperators).toEqual([
+      Operator.TokenChunker,
+      Operator.TitleChunker,
+    ]);
   });
 });

@@ -150,7 +150,7 @@ class RAGFlowJsonParser:
         return sections
 
     def _parse_jsonl(self, content: str) -> list[str]:
-        lines = content.strip().splitlines()
+        lines = content.strip().split("\n")
         all_chunks = []
         for line in lines:
             if not line.strip():
@@ -164,7 +164,7 @@ class RAGFlowJsonParser:
         return all_chunks
 
     def is_jsonl_format(self, txt: str, sample_limit: int = 10, threshold: float = 0.8) -> bool:
-        lines = [line.strip() for line in txt.strip().splitlines() if line.strip()]
+        lines = [line.strip() for line in txt.strip().split("\n") if line.strip()]
         if not lines:
             return False
 

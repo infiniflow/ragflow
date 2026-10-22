@@ -10,6 +10,11 @@ import { useEffect, useRef, useState } from 'react';
 
 const PollIntervalMs = 5000;
 
+// Module-level constant: an inline default object would get a new identity on
+// every render and, being a polling-effect dependency, would reset the
+// interval before it ever fires.
+const DefaultParams: IngestionMessageParams = { limit: 200 };
+
 export const IngestionMessageKeys = {
   messages: (datasetId: string | undefined, logId: string | undefined) =>
     ['ingestionMessages', datasetId, logId] as const,
@@ -19,7 +24,7 @@ export const useIngestionMessages = (
   datasetId: string | undefined,
   logId: string | undefined,
   enabled: boolean,
-  params: IngestionMessageParams = { limit: 200 },
+  params: IngestionMessageParams = DefaultParams,
 ) => {
   const queryClient = useQueryClient();
   const isGoBackend = useIsGoBackend();

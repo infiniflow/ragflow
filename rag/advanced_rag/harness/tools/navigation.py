@@ -32,6 +32,7 @@ from typing import Any
 
 import json_repair
 
+from common.doc_store.doc_store_base import field_scalar
 from rag.advanced_rag.harness.chunk_utils import (
     _chunk_id,
     _chunk_text,
@@ -200,8 +201,8 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
     entities: list[dict] = []
     relations: list[dict] = []
     for row in rows.values():
-        compile_kwd = row.get("compile_kwd") or ""
-        kind = _normalize_kind(row.get("compilation_template_kind_kwd") or compile_kwd)
+        compile_kwd = field_scalar(row.get("compile_kwd"))
+        kind = _normalize_kind(field_scalar(row.get("compilation_template_kind_kwd")) or compile_kwd)
         if kind not in kinds:
             continue
         try:
@@ -211,13 +212,14 @@ async def _load_compiled_structure(tools, doc_id: str, kinds: set) -> dict:
         if not isinstance(graph, dict):
             continue
         # graph blob: compact graph with nested entities/relations
-        if row.get("knowledge_graph_kwd") == "graph":
+        graph_kind = field_scalar(row.get("knowledge_graph_kwd"))
+        if graph_kind == "graph":
             entities.extend(graph.get("entities") or [])
             relations.extend(graph.get("relations") or [])
         # per-entity/relation row: content is a single node/edge
-        elif row.get("knowledge_graph_kwd") == "entity":
+        elif graph_kind == "entity":
             entities.append(graph)
-        elif row.get("knowledge_graph_kwd") == "relation":
+        elif graph_kind == "relation":
             relations.append(graph)
 
     return {"entities": entities, "relations": relations}
@@ -263,7 +265,7 @@ async def _load_chunks_by_ids(tools, doc_id: str, chunk_ids: list[str]) -> list[
             {
                 "chunk_id": cid,
                 "content_with_weight": row.get("content_with_weight") or "",
-                "docnm_kwd": row.get("docnm_kwd") or "",
+                "docnm_kwd": field_scalar(row.get("docnm_kwd")),
                 "doc_id": row.get("doc_id") or doc_id,
             }
         )
@@ -779,14 +781,14 @@ async def dataset_navigation_search(tools, topic: str, keywords: str = "", doc_s
 # module, and the action-session tool surface exposes ``graph_explore`` by this
 # name.
 from rag.advanced_rag.harness.tools.exploration import (  # noqa: F401
+    _SCOPE_KWD_DATASET,
+    _SCOPE_KWD_DOC,
     _collect_evidence_ids,
     _endpoint_terms,
     _kg_parse_entity,
     _kg_parse_relation,
     _kg_scopes,
     _kg_search,
-    _SCOPE_KWD_DATASET,
-    _SCOPE_KWD_DOC,
     graph_explore,
 )
 
@@ -1238,13 +1240,13 @@ async def _load_entities_with_vectors(tools_slot, doc_id: str, kinds: set, vec_f
             continue
         if not isinstance(graph, dict):
             continue
-        kind = _normalize_kind(row.get("compilation_template_kind_kwd") or row.get("compile_kwd") or "")
+        kind = _normalize_kind(field_scalar(row.get("compilation_template_kind_kwd")) or field_scalar(row.get("compile_kwd")))
         if kind not in kinds:
             continue
         vec = row.get(vec_field) if vec_field else None
         # graph blob: content nests entities under "entities"; entity row: content
         # is a single entity dict.
-        candidates = graph.get("entities") or [] if row.get("knowledge_graph_kwd") == "graph" else [graph]
+        candidates = graph.get("entities") or [] if field_scalar(row.get("knowledge_graph_kwd")) == "graph" else [graph]
         for e in candidates:
             if not isinstance(e, dict) or not (e.get("name") or "").strip():
                 continue
@@ -1816,7 +1818,7 @@ async def dataset_compilation_kinds(tools) -> tuple:
             )
             rows = settings.docStoreConn.get_fields(res, ["doc_id", "compile_kwd"]) or {}
             for row in rows.values():
-                kind = _normalize_kind(row.get("compile_kwd") or "")
+                kind = _normalize_kind(field_scalar(row.get("compile_kwd")))
                 if kind and kind not in kinds:
                     kinds.append(kind)
         except Exception:  # noqa: BLE001
@@ -2071,8 +2073,7 @@ def _drill_kept_nodes(query_terms: list[str], qvec, entities: list[dict], relati
         if not scored:
             break
         best = scored[0][0]
-        if best > best_overall:
-            best_overall = best
+        best_overall = max(best_overall, best)
         # If even the best node has no relevance, stop descending.
         if qvec is None and best < _STRUCT_RELEVANCE_MIN:
             break
@@ -2443,7 +2444,7 @@ async def _load_chunks_for_ids(tools_slot, chunk_ids: list[str]) -> list[dict]:
                         found[cid] = {
                             "chunk_id": cid,
                             "content_with_weight": row.get("content_with_weight") or "",
-                            "docnm_kwd": row.get("docnm_kwd") or "",
+                            "docnm_kwd": field_scalar(row.get("docnm_kwd")),
                             "doc_id": row.get("doc_id") or "",
                         }
         return [found[c] for c in chunk_ids if c in found]

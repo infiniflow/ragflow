@@ -17,6 +17,7 @@
 import copy
 import logging
 import re
+from html import escape as html_escape
 from io import BytesIO
 
 from docx import Document
@@ -134,7 +135,8 @@ class Docx(DocxParser):
                         else:
                             break
                     i += 1
-                    html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                    cell = html_escape(c.text)
+                    html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                 html += "</tr>"
             html += "</table>"
             tbls.append(((None, html), ""))
@@ -261,10 +263,17 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 pn += 1
             return f"@@{pn}\t{left:.1f}\t{right:.1f}\t{top:.1f}\t{bottom:.1f}##"
 
+        def _section_sort_key(section):
+            poss = section[-1]
+            if poss:
+                first = poss[0]
+                return (first[0], first[3], first[1])
+            return (float("inf"), float("inf"), float("inf"))
+
         chunks = []
         last_sid = -2
         tk_cnt = 0
-        for txt, sec_id, poss in sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1])):
+        for txt, sec_id, poss in sorted(sections, key=_section_sort_key):
             poss = "\t".join([tag(*pos) for pos in poss])
             if tk_cnt < 32 or (tk_cnt < 1024 and (sec_id == last_sid or sec_id == -1)):
                 if chunks:

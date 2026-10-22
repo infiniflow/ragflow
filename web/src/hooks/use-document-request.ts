@@ -328,9 +328,16 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+type RefetchInterval =
+  | number
+  | false
+  | ((query: {
+      state: { data?: { docs: IDocumentInfo[]; total: number } };
+    }) => number | false);
+
 export const useFetchDocumentsByIds = (
   ids: string[],
-  options?: { enabled?: boolean; refetchInterval?: number | false },
+  options?: { enabled?: boolean; refetchInterval?: RefetchInterval },
 ) => {
   const { id: datasetId } = useParams();
   const { enabled, refetchInterval } = options ?? {};

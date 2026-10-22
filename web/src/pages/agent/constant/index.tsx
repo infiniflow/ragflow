@@ -25,6 +25,8 @@ export {
 
 export * from './pipeline';
 
+import { DocGeneratorOutputFormat } from './doc-generator';
+
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import {
@@ -1119,7 +1121,7 @@ export enum AgentVariableType {
 }
 
 export const initialDocGeneratorValues = {
-  output_format: 'pdf',
+  output_format: DocGeneratorOutputFormat.Pdf,
   content: '',
   filename: '',
   header_text: '',
