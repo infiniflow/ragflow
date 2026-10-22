@@ -19,6 +19,7 @@ package component
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -202,5 +203,55 @@ func TestExtractLinksFromPDFRepeatedUnterminatedMarkers(t *testing.T) {
 	got := extractLinksFromPDF(pdf)
 	if !reflect.DeepEqual(got, []string{"https://example.com/ok"}) {
 		t.Fatalf("got %v, want the trailing URI", got)
+	}
+}
+
+// The scan window includes both delimiters, so a URI at the decoded cap is
+// still parsed. This pins the off-by-one where the closing '>' fell one byte
+// outside the window.
+func TestReadPDFHexStringKeepsMaxSizedURI(t *testing.T) {
+	body := strings.Repeat("61", hyperlinkMaxURIBytes)
+	uri, rest, ok := readPDFHexString([]byte("<" + body + ">tail"))
+	if !ok || len(uri) != hyperlinkMaxURIBytes || string(rest) != "tail" {
+		t.Fatalf("ok=%v len=%d rest=%q, want a %d-byte URI", ok, len(uri), rest, hyperlinkMaxURIBytes)
+	}
+}
+
+func TestReadPDFHexStringRejectsOverCapURI(t *testing.T) {
+	body := strings.Repeat("61", hyperlinkMaxURIBytes+1)
+	if _, _, ok := readPDFHexString([]byte("<" + body + ">")); ok {
+		t.Fatal("want over-cap hex URI rejected")
+	}
+}
+
+// Escape-heavy literals can reach the decoded cap with two raw bytes per
+// character; the window must still include the closing paren.
+func TestReadPDFLiteralStringKeepsMaxSizedEscapedURI(t *testing.T) {
+	body := strings.Repeat(`\a`, hyperlinkMaxURIBytes)
+	uri, rest, ok := readPDFLiteralString([]byte("(" + body + ")tail"))
+	if !ok || len(uri) != hyperlinkMaxURIBytes || string(rest) != "tail" {
+		t.Fatalf("ok=%v len=%d rest=%q, want a %d-byte URI", ok, len(uri), rest, hyperlinkMaxURIBytes)
+	}
+}
+
+func TestExtractLinksFromPDFCapsCandidates(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < hyperlinkMaxURLCandidates+10; i++ {
+		fmt.Fprintf(&b, "/URI (https://example.com/%d)", i)
+	}
+	got := extractLinksFromPDF([]byte(b.String()))
+	if len(got) != hyperlinkMaxURLCandidates {
+		t.Fatalf("got %d links, want %d", len(got), hyperlinkMaxURLCandidates)
+	}
+}
+
+func TestExtractLinksFromMarkdownTextCapsCandidates(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < hyperlinkMaxURLCandidates+10; i++ {
+		fmt.Fprintf(&b, "[x](https://example.com/%d)", i)
+	}
+	got := extractLinksFromMarkdownText(b.String())
+	if len(got) != hyperlinkMaxURLCandidates {
+		t.Fatalf("got %d links, want %d", len(got), hyperlinkMaxURLCandidates)
 	}
 }

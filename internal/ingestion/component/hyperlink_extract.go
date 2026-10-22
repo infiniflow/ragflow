@@ -43,9 +43,15 @@ const (
 	// otherwise allocate proportional to the remaining file size.
 	hyperlinkMaxURIBytes = 8 << 10
 	// hyperlinkMaxPDFScanBytes caps the raw bytes examined for one PDF URI
-	// string. Without it, a crafted PDF full of unterminated /URI markers
-	// makes every marker rescan the rest of the file (quadratic CPU).
-	hyperlinkMaxPDFScanBytes = hyperlinkMaxURIBytes * 2
+	// string, including its opening and closing delimiters. Without it, a
+	// crafted PDF full of unterminated /URI markers makes every marker rescan
+	// the rest of the file (quadratic CPU).
+	hyperlinkMaxPDFScanBytes = hyperlinkMaxURIBytes*2 + 2
+	// hyperlinkMaxURLCandidates caps how many raw link targets extraction
+	// collects and how many PDF /URI markers it processes. Only MaxURLs are
+	// ever fetched, so scanning a crafted document further only burns CPU and
+	// memory.
+	hyperlinkMaxURLCandidates = 4096
 )
 
 var (
@@ -96,6 +102,9 @@ func extractLinksFromDocx(binary []byte) ([]string, error) {
 	for _, r := range rels.Relationships {
 		if strings.HasSuffix(r.Type, hyperlinkRelTypeSuffix) && r.Target != "" {
 			out = append(out, r.Target)
+			if len(out) >= hyperlinkMaxURLCandidates {
+				break
+			}
 		}
 	}
 	return out, nil
@@ -113,11 +122,16 @@ func extractLinksFromDocx(binary []byte) ([]string, error) {
 func extractLinksFromPDF(binary []byte) []string {
 	var out []string
 	rest := binary
+	scanned := 0
 	for {
 		i := bytes.Index(rest, []byte("/URI"))
 		if i < 0 {
 			break
 		}
+		if scanned >= hyperlinkMaxURLCandidates {
+			break
+		}
+		scanned++
 		rest = rest[i+len("/URI"):]
 		rest = skipPDFWhitespace(rest)
 		if len(rest) == 0 {
@@ -227,8 +241,8 @@ func readPDFLiteralString(b []byte) (string, []byte, bool) {
 // cannot rescan the whole file.
 func readPDFHexString(b []byte) (string, []byte, bool) {
 	window := b
-	if len(window) > hyperlinkMaxPDFScanBytes+1 {
-		window = window[:hyperlinkMaxPDFScanBytes+1]
+	if len(window) > hyperlinkMaxPDFScanBytes {
+		window = window[:hyperlinkMaxPDFScanBytes]
 	}
 	end := bytes.IndexByte(window, '>')
 	if end < 0 {
@@ -279,7 +293,7 @@ func extractLinksFromMarkdownText(text string) []string {
 		seen[url] = true
 		out = append(out, url)
 	}
-	for _, m := range markdownLinkRe.FindAllStringSubmatch(text, -1) {
+	for _, m := range markdownLinkRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
 		if m[1] == "!" {
 			continue
 		}
@@ -288,9 +302,15 @@ func extractLinksFromMarkdownText(text string) []string {
 			dest = dest[:i]
 		}
 		add(dest)
+		if len(out) >= hyperlinkMaxURLCandidates {
+			return out
+		}
 	}
-	for _, m := range htmlAnchorHrefRe.FindAllStringSubmatch(text, -1) {
+	for _, m := range htmlAnchorHrefRe.FindAllStringSubmatch(text, hyperlinkMaxURLCandidates) {
 		add(m[1])
+		if len(out) >= hyperlinkMaxURLCandidates {
+			return out
+		}
 	}
 	return out
 }
