@@ -59,7 +59,7 @@ func maybeFetchHyperlinkContents(ctx context.Context, fileType utility.FileType,
 		return parent, nil
 	}
 
-	raw, warnings := collectHyperlinkTargets(family, binary, parent)
+	raw, warnings := collectHyperlinkTargets(family, binary)
 	urls, truncated := normalizeAndDedupeLinks(raw, param.MaxURLs)
 	if truncated {
 		warnings = append(warnings, fmt.Sprintf("hyperlink: %d links found, fetching first %d", len(raw), param.MaxURLs))
@@ -135,9 +135,11 @@ func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
 	return total
 }
 
-// collectHyperlinkTargets extracts raw link targets for the family:
-// document bytes for pdf/docx, parent item text for markdown.
-func collectHyperlinkTargets(family string, binary []byte, parent []parser.DocItem) ([]string, []string) {
+// collectHyperlinkTargets extracts raw link targets for the family from the
+// source bytes. Markdown uses the raw document rather than the parsed items:
+// the markdown parser resolves links to their label, so the URL is already
+// gone by the time items exist.
+func collectHyperlinkTargets(family string, binary []byte) ([]string, []string) {
 	switch family {
 	case "pdf":
 		return extractLinksFromPDF(binary), nil
@@ -148,12 +150,7 @@ func collectHyperlinkTargets(family string, binary []byte, parent []parser.DocIt
 		}
 		return links, nil
 	case "markdown":
-		var raw []string
-		for _, it := range parent {
-			text, _ := it.ToMap()["text"].(string)
-			raw = append(raw, extractLinksFromMarkdownText(text)...)
-		}
-		return raw, nil
+		return extractLinksFromMarkdownText(string(binary)), nil
 	default:
 		return nil, nil
 	}

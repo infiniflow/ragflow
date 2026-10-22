@@ -633,6 +633,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		out["json"] = fetched
 		reportParserWarnings(ctx, linkWarnings)
 	}
+	// Linked fetching degrades to warnings on per-URL failures, but a run
+	// cancelled mid-fetch must still fail instead of being reported done.
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
+	}
 	out["file_type"] = string(fileTypeExt)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
