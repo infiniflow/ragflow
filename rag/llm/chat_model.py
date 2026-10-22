@@ -3126,6 +3126,7 @@ class LiteLLMBase(ABC):
             if self.base_url:
                 completion_args.update({"api_base": self.base_url})
             if self.provider_order:
+
                 def _to_order_list(x):
                     if x is None:
                         return []
