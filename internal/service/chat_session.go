@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -1610,7 +1612,9 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 }
 
 // GetOrCreateForChannel finds or creates the deterministic conversation for one external chat.
-func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID string) (*entity.ChatSession, error) {
+// firstQuery and channelName only affect the display name, and only when the
+// conversation is created here; an existing conversation keeps its name.
+func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID, firstQuery, channelName string) (*entity.ChatSession, error) {
 	sessionID := channelSessionID(dialogID, channelID, chatID)
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 	if err == nil {
@@ -1622,7 +1626,10 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 
 	messagesJSON, _ := json.Marshal([]map[string]interface{}{})
 	referenceJSON, _ := json.Marshal([]interface{}{})
-	name := fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	name := channelSessionName(firstQuery, channelName)
+	if name == "" {
+		name = fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	}
 	session = &entity.ChatSession{
 		ID:        sessionID,
 		DialogID:  dialogID,
@@ -1644,6 +1651,47 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 func channelSessionID(dialogID, channelID, chatID string) string {
 	sum := sha256.Sum256([]byte(dialogID + ":" + channelID + ":" + chatID))
 	return fmt.Sprintf("%x", sum[:])[:32]
+}
+
+// channelSessionNameMaxRunes matches the conversation.name column width.
+const channelSessionNameMaxRunes = 255
+
+// channelMentionMarkup matches platform mention markup that carries an opaque
+// ID instead of readable text, such as Discord's <@123>, <@!123>, <@&123>, and
+// <#123>.
+var channelMentionMarkup = regexp.MustCompile(`<(?:@[!&]?|#)\d+>`)
+
+// channelSessionName builds the display name for a newly created channel
+// session: the chat-channel name in parentheses, then the first user query,
+// as in "(channel: cc) who is Lin Daiyu". Mention markup is removed from the query,
+// so a bot mention never shows up in the name. It returns the empty string
+// when both inputs are blank, so the caller can fall back to the deterministic
+// ID-based name.
+func channelSessionName(firstQuery, channelName string) string {
+	query := normalizeChannelSessionNameText(channelMentionMarkup.ReplaceAllString(firstQuery, " "))
+	channel := normalizeChannelSessionNameText(channelName)
+	if channel == "" {
+		return utility.TruncateRunes(query, channelSessionNameMaxRunes)
+	}
+
+	prefix := "(channel: " + channel + ") "
+	if query == "" {
+		return utility.TruncateRunes(strings.TrimSpace(prefix), channelSessionNameMaxRunes)
+	}
+	prefixRunes := []rune(prefix)
+	if len(prefixRunes) >= channelSessionNameMaxRunes {
+		return string(prefixRunes[:channelSessionNameMaxRunes])
+	}
+	if room := channelSessionNameMaxRunes - len(prefixRunes); len([]rune(query)) > room {
+		query = utility.TruncateRunes(query, room)
+	}
+	return prefix + query
+}
+
+// normalizeChannelSessionNameText collapses every whitespace run, including
+// newlines, into one space and trims the ends.
+func normalizeChannelSessionNameText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // appendSessionMessage appends the last user message to the session's message history.
