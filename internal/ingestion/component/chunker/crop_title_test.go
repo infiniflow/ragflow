@@ -17,8 +17,12 @@ package chunker
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 )
 
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
@@ -70,47 +74,132 @@ func TestCropTitleChunks_CropsImageWithPageList(t *testing.T) {
 	}
 }
 
-// TestCropTitleChunks_PositionOnlyImageWithRootHeading reaches the crop and
-// streaming upload after a position-only figure survives extraction. The root
-// heading supplies text before cropping; the crop path still intentionally
-// skips media whose finalized text remains empty.
-func TestCropTitleChunks_PositionOnlyImageWithRootHeading(t *testing.T) {
-	comp, err := NewGroupTitleChunker(map[string]any{
-		"levels":                [][]string{{`^# `}},
-		"root_chunk_as_heading": true,
-	})
-	if err != nil {
-		t.Fatalf("NewGroupTitleChunker: %v", err)
+// Position-only figures must keep distinct identities even when the root
+// heading supplies identical text. Streamed uploads, decorator retries and
+// the no-engine fallback must agree on the same per-figure IDs.
+func TestCropTitleChunks_PositionOnlyImagesWithRootHeading(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		new  func(map[string]any) (runtime.Component, error)
+	}{
+		{"group", NewGroupTitleChunker},
+		{"hierarchy", NewHierarchyTitleChunker},
+		{"manual", NewManualChunker},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, err := tc.new(map[string]any{
+				"levels":                [][]string{{`^# `}},
+				"hierarchy":             1,
+				"root_chunk_as_heading": true,
+			})
+			if err != nil {
+				t.Fatalf("new chunker: %v", err)
+			}
+			testPositionOnlyImagesWithRootHeading(t, comp)
+		})
 	}
-	chunks := titleFamilyChunks(t, comp, []map[string]any{
-		{"text": "# Figure context", "doc_type_kwd": "text"},
-		{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{1, 10, 100, 10, 100}}},
-	})
-	if len(chunks) != 1 || chunks[0]["doc_type_kwd"] != "image" {
-		t.Fatalf("chunks = %#v, want the positioned image with root heading", chunks)
-	}
-	if !strings.Contains(toString(chunks[0]["text"]), "# Figure context") {
-		t.Fatalf("root heading not applied to image: %#v", chunks[0])
-	}
+}
 
-	rec := &recordingUploader{}
-	orig := ChunkImageUploader
-	ChunkImageUploader = rec.upload
-	t.Cleanup(func() { ChunkImageUploader = orig })
+func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component) {
+	t.Helper()
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+	var wantIDs [2]string
+	for _, mode := range []string{"stream", "retry", "no-engine"} {
+		t.Run(mode, func(t *testing.T) {
+			out, err := comp.Invoke(ctx, nil, map[string]any{
+				"name":          "doc.pdf",
+				"output_format": "json",
+				"json": []map[string]any{
+					{"text": "# Figure context", "doc_type_kwd": "text"},
+					// _pdf_positions carries only page identity; positions supplies the crop.
+					{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{2, 0, 0, 0, 0}}, "positions": [][]float64{{1, 10, 100, 10, 100}}},
+					{"text": "", "doc_type_kwd": "image", "_pdf_positions": [][]float64{{2, 0, 0, 0, 0}}, "positions": [][]float64{{1, 200, 300, 200, 300}}},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks, _ := out["chunks"].([]map[string]any)
+			if len(chunks) != 2 {
+				t.Fatalf("chunks = %#v, want two positioned images", chunks)
+			}
+			for _, ck := range chunks {
+				if ck["doc_type_kwd"] != "image" || !strings.Contains(toString(ck["text"]), "# Figure context") {
+					t.Fatalf("root heading not applied to image: %#v", ck)
+				}
+			}
+			if chunks[0]["text"] != chunks[1]["text"] {
+				t.Fatal("fixture must give both figures identical heading-only text")
+			}
 
-	got := cropTitleChunks(withIngestionGlobals(t, "kb1", "doc1"), mockCropEngine{}, chunks)
-	if len(got) != 1 || len(rec.calls) != 1 {
-		t.Fatalf("chunks = %d, uploads = %d, want 1 each", len(got), len(rec.calls))
-	}
-	call := rec.calls[0]
-	if call.kbID != "kb1" || call.chunkID == "" || call.dataLen == 0 {
-		t.Errorf("upload = %#v, want nonempty preview and chunk ID in kb1", call)
-	}
-	if got[0]["img_id"] != "kb1-"+call.chunkID {
-		t.Errorf("img_id = %v, want uploaded reference", got[0]["img_id"])
-	}
-	if image, _ := got[0]["image"].(string); image != "" {
-		t.Errorf("inline image retained after streaming upload")
+			rec := &recordingUploader{}
+			orig := ChunkImageUploader
+			ChunkImageUploader = rec.upload
+			t.Cleanup(func() { ChunkImageUploader = orig })
+			if mode == "retry" {
+				ChunkImageUploader = func(ctx context.Context, kbID, chunkID string, data []byte) (string, error) {
+					rec.upload(ctx, kbID, chunkID, data)
+					return "", fmt.Errorf("stream upload failed")
+				}
+			}
+			if mode != "no-engine" {
+				chunks = cropTitleChunks(ctx, assertZeroPageEngine{}, chunks)
+				if len(rec.calls) != 2 {
+					t.Fatalf("uploads = %d, want 2", len(rec.calls))
+				}
+				if rec.calls[0].chunkID == rec.calls[1].chunkID {
+					t.Errorf("different figures share upload key %q", rec.calls[0].chunkID)
+				}
+				for _, ck := range chunks {
+					if mode == "retry" && (ck["img_id"] != nil || !strings.HasPrefix(toString(ck["image"]), "data:image/png;base64,")) {
+						t.Errorf("failed upload must retain bytes for retry: %#v", ck)
+					}
+				}
+			}
+
+			ChunkImageUploader = rec.upload
+			// Ordinary text IDs must retain their existing text-only formula.
+			text := map[string]any{"text": "ordinary text", "doc_type_kwd": "text"}
+			decorated := &imageUploadDecorator{inner: &stubChunker{chunks: append(chunks, text)}}
+			if _, err := decorated.Invoke(ctx, nil, nil); err != nil {
+				t.Fatalf("decorator Invoke: %v", err)
+			}
+			if text["id"] != common.ChunkID("doc1", "ordinary text") {
+				t.Errorf("ordinary text ID changed: %v", text["id"])
+			}
+			ids := [2]string{toString(chunks[0]["id"]), toString(chunks[1]["id"])}
+			if ids[0] == "" || ids[1] == "" || ids[0] == ids[1] {
+				t.Fatalf("figure IDs must be nonempty and distinct: %q", ids)
+			}
+			if mode == "stream" {
+				wantIDs = ids
+			} else if wantIDs != ids {
+				t.Errorf("IDs = %q, want stable IDs %q", ids, wantIDs)
+			}
+			wantUploads := map[string]int{"stream": 2, "retry": 4, "no-engine": 0}[mode]
+			if len(rec.calls) != wantUploads {
+				t.Fatalf("uploads = %d, want %d", len(rec.calls), wantUploads)
+			}
+			uploads := make(map[string]int)
+			for _, call := range rec.calls {
+				if call.kbID != "kb1" || call.dataLen == 0 || (call.chunkID != ids[0] && call.chunkID != ids[1]) {
+					t.Errorf("upload key differs from decorator ID: %#v", call)
+				}
+				uploads[call.chunkID]++
+			}
+			for _, id := range ids {
+				if uploads[id] != wantUploads/2 {
+					t.Errorf("uploads at %q = %d, want %d", id, uploads[id], wantUploads/2)
+				}
+			}
+			if mode != "no-engine" {
+				for i, ck := range chunks {
+					if ck["img_id"] != "kb1-"+ids[i] || toString(ck["image"]) != "" {
+						t.Errorf("figure %d must reference its uploaded preview and drop inline bytes", i)
+					}
+				}
+			}
+		})
 	}
 }
 

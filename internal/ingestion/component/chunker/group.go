@@ -177,7 +177,8 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream))
+	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
@@ -304,7 +305,7 @@ func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 // stay aligned with the returned chunks after empty groups are dropped and
 // root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
 // chunk's chain to every piece it splits off.
-func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool, docID string) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
 	var outPrefixes []string
 	if prefixes != nil {
@@ -366,6 +367,17 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		}
 		if m := mergePositionMatrix(posSrc...); m != nil {
 			chunk["positions"] = m
+		}
+		first := g[0]
+		if !plain && (first.docType == "image" || first.docType == "table") &&
+			chunkText == "" && first.image == "" && first.imgID == nil {
+			if positions := mergePositionMatrix(first.pdfPositions, first.positions); positions != nil {
+				// Stamp position-only media before root_chunk_as_heading adds
+				// identical text to different figures. The normalized JSON rows
+				// contain only decoded JSON values, so marshaling cannot fail.
+				identity, _ := json.Marshal(positions)
+				chunk["id"] = common.ChunkID(docID, mediaChunkIDPrefix+first.docType+":"+string(identity))
+			}
 		}
 		chunks = append(chunks, chunk)
 		if prefixes != nil {
