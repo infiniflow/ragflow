@@ -42,6 +42,9 @@ import {
   usePipelineDataList,
   useSaveDatasetSetting,
 } from './hooks';
+import { PipelineVersionSelect } from '@/components/pipeline-version-select';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
+import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 
 export default function DatasetSetting() {
@@ -91,6 +94,11 @@ export default function DatasetSetting() {
     name: 'pipeline_id',
     defaultValue: '',
   });
+  const pipelineVersionId = useWatch({
+    control: form.control,
+    name: 'pipeline_version_id',
+    defaultValue: '',
+  });
 
   const builtinPipelineId = useWatch({
     control: form.control,
@@ -117,6 +125,17 @@ export default function DatasetSetting() {
         : knowledgeDetails?.parser_id
       : undefined;
 
+  // Published versions of the selected dataflow canvas (design C1/C2).
+  const { data: canvasVersions } = useFetchCanvasVersionList(
+    parseType === ParseType.Pipeline && pipelineId ? pipelineId : undefined,
+  );
+  // Show the outdated bang only while the form still holds the SAVED pin:
+  // once the user picks a different (unsaved) version the bang would be
+  // misleading (design D3: hint only, never auto-upgrade).
+  const savedVersionOutdated =
+    !!knowledgeDetails?.pipeline_version_outdated &&
+    (pipelineVersionId ?? '') === (knowledgeDetails?.pipeline_version_id ?? '');
+
   const { operatorNodes, loading: operatorNodesLoading } =
     usePipelineOperatorNodes(
       selectedPipelineId,
@@ -132,6 +151,17 @@ export default function DatasetSetting() {
     savedPipelineId,
     operatorNodes,
   );
+
+  // A pinned version belongs to the canvas it was pinned on (design section
+  // 5/B4 sticky snapshot). Switching the dataflow canvas invalidates any
+  // previously pinned version, so clear it; otherwise a version id from the
+  // old canvas would be submitted against the new pipeline. The initial load
+  // keeps the saved version (selected equals saved).
+  useEffect(() => {
+    if (selectedPipelineId !== savedPipelineId) {
+      form.setValue('pipeline_version_id', '');
+    }
+  }, [selectedPipelineId, savedPipelineId, form]);
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 
@@ -252,6 +282,42 @@ export default function DatasetSetting() {
                       </div>
                     </div>
                   </FormItem>
+                  {parseType === ParseType.Pipeline && !!pipelineId && (
+                    <FormItem className="items-center space-y-0">
+                      <div className="flex items-center gap-1">
+                        <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
+                          {t('flow.version.label')}
+                        </FormLabel>
+                        <div className="text-muted-foreground w-3/4">
+                          <FormField
+                            control={form.control}
+                            name="pipeline_version_id"
+                            render={({ field }) => (
+                              <FormItem className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <PipelineVersionSelect
+                                    versions={canvasVersions}
+                                    value={field.value ?? ''}
+                                    onChange={field.onChange}
+                                  />
+                                  {savedVersionOutdated && (
+                                    <RAGFlowTooltip
+                                      tooltip={t('flow.version.outdated')}
+                                    >
+                                      <span className="text-destructive cursor-help font-bold">
+                                        !
+                                      </span>
+                                    </RAGFlowTooltip>
+                                  )}
+                                </div>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </FormItem>
+                  )}
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}

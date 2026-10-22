@@ -2176,8 +2176,10 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list versions: %v", err)
 	}
-	if len(versions) != 1 {
-		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
+	// v5.2 §5.1: a manual Save always INSERTs a new version, even when the DSL
+	// is identical to the previous one (no same-DSL in-place refresh dedup).
+	if len(versions) != 2 {
+		t.Fatalf("expected every manual save to mint a new version, got %d versions", len(versions))
 	}
 	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
 		t.Fatalf("unexpected version title: %v", versions[0].Title)

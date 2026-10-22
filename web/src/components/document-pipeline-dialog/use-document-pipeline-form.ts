@@ -37,12 +37,16 @@ import { addParserConfigIssues } from '../pipeline-operator-tabs/parser-config-v
 export interface IDocumentPipelineDialogProps {
   parserId: string;
   pipelineId?: string;
+  // Currently pinned canvas version id (design section 5). Empty when the
+  // dataset/document binds the latest version.
+  pipelineVersionId?: string;
   parserConfig?: Record<string, any>;
 }
 
 export function useDocumentPipelineForm({
   parserId,
   pipelineId,
+  pipelineVersionId,
   parserConfig,
 }: IDocumentPipelineDialogProps) {
   const { t } = useTranslation();
@@ -57,6 +61,7 @@ export function useDocumentPipelineForm({
           // The superRefine below enforces it when BuiltIn is selected.
           parser_id: z.string().optional(),
           pipeline_id: z.string().optional(),
+          pipeline_version_id: z.string().optional(),
           parser_config: z.record(z.string(), z.any()).optional(),
         })
         .superRefine((data, ctx) => {
@@ -88,6 +93,7 @@ export function useDocumentPipelineForm({
       parse_type: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
       parser_id: parserId || '',
       pipeline_id: pipelineId || '',
+      pipeline_version_id: pipelineVersionId || '',
       parser_config: transformSavedParserConfigToForm(parserConfig),
     },
   });
@@ -135,6 +141,17 @@ export function useDocumentPipelineForm({
     savedPipelineId,
     operatorNodes,
   );
+
+  // A pinned version belongs to the canvas it was pinned on (design section 5/B4
+  // sticky snapshot). Switching the dataflow canvas invalidates any previously
+  // pinned version, so clear it; otherwise a version id from the old canvas
+  // would be submitted against the new pipeline. The initial load keeps the
+  // saved version (selected equals saved).
+  useEffect(() => {
+    if (selectedPipelineId !== savedPipelineId) {
+      form.setValue('pipeline_version_id', '');
+    }
+  }, [selectedPipelineId, savedPipelineId, form]);
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 
@@ -187,6 +204,7 @@ export function useDocumentPipelineForm({
       return {
         parser_id: isPipeline ? '' : (data.parser_id ?? ''),
         pipeline_id: isPipeline ? data.pipeline_id : '',
+        pipeline_version_id: isPipeline ? (data.pipeline_version_id ?? '') : '',
         parser_config: transformedConfig,
         parse_type: data.parse_type,
       };
