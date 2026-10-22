@@ -233,18 +233,142 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 			docs = append(docs, *result.Result)
 		}
 	}
+	pageCount := doclingPageCount(docs)
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return pdfMarkdownToResult(ctx, filename, md, outputFormat, len(docs)), true
+			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, outputFormat, pageCount), doc.JSONContent), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
-			return doclingTextsToResult(filename, []string{txt}, outputFormat, len(docs)), true
+			return doclingAttachPositions(doclingTextsToResult(filename, []string{txt}, outputFormat, pageCount), doc.JSONContent), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return pdfMarkdownToResult(ctx, filename, md, outputFormat, len(docs)), true
+			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, outputFormat, pageCount), doc.JSONContent), true
 		}
 	}
 	return ParseResult{}, false
+}
+
+// doclingPageCount returns the number of PDF pages described by the Docling
+// documents: the size of json_content.pages when present, otherwise the
+// highest page_no found in any provenance entry. It falls back to the number
+// of documents only when the response carries no page information.
+func doclingPageCount(docs []doclingDocument) int {
+	total := 0
+	for _, doc := range docs {
+		count := 0
+		switch pages := doc.JSONContent["pages"].(type) {
+		case map[string]any:
+			count = len(pages)
+		case []any:
+			count = len(pages)
+		}
+		for _, entry := range doclingTextEntries(doc.JSONContent) {
+			for _, prov := range doclingProvs(entry) {
+				if page, ok := numericAny(prov["page_no"]); ok && int(page) > count {
+					count = int(page)
+				}
+			}
+		}
+		total += count
+	}
+	if total == 0 {
+		return len(docs)
+	}
+	return total
+}
+
+func doclingTextEntries(content map[string]any) []map[string]any {
+	var entries []map[string]any
+	texts, _ := content["texts"].([]any)
+	for _, raw := range texts {
+		if entry, ok := raw.(map[string]any); ok {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
+}
+
+func doclingProvs(entry map[string]any) []map[string]any {
+	var provs []map[string]any
+	list, _ := entry["prov"].([]any)
+	for _, raw := range list {
+		if prov, ok := raw.(map[string]any); ok {
+			provs = append(provs, prov)
+		}
+	}
+	return provs
+}
+
+// doclingProvPosition converts a Docling provenance entry (1-based page_no and
+// bbox {l, t, r, b}) into a [page, left, right, top, bottom] row with top
+// above bottom regardless of the bbox coordinate origin.
+func doclingProvPosition(prov map[string]any) []any {
+	page, ok := numericAny(prov["page_no"])
+	if !ok || page < 1 {
+		return nil
+	}
+	bbox, _ := prov["bbox"].(map[string]any)
+	var v [4]float64
+	for i, key := range []string{"l", "t", "r", "b"} {
+		n, ok := numericAny(bbox[key])
+		if !ok {
+			return nil
+		}
+		v[i] = n
+	}
+	left, top, right, bottom := v[0], v[1], v[2], v[3]
+	if left > right {
+		left, right = right, left
+	}
+	if top > bottom {
+		top, bottom = bottom, top
+	}
+	return []any{int(page), left, right, top, bottom}
+}
+
+func doclingNormalizeText(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// doclingAttachPositions copies page positions from Docling's structured
+// json_content onto JSON items whose text matches a Docling text element. Items
+// without a match are left unchanged.
+func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult {
+	if res.Err != nil || len(res.JSON) == 0 || len(content) == 0 {
+		return res
+	}
+	byText := map[string][][]any{}
+	for _, entry := range doclingTextEntries(content) {
+		text := doclingNormalizeText(stringValue(entry["text"]))
+		if text == "" {
+			continue
+		}
+		for _, prov := range doclingProvs(entry) {
+			if pos := doclingProvPosition(prov); pos != nil {
+				byText[text] = append(byText[text], pos)
+			}
+		}
+	}
+	if len(byText) == 0 {
+		return res
+	}
+	itemMaps := make([]map[string]any, len(res.JSON))
+	matched := false
+	for i, item := range res.JSON {
+		m := item.ToMap()
+		text := doclingNormalizeText(strings.TrimLeft(stringValue(m["text"]), "#-*0123456789. "))
+		if rows := byText[text]; len(rows) > 0 && text != "" {
+			m["positions"] = rows
+			m["_pdf_positions"] = rows
+			matched = true
+		}
+		itemMaps[i] = m
+	}
+	if !matched {
+		return res
+	}
+	res.JSON = MapsToItems(itemMaps)
+	return res
 }
 
 func doclingTextsToResult(filename string, texts []string, outputFormat string, pageCount int) ParseResult {

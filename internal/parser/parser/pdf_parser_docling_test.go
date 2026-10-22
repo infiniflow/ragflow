@@ -252,3 +252,81 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 		})
 	}
 }
+
+const doclingPositionsResponse = `{"document":{"md_content":"# Docling Title\n\nDocling body.\n\nUnmatched paragraph.\n","json_content":{
+ "pages":{"1":{"page_no":1},"2":{"page_no":2},"3":{"page_no":3}},
+ "texts":[
+  {"label":"section_header","text":"Docling Title","prov":[{"page_no":1,"bbox":{"l":10,"t":700,"r":200,"b":680,"coord_origin":"BOTTOMLEFT"}}]},
+  {"label":"text","text":"Docling body.","prov":[{"page_no":2,"bbox":{"l":15,"t":100,"r":300,"b":140,"coord_origin":"TOPLEFT"}}]}
+ ]}}}`
+
+func TestPDFParser_ParseWithResult_DoclingEmitsPositionsAndPageCount(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		options, _ := body["options"].(map[string]any)
+		if _, chunked := options["do_chunking"]; chunked {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(doclingPositionsResponse))
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":       "Docling",
+		"output_format":      "json",
+		"docling_server_url": server.URL,
+	})
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got := res.File["page_count"]; got != 3 {
+		t.Fatalf("page_count = %v, want 3 (pages, not documents)", got)
+	}
+	want := map[string][]any{
+		"Docling Title": {1, 10.0, 200.0, 680.0, 700.0},
+		"Docling body.": {2, 15.0, 300.0, 100.0, 140.0},
+	}
+	found := map[string]bool{}
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		text := strings.TrimSpace(strings.TrimLeft(stringValue(m["text"]), "# "))
+		rows, ok := ExtractPDFPositions(m)
+		if w, expected := want[text]; expected {
+			if !ok || len(rows) != 1 || len(rows[0]) != 5 {
+				t.Fatalf("%q positions = %#v ok=%v", text, rows, ok)
+			}
+			for i := range w {
+				got, _ := numericAny(rows[0][i])
+				exp, _ := numericAny(w[i])
+				if got != exp {
+					t.Fatalf("%q positions[%d] = %v, want %v (row %#v)", text, i, rows[0][i], w[i], rows[0])
+				}
+			}
+			found[text] = true
+		} else if ok {
+			t.Fatalf("unmatched item %q must not carry positions: %#v", text, rows)
+		}
+	}
+	if len(found) != 2 {
+		t.Fatalf("matched items = %v, want both", found)
+	}
+}
+
+func TestDoclingPageCountFallsBackToProvenanceThenDocuments(t *testing.T) {
+	withProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 4.0}}},
+	}}}}
+	if got := doclingPageCount(withProv); got != 4 {
+		t.Fatalf("provenance page count = %d, want 4", got)
+	}
+	if got := doclingPageCount([]doclingDocument{{MDContent: "x"}}); got != 1 {
+		t.Fatalf("no page info page count = %d, want 1 (document count)", got)
+	}
+}
