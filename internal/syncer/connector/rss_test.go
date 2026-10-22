@@ -208,3 +208,80 @@ func mustTime(t *testing.T, value string) time.Time {
 	}
 	return parsed
 }
+
+// TestRSSConnectorReadsRSS10Items verifies that RSS 1.0 (RDF) items, which sit
+// beside <channel> rather than inside it, are read with their dc:date in each
+// W3C-DTF form.
+func TestRSSConnectorReadsRSS10Items(t *testing.T) {
+	for _, tc := range []struct{ date, want string }{
+		{"2026-01-03", "2026-01-03T00:00:00Z"},
+		{"2026-01-03T10:15Z", "2026-01-03T10:15:00Z"},
+		{"2026-01-03T10:15+05:30", "2026-01-03T04:45:00Z"},
+		{"2026-01-03T10:15:30+05:30", "2026-01-03T04:45:30Z"},
+	} {
+		t.Run(tc.date, func(t *testing.T) {
+			connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.rdf", "batch_size": 10})
+			if err != nil {
+				t.Fatalf("NewRSSConnector failed: %v", err)
+			}
+			connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
+				return []byte(`<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel rdf:about="https://example.com/">
+    <title>Feed</title>
+    <link>https://example.com/</link>
+    <items>
+      <rdf:Seq>
+        <rdf:li rdf:resource="https://example.com/old"/>
+        <rdf:li rdf:resource="https://example.com/new"/>
+      </rdf:Seq>
+    </items>
+  </channel>
+  <item rdf:about="https://example.com/old">
+    <title>Old title</title>
+    <link>https://example.com/old</link>
+    <description>Old body</description>
+    <dc:date>2026-01-01T00:00:00Z</dc:date>
+  </item>
+  <item rdf:about="https://example.com/new">
+    <title>New title</title>
+    <link>https://example.com/new</link>
+    <description>New body</description>
+    <dc:creator>Alice</dc:creator>
+    <dc:date>` + tc.date + `</dc:date>
+  </item>
+</rdf:RDF>`), nil
+			}
+
+			if err := connector.Validate(t.Context()); err != nil {
+				t.Fatalf("Validate failed: %v", err)
+			}
+
+			start := mustTime(t, "2026-01-02T00:00:00Z")
+			session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")})
+			if err != nil {
+				t.Fatalf("OpenSync failed: %v", err)
+			}
+			batch, err := session.NextBatch(context.Background())
+			if err != nil {
+				t.Fatalf("NextBatch failed: %v", err)
+			}
+			if len(batch.Documents) != 1 {
+				t.Fatalf("incremental batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+			}
+			doc := batch.Documents[0]
+			if doc.SourceID != expectedRSSSourceID("https://example.com/new") {
+				t.Fatalf("source id = %s", doc.SourceID)
+			}
+			if string(doc.Blob) != "New title\n\nNew body" {
+				t.Fatalf("blob = %q", string(doc.Blob))
+			}
+			if want := mustTime(t, tc.want); !doc.UpdatedAt.Equal(want) {
+				t.Fatalf("updated at = %v, want %v", doc.UpdatedAt, want)
+			}
+			if doc.Metadata["author"] != "Alice" {
+				t.Fatalf("author metadata = %v", doc.Metadata["author"])
+			}
+		})
+	}
+}
