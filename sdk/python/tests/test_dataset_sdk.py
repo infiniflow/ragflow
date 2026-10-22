@@ -82,6 +82,38 @@ def test_create_dataset_builtin_payload_uses_parser_fields():
     assert dataset.language == "English"
 
 
+def test_create_dataset_treats_blank_pipeline_id_as_absent():
+    rag = RecordingRAGFlow({"id": "ds-1", "name": "kb", "parser_id": "general"})
+
+    rag.create_dataset(name="kb", pipeline_id="  ")
+
+    payload = rag.calls[0][2]
+    assert payload["parser_id"] == "general"
+    assert "pipeline_id" not in payload
+
+
+def test_create_dataset_treats_blank_parser_id_as_absent_for_pipeline():
+    rag = RecordingRAGFlow(
+        {
+            "id": "ds-1",
+            "name": "kb",
+            "parser_id": "",
+            "pipeline_id": "0123456789abcdef0123456789abcdef",
+        }
+    )
+
+    rag.create_dataset(
+        name="kb",
+        parse_type=2,
+        parser_id=" ",
+        pipeline_id="0123456789abcdef0123456789abcdef",
+    )
+
+    payload = rag.calls[0][2]
+    assert "parser_id" not in payload
+    assert payload["pipeline_id"] == "0123456789abcdef0123456789abcdef"
+
+
 def test_create_dataset_pipeline_payload():
     rag = RecordingRAGFlow(
         {

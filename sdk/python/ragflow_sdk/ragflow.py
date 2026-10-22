@@ -70,6 +70,9 @@ class RAGFlow:
         ``"general"``. ``parse_type=2`` selects an ingestion pipeline and requires
         ``pipeline_id``.
         """
+        parser_id = (parser_id or "").strip() or None
+        pipeline_id = (pipeline_id or "").strip() or None
+
         if parse_type == 1:
             if pipeline_id is not None:
                 raise ValueError("pipeline_id must not be set when parse_type is 1 (BuiltIn)")
