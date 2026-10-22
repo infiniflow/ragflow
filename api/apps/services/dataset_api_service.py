@@ -32,6 +32,7 @@ from api.db.services.user_service import TenantService, UserService, UserTenantS
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
 from common import settings
 from common.constants import PAGERANK_FLD, FileSource, LLMType, RetCode, StatusEnum, TaskStatus
+from common.doc_store.doc_store_base import field_scalar
 from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
@@ -1640,19 +1641,6 @@ def _compilation_template_kind(kind) -> str:
     return normalized
 
 
-def _scalar(raw, default=""):
-    """Infinity ``get_fields`` returns every ``*_kwd`` field as a list (split
-    on ``###``), even single scalar values like ``slug_kwd=["entity/foo"]``.
-    Normalize a field value that is expected to be a scalar identifier back to
-    the first non-empty element."""
-    if isinstance(raw, (list, tuple)):
-        for item in raw:
-            if item not in (None, ""):
-                return item
-        return default
-    return raw if raw not in (None, "") else default
-
-
 def _string_list(raw) -> list[str]:
     """Normalize native arrays and legacy JSON/Infinity string fields."""
     if isinstance(raw, (list, tuple, set)):
@@ -1923,7 +1911,6 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
     from api.apps.services import structure_graph_common as sgc
     from api.db.services.compilation_template_service import CompilationTemplateService
-    from api.db.services.tenant_llm_service import TenantLLMService
     from common.doc_store.doc_store_base import OrderByExpr
 
     keywords = (keywords or "").strip()
@@ -2094,15 +2081,9 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         resolved_kind,
     )
 
-    # ── keywords mode: name matching/KNN across the kind → matched subgraph. ──
+    # ── keywords mode: name matching across the kind → matched subgraph. ──
     if keywords:
         if not kind_template_ids:
-            return True, empty
-        try:
-            model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING.value, kb.embd_id)
-            embd_mdl = TenantLLMService.model_instance(model_config)
-        except Exception:
-            logging.exception("get_dataset_structure: embedding bind failed for kb=%s", dataset_id)
             return True, empty
 
         def _scope_for_template(row: dict):
@@ -2119,11 +2100,9 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
             index_nm,
             dataset_id,
-            embd_mdl,
             {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset", "doc"]},
             keywords,
             _scope_for_template,
-            log_ctx=f"kb={dataset_id}",
             excluded_doc_ids=dataset_excluded_doc_ids,
         )
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
@@ -2197,7 +2176,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             if _resolve_dataset_structure_kind((stamped_kind or "").strip()) != resolved_kind:
                 continue
             if disabled_doc_ids:
-                compile_kwd = _scalar(row.get("compile_kwd"))
+                compile_kwd = field_scalar(row.get("compile_kwd"))
                 if not compile_kwd or compile_kwd in reconstructed_compile_kwds:
                     continue
                 reconstructed_compile_kwds.add(compile_kwd)
@@ -2745,14 +2724,14 @@ async def list_wiki_pages(
     ]
 
     def _to_item(row):
-        slug = _scalar(row.get("slug_kwd"))
+        slug = field_scalar(row.get("slug_kwd"))
         if not slug:
             return None
         return {
             "slug": slug,
-            "title": _scalar(row.get("title_kwd")) or slug,
-            "page_type": _scalar(row.get("page_type_kwd")) or "concept",
-            "topic": _scalar(row.get("topic_kwd")) or "",
+            "title": field_scalar(row.get("title_kwd")) or slug,
+            "page_type": field_scalar(row.get("page_type_kwd")) or "concept",
+            "topic": field_scalar(row.get("topic_kwd")) or "",
             "summary": row.get("summary_with_weight") or "",
         }
 
@@ -2896,8 +2875,8 @@ async def list_wiki_topics(
                 if not child_rows:
                     break
                 for row in child_rows:
-                    topic_name = _scalar(row.get("topic_kwd"))
-                    if topic_name and any(keywords in str(_scalar(row.get(field)) or "").casefold() for field in ("title_kwd", "slug_kwd", "summary_with_weight")):
+                    topic_name = field_scalar(row.get("topic_kwd"))
+                    if topic_name and any(keywords in str(field_scalar(row.get(field)) or "").casefold() for field in ("title_kwd", "slug_kwd", "summary_with_weight")):
                         matching_topics.add(topic_name)
                 if len(child_rows) < batch_size:
                     break
@@ -2988,10 +2967,10 @@ async def get_wiki_page(
     content_md = row.get("md_with_weight") or row.get("content_with_weight") or ""
     summary = row.get("summary_with_weight") or ""
     return True, {
-        "slug": _scalar(row.get("slug_kwd")) or full_slug,
-        "title": _scalar(row.get("title_kwd")) or full_slug,
-        "page_type": _scalar(row.get("page_type_kwd")) or page_type,
-        "topic": _scalar(row.get("topic_kwd")) or "",
+        "slug": field_scalar(row.get("slug_kwd")) or full_slug,
+        "title": field_scalar(row.get("title_kwd")) or full_slug,
+        "page_type": field_scalar(row.get("page_type_kwd")) or page_type,
+        "topic": field_scalar(row.get("topic_kwd")) or "",
         "content_md_rendered": content_md,
         "summary": summary,
         "entity_names": _string_list(row.get("entity_names_kwd")),
@@ -3074,7 +3053,7 @@ async def get_skill_tree(dataset_id: str, tenant_id: str):
         "id": row.get("id"),
         "kb_id": row.get("kb_id") or dataset_id,
         "doc_id": row.get("doc_id") or dataset_id,
-        "compile_kwd": row.get("compile_kwd") or _SKILL_ALL_COMPILE_KWD,
+        "compile_kwd": field_scalar(row.get("compile_kwd")) or _SKILL_ALL_COMPILE_KWD,
         "skill_with_weight": json.loads(row.get("skill_with_weight")) or [],
     }
 
@@ -3363,8 +3342,8 @@ async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
         "id": row.get("id"),
         "kb_id": row.get("kb_id") or dataset_id,
         "doc_id": row.get("doc_id") or dataset_id,
-        "compile_kwd": row.get("compile_kwd") or _SKILL_COMPILE_KWD,
-        "skill_kwd": row.get("skill_kwd") or skill_kwd,
+        "compile_kwd": field_scalar(row.get("compile_kwd")) or _SKILL_COMPILE_KWD,
+        "skill_kwd": field_scalar(row.get("skill_kwd")) or skill_kwd,
         "depth_int": row.get("depth_int") or 0,
         "children_kwd": row.get("children_kwd") or [],
         "source_doc_ids": row.get("source_doc_ids") or [],
@@ -3393,13 +3372,6 @@ _NAV_FIELDS = [
     "depth_int",
     "parent_kwd",
 ]
-
-
-def _first_str(val) -> str:
-    """Extract the first string from a value that may be str, list, tuple, or set."""
-    if isinstance(val, (list, tuple, set)):
-        return str(next(iter(val), "") or "")
-    return str(val or "")
 
 
 def _resolve_embd_mdl(kb):
@@ -3646,11 +3618,11 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
         # Reuse the existing document-removal path so direct parents are
         # updated and empty ancestor clusters are cleaned consistently.
         for row in rows_by_id.values():
-            if row.get("type_kwd") == "nav_doc" and row.get("doc_id"):
+            if field_scalar(row.get("type_kwd")) == "nav_doc" and row.get("doc_id"):
                 await _remove_dataset_nav_doc_locked(tenant_id, dataset_id, row["doc_id"])
                 deleted += 1
 
-        cluster_ids = [row_id for row_id, row in rows_by_id.items() if row.get("type_kwd") == "nav_cluster" and row_id]
+        cluster_ids = [row_id for row_id, row in rows_by_id.items() if field_scalar(row.get("type_kwd")) == "nav_cluster" and row_id]
         if cluster_ids:
             deleted_rows = await thread_pool_exec(
                 settings.docStoreConn.delete,
@@ -4316,8 +4288,7 @@ def _nav_bucket_compiled_rows(field_map: dict) -> dict[str, dict]:
             continue
         entry["total"] += score
         entry["hits"] += 1
-        if score > entry["best"]:
-            entry["best"] = score
+        entry["best"] = max(entry["best"], score)
     return {"claim": claim_bucket}
 
 
@@ -4373,8 +4344,7 @@ def _nav_aggregate_chunks(chunks: list) -> dict[str, dict]:
             continue
         entry["total"] += score
         entry["hits"] += 1
-        if score > entry["best"]:
-            entry["best"] = score
+        entry["best"] = max(entry["best"], score)
     return agg
 
 
@@ -4668,7 +4638,7 @@ async def _enrich_nav_items(dataset_id: str, tenant_id: str, items: list[dict]) 
         if row:
             nav_item = _nav_item(row)
             nav_item["score"] = it.get("score", 0.0)
-            nav_item["_parent_kwd"] = _first_str(row.get("parent_kwd"))
+            nav_item["_parent_kwd"] = field_scalar(row.get("parent_kwd"))
             doc_items[i] = nav_item
 
     # Phase 3: get parent_kwd for _nav doc items (search_dataset_nav strips it).
@@ -4693,14 +4663,14 @@ async def _enrich_nav_items(dataset_id: str, tenant_id: str, items: list[dict]) 
 
         parent_by_name: dict[str, str] = {}
         for row in (field_map or {}).values():
-            nm = _first_str(row.get("name"))
-            pn = _first_str(row.get("parent_kwd"))
+            nm = field_scalar(row.get("name"))
+            pn = field_scalar(row.get("parent_kwd"))
             if nm and pn:
                 parent_by_name[nm] = pn
 
         for it in doc_items:
             if it.get("type") == "doc" and not it.get("_parent_kwd"):
-                it["_parent_kwd"] = parent_by_name.get(it.get("name", ""), "")
+                it["_parent_kwd"] = parent_by_name.get(field_scalar(it.get("name")), "")
 
     # Phase 4: batch-fetch parent cluster rows.
     parent_names = {it["_parent_kwd"] for it in doc_items if it.get("_parent_kwd")}
@@ -4724,7 +4694,7 @@ async def _enrich_nav_items(dataset_id: str, tenant_id: str, items: list[dict]) 
             field_map = None
 
         for row in (field_map or {}).values():
-            nm = _first_str(row.get("name"))
+            nm = field_scalar(row.get("name"))
             if nm:
                 cluster_by_name[nm] = _nav_item(row)
 
@@ -4965,7 +4935,7 @@ def _wiki_entity_payload(row: dict) -> dict | None:
                 payload = parsed
         except Exception:
             pass
-    slug = payload.get("slug") or _scalar(row.get("slug_kwd"))
+    slug = payload.get("slug") or field_scalar(row.get("slug_kwd"))
     if not isinstance(slug, str) or not slug:
         return None
     out = {

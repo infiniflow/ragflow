@@ -40,10 +40,12 @@ from rag.flow.parser.pdf_chunk_metadata import (
     restore_pdf_text_previews,
 )
 from rag.nlp import not_bullet, not_title
+from rag.nlp.delim import normalize_text_newlines
 
 logger = logging.getLogger(__name__)
 
 BODY_LEVEL = sys.maxsize - 1
+_HEADING_LAYOUT_RE = re.compile(r"(section|title|head)", re.IGNORECASE)
 
 
 class TitleChunkerParam(ProcessParamBase):
@@ -94,7 +96,6 @@ class BaseTitleChunker(ABC):
         line_records = self.extract_line_records()
         resolved = self.resolve_levels(line_records)
         chunks = self.build_chunks(line_records, resolved)
-        chunks = self._enforce_token_cap(chunks)
         await self.set_chunks(chunks)
         self.process.callback(1, "Done.")
 
@@ -115,8 +116,7 @@ class BaseTitleChunker(ABC):
                 sentences.append(piece)
         return sentences
 
-    @staticmethod
-    def _hard_split_by_tokens(text, cap):
+    def _hard_split_by_tokens(self, text, cap, heading=""):
         """Hard-split a boundary-less run into <= cap-token pieces.
 
         Mirrors common.token_utils.truncate semantics (prefix bounded by
@@ -125,37 +125,46 @@ class BaseTitleChunker(ABC):
         """
         out = []
         rest = text or ""
+        body_cap = cap - self._token_count(heading)
         while rest:
             try:
-                head = truncate(rest, cap)
+                head = truncate(rest, body_cap)
             except (ValueError, TypeError, UnicodeError):
                 # Tokenizer rejected the input; fall back to a character prefix
                 # so the ceiling still holds. An unavailable BPE table raises
                 # from truncate and is not caught here; see _token_count.
-                head = rest[:cap]
-            # truncate decodes the first `cap` tokens; when that lands mid
+                head = rest[:body_cap]
+            # truncate decodes the first `body_cap` tokens; when that lands mid
             # multibyte character it emits a U+FFFD, which is not a true prefix
             # of `rest`. Trim it so the rest[len(head):] advance stays lossless
             # and no character is dropped at the split boundary.
             if head and not rest.startswith(head):
                 head = head[:-1]
             if not head:
-                out.append(rest)
-                break
+                head = rest[:1]
+            while head and self._token_count(heading + head) > cap:
+                head = head[:-1]
+            if not head:
+                raise ValueError(
+                    f"Title chunker heading leaves no room for the next body character within the token cap. heading_tokens={self._token_count(heading)}, cap={cap}, heading={heading[:120]!r}"
+                )
             out.append(head)
             if head == rest:
                 break
             rest = rest[len(head) :]
         return out
 
-    def _split_text_chunk_by_cap(self, chunk, cap):
+    def _split_text_chunk_by_cap(self, chunk, cap, heading="", body=None):
         """Re-split one oversized text chunk into <= cap sub-chunks.
 
         Sentence boundaries are tried first; any remaining over-cap segment is
         hard-split. Every sub-chunk keeps the original (coarse, page-level)
         positions so each still gets its preview image and highlight.
         """
-        text = chunk.get("text") or ""
+        text = (chunk.get("text") or "") if body is None else body
+        heading_tokens = self._token_count(heading)
+        if heading and heading_tokens >= cap:
+            raise ValueError(f"Title chunker heading leaves no room for body within the token cap. heading_tokens={heading_tokens}, cap={cap}, heading={heading[:120]!r}")
         sentences = self._split_text_by_sentences(text)
         if not sentences:
             return [chunk]
@@ -164,7 +173,7 @@ class BaseTitleChunker(ABC):
         current = ""
         for sentence in sentences:
             candidate = current + sentence if current else sentence
-            if current and self._token_count(candidate) > cap:
+            if current and self._token_count(heading + candidate) > cap:
                 groups.append(current)
                 current = sentence
             else:
@@ -174,10 +183,10 @@ class BaseTitleChunker(ABC):
 
         final_groups = []
         for group in groups:
-            if self._token_count(group) <= cap:
+            if self._token_count(heading + group) <= cap:
                 final_groups.append(group)
             else:
-                final_groups.extend(self._hard_split_by_tokens(group, cap))
+                final_groups.extend(self._hard_split_by_tokens(group, cap, heading))
         if not final_groups:
             return [chunk]
 
@@ -186,7 +195,7 @@ class BaseTitleChunker(ABC):
         out = []
         for group in final_groups:
             sub = dict(chunk)
-            sub["text"] = group
+            sub["text"] = heading + group
             # Every sub-chunk keeps the original (coarse, page-level)
             # coordinates so the preview-image/position restore pass covers
             # all sub-chunks. Each sub-chunk owns a deep copy so no two of
@@ -210,30 +219,30 @@ class BaseTitleChunker(ABC):
             return len(text or "")
         return n
 
-    def _enforce_token_cap(self, chunks):
+    def _enforce_token_cap(self, chunk_groups):
         """Apply the hard token ceiling to every text chunk after build_chunks.
 
         Both hierarchy and group methods honour ``chunk_token_cap``. Table and
         image chunks are atomic and skipped. ``cap`` of 0/None disables it.
         """
         cap = self.param.chunk_token_cap
-        if not cap or cap <= 0:
-            return chunks
-
         out = []
-        for chunk in chunks:
+        for chunk, heading, body in chunk_groups:
+            if not cap or cap <= 0:
+                out.append(chunk)
+                continue
             if chunk.get("doc_type_kwd", "text") != "text":
                 out.append(chunk)
                 continue
             if self._token_count(chunk.get("text") or "") <= cap:
                 out.append(chunk)
                 continue
-            out.extend(self._split_text_chunk_by_cap(chunk, cap))
-        if len(out) != len(chunks):
+            out.extend(self._split_text_chunk_by_cap(chunk, cap, heading, body))
+        if len(out) != len(chunk_groups):
             logger.info(
                 "title chunker token cap enforced: cap=%s chunks %d -> %d",
                 cap,
-                len(chunks),
+                len(chunk_groups),
                 len(out),
             )
         return out
@@ -252,7 +261,7 @@ class BaseTitleChunker(ABC):
             payload = self.from_upstream.html_result or ""
 
         if payload is not None:
-            lines = payload.split("\n")
+            lines = normalize_text_newlines(payload).split("\n")
             input_line_count = len(lines)
             # Plain text: full whitespace strip + drop blank lines. Markdown &
             # HTML: keep original spacing, drop only pure blank lines.
@@ -264,16 +273,54 @@ class BaseTitleChunker(ABC):
             logger.info(f"payload filter: format={self.from_upstream.output_format} before={input_line_count} after={output_line_count}")
             return [{"text": line, "doc_type_kwd": "text", "img_id": None, "layout": "", PDF_POSITIONS_KEY: []} for line in clean_lines]
         items = self.from_upstream.chunks if self.from_upstream.output_format == "chunks" else self.from_upstream.json_result
-        return [
-            {
+        records = []
+        for item in items or []:
+            record = {
                 "text": item.get("text") or "",
                 "doc_type_kwd": str(item.get("doc_type_kwd") or "text"),
                 "img_id": item.get("img_id"),
                 "layout": "{} {}".format(item.get("layout_type", ""), item.get("layoutno", "")).strip(),
                 PDF_POSITIONS_KEY: extract_pdf_positions(item),
             }
-            for item in items or []
-        ]
+            # Positioned blocks retain their parser boundaries so PDF outline
+            # coverage and layout-based heading detection remain stable.
+            # Media references and explicit layout headings also stay intact.
+            if (
+                record["doc_type_kwd"] != "text"
+                or record[PDF_POSITIONS_KEY]
+                or item.get("bbox")
+                or record["img_id"]
+                or item.get("image")
+                or str(item.get("layout_type") or "").lower() in {"figure", "table"}
+                or _HEADING_LAYOUT_RE.search(record["layout"])
+                or not record["text"].strip()
+            ):
+                records.append(record)
+                continue
+            text = normalize_text_newlines(record["text"])
+            if self._contains_structured_text(text):
+                records.append(record)
+                continue
+            # Only coordinate-free ordinary text needs headings recovered from
+            # within a merged Parser record, as in plain-text input.
+            for line in text.split("\n"):
+                if line.strip():
+                    records.append({**record, "text": line})
+        return records
+
+    @staticmethod
+    def _contains_structured_text(text):
+        """Keep flattened tables and fenced code intact during title detection."""
+        if re.search(r"<table(?:\s|>)|^[ \t]*(?:`{3,}|~{3,})", text, re.IGNORECASE | re.MULTILINE):
+            return True
+        lines = text.split("\n")
+        for index in range(1, len(lines)):
+            if not lines[index - 1].lstrip().startswith("|"):
+                continue
+            cells = lines[index].strip().strip("|").split("|")
+            if all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells):
+                return True
+        return False
 
     def extract_outlines(self):
         """Extract PDF bookmarks/outlines used for outline-based leveling."""
@@ -325,7 +372,7 @@ class BaseTitleChunker(ABC):
     @staticmethod
     def match_layout_level(text, layout, fallback_level):
         """Treat layout-tagged title-like lines as ``fallback_level``."""
-        if re.search(r"(section|title|head)", layout, re.IGNORECASE) and not not_title(text.split("@")[0].strip()):
+        if _HEADING_LAYOUT_RE.search(layout) and not not_title(text.split("@")[0].strip()):
             return fallback_level
         return BODY_LEVEL
 
@@ -399,43 +446,48 @@ class BaseTitleChunker(ABC):
         return self.resolve_outline_levels(line_records) or self.resolve_frequency_levels(line_records)
 
     def build_chunks_from_record_groups(self, record_groups):
-        """Materialize each record group into the output chunk representation.
+        """Build and cap chunks while retaining each group's heading records."""
+        plain_text = self.from_upstream.output_format in ["markdown", "text", "html"]
 
-        For PDF-like inputs the chunk box is defined by merged source positions
-        and the text payload is normalized by removing parser tags.
-        """
-        if self.from_upstream.output_format in ["markdown", "text", "html"]:
-            chunks = [{"text": "".join(record["text"] + "\n" for record in records)} for records in record_groups if records]
-        else:
-            chunks = [
-                (
-                    {
-                        "text": RAGFlowPdfParser.remove_tag("".join(record["text"] + "\n" for record in records)),
-                        "doc_type_kwd": "text",
-                        PDF_POSITIONS_KEY: merge_pdf_positions(records),
-                    }
-                    if records[0]["doc_type_kwd"] == "text"
-                    else {
-                        "text": records[0]["text"],
-                        "doc_type_kwd": records[0]["doc_type_kwd"],
-                        "img_id": records[0]["img_id"],
-                        PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
-                    }
-                )
-                for records in record_groups
-                if records
-            ]
+        def text_from_records(records):
+            text = "".join(record["text"] + "\n" for record in records)
+            return text if plain_text else RAGFlowPdfParser.remove_tag(text)
 
-        if self.param.root_chunk_as_heading and len(chunks) > 1:
-            root_chunk = chunks[0]
-            root_text = root_chunk.get("text", "")
+        chunk_groups = []
+        for records, headings in record_groups:
+            if not records:
+                continue
+            if plain_text:
+                chunk = {"text": text_from_records(records)}
+            elif records[0]["doc_type_kwd"] == "text":
+                chunk = {
+                    "text": text_from_records(records),
+                    "doc_type_kwd": "text",
+                    PDF_POSITIONS_KEY: merge_pdf_positions(records),
+                }
+            else:
+                chunk = {
+                    "text": records[0]["text"],
+                    "doc_type_kwd": records[0]["doc_type_kwd"],
+                    "img_id": records[0]["img_id"],
+                    PDF_POSITIONS_KEY: records[0][PDF_POSITIONS_KEY],
+                }
+            heading_ids = {id(record) for record in headings}
+            body = text_from_records(record for record in records if id(record) not in heading_ids) if headings else chunk["text"]
+            chunk_groups.append((chunk, text_from_records(headings), body))
 
-            for ck in chunks[1:]:
-                ck["text"] = root_text + "\n" + ck.get("text", "")
+        if self.param.root_chunk_as_heading and len(chunk_groups) > 1:
+            root_text = chunk_groups[0][0]["text"] + "\n"
+            chunk_groups = chunk_groups[1:]
+            for index, (chunk, heading, body) in enumerate(chunk_groups):
+                chunk["text"] = root_text + chunk["text"]
+                if self.param.method == "hierarchy":
+                    heading = root_text + heading
+                else:
+                    body = chunk["text"]
+                chunk_groups[index] = (chunk, heading, body)
 
-            return chunks[1:]
-
-        return chunks
+        return self._enforce_token_cap(chunk_groups)
 
     async def set_chunks(self, chunks):
         """Finalize and emit chunks, enriching PDF positions when needed."""

@@ -22,6 +22,7 @@ constraints = [
     { name = "pyasn1", specifier = ">=0.6.4" },
     { name = "trio", specifier = ">=0.26.0", index = "https://pypi.org/simple" },
     { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "thrift", specifier = ">=0.24.0" },
 ]
 overrides = [
     { name = "attrs", specifier = ">=23.2.0" },
@@ -3003,7 +3004,7 @@ wheels = [
 
 [[package]]
 name = "infinity-sdk"
-version = "0.7.3"
+version = "0.7.4"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "datrie" },
@@ -3020,9 +3021,9 @@ dependencies = [
     { name = "sqlglot", extra = ["rs"] },
     { name = "thrift" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/e7/42/dd731a19b353b7f47ba81093b2df40f773e719a79bcadddfb1c92ad3de28/infinity_sdk-0.7.3.tar.gz", hash = "sha256:645bc88e766930a0b34e16d4405e5e3d24d3f903306d61eb2a01438c8dd0b964" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/74/b8/26f4e3b767a8e3262b6b57f722bb5d4de951ad6c0b85e6a1de8739511e77/infinity_sdk-0.7.4.tar.gz", hash = "sha256:4d854de63c879218d2cd6b68c5b812c37532e6ea4d4ffa4b7060cb7663b66762" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/2f/a7/e9a3d489051647f40bfac94947a3d0d588db07439d337944b76f24a88c86/infinity_sdk-0.7.3-py3-none-any.whl", hash = "sha256:f9a1c8cf20e51da1575d4a18a519523350c145f9025e90f3cd9028c3fd8dfb93" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/b5/62/e28fae97b163e6189d5317bc4e1621d4e6a1b646febceac6d17fdecad8d5/infinity_sdk-0.7.4-py3-none-any.whl", hash = "sha256:c5a443376827ade4f3c0c11d6d5d9976f7afc556ee86b7f881b110c7f074cf4a" },
 ]
 
 [[package]]
@@ -8419,7 +8420,7 @@ requires-dist = [
     { name = "grpcio-status", specifier = "==1.67.1" },
     { name = "html-text", specifier = "==0.6.2" },
     { name = "infinity-emb", specifier = ">=0.0.66,<0.0.67" },
-    { name = "infinity-sdk", specifier = "==0.7.3" },
+    { name = "infinity-sdk", specifier = "==0.7.4" },
     { name = "ja-core-news-sm", url = "https://github.com/explosion/spacy-models/releases/download/ja_core_news_sm-3.8.0/ja_core_news_sm-3.8.0-py3-none-any.whl" },
     { name = "jira", specifier = "==3.10.5" },
     { name = "json-repair", specifier = "==0.60.1" },
@@ -9690,9 +9691,9 @@ wheels = [
 
 [[package]]
 name = "thrift"
-version = "0.22.0"
+version = "0.24.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/b2/c2/db648cc10dd7d15560f2eafd92a27cd280811924696e0b4a87175fb28c94/thrift-0.22.0.tar.gz", hash = "sha256:42e8276afbd5f54fe1d364858b6877bc5e5a4a5ed69f6a005b94ca4918fe1466" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5f/bd/8f90501b11206e545da3343ed0e5740fc694be24a5f637d7dd7e4e3af927/thrift-0.24.0.tar.gz", hash = "sha256:9ef601c49e988475ff0e741d8e1b45feec23b48514e524341efc274191f1789c" }
 
 [[package]]
 name = "tika"

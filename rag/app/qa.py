@@ -26,7 +26,6 @@ from docx import Document
 from markdown import markdown
 
 from common.constants import MAXIMUM_PAGE_NUMBER
-from common.float_utils import get_float
 from deepdoc.parser import DocxParser, ExcelParser, PdfParser
 from deepdoc.parser.utils import get_text
 from rag.nlp import add_positions, concat_img, docx_question_level, has_qbullet, is_english, qbullets_category, rag_tokenizer, random_choices, tokenize_table
@@ -67,7 +66,7 @@ class Excel(ExcelParser):
                 else:
                     fails.append(str(i + 1))
                 if len(res) % 999 == 0:
-                    callback(len(res) * 0.6 / total, (f"Extract pairs: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                    callback(len(res) * 0.6 / total, (f"Extract pairs: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         callback(0.6, (f"Extract pairs: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         self.is_english = is_english([rmPrefix(q) for q, _ in random_choices(res, k=30) if len(q) > 1])
@@ -119,21 +118,26 @@ class Pdf(PdfParser):
         tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
         for box in self.boxes:
             section, line_tag = box["text"], self._line_tag(box, zoomin)
+            line_positions = self.extract_positions(line_tag)
             has_bull, index = has_qbullet(reg, box, last_box, last_index, last_bull, bull_x0_list)
             last_box, last_index, last_bull = box, index, has_bull
-            line_pn = get_float(line_tag.lstrip("@@").split("\t")[0])
-            line_top = get_float(line_tag.rstrip("##").split("\t")[3])
+            # Tags may be split across pages, or absent for invalid geometry.
+            # Keep unpositioned text, but do not use it to advance table cursors.
+            line_pn, line_top = (line_positions[0][0][0] + 1, line_positions[0][3]) if line_positions else (last_pn, last_bottom)
             tbl_pn, tbl_left, tbl_right, tbl_top, tbl_bottom, tbl_tag, tbl_text = self.get_tbls_info(tbls, tbl_index)
             if not has_bull:  # No question bullet
                 if not last_q:
-                    if tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top):  # image passed
+                    if line_positions and (tbl_pn < line_pn or (tbl_pn == line_pn and tbl_top <= line_top)):  # image passed
                         tbl_index += 1
                     continue
                 else:
                     sum_tag = line_tag
                     sum_section = section
-                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
-                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    while (
+                        line_positions
+                        and tbl_index < len(tbls)
+                        and ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn))
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn))
                     ):  # add image at the middle of current answer
                         sum_tag = f"{tbl_tag}{sum_tag}"
                         sum_section = f"{tbl_text}{sum_section}"
@@ -143,8 +147,11 @@ class Pdf(PdfParser):
                     last_tag = f"{last_tag}{sum_tag}"
             else:
                 if last_q:
-                    while ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn)) and (
-                        (tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn)
+                    while (
+                        line_positions
+                        and tbl_index < len(tbls)
+                        and ((tbl_pn == last_pn and tbl_top >= last_bottom) or (tbl_pn > last_pn))
+                        and ((tbl_pn == line_pn and tbl_top <= line_top) or (tbl_pn < line_pn))
                     ):  # add image at the end of last answer
                         last_tag = f"{last_tag}{tbl_tag}"
                         last_a = f"{last_a}{tbl_text}"
@@ -157,8 +164,9 @@ class Pdf(PdfParser):
                 _, end = has_bull.span()
                 last_a = section[end:]
                 last_tag = line_tag
-            last_bottom = float(line_tag.rstrip("##").split("\t")[4])
-            last_pn = line_pn
+            if line_positions:
+                last_pn = line_positions[-1][0][-1] + 1
+                last_bottom = line_positions[-1][4]
         if last_q:
             qai_list.append((last_q, last_a, *self.crop(last_tag, need_position=True)))
         return qai_list, tbls
@@ -166,7 +174,9 @@ class Pdf(PdfParser):
     def get_tbls_info(self, tbls, tbl_index):
         if tbl_index >= len(tbls):
             return 1, 0, 0, 0, 0, "@@0\t0\t0\t0\t0##", ""
-        tbl_pn = tbls[tbl_index][1][0][0] + 1
+        # cropout returns global 0-based pages. QA line tags and crop input
+        # are window-local 1-based; crop adds page_from back on output.
+        tbl_pn = tbls[tbl_index][1][0][0] - self.page_from + 1
         tbl_left = tbls[tbl_index][1][0][1]
         tbl_right = tbls[tbl_index][1][0][2]
         tbl_top = tbls[tbl_index][1][0][3]
@@ -296,6 +306,36 @@ def mdQuestionLevel(s):
     return (len(match.group(0)), s.lstrip("#").lstrip()) if match else (0, s)
 
 
+def csv_pair_delimiter(lines):
+    """TAB, the documented delimiter, unless the file reads as comma separated.
+
+    A file with no TAB reads with comma. A comma separated file can still hold a
+    TAB inside one field, so a file with a TAB reads with comma only when the
+    first non-empty row holds no TAB, every row with a TAB splits into two values,
+    and the two-value rows with no TAB outnumber all other non-empty rows.
+    """
+    if not any("\t" in line for line in lines):
+        return ","
+    tab_free_pairs = other_rows = 0
+    try:
+        for row in csv.reader((line + "\n" for line in lines), delimiter=","):
+            values = [field for field in row if field.strip()]
+            if not values:
+                continue
+            has_tab = any("\t" in field for field in row)
+            first_row = tab_free_pairs + other_rows == 0
+            if has_tab and (first_row or len(values) != 2):
+                return "\t"
+            if len(values) == 2 and not has_tab:
+                tab_free_pairs += 1
+            else:
+                other_rows += 1
+    except csv.Error:
+        # An unclosed quote can run past the field size limit when a TAB file is read with comma.
+        return "\t"
+    return "," if tab_free_pairs > other_rows else "\t"
+
+
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Excel and csv(txt) format files are supported.
@@ -347,12 +387,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 question, answer = arr
             i += 1
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, (f"Extract Q&A: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         return res
 
@@ -360,7 +400,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
-        delimiter = "\t" if any("\t" in line for line in lines) else ","
+        delimiter = csv_pair_delimiter(lines)
 
         fails = []
         question, answer = "", ""
@@ -382,12 +422,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     res.append(beAdoc(deepcopy(doc), question, answer, eng, i))
                 question, answer = row
             if len(res) % 999 == 0:
-                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+                callback(len(res) * 0.6 / len(lines), (f"Extract Q&A: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
 
         if question:
             res.append(beAdoc(deepcopy(doc), question, answer, eng, len(lines)))
 
-        callback(0.6, (f"Extract Q&A: {len(res)}" + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
+        callback(0.6, (f"Extract Q&A: {len(res)}. " + (f"{len(fails)} failure, line: %s..." % (",".join(fails[:3])) if fails else "")))
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):

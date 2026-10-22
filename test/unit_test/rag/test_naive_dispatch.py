@@ -47,7 +47,6 @@ from common.parser_config_utils import (
     normalize_layout_recognizer,
 )
 
-
 # --------------------------------------------------------------------------- #
 # has_mineru_options
 # --------------------------------------------------------------------------- #
@@ -243,6 +242,7 @@ def naive_module():
             doc_tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_chunks_with_images=lambda *a, **k: [],
             tokenize_table=lambda *a, **k: [],
+            merge_chunks_by_reading_order=lambda media, text: list(media or []) + list(text),
             append_context2table_image4pdf=lambda *a, **k: [],
         )
 
@@ -482,3 +482,67 @@ def test_by_paddleocr_not_found_path_unchanged(naive_module):
 
     assert (sections, tables, parser) == (None, None, None)
     callback.assert_called_once_with(-1, "PaddleOCR not found.")
+
+
+# --------------------------------------------------------------------------- #
+# chunk(): every PDF engine's tables reach merge_chunks_by_reading_order
+# --------------------------------------------------------------------------- #
+
+_PDF_ENGINES = [
+    ("DeepDOC", "deepdoc"),
+    ("MinerU", "mineru"),
+    ("MonkeyOCRv2", "monkeyocrv2"),
+    ("Docling", "docling"),
+    ("OpenDataLoader", "opendataloader"),
+    ("PaddleOCR", "paddleocr"),
+    ("SoMark", "somark"),
+    ("Mistral OCR", "mistral ocr"),
+    ("TCADP Parser", "tcadp parser"),
+    ("Plain Text", "plaintext"),
+]
+
+
+@pytest.mark.p2
+def test_pdf_engine_matrix_covers_every_dispatcher_entry(naive_module):
+    """The parametrized test only proves what it enumerates, so adding an engine
+    to ``PARSERS`` without extending the matrix must fail here."""
+    assert {key for _, key in _PDF_ENGINES} == set(naive_module.PARSERS)
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("layout_recognize, key", _PDF_ENGINES)
+def test_chunk_routes_every_pdf_engine_tables_through_the_merge(naive_module, monkeypatch, layout_recognize, key):
+    """Every PDF engine returns its figures/tables through the same
+    ``tokenize_table`` call and the merge site, so interleaving does not depend
+    on which engine parsed the document."""
+    module = naive_module
+    seen = []
+
+    class _Engine:
+        def __call__(self, *args, **kwargs):
+            return [("body", "")], [((None, "<table>t</table>"), "")], self
+
+    monkeypatch.setattr(module, "PARSERS", {**module.PARSERS, key: _Engine()})
+    monkeypatch.setattr(module, "rag_tokenizer", types.SimpleNamespace(tokenize=lambda s: (["t"], []), fine_grained_tokenize=lambda tks: tks))
+    monkeypatch.setattr(module, "extract_embed_file", lambda binary: [])
+    monkeypatch.setattr(module, "tokenize_table", lambda tables, *a, **k: [{"content_with_weight": "media"}] if tables else [])
+    monkeypatch.setattr(module, "naive_merge", lambda sections, *a, **k: ["body"])
+    monkeypatch.setattr(module, "tokenize_chunks", lambda *a, **k: [{"content_with_weight": "text"}])
+
+    def _merge(media, text):
+        seen.append((media, text))
+        return list(text)
+
+    monkeypatch.setattr(module, "merge_chunks_by_reading_order", _merge)
+
+    module.chunk(
+        "doc.pdf",
+        binary=b"%PDF-1.4",
+        callback=lambda *a, **k: None,
+        parser_config={"layout_recognize": layout_recognize, "chunk_token_num": 128, "analyze_hyperlink": False},
+    )
+
+    assert len(seen) == 1, f"{key} never reached merge_chunks_by_reading_order"
+    media, text = seen[0]
+    assert media == [{"content_with_weight": "media"}]
+    assert text == [{"content_with_weight": "text"}]

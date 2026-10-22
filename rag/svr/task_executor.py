@@ -12,11 +12,11 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-import argparse
 import time
 
+from rag.svr.task_executor_cli import log_task_executor_index_usage, parse_task_executor_args, resolve_task_executor_index
+from rag.svr.task_executor_refactor.recording_context import NullRecordingContext, RecordingContext, get_recording_context, set_recording_context, timed_with_recording
 from rag.svr.task_executor_refactor.task_manager import TaskManager
-from rag.svr.task_executor_refactor.recording_context import timed_with_recording, get_recording_context, RecordingContext, set_recording_context, NullRecordingContext
 
 start_ts = time.time()
 
@@ -26,24 +26,68 @@ import os
 
 os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # no internet, save about 10s
 
-from common.misc_utils import thread_pool_exec
-
 import asyncio
-import socket
+import copy
+import faulthandler
+import json
+import logging
+import os
 
 # from beartype import BeartypeConf
 # from beartype.claw import beartype_all  # <-- you didn't sign up for this
 # beartype_all(conf=BeartypeConf(violation_type=UserWarning))    # <-- emit warnings from all code
 import random
+import re
+import signal
+import socket
 import sys
 import threading
+from datetime import datetime
+from functools import partial
+from multiprocessing.context import TimeoutError
+from timeit import default_timer as timer
+
+import exceptiongroup
+import numpy as np
+import xxhash
+from peewee import DoesNotExist
 
 from api.db import PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES
-from api.db.services.knowledgebase_service import KnowledgebaseService
-from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.db_models import close_connection
 from api.db.joint_services.memory_message_service import handle_save_to_memory_task
+from api.db.joint_services.tenant_model_service import get_model_config_by_id, get_tenant_default_model_by_type, resolve_model_config
+from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_service import DocumentService
+from api.db.services.file2document_service import File2DocumentService
+from api.db.services.knowledgebase_service import KnowledgebaseService
+from api.db.services.llm_service import LLMBundle
+from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
+from api.db.services.task_service import CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID, TaskService, has_canceled
+from common import settings
+from common.chunk_order import TOC_CHUNK_ORDER_BASE, assign_chunk_order, assign_derived_chunk_order, drop_parent_link
+from common.config_utils import show_configs
 from common.connection_utils import timeout
+from common.constants import PAGERANK_FLD, SVR_CONSUMER_GROUP_NAME, TAG_FLD, LLMType, ParserType, PipelineTaskType
+from common.exceptions import TaskCanceledException
+from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
+from common.log_utils import init_root_logger
 from common.metadata_utils import turn2jsonschema, update_metadata_to
+from common.misc_utils import thread_pool_exec
+from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
+from common.token_utils import num_tokens_from_string, truncate
+from common.versions import get_ragflow_version
+from rag.app import audio, book, email, laws, manual, naive, one, paper, picture, presentation, qa, resume, table, tag
+from rag.graphrag.utils import chat_limiter, get_llm_cache, get_tags_from_cache, set_llm_cache, set_tags_to_cache
+from rag.nlp import DEFAULT_DELIMITER, add_positions, rag_tokenizer, search
+from rag.nlp import search as nlp_search
+from rag.prompts.generator import content_tagging, gen_metadata, keyword_extraction, question_proposal, run_toc_from_text
+from rag.svr.task_executor_limiter import (
+    chunk_limiter,
+    embed_limiter,
+    kg_limiter,
+    minio_limiter,
+    task_limiter,
+)
 from rag.utils.base64_image import image2id
 from rag.utils.raptor_utils import (
     RAPTOR_TREE_BUILDER,
@@ -53,58 +97,12 @@ from rag.utils.raptor_utils import (
     make_raptor_summary_chunk_id,
     should_skip_raptor,
 )
-from common.log_utils import init_root_logger
-from common.config_utils import show_configs
-from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
-from rag.prompts.generator import keyword_extraction, question_proposal, content_tagging, run_toc_from_text, gen_metadata
-import logging
-import os
-from datetime import datetime
-import json
-import xxhash
-import copy
-import re
-from functools import partial
-from multiprocessing.context import TimeoutError
-from timeit import default_timer as timer
-import signal
-import exceptiongroup
-import faulthandler
-import numpy as np
-from peewee import DoesNotExist
-from common.constants import LLMType, ParserType, PipelineTaskType
-from api.db.services.document_service import DocumentService
-from api.db.services.doc_metadata_service import DocMetadataService
-from api.db.services.llm_service import LLMBundle
-from api.db.services.task_service import TaskService, has_canceled, CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID
-from api.db.services.file2document_service import File2DocumentService
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
-from common.versions import get_ragflow_version
-from api.db.db_models import close_connection
-from rag.app import laws, paper, presentation, manual, qa, table, book, resume, picture, naive, one, audio, email, tag
-from rag.nlp import search, rag_tokenizer, add_positions, DEFAULT_DELIMITER
-
-from common.token_utils import num_tokens_from_string, truncate
 from rag.utils.redis_conn import REDIS_CONN, RedisDistributedLock
-from rag.graphrag.utils import chat_limiter
-from common.signal_utils import start_tracemalloc_and_snapshot, stop_tracemalloc
-from common.exceptions import TaskCanceledException
-from rag.svr.task_executor_limiter import (
-    task_limiter,
-    chunk_limiter,
-    embed_limiter,
-    minio_limiter,
-    kg_limiter,
-)
-from common import settings
-from common.constants import PAGERANK_FLD, TAG_FLD, SVR_CONSUMER_GROUP_NAME
-from common.llm_request_context import normalize_llm_user_id, reset_llm_request_context, set_llm_request_context
 from rag.utils.table_es_metadata import (
     aggregate_table_doc_metadata,
     merge_table_parser_config_from_kb,
     table_parser_strip_doc_metadata_keys,
 )
-from rag.nlp import search as nlp_search
 
 BATCH_SIZE = 64
 
@@ -408,6 +406,9 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
         logging.exception("Chunking {}/{} got exception".format(task["location"], task["name"]))
         raise
 
+    # Stamp reading order before the parallel upload below reorders docs.
+    assign_chunk_order(cks, task["from_page"])
+
     # Record raw chunks for comparison
     get_recording_context().record("raw_chunks", cks)
 
@@ -500,12 +501,12 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error in doc_keyword_extraction: {}".format(e))
+            logging.error(f"Error in doc_keyword_extraction: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        progress_callback(msg="Keywords generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        progress_callback(msg=f"Keywords generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
     # Record keywords extraction count
     keywords = [d for d in docs if d.get("important_kwd")]
@@ -541,7 +542,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        progress_callback(msg=f"Question generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
     # Record question generation
     questions = [d for d in docs if d.get("question_kwd")]
@@ -603,7 +604,7 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
             metadata = update_metadata_to(metadata, existing_meta)
             ret = DocMetadataService.update_document_metadata(task["doc_id"], metadata)
             get_recording_context().save_func_return_value("DocMetadataService.update_document_metadata", ret)
-        progress_callback(msg="Question generation {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        progress_callback(msg=f"Question generation {len(docs)} chunks completed in {timer() - st:.2f}s")
 
     # Record metadata generation count
     metadata_list = [d for d in docs if d.get("metadata_obj")]
@@ -666,12 +667,12 @@ async def build_chunks(task, progress_callback, on_chunking_start=None):
         try:
             await asyncio.gather(*tasks, return_exceptions=False)
         except Exception as e:
-            logging.error("Error tagging docs: {}".format(e))
+            logging.error(f"Error tagging docs: {e}")
             for t in tasks:
                 t.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
             raise
-        progress_callback(msg="Tagging {} chunks completed in {:.2f}s".format(len(docs), timer() - st))
+        progress_callback(msg=f"Tagging {len(docs)} chunks completed in {timer() - st:.2f}s")
 
     # Record tags applied
     tags_applied = [d for d in docs if d.get(TAG_FLD)]
@@ -725,10 +726,16 @@ def build_TOC(task, docs, progress_callback):
 
     if toc:
         d = copy.deepcopy(docs[-1])
+        # The TOC row only borrows the last chunk's position columns. Its parent
+        # link must go, or insert_chunks derives a duplicate parent row from it.
+        drop_parent_link(d)
         d["content_with_weight"] = json.dumps(toc, ensure_ascii=False)
         d["toc_kwd"] = "toc"
         d["available_int"] = 0
         d["page_num_int"] = [100000000]
+        # Each parsing task builds its own TOC, so offset by the task's first
+        # page to keep a multi-range document's TOCs in range order.
+        d["chunk_order_int"] = TOC_CHUNK_ORDER_BASE + max(int(task.get("from_page") or 0), 0)
         d["id"] = xxhash.xxh64((d["content_with_weight"] + str(d["doc_id"])).encode("utf-8", "surrogatepass")).hexdigest()
         return d
     return None
@@ -966,9 +973,9 @@ async def run_dataflow(task: dict):
     except Exception:
         logging.exception("increment_chunk_num failed for doc %s", doc_id)
         ret = None
-    set_progress(task_id, prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
+    set_progress(task_id, prog=1.0, msg=f"Indexing done ({time_cost:.2f}s). Task done ({task_time_cost:.2f}s)")
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
-    logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
+    logging.info(f"[Done], chunks({len(chunks)}), token({embedding_token_consumption}), elapsed:{task_time_cost:.2f}")
     get_recording_context().record("dataflow_chunks", chunks)
     ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
     get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
@@ -1327,7 +1334,7 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         chunks: List of chunk dictionaries to insert
         progress_callback: Callback function for progress updates
     """
-    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability
+    from rag.svr.task_executor_refactor.chunk_service import apply_source_chunks_document_availability, make_mother_chunk_id
 
     apply_source_chunks_document_availability(chunks)
 
@@ -1337,13 +1344,13 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
         mom = ck.get("mom") or ck.get("mom_with_weight") or ""
         if not mom:
             continue
-        id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
-        ck["mom_id"] = id
-        if id in mother_ids:
+        mom_id = make_mother_chunk_id(mom, ck.get("doc_id"))
+        ck["mom_id"] = mom_id
+        if mom_id in mother_ids:
             continue
-        mother_ids.add(id)
+        mother_ids.add(mom_id)
         mom_ck = copy.deepcopy(ck)
-        mom_ck["id"] = id
+        mom_ck["id"] = mom_id
         mom_ck["content_with_weight"] = mom
         mom_ck["available_int"] = 0
         flds = list(mom_ck.keys())
@@ -1351,6 +1358,9 @@ async def insert_chunks(task_id, task_tenant_id, task_dataset_id, chunks, progre
             if fld not in ["id", "content_with_weight", "doc_id", "docnm_kwd", "kb_id", "available_int", "position_int", "create_timestamp_flt", "page_num_int", "top_int"]:
                 del mom_ck[fld]
         mothers.append(mom_ck)
+
+    # Parent rows must list after the source chunks they were derived from.
+    assign_derived_chunk_order(mothers)
 
     for b in range(0, len(mothers), settings.DOC_BULK_SIZE):
         ret = await thread_pool_exec(
@@ -1486,7 +1496,7 @@ async def do_handle_task(task):
         vts, _ = embedding_model.encode(["ok"])
         vector_size = len(vts[0])
     except Exception as e:
-        error_message = f"Fail to bind embedding model: {str(e)}"
+        error_message = f"Fail to bind embedding model: {e!s}"
         progress_callback(-1, msg=error_message)
         logging.exception(error_message)
         raise
@@ -1606,11 +1616,10 @@ async def do_handle_task(task):
             )
             logging.info(f"GraphRAG task result for task {task}:\n{result}")
         get_recording_context().record("graphrag_result", result)
-        progress_callback(prog=1.0, msg="Knowledge Graph done ({:.2f}s)".format(timer() - start_ts))
+        progress_callback(prog=1.0, msg=f"Knowledge Graph done ({timer() - start_ts:.2f}s)")
         return
     elif task_type == "mindmap":
         progress_callback(1, "place holder")
-        pass
         return
     elif task_type == "skill":
         progress_callback(-1, "Skill generation requires the refactored task executor (TE_RUN_MODE=0).")
@@ -1630,25 +1639,25 @@ async def do_handle_task(task):
         chunk_ids = [c.get("id") for c in chunks if isinstance(c, dict) and "id" in c]
         get_recording_context().record("chunk_ids_count", len(chunk_ids))
         # Record chunks array for content comparison (first, middle, last, random)
-        logging.info("Build document {}: {:.2f}s".format(task_document_name, timer() - start_ts))
+        logging.info(f"Build document {task_document_name}: {timer() - start_ts:.2f}s")
         if not chunks:
             progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
             return
-        progress_callback(msg="Generate {} chunks".format(len(chunks)))
+        progress_callback(msg=f"Generate {len(chunks)} chunks")
         start_ts = timer()
         try:
             token_count, vector_size = await embedding(chunks, embedding_model, task_parser_config, progress_callback)
         except TaskCanceledException:
             raise
         except Exception as e:
-            error_message = "Generate embedding error:{}".format(str(e))
+            error_message = f"Generate embedding error:{e!s}"
             progress_callback(-1, error_message)
             logging.exception(error_message)
             token_count = 0
             raise
         get_recording_context().record("token_count", token_count)
         get_recording_context().record("vector_size", vector_size)
-        progress_message = "Embedding chunks ({:.2f}s)".format(timer() - start_ts)
+        progress_message = f"Embedding chunks ({timer() - start_ts:.2f}s)"
         logging.info(progress_message)
         progress_callback(msg=progress_message)
 
@@ -1689,7 +1698,7 @@ async def do_handle_task(task):
             if cleaned_chunks:
                 progress_callback(msg=f"Cleaned up {cleaned_chunks} stale RAPTOR chunks.")
 
-        logging.info("Indexing doc({}), page({}-{}), chunks({}), elapsed: {:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), timer() - start_ts))
+        logging.info(f"Indexing doc({task_document_name}), page({task_from_page}-{task_to_page}), chunks({len(chunks)}), elapsed: {timer() - start_ts:.2f}")
 
         ret = DocumentService.increment_chunk_num(task_doc_id, task_dataset_id, token_count, chunk_count, 0)
         get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
@@ -1729,7 +1738,7 @@ async def do_handle_task(task):
                     e,
                 )
 
-        progress_callback(msg="Indexing done ({:.2f}s).".format(timer() - start_ts))
+        progress_callback(msg=f"Indexing done ({timer() - start_ts:.2f}s).")
 
         if toc_thread:
             d = await toc_thread
@@ -1748,8 +1757,8 @@ async def do_handle_task(task):
 
         task_time_cost = timer() - task_start_ts
         get_recording_context().record("task_status", "completed")
-        progress_callback(prog=1.0, msg="Task done ({:.2f}s)".format(task_time_cost))
-        logging.info("Chunk doc({}), page({}-{}), chunks({}), token({}), elapsed:{:.2f}".format(task_document_name, task_from_page, task_to_page, len(chunks), token_count, task_time_cost))
+        progress_callback(prog=1.0, msg=f"Task done ({task_time_cost:.2f}s)")
+        logging.info(f"Chunk doc({task_document_name}), page({task_from_page}-{task_to_page}), chunks({len(chunks)}), token({token_count}), elapsed:{task_time_cost:.2f}")
 
     finally:
         if toc_thread is not None and not toc_thread.done():
@@ -1831,8 +1840,7 @@ async def handle_task() -> bool:
                 err_msg += " -- " + str(e)
             set_progress(task_id, prog=-1, msg=f"[Exception]: {err_msg}")
         except Exception as e:
-            logging.exception(f"[Exception]: {str(e)}")
-            pass
+            logging.exception(f"[Exception]: {e!s}")
         logging.exception(f"handle_task got exception for task {json.dumps(_redact_task_user(task))}")
     finally:
         reset_llm_request_context(ctx_token)
@@ -1907,7 +1915,6 @@ async def report_status():
             logging.warning(f"Failed to report heartbeat: {e}")
         else:
             logging.debug(f"{CONSUMER_NAME} reported heartbeat: {heartbeat}")
-            pass
 
         # Clean up own expired heartbeat
         try:
@@ -2030,19 +2037,16 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Parse command line arguments (consistent with SAAS version)
-    parser = argparse.ArgumentParser(description="Task Executor")
-    parser.add_argument("-i", "--index", type=str, default="0")
-    parser.add_argument("-t", "--type", type=str, default="common", help="[common, graphrag, raptor, resume]")
-    args = parser.parse_args()
+    args = parse_task_executor_args()
 
     # Update global variables
     TASK_TYPE = args.type
-    TE_IDX = args.index
+    TE_IDX = resolve_task_executor_index(args)
     CONSUMER_NAME = f"task_executor_{TASK_TYPE}_{TE_IDX}"
 
     faulthandler.enable()
     init_root_logger(CONSUMER_NAME)
+    log_task_executor_index_usage(args)
     try:
         asyncio.run(main())
     except Exception as e:

@@ -2,6 +2,7 @@ import {
   ModelTreeSelectFormField,
   ModelTypeMap,
 } from '@/components/model-tree-select';
+import { FileType } from '@/constants/file';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
@@ -13,7 +14,10 @@ import {
 } from './common-form-fields';
 import { buildFieldNameWithPrefix } from './utils';
 
-export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
+export function WordFormFields({
+  prefix,
+  fileType,
+}: OutputFormatFormFieldProps) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
   const flattenMediaToText = useWatch({
@@ -22,8 +26,12 @@ export function WordFormFields({ prefix }: OutputFormatFormFieldProps) {
 
   return (
     <>
-      <RmdirFormField prefix={prefix} />
-      <RemoveHeaderFooterFormField prefix={prefix} />
+      {fileType === FileType.Docx && (
+        <>
+          <RmdirFormField prefix={prefix} />
+          <RemoveHeaderFooterFormField prefix={prefix} />
+        </>
+      )}
       <FlattenMediaToTextFormField prefix={prefix} />
       {!flattenMediaToText && (
         <ModelTreeSelectFormField

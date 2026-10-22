@@ -27,6 +27,7 @@ from cn2an import cn2an
 from PIL import Image
 from word2number import w2n
 
+from common.doc_store.doc_store_base import field_scalar
 from common.token_utils import num_tokens_from_string
 
 # Re-exported below for backwards compatibility; the canonical parser lives
@@ -582,6 +583,156 @@ def tokenize_table(tbls, doc, eng, batch_size=10, language="English"):
     return res
 
 
+def reading_order_key(chunk):
+    """Return ``(page, left, right, top)`` of the chunk's first source position.
+
+    A chunk can carry several positions — a block spanning a column or page
+    break — and the first one is where it starts being read: parsers emit
+    ``position_int`` in tag order, so it is used as is rather than re-derived
+    from geometry. Anchoring a chunk that covers both columns at its
+    geometrically leftmost position instead would place it behind media that
+    sits above its own right-column start.
+
+    Unreadable entries are skipped, so a malformed leading entry costs only
+    itself and the rest of the chunk's positions still anchor it. ``None`` when
+    the chunk carries no readable ``position_int`` (parsers without
+    coordinates).
+    """
+    if not isinstance(chunk, dict):
+        return None
+    for position in chunk.get("position_int") or []:
+        if not isinstance(position, (list, tuple)):
+            continue
+        try:
+            page, left, right, top = position[:4]
+            return int(page), int(left), int(right), int(top)
+        except (IndexError, TypeError, ValueError):
+            continue
+    return None
+
+
+def read_before(box, other):
+    """Return whether the chunk at ``box`` is read before the one at ``other``.
+
+    Column-major: overlapping ranges share a column and compare vertically,
+    otherwise the left one comes first. Not transitive — a block between two
+    columns compares inconsistently with each — so this decides a media chunk
+    against the text stream, never the order among several media chunks.
+    """
+    page, left, right, top = box
+    o_page, o_left, o_right, o_top = other
+    if page != o_page:
+        return page < o_page
+    if right > o_left and left < o_right:
+        return top < o_top
+    return right <= o_left
+
+
+def _text_column_bands(text_chunks):
+    """Group the text positions' horizontal ranges into per-page column bands.
+
+    Bands come from the text itself, so indented single-column text stays one
+    band while a two-column page yields one band per column.
+    """
+    spans = defaultdict(list)
+    for chunk in text_chunks:
+        if not isinstance(chunk, dict):
+            continue
+        for position in chunk.get("position_int") or []:
+            try:
+                page, left, right = int(position[0]), int(position[1]), int(position[2])
+            except (IndexError, TypeError, ValueError):
+                continue
+            spans[page].append((left, right))
+
+    bands = {}
+    for page, page_spans in spans.items():
+        merged = []
+        for left, right in sorted(page_spans):
+            if merged and left <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], right)
+            else:
+                merged.append([left, right])
+        bands[page] = merged
+    return bands
+
+
+def _column_index(box, bands):
+    """Index of the leftmost column band ``box`` overlaps, ``0`` for none.
+
+    A block spanning several bands orders with the leftmost one, so a full-width
+    figure stays in the left column's flow instead of behind the right column.
+    """
+    left, right = box[1], box[2]
+    for index, (band_left, band_right) in enumerate(bands):
+        if min(right, band_right) > max(left, band_left):
+            return index
+    return 0
+
+
+def merge_chunks_by_reading_order(media_chunks, text_chunks):
+    """Insert media chunks (figures/tables) into text chunks in reading order.
+
+    ``tokenize_table`` and ``tokenize_chunks`` build two independent streams and
+    concatenating them lists every image and table ahead of the text, which is
+    also the order ``chunk_order_int`` is numbered in. The text stream is never
+    re-sorted — it carries the parser's order and is not monotonic across
+    columns — so each media chunk goes in front of the first text chunk read
+    after it, ordered by (anchor, page, column, top). A chunk spanning several
+    columns is atomic.
+
+    Missing coordinates degrade per chunk, not per document: a media chunk
+    without ``position_int`` keeps the historical lead position while the
+    others still interleave, and a text chunk without one keeps its slot in the
+    text stream — it cannot anchor a media chunk, so one may land ahead of it.
+    Only a document whose whole text stream carries no coordinates falls back
+    to ``media then text``, because there is nothing to anchor against.
+    """
+    if not media_chunks:
+        return list(text_chunks)
+    if not text_chunks:
+        return list(media_chunks)
+
+    text_boxes = [reading_order_key(ck) for ck in text_chunks]
+    if all(box is None for box in text_boxes):
+        # No coordinates to anchor against: keep the historical media-then-text order.
+        logging.info(
+            "merge_chunks_by_reading_order: none of the %d text chunks carries a position; keeping media-first order for %d media chunks",
+            len(text_chunks),
+            len(media_chunks),
+        )
+        return list(media_chunks) + list(text_chunks)
+
+    bands = _text_column_bands(text_chunks)
+    unpositioned_media = []
+    placed = []
+    for chunk in media_chunks:
+        box = reading_order_key(chunk)
+        if box is None:
+            unpositioned_media.append(chunk)
+            continue
+        # A media chunk starting where a text chunk starts goes first.
+        index = next(
+            (i for i, text_box in enumerate(text_boxes) if text_box is not None and (text_box == box or read_before(box, text_box))),
+            len(text_chunks),
+        )
+        column = _column_index(box, bands.get(box[0], []))
+        placed.append(((index, box[0], column, box[3]), chunk))
+    # ``tokenize_table`` emits every figure before every table, so the media
+    # stream needs sorting; a tuple key keeps it deterministic, unlike pairwise
+    # comparison, which is not transitive.
+    placed.sort(key=lambda item: item[0])
+
+    merged, cursor = [], 0
+    for key, chunk in placed:
+        index = key[0]
+        merged.extend(text_chunks[cursor:index])
+        cursor = max(cursor, index)
+        merged.append(chunk)
+    merged.extend(text_chunks[cursor:])
+    return unpositioned_media + merged
+
+
 def attach_media_context(chunks, table_context_size=0, image_context_size=0):
     """
     Attach surrounding text chunk content to media chunks (table/image).
@@ -594,7 +745,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         return chunks
 
     def is_image_chunk(ck):
-        if ck.get("doc_type_kwd") == "image":
+        if field_scalar(ck.get("doc_type_kwd")) == "image":
             return True
 
         text_val = ck.get("content_with_weight") if isinstance(ck.get("content_with_weight"), str) else ck.get("text")
@@ -602,7 +753,7 @@ def attach_media_context(chunks, table_context_size=0, image_context_size=0):
         return bool(ck.get("image")) and not has_text
 
     def is_table_chunk(ck):
-        return ck.get("doc_type_kwd") == "table"
+        return field_scalar(ck.get("doc_type_kwd")) == "table"
 
     def is_text_chunk(ck):
         return not is_image_chunk(ck) and not is_table_chunk(ck)
@@ -911,7 +1062,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             else:
                 poss = []
         if isinstance(txt, str) and "@@" in txt:
-            txt = re.sub(r"@@[0-9-]+\t[0-9.\t]+##", "", txt).strip()
+            txt = re.sub(r"@@[0-9-]+\t[-0-9.\t]+##", "", txt).strip()
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
@@ -1117,7 +1268,7 @@ def not_title(txt):
     return re.search(r"[,;，。；！!]", txt)
 
 
-def tree_merge(bull, sections, depth):
+def tree_merge(bull, sections, depth, chunk_token_num=0):
     if not sections or bull < 0:
         return sections
     if isinstance(sections[0], str):
@@ -1158,7 +1309,7 @@ def tree_merge(bull, sections, depth):
     if target_level == len(BULLET_PATTERN[bull]) + 2:
         target_level = sorted_levels[-2] if len(sorted_levels) > 1 else sorted_levels[0]
 
-    root = Node(level=0, depth=target_level, texts=[])
+    root = Node(level=0, depth=target_level, chunk_token_num=chunk_token_num, texts=[])
     root.build_tree(lines)
 
     return [element for element in root.get_tree() if element]
@@ -1254,18 +1405,15 @@ def hierarchical_merge(bull, sections, depth):
 
 
 def _compute_overlap_prefix(prev_text, overlapped_percent):
-    """Return (overlap_text, overlap_token_count) carved from the tail of ``prev_text``.
+    """Return the overlap text carved from the tail of ``prev_text``.
 
     ``prev_text`` is treated as if HTML/PDF markup has been stripped, so the carve
     index is computed against the visible characters, matching the existing
     behaviour of ``RAGFlowPdfParser.remove_tag`` callers above.
     """
     visible = re.sub(r"@@[\t0-9.-]+?##", "", prev_text or "")
-    if not visible:
-        return "", 0
     overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
-    overlap_text = visible[overlap_start:]
-    return overlap_text, num_tokens_from_string(overlap_text)
+    return visible[overlap_start:]
 
 
 class MergeStrategy(Enum):
@@ -1432,7 +1580,7 @@ def _reconstruct_image_chunk(paragraphs, group):
 
 
 def _apply_overlap_unconditional(chunks, overlapped_percent):
-    """Prepend an overlap prefix from the previous chunk at each new-chunk
+    """Prepend an overlap prefix from the previous original chunk at each new-chunk
     boundary, UNCONDITIONALLY when ``overlapped_percent > 0`` (unified JSON
     strategy). The prefix is never dropped for not fitting the budget, so
     context is continuous across every chunk boundary; a chunk may therefore
@@ -1445,11 +1593,7 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
         if i == 0:
             out.append(c)
             continue
-        overlap_text, _ = _compute_overlap_prefix(out[-1], overlapped_percent)
-        if overlap_text:
-            out.append(overlap_text + c)
-        else:
-            out.append(c)
+        out.append(_compute_overlap_prefix(chunks[i - 1], overlapped_percent) + c)
     return out
 
 
@@ -1947,6 +2091,7 @@ def _merge_cks(cks, chunk_token_num, has_custom):
             merged.append(cks[i])
             if ck_type == "image":
                 image_idxs.append(len(merged) - 1)
+            prev_text_ck = -1
             continue
 
         line_break = cks[i].pop("line_break", False)
@@ -1968,6 +2113,7 @@ def naive_merge_docx(
     delimiter=DEFAULT_DELIMITER,
     table_context_size=0,
     image_context_size=0,
+    overlapped_percent=0,
 ):
     if not sections:
         return [], []
@@ -1982,7 +2128,20 @@ def naive_merge_docx(
         for i in images:
             _add_context(cks, i, image_context_size)
 
-    merged_cks, merged_image_idx = _merge_cks(cks, chunk_token_num, has_custom)
+    threshold = chunk_token_num * (100 - overlapped_percent) / 100
+    merged_cks, merged_image_idx = _merge_cks(cks, threshold, has_custom)
+
+    if overlapped_percent > 0 and not has_custom:
+        previous_text = ""
+        for ck in merged_cks:
+            if ck["ck_type"] != "text":
+                previous_text = ""
+                continue
+            original = ck["text"]
+            if previous_text:
+                ck["text"] = _compute_overlap_prefix(previous_text, overlapped_percent) + original
+                ck["tk_nums"] = num_tokens_from_string(ck["text"])
+            previous_text = original
 
     return merged_cks, merged_image_idx
 
@@ -1993,9 +2152,10 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 
 
 class Node:
-    def __init__(self, level, depth=-1, texts=None):
+    def __init__(self, level, depth=-1, chunk_token_num=0, texts=None):
         self.level = level
         self.depth = depth
+        self.chunk_token_num = chunk_token_num
         self.texts = texts or []
         self.children = []
 
@@ -2052,22 +2212,59 @@ class Node:
         texts = node.get_texts()
         child = node.get_children()
 
-        if level == 0 and texts:
-            tree_list.append("\n".join(titles + texts))
+        def _tok(s):
+            # Position tags (@@page\tx0\t...##) are not body content, so strip
+            # them before counting, matching hierarchical_merge's budget
+            # accounting.
+            return num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", s))
 
-        # Titles within configured depth are accumulated into the current path
+        def _emit(title_parts, body_parts):
+            # Split an over-long accumulation into chunk_token_num-budgeted
+            # pieces instead of joining it whole, mirroring hierarchical_merge's
+            # overflow split for a hierarchy group: title_parts is repeated on
+            # every emitted piece (its tokens count against that piece's
+            # budget) so a continuation chunk never loses the heading path. A
+            # non-positive chunk_token_num (unset) preserves today's
+            # single-chunk behaviour.
+            if not self.chunk_token_num or self.chunk_token_num <= 0 or not body_parts:
+                tree_list.append("\n".join(title_parts + body_parts))
+                return
+            title_n = sum(_tok(t) for t in title_parts)
+            cur, cur_n = [], title_n
+            for t in body_parts:
+                n = _tok(t)
+                if cur and cur_n + n > self.chunk_token_num:
+                    tree_list.append("\n".join(title_parts + cur))
+                    cur, cur_n = [], title_n
+                cur.append(t)
+                cur_n += n
+            if cur:
+                tree_list.append("\n".join(title_parts + cur))
+
+        if level == 0 and texts:
+            _emit(titles, texts)
+
+        # Titles within configured depth are accumulated into the current path.
+        # Only the node's own heading (texts[:1]) is carried forward: any body
+        # text merged onto this node before its first child appeared
+        # (build_tree attaches beyond-depth lines onto the current stack top)
+        # is emitted as its own budgeted chunk below instead of being folded,
+        # unsplit, into every descendant chunk's title prefix.
         if 1 <= level <= self.depth:
-            path_titles = titles + texts
+            path_titles = titles + texts[:1]
         else:
             path_titles = titles
 
         # Body outside the depth limit becomes its own chunk under the current title path
         if level > self.depth and texts:
-            tree_list.append("\n".join(path_titles + texts))
+            _emit(path_titles, texts)
 
-        # A leaf title within depth emits its title path as a chunk (header-only section)
-        elif not child and (1 <= level <= self.depth):
-            tree_list.append("\n".join(path_titles))
+        # A leaf title within depth emits its title path as a chunk (header-only section).
+        # texts[0] is this node's own heading and texts[1:] is any overflow body merged
+        # onto it; split only the body and repeat the heading path on every piece so a
+        # continuation chunk never loses the title.
+        elif not child and (1 <= level <= self.depth) or child and (1 <= level <= self.depth) and len(texts) > 1:
+            _emit(titles + texts[:1], texts[1:])
 
         # Recurse into children with the updated title path
         for c in child:
