@@ -15,6 +15,7 @@ import {
   useGetChunkHighlights,
   useGetSelectedChunk,
   useHandleChunkCardClick,
+  useTargetChunkFromQuery,
   useUpdateChunk,
 } from './hooks';
 
@@ -51,7 +52,20 @@ import { useMemoizedFn } from 'ahooks';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
-  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
+  const { targetChunkId, clearTargetChunkId } = useTargetChunkFromQuery();
+  // Arriving from a retrieval-testing hit: show only that chunk, because its
+  // position in the full paginated list is unknown.
+  const [filterChunkIds, setFilterChunkIds] = useState<string[]>(
+    targetChunkId ? [targetChunkId] : [],
+  );
+  // The route keeps this page mounted when only the query string changes, so
+  // history navigation on and off a hit has to move the filter with it.
+  useEffect(() => {
+    setFilterChunkIds((previousIds) => {
+      const nextIds = targetChunkId ? [targetChunkId] : [];
+      return previousIds.join() === nextIds.join() ? previousIds : nextIds;
+    });
+  }, [targetChunkId]);
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   // The artifact tree publishes its claims / evidence content upward; the page
   // renders it as a resizable column between the tree and the chunk list, and
@@ -71,7 +85,8 @@ function Chunk() {
     handleSetAvailable,
     dataUpdatedAt,
   } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
-  const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
+  const { handleChunkCardClick, selectedChunkId } =
+    useHandleChunkCardClick(targetChunkId);
 
   const { t } = useTranslation();
   const { changeChunkTextMode, textMode } = useChangeChunkTextMode();
@@ -137,6 +152,18 @@ function Chunk() {
     clearSelectedChunkIds();
     pagination.onChange?.(1, pagination.pageSize);
   });
+
+  // The artifact view can replace the filter while the target stays in the
+  // query string, so the banner is tied to the target's own filter.
+  const showingRetrievedChunk =
+    !!targetChunkId &&
+    filterChunkIds.length === 1 &&
+    filterChunkIds[0] === targetChunkId;
+
+  const showAllChunks = useCallback(() => {
+    setFilterChunkIds([]);
+    clearTargetChunkId();
+  }, [clearTargetChunkId]);
 
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
@@ -355,6 +382,21 @@ function Chunk() {
                         selectedChunkIds={selectedChunkIds}
                       />
                     </div>
+
+                    {showingRetrievedChunk && (
+                      <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border-0.5 border-border-button bg-bg-card px-4 py-2.5">
+                        <span className="text-sm text-text-secondary">
+                          {t('chunk.showingRetrievedChunk')}
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={showAllChunks}
+                        >
+                          {t('chunk.showAllChunks')}
+                        </Button>
+                      </div>
+                    )}
 
                     <ChunkVirtualList
                       key={listKey}
