@@ -542,12 +542,13 @@ Creates a dataset.
   - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
+  - `"parser_id"`: `string`
   - `"chunk_method"`: `string`
   - `"parser_config"`: `object`
   - `"parse_type"`: `int`
   - `"pipeline_id"`: `string`
 
-##### A basic request example
+##### A request example creating a built-in general dataset
 
 ```bash
 curl --request POST \
@@ -555,7 +556,10 @@ curl --request POST \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
-      "name": "test_1"
+      "name": "test_1",
+      "language": "English",
+      "parse_type": 1,
+      "parser_id": "general"
       }'
 ```
 
@@ -573,7 +577,7 @@ curl --request POST \
   --data '{
    "name": "test-sdk",
    "language": "English",
-   "parse_type": <NUMBER_OF_PARSERS_IN_YOUR_PARSER_COMPONENT>,
+   "parse_type": 2,
    "pipeline_id": "<PIPELINE_ID_32_HEX>"
   }'
 ```
@@ -608,8 +612,24 @@ curl --request POST \
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
+- `"parser_id"`: `enum<string>`
+  The built-in parser to use. Required when `"parse_type"` is `1`.
+  - `"general"`: General (default)
+  - `"book"`: Book
+  - `"email"`: Email
+  - `"laws"`: Laws
+  - `"manual"`: Manual
+  - `"one"`: One
+  - `"paper"`: Paper
+  - `"picture"`: Picture
+  - `"presentation"`: Presentation
+  - `"qa"`: Q&A
+  - `"table"`: Table
+  - `"tag"`: Tag
+  - Must not be included when `"parse_type"` is `2`.
+
 - `"chunk_method"`: `enum<string>`
-  The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.
+  Legacy alias of `"parser_id"` kept for Python-backend compatibility. The Go backend creates datasets with `"parser_id"` instead; do not send `"chunk_method"` together with `"parse_type"` or `"pipeline_id"`.
   Available options:
   - `"naive"`: General (default)
   - `"book"`: Book
@@ -625,8 +645,8 @@ curl --request POST \
   - `"tag"`: Tag
 
 - `"parser_config"`: `object`
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
-  - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
+  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"parser_id"`:
+  - If `"parser_id"` is `"general"` (`"naive"` alias), the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
       - Defaults to `0`
       - Minimum: `0`
@@ -658,23 +678,21 @@ curl --request POST \
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
 
 - `"parse_type"`: `int`
-  The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
-  - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
-  - Must not be included when `"chunk_method"` is specified.
+  How the dataset selects its parser: `1` = built-in (`"parser_id"`), `2` = ingestion pipeline (`"pipeline_id"`).
+  - Required. Use `1` together with `"parser_id"`, or `2` together with `"pipeline_id"`.
+  - Do not mix the two options.
 
 - `"pipeline_id"`: `string`
   The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
-  - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
+  - Required (along with `"parse_type": 2`) if specifying an ingestion pipeline.
   - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
-  - Must not be included when `"chunk_method"` is specified.
+  - Must not be included when `"parse_type"` is `1`.
 
 :::caution WARNING
 You can choose either of the following ingestion options when creating a dataset, but *not* both:
 
-- Use a built-in chunk method -- specify `"chunk_method"` (optionally with `"parser_config"`).
-- Use an ingestion pipeline -- specify both `"parse_type"` and `"pipeline_id"`.
-
-If none of `"chunk_method"`, `"parse_type"`, or `"pipeline_id"` are provided, the system defaults to `chunk_method = "naive"`.
+- Use a built-in parser -- specify `"parse_type": 1` with `"parser_id"` (optionally with `"parser_config"`).
+- Use an ingestion pipeline -- specify both `"parse_type": 2` and `"pipeline_id"`.
 :::
 
 #### Response
