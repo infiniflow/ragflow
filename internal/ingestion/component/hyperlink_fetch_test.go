@@ -389,6 +389,8 @@ func TestParserInvokeFailsWhenCancelledDuringFetch(t *testing.T) {
 
 // The markdown contract is two switches: fetching without collecting links has
 // nothing to fetch, and must say nothing rather than half-work.
+// fetch_links alone on a Markdown document collects nothing, and that has to be
+// said rather than left as a run that looks like it found no links.
 func TestHyperlinkMarkdownCollectSwitchOffSkipsFetch(t *testing.T) {
 	withSSRFBypass(t)
 	var hits int32
@@ -403,8 +405,11 @@ func TestHyperlinkMarkdownCollectSwitchOffSkipsFetch(t *testing.T) {
 	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
 	got, warnings := c.fetchHyperlinkedContent(t.Context(), utility.FileTypeMarkdown,
 		"doc.md", []byte("[p]("+srv.URL+"/p)"), parent, "doc1")
-	if len(got) != len(parent) || atomic.LoadInt32(&hits) != 0 || len(warnings) != 0 {
-		t.Fatalf("got=%d hits=%d warnings=%v, want parent only, no request, no warning", len(got), hits, warnings)
+	if len(got) != len(parent) || atomic.LoadInt32(&hits) != 0 {
+		t.Fatalf("got=%d hits=%d, want parent only and no request", len(got), hits)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "collect_markdown_links") {
+		t.Fatalf("warnings = %v, want the one naming the switch pairing", warnings)
 	}
 }
 

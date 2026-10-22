@@ -60,7 +60,10 @@ func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType 
 		return parent, nil
 	}
 	if family == "markdown" && !param.CollectMarkdownLinks {
-		return parent, nil
+		// A Markdown document needs both switches: fetching is enabled but
+		// nothing collects the body's links. Returning quietly here is
+		// indistinguishable from "no links found", so name the pairing.
+		return parent, []string{"hyperlink: fetch_links on a Markdown document also needs collect_markdown_links; nothing was fetched"}
 	}
 
 	raw, warnings := collectHyperlinkTargets(family, binary)
@@ -168,6 +171,13 @@ const hyperlinkMaxRedirects = 10
 
 // hyperlinkOverallDeadline bounds one document's linked fetching. It derives
 // from the per-URL timeout and URL count so no extra config knob is needed.
+//
+// The window is additive to the parse itself: fetching is sequential, so an
+// enabled document can occupy its worker for up to five minutes on top of its
+// normal parse time. That is throughput, not a timeout risk — the task heartbeat
+// (internal/ingestion/service/heartbeat.go) renews the broker's AckWait while the
+// run is alive — and it is tuned down through max_urls and timeout_s rather than a
+// second knob that would have to be reconciled with them.
 func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
 	total := time.Duration(param.MaxURLs) * time.Duration(param.TimeoutSeconds) * time.Second
 	if total > 5*time.Minute {

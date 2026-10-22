@@ -2709,7 +2709,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       removeHeaderFooter: 'Remove header and footer',
       fetchLinks: 'Fetch linked content',
       fetchLinksTip:
-        'Download the pages referenced by links in the document and index them together with the document. Off by default.',
+        'Download the pages referenced by links in the document and index them together with the document. Off by default. A Markdown document also needs Collect links from the document body, or there is nothing to fetch.',
       collectMarkdownLinks: 'Collect links from the document body',
       collectMarkdownLinksTip:
         'Collect link destinations from the Markdown body. Links are only fetched when linked-content fetching is enabled.',
