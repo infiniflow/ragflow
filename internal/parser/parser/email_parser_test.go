@@ -1350,3 +1350,35 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 		t.Errorf("JSON body text must not duplicate flattened header lines: %q", bodyText)
 	}
 }
+
+// TestEmailParserTextOutputRemoved verifies the Email parser has no "text"
+// output path. A setup requesting output_format "text" must be ignored and the
+// result must be JSON, never a Text payload.
+func TestEmailParserTextOutputRemoved(t *testing.T) {
+	ctx := context.Background()
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: recipient@test.com",
+		"Subject: Hello",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Hello, world!",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"output_format": "text",
+		"fields":        []string{"from", "to", "subject", "body"},
+	})
+
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	if result.OutputFormat != "json" {
+		t.Fatalf("email must ignore text output_format and emit json, got OutputFormat=%q", result.OutputFormat)
+	}
+	if len(result.JSON) == 0 {
+		t.Fatalf("email json output must contain items, got empty")
+	}
+}
