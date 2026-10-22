@@ -36,16 +36,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, Callable, Dict, List
+from collections.abc import AsyncIterator, Callable
 
 import xxhash
 
 from common import settings
 from common.constants import LLMType
+from common.doc_store.doc_store_base import field_scalar
 from common.misc_utils import thread_pool_exec
-from rag.nlp import search
-from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile._common import env_int
+from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
 from rag.advanced_rag.knowlege_compile.wiki import (
     WIKI_MAP_STATE_COMPILE_KWD,
     WIKI_MAP_STATE_META_COMPILE_KWD,
@@ -56,8 +56,8 @@ from rag.advanced_rag.knowlege_compile.wiki import (
     _wiki_scan_current_chunk_state,
     wiki_map_from_chunks,
 )
+from rag.nlp import search
 from rag.svr.task_executor_refactor.task_context import TaskContext
-
 
 # ----- tunables ------------------------------------------------------
 # Artifact-MAP tuning: how many chunks to feed per ``wiki_map_from_chunks``
@@ -131,11 +131,11 @@ WIKI_DERIVED_COMPILE_KWDS = (
 def _parser_config_compilation_template_ids(parser_config, tenant_id: str) -> list[str]:
     """Resolve a doc's ``parser_config`` to compile-template ids by
     looking up configured groups. Returns ``[]`` if no group resolves."""
-    from rag.svr.task_executor_refactor.chunk_post_processor import (
-        _parser_config_compilation_template_group_ids,
-    )
     from api.db.services.compilation_template_group_service import (
         CompilationTemplateGroupService,
+    )
+    from rag.svr.task_executor_refactor.chunk_post_processor import (
+        _parser_config_compilation_template_group_ids,
     )
 
     template_ids: list[str] = []
@@ -312,8 +312,8 @@ def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tup
     ``parser_config``. Returns ``(doc, template_id)`` for the first wiki template
     matched per doc.
     """
-    from api.db.services.compilation_template_service import CompilationTemplateService
     from api.apps.restful_apis.chunk_api import _compilation_template_kind
+    from api.db.services.compilation_template_service import CompilationTemplateService
 
     skip_doc_ids = skip_doc_ids or set()
     eligible: list[tuple[dict, str]] = []
@@ -475,10 +475,10 @@ async def _wiki_delete_deleted_doc_state(
                 to_shrink.append((row_id, remaining))
             else:
                 to_delete.append(row_id)
-                if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
-                    slug = row.get("slug_kwd")
-                    if isinstance(slug, str) and slug:
-                        page_history_to_delete.append((row_id, slug, row.get("page_type_kwd") or "concept"))
+                if field_scalar(row.get("compile_kwd")) == WIKI_PAGE_COMPILE_KWD:
+                    slug = field_scalar(row.get("slug_kwd"))
+                    if slug:
+                        page_history_to_delete.append((row_id, slug, field_scalar(row.get("page_type_kwd")) or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
@@ -544,6 +544,44 @@ def _wiki_mode_meta_id(kb_id: str) -> str:
     return f"wiki_mode_meta_{kb_id}"
 
 
+#: Columns the ``wiki_mode_meta`` row stores. Only fixed-schema engines need
+#: them declared; ES/OpenSearch map ``*_kwd`` through ``dynamic_templates``.
+_WIKI_MODE_META_COLUMNS = {
+    "mode_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+    "embedding_model_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+}
+
+#: Chunk tables already upgraded in this process, keyed by (index, kb_id).
+_WIKI_MODE_COLUMNS_ENSURED: set[tuple[str, str]] = set()
+
+
+async def _wiki_ensure_mode_columns(kb_id: str, index: str) -> None:
+    """Add the mode-meta columns to a chunk table created before they existed.
+
+    New tables inherit them from ``conf/infinity_mapping.json``; on an older
+    table both reading and writing the meta row fail until it is upgraded in
+    place. Best-effort — mode reuse only saves work, so a failed upgrade is
+    logged and the build continues.
+    """
+    key = (index, kb_id)
+    if key in _WIKI_MODE_COLUMNS_ENSURED:
+        return
+    ensure_fn = getattr(settings.docStoreConn, "ensure_columns", None)
+    if not callable(ensure_fn):
+        _WIKI_MODE_COLUMNS_ENSURED.add(key)
+        return
+    try:
+        # ``ensure_columns`` no-ops on a missing table, so caching the upgrade
+        # there would skip it for the table a later insert creates.
+        if not await thread_pool_exec(settings.docStoreConn.index_exist, index, kb_id):
+            return
+        await thread_pool_exec(ensure_fn, index, kb_id, _WIKI_MODE_META_COLUMNS)
+    except Exception:
+        logging.exception("wiki: failed to ensure mode meta columns for kb=%s", kb_id)
+        return
+    _WIKI_MODE_COLUMNS_ENSURED.add(key)
+
+
 async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
     """Return the mode value recorded by the previous build, or None
     if this KB has never recorded a mode (e.g. first ever build)."""
@@ -552,6 +590,7 @@ async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return None
+    await _wiki_ensure_mode_columns(kb_id, index)
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -567,10 +606,7 @@ async def _wiki_load_mode(tenant_id: str, kb_id: str) -> str | None:
         )
         fm = settings.docStoreConn.get_fields(res, ["mode_kwd"]) or {}
         for row in fm.values():
-            val = row.get("mode_kwd")
-            if isinstance(val, list):
-                val = val[0] if val else ""
-            val = str(val or "").strip()
+            val = field_scalar(row.get("mode_kwd"))
             if val in ("entity", "topic"):
                 return val
     except Exception:
@@ -585,6 +621,7 @@ async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return None
+    await _wiki_ensure_mode_columns(kb_id, index)
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -600,10 +637,8 @@ async def _wiki_load_embedding_fingerprint(tenant_id: str, kb_id: str) -> str | 
         )
         fm = settings.docStoreConn.get_fields(res, ["embedding_model_kwd"]) or {}
         for row in fm.values():
-            value = row.get("embedding_model_kwd")
-            if isinstance(value, list):
-                value = value[0] if value else ""
-            return str(value).strip() or None
+            value = field_scalar(row.get("embedding_model_kwd"))
+            return value or None
     except Exception:
         logging.exception("wiki: failed to load embedding model meta for kb=%s", kb_id)
     return None
@@ -621,6 +656,7 @@ async def _wiki_save_mode(tenant_id: str, kb_id: str, mode: str, embedding_finge
     if mode not in ("entity", "topic"):
         raise ValueError(f"Unsupported wiki mode: {mode}")
     index = search.index_name(tenant_id)
+    await _wiki_ensure_mode_columns(kb_id, index)
     row = {
         "id": _wiki_mode_meta_id(kb_id),
         "compile_kwd": "wiki_mode_meta",
@@ -645,7 +681,13 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
     entities, plan/draft/reduce, topics, doc_page_source, mode meta). Used when
     the plan (mode) setting toggles: Mode A and Mode B pages are structurally
     different and cannot be merged incrementally, so a mode switch must rebuild
-    from a clean slate."""
+    from a clean slate.
+
+    MAP extracts are deliberately left alone: their identity is
+    ``hash(doc_id, chunk_id, chunk_hash)`` and ``chunk_hash`` depends only on the
+    chunk content and the pipeline rev, so they still match after a mode or
+    embedding switch. Dropping them would turn a page rebuild into a full
+    re-extraction."""
 
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
@@ -679,9 +721,9 @@ async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
 
 
 def build_wiki_page_graph(
-    pages: List[Dict],
+    pages: list[dict],
     kb_id: str,
-) -> tuple[List[Dict], List[Dict]]:
+) -> tuple[list[dict], list[dict]]:
     """Project the REFINE-emitted page list onto per-entity and
     per-relation ES rows.
 
@@ -699,8 +741,8 @@ def build_wiki_page_graph(
     """
     from rag.nlp import rag_tokenizer
 
-    by_slug: Dict[str, Dict] = {}
-    entity_rows: List[Dict] = []
+    by_slug: dict[str, dict] = {}
+    entity_rows: list[dict] = []
     for p in pages or []:
         slug = (p.get("slug") or "").strip()
         if not slug:
@@ -775,7 +817,7 @@ def build_wiki_page_graph(
             }
         )
 
-    relation_rows: List[Dict] = []
+    relation_rows: list[dict] = []
     for p in pages or []:
         src = (p.get("slug") or "").strip()
         if not src or src not in by_slug:
@@ -822,7 +864,7 @@ def build_wiki_page_graph(
 
 async def persist_wiki_page_graph(
     ctx: TaskContext,
-    pages: List[Dict],
+    pages: list[dict],
 ) -> None:
     """Materialize and store the per-entity / per-relation doc-store rows
     derived from artifact pages.
@@ -843,7 +885,7 @@ async def persist_wiki_page_graph(
 
     index = search.index_name(ctx.tenant_id)
 
-    async def _replace_bucket(kwd: str, rows: List[Dict]) -> None:
+    async def _replace_bucket(kwd: str, rows: list[dict]) -> None:
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
@@ -917,10 +959,10 @@ async def run_wiki_incremental(
         load_chunks_for_doc: Chunk loader
         mode: ``entity`` or ``topic``
     """
-    from api.db.services.document_service import DocumentService
-    from api.db.services.compilation_template_service import CompilationTemplateService
-    from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import resolve_model_config
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.db.services.document_service import DocumentService
+    from api.db.services.llm_service import LLMBundle
     from rag.advanced_rag.knowlege_compile.wiki_incremental import (
         wiki_compile_incremental,
     )
@@ -1101,6 +1143,7 @@ async def run_wiki_incremental(
                 doc_id = doc["id"]
                 map_llm_id = pipeline_chat_llm_ids[str(doc_id)]
 
+                # MAP fractions belong to one batch, not the dataset task.
                 await wiki_map_from_chunks(
                     chunks=batch,
                     chat_mdl=map_llm_pool.wrap(
@@ -1114,7 +1157,7 @@ async def run_wiki_incremental(
                     tenant_id=ctx.tenant_id,
                     kb_id=ctx.kb_id,
                     language=ctx.language,
-                    callback=lambda p, msg: progress(p, msg),
+                    callback=lambda p, msg: progress(p if p is not None and p < 0 else None, msg),
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
@@ -1213,6 +1256,7 @@ async def run_wiki_incremental(
     kb_chat_mdl = _bundle_for(kb_chat_llm_id)
 
     progress(0.65, f"Wiki {mode} incremental compilation ...")
+    # Only the task owner may report success, after graph/state persistence.
     summary = await wiki_compile_incremental(
         chat_mdl=map_llm_pool.wrap(
             kb_chat_mdl,
@@ -1229,7 +1273,7 @@ async def run_wiki_incremental(
         chunk_delta=chunk_delta,
         previous_chunk_state=previous_chunk_state,
         current_chunk_state=current_chunk_state,
-        callback=lambda p, msg: progress(p, msg),
+        callback=lambda p, msg: progress(p if p is not None and p < 0 else None, msg),
     )
 
     # 6. Materialize the canvas graph from the compiled pages. The incremental
@@ -1258,4 +1302,9 @@ async def run_wiki_incremental(
         logging.warning("wiki: incomplete compilation errors: %s", summary["errors"])
         progress(-1, f"Wiki incomplete: {len(summary['errors'])} page(s) failed; retry required.")
     else:
-        progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
+        skipped = len(summary.get("pages_skipped") or [])
+        suffix = f" ({skipped} skipped)" if skipped else ""
+        progress(
+            1.0,
+            f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}{suffix}",
+        )

@@ -35,12 +35,12 @@ import asyncio
 import inspect
 import json
 import logging
-from functools import lru_cache
-from typing import Optional
+from functools import cache
 
 import xxhash
 
 from common import settings
+from common.doc_store.doc_store_base import field_scalar
 from common.misc_utils import hashable_key, thread_pool_exec
 from rag.advanced_rag.knowlege_compile._common import (
     encode as _encode,
@@ -72,7 +72,7 @@ _BUCKET_MERGE_MAX_IN_FLIGHT = 4
 _META_ROW_KWD = "kg_build_meta"
 
 
-@lru_cache(maxsize=None)
+@cache
 def _supports_bulk_refresh(connection_type: type) -> bool:
     try:
         return "refresh" in inspect.signature(connection_type.insert).parameters
@@ -226,6 +226,42 @@ async def _disabled_doc_ids(kb_id: str) -> set[str]:
 # ---------------------------------------------------------------------------
 _UPGRADED_TABLES: set[tuple[str, str]] = set()
 
+#: Chunk tables already upgraded with the build-timestamp column, keyed by
+#: (index, kb_id). Kept separate from :data:`_UPGRADED_TABLES` because that set
+#: only guarantees ``deleted_doc_id``.
+_TIMESTAMP_UPGRADED_TABLES: set[tuple[str, str]] = set()
+
+
+async def _ensure_build_timestamp_column(index: str, kb_id: str) -> None:
+    """Add ``build_timestamp_flt`` to a chunk table created before it existed.
+
+    The merge stores its build time in this column, so on an older table the
+    write is rejected and every run falls back to a full build. Best-effort —
+    the column only decides whether a build is incremental.
+    """
+    key = (index, kb_id)
+    if key in _TIMESTAMP_UPGRADED_TABLES:
+        return
+    ensure_fn = getattr(settings.docStoreConn, "ensure_columns", None)
+    if not callable(ensure_fn):
+        _TIMESTAMP_UPGRADED_TABLES.add(key)
+        return
+    try:
+        # ``ensure_columns`` no-ops on a missing table, so caching the upgrade
+        # there would skip it for the table a later insert creates.
+        if not await thread_pool_exec(settings.docStoreConn.index_exist, index, kb_id):
+            return
+        await thread_pool_exec(
+            ensure_fn,
+            index,
+            kb_id,
+            {"build_timestamp_flt": {"type": "float", "default": 0.0}},
+        )
+    except Exception:
+        logging.exception("structure_merge: failed to ensure build_timestamp_flt for kb=%s", kb_id)
+        return
+    _TIMESTAMP_UPGRADED_TABLES.add(key)
+
 
 def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
     """Write a deletion-marker row into the chunk table.
@@ -302,6 +338,7 @@ async def _save_build_time(tenant_id: str, kb_id: str, compile_kwd: str, templat
 
     meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
     index = _index_name(tenant_id)
+    await _ensure_build_timestamp_column(index, kb_id)
     payload = {
         "id": meta_id,
         "kb_id": kb_id,
@@ -316,6 +353,15 @@ async def _save_build_time(tenant_id: str, kb_id: str, compile_kwd: str, templat
         await thread_pool_exec(settings.docStoreConn.update, {"id": meta_id}, payload, index, kb_id)
     else:
         await thread_pool_exec(settings.docStoreConn.insert, [payload], index, kb_id)
+
+
+def _is_relation_row(row: dict) -> bool:
+    """True when a scanned graph row is a relation edge.
+
+    Infinity materializes requested columns and fills absent ones with ``None``,
+    so ``"from_entity_kwd" in row`` holds for entity rows too; use values.
+    """
+    return field_scalar(row.get("knowledge_graph_kwd")) == "relation" or bool(field_scalar(row.get("from_entity_kwd")))
 
 
 def _bucket_id(name: str, bucket_count: int = _BUCKET_COUNT) -> int:
@@ -438,9 +484,9 @@ async def _merge_relations(
     groups: dict[tuple[str, str, str], list[dict]] = {}
     for row in rel_bucket_rows:
         payload = json.loads(row.get("content_with_weight") or "{}")
-        src = (payload.get("from") or row.get("from_entity_kwd") or "").strip().lower()
-        tgt = (payload.get("to") or row.get("to_entity_kwd") or "").strip().lower()
-        rel_type = (payload.get("type") or "related").strip().lower()
+        src = (field_scalar(payload.get("from")) or field_scalar(row.get("from_entity_kwd"))).lower()
+        tgt = (field_scalar(payload.get("to")) or field_scalar(row.get("to_entity_kwd"))).lower()
+        rel_type = field_scalar(payload.get("type")).lower() or "related"
         key = (src, rel_type, tgt)
         groups.setdefault(key, []).append(row)
 
@@ -791,6 +837,7 @@ async def _do_build(
                 "mention_count_int",
                 "compilation_template_ids",
                 "create_timestamp_flt",
+                "knowledge_graph_kwd",
                 "from_entity_kwd",
                 "to_entity_kwd",
             ],
@@ -807,18 +854,18 @@ async def _do_build(
                 ts = row.get("create_timestamp_flt", 0)
                 if isinstance(ts, (int, float)) and ts < ts_cond["create_timestamp_flt"]["gte"]:
                     continue
-            is_rel = row.get("knowledge_graph_kwd") == "relation" or "from_entity_kwd" in row
+            is_rel = _is_relation_row(row)
             if is_rel:
                 # Bucketize relations by stable hash of src/type/tgt
                 payload = json.loads(row.get("content_with_weight") or "{}")
-                rsrc = (payload.get("from") or row.get("from_entity_kwd") or "").strip().lower()
-                rtgt = (payload.get("to") or row.get("to_entity_kwd") or "").strip().lower()
-                rtype = (payload.get("type") or "related").strip().lower()
+                rsrc = (field_scalar(payload.get("from")) or field_scalar(row.get("from_entity_kwd"))).lower()
+                rtgt = (field_scalar(payload.get("to")) or field_scalar(row.get("to_entity_kwd"))).lower()
+                rtype = field_scalar(payload.get("type")).lower() or "related"
                 rbid = _bucket_id(f"{rsrc}:{rtype}:{rtgt}")
                 if rbid < _BUCKET_COUNT:
                     rel_buckets[rbid].append(row)
             else:
-                name = row.get("name_kwd", "")
+                name = field_scalar(row.get("name_kwd"))
                 if not name:
                     continue
                 bid = _bucket_id(name)
@@ -896,14 +943,14 @@ async def run_structure_merge(ctx: TaskContext) -> None:
         progress(1.0, "No doc_graph rows found.")
         return
 
-    template_meta: dict[str, tuple[bool, Optional[str]]] = {}
+    template_meta: dict[str, tuple[bool, str | None]] = {}
 
-    def _resolve_template(template_id: str) -> tuple[bool, Optional[str]]:
+    def _resolve_template(template_id: str) -> tuple[bool, str | None]:
         cached = template_meta.get(template_id)
         if cached is not None:
             return cached
         keep = False
-        structure_kind: Optional[str] = None
+        structure_kind: str | None = None
         try:
             saved = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             if saved:
@@ -1003,8 +1050,8 @@ async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str,
         if not field_map:
             break
         for row in field_map.values():
-            compile_kwd = row.get("compile_kwd")
-            if not isinstance(compile_kwd, str) or not compile_kwd:
+            compile_kwd = field_scalar(row.get("compile_kwd"))
+            if not compile_kwd:
                 continue
             raw_tids = row.get("compilation_template_ids")
             tids = []

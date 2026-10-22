@@ -89,30 +89,34 @@ def test_oversized_section_is_split_at_sentence_boundaries():
 
 
 @pytest.mark.p2
-def test_small_section_is_split_at_delimiter_boundary():
-    # A small section (well under chunk_token_num) that contains a delimiter
-    # must still be broken at the delimiter: the delimiter is a chunk boundary
-    # and its text must never leak into a chunk. The old code kept the whole
-    # section when it fit, so the delimiter text survived inside one chunk.
+def test_small_section_retains_delimiter_and_content():
+    # A small section (well under chunk_token_num) that contains a delimiter is
+    # broken at the delimiter into paragraphs; per the #20276 parity fix the
+    # bare delimiter is RETAINED (attached to the preceding paragraph) instead
+    # of being dropped. Concatenating the emitted chunks reproduces the source.
     small_section = "first part。second part。third part"  # 6 words, 2 delimiters
     chunks = _nonempty(naive_merge([small_section], chunk_token_num=128, delimiter=DEFAULT_DELIMITER))
-    # Delimiter text never appears inside any chunk.
-    assert all("。" not in c for c in chunks)
-    # Every delimiter-separated piece is present (content preserved).
     joined = "".join(chunks)
+    # Bare delimiter text is preserved (not dropped).
+    assert "。" in joined
+    # Content is preserved exactly: rejoining reproduces the source.
+    assert joined.lstrip("\n") == small_section, joined
+    # Every delimiter-separated piece is present.
     assert "first part" in joined and "second part" in joined and "third part" in joined
 
 
 @pytest.mark.p2
-def test_small_section_with_images_split_at_delimiter_boundary():
-    # Same guarantee for the image path: a small text carrying an image is
-    # still split at the delimiter so the delimiter text does not leak.
+def test_small_section_with_images_retains_delimiter():
+    # Same guarantee for the image path: a small text carrying an image keeps
+    # the bare delimiter instead of dropping it (#20276 parity).
     small_section = "alpha。beta。gamma"  # 3 words, 2 delimiters
     texts = [(small_section, "")]
     images = [object()]
     chunks, imgs = naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAULT_DELIMITER)
     nonempty = _nonempty(chunks)
-    assert all("。" not in c for c in nonempty)
+    joined = "".join(nonempty)
+    assert "。" in joined
+    assert joined.lstrip("\n") == small_section, joined
     # The single image travels with its (split) text.
     assert len(chunks) == len(imgs)
 
@@ -161,9 +165,10 @@ def test_overlap_prefix_is_never_dropped_at_overflow():
     # overlap-prefix budget check is the only thing under test here.
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    # The overlap prefix is always present at every boundary: each chunk (after
-    # the first) starts with the tail of the previous chunk.
-    for prev, cur in itertools.pairwise(chunks):
+    # Size overlap from the previous original chunk, excluding its own prefix.
+    originals = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER, strategy=MergeStrategy.UNDER_CAP))
+    assert len(chunks) == len(originals)
+    for prev, cur in zip(originals, chunks[1:]):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     # And because the prefix is never dropped, some chunks exceed the budget.
@@ -292,10 +297,23 @@ def test_strict_cap_overlap_never_dropped_at_overflow_boundary():
     sentences = [" ".join(["w"] * 10) for _ in range(20)]
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    for prev, cur in itertools.pairwise(chunks):
+    originals = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, strategy=MergeStrategy.UNDER_CAP))
+    assert len(chunks) == len(originals)
+    for prev, cur in zip(originals, chunks[1:]):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     assert any(_tok(c) > 20 for c in chunks)
+
+
+@pytest.mark.parametrize(
+    "originals,percent,expected",
+    [
+        (["ABCDEFGHI。", "KLMNOPQRS。", "UVWXYZ123。"], 20, ["ABCDEFGHI。", "I。KLMNOPQRS。", "S。UVWXYZ123。"]),
+        (["A" * 100, "xy", "END"], 30, ["A" * 100, "A" * 30 + "xy", "yEND"]),
+    ],
+)
+def test_overlap_uses_previous_original_chunk(originals, percent, expected):
+    assert nlp._apply_overlap_unconditional(originals, percent) == expected
 
 
 @pytest.mark.p2

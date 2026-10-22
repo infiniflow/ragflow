@@ -36,9 +36,8 @@ import logging
 import re
 
 from common import settings
-from common.doc_store.doc_store_base import OrderByExpr
+from common.doc_store.doc_store_base import OrderByExpr, field_scalar
 from common.misc_utils import thread_pool_exec
-
 
 # Below this combined (entities + relations) count for a bucket, return all rows.
 GRAPH_FULL_THRESHOLD = 1024
@@ -47,10 +46,6 @@ GRAPH_TOP_ENTITIES = 256
 # Keyword search needs a small, relevant candidate set; the larger sampling
 # cap above is intended for rendering an entire large graph bucket.
 GRAPH_KEYWORD_CANDIDATES = 16
-# Semantic fallback is intentionally singular. KNN is only used after exact
-# name and BM25 lookup fail; returning several approximate tree nodes creates
-# unrelated sibling branches in an otherwise focused path response.
-GRAPH_KEYWORD_KNN_CANDIDATES = 1
 # Upper bound on the relation / neighbor-entity expansion so a hub node can't
 # blow up the response.
 GRAPH_EXPANSION_CAP = 4096
@@ -132,8 +127,8 @@ def project_relation(row: dict) -> dict | None:
         node = _struct_graph_relation(payload)
         if node:
             return node
-    src = str(row.get("from_entity_kwd") or "").strip()
-    tgt = str(row.get("to_entity_kwd") or "").strip()
+    src = field_scalar(row.get("from_entity_kwd"))
+    tgt = field_scalar(row.get("to_entity_kwd"))
     if not src or not tgt:
         return None
     typ = payload.get("type") if isinstance(payload, dict) else None
@@ -298,7 +293,7 @@ async def build_bucket(index_name, kb_id, scope: dict, excluded_doc_ids: set[str
         for row in field_map.values():
             if not _row_has_enabled_source(row, excluded_doc_ids):
                 continue
-            if row.get("knowledge_graph_kwd") == "relation":
+            if field_scalar(row.get("knowledge_graph_kwd")) == "relation":
                 edge = project_relation(row)
                 if edge:
                     relations.append(edge)
@@ -538,29 +533,26 @@ async def attach_claim_counts(
 async def keyword_subgraph(
     index_name,
     kb_id,
-    embd_mdl,
     base_entity_condition,
     keywords,
     scope_for_template,
-    log_ctx="",
     excluded_doc_ids: set[str] | None = None,
 ) -> tuple[dict | None, list[dict], list[dict]]:
     """Find matching entity rows and return their focused subgraph.
 
     BM25 provides lexical candidates which are then filtered by entity-name
-    containment. KNN is used as a semantic fallback when lexical search has
-    no valid candidates. Matching entities and their touching neighbors are
+    containment. Matching entities and their touching neighbors are
     returned; ``tree`` and ``page_index`` buckets additionally include the
     full ancestor path to the root. ``(None, [], [])`` is returned when
-    nothing matches or embedding is unavailable.
+    nothing matches.
 
-    ``base_entity_condition`` scopes the KNN (e.g. ``{"doc_id":[id],
+    ``base_entity_condition`` scopes the search (e.g. ``{"doc_id":[id],
     "knowledge_graph_kwd":["entity"]}`` or ``{"compilation_template_ids":[...],
     "knowledge_graph_kwd":["entity"]}``). ``scope_for_template(row)`` resolves
     ``(bucket_meta, scope_filter)`` for the matched row (scope WITHOUT
     ``knowledge_graph_kwd``).
     """
-    from common.doc_store.doc_store_base import MatchDenseExpr, MatchTextExpr
+    from common.doc_store.doc_store_base import MatchTextExpr
     from rag.advanced_rag.knowlege_compile._common import tokenize_for_search
 
     excluded_doc_ids = excluded_doc_ids or set()
@@ -589,8 +581,7 @@ async def keyword_subgraph(
 
     # Entity names are identifiers in the graph. Check the exact normalized
     # name first: BM25 searches the entity description and may miss a stored
-    # name even when the query equals it, which would otherwise trigger KNN
-    # and return an approximate result. Partial-name queries
+    # name even when the query equals it. Partial-name queries
     # continue through BM25 so they can intentionally return multiple nodes.
     text_query = re.sub(r"[ :|\r\n\t,，。？?/`!！&^%()\[\]{}<>*~'\"\\=]+", " ", str(keywords or "")).strip()
     candidates = []
@@ -623,29 +614,6 @@ async def keyword_subgraph(
     detail_candidates = [(row, node) for row, node in candidates if str(node.get("type") or "").strip().lower() != "title"]
     if detail_candidates:
         candidates = detail_candidates
-
-    # Fall back to semantic matching for aliases, paraphrases, and cases
-    # where the query does not occur in the stored entity name.
-    if not candidates:
-        try:
-            qv, _ = await thread_pool_exec(embd_mdl.encode_queries, keywords)
-            vec = list(qv)
-        except Exception:
-            logging.exception("structure graph: keyword embedding failed (%s)", log_ctx)
-            return None, [], []
-        if not vec:
-            return None, [], []
-
-        match_expr = MatchDenseExpr(
-            vector_column_name=f"q_{len(vec)}_vec",
-            embedding_data=vec,
-            embedding_data_type="float",
-            distance_type="cosine",
-            topn=GRAPH_KEYWORD_KNN_CANDIDATES,
-            extra_options={"similarity": 0.3},
-        )
-        top_map, _ = await graph_search(index_name, kb_id, top_fields, base_entity_condition, OrderByExpr(), GRAPH_KEYWORD_KNN_CANDIDATES, match_expressions=[match_expr])
-        candidates = _valid_top_nodes(top_map)
 
     if not candidates:
         return None, [], []
