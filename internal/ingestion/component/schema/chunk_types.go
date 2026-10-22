@@ -218,6 +218,14 @@ func (d ChunkDoc) wireMapErr() (map[string]any, error) {
 		if k == "ck_type" {
 			continue
 		}
+		// Fill-missing-only: typed fields already emitted by the alias marshal
+		// (id, doc_type_kwd, table, ...) take precedence over a colliding Extra
+		// key. UnmarshalJSON copies the incoming "id" into Extra (its deletion
+		// whitelist omits "id"), so an unconditional assignment would let a stale
+		// Extra copy shadow the real typed value through the GetChunks bridge.
+		if _, exists := out[k]; exists {
+			continue
+		}
 		out[k] = decodeExtraValue(raw)
 	}
 	out["text"] = d.Text
