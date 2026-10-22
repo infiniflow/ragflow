@@ -62,6 +62,14 @@ export const parseCitationIndex = (value: string): CitationKey => {
 export const citationMarkerReg =
   /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/g;
 
+// react-string-replace hands the callback the last capture group, not the whole
+// match. citationMarkerReg groups only the id, so feeding it to
+// reactStringReplace would strip the brackets and turn an opaque all-digit id
+// into a positional index. This expression captures the whole marker instead;
+// the renderer can then pass it to parseCitationIndex unchanged.
+export const citationWholeMarkerReg =
+  /(\[(?:ID:)?[0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+\])/g;
+
 // Resolve the chunk a citation marker points at. A numeric key is the
 // chunk's position in the payload — the plain-chat contract, where the
 // backend numbers each marker by its index into reference.chunks. A string

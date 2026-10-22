@@ -122,8 +122,84 @@ func TestCitationMarkerStreamFilter_FlushRules(t *testing.T) {
 	if got := unclosed.Push("answer [ID:good"); got != "answer " {
 		t.Fatalf("Push held the unclosed marker, got %q", got)
 	}
-	if got := unclosed.Flush(); got != "" {
-		t.Fatalf("Flush = %q, want the unclosed marker dropped", got)
+	if got := unclosed.Flush(); got != "[ID:good" {
+		t.Fatalf("Flush = %q, want the unclosed marker left literal", got)
+	}
+}
+
+func TestCitationMarkerStreamFilter_KeepsTextAfterUnclosedMarker(t *testing.T) {
+	filter := newCitationMarkerStreamFilter([]string{"good"})
+	var out strings.Builder
+	for _, delta := range []string{"answer ", "[ID:good", " more text"} {
+		out.WriteString(filter.Push(delta))
+	}
+	out.WriteString(filter.Flush())
+
+	content := "answer [ID:good more text"
+	want := filterCitationMarkers(content, []string{"good"})
+	if got := out.String(); got != want {
+		t.Fatalf("streamed = %q, want %q", got, want)
+	}
+	if !strings.Contains(out.String(), "more text") {
+		t.Fatalf("streamed = %q, want the text after the unclosed marker", out.String())
+	}
+}
+
+func TestCitationMarkerStreamFilter_BoundsLongCandidate(t *testing.T) {
+	filter := newCitationMarkerStreamFilter([]string{"good"})
+	long := "[ID:" + strings.Repeat("x", citationMarkerMaxLength)
+
+	got := filter.Push(long) + filter.Flush()
+	if got == "" {
+		t.Fatal("Push buffered an over-long non-marker instead of emitting it")
+	}
+	if want := filterCitationMarkers(long, []string{"good"}); got != want {
+		t.Fatalf("streamed = %q, want %q", got, want)
+	}
+}
+
+func TestCitationMarkerStreamFilter_MatchesFinalFilter(t *testing.T) {
+	allowed := []string{"good", "a2d067519c9e0db1"}
+	cases := []struct {
+		name    string
+		content string
+		splits  []int
+	}{
+		{name: "valid marker", content: "answer [ID:good] done", splits: []int{7, 12}},
+		{name: "invalid marker", content: "keep [ID:bad] text", splits: []int{9}},
+		{name: "unclosed marker", content: "answer [ID:good more text", splits: []int{7, 15}},
+		{name: "over-long marker", content: "[ID:" + strings.Repeat("x", citationMarkerMaxLength+10) + "] tail", splits: []int{20, 40}},
+		{name: "plain brackets", content: "see [note] and [", splits: []int{5}},
+		{name: "no markers", content: "just answer text", splits: []int{4}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			want := filterCitationMarkers(tc.content, allowed)
+			filter := newCitationMarkerStreamFilter(allowed)
+			var out strings.Builder
+			prev := 0
+			for _, cut := range tc.splits {
+				if cut <= prev || cut >= len(tc.content) {
+					continue
+				}
+				out.WriteString(filter.Push(tc.content[prev:cut]))
+				prev = cut
+			}
+			out.WriteString(filter.Push(tc.content[prev:]))
+			out.WriteString(filter.Flush())
+			if got := out.String(); got != want {
+				t.Fatalf("streamed = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestFilterCitationMarkers_LeavesOverlongMarkerLiteral(t *testing.T) {
+	id := strings.Repeat("a", citationMarkerMaxLength)
+	overlong := "[ID:" + id + "]"
+	if got := filterCitationMarkers(overlong, []string{id}); got != overlong {
+		t.Fatalf("filterCitationMarkers(overlong) = %q, want it left literal", got)
 	}
 }
 

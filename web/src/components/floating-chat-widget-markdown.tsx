@@ -24,7 +24,6 @@ import {
 } from '@/hooks/use-document-request';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
-  currentReg,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
@@ -33,7 +32,10 @@ import {
   resolveCitationChunk,
   showImage,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
+import {
+  citationMarkerReg,
+  citationWholeMarkerReg,
+} from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -275,7 +277,7 @@ const FloatingChatWidgetMarkdown = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      return reactStringReplace(text, currentReg, (match, i) => {
+      return reactStringReplace(text, citationWholeMarkerReg, (match, i) => {
         const chunkKey = getChunkKey(match);
         const info = getReferenceInfo(chunkKey);
 

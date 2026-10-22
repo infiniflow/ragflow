@@ -1,6 +1,8 @@
 import type { IReferenceChunk } from '@/interfaces/database/chat';
+import reactStringReplace from 'react-string-replace';
 import {
   buildCitationDisplayMap,
+  citationWholeMarkerReg,
   parseCitationIndex,
   resolveCitationChunk,
 } from '../citation-utils';
@@ -95,6 +97,23 @@ describe('resolveCitationChunk', () => {
   it('tolerates an empty payload', () => {
     expect(resolveCitationChunk(undefined, 0)).toBeUndefined();
     expect(resolveCitationChunk(null, 'a2d067519c9e0db1')).toBeUndefined();
+  });
+});
+
+describe('citationWholeMarkerReg', () => {
+  it('hands react-string-replace the whole marker, not the bare id', () => {
+    const seen: string[] = [];
+    reactStringReplace(
+      'see [ID:0000123456789012] here',
+      citationWholeMarkerReg,
+      (match) => {
+        seen.push(match);
+        return match;
+      },
+    );
+
+    expect(seen).toEqual(['[ID:0000123456789012]']);
+    expect(parseCitationIndex(seen[0])).toBe('0000123456789012');
   });
 });
 

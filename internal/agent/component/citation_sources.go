@@ -30,6 +30,13 @@ import (
 // model's context window.
 const citationGroundingSourceTokenBudget = 30000
 
+// citationMarkerMaxLength bounds a citation marker's full text length. It is
+// far above [ID:<chunk id>] for any real chunk id, so a candidate longer than
+// this is not a marker. The stream filter stops holding at this bound and the
+// final filter leaves such text literal, keeping the streamed and saved
+// content identical.
+const citationMarkerMaxLength = 128
+
 // citationGroundingMarkerCaptureRe matches a canonical [ID:<id>] marker and
 // captures the id. Whitespace after "ID:" is tolerated and normalized away.
 var citationGroundingMarkerCaptureRe = regexp.MustCompile(`\[ID:\s*([^\]]*)\]`)
@@ -75,6 +82,11 @@ func filterCitationMarkersWithSet(content string, allowed map[string]struct{}) s
 		return ""
 	}
 	return citationGroundingMarkerCaptureRe.ReplaceAllStringFunc(content, func(marker string) string {
+		// A marker longer than the cap is not a real citation id; keep the text
+		// visible instead of silently dropping it.
+		if len(marker) > citationMarkerMaxLength {
+			return marker
+		}
 		match := citationGroundingMarkerCaptureRe.FindStringSubmatch(marker)
 		if len(match) < 2 {
 			return ""
@@ -111,7 +123,7 @@ func (f *citationMarkerStreamFilter) Push(delta string) string {
 	}
 	text := f.pending + delta
 	f.pending = ""
-	if hold := citationMarkerHoldStart(text); hold >= 0 {
+	if hold := citationMarkerHoldStart(text); hold >= 0 && len(text)-hold <= citationMarkerMaxLength {
 		f.pending = text[hold:]
 		text = text[:hold]
 	}
@@ -124,9 +136,9 @@ func (f *citationMarkerStreamFilter) Flush() string {
 	if text == "" {
 		return ""
 	}
-	if strings.HasPrefix(text, "[ID:") {
-		return ""
-	}
+	// Apply the same filter as the final (non-stream) path: a well-formed
+	// marker is filtered or kept, while an unclosed [ID:... stays literal
+	// instead of swallowing the text that follows it.
 	return filterCitationMarkersWithSet(text, f.allowed)
 }
 
