@@ -59,6 +59,7 @@ from rag.nlp import (
     concat_img,
     decode_text,
     doc_tokenize_chunks_with_images,
+    merge_chunks_by_reading_order,
     naive_merge,
     naive_merge_docx,
     naive_merge_with_images,
@@ -1151,6 +1152,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
     res = []
     pdf_parser = None
     section_images = None
+    # Figures/tables the PDF parser produced; merged into the text chunks below.
+    pdf_media_chunks = None
 
     is_root = kwargs.get("is_root", True)
     embed_res = []
@@ -1285,7 +1288,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
-        res = tokenize_table(tables, doc, is_english, language=lang)
+        pdf_media_chunks = tokenize_table(tables, doc, is_english, language=lang)
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.(csv|xlsx?)$", filename, re.IGNORECASE):
@@ -1503,7 +1506,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         else:
             chunks = naive_merge(sections, int(parser_config.get("chunk_token_num", 128)), parser_config.get("delimiter", DEFAULT_DELIMITER), overlapped_percent)
 
-            res.extend(tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang))
+            text_chunks = tokenize_chunks(chunks, doc, is_english, pdf_parser, child_delimiters_pattern=child_deli, language=lang)
+            res.extend(merge_chunks_by_reading_order(pdf_media_chunks, text_chunks))
 
     if urls and parser_config.get("analyze_hyperlink", False) and is_root:
         for index, url in enumerate(urls):
