@@ -204,6 +204,25 @@ jobs:
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "Go: ${has_go}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}"
 
+  ragflow_python_sdk_unit:
+    name: ragflow_python_sdk_unit
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install Python SDK
+        run: |
+          uv venv --python 3.13
+          uv pip install -e sdk/python pytest
+
+      - name: Run Python SDK unit tests
+        run: .venv/bin/python -m pytest sdk/python/tests -q
+
   ragflow_tests_infinity:
     name: ragflow_tests_infinity
     needs: ragflow_preflight

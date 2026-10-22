@@ -59,7 +59,7 @@ The following changes require client updates:
 
 | Area | RAGFlow 1.0 Go change | Client action |
 |------|------------------------|---------------|
-| Dataset parser selection | Dataset create and update use `parser_id`; responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `parser_id`. For the general parser, send `"parser_id": "general"`. |
+| Dataset parser selection | Dataset create and update use `parse_type` with `parser_id` (BuiltIn) or `pipeline_id` (Pipeline); responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `"parse_type": 1` and `"parser_id": "<builtin parser>"`. For the general parser, send `"parser_id": "general"`. |
 | Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
 | Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
 
@@ -537,18 +537,15 @@ Creates a dataset.
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
-  - `"avatar"`: `string`
-  - `"description"`: `string`
+  - `"parse_type"`: `int`
+  - `"parser_id"`: `string`
+  - `"pipeline_id"`: `string`
   - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
-  - `"parser_id"`: `string`
-  - `"chunk_method"`: `string`
   - `"parser_config"`: `object`
-  - `"parse_type"`: `int`
-  - `"pipeline_id"`: `string`
 
-##### A request example creating a built-in general dataset
+##### A basic request example
 
 ```bash
 curl --request POST \
@@ -566,7 +563,7 @@ curl --request POST \
 ##### A request example specifying ingestion pipeline
 
 :::caution WARNING
-You must *not* include `"chunk_method"` or `"parser_config"` when specifying an ingestion pipeline.
+Do not include `"parser_id"` when specifying an ingestion pipeline.
 :::
 
 ```bash
@@ -591,14 +588,6 @@ curl --request POST \
   - Case-insensitive
   If the name is already taken, the dataset is created with a numbered suffix such as `test_1(1)`, `test_1(2)`, and so on.
 
-- `"avatar"`: `string`
-  Base64 encoding of the avatar.
-  - Maximum 65535 characters
-
-- `"description"`: `string`
-  A brief description of the dataset to create.
-  - Maximum 65535 characters
-
 - `"language"`: `string`
   Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the server/database default is used.
 
@@ -615,84 +604,40 @@ curl --request POST \
 - `"parser_id"`: `enum<string>`
   The built-in parser to use. Required when `"parse_type"` is `1`.
   - `"general"`: General (default)
-  - `"book"`: Book
-  - `"email"`: Email
-  - `"laws"`: Laws
-  - `"manual"`: Manual
-  - `"one"`: One
-  - `"paper"`: Paper
-  - `"picture"`: Picture
-  - `"presentation"`: Presentation
   - `"qa"`: Q&A
-  - `"table"`: Table
-  - `"tag"`: Tag
-  - Must not be included when `"parse_type"` is `2`.
-
-- `"chunk_method"`: `enum<string>`
-  Legacy alias of `"parser_id"` kept for Python-backend compatibility. The Go backend creates datasets with `"parser_id"` instead; do not send `"chunk_method"` together with `"parse_type"` or `"pipeline_id"`.
-  Available options:
-  - `"naive"`: General (default)
-  - `"book"`: Book
-  - `"email"`: Email
-  - `"laws"`: Laws
   - `"manual"`: Manual
-  - `"one"`: One
-  - `"paper"`: Paper
-  - `"picture"`: Picture
-  - `"presentation"`: Presentation
-  - `"qa"`: Q&A
   - `"table"`: Table
-  - `"tag"`: Tag
+  - `"paper"`: Paper
+  - `"book"`: Book
+  - `"laws"`: Laws
+  - `"presentation"`: Presentation
+  - `"picture"`: Picture
+  - `"one"`: One
+  - `"audio"`: Audio
+  - `"email"`: Email
+  - Must be omitted when `"parse_type"` is `2`.
 
 - `"parser_config"`: `object`
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"parser_id"`:
-  - If `"parser_id"` is `"general"` (`"naive"` alias), the `"parser_config"` object contains the following attributes:
-    - `"auto_keywords"`: `int`
-      - Defaults to `0`
-      - Minimum: `0`
-      - Maximum: `32`
-    - `"auto_questions"`: `int`
-      - Defaults to `0`
-      - Minimum: `0`
-      - Maximum: `10`
-    - `"chunk_token_num"`: `int`
-      - Defaults to `512`
-      - Minimum: `1`
-      - Maximum: `2048`
-    - `"delimiter"`: `string`
-      - Defaults to `"\n"`.
-    - `"html4excel"`: `bool`
-      - Whether to convert Excel documents into HTML format.
-      - Defaults to `false`
-    - `"layout_recognize"`: `string`
-      - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>`
-      - IDs of datasets to be parsed using the ​​Tag chunk method.
-      - Before setting this, ensure a tag set is created and properly configured. For details, see [Use tag set](https://ragflow.io/docs/dev/dataset_configuration).
-    - `"task_page_size"`: `int`
-      - For PDFs only.
-      - Defaults to `12`
-      - Minimum: `1`
-    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
-      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
-      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
+  The configuration settings for the dataset parser. RAGFlow 1.0 stores parser settings per ingestion-pipeline component; use component-scoped keys (keys containing `:`) as returned by the API. Legacy flat keys are ignored.
 
-- `"parse_type"`: `int`
-  How the dataset selects its parser: `1` = built-in (`"parser_id"`), `2` = ingestion pipeline (`"pipeline_id"`).
-  - Required. Use `1` together with `"parser_id"`, or `2` together with `"pipeline_id"`.
-  - Do not mix the two options.
+- `"parse_type"`: `int`, *Required*
+  The parser selection mode:
+  - `1`: BuiltIn. Requires `"parser_id"`.
+  - `2`: Pipeline. Requires `"pipeline_id"`.
 
 - `"pipeline_id"`: `string`
   The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
-  - Required (along with `"parse_type": 2`) if specifying an ingestion pipeline.
+  - Required when `"parse_type"` is `2`.
   - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
-  - Must not be included when `"parse_type"` is `1`.
+  - Must be omitted when `"parse_type"` is `1`.
 
 :::caution WARNING
-You can choose either of the following ingestion options when creating a dataset, but *not* both:
+`"parse_type"` is required when creating a dataset. Choose exactly one mode:
 
-- Use a built-in parser -- specify `"parse_type": 1` with `"parser_id"` (optionally with `"parser_config"`).
-- Use an ingestion pipeline -- specify both `"parse_type": 2` and `"pipeline_id"`.
+- `"parse_type": 1` with `"parser_id"` for a builtin parser.
+- `"parse_type": 2` with `"pipeline_id"` for an ingestion pipeline.
+
+`"chunk_method"`, `"avatar"`, `"description"`, and `"auto_metadata_config"` are not accepted by the RAGFlow 1.0 create endpoint. Use `"parser_id"` instead of `"chunk_method"`; set avatar and description with the update endpoint, and metadata configuration with the metadata endpoint.
 :::
 
 #### Response
@@ -703,13 +648,9 @@ Success:
 {
     "code": 0,
     "data": {
-        "avatar": null,
         "chunk_count": 0,
-        "chunk_method": "naive",
-        "create_date": "2025-04-28T18:40:41",
         "create_time": 1745836841611,
         "created_by": "3af81804241d11f0a6a79f24fc270c7f",
-        "description": null,
         "document_count": 0,
         "embedding_model": "BAAI/bge-large-zh-v1.5@BAAI",
         "id": "3b4de7d4241d11f0a6a79f24fc270c7f",
@@ -717,20 +658,22 @@ Success:
         "name": "RAGFlow example",
         "pagerank": 0,
         "parser_config": {
-            "chunk_token_num": 128,
-            "delimiter": "\\n!?;。；！？",
-            "html4excel": false,
-            "layout_recognize": "DeepDOC"
+            "GeneralChunker:SixApplesFall": {
+                "chunk_token_size": 128,
+                "delimiters": ["\n", "!?;。；！？"],
+                "parent_child": {
+                    "use_parent_child": false,
+                    "children_delimiter": "\n"
+                }
+            }
         },
+        "parser_id": "general",
         "permission": "me",
         "similarity_threshold": 0.2,
-        "status": "1",
         "tenant_id": "3af81804241d11f0a6a79f24fc270c7f",
         "token_num": 0,
-        "update_date": "2025-04-28T18:40:41",
-        "update_time": 1745836841611,
-        "keywords_similarity_weight": 0.7,
-    },
+        "keywords_similarity_weight": 0.7
+    }
 }
 ```
 
@@ -835,8 +778,10 @@ Updates configurations for a specified dataset.
   - `"language"`: `string`
   - `"embedding_model"`: `string`
   - `"permission"`: `string`
-  - `"chunk_method"`: `string`
   - `"pagerank"`: `int`
+  - `"parse_type"`: `int`
+  - `"parser_id"`: `string`
+  - `"pipeline_id"`: `string`
   - `"parser_config"`: `object`
 
 ##### Request example
@@ -880,49 +825,16 @@ curl --request PUT \
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
-- `"chunk_method"`: (*Body parameter*), `enum<string>`
-  The chunking method for the dataset. Available options:
-  - `"naive"`: General (default)
-  - `"book"`: Book
-  - `"email"`: Email
-  - `"laws"`: Laws
-  - `"manual"`: Manual
-  - `"one"`: One
-  - `"paper"`: Paper
-  - `"picture"`: Picture
-  - `"presentation"`: Presentation
-  - `"qa"`: Q&A
-  - `"table"`: Table
-  - `"tag"`: Tag
+- `"parse_type"`: (*Body parameter*), `int`
+  The parser selection mode: `1` for a builtin parser (`parser_id` required) or `2` for an ingestion pipeline (`pipeline_id` required). Required whenever `parser_id` or `pipeline_id` is provided.
+- `"parser_id"`: (*Body parameter*), `string`
+  The builtin parser ID. Required when `parse_type` is `1`; must be omitted when `parse_type` is `2`.
+- `"pipeline_id"`: (*Body parameter*), `string`
+  The ingestion pipeline ID. Required when `parse_type` is `2`; must be omitted when `parse_type` is `1`.
 - `"parser_config"`: (*Body parameter*), `object`
-  The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
-  - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
-    - `"auto_keywords"`: `int`
-      - Defaults to `0`
-      - Minimum: `0`
-      - Maximum: `32`
-    - `"auto_questions"`: `int`
-      - Defaults to `0`
-      - Minimum: `0`
-      - Maximum: `10`
-    - `"chunk_token_num"`: `int`
-      - Defaults to `512`
-      - Minimum: `1`
-      - Maximum: `2048`
-    - `"delimiter"`: `string`
-      - Defaults to `"\n"`.
-    - `"html4excel"`: `bool` Indicates whether to convert Excel documents into HTML format.
-      - Defaults to `false`
-    - `"layout_recognize"`: `string`
-      - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/dataset_configuration).
-      - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
-    - `"task_page_size"`: `int` For PDF only.
-      - Defaults to `12`
-      - Minimum: `1`
-    - `"parent_child"`: `object` Parent-child chunking settings. When enabled, each chunk is further split into smaller child chunks using `children_delimiter`. At retrieval time, matched child chunks are replaced by their parent's full text before being passed to the LLM, giving precise vector matching with broader context.
-      - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
-      - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
+  The configuration settings for the dataset parser. RAGFlow 1.0 stores parser settings per ingestion-pipeline component; use component-scoped keys (keys containing `:`) as returned by the API. Legacy flat keys are ignored.
+
+`chunk_method` is not supported by RAGFlow 1.0; use `parse_type` together with `parser_id` or `pipeline_id`.
 
 
 #### Response
@@ -1020,17 +932,12 @@ Success:
             "id": "6e211ee0723611efa10a0242ac120007",
             "language": "English",
             "name": "mysql",
-            "chunk_method": "naive",
+            "parser_id": "general",
             "parser_config": {
-                "chunk_token_num": 8192,
-                "delimiter": "\\n",
-                "entity_types": [
-                    "organization",
-                    "person",
-                    "location",
-                    "event",
-                    "time"
-                ]
+                "GeneralChunker:SixApplesFall": {
+                    "chunk_token_size": 8192,
+                    "delimiters": ["\n"]
+                }
             },
             "permission": "me",
             "similarity_threshold": 0.2,
@@ -1056,7 +963,7 @@ Success (with `include_parsing_status=true`):
             "avatar": null,
             "cancel_count": 0,
             "chunk_count": 30,
-            "chunk_method": "qa",
+            "parser_id": "qa",
             "create_date": "2026-03-09T18:57:13",
             "create_time": 1773053833094,
             "created_by": "928f92a210b911f1ac4cc39e0b8fa3ad",
@@ -1069,7 +976,9 @@ Success (with `include_parsing_status=true`):
             "language": "English",
             "name": "Test Dataset",
             "parser_config": {
-                "llm_id": "deepseek-chat@DeepSeek"
+                "Extractor:AutoExtractDefault": {
+                    "llm_id": "deepseek-chat@DeepSeek"
+                }
             },
             "permission": "me",
             "running_count": 0,
