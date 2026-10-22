@@ -1,18 +1,23 @@
 //
-// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
 //
 //      http://www.apache.org/licenses/LICENSE-2.0
 //
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
 //
+
+// Linked-content fetching is the Parser post-step: it collects a document's
+// outbound links, GETs them under a per-page and per-document byte budget with a
+// derived deadline, parses each page as plain HTML, and appends the items tagged
+// with where they came from.
 
 package component
 
@@ -21,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -73,7 +79,6 @@ func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType 
 	if parentID == "" {
 		parentID = filename
 	}
-	client := common.GetSSRFHTTPClient()
 	// Document-level deadline: per-URL timeouts alone allow maxURLs*timeout
 	// worker occupancy (100 minutes at the configuration maxima). The overall
 	// budget is derived from the same parameters and capped at five minutes.
@@ -110,7 +115,7 @@ func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType 
 		if remaining < readCap {
 			readCap = remaining
 		}
-		body, finalURL, consumed, warn := fetchHyperlinkPage(fetchCtx, client, url, param.TimeoutSeconds, readCap)
+		body, finalURL, consumed, warn := fetchHyperlinkPage(fetchCtx, url, time.Duration(param.TimeoutSeconds)*time.Second, readCap)
 		total += consumed
 		if warn != "" {
 			warnings = append(warnings, warn)
@@ -128,7 +133,7 @@ func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType 
 		parsedFinal[key] = true
 		sub := dispatchParse(fetchCtx, utility.FileTypeHTML, finalURL, body, c.setups, progress.Window{})
 		if sub.Err != nil {
-			warnings = append(warnings, fmt.Sprintf("hyperlink: parse %s failed (%v)", finalURL, sub.Err))
+			warnings = append(warnings, fmt.Sprintf("hyperlink: parse %s failed: %v", finalURL, sub.Err))
 			continue
 		}
 		fetched++
@@ -157,6 +162,10 @@ func (c *ParserComponent) fetchHyperlinkedContent(ctx context.Context, fileType 
 	return out, warnings
 }
 
+// hyperlinkMaxRedirects bounds how far one linked URL is followed. Each hop is
+// validated and pinned separately, so the limit is about work done, not safety.
+const hyperlinkMaxRedirects = 10
+
 // hyperlinkOverallDeadline bounds one document's linked fetching. It derives
 // from the per-URL timeout and URL count so no extra config knob is needed.
 func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
@@ -167,41 +176,88 @@ func hyperlinkOverallDeadline(param schema.HyperlinkFetchParam) time.Duration {
 	return total
 }
 
-// fetchHyperlinkPage GETs one page through the guarded SSRF client with a
-// per-URL timeout and a hard response cap (readCap, the smaller of the
-// per-page and remaining document budgets). It returns the body, the final
-// URL after redirects, the bytes consumed (charged to the document budget
-// even when the response is rejected), or a warning (empty body on warning).
-func fetchHyperlinkPage(ctx context.Context, client *http.Client, url string, timeoutSeconds int, readCap int64) (body []byte, finalURL string, consumed int64, warning string) {
-	urlCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+// fetchHyperlinkPage GETs one page, following redirects itself so every hop is
+// validated and dialed at the address the validation returned: the shared
+// SSRF client re-resolves DNS after checking, which leaves a rebinding window
+// that a document-supplied URL can exploit. Per-URL timeout and a hard response
+// cap (readCap, the smaller of the per-page and remaining document budgets)
+// still apply across the whole chain. It returns the body, the final URL after
+// redirects, the bytes consumed (charged to the document budget even when the
+// response is rejected), or a warning (empty body on warning).
+//
+// utility.FetchRemoteFileSafelyWithTimeout is the same shape but buffers the
+// body before the caller can see it: this path has to reject a non-page
+// content type without charging its bytes to the document budget.
+func fetchHyperlinkPage(ctx context.Context, rawURL string, timeout time.Duration, readCap int64) (body []byte, finalURL string, consumed int64, warning string) {
+	urlCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(urlCtx, http.MethodGet, url, nil)
+
+	current := rawURL
+	for hop := 0; ; hop++ {
+		hostname, resolvedIP, err := common.AssertURLSafe(current)
+		if err != nil {
+			return nil, "", 0, fmt.Sprintf("hyperlink: skip %s: %v", rawURL, err)
+		}
+		client := utility.PinnedHTTPClient(hostname, resolvedIP, timeout)
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		req, err := http.NewRequestWithContext(urlCtx, http.MethodGet, current, nil)
+		if err != nil {
+			return nil, "", 0, fmt.Sprintf("hyperlink: skip %s: %v", rawURL, err)
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s failed: %v", rawURL, err)
+		}
+		if location := redirectLocation(resp, current); location != "" {
+			_ = resp.Body.Close()
+			if hop+1 >= hyperlinkMaxRedirects {
+				return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (too many redirects)", rawURL)
+			}
+			current = location
+			continue
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s returned status %s", rawURL, resp.Status)
+		}
+		contentType := resp.Header.Get("Content-Type")
+		if !isFetchableContentType(contentType) {
+			return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (content type %q is not a page)", rawURL, contentType)
+		}
+		capped, err := io.ReadAll(io.LimitReader(resp.Body, readCap+1))
+		if err != nil {
+			return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: read %s failed: %v", rawURL, err)
+		}
+		if int64(len(capped)) > readCap {
+			return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", rawURL, readCap)
+		}
+		return capped, current, int64(len(capped)), ""
+	}
+}
+
+// redirectLocation returns the absolute URL one redirect response points at, or
+// "" when the response is not a redirect. The caller dials it only after it has
+// been validated in turn.
+func redirectLocation(resp *http.Response, from string) string {
+	switch resp.StatusCode {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return ""
+	}
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return ""
+	}
+	base, err := url.Parse(from)
 	if err != nil {
-		return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (%v)", url, err)
+		return ""
 	}
-	resp, err := client.Do(req)
+	next, err := base.Parse(location)
 	if err != nil {
-		return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s failed (%v)", url, err)
+		return ""
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", 0, fmt.Sprintf("hyperlink: fetch %s returned status %s", url, resp.Status)
-	}
-	contentType := resp.Header.Get("Content-Type")
-	if !isFetchableContentType(contentType) {
-		return nil, "", 0, fmt.Sprintf("hyperlink: skip %s (content type %q is not a page)", url, contentType)
-	}
-	capped, err := io.ReadAll(io.LimitReader(resp.Body, readCap+1))
-	if err != nil {
-		return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: read %s failed (%v)", url, err)
-	}
-	if int64(len(capped)) > readCap {
-		return nil, "", int64(len(capped)), fmt.Sprintf("hyperlink: skip %s (over %d byte limit)", url, readCap)
-	}
-	if resp.Request != nil && resp.Request.URL != nil {
-		return capped, resp.Request.URL.String(), int64(len(capped)), ""
-	}
-	return capped, url, int64(len(capped)), ""
+	return next.String()
 }
 
 func isFetchableContentType(contentType string) bool {

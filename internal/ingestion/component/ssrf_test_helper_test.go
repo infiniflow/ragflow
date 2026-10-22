@@ -17,3 +17,13 @@ func withSSRFBypass(t *testing.T) {
 	common.AllowAnyHostForTest = true
 	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
 }
+
+// withoutSSRFBypass pins the guard ON for tests that assert a refused
+// destination, so they cannot start passing because another test in the
+// package left the bypass set.
+func withoutSSRFBypass(t *testing.T) {
+	t.Helper()
+	prev := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = false
+	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+}
