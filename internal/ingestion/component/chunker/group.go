@@ -325,6 +325,16 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		// Item-level `extra` (linked-content provenance among others) rides the
+		// chunk the way the General/Token paths re-emit ChunkDoc.Extra. A merged
+		// group spans several items, so the first record carrying `extra` owns it
+		// — a heading-only leading record must not drop the label.
+		for _, r := range g {
+			if raw, ok := r.parentMeta["extra"]; ok {
+				chunk["extra"] = raw
+				break
+			}
+		}
 		if g[0].preserveOrder {
 			chunk["_preserve_order"] = true
 		}

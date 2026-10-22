@@ -1173,6 +1173,20 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 		prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
 		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
 		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+		// A joined chunk covers every unit it absorbed, so it carries their
+		// dynamic keys too (first unit wins per key), matching the general
+		// chunker's merge. Without this, a chunk that spans the parent body and
+		// an appended linked page drops that page's provenance (#21032).
+		if len(ck.Extra) > 0 {
+			if prev.Extra == nil {
+				prev.Extra = make(map[string]json.RawMessage, len(ck.Extra))
+			}
+			for key, value := range ck.Extra {
+				if _, exists := prev.Extra[key]; !exists {
+					prev.Extra[key] = append(json.RawMessage(nil), value...)
+				}
+			}
+		}
 		mergedItems[prevIdx] = append(mergedItems[prevIdx], cur)
 	}
 	return merged
