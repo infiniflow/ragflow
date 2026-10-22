@@ -237,10 +237,10 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	operationLog.ResourceName = req.Email
 
 	if !local.IsAdminAvailable() {
-		license := local.GetAdminStatus()
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", license.Reason)
+		adminStatus := local.GetAdminStatus()
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", adminStatus.Reason)
 		operationLog.ErrorCode = uint16(common.CodeAuthenticationError)
-		operationLog.Message = license.Reason
+		operationLog.Message = adminStatus.Reason
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
