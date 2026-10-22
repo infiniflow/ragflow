@@ -105,3 +105,22 @@ def test_legacy_index_pages_past_max_result_window_with_search_after():
     assert len(res["hits"]["hits"]) == 1000
     assert all("from" not in q for q in queries)
     assert all(q["sort"] == [{"id.keyword": {"order": "asc", "unmapped_type": "keyword"}}] for q in queries)
+
+
+def test_unsortable_id_mapping_and_deep_offset_raises():
+    conn = _connection(
+        {
+            "ragflow_a": {"mappings": {"id": _KEYWORD_ID}},
+            "ragflow_b": {"mappings": {"id": _TEXT_ID}},
+        }
+    )
+
+    def search_once(_index_names, query, **_kwargs):
+        if query.get("from", 0) + query.get("size", 10) > es_conn.MAX_RESULT_WINDOW:
+            raise RuntimeError("Result window is too large")
+        return {"timed_out": False, "hits": {"total": {"value": 20000}, "hits": []}}
+
+    conn._es_search_once = search_once
+
+    with pytest.raises(Exception, match="Result window"):
+        conn.search(["id"], [], {}, [], OrderByExpr().asc("id"), 10000, 1000, ["ragflow_a", "ragflow_b"], ["kb-1"])

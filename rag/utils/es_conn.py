@@ -299,8 +299,8 @@ class ESConnection(ESConnectionBase):
         for field in highlight_fields:
             s = s.highlight(field, fragment_size=50, number_of_fragments=5)
 
+        orders = list()
         if order_by:
-            orders = list()
             for field, order in order_by.fields:
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
@@ -322,7 +322,7 @@ class ESConnection(ESConnectionBase):
                 s.aggs.bucket(f"aggs_{fld}", "terms", field=fld, size=1000000)
 
         has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
-        has_explicit_sort = bool(order_by and order_by.fields)
+        has_explicit_sort = bool(orders)
         use_search_after = limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
 
         if limit > 0 and not use_search_after:
