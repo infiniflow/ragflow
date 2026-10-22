@@ -18,54 +18,6 @@ package schema
 
 import (
 	"fmt"
-	"math"
-)
-
-// Linked-content Parser setup keys (#21032). Parser Check rejects them under
-// families that do not support fetching, so these names and
-// HyperlinkFetchParam move together.
-const (
-	HyperlinkKeyFetchLinks           = "fetch_links"
-	HyperlinkKeyCollectMarkdownLinks = "collect_markdown_links"
-	HyperlinkKeyMaxURLs              = "max_urls"
-	HyperlinkKeyMaxBytesPerURL       = "max_bytes_per_url"
-	HyperlinkKeyMaxTotalBytes        = "max_total_bytes"
-	HyperlinkKeyTimeoutSeconds       = "timeout_s"
-)
-
-// hyperlinkBudgetKeys are the numeric members of the key set above.
-var hyperlinkBudgetKeys = []string{
-	HyperlinkKeyMaxURLs,
-	HyperlinkKeyMaxBytesPerURL,
-	HyperlinkKeyMaxTotalBytes,
-	HyperlinkKeyTimeoutSeconds,
-}
-
-// hyperlinkBudgetValue coerces a setup budget to an int through the package's
-// JSON-number normalizer, then requires a whole number: a fractional value, a
-// bool or a string is rejected instead of silently truncated or counted as 1.
-func hyperlinkBudgetValue(raw any) (int, bool) {
-	v, ok := NumericFromAny(raw)
-	if !ok || v != math.Trunc(v) || v < math.MinInt32 || v > math.MaxInt32 {
-		return 0, false
-	}
-	return int(v), true
-}
-
-// Hyperlink fetch bounds for the opt-in linked-content ingestion (#21032).
-// Budgets are shared by the pdf, docx and markdown families; each family
-// carries its own copy under its setup so one model serves all types
-// without repeating the numbers in code.
-const (
-	HyperlinkDefaultMaxURLs        = 5
-	HyperlinkDefaultMaxBytesPerURL = 1 << 20
-	HyperlinkDefaultMaxTotalBytes  = 5 << 20
-	HyperlinkDefaultTimeoutSeconds = 10
-
-	hyperlinkMaxURLsLimit        = 50
-	hyperlinkMaxBytesPerURLLimit = 64 << 20
-	hyperlinkMaxTotalBytesLimit  = 256 << 20
-	hyperlinkTimeoutSecondsLimit = 120
 )
 
 // HyperlinkFetchParam is the per-family linked-content switch (#21032).
@@ -86,27 +38,27 @@ func (HyperlinkFetchParam) Defaults() HyperlinkFetchParam {
 	return HyperlinkFetchParam{
 		FetchLinks:           false,
 		CollectMarkdownLinks: false,
-		MaxURLs:              HyperlinkDefaultMaxURLs,
-		MaxBytesPerURL:       HyperlinkDefaultMaxBytesPerURL,
-		MaxTotalBytes:        HyperlinkDefaultMaxTotalBytes,
-		TimeoutSeconds:       HyperlinkDefaultTimeoutSeconds,
+		MaxURLs:              5,
+		MaxBytesPerURL:       1 << 20,
+		MaxTotalBytes:        5 << 20,
+		TimeoutSeconds:       10,
 	}
 }
 
 // Validate enforces ranges; a disabled param still validates its budgets
 // so a later enable cannot silently pick up nonsense.
 func (p *HyperlinkFetchParam) Validate() error {
-	if p.MaxURLs < 1 || p.MaxURLs > hyperlinkMaxURLsLimit {
-		return errInvalidValue{Field: HyperlinkKeyMaxURLs, Value: fmt.Sprintf("%d", p.MaxURLs)}
+	if p.MaxURLs < 1 || p.MaxURLs > 50 {
+		return errInvalidValue{Field: "max_urls", Value: fmt.Sprintf("%d", p.MaxURLs)}
 	}
-	if p.MaxBytesPerURL < 1 || p.MaxBytesPerURL > hyperlinkMaxBytesPerURLLimit {
-		return errInvalidValue{Field: HyperlinkKeyMaxBytesPerURL, Value: fmt.Sprintf("%d", p.MaxBytesPerURL)}
+	if p.MaxBytesPerURL < 1 || p.MaxBytesPerURL > 64<<20 {
+		return errInvalidValue{Field: "max_bytes_per_url", Value: fmt.Sprintf("%d", p.MaxBytesPerURL)}
 	}
-	if p.MaxTotalBytes < 1 || p.MaxTotalBytes > hyperlinkMaxTotalBytesLimit {
-		return errInvalidValue{Field: HyperlinkKeyMaxTotalBytes, Value: fmt.Sprintf("%d", p.MaxTotalBytes)}
+	if p.MaxTotalBytes < 1 || p.MaxTotalBytes > 256<<20 {
+		return errInvalidValue{Field: "max_total_bytes", Value: fmt.Sprintf("%d", p.MaxTotalBytes)}
 	}
-	if p.TimeoutSeconds < 1 || p.TimeoutSeconds > hyperlinkTimeoutSecondsLimit {
-		return errInvalidValue{Field: HyperlinkKeyTimeoutSeconds, Value: fmt.Sprintf("%d", p.TimeoutSeconds)}
+	if p.TimeoutSeconds < 1 || p.TimeoutSeconds > 120 {
+		return errInvalidValue{Field: "timeout_s", Value: fmt.Sprintf("%d", p.TimeoutSeconds)}
 	}
 	return nil
 }
@@ -161,51 +113,6 @@ func mergeSetupEntry(nested, top any) any {
 		merged[k] = v
 	}
 	return merged
-}
-
-// HyperlinkFetchParamFromSetup reads the per-family hyperlink param,
-// starting from Defaults and overlaying the setup's keys. Unknown types
-// are errors so a misconfigured canvas fails at build time.
-func HyperlinkFetchParamFromSetup(setup ParserSetup) (HyperlinkFetchParam, error) {
-	p := HyperlinkFetchParam{}.Defaults()
-	if raw, exists := setup[HyperlinkKeyFetchLinks]; exists {
-		v, ok := raw.(bool)
-		if !ok {
-			return p, errInvalidValue{Field: HyperlinkKeyFetchLinks, Value: fmt.Sprintf("%v", raw)}
-		}
-		p.FetchLinks = v
-	}
-	if raw, exists := setup[HyperlinkKeyCollectMarkdownLinks]; exists {
-		v, ok := raw.(bool)
-		if !ok {
-			return p, errInvalidValue{Field: HyperlinkKeyCollectMarkdownLinks, Value: fmt.Sprintf("%v", raw)}
-		}
-		p.CollectMarkdownLinks = v
-	}
-	for _, key := range hyperlinkBudgetKeys {
-		raw, exists := setup[key]
-		if !exists {
-			continue
-		}
-		v, ok := hyperlinkBudgetValue(raw)
-		if !ok {
-			return p, errInvalidValue{Field: key, Value: fmt.Sprintf("%v", raw)}
-		}
-		switch key {
-		case HyperlinkKeyMaxURLs:
-			p.MaxURLs = v
-		case HyperlinkKeyMaxBytesPerURL:
-			p.MaxBytesPerURL = v
-		case HyperlinkKeyMaxTotalBytes:
-			p.MaxTotalBytes = v
-		case HyperlinkKeyTimeoutSeconds:
-			p.TimeoutSeconds = v
-		}
-	}
-	if err := p.Validate(); err != nil {
-		return p, err
-	}
-	return p, nil
 }
 
 // ParserOutputs is the result of invoking the Parser component. The

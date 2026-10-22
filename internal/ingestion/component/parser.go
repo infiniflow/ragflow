@@ -79,6 +79,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -270,12 +271,75 @@ func cloneParserSetupValue(value any) any {
 // Families outside hyperlinkTargetCollectors must not carry any of them, and
 // none may sit at the params root (#21032).
 var hyperlinkSetupKeys = []string{
-	schema.HyperlinkKeyFetchLinks,
-	schema.HyperlinkKeyCollectMarkdownLinks,
-	schema.HyperlinkKeyMaxURLs,
-	schema.HyperlinkKeyMaxBytesPerURL,
-	schema.HyperlinkKeyMaxTotalBytes,
-	schema.HyperlinkKeyTimeoutSeconds,
+	"fetch_links",
+	"collect_markdown_links",
+	"max_urls",
+	"max_bytes_per_url",
+	"max_total_bytes",
+	"timeout_s",
+}
+
+// hyperlinkParamFromSetup overlays one family's setup onto the param defaults.
+// Unlike the chunker params' Update, an unusable type is an error rather than a
+// silent ignore: these values bound how much the Parser downloads, so a canvas
+// that misconfigures them must fail to compile. Errors are returned unprefixed
+// so Check can name the family they came from.
+func hyperlinkParamFromSetup(setup schema.ParserSetup) (schema.HyperlinkFetchParam, error) {
+	p := schema.HyperlinkFetchParam{}.Defaults()
+	if raw, exists := setup["fetch_links"]; exists {
+		v, ok := raw.(bool)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a boolean", "fetch_links", raw)
+		}
+		p.FetchLinks = v
+	}
+	if raw, exists := setup["collect_markdown_links"]; exists {
+		v, ok := raw.(bool)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a boolean", "collect_markdown_links", raw)
+		}
+		p.CollectMarkdownLinks = v
+	}
+	if raw, exists := setup["max_urls"]; exists {
+		v, ok := hyperlinkBudget(raw)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a whole number", "max_urls", raw)
+		}
+		p.MaxURLs = v
+	}
+	if raw, exists := setup["max_bytes_per_url"]; exists {
+		v, ok := hyperlinkBudget(raw)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a whole number", "max_bytes_per_url", raw)
+		}
+		p.MaxBytesPerURL = v
+	}
+	if raw, exists := setup["max_total_bytes"]; exists {
+		v, ok := hyperlinkBudget(raw)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a whole number", "max_total_bytes", raw)
+		}
+		p.MaxTotalBytes = v
+	}
+	if raw, exists := setup["timeout_s"]; exists {
+		v, ok := hyperlinkBudget(raw)
+		if !ok {
+			return p, fmt.Errorf("field %q has invalid value %v: want a whole number", "timeout_s", raw)
+		}
+		p.TimeoutSeconds = v
+	}
+	return p, p.Validate()
+}
+
+// hyperlinkBudget accepts a JSON number that is a whole int32, rejecting a
+// fractional value, a bool or a string instead of truncating it or counting it
+// as 1.
+func hyperlinkBudget(raw any) (int, bool) {
+	v, ok := schema.NumericFromAny(raw)
+	if !ok || v != math.Trunc(v) || v < math.MinInt32 || v > math.MaxInt32 {
+		return 0, false
+	}
+	return int(v), true
 }
 
 // Check validates parser methods at construction time so a malformed DSL
@@ -331,11 +395,11 @@ func (c *ParserComponent) Check() error {
 	for family, setup := range c.setups {
 		if _, ok := hyperlinkTargetCollectors[family]; ok {
 			if family != "markdown" {
-				if _, exists := setup[schema.HyperlinkKeyCollectMarkdownLinks]; exists {
-					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, schema.HyperlinkKeyCollectMarkdownLinks)
+				if _, exists := setup["collect_markdown_links"]; exists {
+					return fmt.Errorf("parser: %s has no hyperlink parameter %q", family, "collect_markdown_links")
 				}
 			}
-			param, err := schema.HyperlinkFetchParamFromSetup(setup)
+			param, err := hyperlinkParamFromSetup(setup)
 			if err != nil {
 				return fmt.Errorf("parser: %s %w", family, err)
 			}
@@ -377,10 +441,10 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"fetch_links":           false,
-			"max_urls":              schema.HyperlinkDefaultMaxURLs,
-			"max_bytes_per_url":     schema.HyperlinkDefaultMaxBytesPerURL,
-			"max_total_bytes":       schema.HyperlinkDefaultMaxTotalBytes,
-			"timeout_s":             schema.HyperlinkDefaultTimeoutSeconds,
+			"max_urls":              5,
+			"max_bytes_per_url":     1 << 20,
+			"max_total_bytes":       5 << 20,
+			"timeout_s":             10,
 			"suffix":                []string{"pdf"},
 		},
 		"spreadsheet": {
@@ -399,10 +463,10 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"fetch_links":           false,
-			"max_urls":              schema.HyperlinkDefaultMaxURLs,
-			"max_bytes_per_url":     schema.HyperlinkDefaultMaxBytesPerURL,
-			"max_total_bytes":       schema.HyperlinkDefaultMaxTotalBytes,
-			"timeout_s":             schema.HyperlinkDefaultTimeoutSeconds,
+			"max_urls":              5,
+			"max_bytes_per_url":     1 << 20,
+			"max_total_bytes":       5 << 20,
+			"timeout_s":             10,
 			"suffix":                []string{"docx"},
 		},
 		"markdown": {
@@ -411,10 +475,10 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_toc":             false,
 			"fetch_links":            false,
 			"collect_markdown_links": false,
-			"max_urls":               schema.HyperlinkDefaultMaxURLs,
-			"max_bytes_per_url":      schema.HyperlinkDefaultMaxBytesPerURL,
-			"max_total_bytes":        schema.HyperlinkDefaultMaxTotalBytes,
-			"timeout_s":              schema.HyperlinkDefaultTimeoutSeconds,
+			"max_urls":               5,
+			"max_bytes_per_url":      1 << 20,
+			"max_total_bytes":        5 << 20,
+			"timeout_s":              10,
 		},
 		"text&code": {
 			"suffix": []string{

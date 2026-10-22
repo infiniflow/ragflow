@@ -17,6 +17,7 @@
 package component
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -281,5 +282,28 @@ func TestNewParserComponentVisionEnhancementSetting(t *testing.T) {
 	}
 	if _, err := NewParserComponent(map[string]any{"enable_vision_enhancement": "true"}); err == nil || !strings.Contains(err.Error(), "must be a boolean") {
 		t.Fatalf("string switch error = %v, want boolean validation", err)
+	}
+}
+
+// The config path is as strict as the schema ranges: an integral JSON float
+// decodes, while a fractional value, a bool, a string or an out-of-int32 number
+// is rejected rather than truncated or counted as 1.
+func TestHyperlinkFetchParamFromSetupBudgetTypes(t *testing.T) {
+	p, err := hyperlinkParamFromSetup(schema.ParserSetup{
+		"max_urls": float64(7), "timeout_s": 3,
+	})
+	if err != nil {
+		t.Fatalf("integral values rejected: %v", err)
+	}
+	if p.MaxURLs != 7 || p.TimeoutSeconds != 3 {
+		t.Fatalf("parsed = %+v, want max_urls 7 and timeout_s 3", p)
+	}
+	for _, raw := range []any{3.5, true, "5", nil, math.MaxInt32 + 1.0} {
+		if _, err := hyperlinkParamFromSetup(schema.ParserSetup{"max_urls": raw}); err == nil {
+			t.Errorf("max_urls %v (%T) accepted, want rejection", raw, raw)
+		}
+	}
+	if _, err := hyperlinkParamFromSetup(schema.ParserSetup{"fetch_links": "yes"}); err == nil {
+		t.Error("fetch_links as a string accepted, want rejection")
 	}
 }
