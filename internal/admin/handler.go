@@ -1105,6 +1105,7 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
 	}
 	common.SuccessWithData(c, tasks, "Get all tasks")
 }
