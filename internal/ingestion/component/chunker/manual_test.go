@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // manualChunkerInput is a small builder for a structured (output_format=chunks)
@@ -76,7 +77,7 @@ func mustManual(t *testing.T, params map[string]any) *ManualChunkerComponent {
 
 // manualChunkTexts pulls the ordered chunk texts out of a chunker output map.
 func manualChunkTexts(out map[string]any) []string {
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	out2 := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		if s, _ := ck["text"].(string); s != "" {
@@ -118,7 +119,7 @@ func TestManualChunker_Empty(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -155,8 +156,8 @@ func TestManualChunker_NoPositionsEqualsGroupChunker(t *testing.T) {
 		t.Fatalf("manual Invoke: %v", err)
 	}
 
-	gChunks, _ := gOut["chunks"].([]map[string]any)
-	mChunks, _ := mOut["chunks"].([]map[string]any)
+	gChunks, _ := schema.ChunkCarrierToMaps(gOut["chunks"])
+	mChunks, _ := schema.ChunkCarrierToMaps(mOut["chunks"])
 	if !reflect.DeepEqual(gChunks, mChunks) {
 		t.Fatalf("ManualChunker output diverges from GroupTitleChunker on no-coordinate input\n group: %#v\n manual: %#v", gChunks, mChunks)
 	}
@@ -253,7 +254,7 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	found := false
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)

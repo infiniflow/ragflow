@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 type imageOCREmbedder struct{ texts []string }
@@ -193,7 +194,7 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks := indexable["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(indexable["chunks"])
 	if len(chunks) != 1 || chunks[0]["text"] != text {
 		t.Fatalf("searchable OCR text was lost: %+v", chunks)
 	}
