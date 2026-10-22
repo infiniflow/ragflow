@@ -113,7 +113,7 @@ func logTokenizerCounters() {
 	if len(unavailable) > 0 {
 		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
 			zap.Strings("unavailable", unavailable),
-			zap.String("hint", "run `uv run ragflow_deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+			zap.String("hint", "run `uv run deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
 	}
 }
 

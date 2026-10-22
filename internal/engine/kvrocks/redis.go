@@ -827,8 +827,8 @@ func (r *Client) QueueInfo(ctx context.Context, queue, groupName string) (map[st
 	return nil, nil
 }
 
-// deleteIfEqual deletes key if its value equals expected value atomically.
-func (r *Client) deleteIfEqual(ctx context.Context, key, expectedValue string) (bool, error) {
+// DeleteIfEqual deletes key if its value equals expected value atomically.
+func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) (bool, error) {
 	if r == nil || r.client == nil {
 		return false, errors.New("kvrocks client is not initialized")
 	}
@@ -913,7 +913,7 @@ func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
 		return false, errors.New("distributed lock client is not initialized")
 	}
 	// Remove a lock left by this owner before trying to acquire it again.
-	if _, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue); err != nil {
+	if _, err := l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue); err != nil {
 		return false, err
 	}
 	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
@@ -946,7 +946,7 @@ func (l *DistributedLock) Release(ctx context.Context) bool {
 	if l == nil || l.client == nil {
 		return false
 	}
-	released, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue)
+	released, err := l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
 	return err == nil && released
 }
 

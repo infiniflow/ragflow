@@ -72,7 +72,7 @@ var expectedWordPieceHashes = map[string]string{
 const wordPieceAssetPinKey = "BAAI/bge-large-en-v1.5/vocab.txt"
 
 var bertWordPieceAssetNames = []string{
-	"ragflow_deps/huggingface.co/BAAI/bge-large-en-v1.5/vocab.txt",
+	"deps/huggingface.co/BAAI/bge-large-en-v1.5/vocab.txt",
 	"vocab.txt",
 	"bert_wordpiece_vocab.txt",
 }

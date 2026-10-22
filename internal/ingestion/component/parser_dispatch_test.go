@@ -302,7 +302,6 @@ func TestDispatch_JSONOutput(t *testing.T) {
 
 func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	setups := defaultSetups()
-	setups["email"]["output_format"] = "text"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -433,7 +432,6 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -470,7 +468,6 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			setups := defaultSetups()
 			setups["pdf"]["parse_method"] = method
-			setups["pdf"]["output_format"] = "json"
 			c := &ParserComponent{setups: setups}
 
 			out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -565,7 +562,6 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -631,7 +627,6 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -688,7 +683,6 @@ func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	setups["pdf"]["pages"] = []any{[]any{float64(2), float64(3)}}
 	c := &ParserComponent{setups: setups}
 
@@ -728,7 +722,6 @@ func TestDispatch_PDFVisionJSON_RejectsInvalidPages(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	setups["pdf"]["pages"] = "abc"
 	c := &ParserComponent{setups: setups}
 
@@ -774,7 +767,6 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -822,7 +814,6 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -880,7 +871,6 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -952,7 +942,6 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 		}
 		setups := defaultSetups()
 		setups["pdf"]["parse_method"] = "mineru"
-		setups["pdf"]["output_format"] = "markdown"
 		setups["pdf"]["mineru_backend"] = "standard"
 		return invokeMinerUDispatch(t, nil, setups)
 	}
@@ -1106,7 +1095,6 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 		}
 		setups := defaultSetups()
 		setups["pdf"]["parse_method"] = "mineru"
-		setups["pdf"]["output_format"] = "markdown"
 		setups["pdf"]["mineru_backend"] = "standard"
 		c := &ParserComponent{setups: setups}
 		_, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1162,7 +1150,7 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	}
 
 	component, err := NewParserComponent(map[string]any{
-		"pdf": map[string]any{"parse_method": "monkeyocrv2", "output_format": "markdown"},
+		"pdf": map[string]any{"parse_method": "monkeyocrv2"},
 	})
 	if err != nil {
 		t.Fatalf("NewParserComponent: %v", err)
@@ -1265,7 +1253,6 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1327,7 +1314,6 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1352,7 +1338,6 @@ func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "paddleocr"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1415,7 +1400,6 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["layout_recognizer"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1479,7 +1463,6 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1554,7 +1537,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1618,7 +1600,6 @@ func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
 
 			setups := defaultSetups()
 			setups["pdf"]["parse_method"] = "mineru"
-			setups["pdf"]["output_format"] = "markdown"
 			for k, v := range tc.overrides {
 				setups["pdf"][k] = v
 			}
@@ -1692,7 +1673,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "deepdoc"
 	setups["pdf"]["layout_recognizer"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1808,7 +1788,6 @@ func TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["mineru_parse_method"] = "ocr"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, nil, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1837,7 +1816,6 @@ func TestDispatch_PDFMinerU_CompositeSelectorInParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = selector
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, nil, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1855,7 +1833,6 @@ func TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel(t *testing
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1873,7 +1850,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver(t 
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1892,7 +1868,6 @@ func TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver(t *tes
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "deepdoc"
 	setups["pdf"]["layout_recognizer"] = "MinerU-model@default@MinerU"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1975,7 +1950,6 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "Docling"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["docling_server_url"] = server.URL
 	setups["pdf"]["docling_api_key"] = "doc-secret"
 	c := &ParserComponent{setups: setups}
@@ -2011,7 +1985,6 @@ func TestDispatch_PDFOpenDataLoaderLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "OpenDataLoader"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["opendataloader_apiserver"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -2042,7 +2015,6 @@ func TestDispatch_PDFSoMarkLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "SoMark"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["somark_base_url"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -2075,7 +2047,6 @@ func TestDispatch_PDFTCADPLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "TCADP parser"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["tcadp_apiserver"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -2147,16 +2118,13 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 	}
 }
 
-// TestConfigureParserFromSetups_VisualAural pins that image and audio
-// files pick up their setup (parse_method / lang / vlm) via the family
-// mapping. Before the fix, configureParserFromSetups silently skipped
-// configuration because resolveParserFamily returned "picture" / "aural",
-// neither of which existed in defaultSetups.
-func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+// TestConfigureParserFromSetups_Visual pins that image files pick up their
+// setup (parse_method / lang / vlm) via the family mapping. Before the fix,
+// configureParserFromSetups silently skipped configuration because
+// resolveParserFamily returned "picture", which did not exist in
+// defaultSetups.
+func TestConfigureParserFromSetups_Visual(t *testing.T) {
 	setups := defaultSetups()
-	// The component normalizes output_format onto every family before the
-	// dispatch layer sees the setups, so mirror that here.
-	normalizeParserOutputFormats(setups)
 
 	t.Run("visual resolves to image setup", func(t *testing.T) {
 		got := &captureSetupConfigurer{}
@@ -2170,15 +2138,4 @@ func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
 		}
 	})
 
-	t.Run("aural resolves to audio setup", func(t *testing.T) {
-		got := &captureSetupConfigurer{}
-		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
-		want := map[string]any(setups["audio"])
-		if got.setup == nil {
-			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
-		}
-		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
-			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
-		}
-	})
 }

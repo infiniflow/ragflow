@@ -61,7 +61,6 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "SoMark",
-		"output_format":   "json",
 		"somark_base_url": server.URL,
 		"somark_api_key":  "somark-secret",
 	})
@@ -75,35 +74,6 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 	}
 	if len(res.JSON) < 3 {
 		t.Fatalf("JSON len = %d, want >=3", len(res.JSON))
-	}
-}
-
-func TestPDFParser_ParseWithResult_SoMarkMarkdownIntegration(t *testing.T) {
-	withSSRFBypass(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/parse/async":
-			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-2"}}`))
-		case "/parse/async_check":
-			_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[{"blocks":[{"type":"title","content":"SoMark Title","title_level":1},{"type":"text","content":"Body"}]}]}}}}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":    "SoMark",
-		"output_format":   "markdown",
-		"somark_base_url": server.URL,
-	})
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if !strings.Contains(res.Markdown, "SoMark Title") {
-		t.Fatalf("Markdown = %q, want title", res.Markdown)
 	}
 }
 

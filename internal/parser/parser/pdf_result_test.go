@@ -84,7 +84,7 @@ func TestPDFMarkdownBackendDoesNotFetchRemoteImages(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNotFound) }))
 	defer server.Close()
-	result := pdfMarkdownToResult(t.Context(), "remote.pdf", "![remote]("+server.URL+"/image.png)", "json", 1)
+	result := pdfMarkdownToResult(t.Context(), "remote.pdf", "![remote]("+server.URL+"/image.png)", 1)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -264,22 +264,16 @@ func TestProjectPDFTablePreservesExistingStructureAndNotes(t *testing.T) {
 	}
 }
 
-func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
+func TestPDFTableDescriptionUsesTextItem(t *testing.T) {
 	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}
 	item := map[string]any{"table": table, "doc_type_kwd": "table", "text": "Footnote", "page_number": 3}
-	for _, format := range []string{"json", "markdown"} {
-		result := pdfItemsToResult("sample.pdf", []map[string]any{item}, format, 3)
-		if result.Err != nil {
-			t.Fatal(result.Err)
-		}
-		if format == "json" {
-			result = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", result)
-			if len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != nil || result.JSON[1].ToMap()["text"] != "Footnote" || result.JSON[1].ToMap()["page_number"] != 3 {
-				t.Fatalf("table description not separated: %#v", result.JSON)
-			}
-		} else if !strings.Contains(result.Markdown, "Cell value") || !strings.Contains(result.Markdown, "Footnote") {
-			t.Fatalf("table description lost: %s", result.Markdown)
-		}
+	result := pdfItemsToResult("sample.pdf", []map[string]any{item}, 3)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	result = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", result)
+	if len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != nil || result.JSON[1].ToMap()["text"] != "Footnote" || result.JSON[1].ToMap()["page_number"] != 3 {
+		t.Fatalf("table description not separated: %#v", result.JSON)
 	}
 	if item["text"] != "Footnote" {
 		t.Fatal("source item mutated")
@@ -289,7 +283,7 @@ func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
 func TestPDFWhitespaceTableDescriptionCannotHideCells(t *testing.T) {
 	item := map[string]any{"table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, "doc_type_kwd": "table", "text": " \n "}
 	results := []ParseResult{
-		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 1)),
+		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 1)),
 		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{item})}),
 	}
 	for _, result := range results {
@@ -318,7 +312,7 @@ func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 				originalText := item["text"]
 				p := NewPDFParser()
 				p.FlattenMediaToText = flatten
-				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
 				if result.Err != nil {
 					t.Fatal(result.Err)
 				}
@@ -373,7 +367,7 @@ func TestPDFNormalizeResultIsIdempotent(t *testing.T) {
 			"doc_type_kwd": "table", "text": markup, "page_number": 3,
 			"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
 		}
-		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
 		if once.Err != nil {
 			t.Fatal(once.Err)
 		}
@@ -504,7 +498,7 @@ func TestPDFNormalizeResultCancellationPreservesFile(t *testing.T) {
 func TestPDFMarkdownToResultPreservesFileOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result := pdfMarkdownToResult(ctx, "cancel.pdf", "body", "json", 3)
+	result := pdfMarkdownToResult(ctx, "cancel.pdf", "body", 3)
 	if !errors.Is(result.Err, context.Canceled) {
 		t.Fatalf("err = %v", result.Err)
 	}

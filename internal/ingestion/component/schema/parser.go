@@ -17,7 +17,7 @@
 package schema
 
 // ParserSetup is a per-filetype parser configuration block. The keys are heterogeneous (e.g.,
-// `parse_method`, `lang`, `output_format`, `suffix`, `fields`, `vlm`),
+// `parse_method`, `lang`, `suffix`, `fields`, `vlm`),
 // so a free-form map best mirrors the Python dict literal.
 type ParserSetup map[string]any
 

@@ -35,7 +35,6 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -49,7 +48,7 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 }
 
-func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_TCADPIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
@@ -67,7 +66,6 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "markdown",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -75,8 +73,14 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(res.Markdown, "Hello TCADP") {
-		t.Fatalf("Markdown = %q, want fixture text", res.Markdown)
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "Hello TCADP") {
+		t.Fatalf("JSON text = %q, want fixture text", text.String())
 	}
 }
 
@@ -106,7 +110,6 @@ func TestPDFParser_ParseWithResult_TCADPCancellationAbortsDownload(t *testing.T)
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": submit.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
