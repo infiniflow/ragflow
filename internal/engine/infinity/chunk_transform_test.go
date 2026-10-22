@@ -1042,3 +1042,43 @@ func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
 		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
 	}
 }
+
+// Linked-content ingestion attributes fetched pages with source_url and
+// parent_doc_id inside the declared `extra` column, and only there: an
+// undeclared top-level column is dropped by the projection, which is why the
+// provenance cannot ride at the top level.
+func TestDropUndeclaredFieldsKeepsProvenanceOnlyInsideExtra(t *testing.T) {
+	provenance := map[string]interface{}{
+		"source_url":    "https://example.com/linked",
+		"parent_doc_id": "doc-1",
+	}
+	nested := transformChunkFields(map[string]interface{}{
+		"id": "c1", "content_with_weight": "linked page body", "extra": provenance,
+	}, nil)
+	flat := transformChunkFields(map[string]interface{}{
+		"id": "c2", "content_with_weight": "linked page body",
+		"source_url": "https://example.com/linked", "parent_doc_id": "doc-1",
+	}, nil)
+	rows := []map[string]interface{}{nested, flat}
+
+	if err := (&Engine{mappingFileName: "infinity_mapping.json"}).dropUndeclaredFields("ragflow_t_kb", rows, map[string]bool{}); err != nil {
+		t.Fatalf("dropUndeclaredFields: %v", err)
+	}
+
+	encoded, ok := rows[0]["extra"].(string)
+	if !ok {
+		t.Fatalf("extra = %#v (%T), want the JSON string the varchar column stores", rows[0]["extra"], rows[0]["extra"])
+	}
+	var decoded map[string]string
+	if err := json.Unmarshal([]byte(encoded), &decoded); err != nil {
+		t.Fatalf("extra %q is not a JSON object: %v", encoded, err)
+	}
+	if decoded["source_url"] != "https://example.com/linked" || decoded["parent_doc_id"] != "doc-1" {
+		t.Fatalf("extra = %#v, want both provenance keys", decoded)
+	}
+	for _, key := range []string{"source_url", "parent_doc_id"} {
+		if _, exists := rows[1][key]; exists {
+			t.Errorf("%s survived the projection as a top-level column", key)
+		}
+	}
+}
