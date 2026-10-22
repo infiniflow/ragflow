@@ -42,10 +42,11 @@ def test_merged_paragraphs_keep_a_line_break(delimiter):
 
 @pytest.mark.parametrize("delimiter", DELIMITERS)
 @pytest.mark.parametrize("between", [IMAGE, TABLE], ids=["image", "table"])
-def test_paragraphs_merged_across_an_image_or_table_keep_a_line_break(between, delimiter):
-    sections = [SECTIONS[0], between, SECTIONS[1]]
+def test_paragraphs_merged_after_an_image_or_table_keep_a_line_break(between, delimiter):
+    sections = [SECTIONS[0], between, SECTIONS[1], SECTIONS[2]]
     chunks, _ = naive_merge_docx(sections, chunk_token_num=128, delimiter=delimiter)
-    assert _texts(chunks) == ["First paragraph.\nSecond paragraph."]
+    assert [ck["ck_type"] for ck in chunks] == ["text", "image" if between is IMAGE else "table", "text"]
+    assert _texts(chunks) == ["First paragraph.", "Second paragraph.\nThird paragraph."]
 
 
 def test_paragraph_that_ends_on_a_delimiter_keeps_a_line_break():
