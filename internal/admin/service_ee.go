@@ -1128,16 +1128,6 @@ func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[s
 	return result, nil
 }
 
-// RemoveIngestionTasks reports that admin task removal is not supported.
-func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
-	return nil, errors.New("removing admin ingestion tasks is not supported in the open-source edition")
-}
-
-// StopIngestionTasks reports that admin task stopping is not supported.
-func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	return nil, errors.New("stopping admin ingestion tasks is not supported in the open-source edition")
-}
-
 // ListIngestionTasks reports that admin task listing is not supported.
 func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
 	return []map[string]interface{}{
@@ -1148,48 +1138,20 @@ func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interfac
 	}, nil
 }
 
-func (s *Service) StopIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
-	if email == nil && status == nil {
-		return nil, fmt.Errorf("email or status are required")
-	}
-
-	element := map[string]interface{}{
-		"command": "stop_ingestion_tasks_by_condition",
-		"tasks":   tasks,
-		"error":   "'Stop ingestion tasks by condition' is not supported",
-	}
-
-	if email != nil {
-		element["email"] = *email
-	}
-	if status != nil {
-		element["status"] = *status
-	}
-
-	return []map[string]interface{}{element}, nil
+// RemoveIngestionTasks reports that admin task removal is not supported.
+func (s *Service) RemoveIngestionTasks(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command": "remove_ingestion_tasks",
+		"error":   "'remove ingestion tasks' is not supported",
+	}, nil
 }
 
-func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []string, email, status *string) ([]map[string]interface{}, error) {
-
-	if email == nil && status == nil {
-		return nil, fmt.Errorf("email or status are required")
-	}
-
-	element := map[string]interface{}{
-		"command": "remove_ingestion_tasks_by_condition",
-		"tasks":   tasks,
-		"error":   "'Remove ingestion tasks by condition' is not supported",
-	}
-
-	if email != nil {
-		element["email"] = *email
-	}
-	if status != nil {
-		element["status"] = *status
-	}
-
-	return []map[string]interface{}{element}, nil
+// StopIngestionTasks reports that admin task stopping is not supported.
+func (s *Service) StopIngestionTasks(ctx context.Context) (map[string]interface{}, error) {
+	return map[string]interface{}{
+		"command": "stop_ingestion_tasks",
+		"error":   "'stop ingestion tasks' is not supported",
+	}, nil
 }
 
 func CheckClientStatus(serverName string, status *common.BaseMessage) error {

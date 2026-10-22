@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/handler"
 	"strconv"
 	"strings"
 	"time"
@@ -1582,84 +1581,34 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 	common.SuccessWithData(c, ingestionTasksSummary, "")
 }
 
-// ListIngestionTasks handles the admin ingestion task list.
+// ListIngestionTasks requires the enterprise edition.
 func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	ctx := c.Request.Context()
-	tasks, err := h.service.ListIngestionTasks(ctx)
+	tasks, err := h.service.ListIngestionTasks(c.Request.Context())
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, tasks, "Get all tasks")
+	common.SuccessWithData(c, tasks, "")
 }
 
-type RemoveIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
+// RemoveIngestionTasks requires the enterprise edition.
 func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
-	var req RemoveIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
+	result, err := h.service.RemoveIngestionTasks(c.Request.Context())
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	} else {
-		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	}
+	common.SuccessWithData(c, result, "")
 }
 
-type StopIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
+// StopIngestionTasks requires the enterprise edition.
 func (h *Handler) StopIngestionTasks(c *gin.Context) {
-	var req StopIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
+	result, err := h.service.StopIngestionTasks(c.Request.Context())
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		var result []map[string]string
-		for _, task := range tasks {
-			result = append(result, map[string]string{
-				"task_id": task.ID,
-				"status":  task.Status,
-			})
-		}
-
-		common.SuccessWithData(c, result, "Stop tasks successfully")
-	} else {
-		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Stop tasks successfully")
-	}
+	common.SuccessWithData(c, result, "")
 }
 
 // ShowDataSummary handle show data summary
