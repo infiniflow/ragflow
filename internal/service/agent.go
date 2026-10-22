@@ -1338,13 +1338,12 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:           common.GenerateUUID(),
-		UserCanvasID:    canvasID,
-		Title:           &versionTitle,
-		Description:     description,
-		DSL:             dsl,
-		Release:         release,
-		KeepUnpublished: 20,
+		NewID:        common.GenerateUUID(),
+		UserCanvasID: canvasID,
+		Title:        &versionTitle,
+		Description:  description,
+		DSL:          dsl,
+		Release:      release,
 		SameDSL: func(latestDSL entity.JSONMap) bool {
 			return reflect.DeepEqual(
 				entity.JSONMap(dslpkg.NormalizeForCanvas(latestDSL)),
