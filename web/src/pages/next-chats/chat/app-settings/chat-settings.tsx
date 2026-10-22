@@ -31,6 +31,10 @@ import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
+import {
+  promptConfigDefaults,
+  withPromptConfigDefaults,
+} from './prompt-config-defaults';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
@@ -84,16 +88,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       icon: '',
       description: '',
       dataset_ids: [],
-      prompt_config: {
-        quote: true,
-        keyword: false,
-        tts: false,
-        refine_multiturn: true,
-        system: '',
-        parameters: [],
-        reasoning: false,
-        cross_languages: [],
-      },
+      prompt_config: { ...promptConfigDefaults },
       top_n: 8,
       rerank_candidates_count: 64,
       similarity_threshold: 0.2,
@@ -163,7 +158,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const nextData = {
       ...omit(data, ['top_k']),
       prompt_config: {
-        ...data.prompt_config,
+        // Chats created through the REST API / SDK may omit keys the schema
+        // treats as required (e.g. `keyword`, `tts`, `refine_multiturn`).
+        // Without them the form never validates and Save does nothing.
+        ...withPromptConfigDefaults(data.prompt_config),
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
       },
