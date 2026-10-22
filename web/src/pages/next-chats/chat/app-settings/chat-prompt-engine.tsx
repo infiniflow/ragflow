@@ -3,6 +3,10 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { MetadataFilter } from '@/components/metadata-filter';
+import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
@@ -108,6 +112,13 @@ export function ChatPromptEngine({
               label={t('chat.keyword')}
               tooltip={t('chat.keywordTip')}
             ></SwitchFormField>
+            <ModelTreeSelectFormField
+              name={prefixName(prefix, 'decision_id')}
+              label={t('chat.decisionModel')}
+              tooltip={t('chat.decisionModelTip')}
+              modelTypes={ModelTypeMap.decision_id}
+              allowClear
+            />
             <FormField
               control={form.control}
               name={prefixName(prefix, 'prompt_config.system')}
