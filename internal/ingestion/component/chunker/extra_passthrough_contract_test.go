@@ -28,6 +28,15 @@ import (
 // Parser post-step to the indexed chunk. Every chunker family has to carry it:
 // the General/Token paths re-emit ChunkDoc.Extra, and the title family joins
 // records into groups, which used to drop the item keys entirely.
+func mustTokenChunker(t *testing.T, chunkTokens int) runtime.Component {
+	t.Helper()
+	c, err := NewTokenChunker(map[string]any{"chunk_token_size": chunkTokens})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	return c
+}
+
 func TestChunkersCarryItemExtra(t *testing.T) {
 	linked := map[string]any{
 		"source_url":    "https://example.com/linked",
@@ -119,5 +128,52 @@ func TestChunkersCarryItemExtra(t *testing.T) {
 				t.Fatalf("%s: no chunk carries the linked body", tc.name)
 			}
 		})
+	}
+}
+
+// This pins a KNOWN LIMITATION, not a desired end state. The Token chunker's
+// final merge is deliberately global (Python _merge_text_chunks_by_token_size
+// merges adjacent text chunks across JSON items), so a linked page can be folded
+// into the parent document's under-cap tail chunk. `extra` merges first-wins per
+// key, and the parent's chunk carries none, so the linked page's provenance
+// lands on the merged chunk — which then reports parent body text as if it came
+// from the fetched URL. Provenance is per item, not per chunk. If a merge barrier
+// across differing provenance is added, this test must flip to asserting both
+// sources rather than being deleted.
+func TestTokenMergeAcrossSourcesAttributesTheWholeChunkToTheLinkedPage(t *testing.T) {
+	out, err := mustTokenChunker(t, 512).Invoke(t.Context(), nil, map[string]any{
+		"name": "t.md", "file_type": "md", "output_format": "json",
+		"json": []map[string]any{
+			{"text": "parent tail", "doc_type_kwd": "text"},
+			{
+				"text": "linked body", "doc_type_kwd": "text",
+				"extra": map[string]any{"source_url": "https://example.com/linked", "parent_doc_id": "doc-1"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("len = %d, want the two items merged into one chunk", len(chunks))
+	}
+	encoded, err := json.Marshal(chunks[0])
+	if err != nil {
+		t.Fatalf("marshal chunk: %v", err)
+	}
+	var decoded struct {
+		Text  string         `json:"text"`
+		Extra map[string]any `json:"extra"`
+	}
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("unmarshal chunk: %v", err)
+	}
+	if !strings.Contains(decoded.Text, "parent tail") || !strings.Contains(decoded.Text, "linked body") {
+		t.Fatalf("text = %q, want both bodies merged", decoded.Text)
+	}
+	if decoded.Extra["source_url"] != "https://example.com/linked" {
+		t.Fatalf("chunk extra = %#v, want the linked page's URL on the merged chunk: %s", decoded.Extra, encoded)
 	}
 }

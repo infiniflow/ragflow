@@ -512,3 +512,94 @@ func TestParserInvokeReportsLinkedContentProgress(t *testing.T) {
 		t.Fatalf("messages = %v, want the per-URL skip warning and the run summary", messages)
 	}
 }
+
+// The redirect chain is followed by hand so every hop is validated, which means
+// the loop needs its own bound: a server that redirects to itself must stop with
+// a warning instead of spinning until the document deadline.
+func TestHyperlinkStopsAtTheRedirectLimit(t *testing.T) {
+	withSSRFBypass(t)
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, r.URL.Path, http.StatusFound)
+	}))
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("[loop](" + srv.URL + "/loop)")
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+	})
+	got, warnings := c.fetchHyperlinkedContent(t.Context(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
+	}
+	if n := hits.Load(); n != hyperlinkMaxRedirects {
+		t.Fatalf("requests = %d, want the chain stopped at %d", n, hyperlinkMaxRedirects)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "too many redirects") {
+		t.Fatalf("warnings = %v, want the redirect-limit warning", warnings)
+	}
+}
+
+// A redirect target is a new destination, not a continuation of the one already
+// cleared: it has to pass the same guard, or a public page could hand the worker
+// a URL the guard would never accept.
+func TestHyperlinkValidatesEachRedirectHop(t *testing.T) {
+	withSSRFBypass(t)
+	var hits atomic.Int64
+	mux := http.NewServeMux()
+	mux.HandleFunc("/jump", func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Redirect(w, r, "file:///etc/passwd", http.StatusFound)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("[jump](" + srv.URL + "/jump)")
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+	})
+	got, warnings := c.fetchHyperlinkedContent(t.Context(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "disallowed URL scheme") {
+		t.Fatalf("warnings = %v, want the per-hop scheme rejection", warnings)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("requests = %d, want only the hop that redirected", n)
+	}
+}
+
+// timeout_s is per link, not per document: one unresponsive host must not be
+// able to occupy the run until the document deadline.
+func TestHyperlinkPerURLTimeoutExpires(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	parent := []parser.DocItem{parser.TextItem{Text: "parent body"}}
+	binary := []byte("[slow](" + srv.URL + ")")
+	c := newHyperlinkComponent(t, "markdown", map[string]any{
+		"fetch_links": true, "collect_markdown_links": true,
+		"timeout_s": 1, "max_urls": 5,
+	})
+	started := time.Now()
+	got, warnings := c.fetchHyperlinkedContent(t.Context(), utility.FileTypeMarkdown,
+		"doc.md", binary, parent, "doc1")
+	if len(got) != len(parent) {
+		t.Fatalf("len = %d, want parent only", len(got))
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "fetch") {
+		t.Fatalf("warnings = %v, want the per-URL timeout warning", warnings)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("elapsed = %v, want the link abandoned at its 1s timeout", elapsed)
+	}
+}

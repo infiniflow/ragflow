@@ -198,14 +198,15 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" || k == "vlm" {
 			continue
 		}
+		// A hyperlink switch sitting at the params root is a misplaced setting:
+		// it would never reach a family setup, whatever shape it arrives in.
+		// Checked before the map branch below, because a map value would
+		// otherwise be absorbed as a file-format family named "max_urls".
+		if slices.Contains(hyperlinkSetupKeys, k) {
+			return nil, fmt.Errorf("parser: %q must be set inside a file-format setup, not at the top level", k)
+		}
 		ftCfg, ok := raw.(map[string]any)
 		if !ok {
-			// A hyperlink switch sitting at the params root is a misplaced
-			// setting: it would never reach a family setup, so fail rather than
-			// silently do nothing (#21032).
-			if slices.Contains(hyperlinkSetupKeys, k) {
-				return nil, fmt.Errorf("parser: %q must be set inside a file-format setup, not at the top level", k)
-			}
 			continue
 		}
 		if _, exists := s[k]; !exists {

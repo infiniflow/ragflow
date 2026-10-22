@@ -247,11 +247,15 @@ func TestParserComponent_New_RunsCheck(t *testing.T) {
 }
 
 // A hyperlink switch left at the params root never reaches a family setup, so it
-// must fail at compile time instead of doing nothing (#21032).
+// must fail at compile time instead of doing nothing (#21032) — including the
+// map shape, which would otherwise be absorbed as a file-format family named
+// after the key.
 func TestNewParserComponentRejectsTopLevelHyperlinkKey(t *testing.T) {
-	for _, key := range []string{"fetch_links", "max_urls", "timeout_s"} {
-		if _, err := NewParserComponent(map[string]any{key: 1}); err == nil {
-			t.Errorf("NewParserComponent with top-level %q: want error, got nil", key)
+	for _, key := range []string{"fetch_links", "collect_markdown_links", "max_urls", "max_bytes_per_url", "max_total_bytes", "timeout_s"} {
+		for _, value := range []any{1, true, "5", map[string]any{"a": 1}, map[string]any{}} {
+			if _, err := NewParserComponent(map[string]any{key: value}); err == nil {
+				t.Errorf("NewParserComponent with top-level %q = %T: want error, got nil", key, value)
+			}
 		}
 	}
 	// An unrelated non-map key keeps the legacy lenient behaviour.
