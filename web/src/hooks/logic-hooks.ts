@@ -446,7 +446,7 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
 // are rounded. `scrollToBottom` therefore lands a sub-pixel *below* the position
 // a native clamp had produced, which reads as a decreasing `scrollTop`. Require a
 // real gesture's worth of movement so that jitter is not mistaken for one.
-const UserScrollUpThreshold = 2;
+const UserScrollUpThreshold = 40;
 
 export const useScrollToBottom = (
   messages?: unknown,
@@ -494,7 +494,10 @@ export const useScrollToBottom = (
     const handleScroll = () => {
       const previousScrollTop = lastScrollTopRef.current;
       const { scrollTop } = container;
-      lastScrollTopRef.current = scrollTop;
+      lastScrollTopRef.current = Math.max(
+        previousScrollTop ?? scrollTop,
+        scrollTop,
+      );
 
       const nearBottom = checkIfNearBottom();
       let atBottom: boolean;
@@ -537,10 +540,13 @@ export const useScrollToBottom = (
       // Overshoot and let the browser clamp. `scrollHeight - clientHeight` is a
       // difference of two rounded values, so in Firefox — where the real maximum
       // is fractional — it can land just short of the bottom.
+      isAtBottomRef.current = true;
+      setIsAtBottom(true);
       container.scrollTo({
         top: container.scrollHeight,
         behavior: 'auto',
       });
+      lastScrollTopRef.current = container.scrollTop;
     }
   }, [containerRef]);
 
@@ -586,7 +592,7 @@ export const useSelectDerivedMessages = () => {
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  const { scrollRef, scrollToBottom } = useScrollToBottom(
+  const { scrollRef, scrollToBottom, isAtBottom } = useScrollToBottom(
     derivedMessages,
     messageContainerRef,
   );
@@ -781,6 +787,7 @@ export const useSelectDerivedMessages = () => {
     removeMessagesAfterCurrentMessage,
     removeAllMessages,
     scrollToBottom,
+    isAtBottom,
     removeAllMessagesExceptFirst,
     addPrologue,
   };
