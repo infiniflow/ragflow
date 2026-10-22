@@ -125,6 +125,8 @@ def _ensure_ocr_provider_from_env(tenant_id: str, provider_name: str, model_name
             api_key=api_key,
             extra="{}",
         )
+        if not instance_obj or isinstance(instance_obj, int):
+            instance_obj = TenantModelInstanceService.get_by_provider_id_and_api_key(provider_obj.id, api_key)
 
     model_obj = TenantModelService.get_by_provider_id_and_instance_id_and_model_type_and_model_name(
         provider_obj.id,
