@@ -357,9 +357,6 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 	if dispatched.Markdown != "" {
 		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
-	if dispatched.Text != "" {
-		return []parser.DocItem{parser.NewTextJSONItem(dispatched.Text)}
-	}
 	return []parser.DocItem{}
 }
 

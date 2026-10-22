@@ -619,9 +619,6 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	if dispatched.Markdown != "" {
 		return "markdown"
 	}
-	if dispatched.Text != "" {
-		return "text"
-	}
 	return "raw"
 }
 

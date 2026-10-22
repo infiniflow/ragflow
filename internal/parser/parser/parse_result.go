@@ -71,11 +71,10 @@ type ParseResult struct {
 	// and, after ingestion enhancement, its VLM description.
 	JSON []DocItem
 
-	// Markdown is a backend response awaiting normalization.
+	// Markdown is a backend response awaiting normalization (PDF markdown
+	// engines only; the DSL hardcodes output_format to "json" for all other
+	// families via normalizeParserOutputFormats).
 	Markdown string
-
-	// Text is a backend response awaiting normalization.
-	Text string
 
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.

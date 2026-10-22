@@ -242,8 +242,6 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 // text field and serializing items without one as a final fallback.
 func parseResultText(res parser.ParseResult) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
-	case "text":
-		return res.Text, nil
 	case "markdown":
 		return res.Markdown, nil
 	case "json":
@@ -270,10 +268,8 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		// Some legacy parsers mark the result as JSON while only populating a
 		// rendered companion field. Preserve that content instead of returning
 		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.Text} {
-			if fallback != "" {
-				return fallback, nil
-			}
+		if res.Markdown != "" {
+			return res.Markdown, nil
 		}
 		return "", nil
 	default:

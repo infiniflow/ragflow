@@ -95,7 +95,7 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	t.Fatalf("json payload does not contain %q: %#v", want, items)
 }
 
-func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
+func TestBuildParserOutputsNormalizesMarkdownToJSON(t *testing.T) {
 	tests := []struct {
 		name       string
 		dispatched parser.ParseResult
@@ -108,14 +108,6 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 				Markdown:     "# Title\n\nBody",
 			},
 			wantText: "Title",
-		},
-		{
-			name: "text",
-			dispatched: parser.ParseResult{
-				OutputFormat: "text",
-				Text:         "plain body",
-			},
-			wantText: "plain body",
 		},
 	}
 
