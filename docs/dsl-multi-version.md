@@ -1,6 +1,6 @@
 # DSL 多版本设计（Ingestion Pipeline / Dataflow Canvas）
 
-> 状态：v5.3（在 v5.2 基础上追加：§5.2 版本上限与保留策略[K=64 每画布硬上限 + keep-all 写时不自动裁剪]；仍为锁定设计，TDD 实现中）
+> 状态：v5.4（在 v5.3 基础上追加：§1 C5 / §G3 空版本=红色 Missing + Save 报“版本信息缺失”，dataset/file 两层；仍为锁定设计，TDD 实现中）
 > 约束：单 PR、严格 TDD、迁移为幂等 Go 函数、Missing 运行时校验不加字段、版本归属校验禁止悬空。
 
 ---
@@ -14,8 +14,10 @@
 - **B1** 画布可查看多版本；**B2/B2.1** 删除版本需弹窗二次确认（告知可能导致 File 解析不可用）；**B3** 手动 Save（用户明确点击保存）→ 生成新版本；自动保存（非手动）→ 仅更新 `user_canvas.dsl` live draft，不生成新版本（v5.2 细化，修正原「改 DSL 即生成版本」）；**B4** 画布修改**不向下传播**到已绑定的 dataset/file（粘性快照）。
 - **C1** dataset/file 配置可选版本；**C2** 默认绑定“选择时刻最新具体版本”（锁定非浮动），可手动选；**C3** 切版本 → 参数重置为该版本 default。
 - **C4** 版本删除 → 引用方 Missing，file 不可解析；**D1/D2/D3** 非最新显示 `!`，点击仅提示不引导升级；**E1** 列表新→老；**F1** 别名前端过滤。
+- **C5** 版本信息为空（`pipeline_version_id` 为空 / 未选版本）→ UI 显示红色 `Missing`（缺失）徽标；用户点击 Save 时校验并报错“版本信息缺失”。dataset 与 file 两层均适用（见 G3）。空版本不再自动回填为最新版本。
 - **G1** dataset/file 版本选择 UI：不渲染 `latest` 伪选项，仅列真实版本，选项文案须含 `alias`（如 `alias (title)`）；已绑定即存具体版本 ID，无 latest 概念（呼应 C2）。
 - **G2** alias 写入/更新：后端经版本级 `PATCH` 端点（及可选随 manual Save 携带）写入 `user_canvas_version.alias`；前端提供编辑入口（见 §4.4、§8）。
+- **G3** 空版本（`pipeline_version_id` 为空 / 未选版本）处理：UI 显示红色 `Missing`（缺失）徽标，与「版本被删」的 Missing 同一种视觉（见 §3 扩展）；用户点击 Save（创建/更新 dataset、或更新 file 绑定）时，后端**拒绝**并校验报错“版本信息缺失”（HTTP 4xx + 文案“版本信息缺失”），不写入、不自动回填为最新版本（呼应 C5）。dataset 与 file 两层均实现此校验（C5 双层要求）。
 
 **不在范围**：agent（画布类别 `agent`）的发布语义、built-in parser（`parse_type=1`）的版本化、Python 端（按 AGENTS.md 正在移除）。
 
@@ -58,7 +60,10 @@
 ## 3. 锁定决策
 
 1. **迁移 = 幂等 Go 迁移函数**（`internal/dao/migration.go` 的 `RunMigrations` 集中调用），参考先例 `migrateKnowledgebaseParserConfig`（FindInBatches + 版本标记）。**不**用独立 SQL 脚本。
-2. **Missing = 运行时校验**，不额外增加字段、不查“是否最新”。仅当绑定版本 `pipeline_version_id` 指向的 `user_canvas_version` 不存在（或被删）时 → Missing。
+2. **Missing = 运行时校验**，不额外增加字段、不查“是否最新”。两种成因都归为 Missing：
+   - **版本被删 / 悬空**：绑定版本 `pipeline_version_id` 指向的 `user_canvas_version` 不存在（或被删、或跨 canvas）→ Missing。
+   - **空版本**：`pipeline_version_id` 为空 / 未选版本（dataset 或 file 创建/更新时未带版本）→ 同样显示红色 `Missing` 徽标（见 G3/C5）；保存时后端校验报错“版本信息缺失”，不写入、不自动回填（见 G3）。
+   空版本与「被删版本」是 Missing 的两种成因，前端视觉统一为红色 `Missing`，区别仅在于成因提示文案（被删=提示重选版本；空版本=提示“版本信息缺失”）。
 3. **版本归属校验**：禁止悬空版本号。`pipeline_version_id` 必须属于绑定 `pipeline_id` 对应的 `user_canvas`（且类别为 `dataflow_canvas`）；否则视为无效。
 
 ### H12 修订（v4 修正）
@@ -266,6 +271,8 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
 - T36（v5.2 alias 兜底）manual Save 请求携带 `alias` → 断言新建/刷新版本写入该 alias。
 - T37（v5.2 前端 latest 去除）dataset/file 版本选择器选项列表**不含** `__latest__` 伪值，且含 alias 文案；提交 `pipeline_version_id` 为具体 ID（前端/组件断言）。
 - T38（v5.2 对抗）连续 N 次自动保存（不刷版本）+ 仅 1 次手动 Save → 版本数恰为 1（非 N），且 live draft 反映最后一次自动保存内容；手动 Save 前后 `user_canvas_version` 记录数差恰为 1（确认 INSERT 而非 in-place 更新）。
+- T39（v5.4 空版本校验）dataset 创建/更新 Save 时 `pipeline_version_id` 为空（且为 Pipeline 模式）→ 后端**拒绝**并返错误文案“版本信息缺失”（HTTP 4xx），`pipeline_version_id` 不写入、不自动回填为 latest（呼应 C5/G3）；对抗：built-in 模式允许空版本（空版本校验仅作用于 Pipeline 模式）。
+- T40（v5.4 空版本校验·file 层）document/file 绑定 Save 时 `pipeline_version_id` 为空（Pipeline 模式）→ 后端同样拒绝并返“版本信息缺失”；dataset 与 file 两层校验行为一致（C5 双层要求）。
 
 ## 10. 漏洞审计（v4 状态）
 
@@ -291,6 +298,7 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
 5. 迁移幂等：存量 dataflow 绑定被锁定到 `GetLatest`；重跑安全；built-in/agent 跳过。
 6. 悬空/跨 canvas 的 `pipeline_version_id` 被拒绝或判 Missing（归属校验）。
 7. 别名仅存、仅前端过滤，后端版本返回集不受其影响。
+8. 空版本（Pipeline 模式 `pipeline_version_id` 为空）：UI 红色 `Missing` 徽标；Save 时报错“版本信息缺失”且不写入、不自动回填；dataset 与 file 两层一致（C5/G3/T39/T40）。
 
 ---
 
