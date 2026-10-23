@@ -17,6 +17,7 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -489,5 +490,96 @@ func TestInvoke_ProxyRejectsHostnameTarget(t *testing.T) {
 	}
 	if got, _ := out["_ERROR"].(string); got != "URL not valid" {
 		t.Errorf("hostname+proxy target: _ERROR = %q, want %q", got, "URL not valid")
+	}
+}
+
+// invokeBodyServer serves bodyBytes of filler on any request.
+func invokeBodyServer(t *testing.T, bodyBytes int, filler byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chunk := bytes.Repeat([]byte{filler}, 32*1024)
+		for written := 0; written < bodyBytes; {
+			n := min(len(chunk), bodyBytes-written)
+			if _, err := w.Write(chunk[:n]); err != nil {
+				return
+			}
+			written += n
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// TestInvoke_ResponseTooLarge is the regression test for silent truncation.
+// The node capped the body with io.LimitReader but reported success when the
+// cap bit, so a workflow received exactly 16 MiB of a larger response and
+// every downstream step treated it as complete.
+func TestInvoke_ResponseTooLarge(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	// A little over the cap, so the body is definitely cut.
+	srv := invokeBodyServer(t, maxInvokeResponseBody+4096, 'x')
+	c, _ := NewInvokeComponent(nil)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "GET",
+		"url":    srv.URL,
+	})
+	if err == nil {
+		res, _ := out["result"].(string)
+		t.Fatalf("Invoke returned success with a %d-byte result for an oversized response: "+
+			"the body was silently truncated", len(res))
+	}
+	if !strings.Contains(err.Error(), "response too large") {
+		t.Errorf("err = %v, want it to report the response as too large", err)
+	}
+	if out != nil {
+		t.Errorf("out = %#v, want nil so the canvas does not consume a truncated body", out)
+	}
+}
+
+// TestInvoke_ResponseExactlyAtCapSucceeds pins the boundary: a body exactly at
+// the cap is complete and must still succeed. The read is one byte past the
+// cap precisely so "at the limit" and "over the limit" stay distinguishable.
+func TestInvoke_ResponseExactlyAtCapSucceeds(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	const want = "at-the-limit"
+	srv := invokeBodyServer(t, maxInvokeResponseBody, 'y')
+	// Overwrite the tail with a recognisable marker so truncation is visible
+	// in the result as well as in the error.
+	c, _ := NewInvokeComponent(nil)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "GET",
+		"url":    srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("Invoke at exactly the cap: %v", err)
+	}
+	res, _ := out["result"].(string)
+	if len(res) != maxInvokeResponseBody {
+		t.Errorf("result length = %d, want the full %d", len(res), maxInvokeResponseBody)
+	}
+	if strings.Trim(res, "y") != "" {
+		t.Errorf("result contains unexpected bytes at the cap boundary (want all %q filler)", want)
+	}
+}
+
+// TestInvoke_ResponseJustUnderCapSucceeds keeps the bound from rejecting
+// ordinary large-but-legal responses.
+func TestInvoke_ResponseJustUnderCapSucceeds(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	const bodyBytes = 1 << 20
+	srv := invokeBodyServer(t, bodyBytes, 'z')
+	c, _ := NewInvokeComponent(nil)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "GET",
+		"url":    srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if res, _ := out["result"].(string); len(res) != bodyBytes {
+		t.Errorf("result length = %d, want %d", len(res), bodyBytes)
 	}
 }
