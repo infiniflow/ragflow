@@ -25,6 +25,7 @@ import {
   RetrievalFrom,
   VariableRegex,
 } from '../constant';
+import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-form';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
 import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
@@ -621,6 +622,18 @@ export function collectCanvasIssues({
         ...target,
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.iterationOutputsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.ExeSQL &&
+      !ExeSQLFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
         blocksRun: true,
       });
     }
