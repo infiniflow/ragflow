@@ -150,7 +150,7 @@ func testMixedPageRegion(t *testing.T, top, bottom float64) {
 		{X0: 15, Y0: top*3 - 15, X1: 305, Y1: bottom*3 + 15, Label: "text", Confidence: 0.9},
 		{X0: 300, Y0: 300, X1: 600, Y1: 450, Label: "figure", Confidence: 0.9},
 	}, OCRBoxes: []pdf.OCRBox{
-		{X0: 15, Y0: 15, X1: 150, Y1: 15, X2: 150, Y2: 45, X3: 15, Y3: 45},
+		{X0: 315, Y0: 315, X1: 450, Y1: 315, X2: 450, Y2: 345, X3: 315, Y3: 345},
 	}, OCRTexts: []pdf.OCRText{{Text: "Bitmap label", Confidence: 0.95}}}
 	result, err := NewParser(pdf.DefaultParserConfig()).ParseRaw(t.Context(), engine, analyzer)
 	if err != nil {
@@ -169,5 +169,40 @@ func testMixedPageRegion(t *testing.T, top, bottom float64) {
 	figures := result.Figures()
 	if len(figures) != 1 || figures[0].Positions[0].Left != 100 || figures[0].Positions[0].Top != 100 {
 		t.Fatalf("bitmap figure lost its page-space position: %+v", figures)
+	}
+}
+
+func TestParseMixedPageRetainsBitmapText(t *testing.T) {
+	for _, label := range []string{pdf.LayoutTypeFigure, pdf.DLALabelFigureCaption, pdf.DLALabelTableCaption, ""} {
+		name := label
+		if name == "" {
+			name = "without_layout_region"
+		}
+		t.Run(name, func(t *testing.T) {
+			engine := &MockEngine{RenderW: 900, RenderH: 900, Chars: map[int][]pdf.TextChar{0: {
+				{Text: "Native", X0: 10, X1: 50, Top: 10, Bottom: 20},
+			}}}
+			analyzer := &MockDocAnalyzer{Healthy: true, OCRBoxes: []pdf.OCRBox{
+				{X0: 30, Y0: 30, X1: 150, Y1: 30, X2: 150, Y2: 60, X3: 30, Y3: 60},
+				{X0: 300, Y0: 300, X1: 450, Y1: 300, X2: 450, Y2: 330, X3: 300, Y3: 330},
+			}, OCRTexts: []pdf.OCRText{{Text: "Bitmap", Confidence: 0.95}}}
+			if label != "" {
+				analyzer.DLARegions = []pdf.DLARegion{{X0: 0, Y0: 0, X1: 600, Y1: 600, Label: pdf.LayoutTypeFigure, Confidence: 0.95}}
+				if label != pdf.LayoutTypeFigure {
+					analyzer.DLARegions = append(analyzer.DLARegions, pdf.DLARegion{X0: 240, Y0: 240, X1: 600, Y1: 600, Label: label, Confidence: 0.95})
+				}
+			}
+			result, err := NewParser(pdf.DefaultParserConfig()).ParseRaw(t.Context(), engine, analyzer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var text strings.Builder
+			for _, section := range result.Sections {
+				text.WriteString(section.Text)
+			}
+			if got := text.String(); strings.Count(got, "Native") != 1 || strings.Count(got, "Bitmap") != 1 {
+				t.Fatalf("mixed content lost or duplicated: %q", got)
+			}
+		})
 	}
 }

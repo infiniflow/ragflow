@@ -458,7 +458,7 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 			Text:         "",
 			LayoutType:   pdf.LayoutTypeFigure,
 			LayoutNo:     fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
-			LayoutRegion: &pdf.DLARegion{X0: cands[j].x0, Y0: cands[j].y0, X1: cands[j].x1, Y1: cands[j].y1, Label: cands[j].label, Confidence: cands[j].score},
+			FigureBounds: &pdf.Position{Left: cands[j].x0, Top: cands[j].y0, Right: cands[j].x1, Bottom: cands[j].y1},
 		})
 	}
 

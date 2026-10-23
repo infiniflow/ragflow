@@ -717,56 +717,29 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	return filtered
 }
 
-// recognizeMissingRegions supplements native text with OCR of DLA regions
-// that have no text layer. Native boxes never depend on OCR detection.
-func (p *Parser) recognizeMissingRegions(ctx context.Context, img image.Image, boxes []pdf.TextBox, regions []pdf.DLARegion, analyzer pdf.DocAnalyzer, page int, scale float64) []pdf.TextBox {
-	out := append([]pdf.TextBox(nil), boxes...)
-	hasNative := false
-	for _, box := range boxes {
-		if !box.IsOCR && strings.TrimSpace(box.Text) != "" {
-			hasNative = true
-			break
-		}
+// recognizeMissingText OCRs detected text boxes not covered by native text.
+// Detection never controls which native characters are retained.
+func (p *Parser) recognizeMissingText(ctx context.Context, img image.Image, native []pdf.TextBox, analyzer pdf.DocAnalyzer, page int, zoom float64) []pdf.TextBox {
+	detected, scale, err := p.detectBoxes(ctx, img, analyzer, page, zoom)
+	if err != nil || len(detected) == 0 {
+		return native
 	}
-	if !hasNative {
-		return out
-	}
-	for _, region := range regions {
-		switch region.Label {
-		case pdf.LayoutTypeFigure, pdf.LayoutTypeEquation, pdf.LayoutTypeText, pdf.LayoutTypeTable, pdf.LayoutTypeTitle:
-		default:
-			continue
-		}
-		bounds := pdf.DLARegion{X0: region.X0 / scale, Y0: region.Y0 / scale, X1: region.X1 / scale, Y1: region.Y1 / scale}
+	missing := detected[:0]
+	for _, candidate := range detected {
 		covered := false
-		for _, box := range out {
-			if strings.TrimSpace(box.Text) == "" {
-				continue
-			}
-			// Use the same box-coverage threshold as DLA annotation; a
-			// neighboring line touching the image is not its text layer.
-			if util.OverlapRatioA(&box, &bounds) >= 0.4 {
+		for _, box := range native {
+			if util.OverlapRatioA(&candidate.box, &box) >= 0.4 {
 				covered = true
 				break
 			}
 		}
-		if covered {
-			continue
-		}
-		x0, y0 := max(0, int(math.Floor(region.X0))), max(0, int(math.Floor(region.Y0)))
-		x1, y1 := min(img.Bounds().Dx(), int(math.Ceil(region.X1))), min(img.Bounds().Dy(), int(math.Ceil(region.Y1)))
-		if x0 >= x1 || y0 >= y1 {
-			continue
-		}
-		crop := util.FastCrop(img, x0, y0, x1, y1)
-		for _, box := range p.ocrDetectAndRecognize(ctx, crop, analyzer, page, "image region", scale) {
-			box.X0 += float64(x0) / scale
-			box.X1 += float64(x0) / scale
-			box.Top += float64(y0) / scale
-			box.Bottom += float64(y0) / scale
-			box.IsOCR = true
-			out = append(out, box)
+		if !covered {
+			missing = append(missing, candidate)
 		}
 	}
-	return out
+	recognized := p.buildTextBoxes(ctx, img, missing, make([][]pdf.TextChar, len(missing)), analyzer, scale, page)
+	for i := range recognized {
+		recognized[i].IsOCR = true
+	}
+	return append(native, recognized...)
 }

@@ -595,8 +595,8 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 				}
 				boxes[anchor].Text += b.Text
 			}
-			if boxes[anchor].LayoutRegion == nil {
-				boxes[anchor].LayoutRegion = b.LayoutRegion
+			if boxes[anchor].FigureBounds == nil {
+				boxes[anchor].FigureBounds = b.FigureBounds
 			}
 			boxes[anchor].X0 = math.Min(boxes[anchor].X0, b.X0)
 			boxes[anchor].X1 = math.Max(boxes[anchor].X1, b.X1)
@@ -604,9 +604,9 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 			boxes[anchor].Bottom = math.Max(boxes[anchor].Bottom, b.Bottom)
 			removeSet[idx] = true
 		}
-		if region := boxes[anchor].LayoutRegion; region != nil {
-			boxes[anchor].X0, boxes[anchor].X1 = region.X0, region.X1
-			boxes[anchor].Top, boxes[anchor].Bottom = region.Y0, region.Y1
+		if region := boxes[anchor].FigureBounds; region != nil {
+			boxes[anchor].X0, boxes[anchor].X1 = region.Left, region.Right
+			boxes[anchor].Top, boxes[anchor].Bottom = region.Top, region.Bottom
 		}
 	}
 }

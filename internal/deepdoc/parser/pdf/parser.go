@@ -276,7 +276,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 // page-local and the OCR call path is selected here.
 //
 //   - Clean embedded chars (count > 0 and not garbled):
-//     group the native characters directly, independently of OCR detection.
+//     group native characters directly and OCR only uncovered text boxes.
 //   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR.
 //     Synthetic chars support subsequent median calculations.
 //
@@ -303,7 +303,8 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 //     (one box per line or per column-subline, never per rune).
 //   - updatedChars: chars, possibly augmented with synthetic OCR-derived
 //     glyphs so downstream median-height/width stats stay meaningful.
-//   - bool: whether OCR was actually used to produce ocrBoxes.
+//   - bool: whether the page used the OCR fallback for its text layer.
+//     Supplemental image-text boxes carry their own IsOCR markers.
 func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, chars []pdf.TextChar, pg int,
 	renderErr error, isScanNoise bool, docAnalyzer pdf.DocAnalyzer, zoom float64,
 ) ([]pdf.TextBox, []pdf.TextChar, bool) {
@@ -323,7 +324,8 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 				valid = append(valid, c)
 			}
 			if len(valid) > 0 {
-				return lyt.CharsToBoxes(valid, pg, p.Config.SortByTop), valid, false
+				native := lyt.CharsToBoxes(valid, pg, p.Config.SortByTop)
+				return p.recognizeMissingText(ctx, pageImg, native, docAnalyzer, pg, zoom), valid, false
 			}
 		}
 		label := "scan page"

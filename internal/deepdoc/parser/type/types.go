@@ -117,9 +117,8 @@ type TextBox struct {
 	Pages      []int
 	LayoutType string
 	LayoutNo   string
-	// LayoutRegion is the matched figure/equation region in PDF-point space.
-	// Text bounds remain unchanged until the figure is assembled.
-	LayoutRegion *DLARegion
+	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
+	FigureBounds *Position
 	ColID        int
 	R            int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /

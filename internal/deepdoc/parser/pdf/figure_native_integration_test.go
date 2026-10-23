@@ -3,20 +3,15 @@
 package pdf
 
 import (
-	"encoding/json"
 	"fmt"
-	"image"
-	"image/png"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
-// TestAN0590Figures exercises real native text, DLA, OCR and rendered crops.
+// TestAN0590Figures exercises real native text and complete DLA figure bounds.
 // AN0590_PDF points to an0590scv140.pdf; MODEL_DIR supplies DeepDOC models.
 func TestAN0590Figures(t *testing.T) {
 	path := os.Getenv("AN0590_PDF")
@@ -34,19 +29,6 @@ func TestAN0590Figures(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer result.Close()
-	dir := os.Getenv("DEEPDOC_DIAGNOSTIC_DIR")
-	if dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			t.Fatal(err)
-		}
-		b, err := json.MarshalIndent(result.Sections, "", "  ")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "sections.json"), b, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
 	for _, tc := range []struct {
 		number, page        int
 		minWidth, minHeight float64
@@ -72,27 +54,6 @@ func TestAN0590Figures(t *testing.T) {
 			}
 			if tc.number == 3 && (!strings.Contains(figure.Text, "SCL") || !strings.Contains(figure.Text, "SDA")) {
 				t.Fatalf("native waveform labels missing: %q", figure.Text)
-			}
-			if dir != "" {
-				img, err := RenderPageToImage(result.Engine, tc.page)
-				if err != nil {
-					t.Fatal(err)
-				}
-				crop := util.CropSectionPositionsRaster(figure.Positions, map[int]image.Image{tc.page: img}, pdf.DlaScale)
-				if crop == nil {
-					t.Fatal("figure crop missing")
-				}
-				f, err := os.Create(filepath.Join(dir, fmt.Sprintf("figure%d.png", tc.number)))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := png.Encode(f, crop); err != nil {
-					f.Close()
-					t.Fatal(err)
-				}
-				if err := f.Close(); err != nil {
-					t.Fatal(err)
-				}
 			}
 		})
 	}
