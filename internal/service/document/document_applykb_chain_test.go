@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	datasetsvc "ragflow/internal/service/dataset"
 )
@@ -89,8 +90,6 @@ func migrateChainModelTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroup{},
-		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 		&entity.PipelineOperationLog{},
 	); err != nil {
@@ -336,7 +335,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 				},
 			},
 		},
-	}, "tenant-1")
+	}, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%v", err, code)
 	}
