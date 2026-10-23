@@ -23,7 +23,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -31,6 +31,11 @@ import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
+import {
+  mergePromptConfigForSubmit,
+  promptConfigDefaults,
+  withPromptConfigDefaults,
+} from './prompt-config-defaults';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
@@ -70,6 +75,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
 
   type FormSchemaType = z.infer<typeof formSchema>;
 
+  // The same prompt the create dialog seeds, so an assistant that arrives
+  // without one is still valid to save. Initialised once: `t` is replaced when
+  // the header switches language, and re-deriving this would change the value
+  // the reset effect depends on, wiping unsaved edits with no data change.
+  const [defaultPromptConfig] = useState(() =>
+    promptConfigDefaults(t('chat.systemInitialValue')),
+  );
+
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     // shouldUnregister: false keeps every field mounted in the form state, which
@@ -84,16 +97,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       icon: '',
       description: '',
       dataset_ids: [],
-      prompt_config: {
-        quote: true,
-        keyword: false,
-        tts: false,
-        refine_multiturn: true,
-        system: '',
-        parameters: [],
-        reasoning: false,
-        cross_languages: [],
-      },
+      prompt_config: defaultPromptConfig,
       top_n: 8,
       rerank_candidates_count: 64,
       similarity_threshold: 0.2,
@@ -128,7 +132,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     );
 
     nextValues.prompt_config = {
-      ...nextValues.prompt_config,
+      // promptConfigSchema strips fields the form does not render (`use_kg`,
+      // `toc_enhance`), and the PUT replaces the whole object — spread the
+      // persisted config first so those survive a save.
+      ...mergePromptConfigForSubmit(
+        data.prompt_config,
+        nextValues.prompt_config,
+      ),
       agentic_rag: agenticRag,
     };
 
@@ -163,7 +173,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const nextData = {
       ...omit(data, ['top_k']),
       prompt_config: {
-        ...data.prompt_config,
+        // Chats created through the REST API / SDK may omit keys the schema
+        // treats as required (`keyword`, `tts`, `system`, `refine_multiturn`).
+        // Without them the form never validates and Save does nothing.
+        ...withPromptConfigDefaults(
+          data.prompt_config,
+          defaultPromptConfig.system ?? '',
+        ),
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
       },
@@ -174,7 +190,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     if (!isEmpty(data)) {
       form.reset(nextData as FormSchemaType);
     }
-  }, [data, form]);
+  }, [data, form, defaultPromptConfig]);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
