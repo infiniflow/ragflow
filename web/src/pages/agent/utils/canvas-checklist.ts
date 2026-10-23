@@ -670,6 +670,27 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      ['delimiters', 'children_delimiters'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((entry: unknown) => {
+            const value =
+              entry && typeof entry === 'object' && 'value' in entry
+                ? entry.value
+                : entry;
+            return typeof value !== 'string' || value === '';
+          }),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
