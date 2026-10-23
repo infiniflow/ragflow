@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
+import { Modal } from '@/components/ui/modal/modal';
 import {
   Form,
   FormField,
@@ -24,6 +25,7 @@ import {
   usePipelineOperatorNodes,
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
+import { buildParserConfigFromNodes } from '@/utils/pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
@@ -42,6 +44,7 @@ import {
   usePipelineDataList,
   useSaveDatasetSetting,
 } from './hooks';
+import { normalizeParserConfigForComparison } from './parser-config';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 
 export default function DatasetSetting() {
@@ -146,9 +149,39 @@ export default function DatasetSetting() {
 
   const handleSubmit = useCallback(
     async (data: z.infer<typeof formSchema>) => {
-      await handleSave(data);
+      const savedValues = form.formState.defaultValues;
+      const operatorDefaults = buildParserConfigFromNodes(operatorNodes);
+      const [savedParserConfig, parserConfig] = [
+        savedValues?.parser_config,
+        data.parser_config,
+      ].map((config) =>
+        normalizeParserConfigForComparison(config, operatorDefaults, t),
+      );
+      const parserSettingsChanged =
+        data.parse_type !== savedValues?.parse_type ||
+        (data.parser_id || '') !== (savedValues?.parser_id || '') ||
+        (data.pipeline_id || '') !== (savedValues?.pipeline_id || '') ||
+        !isEqual(parserConfig, savedParserConfig);
+
+      if (knowledgeDetails.chunk_count > 0 && parserSettingsChanged) {
+        await new Promise<void>((resolve) => {
+          Modal.warning({
+            title: t('common.warn'),
+            content: t('knowledgeConfiguration.parserSettingsChangeWarning'),
+            okText: t('common.ok'),
+            closable: false,
+            showCancel: false,
+            onOk: resolve,
+          });
+        });
+      }
+
+      const result = await handleSave(data);
+      if (result.code === 0) {
+        form.reset(data);
+      }
     },
-    [handleSave],
+    [form, handleSave, knowledgeDetails.chunk_count, operatorNodes, t],
   );
 
   const { errors } = useFormState({
@@ -294,6 +327,7 @@ export default function DatasetSetting() {
                   loading={
                     datasetSettingLoading ||
                     saveLoading ||
+                    form.formState.isSubmitting ||
                     (operatorNodesLoading && operatorNodes.length === 0)
                   }
                 >

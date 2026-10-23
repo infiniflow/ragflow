@@ -318,9 +318,7 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return tavilyErrJSON(fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")), nil
 	}
 
-	// Match the Python implementation: always disable images and raw content.
 	p.IncludeImages = false
-	p.IncludeRawContent = false
 
 	body, _ := json.Marshal(tavilyRequestBody{
 		Query:                    p.Query,
