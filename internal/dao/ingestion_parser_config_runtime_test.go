@@ -221,7 +221,10 @@ func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 				if err := dao.MigrateIngestionParserConfigsForTest(t.Context(), db); err != nil {
 					t.Fatal(err)
 				}
-				config := pipeline.BuildParserConfig(dsl, migratedConfig(t, db, "kb-mineru"))
+				config, err := pipeline.BuildParserConfig(dsl, migratedConfig(t, db, "kb-mineru"))
+				if err != nil {
+					t.Fatal(err)
+				}
 				effective := effectiveComponentParams(t, "general", config)
 				parser, err := component.NewParserComponent(effective["Parser:HipSignsRhyme"])
 				if err != nil {
@@ -873,7 +876,11 @@ func extractorFromMigratedConfig(t *testing.T, config map[string]any) *component
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned := service.ApplyComponentScopedParserConfig(pipeline.BuildParserConfig(dsl, config), "tenant-llm")
+	cleaned, err := pipeline.BuildParserConfig(dsl, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleaned = service.ApplyComponentScopedParserConfig(cleaned, "tenant-llm")
 	c, err := component.NewExtractorComponent(cleaned["Extractor:AutoExtractDefault"].(map[string]any))
 	if err != nil {
 		t.Fatal(err)

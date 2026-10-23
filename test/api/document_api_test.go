@@ -290,6 +290,8 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 		{"nested_meta", apiObject{"meta_fields": apiObject{"nested": apiObject{"x": 1}}}, 102},
 		{"nested_meta_list", apiObject{"meta_fields": apiObject{"nested": []any{apiObject{"x": 1}}}}, 102},
 		{"invalid_chunk_method", apiObject{"chunk_method": "unknown"}, 102}, {"empty_chunk_method", apiObject{"chunk_method": ""}, 102},
+		{"removed_knowledge_graph", apiObject{"name": "must_not_persist.txt", "chunk_method": "knowledge_graph"}, 102},
+		{"removed_tag", apiObject{"name": "must_not_persist.txt", "chunk_method": "tag"}, 102},
 		{"parser_not_object", apiObject{"parser_config": []any{}}, 102},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -303,7 +305,16 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 			}
 		})
 	}
-	for _, method := range []string{"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"} {
+	catalog := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/pipelines", nil, apiObject{"type": "builtin"}))["data"])
+	pipelines := array(t, catalog["canvas"])
+	if len(pipelines) == 0 {
+		t.Fatal("builtin pipeline catalog is empty")
+	}
+	methods := []string{"naive"}
+	for _, pipeline := range pipelines {
+		methods = append(methods, object(t, pipeline)["id"].(string))
+	}
+	for _, method := range methods {
 		restOK(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method}, nil))
 		persisted := getRESTDocument(t, id, docID)
 		if persisted["chunk_method"] != method || persisted["parser_id"] != method {
