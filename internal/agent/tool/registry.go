@@ -75,6 +75,8 @@ var registry = map[string]Factory{
 	"wikipedia":                  buildWikipediaTool,
 	"wikipedia_search":           buildWikipediaTool,
 	"yahoo_finance":              buildYahooFinanceTool,
+	"youcom":                     buildYouComTool,
+	"youcom_search":              buildYouComTool,
 }
 
 // canvasToolNames maps lower-cased Canvas component names to the canonical
@@ -93,6 +95,7 @@ var canvasToolNames = map[string]string{
 	"tavilyextract":    "tavily_extract",
 	"tavilysearch":     "tavily",
 	"yahoofinance":     "yahoo_finance",
+	"youcomsearch":     "youcom",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -749,6 +752,33 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires api_key for realtime mode", "keenable")
 	}
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
+}
+
+func buildYouComTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := youComParams{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "youcom")
+		}
+	}
+	if value, ok := params["freshness"]; ok {
+		var valid bool
+		defaults.Freshness, valid = value.(string)
+		if !valid || (defaults.Freshness != "" && defaults.Freshness != "any" && defaults.Freshness != "day" && defaults.Freshness != "week" && defaults.Freshness != "month" && defaults.Freshness != "year") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported freshness %v", "youcom", value)
+		}
+	}
+	if value, ok := params["top_n"]; ok {
+		var valid bool
+		defaults.TopN, valid = strictInt(value)
+		if !valid || defaults.TopN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "youcom")
+		}
+	}
+	return newYouComTool(nil, apiKey, defaults), nil
 }
 
 func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
