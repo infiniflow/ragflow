@@ -97,6 +97,11 @@ vastbase:
   user: '${VB_USERNAME:-ragflow}'
   password: '${VB_PASSWORD:-Infini_Rag@123}'
   db_name: '${VB_VEC_DBNAME:-ragflow}'
+  # Metadata database, read only when DB_TYPE=vastbase; host/port/user/
+  # password/ssl_mode above are shared with the doc engine.
+  name: '${VB_META_DBNAME:-rag_flow}'
+  max_connections: 50
+  stale_timeout: 300
   dbcompatibility: '${VB_DBCOMPATIBILITY:-B}'
   # No disable fallback: an empty ssl_mode reaches the engine's host policy
   # (disable on loopback, verify-full otherwise). docker/.env sets disable

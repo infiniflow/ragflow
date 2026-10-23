@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
+	"github.com/lib/pq"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
@@ -283,6 +285,33 @@ func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
 			got := phantomUniqueDrop(&schema.Field{Unique: tc.tag}, uniqueColumnType{unique: tc.unique})
 			if got != tc.wantSkip {
 				t.Fatalf("phantomUniqueDrop(unique=%v, tag=%v) = %v, want %v", tc.unique, tc.tag, got, tc.wantSkip)
+			}
+		})
+	}
+}
+
+// TestIsPostgresDuplicateObjectErr pins the typed classification the
+// Vastbase convergence skip relies on: only the three duplicate-object
+// SQLSTATEs count as convergence, and errors that merely contain "already
+// exists" in their text — a non-pq error, or a pq error with another code —
+// must surface instead of being suppressed.
+func TestIsPostgresDuplicateObjectErr(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"relation exists", &pq.Error{Code: "42P07", Message: `relation "user" already exists`}, true},
+		{"column exists", &pq.Error{Code: "42701", Message: `column "foo" of relation "user" already exists`}, true},
+		{"object exists", &pq.Error{Code: "42710", Message: `constraint "c" for relation "user" already exists`}, true},
+		{"wrapped relation exists", fmt.Errorf("auto migrate: %w", &pq.Error{Code: "42P07"}), true},
+		{"unique violation", &pq.Error{Code: "23505", Message: "duplicate key value violates unique constraint", Detail: "Key (id)=(1) already exists."}, false},
+		{"text only", errors.New(`relation "user" already exists`), false},
+		{"other pq error", &pq.Error{Code: "42602", Message: "invalid name"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPostgresDuplicateObjectErr(tc.err); got != tc.want {
+				t.Fatalf("isPostgresDuplicateObjectErr(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

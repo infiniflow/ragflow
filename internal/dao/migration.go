@@ -375,7 +375,8 @@ func isDuplicateColumnError(err error) bool {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+	return (strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")) ||
+		strings.Contains(strings.ToLower(text), "already exists")
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
