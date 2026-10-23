@@ -30,7 +30,7 @@
 #   docker build -f Dockerfile -t infiniflow/ragflow_deps .
 #
 # The main `Dockerfile` (built from the project root) pulls this image
-# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest,...` and
+# via `--mount=type=bind,from=infiniflow/ragflow_deps:latest-python,...` and
 # is unaffected by where these files live locally.
 #
 # Go DeepDoc weights: in addition to the native libs, this script downloads the
