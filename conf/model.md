@@ -184,6 +184,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |
+| **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
 | **LongCat** | Meituan's model platform |

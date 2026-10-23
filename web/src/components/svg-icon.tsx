@@ -123,6 +123,7 @@ const svgIcons = [
   LLMFactory.AIStupidLevel,
   LLMFactory.Runcrate,
   LLMFactory.CloudGPU,
+  LLMFactory.HostingerRouter,
 ];
 
 export const LlmIcon = ({

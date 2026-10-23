@@ -3541,6 +3541,14 @@
             "url": "https://cloudgpu.app/v1"
         },
         {
+            "name": "Hostinger Router",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://router.hostinger.com/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

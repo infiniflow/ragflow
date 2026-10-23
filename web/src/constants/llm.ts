@@ -119,6 +119,7 @@ export enum LLMFactory {
   Runcrate = 'Runcrate',
   CloudGPU = 'CloudGPU',
   SystemOne = 'SystemOne',
+  HostingerRouter = 'Hostinger Router',
 }
 
 // Please lowercase the file name
@@ -219,6 +220,7 @@ export const IconMap = {
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
   [LLMFactory.CloudGPU]: 'cloudgpu',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
 };
 
 /**
@@ -268,6 +270,7 @@ export const APIMapUrl = {
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
