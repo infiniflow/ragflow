@@ -505,7 +505,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
       action: '操作',
@@ -705,7 +705,7 @@ export default {
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方式',
+      parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
       noConfigChunkerHint:
@@ -728,8 +728,6 @@ export default {
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
         '建议的生成文本块的 Token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
       chinese: '中文',

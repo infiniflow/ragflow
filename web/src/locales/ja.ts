@@ -167,7 +167,7 @@ export default {
       webCrawl: 'ウェブクロール',
       chunkNumber: 'チャンク数',
       uploadDate: 'アップロード日',
-      chunkMethod: 'チャンク方法',
+      parsingMode: '解析モード',
       enabled: '有効',
       disabled: '無効',
       action: 'アクション',
@@ -422,8 +422,6 @@ export default {
       chunkTokenNumberTip:
         'チャンクのトークンしきい値を設定します。このしきい値を下回る段落は、次の段落と結合され、しきい値を超えた時点でチャンクが作成されます。新しいチャンクは、デリミタが検出されるまで作成されません。このしきい値が超過されていてもです。',
 
-      chunkMethod: 'チャンク方法',
-      chunkMethodTip: '詳細は右側の説明をご覧ください。',
       upload: 'アップロード',
       english: '英語',
       chinese: '中国語',
@@ -637,7 +635,7 @@ export default {
       dataFlowPlaceholder: 'パイプラインを選択してください。',
       buildItFromScratch: '最初から構築',
       dataFlow: 'パイプライン',
-      parseType: 'パースタイプ',
+      parsingMode: '解析モード',
       manualSetup: 'パイプライン',
       builtIn: '組み込み',
       portugueseBr: 'ポルトガル語（ブラジル）',

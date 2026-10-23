@@ -108,7 +108,7 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
@@ -217,6 +217,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      parsingMode: '解析方式',
       builtInSuffix: ' (built in)',
       settings: '設置',
       autoMetadataTip:
@@ -241,8 +242,6 @@ export default {
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
       chinese: '中文',
