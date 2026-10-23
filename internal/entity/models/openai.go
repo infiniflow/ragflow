@@ -76,7 +76,7 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildOpenAIRequestBody(chatModelConfig, modelName, messages, false)
 
 	if strings.Contains(strings.ToLower(modelName), "qwen3") {
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
@@ -109,7 +109,7 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody := buildOpenAIRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
 	}
@@ -133,6 +133,36 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
+}
+
+func buildOpenAIRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	body := buildRequestBody(cfg, modelName, messages, stream)
+	name := strings.ToLower(modelName)
+	isFamily := func(family string) bool {
+		return name == family || strings.HasPrefix(name, family+"-") || strings.HasPrefix(name, family+".")
+	}
+	if !isFamily("gpt-5") && !isFamily("gpt-6") && !isFamily("o1") && !isFamily("o3") && !isFamily("o4") {
+		return body
+	}
+	if cfg != nil && cfg.MaxTokens != nil {
+		delete(body, "max_tokens")
+		body["max_completion_tokens"] = *cfg.MaxTokens
+	}
+	effort := ""
+	if cfg != nil && cfg.Effort != nil {
+		effort = *cfg.Effort
+		if effort != "" {
+			body["reasoning_effort"] = effort
+		}
+	}
+	// These models default to non-reasoning mode. Other reasoning models do not.
+	defaultNone := (isFamily("gpt-5.1") || isFamily("gpt-5.2") || isFamily("gpt-5.4")) && !strings.Contains(name, "-pro")
+	chatModel := strings.Contains(name, "chat-latest")
+	if !chatModel && effort != "none" && !(effort == "" && defaultNone) {
+		delete(body, "temperature")
+		delete(body, "top_p")
+	}
+	return body
 }
 
 type openaiEmbeddingResponse struct {
