@@ -299,7 +299,6 @@ func TestParseListSyncLogs(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestParseAPIShowModelStats(t *testing.T) {

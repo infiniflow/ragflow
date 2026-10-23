@@ -1064,7 +1064,7 @@ func (p *Parser) parseAPIShowModelStats() (*Command, error) {
 
 	// Optional grouping dimension: BY DATE | BY MODEL | BY INSTANCE | BY PROVIDER.
 	// BY is not a reserved keyword, so it arrives as a bare identifier.
-	if p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "by") {
+	if p.curToken.Type == TokenBy {
 		p.nextToken() // consume BY
 		switch {
 		case p.curToken.Type == TokenModel:
@@ -1073,7 +1073,7 @@ func (p *Parser) parseAPIShowModelStats() (*Command, error) {
 			cmd.Params["by"] = "instance"
 		case p.curToken.Type == TokenProvider:
 			cmd.Params["by"] = "provider"
-		case p.curToken.Type == TokenIdentifier && strings.EqualFold(p.curToken.Value, "date"):
+		case p.curToken.Type == TokenDate:
 			cmd.Params["by"] = "date"
 		default:
 			return nil, fmt.Errorf("unknown MODEL STATS dimension: %s", p.curToken.Value)
