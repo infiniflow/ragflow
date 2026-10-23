@@ -202,13 +202,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     llmID,
-		EmbdID:    embdID,
-		ASRID:     asrID,
-		Img2TxtID: img2txtID,
-		RerankID:  rerankID,
-		TTSID:     &ttsID,
-		OCRID:     &ocrID,
 		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
@@ -220,6 +213,13 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &status,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
+		TTSID:     &ttsID,
+		OCRID:     &ocrID,
 	}
 	fileID := common.GenerateToken()
 	file__ := ""
@@ -750,30 +750,38 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
-// SetTenantInfo updates tenant model configuration
+// SetTenantInfo updates default models on the caller's owner membership.
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	_ = userID
-	tenantDAO := dao.NewTenantDAO()
+	if req == nil {
+		return common.CodeArgumentError, fmt.Errorf("model settings are required")
+	}
+	membershipDAO := dao.NewUserTenantDAO()
+	membership, err := membershipDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != membership.TenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the user's tenant")
+	}
 	updates := make(map[string]interface{})
-
 	for key, value := range req.Raw {
 		if key == "tenant_id" {
 			continue
 		}
-		updates[key] = value
+		switch key {
+		case "llm_id", "tenant_llm_id", "embd_id", "tenant_embd_id", "asr_id", "tenant_asr_id",
+			"img2txt_id", "tenant_img2txt_id", "rerank_id", "tenant_rerank_id", "tts_id", "tenant_tts_id",
+			"ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			updates[key] = value
+		default:
+			return common.CodeArgumentError, fmt.Errorf("unsupported model setting %q", key)
+		}
 	}
-
-	tenantID := ""
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
-	}
-
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
+		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
-
 	return common.CodeSuccess, nil
 }
 

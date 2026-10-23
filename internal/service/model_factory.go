@@ -495,11 +495,25 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 		return nil, fmt.Errorf("%w: tenant DAO is not initialized", errModelConfigUnavailable)
 	}
 
-	tenant, err := f.tenantDAO.GetByID(ctx, dao.DB, access.TenantID)
-	if err != nil {
+	if _, err := f.tenantDAO.GetByID(ctx, dao.DB, access.TenantID); err != nil {
 		return nil, fmt.Errorf("failed to get tenant: %s type %s: %w", access.TenantID, modelType, err)
 	}
-	modelName, modelID := defaultModelRefs(tenant, modelType)
+	membershipDAO := dao.NewUserTenantDAO()
+	var membership *entity.UserTenant
+	var err error
+	if access.UserID != "" {
+		membership, err = membershipDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
+		if err != nil && (access.UserID != access.TenantID || !errors.Is(err, gorm.ErrRecordNotFound)) {
+			return nil, fmt.Errorf("failed to get user tenant model settings: %s type %s: %w", access.TenantID, modelType, err)
+		}
+	}
+	if membership == nil {
+		membership, err = membershipDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get tenant owner model settings: %s type %s: %w", access.TenantID, modelType, err)
+		}
+	}
+	modelName, modelID := defaultModelRefs(membership, modelType)
 	if modelID != "" {
 		return f.resolveConfigAuthorized(ctx, access, modelType, modelID)
 	}
@@ -509,27 +523,27 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 	return f.resolveConfigAuthorized(ctx, access, modelType, modelName)
 }
 
-func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string, string) {
-	if tenant == nil {
+func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType) (string, string) {
+	if membership == nil {
 		return "", ""
 	}
 	switch modelType {
 	case entity.ModelTypeChat:
-		return tenant.LLMID, ptrStringValue(tenant.TenantLLMID)
+		return membership.LLMID, ptrStringValue(membership.TenantLLMID)
 	case entity.ModelTypeEmbedding:
-		return tenant.EmbdID, ptrStringValue(tenant.TenantEmbdID)
+		return membership.EmbdID, ptrStringValue(membership.TenantEmbdID)
 	case entity.ModelTypeRerank:
-		return tenant.RerankID, ptrStringValue(tenant.TenantRerankID)
+		return membership.RerankID, ptrStringValue(membership.TenantRerankID)
 	case entity.ModelTypeSpeech2Text:
-		return tenant.ASRID, ptrStringValue(tenant.TenantASRID)
+		return membership.ASRID, ptrStringValue(membership.TenantASRID)
 	case entity.ModelTypeImage2Text:
-		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
+		return membership.Img2TxtID, ptrStringValue(membership.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
+		return ptrStringValue(membership.TTSID), ptrStringValue(membership.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
+		return ptrStringValue(membership.OCRID), ptrStringValue(membership.TenantOCRID)
 	case entity.ModelTypeDecision:
-		return ptrStringValue(tenant.DecisionID), ptrStringValue(tenant.TenantDecisionID)
+		return ptrStringValue(membership.DecisionID), ptrStringValue(membership.TenantDecisionID)
 	default:
 		return "", ""
 	}

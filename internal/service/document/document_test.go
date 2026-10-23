@@ -1303,15 +1303,10 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			t.Fatalf("insert test user: %v", err)
 		}
 	}
-	// Insert tenant if not exists (llm_id, embd_id, asr_id are NOT NULL)
+	// Insert tenant if not exists.
 	var existingTenant entity.Tenant
 	if err := dao.DB.Where("id = ?", tenantID).First(&existingTenant).Error; err != nil {
-		tn := &entity.Tenant{
-			ID:     tenantID,
-			LLMID:  "llm-default",
-			EmbdID: "embd-default",
-			ASRID:  "asr-default",
-		}
+		tn := &entity.Tenant{ID: tenantID}
 		if err = dao.DB.Create(tn).Error; err != nil {
 			t.Fatalf("insert test tenant: %v", err)
 		}
@@ -1328,6 +1323,11 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
 		}
+	}
+	if err := dao.DB.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
+		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
+		t.Fatalf("set test owner model defaults: %v", err)
 	}
 }
 

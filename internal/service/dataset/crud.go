@@ -184,8 +184,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
-	embdID := tenant.EmbdID
-	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
+	embdID, tenantEmbdID, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
+	if err != nil {
+		return nil, common.CodeForbidden, err
+	}
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, service.ModelAccess{UserID: userID, TenantID: tenantID})
 		if !ok {
@@ -212,10 +214,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	name = dedupedName
 
-	parserConfig = service.ApplyComponentScopedParserConfig(
-		parserConfig,
-		tenant.LLMID,
-	)
+	llmID, _, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeChat)
+	if err != nil {
+		return nil, common.CodeForbidden, err
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,

@@ -192,8 +192,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
-	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
-	if err != nil {
+	if _, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID); err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
@@ -262,9 +261,14 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		req["kb_ids"] = []string{}
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
-		req["llm_id"] = tenant.LLMID
-		if tenant.TenantLLMID != nil {
-			req["tenant_llm_id"] = *tenant.TenantLLMID
+		membership, membershipErr := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+		if membershipErr != nil {
+			return nil, common.CodeForbidden, membershipErr
+		}
+		modelName, modelID := defaultModelRefs(membership, entity.ModelTypeChat)
+		req["llm_id"] = modelName
+		if modelID != "" {
+			req["tenant_llm_id"] = modelID
 		}
 	}
 	if stringFromValue(req["llm_id"]) != "" && !isTruthy(req["tenant_llm_id"]) {

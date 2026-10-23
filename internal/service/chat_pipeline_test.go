@@ -1833,10 +1833,12 @@ func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID s
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Tenant{
 		ID:     "tenant-1",
-		LLMID:  defaultLLMID,
 		Status: &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err := db.Model(&entity.UserTenant{}).Where("id = ?", "user-tenant-1").Update("llm_id", defaultLLMID).Error; err != nil {
+		t.Fatalf("failed to configure owner default model: %v", err)
 	}
 }
 

@@ -708,13 +708,13 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	if err := db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")}).Error; err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
 	if err := db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: role, Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert user_tenant: %v", err)
 	}
-	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid)), LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"}).Error; err != nil {
 		t.Fatalf("insert tenant owner: %v", err)
 	}
 	pipelineID := "pipe-1"
@@ -1255,9 +1255,9 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	// Insert user
 	db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")})
 	// Insert tenant
-	db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
+	db.Create(&entity.Tenant{ID: "tenant-1"})
 	// Insert user_tenant mapping
-	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))})
+	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid)), LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
 	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "normal", Status: sptr(string(entity.StatusValid))})
 	// Insert knowledgebase and its document for the resource-level access check.
 	db.Create(&entity.Knowledgebase{

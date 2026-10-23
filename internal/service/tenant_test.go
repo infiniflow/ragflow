@@ -253,13 +253,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	}
 
 	// Insert Tenant
-	err = db.Create(&entity.Tenant{
-		ID:     tenantID,
-		LLMID:  "",
-		EmbdID: "",
-		ASRID:  "",
-		Status: &statusVal,
-	}).Error
+	err = db.Create(&entity.Tenant{ID: tenantID, Status: &statusVal}).Error
 	if err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
@@ -318,18 +312,18 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Fatalf("SetTenantDefaultModels failed: %v", err)
 	}
 
-	// Verify Tenant default model is updated to composite name
-	tenant := &entity.Tenant{}
-	err = db.Where("id = ?", tenantID).First(tenant).Error
+	// Verify the default is stored on the user's owner membership.
+	var membership entity.UserTenant
+	err = db.Where("id = ?", "ut-1").First(&membership).Error
 	if err != nil {
-		t.Fatalf("failed to retrieve tenant: %v", err)
+		t.Fatalf("failed to retrieve owner membership: %v", err)
 	}
 
 	expectedDefaultModel := "gpt-4o@dummy@OpenAI"
-	if tenant.LLMID != expectedDefaultModel {
-		t.Errorf("expected tenant default LLM to be %q, got %q", expectedDefaultModel, tenant.LLMID)
+	if membership.LLMID != expectedDefaultModel {
+		t.Errorf("expected owner default LLM to be %q, got %q", expectedDefaultModel, membership.LLMID)
 	}
-	if tenant.TenantLLMID == nil || *tenant.TenantLLMID != modelID {
-		t.Errorf("expected tenant_llm_id to be %q, got %v", modelID, tenant.TenantLLMID)
+	if membership.TenantLLMID == nil || *membership.TenantLLMID != modelID {
+		t.Errorf("expected owner tenant_llm_id to be %q, got %v", modelID, membership.TenantLLMID)
 	}
 }
