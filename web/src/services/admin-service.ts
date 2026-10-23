@@ -58,10 +58,11 @@ request.interceptors.response.use(
     const { data } = response ?? {};
 
     if (data?.code === 100) {
-      message.error(data?.message);
+      message.error(data?.message, { position: 'top-right' });
     } else if (data?.code === 401) {
       message.error(data?.message, {
         description: data?.message,
+        position: 'top-right',
       });
 
       adminStorage.removeAll();
@@ -70,6 +71,7 @@ request.interceptors.response.use(
     } else if (data?.code && data.code !== 0) {
       message.error(`${i18n.t('message.hint')}: ${data?.code}`, {
         description: data?.message,
+        position: 'top-right',
       });
     }
 

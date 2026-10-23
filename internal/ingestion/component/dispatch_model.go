@@ -264,6 +264,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if err != nil {
 		return nil, err
 	}
+	// A disabled instance must not be used: its credentials are no longer
+	// accepted by the provider, and running against it would hide that the
+	// selected deployment is unavailable. Mirrors the service-layer check.
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, fmt.Errorf("model instance %q is disabled", instance.InstanceName)
+	}
 
 	apiKey := instance.APIKey
 	var extra map[string]string
@@ -322,6 +328,13 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	instance, err := instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+	}
+	// The instance named by the reference must be usable. A two-part
+	// "model@provider" reference names the "default" instance implicitly, so
+	// an inactive default fails here instead of being answered by another
+	// instance of the same provider.
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, "", nil, 0, fmt.Errorf("model instance %q is disabled", instanceName)
 	}
 
 	apiKey := instance.APIKey

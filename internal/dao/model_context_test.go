@@ -349,3 +349,105 @@ func TestResolveModelContentLength_StoredMistralOCRProvider(t *testing.T) {
 		t.Fatalf("tenant model id = %d, want %d", got, want)
 	}
 }
+
+// TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance
+// verifies that a legacy two-part "model@provider" reference never resolves
+// another instance's tenant override. The reference implicitly means the
+// "default" instance; when that instance is missing, the resolution must not
+// borrow the provider's sole active instance, because that reports the
+// context window of a deployment the caller did not select. An explicit
+// "model@instance@provider" reference keeps resolving that instance.
+func TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-prod",
+		ProviderID:   "provider-openai",
+		InstanceName: "prod",
+		Status:       "active",
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "0123456789abcdef0123456789abcdef",
+		ProviderID: "provider-openai",
+		InstanceID: "instance-prod",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens": 32000}`,
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	// The implicit "default" instance does not exist, so the "prod" instance's
+	// tenant override must not answer a two-part reference.
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@OpenAI) = %d, want 128000 (the default instance is unavailable; another instance must not be substituted)", got)
+	}
+	// An explicit instance reference still resolves that instance.
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@prod@OpenAI) = %d, want 32000 (explicit instance reference)", got)
+	}
+}
+
+// TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInstances
+// verifies that a legacy two-part reference does not pick one of several
+// active instances when the implicit "default" instance is missing. Each
+// instance keeps its own override for explicit references.
+func TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInstances(t *testing.T) {
+	db := openModelContextTestDB(t)
+	pushDB(t, db)
+	ctx := t.Context()
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-openai",
+		ProviderName: "OpenAI",
+		TenantID:     "tenant-1",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	for _, instance := range []*entity.TenantModelInstance{
+		{ID: "instance-prod", ProviderID: "provider-openai", InstanceName: "prod", Status: "active"},
+		{ID: "instance-staging", ProviderID: "provider-openai", InstanceName: "staging", Status: "active"},
+	} {
+		if err := db.Create(instance).Error; err != nil {
+			t.Fatalf("create instance %s: %v", instance.InstanceName, err)
+		}
+	}
+	for _, model := range []*entity.TenantModel{
+		{
+			ID: "model-prod", ProviderID: "provider-openai", InstanceID: "instance-prod",
+			ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active",
+			Extra: `{"max_tokens": 32000}`,
+		},
+		{
+			ID: "model-staging", ProviderID: "provider-openai", InstanceID: "instance-staging",
+			ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active",
+			Extra: `{"max_tokens": 16000}`,
+		},
+	} {
+		if err := db.Create(model).Error; err != nil {
+			t.Fatalf("create model %s: %v", model.ID, err)
+		}
+	}
+
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@OpenAI) = %d, want 128000 (no default instance; no instance may be guessed)", got)
+	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@prod@OpenAI) = %d, want 32000", got)
+	}
+	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@staging@OpenAI", "", ""); got != 16000 {
+		t.Fatalf("ResolveModelContentLength(gpt-4o@staging@OpenAI) = %d, want 16000", got)
+	}
+}

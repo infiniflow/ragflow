@@ -344,3 +344,104 @@ func TestResolveModelConfigChainedDBStatementIsolationFixedOnly(t *testing.T) {
 		t.Fatalf("resolver dropped the caller's rejecting scope: %v", err)
 	}
 }
+
+// openDispatchModelTestDB opens an isolated in-memory database holding the
+// tenant model tables the dispatch resolvers read.
+func openDispatchModelTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+// TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure verifies that a
+// model whose instance is inactive fails with an explicit error on both
+// resolution paths, instead of running against the disabled instance's
+// credentials. A two-part "model@provider" reference names the "default"
+// instance implicitly, so an inactive default must fail the same way.
+func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
+	db := openDispatchModelTestDB(t)
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", APIKey: `{"OPENAI_API_KEY": "sk-inactive"}`, Status: "inactive"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	for _, tc := range []struct{ name, modelRef string }{
+		{name: "tenant model id", modelRef: "model-1"},
+		{name: "composite reference", modelRef: "gpt-4o@default@OpenAI"},
+		{name: "legacy two-part reference", modelRef: "gpt-4o@OpenAI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver, modelName, apiConfig, contextLength, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, tc.modelRef)
+			if err == nil {
+				t.Fatalf("an inactive instance must fail explicitly, got driver=%v model=%q", driver, modelName)
+			}
+			if !strings.Contains(strings.ToLower(err.Error()), "disabled") {
+				t.Fatalf("error does not report the disabled instance: %v", err)
+			}
+			if driver != nil || modelName != "" || apiConfig != nil || contextLength != 0 {
+				t.Fatal("failed resolution returned a partial configuration")
+			}
+		})
+	}
+}
+
+// TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly verifies that
+// a tenant "max_tokens" override moves the resolved context window only: the
+// provider catalog's context_length is used when there is no override, and the
+// override never turns the model into an output-generation cap.
+func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T) {
+	db := openDispatchModelTestDB(t)
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", Status: "active"},
+		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	catalogModel, err := dao.GetModelProviderManager().GetModelByName("OpenAI", "gpt-4o")
+	if err != nil {
+		t.Fatalf("resolve provider model: %v", err)
+	}
+	if catalogModel.ContextLength == nil {
+		t.Fatal("provider model has no context_length")
+	}
+
+	// Without an override the catalog context window is used.
+	_, _, _, contextLength, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, "gpt-4o@default@OpenAI")
+	if err != nil {
+		t.Fatalf("resolve model config: %v", err)
+	}
+	if contextLength != *catalogModel.ContextLength {
+		t.Fatalf("context length = %d, want catalog context_length %d", contextLength, *catalogModel.ContextLength)
+	}
+
+	// The tenant override replaces the context window only.
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-1").
+		Update("extra", `{"max_tokens": 2000}`).Error; err != nil {
+		t.Fatalf("set model extra: %v", err)
+	}
+	_, _, _, contextLength, err = defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeChat, "gpt-4o@default@OpenAI")
+	if err != nil {
+		t.Fatalf("resolve model config with override: %v", err)
+	}
+	if contextLength != 2000 {
+		t.Fatalf("context length = %d, want the tenant max_tokens override 2000", contextLength)
+	}
+	if catalogModel.MaxOutput != nil && *catalogModel.MaxOutput == contextLength {
+		t.Fatalf("resolved context length %d equals the catalog max_output; the context window and the output cap are indistinguishable", contextLength)
+	}
+}
