@@ -901,11 +901,11 @@ export const useUpdateVersion = () => {
       versionId: string;
       alias: string;
     }) => {
-      const { data } = await agentService.updateVersion(
-        canvasId,
+      const { data } = await agentService.updateVersion({
+        agentId: canvasId,
         versionId,
-        { alias },
-      );
+        alias,
+      });
       return data?.code === 0;
     },
     onSuccess: (_result, variables) => {
