@@ -691,6 +691,33 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      label === Operator.VariableAggregator &&
+      (!Array.isArray(form?.groups) ||
+        form.groups.length === 0 ||
+        form.groups.some(
+          (group: any) =>
+            typeof group?.group_name !== 'string' ||
+            !group.group_name.trim() ||
+            !Array.isArray(group.variables) ||
+            group.variables.length === 0 ||
+            group.variables.some((variable: any) => {
+              const value =
+                typeof variable === 'string' ? variable : variable?.value;
+              return (
+                typeof value !== 'string' || !value.replace(/[{}]/g, '').trim()
+              );
+            }),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.aggregationIncomplete',
+        blocksRun: true,
+      });
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
