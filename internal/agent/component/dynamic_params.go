@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // ErrCompilationTemplateRequired identifies a Compiler component without a
@@ -15,8 +17,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
-// All other component checks remain the same as ValidateDynamicEntries.
+// ValidateDraftDynamicEntries allows unfinished Message content and chunker delimiters in saved drafts.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
 }
@@ -55,13 +56,8 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
 		}
 	}
-	// Delimiter entries are split tokens, not names: whitespace-only values
-	// ("\n", "\t") are valid delimiters — the chunker form's default row is a
-	// real newline — so only a zero-length string marks an incomplete row.
-	for _, field := range []string{"delimiters", "children_delimiters"} {
-		if values, ok := params[field].([]any); ok && containsEmpty(values) {
-			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
-		}
+	if err := schema.ValidateDelimiterEntries(params, draft); err != nil {
+		return fmt.Errorf("[%s] %w", component, err)
 	}
 	switch strings.ToLower(component) {
 	case "message":
@@ -279,18 +275,6 @@ func isNonBlankString(value any) bool {
 func containsBlank(values []any) bool {
 	for _, value := range values {
 		if isBlank(value) {
-			return true
-		}
-	}
-	return false
-}
-
-// containsEmpty reports whether any entry is a zero-length string. Unlike
-// containsBlank it keeps whitespace-only entries, which are meaningful
-// delimiter values.
-func containsEmpty(values []any) bool {
-	for _, value := range values {
-		if s, ok := value.(string); ok && s == "" {
 			return true
 		}
 	}
