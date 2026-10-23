@@ -1,6 +1,6 @@
 # DSL 多版本设计（Ingestion Pipeline / Dataflow Canvas）
 
-> 状态：v5.2（在 v5.1 基础上追加：§5.1 画布保存语义[手动 Save 建版本/自动保存仅更新 live draft]、§4.4 alias 写入路径、§8 前端去除 latest 伪选项；仍为锁定设计，TDD 实现中）
+> 状态：v5.3（在 v5.2 基础上追加：§5.2 版本上限与保留策略[K=64 每画布硬上限 + keep-all 写时不自动裁剪]；仍为锁定设计，TDD 实现中）
 > 约束：单 PR、严格 TDD、迁移为幂等 Go 函数、Missing 运行时校验不加字段、版本归属校验禁止悬空。
 
 ---
@@ -134,6 +134,38 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
 **范围裁定（A9，用户已确认 2026-10-22）**：因 agent/dataflow 共用 `UpdateAgent`，修正必须落在共享路径、对所有画布类别统一生效；**手动 Save 对 agent 与 dataflow 一致：更新 `user_canvas` + INSERT 新 `user_canvas_version`**；agent 的发布语义（Publish）不受影响。agent 手动 Save 仍建版本（行为不变），仅自动保存收敛，属良性改进且不触及 §1 范围。
 
 **粘性快照不受影响**：新建版本只改 `user_canvas_version`，已绑定 dataset/file 的 `pipeline_version_id` 仍为粘性（B4）；live draft 领先于最新版本属预期（手动 Save 后方才落成版本）。
+
+## 5.2 版本上限与保留策略（v5.3 新增）
+
+**动机**：用户可经手动 Save（§5.1）反复创建版本，需有一个**可预期、有界**的存储上限，同时**绝不**在写路径上静默删除用户的旧版本（旧设计曾设想「未发布 ≤ 20 自动裁剪」，经评审否决——裁剪会丢失用户可能需要的旧版本，故改为 keep-all）。
+
+### 5.2.1 每画布硬上限 K=64
+
+- 常量 `MaxCanvasVersions = 64`（位于 `internal/dao/user_canvas_version.go`）。计数针对**单个 `user_canvas_id` 下的全部 `user_canvas_version` 行**，不区分 `release` 状态（发布的与未发布的草稿一并计入）。
+- 写版本前 `SaveOrReplaceLatestTx` 先 `COUNT(*)` 该 canvas 现有行数：
+  - 当 `existing < MaxCanvasVersions`：允许写入（新增 INSERT 或就地刷新）。
+  - 当 `existing >= MaxCanvasVersions`：拒绝本次写入，返回 `ErrCanvasVersionLimitExceeded`（文案：**「版本数已达上限（最多 64 个），请删除旧的不再使用的版本」**），由 `mapAgentError` 映射为 `common.CodeDataError` 透传原话给前端弹窗。
+- **计数为「总量」而非「未发布」**：发布版本（agent `PublishAgent` 的 `release=true` 行）同样占名额。达到 64 后，无论手动 Save 新草稿还是发布新版本，都会被上限拦截，必须用户主动删除腾位。
+- **隔离性**：上限按 `user_canvas_id` 维度独立计算，画布 A 写满不影响画布 B（见单测 `TestCanvasVersionLimit_PerCanvasIsolation`）。
+
+### 5.2.2 不消耗名额的写入形态
+
+以下两种写入**不计入 / 不触发上限判定**，是「更新既有版本」而非「新增版本」：
+
+- **就地 DSL 刷新**（`ForceNew=false` 且 `sameDSL` 命中）：`SaveOrReplaceLatestTx` 命中同 DSL 分支时只 `UPDATE` 最新一行（如 alias/title/description 元数据），行数不变，不消耗名额（单测 `TestCanvasVersionLimit_RefreshInPlaceAllowedAtCap`）。
+- **元数据 PATCH**：服务层 `PatchVersion`（独立 update 路径）仅改 `alias`/`title`/`description` 等字段，不增行，不消耗名额（单测 `TestCanvasVersionLimit_AliasPatchUnaffected`）。
+
+> 上限只在「实际新增行」时起作用。只要不 INSERT 新行，即便已达到 64 也能继续刷新最新版本或改元数据。
+
+### 5.2.3 keep-all：写路径不做任何自动裁剪
+
+- **彻底删除**原 `deleteAllUnpublishedExcessTx` 及其「未发布 ≤ 20 裁剪」逻辑。写版本路径**不再因总数过高而删除任何既有行**。
+- 版本行的唯一删除入口是用户**显式**操作：
+  - 前端版本历史对话框的删除按钮 → `DeleteVersion`（带归属校验、引用扫描 `CountPipelineVersionReferences`，防止删掉仍被 dataset/file 绑定的版本）。
+  - agent 的版本清理（如适用）走显式接口，非写时隐式裁剪。
+- 因此「手动 Save 越多越占名额」，名额的回收**只能由用户主动删除**完成；K=64 是系统唯一的硬约束，不存在「写满后自动丢旧版」的隐藏行为（单测 `TestCanvasVersionKeepAllRetainsUnpublished`、`TestCanvasVersionKeepAllRetainsBeyondOldTrim`）。
+
+**与上游 PR 的关系**：上游 #21343 曾引入 keep-all 但本 PR 早期版采用「未发布裁剪到 20」，现经评审统一为「keep-all + K=64 上限」——以本 PR 行为为准；上游 #21352 的 `ApplyVersion` 已采纳并保留。
 
 ## 6. 读取路径：版本透传 + Missing 校验
 
