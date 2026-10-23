@@ -75,6 +75,36 @@ func TestFileService_CreateFolderDedupesDuplicateName(t *testing.T) {
 	}
 }
 
+func TestFileService_CreateFolderRecordsRequesterAsOwner(t *testing.T) {
+	db := setupFolderTestDB(t)
+	valid := string(entity.StatusValid)
+	for _, membership := range []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "owner", Role: string(permission.RoleOwner), Status: &valid},
+		{ID: "member-membership", UserID: "member", TenantID: "owner", Role: string(permission.RoleNormal), Status: &valid},
+	} {
+		if err := db.Create(&membership).Error; err != nil {
+			t.Fatalf("create membership: %v", err)
+		}
+	}
+	if err := db.Create(&entity.File{ID: "root", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}).Error; err != nil {
+		t.Fatalf("create root folder: %v", err)
+	}
+
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "member", TenantID: "owner"})
+	created, err := testFileService().CreateFolder(ctx, "member", "notes", "root", FileTypeFolder)
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+
+	var folder entity.File
+	if err := db.Where("id = ?", created["id"]).First(&folder).Error; err != nil {
+		t.Fatalf("load created folder: %v", err)
+	}
+	if folder.TenantID != "owner" || folder.CreatedBy != "member" {
+		t.Fatalf("created folder owner = user %q tenant %q, want requester member in tenant owner", folder.CreatedBy, folder.TenantID)
+	}
+}
+
 // firstCreatedFolderName creates one entry and returns its resulting name.
 func firstCreatedFolderName(t *testing.T, svc *FileService, name, fileType string) string {
 	t.Helper()
@@ -305,8 +335,8 @@ func TestFileService_ListFilesRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().ListFiles(t.Context(), "user-1", foreignFolder.ID, 1, 15, nil, "")
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ListFiles error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("ListFiles error = %v, want resource not found", err)
 	}
 }
 

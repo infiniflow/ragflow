@@ -162,6 +162,15 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 		code, normalized := normalizeSkillSpacePermissionError(err)
 		return nil, code, normalized
 	}
+	defaultEmbdID := req.EmbdID
+	if defaultEmbdID == "" {
+		defaultEmbdID, _, err = NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
+		if err != nil {
+			common.Error("Failed to resolve default embedding model for skill space", err,
+				zap.String("tenantID", tenantID), zap.String("userID", userID))
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", err)
+		}
+	}
 
 	// Tenant-scoped serialization to prevent concurrent create/delete races
 	tenantKey := tenantID + ":" + req.Name
@@ -273,14 +282,10 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	}
 
 	// Create default search config for this space
-	defaultEmbdID := req.EmbdID
-	if defaultEmbdID == "" {
-		defaultEmbdID, _, _ = NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
-		if defaultEmbdID != "" {
-			common.Info("Using tenant member default embedding model", zap.String("tenantID", tenantID), zap.String("embdID", defaultEmbdID))
-		} else {
-			common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", tenantID))
-		}
+	if req.EmbdID == "" && defaultEmbdID != "" {
+		common.Info("Using tenant member default embedding model", zap.String("tenantID", tenantID), zap.String("embdID", defaultEmbdID))
+	} else if defaultEmbdID == "" {
+		common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", tenantID))
 	}
 	if defaultEmbdID != "" {
 		if _, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, defaultEmbdID); err != nil {

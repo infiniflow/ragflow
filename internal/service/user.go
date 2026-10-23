@@ -755,6 +755,10 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	if req == nil {
 		return common.CodeArgumentError, fmt.Errorf("model settings are required")
 	}
+	updates, err := tenantModelSettingUpdates(req.Raw)
+	if err != nil {
+		return common.CodeArgumentError, err
+	}
 	membershipDAO := dao.NewUserTenantDAO()
 	membership, err := membershipDAO.GetOwnerByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -763,26 +767,45 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != membership.TenantID {
 		return common.CodeForbidden, fmt.Errorf("tenant_id must match the user's tenant")
 	}
-	updates := make(map[string]interface{})
-	for key, value := range req.Raw {
-		if key == "tenant_id" {
-			continue
-		}
-		switch key {
-		case "llm_id", "tenant_llm_id", "embd_id", "tenant_embd_id", "asr_id", "tenant_asr_id",
-			"img2txt_id", "tenant_img2txt_id", "rerank_id", "tenant_rerank_id", "tts_id", "tenant_tts_id",
-			"ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
-			updates[key] = value
-		default:
-			return common.CodeArgumentError, fmt.Errorf("unsupported model setting %q", key)
-		}
-	}
 	if len(updates) > 0 {
 		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
 	return common.CodeSuccess, nil
+}
+
+func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
+	updates := make(map[string]interface{}, len(raw))
+	for key, value := range raw {
+		if key == "tenant_id" {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("tenant_id must be a string")
+			}
+			continue
+		}
+		nullable := false
+		switch key {
+		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
+		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
+			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			nullable = true
+		default:
+			return nil, fmt.Errorf("unsupported model setting %q", key)
+		}
+		if value == nil {
+			if !nullable {
+				return nil, fmt.Errorf("%s cannot be null", key)
+			}
+			updates[key] = nil
+			continue
+		}
+		if _, ok := value.(string); !ok {
+			return nil, fmt.Errorf("%s must be a string", key)
+		}
+		updates[key] = value
+	}
+	return updates, nil
 }
 
 // UserTenantService user tenant service

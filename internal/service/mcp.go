@@ -710,6 +710,10 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
 	}
+	if err := checkFeatureAction(ctx, userID, "mcp", permission.ActionWrite); err != nil {
+		_, normalized := permissionresponse.Normalize(err)
+		return nil, normalized
+	}
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultMCPFetchTimeoutSec
 	}
@@ -807,7 +811,12 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 			Variables:  entity.JSONMap(variables),
 			Headers:    entity.JSONMap(headerVals),
 		}
-		if err = s.mcpServerDAO.CreateMCPServer(ctx, dao.DB, server); err != nil {
+		if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
+				return err
+			}
+			return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMCPServer, server.ID)
+		}); err != nil {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Failed to create MCP server."})
 			continue
 		}

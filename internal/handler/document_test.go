@@ -250,7 +250,7 @@ func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*
 	if f.doc != nil {
 		return f.doc, nil
 	}
-	return nil, fmt.Errorf("document not found")
+	return nil, gorm.ErrRecordNotFound
 }
 func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error) {
 	f.updateCalled = true
@@ -2205,6 +2205,31 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	}
 	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	h.documentService = &fakeDocumentService{docErr: errors.New("database connection failed")}
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response envelope, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	if resp["message"] != "Failed to download document" {
+		t.Fatalf("unexpected client-visible error: %v", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "database connection failed") {
+		t.Fatal("database error detail leaked to the client")
 	}
 }
 

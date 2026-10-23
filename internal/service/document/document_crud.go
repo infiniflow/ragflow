@@ -235,6 +235,11 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	if len(ids) == 0 {
 		return 0, nil
 	}
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil &&
+		!errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrMembershipNotFound) {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return 0, permissionErr
+	}
 
 	// 3. Deduplicate (before validation so dup count doesn't matter)
 	ids = common.Deduplicate(ids)

@@ -89,7 +89,6 @@ func (dao *UserTenantDAO) FilterByUserIDAndTenantID(ctx context.Context, db *gor
 	return &userTenant, nil
 }
 
-// GetOwnerByTenantID returns the active owner membership for tenantID.
 // GetOwnerByUserID returns the user's owner membership, falling back to the
 // personal tenant row identified by user_id == tenant_id.
 func (dao *UserTenantDAO) GetOwnerByUserID(ctx context.Context, db *gorm.DB, userID string) (*entity.UserTenant, error) {
@@ -112,6 +111,8 @@ func (dao *UserTenantDAO) GetOwnerByUserID(ctx context.Context, db *gorm.DB, use
 	return &membership, nil
 }
 
+// GetOwnerByTenantID returns the joined owner membership for tenantID, falling
+// back to the personal tenant row identified by user_id == tenant_id.
 func (dao *UserTenantDAO) GetOwnerByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
 	var membership entity.UserTenant
 	err := db.WithContext(ctx).

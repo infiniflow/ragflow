@@ -186,7 +186,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	embdID, tenantEmbdID, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
 	if err != nil {
-		return nil, common.CodeForbidden, err
+		return nil, common.CodeServerError, err
 	}
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, service.ModelAccess{UserID: userID, TenantID: tenantID})
@@ -216,7 +216,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	llmID, _, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeChat)
 	if err != nil {
-		return nil, common.CodeForbidden, err
+		return nil, common.CodeServerError, err
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 

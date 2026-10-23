@@ -40,7 +40,7 @@ func (f failingObjectCheckStorage) ObjectExists(context.Context, string, string)
 
 func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 
 func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
 	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
 func TestDeleteFolderContinuesWhenStorageIsMissing(t *testing.T) {
 	db := setupFolderTestDB(t)
 	service := testFileService()
-	folder, err := service.fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := service.fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}

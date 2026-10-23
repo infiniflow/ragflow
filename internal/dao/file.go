@@ -368,12 +368,12 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 }
 
 // CreateFolder creates a folder in the database
-func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
+func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, createdBy, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
 		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  createdBy,
 		Name:       name,
 		Type:       fileType,
 		Size:       0,

@@ -1192,7 +1192,17 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	// Authorize the caller before serving file bytes. Answer exactly like the
 	// missing-document case so document existence is not leaked.
 	doc, err := h.documentService.GetDocumentByID(ctx, docID)
-	if err != nil || doc == nil || doc.KbID != datasetID {
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			return
+		}
+		common.Error("DownloadDocument failed to load document", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
+		return
+	}
+	if doc == nil || doc.KbID != datasetID {
 		common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
 		return
 	}

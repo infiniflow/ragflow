@@ -3782,7 +3782,7 @@ func insertNamedTestDoc(t *testing.T, id, kbID, name string, tokenNum, chunkNum 
 		Name:         sptr(name),
 		Type:         "doc",
 		SourceType:   "local",
-		CreatedBy:    "tenant-1",
+		CreatedBy:    "user-1",
 		Suffix:       filepath.Ext(name),
 		Status:       sptr("1"),
 	}
