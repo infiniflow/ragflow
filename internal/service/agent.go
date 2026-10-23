@@ -1330,9 +1330,6 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
 			}
-			if err := component.ValidateDynamicEntries(req.DSL); err != nil {
-				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
-			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
@@ -1344,6 +1341,9 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		}
 	}
 
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+	}
 	canvasInstance.DSL = dsl
 	canvasInstance.Title = title
 	canvasInstance.Description = description
@@ -1776,6 +1776,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
 		return nil, err
 	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("RunAgent: %w", err)
+	}
 	// A trusted boundary may allocate the session id before calling RunAgent so
 	// the effective id is available even when the run emits no events.
 	if !sessionFound || newSession {
@@ -2003,6 +2006,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if err := component.ValidateDynamicEntries(dsl); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
 		}
 
 		// Install a per-run token usage sink so every LLM call inside

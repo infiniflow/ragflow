@@ -21,7 +21,8 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 
 // ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
 // entries, Invoke mappings, Compiler configuration, input options, Loop settings,
-// Iteration outputs, SQL connections, search filters, and chunker delimiters in saved drafts.
+// Iteration outputs, SQL connections, search filters, chunker delimiters, and Agent
+// tool entries in saved drafts.
 // All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -70,8 +71,8 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 	case "dataoperations":
 		return validateDataOperationsParams(component, params, draft)
 	case "agent":
-		if values, ok := params["tools"].([]any); ok && containsBlank(values) {
-			return fmt.Errorf("[%s] tools does not support empty entries", component)
+		if err := validateAgentToolEntries(params["tools"], draft); err != nil {
+			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "invoke":
 		if err := validateInvokeVariables(component, params, draft); err != nil {
@@ -286,6 +287,39 @@ func containsBlank(values []any) bool {
 		}
 	}
 	return false
+}
+
+func validateAgentToolEntries(raw any, draft bool) error {
+	if raw == nil {
+		return nil
+	}
+	var values []any
+	switch tools := raw.(type) {
+	case []any:
+		values = tools
+	case []string:
+		for _, tool := range tools {
+			values = append(values, tool)
+		}
+	default:
+		return errors.New("tools must be an array")
+	}
+	for _, raw := range values {
+		incomplete := false
+		switch tool := raw.(type) {
+		case string:
+			incomplete = strings.TrimSpace(tool) == ""
+		case map[string]any:
+			_, _, ok := agentToolObject(tool)
+			incomplete = !ok
+		default:
+			return errors.New("tools entries must be strings or objects")
+		}
+		if incomplete && !draft {
+			return errors.New("tools does not support empty entries")
+		}
+	}
+	return nil
 }
 
 func validateDataOperationsParams(component string, params map[string]any, draft bool) error {

@@ -709,6 +709,14 @@ export function collectCanvasIssues({
     }
 
     if (label === Operator.Agent) {
+      if (hasIncompleteAgentTools(form?.tools)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.agentToolsMissing',
+          blocksRun: true,
+        });
+      }
       // Not gated on editedNodeFormIds: a canvas loaded from storage with an
       // empty model must flag on the very next render, not only after edits.
       if (!form?.llm_id) {
@@ -885,4 +893,20 @@ export function collectCanvasIssues({
   }
 
   return issues;
+}
+
+function hasIncompleteAgentTools(tools: unknown): boolean {
+  if (!Array.isArray(tools)) return tools != null;
+  return tools.some((tool) => {
+    if (typeof tool === 'string') return !tool.trim();
+    if (!tool || typeof tool !== 'object') return true;
+    const name = [tool.component_name, tool.tool_name, tool.name].find(
+      (value) => typeof value === 'string' && value.trim(),
+    );
+    return (
+      !name ||
+      (name.toLowerCase() === 'agent' &&
+        hasIncompleteAgentTools(tool.params?.tools))
+    );
+  });
 }
