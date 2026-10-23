@@ -1195,6 +1195,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			aliasPtr = &s
 		}
 	}
+	// ApplyVersion restore path: re-applying a version whose DSL already matches
+	// the latest draft must reuse that draft instead of minting a duplicate
+	// version row. We signal this with the "apply" flag so the version save can
+	// fall back to the SameDSL reuse branch instead of always inserting.
+	applyVersion := false
+	if value, ok := patch["apply"]; ok && value != nil {
+		applyVersion = true
+	}
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
 		// Exclude the canvas being updated so keeping or only re-casing its
@@ -1252,8 +1260,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		// Manual Save (autosave != true) always mints a new version row, even
 		// when the DSL is identical to the previous one (design §5.1). Auto-save
 		// never mints a version at all, so versionOpts stays nil and only the
-		// live draft is refreshed below.
-		opts.ForceNew = !autosave
+		// live draft is refreshed below. ApplyVersion restores a historical DSL
+		// and must reuse the latest draft when the DSL is unchanged, so it does
+		// NOT force a new row (the SameDSL branch governs instead).
+		opts.ForceNew = !autosave && !applyVersion
 		if !autosave {
 			versionOpts = &opts
 		}
@@ -1418,13 +1428,13 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:        common.GenerateUUID(),
-		UserCanvasID: canvasID,
-		Title:        &versionTitle,
-		Description:  description,
-		Alias:        alias,
-		DSL:          dsl,
-		Release:      release,
+		NewID:           common.GenerateUUID(),
+		UserCanvasID:    canvasID,
+		Title:           &versionTitle,
+		Description:     description,
+		Alias:           alias,
+		DSL:             dsl,
+		Release:         release,
 		KeepUnpublished: 20,
 		SameDSL: func(latestDSL entity.JSONMap) bool {
 			return reflect.DeepEqual(
@@ -1555,7 +1565,9 @@ func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versi
 	if version.DSL == nil {
 		return errors.New("agent version has no DSL to apply")
 	}
-	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL})
+	// The "apply" flag tells UpdateAgent to reuse the latest draft version when
+	// the restored DSL already matches it, instead of minting a duplicate row.
+	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL, "apply": true})
 }
 
 // RunAgent starts a run for the given canvas and returns a channel of
