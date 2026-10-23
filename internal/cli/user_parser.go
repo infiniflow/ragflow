@@ -6,6 +6,7 @@ import (
 	"ragflow/internal/common"
 	"regexp"
 	"strings"
+	"time"
 )
 
 func tokenTypeDescription(t int, tok Token) string {
@@ -4222,4 +4223,119 @@ func parseHistory(literal, delimiter string) ([]map[string]string, error) {
 		return nil, fmt.Errorf("history is empty or unparseable: %q", literal)
 	}
 	return turns, nil
+}
+
+func (p *Parser) parseAPITokenStats() (*Command, error) {
+	p.nextToken() // TOKEN
+	if p.curToken.Type != TokenStats {
+		return nil, fmt.Errorf("expected STATS after TOKEN")
+	}
+	p.nextToken()
+	cmd := NewCommand("api_token_stats")
+	seen := make(map[string]bool)
+	for p.curToken.Type != TokenEOF && p.curToken.Type != TokenSemicolon {
+		if p.curToken.Type == TokenQuotedString {
+			return nil, fmt.Errorf("unexpected quoted value: %s", p.curToken.Value)
+		}
+		clause := strings.ToUpper(p.curToken.Value)
+		key := clause
+		if clause == "TODAY" || clause == "DAYS" || clause == "FROM" {
+			key = "time"
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate or conflicting %s condition", clause)
+		}
+		seen[key] = true
+		p.nextToken()
+		switch clause {
+		case "TODAY":
+			cmd.Params["days"] = 1
+		case "DAYS":
+			days, err := p.parseNumber()
+			if err != nil || days < 1 {
+				return nil, fmt.Errorf("DAYS must be a positive integer")
+			}
+			cmd.Params["days"] = days
+			p.nextToken()
+		case "FROM":
+			from, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			start, err := time.Parse(time.DateOnly, from)
+			if err != nil {
+				return nil, fmt.Errorf("FROM must be a valid YYYY-MM-DD date")
+			}
+			p.nextToken()
+			if p.curToken.Type != TokenTo {
+				return nil, fmt.Errorf("expected TO after FROM date")
+			}
+			p.nextToken()
+			to, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			end, err := time.Parse(time.DateOnly, to)
+			if err != nil {
+				return nil, fmt.Errorf("TO must be a valid YYYY-MM-DD date")
+			}
+			if end.Before(start) {
+				return nil, fmt.Errorf("TO must not precede FROM")
+			}
+			cmd.Params["from"], cmd.Params["to"] = from, to
+			p.nextToken()
+		case "PROVIDER", "INSTANCE", "MODEL":
+			name, err := p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(name) == "" {
+				return nil, fmt.Errorf("%s name must not be empty", clause)
+			}
+			cmd.Params[strings.ToLower(clause)+"_name"] = name
+			p.nextToken()
+		case "BY":
+			group, err := p.parseAPITokenStatsGroup()
+			if err != nil {
+				return nil, err
+			}
+			cmd.Params["group_by"] = group
+		default:
+			return nil, fmt.Errorf("unexpected TOKEN STATS condition: %s", clause)
+		}
+	}
+	if _, ok := cmd.Params["instance_name"]; ok && cmd.Params["provider_name"] == nil {
+		return nil, fmt.Errorf("INSTANCE requires PROVIDER")
+	}
+	if _, ok := cmd.Params["model_name"]; ok && (cmd.Params["provider_name"] == nil || cmd.Params["instance_name"] == nil) {
+		return nil, fmt.Errorf("MODEL requires PROVIDER and INSTANCE")
+	}
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected input after TOKEN STATS")
+	}
+	return cmd, nil
+}
+
+func (p *Parser) parseAPITokenStatsGroup() (string, error) {
+	group := strings.ToLower(p.curToken.Value)
+	if p.curToken.Type == TokenQuotedString || (group != "provider" && group != "instance" && group != "model" && group != "day") {
+		return "", fmt.Errorf("BY expects PROVIDER, INSTANCE, MODEL or DAY")
+	}
+	p.nextToken()
+	if p.curToken.Type == TokenComma {
+		if group != "day" {
+			return "", fmt.Errorf("combined grouping must be DAY, PROVIDER or DAY, INSTANCE or DAY, MODEL")
+		}
+		p.nextToken()
+		resource := strings.ToLower(p.curToken.Value)
+		if p.curToken.Type == TokenQuotedString || (resource != "provider" && resource != "instance" && resource != "model") {
+			return "", fmt.Errorf("expected PROVIDER, INSTANCE or MODEL after DAY,")
+		}
+		group += "," + resource
+		p.nextToken()
+	}
+	return group, nil
 }

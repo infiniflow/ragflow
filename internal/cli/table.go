@@ -82,6 +82,10 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 		}
 	}
 
+	printTableWithColumns(data, columns, format)
+}
+
+func printTableWithColumns(data []map[string]interface{}, columns []string, format OutputFormat) {
 	// Analyze columns: check if numeric and if URI column
 	colIsNumeric := make(map[string]bool)
 	colIsURI := make(map[string]bool)

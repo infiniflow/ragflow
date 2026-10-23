@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	netUrl "net/url"
 	"os"
 	"os/exec"
@@ -3943,4 +3944,30 @@ func (c *CLI) APIShowQuotaCommand(commandCount int, cmd *Command) (ResponseIf, e
 	}
 
 	return HandleCommonDataResponse(resp, "get quota")
+}
+
+// APITokenStatsCommand queries token usage for the authenticated user.
+func (c *CLI) APITokenStatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	client, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+	query := netUrl.Values{}
+	for key, value := range cmd.Params {
+		query.Set(key, fmt.Sprint(value))
+	}
+	path := "/stats/token"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	response, err := client.Request(commandCount, http.MethodGet, path, client.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token stats: %w", err)
+	}
+	result, err := handleTokenStatsResponse(response)
+	if err != nil {
+		return nil, err
+	}
+	result.SetOutputFormat(c.Config.OutputFormat)
+	return result, nil
 }

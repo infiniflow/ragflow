@@ -300,3 +300,48 @@ func TestParseListSyncLogs(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenStatsParse(t *testing.T) {
+	tests := []struct {
+		input  string
+		params map[string]interface{}
+	}{
+		{"TOKEN STATS;", map[string]interface{}{}},
+		{"token stats today", map[string]interface{}{"days": 1}},
+		{"TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';", map[string]interface{}{"days": 7, "provider_name": "openai", "instance_name": "production", "model_name": "gpt-4o"}},
+		{"TOKEN STATS FROM '2026-10-01' TO '2026-10-07' BY DAY, MODEL", map[string]interface{}{"from": "2026-10-01", "to": "2026-10-07", "group_by": "day,model"}},
+		{"TOKEN STATS DAYS 1 BY INSTANCE", map[string]interface{}{"days": 1, "group_by": "instance"}},
+		{"TOKEN STATS BY DAY, PROVIDER", map[string]interface{}{"group_by": "day,provider"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			cmd, err := NewParser(tt.input).Parse(APIMode)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cmd.Type != "api_token_stats" || !reflect.DeepEqual(cmd.Params, tt.params) {
+				t.Fatalf("got %#v, want params %#v", cmd, tt.params)
+			}
+		})
+	}
+}
+
+func TestTokenStatsRejectsInvalidConditions(t *testing.T) {
+	for _, input := range []string{
+		"TOKEN STATS DAYS 0", "TOKEN STATS DAYS -1", "TOKEN STATS DAYS 1.5",
+		"TOKEN STATS TODAY DAYS 7", "TOKEN STATS DAYS 7 FROM '2026-10-01' TO '2026-10-07'",
+		"TOKEN STATS FROM '2026-02-30' TO '2026-03-01'", "TOKEN STATS FROM '2026-10-07' TO '2026-10-01'",
+		"TOKEN STATS FROM '2026-10-01'", "TOKEN STATS TO '2026-10-07'",
+		"TOKEN STATS INSTANCE 'production'", "TOKEN STATS PROVIDER 'openai' MODEL 'gpt-4o'",
+		"TOKEN STATS PROVIDER ''", "TOKEN STATS PROVIDER 'openai' PROVIDER 'other'",
+		"TOKEN STATS PROVIDER 'openai", `TOKEN STATS PROVIDER "openai`,
+		"TOKEN STATS BY MODEL, INSTANCE", "TOKEN STATS BY DAY, DAY", "TOKEN STATS BY DATE", "TOKEN STATS BY DAY,",
+		"TOKEN STATS BY MODEL BY DAY", "TOKEN STATS GROUP 'support'", "TOKEN STATS garbage", "TOKEN STATS; LIST DATASETS;",
+	} {
+		t.Run(input, func(t *testing.T) {
+			if _, err := NewParser(input).Parse(APIMode); err == nil {
+				t.Fatal("expected invalid command to fail")
+			}
+		})
+	}
+}

@@ -101,11 +101,9 @@ func (l *Lexer) NextToken() Token {
 		tok = newToken(TokenRBracket, l.ch)
 		l.readChar()
 	case '\'':
-		tok.Type = TokenQuotedString
-		tok.Value = l.readQuotedString('\'')
+		tok.Value, tok.Type = l.readQuotedString('\'')
 	case '"':
-		tok.Type = TokenQuotedString
-		tok.Value = l.readQuotedString('"')
+		tok.Value, tok.Type = l.readQuotedString('"')
 	case '\\':
 		// Meta command: backslash followed by command name
 		tok.Type = TokenIdentifier
@@ -171,17 +169,18 @@ func (l *Lexer) readNumber() (string, int) {
 	return l.input[start:l.pos], tokenType
 }
 
-func (l *Lexer) readQuotedString(quote byte) string {
+func (l *Lexer) readQuotedString(quote byte) (string, int) {
 	l.readChar() // skip opening quote
 	start := l.pos
 	for l.ch != quote && l.ch != 0 {
 		l.readChar()
 	}
 	str := l.input[start:l.pos]
-	if l.ch == quote {
-		l.readChar() // skip closing quote
+	if l.ch != quote {
+		return str, TokenIllegal
 	}
-	return str
+	l.readChar() // skip closing quote
+	return str, TokenQuotedString
 }
 
 func (l *Lexer) lookupIdent(ident string) Token {

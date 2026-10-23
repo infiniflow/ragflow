@@ -319,6 +319,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 }
 func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
+	case "api_token_stats":
+		return c.APITokenStatsCommand(commandCount, cmd)
 	case "api_register_user":
 		return c.RegisterUser(commandCount, cmd)
 	case "api_login_user":

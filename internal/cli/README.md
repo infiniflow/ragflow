@@ -205,3 +205,131 @@ The parser uses a hand-written recursive descent approach instead of go-yacc for
 - No code generation step required
 
 The parser uses the SQL-like command grammar documented in this guide.
+
+## Token usage statistics
+
+`TOKEN STATS` queries the current user's usage through `GET /api/v1/stats/token`.
+The endpoint contract is proposed for backend implementation; the CLI does not
+calculate usage or access the database. Authentication uses the current connection's
+login token or API key. No user or tenant ID is sent.
+
+```sql
+TOKEN STATS;
+TOKEN STATS TODAY;
+TOKEN STATS DAYS 7;
+TOKEN STATS FROM '2026-10-01' TO '2026-10-07';
+TOKEN STATS DAYS 7 PROVIDER 'openai';
+TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production';
+TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';
+TOKEN STATS DAYS 7 BY PROVIDER;
+TOKEN STATS DAYS 7 BY INSTANCE;
+TOKEN STATS DAYS 7 BY MODEL;
+TOKEN STATS DAYS 7 BY DAY;
+TOKEN STATS DAYS 7 BY DAY, MODEL;
+```
+
+Keywords are case-insensitive. Names must be quoted; the semicolon is optional.
+`INSTANCE` requires `PROVIDER`; `MODEL` requires both. A `BY` clause selects
+one resource dimension (`PROVIDER`, `INSTANCE`, `MODEL`), `DAY`, or `DAY` followed
+by a comma and one resource dimension. Model groups (`GROUP`) are not supported.
+
+The backend resolves omitted defaults:
+
+| Scope | Default detail grouping |
+|---|---|
+| All usage | Provider |
+| Provider | Instance |
+| Provider + instance | Model |
+| Provider + instance + model | Summary only |
+
+An explicit `BY` overrides this default. Instance rows include their provider;
+model rows include both provider and instance, keeping identically named models
+in different instances separate.
+
+Time is evaluated by the backend in its reported timezone. The default is seven
+calendar days including today. `TODAY` maps to `days=1`; `DAYS 7` includes today
+and the previous six days. A `FROM`/`TO` range includes both dates. The current
+day ends at the query time. `DAYS`, `TODAY`, and `FROM`/`TO` are mutually exclusive.
+
+All CLI labels and local errors are in English; resource names retain their
+original spelling. Table output shows the resolved period, timezone, filters,
+summary and detail rows. Plain output has no table borders. JSON output contains
+the entire `data` object without human-readable headings. Unknown input/output
+counts appear as `N/A` in text and `null` in JSON, rather than zero.
+
+```bash
+bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output json "TOKEN STATS DAYS 7 BY MODEL"
+bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output plain "TOKEN STATS TODAY BY DAY"
+```
+
+### Proposed API contract
+
+```http
+GET /api/v1/stats/token?days=7&provider_name=openai&instance_name=production&group_by=day,model
+Authorization: <login_token>
+```
+
+API keys use `Authorization: Bearer <api_key>`, following existing CLI behavior.
+The backend must authenticate and restrict the query to the current user
+(`tenant_id = user.ID`); it must not trust a client-supplied tenant ID.
+
+| Query parameter | Contract |
+|---|---|
+| `days` | Positive integer; omitted by CLI unless explicitly selected |
+| `from`, `to` | Paired `YYYY-MM-DD` dates, inclusive; mutually exclusive with `days` |
+| `provider_name` | Optional provider name |
+| `instance_name` | Optional instance name; requires provider |
+| `model_name` | Optional model name; requires provider and instance |
+| `group_by` | `provider`, `instance`, `model`, `day`, `day,provider`, `day,instance`, `day,model` |
+
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {
+    "period": {
+      "from": "2026-10-17",
+      "to": "2026-10-23",
+      "timezone": "Asia/Shanghai"
+    },
+    "filters": {
+      "provider_name": "openai",
+      "instance_name": "production",
+      "model_name": null
+    },
+    "group_by": ["day", "model"],
+    "summary": {
+      "input_tokens": 120000,
+      "output_tokens": 30000,
+      "total_tokens": 150000
+    },
+    "rows": [
+      {
+        "date": "2026-10-23",
+        "provider_name": "openai",
+        "instance_name": "production",
+        "model_name": "gpt-4o",
+        "input_tokens": 120000,
+        "output_tokens": 30000,
+        "total_tokens": 150000
+      }
+    ]
+  }
+}
+```
+
+`code`, `data.period`, `data.summary`, and `summary.total_tokens` are required.
+All token counts are nonnegative integers; unavailable input/output counts are
+`null`. `group_by` is the effective grouping, including defaults. `filters`
+reflects the resolved selection, with unselected fields set to `null`. `rows`
+contains exactly the dimensions requested plus parent identities, and token
+metrics. There is no pagination in this contract. Summary and rows use the same
+query scope; the summary is calculated by the backend, never from displayed rows.
+Rows should be ordered by total tokens descending; when grouped by day, date
+ascending comes first, then total tokens descending within each date. The CLI
+preserves the returned order.
+
+For summary-only queries, return `group_by: []` and `rows: []`. For no usage,
+return `rows: []` and zero summary counts (or `null` for unavailable splits).
+HTTP errors and nonzero application `code` values are reported as command errors;
+backend error messages must be in English.

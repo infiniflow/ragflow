@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/entity/models"
+	"strconv"
 	"strings"
 )
 
@@ -1330,4 +1331,152 @@ func (r *ChatCompletionsResponse) PrintOut() {
 		printReferenceChunks(r.Data.Reference)
 	}
 	fmt.Printf("Time: %f\n", r.Duration)
+}
+
+// tokenStatsData is the GET /api/v1/stats/token response payload.
+type tokenStatsData struct {
+	Period *struct {
+		From     string `json:"from"`
+		To       string `json:"to"`
+		Timezone string `json:"timezone"`
+	} `json:"period"`
+	Filters struct {
+		ProviderName *string `json:"provider_name"`
+		InstanceName *string `json:"instance_name"`
+		ModelName    *string `json:"model_name"`
+	} `json:"filters"`
+	GroupBy []string           `json:"group_by"`
+	Summary *tokenStatsMetrics `json:"summary"`
+	Rows    []tokenStatsRow    `json:"rows"`
+}
+
+type tokenStatsMetrics struct {
+	InputTokens  *int64 `json:"input_tokens"`
+	OutputTokens *int64 `json:"output_tokens"`
+	TotalTokens  *int64 `json:"total_tokens"`
+}
+
+type tokenStatsRow struct {
+	Date         string `json:"date,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	InstanceName string `json:"instance_name,omitempty"`
+	ModelName    string `json:"model_name,omitempty"`
+	tokenStatsMetrics
+}
+
+// TokenStatsResponse displays the usage summary and grouped details.
+type TokenStatsResponse struct {
+	Data         tokenStatsData
+	Duration     float64
+	OutputFormat OutputFormat
+}
+
+func (r *TokenStatsResponse) Type() string                        { return "token_stats" }
+func (r *TokenStatsResponse) TimeCost() float64                   { return r.Duration }
+func (r *TokenStatsResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+
+func (r *TokenStatsResponse) PrintOut() {
+	if r.OutputFormat == OutputFormatJSON {
+		data, _ := json.MarshalIndent(r.Data, "", "  ")
+		fmt.Println(string(data))
+		return
+	}
+	d := r.Data
+	fmt.Printf("Period: %s to %s\nTimezone: %s\n", d.Period.From, d.Period.To, d.Period.Timezone)
+	for _, filter := range []struct {
+		label string
+		value *string
+	}{{"Provider", d.Filters.ProviderName}, {"Instance", d.Filters.InstanceName}, {"Model", d.Filters.ModelName}} {
+		if filter.value != nil {
+			fmt.Printf("%s: %s\n", filter.label, *filter.value)
+		}
+	}
+	group := "TOTAL"
+	if len(d.GroupBy) > 0 {
+		group = strings.ToUpper(strings.Join(d.GroupBy, ", "))
+	}
+	fmt.Printf("Group by: %s\n\n", group)
+	fmt.Printf("Total tokens: %s\nInput tokens: %s\nOutput tokens: %s\n", formatTokenCount(d.Summary.TotalTokens), formatTokenCount(d.Summary.InputTokens), formatTokenCount(d.Summary.OutputTokens))
+	if len(d.Rows) == 0 {
+		if *d.Summary.TotalTokens == 0 {
+			fmt.Println("\nNo usage data for this period.")
+		}
+		return
+	}
+	// Include parent identities even when the query spans multiple instances.
+	day, resource := false, ""
+	for _, dimension := range d.GroupBy {
+		if dimension == "day" {
+			day = true
+		} else {
+			resource = dimension
+		}
+	}
+	headers := []string{}
+	if day {
+		headers = append(headers, "DATE")
+	}
+	switch resource {
+	case "provider":
+		headers = append(headers, "PROVIDER")
+	case "instance":
+		headers = append(headers, "PROVIDER", "INSTANCE")
+	case "model":
+		headers = append(headers, "PROVIDER", "INSTANCE", "MODEL")
+	}
+	headers = append(headers, "INPUT TOKENS", "OUTPUT TOKENS", "TOTAL TOKENS")
+	rows := make([]map[string]interface{}, 0, len(d.Rows))
+	for _, row := range d.Rows {
+		rows = append(rows, map[string]interface{}{
+			"DATE":          row.Date,
+			"PROVIDER":      row.ProviderName,
+			"INSTANCE":      row.InstanceName,
+			"MODEL":         row.ModelName,
+			"INPUT TOKENS":  formatTokenCount(row.InputTokens),
+			"OUTPUT TOKENS": formatTokenCount(row.OutputTokens),
+			"TOTAL TOKENS":  formatTokenCount(row.TotalTokens),
+		})
+	}
+	fmt.Println()
+	printTableWithColumns(rows, headers, r.OutputFormat)
+}
+
+func formatTokenCount(value *int64) string {
+	if value == nil {
+		return "N/A"
+	}
+	return strconv.FormatInt(*value, 10)
+}
+
+func handleTokenStatsResponse(response *Response) (ResponseIf, error) {
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get token stats: HTTP %d, body: %s", response.StatusCode, response.Body)
+	}
+	var result struct {
+		Code    *int            `json:"code"`
+		Message string          `json:"message"`
+		Data    *tokenStatsData `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body, &result); err != nil {
+		return nil, fmt.Errorf("token stats failed: invalid JSON (%w)", err)
+	}
+	if result.Code == nil {
+		return nil, fmt.Errorf("token stats response is missing code")
+	}
+	if *result.Code != 0 {
+		return nil, fmt.Errorf("token stats failed: %s", result.Message)
+	}
+	if result.Data == nil || result.Data.Period == nil || result.Data.Summary == nil || result.Data.Summary.TotalTokens == nil {
+		return nil, fmt.Errorf("token stats response is missing data, period or summary totals")
+	}
+	if result.Data.GroupBy == nil {
+		return nil, fmt.Errorf("token stats response is missing group_by")
+	}
+	switch strings.Join(result.Data.GroupBy, ",") {
+	case "", "provider", "instance", "model", "day", "day,provider", "day,instance", "day,model":
+	default:
+		return nil, fmt.Errorf("token stats response has unsupported group_by")
+	}
+
+	return &TokenStatsResponse{Data: *result.Data, Duration: response.Duration}, nil
 }
