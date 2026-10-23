@@ -251,6 +251,20 @@ func TestParseTOCEntries_MultiEntry(t *testing.T) {
 	}
 }
 
+// The Extractor writes the level as a numeric string.
+func TestParseTOCEntries_StringLevel(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"content_with_weight": `[{"level":"1","title":"Intro","ids":["c1","c2"]},{"level":"2","title":"Details"}]`},
+	}
+	got := parseTOCEntries(chunks)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(got))
+	}
+	if got[0].Level != 1 || len(got[0].IDs) != 2 || got[1].Level != 2 || got[1].IDs != nil {
+		t.Errorf("unexpected entries: %+v", got)
+	}
+}
+
 func TestParseTOCEntries_InvalidJSON(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"content_with_weight": `not json`},
