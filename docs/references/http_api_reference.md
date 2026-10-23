@@ -2400,6 +2400,8 @@ Retrieves chunks from specified datasets.
 - Body:
   - `"question"`: `string`
   - `"dataset_ids"`: `list[string]`
+  - `"retrieval_mode"`: `string`
+  - `"search_id"`: `string`
   - `"document_ids"`: `list[string]`
   - `"page"`: `integer`
   - `"page_size"`: `integer`
@@ -2459,16 +2461,20 @@ curl --request POST \
   The user query or query keywords.
 - `"dataset_ids"`: `list[string]`, *Required*
   The IDs of the datasets to search. At least one dataset ID must be provided.
+- `"retrieval_mode"`: `string`
+  Selects the candidate retrieval path: `"hybrid"`, `"vector"`, or `"keyword"`. Defaults to `"hybrid"` when omitted. Explicit `null`, empty strings, incorrect types, and unknown values return an argument error. All three modes share permission, dataset, document, availability, and metadata filters. This parameter is also supported by `/api/v1/datasets/search` and `/api/v1/datasets/{dataset_id}/search`.
+- `"search_id"`: `string`
+  Uses a saved search configuration, subject to access permissions. Mode precedence is: an explicitly saved `retrieval_mode` > the request's `retrieval_mode` > `"hybrid"`. Invalid modes in saved configurations return an argument error.
 - `"document_ids"`: `list[string]`
-  Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
+  Limits the search to specific documents within `"dataset_ids"`. Defaults to an empty list. `"hybrid"` and `"vector"` require datasets to use the same embedding model; `"keyword"` skips model dependency checks for query embedding.
 - `"page"`: `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`
-  The minimum similarity score. Defaults to `0.2`.
+  Defaults to `0.2`. `"hybrid"` retains existing similarity filtering. `"vector"` applies this threshold during vector candidate retrieval, preserves an explicit `0`, and keeps the threshold unchanged when there are no matches. `"keyword"` does not use this parameter to filter lexical scores.
 - `"keywords_similarity_weight"`: `float`
-  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
+  The lexical weight for hybrid retrieval. Defaults to `0.7`; the vector weight is `1 - keywords_similarity_weight`. This weight affects scoring only in `"hybrid"`; single-path modes use the signal selected by `retrieval_mode`. Field types, ranges, and conflicts with the vector weight are still validated.
 - `"vector_similarity_weight"`: `float`
   Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: `integer`
@@ -2487,11 +2493,9 @@ curl --request POST \
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`
-  The ID of the rerank model.
+  The ID of an optional rerank model. Reranking operates on candidates retrieved by the selected mode and requires `page=1`. Single-path modes use normalized model relevance scores plus existing business-ranking boosts; hybrid mode retains its existing scoring.
 - `"keyword"`: `boolean`
-  Indicates whether to enable keyword-based matching:
-  - `true`: Enable keyword-based matching.
-  - `false`: Disable keyword-based matching (default).
+  Whether to use a model to extract keywords and expand the query. Defaults to `false`. This option is independent of `retrieval_mode` and may invoke a model when enabled.
 - `"highlight"`: `boolean`
   Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
@@ -2519,6 +2523,30 @@ curl --request POST \
       - `"≥"`
       - `"≤"`
     - `"value"`: `string` - The value to compare.
+
+##### Retrieval modes
+
+| Mode | Candidate source | Query embedding | Scoring without reranking |
+| --- | --- | --- | --- |
+| `hybrid` | Existing hybrid retrieval path | Existing behavior | Hybrid weights and existing scoring rules |
+| `vector` | Vector candidates only, preserving business-scope filters | Requires an available embedding model | Vector retrieval score |
+| `keyword` | Full-text candidates only | 0 calls | Engine lexical retrieval score |
+
+Both single-path modes skip hybrid fusion and secondary vector scoring. `vector` candidates need not match query terms; `keyword` candidates come from full-text retrieval. A `keyword` query with no searchable terms after tokenization returns an argument error. Retrieval errors propagate to the caller, and empty results in single-path modes remain empty.
+
+Without reranking, single-path modes preserve the engine's business ordering, and `similarity` reports the engine's raw single-path score. Additional engine-side business weights can make the final order differ from raw score order. In `keyword` mode, `term_similarity` is the lexical score and `vector_similarity` is `0`; in `vector` mode, `vector_similarity` is the vector score and `term_similarity` is `0`. With reranking, single-path modes report model relevance plus existing business-ranking boosts in `similarity`, model relevance in `vector_similarity`, and `0` in `term_similarity`.
+
+For example, compare semantic retrieval and technical-term retrieval with these request bodies:
+
+```json
+{"question":"How can I extend my phone's battery life?","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"vector"}
+```
+
+```json
+{"question":"ERR_CONNECTION_RESET","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"keyword"}
+```
+
+Lexical and vector score scales depend on the engine, so scores across modes or engines cannot be treated as a common probability of correctness. Query expansion via `keyword`, `cross_languages`, automatic metadata extraction, and optional reranking may each invoke models. The zero-call guarantee in keyword mode applies specifically to query embedding.
 
 #### Response
 

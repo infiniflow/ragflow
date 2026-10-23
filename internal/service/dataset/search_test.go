@@ -25,6 +25,7 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	includeKnowledgeCompilation := false
 	req := &service.SearchDatasetRequest{
 		Question:               "hello world",
+		RetrievalMode:          nlp.RetrievalModeKeyword,
 		Page:                   &page,
 		PageSize:               &pageSize,
 		DocumentIDs:            []string{"doc-1", "doc-2"},
@@ -49,6 +50,9 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	}
 	if converted.Question != req.Question || converted.Page != req.Page || converted.PageSize != req.PageSize {
 		t.Fatalf("converted request did not preserve pagination/question fields: %#v", converted)
+	}
+	if converted.RetrievalMode != req.RetrievalMode {
+		t.Fatalf("转换后的检索模式为 %q，期望 %q", converted.RetrievalMode, req.RetrievalMode)
 	}
 	if len(converted.DocumentIDs) != 2 || converted.DocumentIDs[0] != "doc-1" || converted.DocumentIDs[1] != "doc-2" {
 		t.Fatalf("document_ids=%v want [doc-1 doc-2]", converted.DocumentIDs)
