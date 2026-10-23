@@ -476,6 +476,27 @@ class TestDifyRetrievalArgumentValidation:
         assert kwargs["similarity_threshold"] == 0.3
 
     @pytest.mark.p1
+    @pytest.mark.parametrize(
+        "retrieval_setting, page_size, window",
+        [({}, 1024, 1024), ({"top_k": 100}, 100, 100), ({"top_k": 65}, 65, 65), ({"top_k": 64}, 64, 64), ({"top_k": 10}, 10, 64)],
+    )
+    def test_rerank_window_covers_top_k(self, monkeypatch, retrieval_setting, page_size, window):
+        owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
+        module = _load_dify_retrieval(
+            monkeypatch,
+            kb=(True, owner_kb),
+            accessible=lambda _id, _u: True,
+            request_body={"knowledge_id": "kb-owner", "query": "hello", "retrieval_setting": retrieval_setting},
+            tenant_id="tenant-owner",
+        )
+
+        asyncio.run(module.retrieval())
+
+        kwargs = module._fake_retriever.last_kwargs
+        assert kwargs["page_size"] == page_size
+        assert kwargs["rerank_candidates_count"] == window
+
+    @pytest.mark.p1
     def test_get_request_with_query_args(self, monkeypatch):
         owner_kb = SimpleNamespace(id="kb-owner", tenant_id="tenant-owner", tenant_embd_id="", embd_id="bge")
         module = _load_dify_retrieval(
