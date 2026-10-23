@@ -604,10 +604,6 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 			boxes[anchor].Bottom = math.Max(boxes[anchor].Bottom, b.Bottom)
 			removeSet[idx] = true
 		}
-		if region := boxes[anchor].FigureBounds; region != nil {
-			boxes[anchor].X0, boxes[anchor].X1 = region.Left, region.Right
-			boxes[anchor].Top, boxes[anchor].Bottom = region.Top, region.Bottom
-		}
 	}
 }
 
@@ -615,8 +611,11 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 // into one block, using the matched DLA region for the complete image bounds.
 //
 // Figure boxes whose text matches the data-source discard pattern
-// (r"(数据|资料|图表)*来源[:： ]") are removed entirely — matching Python's
-// _extract_table_figure discard behavior (pdf_parser.py:1050-1052).
+// (r"(数据|资料|图表)*来源[:： ]") have that text removed, matching Python's
+// _extract_table_figure discard behavior (pdf_parser.py:1050-1052). The
+// region's geometry box survives, so the figure image is preserved even when
+// the attribution line was its only text — a deliberate divergence from
+// Python, which drops the whole region once the box is popped.
 func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 	removeSet := markDataSourceBoxesForRemoval(boxes)
 	groups := groupFigureBoxes(boxes, removeSet)
@@ -625,7 +624,26 @@ func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 		mergeFigureGroups(boxes, groups, removeSet)
 	}
 
+	applyFigureBounds(boxes)
 	return FilterBoxesByRemoveSet(boxes, removeSet)
+}
+
+// applyFigureBounds pins every figure box to its matched DLA region.
+//
+// The DLA region is the crop contract: a figure section's geometry must be
+// the region the layout model detected, not the union of the text boxes inside
+// it. Merging unions the member boxes, and NaiveVerticalMerge's empty-box
+// branch can stretch a standalone geometry box (prev.Bottom = curr.Bottom), so
+// the region is re-applied after merging and for single-member groups too.
+func applyFigureBounds(boxes []pdf.TextBox) {
+	for i := range boxes {
+		region := boxes[i].FigureBounds
+		if region == nil {
+			continue
+		}
+		boxes[i].X0, boxes[i].X1 = region.Left, region.Right
+		boxes[i].Top, boxes[i].Bottom = region.Top, region.Bottom
+	}
 }
 
 // boxOverlapsPositionPage reports whether a pdf.TextBox overlaps a
