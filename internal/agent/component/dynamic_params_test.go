@@ -95,6 +95,14 @@ func TestValidateDynamicEntries(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
+			if test.component["component_name"] == "Message" {
+				if draftErr != nil {
+					t.Fatalf("draft rejected Message: %v", draftErr)
+				}
+			} else if draftErr == nil || !strings.Contains(draftErr.Error(), test.want) {
+				t.Fatalf("draft validation changed: %v, want %q", draftErr, test.want)
+			}
 			err := ValidateDynamicEntries(dslWithComponents(test.component))
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("ValidateDynamicEntries() error = %v, want %q", err, test.want)
@@ -113,4 +121,14 @@ func dslWithComponents(components ...map[string]any) map[string]any {
 
 func componentDSL(name string, params map[string]any) map[string]any {
 	return map[string]any{"component_name": name, "params": params}
+}
+
+func TestMessageDSLFactoryRejectsIncompleteContent(t *testing.T) {
+	for _, params := range []map[string]any{
+		nil, {}, {"text": ""}, {"content": []string{}}, {"content": []string{"hello", ""}},
+	} {
+		if _, err := New("Message", params); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+			t.Fatalf("factory accepted %#v: %v", params, err)
+		}
+	}
 }

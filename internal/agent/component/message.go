@@ -638,5 +638,11 @@ func (m *MessageComponent) Outputs() map[string]string {
 }
 
 func init() {
-	Register(componentNameMessage, NewMessageComponent)
+	Register(componentNameMessage, func(params map[string]any) (Component, error) {
+		// DSL factories run before execution; direct callers may supply text at Invoke.
+		if err := validateMessageContent(params); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("[Message] %s", err))
+		}
+		return NewMessageComponent(params)
+	})
 }

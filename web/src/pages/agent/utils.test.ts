@@ -447,17 +447,19 @@ describe('receiveMessageError', () => {
 
 describe('Message component content validation', () => {
   describe('isEmptyMessageContent', () => {
-    it('treats missing, non-array and blank-only content as empty', () => {
+    it('rejects missing, malformed and blank content', () => {
       expect(isEmptyMessageContent()).toBe(true);
       expect(isEmptyMessageContent(null)).toBe(true);
-      expect(isEmptyMessageContent('hello')).toBe(true);
+      expect(isEmptyMessageContent('')).toBe(true);
+      expect(isEmptyMessageContent(' \t ')).toBe(true);
       expect(isEmptyMessageContent([])).toBe(true);
       expect(isEmptyMessageContent(['', ' \t '])).toBe(true);
       // Non-string entries never satisfy the backend either.
       expect(isEmptyMessageContent([123])).toBe(true);
     });
 
-    it('accepts content with at least one non-blank string entry', () => {
+    it('accepts strings and arrays without blank entries', () => {
+      expect(isEmptyMessageContent('hello')).toBe(false);
       expect(isEmptyMessageContent(['hi'])).toBe(false);
       expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
       expect(isEmptyMessageContent(['  text  '])).toBe(false);

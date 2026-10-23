@@ -1058,12 +1058,13 @@ export function convertToObjectArray<T extends string | number | boolean>(
 }
 
 /**
- * Message (回复消息) components keep their texts in form.content (string[]).
- * The backend rejects the component at canvas run time unless at least one
- * entry is a non-blank string, so missing/non-array/blank-only content all
- * count as empty here as well.
+ * Message accepts text/content strings or content arrays; every entry must
+ * be a non-blank string to match backend execution validation.
  */
 export function isEmptyMessageContent(content?: unknown): boolean {
+  if (typeof content === 'string') {
+    return content.trim() === '';
+  }
   return (
     !Array.isArray(content) ||
     content.length === 0 ||

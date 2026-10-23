@@ -346,7 +346,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}
 	tenantID := ""
 	if row != nil {
-		tenantID = row.UserID
+		tenantID = row.EffectiveTenantID()
 	}
 	common.SuccessWithData(c, &agentDetailResponse{
 		UserCanvas:      row,
@@ -355,9 +355,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}, "success")
 }
 
-// agentDetailResponse adds the canvas owner's tenant scope and publish time.
-// user_canvas stores the owner identity in user_id, so that value is exposed
-// as tenant_id for resource-scoped selectors.
+// agentDetailResponse adds the canvas tenant scope and publish time.
 type agentDetailResponse struct {
 	*entity.UserCanvas
 	TenantID        string `json:"tenant_id"`
