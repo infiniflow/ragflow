@@ -206,6 +206,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 		&entity.KnowledgeCompileDataset{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
 		&entity.WikiDocumentDirty{},
 		// Knowledge-compile compilation templates and their groups. The Go
 		// KnowledgeCompilerComponent resolves a compilation_template (or group)
@@ -237,6 +239,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
+		if err = migrateKnowledgeCompileQueues(ctx, DB); err != nil {
+			return fmt.Errorf("failed to split knowledge compilation queues: %w", err)
+		}
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -261,6 +266,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		}
 		common.Info("Database schema migrated successfully")
 	} else {
+		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
+			if DB.WithContext(ctx).Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
+				return fmt.Errorf("knowledge compilation queues need migration: stop queue producers and ingestors, then run ragflow_server --migrate")
+			}
+		}
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
@@ -361,6 +371,8 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
 		&entity.MemoryTask{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.ConversationReference{},
 		&entity.API4ConversationMessage{},
