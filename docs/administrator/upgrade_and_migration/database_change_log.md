@@ -10,32 +10,39 @@ sidebar_custom_props: {
 
 # Database Change Log
 
-A version-by-version record of the schema and data changes the Go backend applies to a RAGFlow database, and of the version marker that decides which of them still have to run.
+A record of the schema and data changes the Go backend applies to a RAGFlow database, and of the version or schema checks that decide which of them still have to run.
 
 ## How the database version is recorded
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
-- The marker prevents a migration step from running again after that step has completed successfully.
+- For version-gated steps, the marker prevents a migration step from running again after that step has completed successfully.
 - Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`.
-- A step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
+- The compilation queue split records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev4`), defined in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go), after both queues finish. Source-column presence controls the queue copy even when the marker already contains this or a newer version.
+- A version-gated step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
 - `checkDatabaseVersion` in [cmd/ragflow_server.go](https://github.com/infiniflow/ragflow/blob/main/cmd/ragflow_server.go) refuses to start when the code version is older than the stored database version, so a database migrated by a newer release cannot be opened by an older one.
 
-Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
+Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
 
 1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
-3. `AutoMigrate` — converges every ORM model.
-4. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
-5. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
+3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
+4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
+5. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
+6. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
+7. `migrateTenantModelMaxTokens` — backfills model context windows before advancing the marker to its target.
+8. `migratePermissions` — applies the permission migration through `v1.0.0-rc3.dev3`.
+9. `migrateTenantModelProviderUserUniqueIndex` — reconciles provider ownership indexes.
+10. `migrateKnowledgeCompileQueues` — copies the existing compilation queues and drops their source columns, then records `v1.0.0-rc3.dev4`. It runs after the earlier versioned steps so advancing the shared marker cannot skip their data changes. Queue copying remains gated on source-column presence.
 
 ## Version overview
 
-| Database version  | Scope                                                                                                        | Gate constant                      |
+| Database version  | Scope                                                                                                        | Gate                               |
 |-------------------|--------------------------------------------------------------------------------------------------------------|------------------------------------|
 | `v0.26.0`         | Rebuild the tenant model tables from `tenant_llm` and normalize stored model ids                             | `modelMigrationBaseVersion`        |
 | `v1.0.0-rc1`      | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion`      |
 | `v1.0.0-rc1`      | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
 | `v1.0.0-rc2`      | Convert Python ingestion settings in dataset/document `parser_config` onto pipeline components, then remove retired dataset `raptor` / `graphrag` sections | `ingestionParserConfigTargetVersion` / `knowledgebaseParserConfigTargetVersion` |
+| `v1.0.0-rc3.dev4` | Split compilation queues into `knowledge_compile_docs_backlog` and `knowledge_compile_docs_inflight`, then drop their source columns | `knowledgeCompileQueueTargetVersion`; source-column presence controls copying |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -149,9 +156,37 @@ On success the migration records `v1.0.0-rc2`. Databases already marked `v1.0.0-
 
 ---
 
+## v1.0.0-rc3.dev4
+
+### Knowledge compilation queues
+
+Introduced in `v1.0.0-rc3.dev4` and implemented by `migrateKnowledgeCompileQueues` in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go). Each queue is migrated when its source column exists, regardless of `mysql_migration.database.version`. After both queues finish, the step records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev4`) in that marker if its current value is older. A newer version is preserved.
+
+| Table | Schema and data change |
+|-------|------------------------|
+| `knowledge_compile_docs_backlog` | Created by `AutoMigrate`. Each event in `knowledge_compile_docs.backlog_doc_ids` becomes a row with `dataset_id`, `doc_id`, `queue_position`, `event_type`, `variants`, and `task_types`. |
+| `knowledge_compile_docs_inflight` | Created by `AutoMigrate` with the same columns; populated from `knowledge_compile_docs.inflight_doc_ids`. |
+| `knowledge_compile_docs` | **Destructive:** drops `backlog_doc_ids` and `inflight_doc_ids`, each after its queue has been copied successfully. Dataset scheduling state, leases, progress, and diagnostics remain in this table. |
+
+Both new tables have no `id`, primary key, or unique constraint. A non-unique index on `(dataset_id, queue_position)` supports ordered reads. Migration preserves duplicate events, array order, and routing metadata; `variants` and `task_types` remain JSON arrays stored in longtext columns.
+
+Datasets are read in batches of 100, with each dataset copied in its own transaction. Info-level progress logs identify the queue and batch range, report committed dataset and entry counts and remaining datasets, and record each source-column drop. Entry counts include duplicate events and reset for each queue and migration run. Failed dataset copies roll back and log the dataset and committed progress. Rerunning while services remain stopped replaces copied rows for any source column that still exists, so retries do not duplicate events.
+
+The version marker advances only after both queue copies and source-column drops succeed. If either queue fails, the marker remains unchanged. Databases whose queues were already split also advance to `v1.0.0-rc3.dev4` without copying entries again. This step runs after the earlier versioned migrations, including the `v1.0.0-rc3.dev3` permission migration, to keep the shared marker from skipping them. The completion log includes the database version and target version.
+
+This migration requires a coordinated service stop:
+
+1. Stop all services that publish or consume compilation events.
+2. Run `ragflow_server --migrate --log-level info` to see progress and wait for successful completion of both queues.
+3. Restart the services.
+
+Starting a server while either source column remains fails with `knowledge compilation queues need migration`. A database version marker at or above the current release does not bypass this requirement. If migration fails, keep services stopped, resolve the reported error, and rerun `ragflow_server --migrate`.
+
+---
+
 ## Version-less steps
 
-These steps are not gated by the version marker. They are idempotent and run on every startup, either through `RunMigrations` or through the ingestion helpers in `InitDB`.
+These steps are not gated by the version marker. They use schema or data checks to make repeated execution safe. Steps in `RunMigrations` run during `ragflow_server --migrate`; ingestion helpers also run during server startup.
 
 ### Schema changes
 

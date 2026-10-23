@@ -24,7 +24,7 @@ func setupKnowledgeCompileMigrationDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	if err := db.AutoMigrate(&entity.KnowledgeCompileDataset{}, &entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}); err != nil {
+	if err := db.AutoMigrate(&entity.KnowledgeCompileDataset{}, &entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}, &entity.SystemSettings{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
@@ -32,6 +32,7 @@ func setupKnowledgeCompileMigrationDB(t *testing.T) *gorm.DB {
 			t.Fatal(err)
 		}
 	}
+	writeDatabaseVersion(t, db, permissionMigrationTargetVersion)
 	return db
 }
 
@@ -61,6 +62,9 @@ func TestMigrateKnowledgeCompileQueuesPreservesEventsAndLease(t *testing.T) {
 	}
 	if err := migrateKnowledgeCompileQueues(t.Context(), db); err != nil {
 		t.Fatal(err)
+	}
+	if got := databaseVersion(t, db); got != knowledgeCompileQueueTargetVersion {
+		t.Fatalf("migration version=%q, want %q", got, knowledgeCompileQueueTargetVersion)
 	}
 	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
 		if db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
@@ -96,12 +100,22 @@ func TestMigrateKnowledgeCompileQueuesPreservesEventsAndLease(t *testing.T) {
 	if stored.ClaimToken != row.ClaimToken || stored.ClaimOwner != row.ClaimOwner || !stored.ClaimExpiresAt.Equal(expires) || stored.State != row.State || stored.Progress != row.Progress {
 		t.Fatalf("migration changed the scheduling state: %+v", stored)
 	}
-	if err := migrateKnowledgeCompileQueues(t.Context(), db); err != nil {
-		t.Fatalf("rerun: %v", err)
-	}
-	var count int64
-	if err := db.Model(&entity.KnowledgeCompileBacklog{}).Count(&count).Error; err != nil || count != 205 {
-		t.Fatalf("rerun duplicated entries: count=%d err=%v", count, err)
+	for _, tc := range []struct{ version, want string }{
+		{permissionMigrationTargetVersion, knowledgeCompileQueueTargetVersion},
+		{knowledgeCompileQueueTargetVersion, knowledgeCompileQueueTargetVersion},
+		{"v1.0.0-rc3.dev5", "v1.0.0-rc3.dev5"},
+	} {
+		writeDatabaseVersion(t, db, tc.version)
+		if err := migrateKnowledgeCompileQueues(t.Context(), db); err != nil {
+			t.Fatalf("rerun: %v", err)
+		}
+		if got := databaseVersion(t, db); got != tc.want {
+			t.Fatalf("rerun database version=%q, want %q", got, tc.want)
+		}
+		var count int64
+		if err := db.Model(&entity.KnowledgeCompileBacklog{}).Count(&count).Error; err != nil || count != 205 {
+			t.Fatalf("rerun duplicated entries: count=%d err=%v", count, err)
+		}
 	}
 }
 
@@ -131,6 +145,9 @@ func TestMigrateKnowledgeCompileQueuesResumesAfterInvalidPayload(t *testing.T) {
 			if err := migrateKnowledgeCompileQueues(t.Context(), db); err == nil {
 				t.Fatal("invalid source must fail migration")
 			}
+			if got := databaseVersion(t, db); got != permissionMigrationTargetVersion {
+				t.Fatalf("failed migration advanced version=%q, want %q", got, permissionMigrationTargetVersion)
+			}
 			if !db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, queue.column) {
 				t.Fatal("failed migration dropped source column")
 			}
@@ -143,6 +160,9 @@ func TestMigrateKnowledgeCompileQueuesResumesAfterInvalidPayload(t *testing.T) {
 			}
 			if err := migrateKnowledgeCompileQueues(t.Context(), db); err != nil {
 				t.Fatalf("resume: %v", err)
+			}
+			if got := databaseVersion(t, db); got != knowledgeCompileQueueTargetVersion {
+				t.Fatalf("resumed migration version=%q, want %q", got, knowledgeCompileQueueTargetVersion)
 			}
 			for _, table := range []string{(entity.KnowledgeCompileBacklog{}).TableName(), (entity.KnowledgeCompileInflight{}).TableName()} {
 				if err := db.Table(table).Count(&count).Error; err != nil || count != 6 {
