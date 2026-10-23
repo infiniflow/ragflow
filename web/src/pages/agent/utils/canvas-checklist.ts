@@ -102,6 +102,7 @@ const OrphanExemptOperators: string[] = [
 const ApiKeyRequiredOperators: string[] = [
   Operator.SofyaSearch,
   Operator.Search1APISearch,
+  Operator.ContextFetchSearch,
 ];
 
 function collectStrings(value: unknown): string[] {

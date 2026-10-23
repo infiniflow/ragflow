@@ -2980,6 +2980,10 @@ Best for: Documents with flowing, contextually connected content — such as boo
       sofyaSearchDepthBasic: 'Page content',
       sofyaSearchDepthSnippets: 'Snippets only',
       sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
+      contextFetchSearch: 'ContextFetch',
+      contextFetchSearchDescription:
+        'A web search component powered by ContextFetch. Each result carries its title, link and the most relevant passage of the page. An API Key is required.',
+      contextFetchApiKeyTip: 'Required. Create an API Key at contextfetch.dev.',
       search1APISearch: 'Search1API',
       search1APISearchDescription:
         'A web and news search component powered by Search1API. It covers search services such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News and Reuters. As an agent tool, the agent can pick the channel and search service for each call. An API Key is required.',

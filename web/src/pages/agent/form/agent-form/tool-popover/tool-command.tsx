@@ -33,6 +33,7 @@ const Menus = [
       Operator.KeenableSearch,
       Operator.YouComSearch,
       Operator.SofyaSearch,
+      Operator.ContextFetchSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,
       Operator.YahooFinance,
