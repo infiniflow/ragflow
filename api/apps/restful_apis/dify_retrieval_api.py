@@ -281,6 +281,9 @@ async def retrieval(tenant_id):
             similarity_threshold=similarity_threshold,
             vector_similarity_weight=0.3,
             knn_top_k=top,
+            # Dealer.retrieval rejects a page_size above the window, which defaults
+            # to 64. Keep 64 as the floor so a small top_k ranks the same candidates.
+            rerank_candidates_count=max(top, 64),
             doc_ids=doc_ids,
             rank_feature=label_question(question, [kb]),
         )
