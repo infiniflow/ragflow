@@ -81,6 +81,7 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 		"memory_ids":       []any{"memory-1"},
 		"cross_languages":  []any{"English", "Chinese", "Spanish"},
 		"toc_enhance":      true,
+		"highlight":        true,
 		"use_kg":           false,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"retrieval_from":   "dataset",
@@ -102,6 +103,9 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 	}
 	if !request.TOCEnhance {
 		t.Error("TOCEnhance = false")
+	}
+	if !request.Highlight {
+		t.Error("Highlight = false")
 	}
 	if request.UseKG {
 		t.Error("UseKG = true")
