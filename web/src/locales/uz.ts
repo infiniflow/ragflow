@@ -1220,9 +1220,6 @@ export default {
       },
       cancel: 'Bekor qilish',
       chatSetting: 'Chat sozlashi',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'Hujjatni tahlil qilish davomida mundarija ma’lumotlari generatsiya qilingan (Umumiy usuldagi ‘Mundarija ajratib olishni yoqish’ opsiyasini ko‘ring). Bu katta modelga foydalanuvchi so‘roviga tegishli mundarija elementlarini qaytarish imkonini beradi, shu orqali ushbu elementlardan tegishli bo‘laklarni olish va tartiblash jarayonida ularga vazn qo‘llash mumkin. Bu yondashuv kitoblardagi inson axborot izlash xatti-harakatiga taqlid qiladi.',
       batchDeleteSessions: 'Ommaviy o‘chirish',
       deleteSelectedConfirm: 'Tanlangan {{count}} sessiya(o‘chirilsinmi)?',
       showChunkMetadata: 'Bo‘lak metadatasini ko‘rsatish',

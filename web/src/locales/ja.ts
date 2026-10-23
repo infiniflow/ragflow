@@ -1008,9 +1008,6 @@ export default {
       muteWidget: 'ウィジェットの音声をミュート',
       crossLanguagePlaceholder: '値を選択してください',
       metadataKeys: 'フィルター可能な項目',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'ドキュメントの解析時に目次情報が生成されます（「全般」方式の「目次抽出を有効にする」オプションを参照）。これにより、大規模モデルはユーザーのクエリに関連する目次項目を返すことができ、これらの項目を使って関連チャンクを取得し、並べ替え時にこれらのチャンクへ重み付けを適用します。この手法は、人間が書籍の中で情報を探す際の行動を模倣したものです。',
       batchDeleteSessions: '一括削除',
       deleteSelectedConfirm: '選択した{{count}}件のセッションを削除しますか？',
     },

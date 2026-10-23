@@ -1124,8 +1124,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       },
       cancel: 'Annuler',
       chatSetting: 'Paramètres du chat',
-      tocEnhance: 'IndexPage',
-      tocEnhanceTip: `Lors de l'analyse du document, des informations de table des matières ont été générées (voir l'option 'Activer l'extraction de la table des matières' dans la méthode Général). Cela permet au grand modèle de retourner les éléments de table des matières pertinents à la requête de l'utilisateur, d'utiliser ces éléments pour récupérer les segments associés et d'appliquer une pondération lors du tri.`,
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',

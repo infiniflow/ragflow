@@ -1331,9 +1331,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       },
       cancel: 'Ləğv et',
       chatSetting: 'Söhbət parametri',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        "Sənədin təhlili zamanı mündəricat məlumatı yaradılıb (Ümumi üsuldakı 'Mündəricatın çıxarılmasını aktivləşdir' seçiminə baxın). Bu, böyük modelə istifadəçinin sorğusuna uyğun mündəricat elementlərini qaytarmağa, sonra bu elementlərdən istifadə edərək əlaqəli fraqmentləri tapmağa və sıralama zamanı həmin fraqmentlərə çəki tətbiq etməyə imkan verir. Bu yanaşma insanların kitablarda məlumat axtarma davranışını təqlid edir.",
       batchDeleteSessions: 'Kütləvi sil',
       deleteSelectedConfirm: 'Seçilmiş {{count}} seans silinsin?',
       showChunkMetadata: 'Fraqmentin metaverilənlərini göstər',

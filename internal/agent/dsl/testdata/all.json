@@ -523,7 +523,6 @@
           "rerank_id": "",
           "retrieval_from": "dataset",
           "similarity_threshold": 0.2,
-          "toc_enhance": false,
           "top_k": 512,
           "top_n": 5,
           "use_kg": false
@@ -3308,7 +3307,6 @@
             "rerank_id": "",
             "retrieval_from": "dataset",
             "similarity_threshold": 0.2,
-            "toc_enhance": false,
             "top_k": 512,
             "top_n": 5,
             "use_kg": false

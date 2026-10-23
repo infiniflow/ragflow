@@ -922,9 +922,6 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       },
       cancel: 'Abbrechen',
       chatSetting: 'Chat-Einstellung',
-      tocEnhance: 'Inhaltsverzeichnis verbessern',
-      tocEnhanceTip:
-        'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
       showChunkMetadata: 'Chunk-Metadaten anzeigen',
