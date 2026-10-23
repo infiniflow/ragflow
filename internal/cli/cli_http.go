@@ -380,10 +380,6 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIDeleteAPIKeyCommand(commandCount, cmd)
 	case "api_set_api_key":
 		return c.APISetAPIKeyCommand(commandCount, cmd)
-	case "api_set_variable":
-		return c.APISetVariableCommand(commandCount, cmd)
-	case "api_show_variable":
-		return c.APIShowVariableCommand(commandCount, cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(commandCount, cmd)
 	case "api_show_version":
@@ -538,8 +534,6 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
-	case "api_list_variables":
-		return c.APIListVariablesCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":

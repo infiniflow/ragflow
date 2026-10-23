@@ -662,11 +662,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
 
-				// Variables/Settings
-				system.GET("/variables", r.systemHandler.ListVariables)
-				system.PUT("/variables", r.systemHandler.SetVariable)
-				system.GET("/variables/:var_name", r.systemHandler.ShowVariable)
-
 				// Environments
 				system.GET("/environments", r.systemHandler.ListEnvironments)
 
