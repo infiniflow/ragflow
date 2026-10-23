@@ -66,6 +66,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Versions.
 	g.GET("/:canvas_id/versions", h.ListVersions)
 	g.GET("/:canvas_id/versions/:version_id", h.GetVersion)
+	g.PATCH("/:canvas_id/versions/:version_id", h.PatchVersion)
 	g.DELETE("/:canvas_id/versions/:version_id", h.DeleteVersion)
 	g.POST("/:canvas_id/versions/:version_id/apply", h.ApplyVersion)
 

@@ -37,6 +37,8 @@ const {
   trace,
   fetchVersionList,
   fetchVersion,
+  deleteVersion,
+  updateVersion: updateVersionApi,
   getAgent,
   fetchAgentSessions,
   fetchExternalAgentInputs,
@@ -64,6 +66,15 @@ const methods = {
     url: (config: { agentId: string; versionId: string }) =>
       fetchVersion(config.agentId, config.versionId),
     method: 'get',
+  },
+  deleteVersion: {
+    url: deleteVersion,
+    method: 'delete',
+  },
+  updateVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      updateVersionApi(config.agentId, config.versionId),
+    method: 'put',
   },
   listAgents: {
     url: listAgents,
@@ -161,9 +172,22 @@ export const updateAgent = (
     description?: string | null;
     permission?: string;
     release?: string;
+    autosave?: boolean;
+    alias?: string;
   },
 ) => {
   return request(updateAgentApi(agentId), { method: 'put', data: params });
+};
+
+export const updateVersion = (
+  agentId: string,
+  versionId: string,
+  params: { alias?: string; title?: string; description?: string },
+) => {
+  return request(updateVersionApi(agentId, versionId), {
+    method: 'patch',
+    data: params,
+  });
 };
 
 export const updateAgentTags = (agentId: string, tags: string[]) => {

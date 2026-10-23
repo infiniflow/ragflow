@@ -199,9 +199,75 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
+	// Resolve the pipeline version this save pins the document to (design
+	// section 5/C2). An explicit pipeline_version_id re-pins the document; the
+	// version must belong to the effective canvas or the save is rejected with
+	// ErrPipelineVersionMissing. Omitting pipeline_version_id keeps the current
+	// pin. The resolved value drives both parser_config cleaning (below) and the
+	// persisted column, so a save that changes the version also cleans against
+	// the new version DSL.
+	effectiveVersionID := doc.PipelineVersionID
+	repointVersion := false
+	if isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" && present["pipeline_version_id"] {
+		canvasID := strings.TrimSpace(*effPipelineID)
+		if req.PipelineVersionID != nil && strings.TrimSpace(*req.PipelineVersionID) != "" {
+			requested := strings.TrimSpace(*req.PipelineVersionID)
+			v, verr := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, requested)
+			if verr != nil {
+				if errors.Is(verr, dao.ErrUserCanvasVersionNotFound) {
+					return nil, common.CodeDataError, fmt.Errorf("pipeline version %s not found: %w", requested, service.ErrPipelineVersionMissing)
+				}
+				return nil, common.CodeServerError, fmt.Errorf("load pipeline version %s: %w", requested, verr)
+			}
+			if v.UserCanvasID != canvasID {
+				return nil, common.CodeDataError, fmt.Errorf("pipeline version %s does not belong to canvas %s: %w", requested, canvasID, service.ErrPipelineVersionMissing)
+			}
+			effectiveVersionID = &requested
+		} else {
+			effectiveVersionID = nil // explicit empty => track the latest version
+		}
+		repointVersion = true
+	}
+
+	// Design C2 / B4: a save that switches the document to a different dataflow
+	// canvas without supplying pipeline_version_id must not keep the stale pin
+	// that belonged to the OLD canvas. Reset the pin so the document tracks the
+	// new canvas's latest version (mirrors the "explicit empty version clears the
+	// pin" semantics). Without this, the document would bind to canvasB while
+	// still pinning canvasA's version, and parser_config cleaning would silently
+	// fall back to a merge because LoadPipelineDSL's ownership check fails.
+	if !present["pipeline_version_id"] && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+		pipelineChanged := doc.PipelineID == nil || strings.TrimSpace(*doc.PipelineID) != strings.TrimSpace(*effPipelineID)
+		if pipelineChanged {
+			effectiveVersionID = nil
+			repointVersion = true
+		}
+	}
+
+	// C3 (T26/V5/A3): an explicit version switch (repointVersion carrying a
+	// different pinned version) resets the document's component params to the
+	// new version default below. Re-pinning the SAME version is NOT a change
+	// (matches the dataset "same version keeps config" semantics).
+	versionChanged := false
+	if repointVersion {
+		oldV := ""
+		if doc.PipelineVersionID != nil {
+			oldV = strings.TrimSpace(*doc.PipelineVersionID)
+		}
+		newV := ""
+		if effectiveVersionID != nil {
+			newV = strings.TrimSpace(*effectiveVersionID)
+		}
+		versionChanged = newV != oldV
+	}
+
 	if present["parser_config"] && req.ParserConfig != nil {
 		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+		// Honor the document's sticky pinned pipeline_version_id (design section 5/B4):
+		// a document bound to a specific version must be cleaned against that version's
+		// DSL, not the canvas's latest. A nil pinned version falls back to the latest,
+		// preserving the previous behavior for unpinned docs.
+		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID, effectiveVersionID)
 		if err != nil {
 			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
 				zap.Error(err))
@@ -218,6 +284,45 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}); err != nil {
 				return nil, common.CodeDataError, err
 			}
+		}
+	} else if versionChanged {
+		// C3 (T26/V5/A3): a version switch resets the document's component params
+		// to the new version default (full reset, not a merge). The caller did
+		// not supply an explicit parser_config, so the new version defaults win
+		// outright, scoped the same way an explicit config would be.
+		cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, effParserID, effPipelineID, effectiveVersionID)
+		if cpErr != nil {
+			common.Warn("document version switch: failed to resolve component params defaults, keeping prior parser_config",
+				zap.String("parserID", effParserID), zap.Error(cpErr))
+		} else {
+			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			if llmErr != nil {
+				common.Warn("document version switch: failed to resolve default chat model, falling back to no llm binding",
+					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
+				llmID = ""
+			}
+			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"parser_config": cleaned,
+			}); err != nil {
+				return nil, common.CodeDataError, err
+			}
+		}
+	}
+
+	// Persist the resolved version pin so a per-document selection survives a
+	// save (design section 5/C2). Written only when the request carried
+	// pipeline_version_id; an empty value clears the pin (track latest) and a nil
+	// pointer maps to SQL NULL.
+	if repointVersion {
+		var colValue interface{}
+		if effectiveVersionID != nil {
+			colValue = *effectiveVersionID
+		}
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+			"pipeline_version_id": colValue,
+		}); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("update document pipeline_version_id: %w", err)
 		}
 	}
 
@@ -550,6 +655,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		DatasetID:            doc.KbID,
 		ParserID:             doc.ParserID,
 		PipelineID:           doc.PipelineID,
+		PipelineVersionID:    doc.PipelineVersionID,
 		ParserConfig:         doc.ParserConfig,
 		SourceType:           doc.SourceType,
 		Type:                 doc.Type,

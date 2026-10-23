@@ -2286,3 +2286,33 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
 	}
 }
+
+// TestMapDocumentListItemIncludesPipelineVersionID guards the document list
+// wire format: the reopened change-parser dialog reads record.pipeline_version_id
+// to show the saved pin, so mapDocumentListItem MUST emit it. An earlier fix added
+// the field to the entity struct and asserted on the service-layer struct, but
+// never on this serialization step, so the field was silently dropped from the
+// HTTP response (file-level pin always reverted to latest). This test covers that
+// exact gap.
+func TestMapDocumentListItemIncludesPipelineVersionID(t *testing.T) {
+	pinned := "v-pinned-123"
+	pipelineID := "canvas-1"
+	doc := &entity.DocumentListItem{
+		ID:                "doc-1",
+		KbID:              "kb-1",
+		PipelineID:        &pipelineID,
+		PipelineVersionID: &pinned,
+	}
+	item := mapDocumentListItem(doc, map[string]interface{}{}, nil)
+
+	got, ok := item["pipeline_version_id"]
+	if !ok {
+		t.Fatalf("mapDocumentListItem must emit pipeline_version_id; got keys without it")
+	}
+	if got != pinned {
+		t.Fatalf("pipeline_version_id value mismatch: got %v want %v", got, pinned)
+	}
+	if item["pipeline_id"] != pipelineID {
+		t.Fatalf("pipeline_id mapping regressed: %v", item["pipeline_id"])
+	}
+}

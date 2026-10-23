@@ -2176,14 +2176,27 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list versions: %v", err)
 	}
-	if len(versions) != 1 {
-		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
+	// v5.2 §5.1: a manual Save always INSERTs a new version, even when the DSL
+	// is identical to the previous one (no same-DSL in-place refresh dedup).
+	if len(versions) != 2 {
+		t.Fatalf("expected every manual save to mint a new version, got %d versions", len(versions))
 	}
-	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
-		t.Fatalf("unexpected version title: %v", versions[0].Title)
+	// create_time may tie within the same second, so select the version from the
+	// second ("Renamed Agent") save by its title instead of relying on list order.
+	var latest *entity.UserCanvasVersion
+	for _, v := range versions {
+		if v.Title != nil && strings.HasPrefix(*v.Title, "owner_Renamed Agent_") {
+			latest = v
+		}
+	}
+	if latest == nil {
+		t.Fatalf("could not find the renamed-agent version among %d versions", len(versions))
+	}
+	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "owner_Renamed Agent_") {
+		t.Fatalf("unexpected version title: %v", latest.Title)
 	}
 	var release bool
-	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Select("release").Where("id = ?", versions[0].ID).Scan(&release).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Select("release").Where("id = ?", latest.ID).Scan(&release).Error; err != nil {
 		t.Fatalf("failed to read release flag: %v", err)
 	}
 	if release {

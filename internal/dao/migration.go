@@ -86,6 +86,14 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
 	}
 
+	// Add pipeline_version_id columns and lock existing dataflow bindings to a version.
+	if err := MigrateDSLVersionColumns(ctx, db); err != nil {
+		return fmt.Errorf("failed to add DSL version columns: %w", err)
+	}
+	if err := BackfillDSLVersionBindings(ctx, db); err != nil {
+		return fmt.Errorf("failed to backfill DSL version bindings: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
