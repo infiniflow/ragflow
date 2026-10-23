@@ -186,7 +186,13 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			warnings = append(warnings, blockWarnings...)
 			for _, item := range blockItems {
 				item["page_number"] = pageNumber
-				if pos := soMarkBlockPosition(block, pageNumber); pos != nil {
+				// A block may carry its own 0-based page_idx; it wins over the
+				// enclosing page value, which stays as the fallback.
+				blockPage := pageNumber
+				if raw, ok := numericAny(block["page_idx"]); ok && raw >= 0 {
+					blockPage = int(raw) + 1
+				}
+				if pos := soMarkBlockPosition(block, blockPage); pos != nil {
 					item["positions"] = [][]any{pos}
 					item["_pdf_positions"] = [][]any{pos}
 				}
