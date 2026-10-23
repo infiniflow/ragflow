@@ -3944,3 +3944,47 @@ func (c *CLI) APIShowQuotaCommand(commandCount int, cmd *Command) (ResponseIf, e
 
 	return HandleCommonDataResponse(resp, "get quota")
 }
+
+func (c *CLI) APIShowModelStatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the query with url.Values rather than Sprintf: filter values are
+	// caller-supplied and may contain characters that need percent-encoding.
+	query := netUrl.Values{}
+	if days, ok := cmd.Params["days"].(int); ok && days > 0 {
+		query.Set("days", fmt.Sprintf("%d", days))
+	}
+	if v, ok := cmd.Params["start"].(string); ok && v != "" {
+		query.Set("start", v)
+	}
+	if v, ok := cmd.Params["end"].(string); ok && v != "" {
+		query.Set("end", v)
+	}
+	if v, ok := cmd.Params["provider"].(string); ok && v != "" {
+		query.Set("provider", v)
+	}
+	if v, ok := cmd.Params["instance"].(string); ok && v != "" {
+		query.Set("instance", v)
+	}
+	if v, ok := cmd.Params["model"].(string); ok && v != "" {
+		query.Set("model", v)
+	}
+	if v, ok := cmd.Params["by"].(string); ok && v != "" {
+		query.Set("by", v)
+	}
+
+	url := "/system/stats/model"
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get model stats: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get model stats")
+}
