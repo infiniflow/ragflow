@@ -3130,6 +3130,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       checklist: '检查清单',
       checklistEmpty: '未发现问题',
       checklistTitle: '以下问题可能影响运行或发布',
+      loopRowsIncomplete: '请完善循环变量和终止条件',
       issueNotConnected: '该步骤未与任何算子连接',
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
