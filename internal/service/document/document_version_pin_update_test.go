@@ -188,14 +188,20 @@ func TestUpdateDatasetDocument_EmptyPipelineVersionTracksLatest(t *testing.T) {
 	seedDocVersion(t, db, canvasID, "v-old", 100)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasID, "v-old")
 
+	// C5/G3: an explicit EMPTY version in Pipeline mode is REJECTED (design
+	// section 3: empty version is no longer auto-backfilled to latest). The pin
+	// must be preserved and the save must fail with ErrPipelineVersionEmpty.
 	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("")},
 		map[string]bool{"pipeline_version_id": true})
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	if err == nil || code == common.CodeSuccess {
+		t.Fatalf("expected rejection of empty pipeline version, got code=%d err=%v", code, err)
 	}
-	if got := loadDoc(t, db, "doc-1"); got.PipelineVersionID != nil {
-		t.Fatalf("PipelineVersionID = %v, want nil (track latest)", *got.PipelineVersionID)
+	if !errors.Is(err, service.ErrPipelineVersionEmpty) {
+		t.Fatalf("err = %v, want ErrPipelineVersionEmpty", err)
+	}
+	if got := loadDoc(t, db, "doc-1"); got.PipelineVersionID == nil || *got.PipelineVersionID != "v-old" {
+		t.Fatalf("pin must be preserved on rejected save, got %v", got.PipelineVersionID)
 	}
 }
 

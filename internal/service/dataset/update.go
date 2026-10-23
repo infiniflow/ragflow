@@ -365,12 +365,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 				versionChanged = true
 			}
 		}
-		// Design §5 sticky snapshot + T7: an explicit caller-supplied version is
-		// re-pinned (with ownership validation) whenever provided; an explicit
-		// EMPTY version clears the pin (track the latest version, design C2),
-		// matching the document layer. When no version is supplied, a changed
-		// pipeline locks the new canvas's latest version, and an unchanged
-		// pipeline preserves the prior binding.
+		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
+		// (no longer silently cleared or auto-backfilled to the canvas latest).
+		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
+		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// bound) is exempt and may carry an empty version.
+		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
 		if req.PipelineVersionID != nil {
 			if strings.TrimSpace(*req.PipelineVersionID) != "" {
 				bound, perr := resolvePipelineVersionID(ctx, tx, canvasCtx, req.PipelineVersionID)
@@ -379,19 +379,21 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 					return perr
 				}
 				updates["pipeline_version_id"] = bound
+			} else if isEffPipeline {
+				// Explicit empty version in Pipeline mode: reject (do not clear the
+				// pin). Only BuiltIn-mode explicit empties are allowed to clear.
+				txCode = common.CodeBadRequest
+				return service.ErrPipelineVersionEmpty
 			} else {
-				// Explicit empty version = track the latest version (design C2):
-				// clear the pin so reads resolve the canvas latest. This mirrors
-				// the document layer, where an empty pipeline_version_id clears
-				// the pin instead of preserving it.
+				// BuiltIn mode explicit empty: clear the pin (no canvas to pin to).
 				updates["pipeline_version_id"] = nil
 			}
 		} else if pipelineChanged && pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
-			if v, gerr := dao.NewUserCanvasVersionDAO().GetLatest(ctx, tx, strings.TrimSpace(*pipelineID)); gerr == nil && v != nil {
-				updates["pipeline_version_id"] = v.ID
-			} else {
-				updates["pipeline_version_id"] = nil
-			}
+			// Switching to a Pipeline canvas without an explicit version is a
+			// missing-version Save (design C5/G3): reject rather than silently
+			// locking the new canvas's latest version.
+			txCode = common.CodeBadRequest
+			return service.ErrPipelineVersionEmpty
 		}
 		if _, ok := updates["parser_config"]; (pipelineChanged || versionChanged) && !ok {
 			cfgParserID := lockedKB.ParserID

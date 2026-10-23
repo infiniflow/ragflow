@@ -15,6 +15,7 @@
 package dataset
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -90,10 +91,14 @@ func TestCreateDataset_BindsLatestPipelineVersion(t *testing.T) {
 	seedDataflowCanvasWithVersion(t, db, canvasID, versionID)
 
 	parseType := 2
+	// C5/G3: Pipeline-mode create now requires an explicit version (the empty
+	// version is no longer auto-backfilled to the canvas latest). Supply the seeded
+	// version to verify the create still pins the chosen version.
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:       "ds-bind-version",
-		PipelineID: &canvasID,
-		ParseType:  &parseType,
+		Name:              "ds-bind-version",
+		PipelineID:        &canvasID,
+		PipelineVersionID: &versionID,
+		ParseType:         &parseType,
 	}, testDatasetSubject("tenant-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
@@ -148,9 +153,13 @@ func TestUpdateDataset_RewritesVersionOnPipelineChange(t *testing.T) {
 	seedBoundKB(t, db, "kb-change", canvas1, ver1)
 
 	parseType := 2
+	// C5/G3: switching the bound pipeline now requires an explicit version (the
+	// empty version is no longer auto-backfilled to the new canvas latest). Supply
+	// canvas2's version to verify the rewrite still pins the chosen version.
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-change", "tenant-1", service.UpdateDatasetRequest{
-		PipelineID: &canvas2,
-		ParseType:  &parseType,
+		PipelineID:        &canvas2,
+		ParseType:         &parseType,
+		PipelineVersionID: &ver2,
 	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
@@ -387,10 +396,10 @@ func TestPipelineVersionOutdated_ComputesFromLatest(t *testing.T) {
 	}
 }
 
-// T7d: an explicit EMPTY PipelineVersionID clears the pin (track latest),
-// matching the document-layer semantics (design C2: the user can pick
-// Latest). Before this contract, an empty version with an unchanged
-// pipeline left the old pin in place, so choosing Latest never took effect.
+// T7d (updated for C5/G3): an explicit EMPTY PipelineVersionID in Pipeline mode is
+// REJECTED, not silently cleared to track latest. The empty version is no longer
+// auto-backfilled (design section 3); the save must fail with ErrPipelineVersionEmpty
+// and the existing pin must be preserved.
 func TestUpdateDataset_EmptyVersionClearsPin(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
@@ -407,15 +416,18 @@ func TestUpdateDataset_EmptyVersionClearsPin(t *testing.T) {
 		ParseType:         &parseType,
 		PipelineVersionID: &empty,
 	})
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	if err == nil || code == common.CodeSuccess {
+		t.Fatalf("expected rejection of explicit empty version, got code=%d err=%v", code, err)
+	}
+	if !errors.Is(err, service.ErrPipelineVersionEmpty) {
+		t.Fatalf("err = %v, want ErrPipelineVersionEmpty", err)
 	}
 	var kb entity.Knowledgebase
 	if err := db.Where("id = ?", "kb-clear").Take(&kb).Error; err != nil {
 		t.Fatalf("load kb: %v", err)
 	}
-	if kb.PipelineVersionID != nil {
-		t.Fatalf("PipelineVersionID = %v, want nil (cleared) after explicit empty version", *kb.PipelineVersionID)
+	if kb.PipelineVersionID == nil || *kb.PipelineVersionID != ver1 {
+		t.Fatalf("PipelineVersionID = %v, want preserved %s after rejected empty version", kb.PipelineVersionID, ver1)
 	}
 }
 

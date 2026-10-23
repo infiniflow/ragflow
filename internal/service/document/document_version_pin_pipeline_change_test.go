@@ -15,19 +15,19 @@
 package document
 
 import (
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/service"
 )
 
-// TestUpdateDatasetDocument_PipelineChangeWithoutVersionResetsPin verifies the
-// sticky-snapshot contract: when a save switches the document to a different
-// dataflow canvas but does NOT supply pipeline_version_id, the previously pinned
-// version (which belongs to the OLD canvas) must not survive the switch. Leaving
-// it in place would bind the document to canvasB while pinning canvasA's version,
-// so the runtime LoadPipelineDSL ownership check fails and parser_config cleaning
-// silently falls back to a merge (design C2 / B4).
-func TestUpdateDatasetDocument_PipelineChangeWithoutVersionResetsPin(t *testing.T) {
+// TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected verifies the C5/G3
+// contract: switching a document to a different dataflow canvas WITHOUT supplying a
+// concrete pipeline_version_id is REJECTED (design section 3: empty version is no
+// longer silently backfilled to the canvas latest). The UI must surface the red
+// Missing badge and the "版本信息缺失" error instead.
+func TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
@@ -46,19 +46,18 @@ func TestUpdateDatasetDocument_PipelineChangeWithoutVersionResetsPin(t *testing.
 	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{ParseType: &parseType, PipelineID: sptr(canvasB)},
 		map[string]bool{"pipeline_id": true})
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	if err == nil || code == common.CodeSuccess {
+		t.Fatalf("expected rejection of pipeline switch without version, got code=%d err=%v", code, err)
 	}
+	if !errors.Is(err, service.ErrPipelineVersionEmpty) {
+		t.Fatalf("err = %v, want ErrPipelineVersionEmpty", err)
+	}
+	// The document must be left unchanged (pipeline_id and pin preserved).
 	got := loadDoc(t, db, "doc-1")
-	if got.PipelineID == nil || *got.PipelineID != canvasB {
-		t.Fatalf("pipeline_id = %v, want %s", got.PipelineID, canvasB)
+	if got.PipelineID == nil || *got.PipelineID != canvasA {
+		t.Fatalf("pipeline_id = %v, want unchanged %s", got.PipelineID, canvasA)
 	}
-	// The surviving pin must no longer reference the old canvas's version.
-	if got.PipelineVersionID != nil && *got.PipelineVersionID == "v-a" {
-		t.Fatalf("pin still references old canvas version v-a after pipeline switch: %v", got.PipelineVersionID)
-	}
-	// It should either be cleared (track latest) or pinned to canvasB's latest (v-b).
-	if got.PipelineVersionID != nil && *got.PipelineVersionID != "v-b" {
-		t.Fatalf("pipeline_version_id = %v, want v-b or nil", got.PipelineVersionID)
+	if got.PipelineVersionID == nil || *got.PipelineVersionID != "v-a" {
+		t.Fatalf("PipelineVersionID = %v, want preserved v-a", got.PipelineVersionID)
 	}
 }

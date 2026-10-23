@@ -42,6 +42,14 @@ var ErrUserCanvasVersionNotFound = errors.New("user_canvas_version: not found")
 // identity).
 var ErrPipelineVersionMissing = errors.New("pipeline version missing or not owned by canvas")
 
+// ErrPipelineVersionEmpty is returned when a dataset or document is saved in
+// Pipeline (dataflow canvas) mode but carries no concrete pinned version
+// (pipeline_version_id is empty / not selected). Per design C5/G3 the empty
+// version is no longer auto-backfilled to the canvas latest; instead the Save is
+// rejected so the UI can surface the red "Missing" badge and the
+// "版本信息缺失" error. BuiltIn mode (no canvas bound) is exempt.
+var ErrPipelineVersionEmpty = errors.New("版本信息缺失")
+
 // userFacingVersionHint is appended to every Missing-state error so the runtime
 // parse path can surface a human-readable instruction (design section 6.2, C4).
 const userFacingVersionHint = "pipeline 版本不存在，请重新选择版本"

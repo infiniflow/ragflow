@@ -167,6 +167,13 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+	// design C5/G3: an empty version in Pipeline mode is no longer auto-backfilled
+	// to the canvas latest; the Save is rejected so the UI can show the red Missing
+	// badge and surface the "版本信息缺失" error. BuiltIn mode (no canvas bound) is
+	// exempt.
+	if isPipeline && (req.PipelineVersionID == nil || strings.TrimSpace(*req.PipelineVersionID) == "") {
+		return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
+	}
 	pipelineVersionID, verr := resolvePipelineVersionID(ctx, dao.DB, pipelineID, req.PipelineVersionID)
 	if verr != nil {
 		return nil, common.CodeBadRequest, verr

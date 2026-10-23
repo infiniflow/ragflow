@@ -224,7 +224,14 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 			effectiveVersionID = &requested
 		} else {
-			effectiveVersionID = nil // explicit empty => track the latest version
+			// C5/G3: an explicit EMPTY version in Pipeline mode is REJECTED, not
+			// silently cleared to track the canvas latest. The Save must fail so the
+			// UI can show the red Missing badge and the "版本信息缺失" error.
+			// BuiltIn mode (no canvas to pin to) still allows clearing the pin.
+			if isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+				return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
+			}
+			effectiveVersionID = nil // explicit empty in BuiltIn mode => clear the pin
 		}
 		repointVersion = true
 	}
@@ -239,8 +246,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	if !present["pipeline_version_id"] && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		pipelineChanged := doc.PipelineID == nil || strings.TrimSpace(*doc.PipelineID) != strings.TrimSpace(*effPipelineID)
 		if pipelineChanged {
-			effectiveVersionID = nil
-			repointVersion = true
+			// C5/G3: switching to a Pipeline canvas without supplying a version is a
+			// missing-version Save; reject rather than silently tracking the new
+			// canvas latest. The user must pick a concrete version.
+			return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
 		}
 	}
 

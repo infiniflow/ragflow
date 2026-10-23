@@ -22,6 +22,12 @@ import (
 // duplicate service/task sentinels into one implementation).
 var ErrPipelineVersionMissing = dao.ErrPipelineVersionMissing
 
+// ErrPipelineVersionEmpty is re-exported from dao so callers (dataset/document
+// CRUD) keep a single stable symbol. It signals a Pipeline-mode Save with no
+// concrete pinned version (design C5/G3: empty version is rejected, not silently
+// backfilled to the canvas latest).
+var ErrPipelineVersionEmpty = dao.ErrPipelineVersionEmpty
+
 // loadCanvasDSLJSON returns the DSL JSON for a custom canvas pipeline.
 //
 // For dataflow canvases (canvas_category = dataflow_canvas) the read is versioned

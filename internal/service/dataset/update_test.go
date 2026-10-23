@@ -318,11 +318,16 @@ func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T
 		t.Fatalf("marshal canvas DSL: %v", err)
 	}
 	seedDatasetUpdateCanvas(t, pipelineID, "tenant-1", dslJSON)
+	// C5/G3: a Pipeline-mode switch now requires an explicit version (the empty
+	// version is no longer auto-backfilled). Seed one and pass it.
+	verID := "version0000000000000000000000cc"
+	seedCanvasVersion(t, db, pipelineID, verID, 0)
 
 	ctx := t.Context()
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		PipelineID: &pipelineID,
-		ParseType:  &parseType,
+		PipelineID:        &pipelineID,
+		ParseType:         &parseType,
+		PipelineVersionID: &verID,
 		ParserConfig: map[string]interface{}{
 			"Parser:CustomP": map[string]interface{}{
 				"pdf": map[string]interface{}{"remove_toc": true},
@@ -1042,6 +1047,7 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}
