@@ -1146,8 +1146,6 @@ export default {
       },
       cancel: '취소',
       chatSetting: '채팅 설정',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `문서 파싱 과정에서 목차 정보가 생성됩니다(일반 방법의 '목차 추출 활성화' 옵션 참조). 이 정보를 활용하면 대형 모델이 사용자 질의와 관련된 목차 항목을 반환하고, 이를 바탕으로 관련 청크를 검색한 뒤 정렬 시 해당 청크에 가중치를 부여할 수 있습니다. 책에서 목차를 보고 원하는 정보를 찾아가는 사람의 행동 방식을 모방한 방식입니다.`,
       batchDeleteSessions: '일괄 삭제',
       deleteSelectedConfirm: '선택한 {{count}}개의 세션을 삭제하시겠습니까?',
       showChunkMetadata: 'Chunk 메타데이터 표시',

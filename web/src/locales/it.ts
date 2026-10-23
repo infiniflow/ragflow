@@ -1169,8 +1169,6 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       },
       cancel: 'Annulla',
       chatSetting: 'Impostazioni chat',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: ` Durante l'analisi del documento, sono state generate informazioni sull'indice (vedi l'opzione 'Abilita estrazione indice' nel metodo Generale). Questo permette al modello grande di restituire elementi dell'indice rilevanti per la query dell'utente, usando così questi elementi per recuperare i chunk correlati e applicare una ponderazione a questi chunk durante il processo di ordinamento. Questo approccio imita il comportamento umano di ricerca delle informazioni nei libri.`,
       batchDeleteSessions: 'Eliminazione multipla',
       deleteSelectedConfirm: 'Eliminare le {{count}} sessioni selezionate?',
       showChunkMetadata: 'Mostra metadati del chunk',
