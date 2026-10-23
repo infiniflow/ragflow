@@ -295,10 +295,11 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			common.Warn("document version switch: failed to resolve component params defaults, keeping prior parser_config",
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
-			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
-			llmID := ""
-			if tenantErr == nil && tenant != nil {
-				llmID = tenant.LLMID
+			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			if llmErr != nil {
+				common.Warn("document version switch: failed to resolve default chat model, falling back to no llm binding",
+					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
+				llmID = ""
 			}
 			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
