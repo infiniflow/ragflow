@@ -46,11 +46,8 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 		t.Fatal(res.Err)
 	}
 
-	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": res.OutputFormat}
-	switch res.OutputFormat {
-	case "json":
-		inputs["json"] = res.JSON
-	}
+	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": "json"}
+	inputs["json"] = res.JSON
 
 	comp, err := NewQAChunker(nil)
 	if err != nil {

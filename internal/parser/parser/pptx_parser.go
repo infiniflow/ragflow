@@ -147,9 +147,8 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("presentation ir-json: empty result")}
 		}
 		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename, "format": effFormat},
-			JSON:         MapsToItems(itemsFromPlainText(plainText)),
+			File: map[string]any{"name": filename, "format": effFormat},
+			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
 	budget := newEmbeddedMediaBudget()
@@ -173,9 +172,8 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": effFormat},
-		JSON:         MapsToItems(items),
-		Warnings:     budget.warnings(),
+		File:     map[string]any{"name": filename, "format": effFormat},
+		JSON:     MapsToItems(items),
+		Warnings: budget.warnings(),
 	}
 }

@@ -691,6 +691,33 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      label === Operator.VariableAggregator &&
+      (!Array.isArray(form?.groups) ||
+        form.groups.length === 0 ||
+        form.groups.some(
+          (group: any) =>
+            typeof group?.group_name !== 'string' ||
+            !group.group_name.trim() ||
+            !Array.isArray(group.variables) ||
+            group.variables.length === 0 ||
+            group.variables.some((variable: any) => {
+              const value =
+                typeof variable === 'string' ? variable : variable?.value;
+              return (
+                typeof value !== 'string' || !value.replace(/[{}]/g, '').trim()
+              );
+            }),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.aggregationIncomplete',
+        blocksRun: true,
+      });
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
@@ -719,11 +746,13 @@ export function collectCanvasIssues({
       }
       // Not gated on editedNodeFormIds: a canvas loaded from storage with an
       // empty model must flag on the very next render, not only after edits.
-      if (!form?.llm_id) {
+      const modelRef = form?.model_id ?? form?.llm_id;
+      if (typeof modelRef !== 'string' || !modelRef.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'flow.agentModelMissing',
+          blocksRun: true,
         });
       }
       if (Array.isArray(form?.tools)) {
@@ -878,14 +907,15 @@ export function collectCanvasIssues({
 
     if (
       modelValidIds &&
-      typeof form?.llm_id === 'string' &&
-      form.llm_id &&
-      !modelValidIds.has(form.llm_id)
+      typeof (form?.model_id ?? form?.llm_id) === 'string' &&
+      (form?.model_id ?? form?.llm_id) &&
+      !modelValidIds.has(form?.model_id ?? form?.llm_id)
     ) {
       issues.push({
         ...target,
         type: CanvasIssueType.InvalidVariable,
         messageKey: 'common.modelUnavailable',
+        blocksRun: label === Operator.Agent,
       });
     }
 

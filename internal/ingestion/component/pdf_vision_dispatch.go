@@ -83,10 +83,10 @@ func maybeDispatchPDFVision(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	// The tenant-selected parser and the built-in backends share one
 	// normalization boundary so a future normalization fix cannot miss one
-	// of the two paths. ParseWithResult already normalizes JSON internally,
-	// but markdown stays unconverted there; running it through the same
-	// NormalizeResult keeps markdown→JSON conversion in the parser package
-	// and makes the call idempotent for already-normalized JSON.
+	// of the two paths. PDF markdown engines (MonkeyOCRv2, MinerU V1
+	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
+	// returns, so the NormalizeResult closure below only ever applies item
+	// policies to already-normalized JSON and stays idempotent.
 	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
 		pdf := parser.PDFParser{FlattenMediaToText: flatten}
@@ -273,41 +273,17 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return buildMarkdownOCRDispatchResult(md), nil
+	return normalizePDFMarkdown(ctx, filename, md, setup), nil
 }
 
-func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
-	// Fallback markdown→JSON converter for non-PDF families via
-	// buildParserOutputs/normalizeParserJSON. PDF dispatch results are
-	// normalized earlier by PDFParser.NormalizeResult (parser.parsePDFMarkdown),
-	// so this stays as the final safety net rather than a second PDF boundary.
-	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
-	if err != nil {
-		warnParserNormalizationFallback(filename, "markdown", err)
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	// OCR Markdown is an untrusted backend response. Keep normalization
-	// deterministic and local: embedded data URIs remain available, while
-	// remote image URLs do not introduce network I/O at the Parser boundary.
-	mp.FetchRemoteImages = false
-	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
-	if res.Err != nil {
-		warnParserNormalizationFallback(filename, "markdown", res.Err)
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	if len(res.JSON) == 0 {
-		warnParserNormalizationFallback(filename, "markdown", fmt.Errorf("parser returned no JSON items"))
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	return res.JSON
-}
-
-func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
-	// The PDF dispatch boundary converts backend Markdown before enhancement.
-	return parser.ParseResult{
-		OutputFormat: "markdown",
-		Markdown:     md,
-	}
+// normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
+// MinerU V1 fallback) into the structured JSON contract via the parser
+// package's NormalizeMarkdown. This keeps the markdown→JSON boundary in the
+// parser package, matching the NormalizeResult path used for JSON backends, and
+// lets the downstream NormalizeResult closure stay idempotent for JSON.
+func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema.ParserSetup) parser.ParseResult {
+	flatten, _ := setup["flatten_media_to_text"].(bool)
+	return (&parser.PDFParser{FlattenMediaToText: flatten}).NormalizeMarkdown(ctx, filename, md)
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -617,7 +593,7 @@ func dispatchMinerUPDF(
 			return mineruJSONParseResult(filename, items), nil
 		}
 		if v1Markdown != "" {
-			return buildMarkdownOCRDispatchResult(result.Markdown), nil
+			return normalizePDFMarkdown(ctx, filename, result.Markdown, setup), nil
 		}
 		if extractErr != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -1143,7 +1119,6 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 
 func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
 	return parser.ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":         filename,
 			"page_count":   mineruItemPageCount(items),
@@ -1246,9 +1221,8 @@ func dispatchPDFVision(
 		"parse_method": modelID,
 	}
 	return parser.ParseResult{
-		OutputFormat: "json",
-		File:         fileMeta,
-		JSON:         parser.MapsToItems(items),
+		File: fileMeta,
+		JSON: parser.MapsToItems(items),
 	}, nil
 }
 

@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,55 +94,6 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	t.Fatalf("json payload does not contain %q: %#v", want, items)
 }
 
-func TestBuildParserOutputsNormalizesMarkdownToJSON(t *testing.T) {
-	tests := []struct {
-		name       string
-		dispatched parser.ParseResult
-		wantText   string
-	}{
-		{
-			name: "markdown",
-			dispatched: parser.ParseResult{
-				OutputFormat: "markdown",
-				Markdown:     "# Title\n\nBody",
-			},
-			wantText: "Title",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, nil, "")
-
-			requireJSONText(t, out, tt.wantText)
-			if tt.name == "markdown" {
-				jsonDocs, ok := out["json"].([]parser.DocItem)
-				items := parser.ItemsToMaps(jsonDocs)
-				if !ok {
-					t.Fatalf("json = %T, want []map[string]any", out["json"])
-				}
-				if len(items) != 2 {
-					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
-				}
-				if got := items[0]["layout"]; got != "heading" {
-					t.Errorf("markdown item[0].layout = %v, want heading", got)
-				}
-				if got := items[0]["text"]; got != "# Title" {
-					t.Errorf("markdown item[0].text = %v, want # Title", got)
-				}
-				if got := items[1]["text"]; got != "Body" {
-					t.Errorf("markdown item[1].text = %v, want Body", got)
-				}
-			}
-			for _, key := range []string{"markdown", "html", "text"} {
-				if _, ok := out[key]; ok {
-					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])
-				}
-			}
-		})
-	}
-}
-
 // TestNormalizeParserJSON_EmptyPayloadYieldsEmpty pins that a result with no
 // populated payload family normalizes to an empty JSON slice rather than
 // injecting a bogus item. HTML is not a supported backend output format
@@ -151,29 +101,16 @@ func TestBuildParserOutputsNormalizesMarkdownToJSON(t *testing.T) {
 // HTML payload), so there is no HTML normalization branch to fall through
 // to — this guards that regression.
 func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
-	r := parser.ParseResult{
-		OutputFormat: "json",
-	}
+	r := parser.ParseResult{}
 	items := normalizeParserJSON(t.Context(), "doc.txt", r)
 	if len(items) != 0 {
 		t.Fatalf("normalizeParserJSON(empty) = %d items, want 0 (no payload → empty)", len(items))
 	}
 }
 
-func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
-	out := buildParserOutputs(t.Context(), parser.ParseResult{
-		OutputFormat: "json",
-		JSON:         parser.MapsToItems([]map[string]any{}),
-		Markdown:     "# Recovered title",
-	}, "sample.md", nil, "")
-
-	requireJSONText(t, out, "Recovered title")
-}
-
 func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "page_number": 1}}
 	out := buildParserOutputs(t.Context(), parser.ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":    "report.pdf",
 			"outline": wantOutline,
@@ -193,33 +130,6 @@ func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 	}
 }
 
-func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
-	originalResolver := net.DefaultResolver
-	dnsLookup := make(chan struct{}, 1)
-	net.DefaultResolver = &net.Resolver{
-		PreferGo:     true,
-		StrictErrors: true,
-		Dial: func(context.Context, string, string) (net.Conn, error) {
-			select {
-			case dnsLookup <- struct{}{}:
-			default:
-			}
-			return nil, fmt.Errorf("unexpected DNS lookup")
-		},
-	}
-	t.Cleanup(func() { net.DefaultResolver = originalResolver })
-
-	items := parseMarkdownToJSONItems(t.Context(), "ocr.md", "![remote](https://images.example.invalid/figure.png)")
-	if len(items) != 1 {
-		t.Fatalf("items = %#v, want one Markdown image block", items)
-	}
-	select {
-	case <-dnsLookup:
-		t.Fatal("Markdown-to-JSON normalization performed a remote image DNS lookup")
-	default:
-	}
-}
-
 func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	core, logs := observer.New(zap.DebugLevel)
 	originalLogger := common.Logger
@@ -227,8 +137,7 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	t.Cleanup(func() { common.Logger = originalLogger })
 
 	logParserOutput(parser.ParseResult{
-		OutputFormat: "markdown",
-		Markdown:     "# Title\n\nBody",
+		JSON: []parser.DocItem{parser.NewTextJSONItem("Title"), parser.NewTextJSONItem("Body")},
 	}, []parser.DocItem{parser.NewTextJSONItem("Title"), parser.NewTextJSONItem("Body")})
 
 	entries := logs.FilterMessage("parser stage output").All()
@@ -239,35 +148,11 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	if _, ok := fields["output_format"]; ok {
 		t.Errorf("output_format must be omitted because it is always json: %v", fields)
 	}
-	if got := fields["normalized_from"]; got != "markdown" {
-		t.Errorf("normalized_from = %v, want markdown", got)
+	if got := fields["normalized_from"]; got != "json" {
+		t.Errorf("normalized_from = %v, want json", got)
 	}
 	if got := fields["json_items"]; got != int64(2) {
 		t.Errorf("json_items = %v, want 2", got)
-	}
-}
-
-func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
-	core, logs := observer.New(zap.WarnLevel)
-	originalLogger := common.Logger
-	common.Logger = zap.New(core)
-	t.Cleanup(func() { common.Logger = originalLogger })
-
-	warnParserNormalizationFallback("broken.md", "markdown", fmt.Errorf("parse failed"))
-
-	entries := logs.FilterMessage("parser normalization fell back to text").All()
-	if len(entries) != 1 {
-		t.Fatalf("normalization fallback log count = %d, want 1", len(entries))
-	}
-	fields := entries[0].ContextMap()
-	if got := fields["filename"]; got != "broken.md" {
-		t.Errorf("filename = %v, want broken.md", got)
-	}
-	if got := fields["normalized_from"]; got != "markdown" {
-		t.Errorf("normalized_from = %v, want markdown", got)
-	}
-	if got := fields["error"]; got != "parse failed" {
-		t.Errorf("error = %v, want parse failed", got)
 	}
 }
 

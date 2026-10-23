@@ -208,7 +208,10 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if cropChunkType(ck) == "text" {
 				img = util.CropTextSectionPositions(positions, single, deepdoctype.DlaScale)
 			} else {
-				img = util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+				// Media previews are clean position-only crops (Python
+				// cropout): no 120pt context bands, no edge dimming. The
+				// text path above is the only one that keeps context.
+				img = util.CropMediaSectionPositions(positions, single, deepdoctype.DlaScale)
 			}
 			// Release the page bitmaps now that cropping is done. They are no
 			// longer needed and may be evicted under the LRU cap; the image

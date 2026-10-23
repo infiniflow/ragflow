@@ -170,7 +170,7 @@ func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 		t.Fatalf("failed to create legacy knowledge_compile_docs: %v", err)
 	}
 	t.Cleanup(func() {
-		for _, table := range []string{"knowledge_compile_docs", "knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight"} {
+		for _, table := range []string{"knowledge_compile_docs", "knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight", "system_settings"} {
 			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
 				t.Errorf("failed to drop %s test table: %v", table, err)
 			}
@@ -187,11 +187,17 @@ func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 	).Error; err != nil {
 		t.Fatalf("failed to seed legacy backlog: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}); err != nil {
+	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}, &entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setDatabaseMigrationVersion(ctx, db, tenantDefaultModelsTargetVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err = migrateKnowledgeCompileQueues(ctx, db); err != nil {
 		t.Fatalf("migrateKnowledgeCompileQueues failed: %v", err)
+	}
+	if version, err := GetDatabaseMigrationVersion(ctx, db); err != nil || version != knowledgeCompileQueueTargetVersion {
+		t.Fatalf("migration version=%q want=%q err=%v", version, knowledgeCompileQueueTargetVersion, err)
 	}
 
 	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {

@@ -143,10 +143,9 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
-		File:         fileMeta,
-		JSON:         MapsToItems(sections),
-		Warnings:     budget.warnings(),
+		File:     fileMeta,
+		JSON:     MapsToItems(sections),
+		Warnings: budget.warnings(),
 	}
 }
 

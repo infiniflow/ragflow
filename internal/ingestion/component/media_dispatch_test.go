@@ -345,8 +345,8 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	// (OutputFormat=="json"), not a bare Text field. The combined text
 	// now lives in JSON[0]["text"]; the legacy res.Text is no longer
 	// populated for the image family.
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json (image family is always structured)", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json (image family is always structured)", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (image result must be a single JSON item)", len(res.JSON))
@@ -500,8 +500,8 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
@@ -546,8 +546,8 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
@@ -599,8 +599,8 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true for AURAL file")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (transcription must be carried as a JSON item)", len(res.JSON))
@@ -639,8 +639,8 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	if !dispatched {
 		t.Fatal("expected dispatched=true for AURAL file")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("default OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("default produced = %t, want true", res.Produced())
 	}
 }
 
