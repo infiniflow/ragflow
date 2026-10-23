@@ -986,6 +986,12 @@ func invalidRunStatuses(statuses []string) []string {
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -1019,6 +1025,12 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
@@ -1655,6 +1667,12 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
+	defer func() {
+		if c.Request != nil && c.Request.MultipartForm != nil {
+			_ = c.Request.MultipartForm.RemoveAll()
+		}
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
