@@ -16,7 +16,7 @@ dependencies = [
     "reportlab>=4.4.1",
     "scholarly==1.7.11",
     "peewee>=3.17.1,<4.0.0",
-    "aiohttp>=3.14.3",
+    "aiohttp>=3.14.4",
 ]
 
 [dependency-groups]
