@@ -1360,23 +1360,55 @@ func insertTestTaskWithProgress(t *testing.T, id, docID string, progress float64
 	}
 }
 
+// metadataFieldKeys returns the set of "key" values in a modular metadata
+// object's "metadata" field list.
+func metadataFieldKeys(meta map[string]any) map[string]bool {
+	out := map[string]bool{}
+	list, _ := meta["metadata"].([]any)
+	for _, item := range list {
+		if m, ok := item.(map[string]any); ok {
+			if k, _ := m["key"].(string); k != "" {
+				out[k] = true
+			}
+		}
+	}
+	return out
+}
+
 func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"llm_id":          "kb-llm",
-		"enable_metadata": true,
-		"metadata":        map[string]interface{}{"author": "team"},
+		"llm_id": "kb-llm",
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "document_name", "type": "string"},
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("set kb parser_config: %v", err)
 	}
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
-	// The document keeps its own parser_config keys; ApplyKB must merge over it.
+	// The document keeps its own component nodes; ApplyKB must scope the
+	// dataset config onto the existing Extractor nodes, not write flat keys
+	// the pipeline would ignore.
 	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
-		"location":      "loc-1",
-		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+		"location": "loc-1",
+		"parser_config": entity.JSONMap{
+			"chunk_token_num": 128,
+			"Extractor:AutoExtractDefault": map[string]any{
+				"llm_id": "",
+			},
+			"Extractor:Pinned": map[string]any{
+				"llm_id": "doc-llm",
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1403,19 +1435,50 @@ func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload doc: %v", err)
 	}
-	if got.ParserConfig["llm_id"] != "kb-llm" {
-		t.Fatalf("llm_id = %v, want kb-llm", got.ParserConfig["llm_id"])
+	// The empty node picks up the dataset llm_id; the explicitly pinned node
+	// keeps its own.
+	auto, ok := got.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extractor:AutoExtractDefault missing: %#v", got.ParserConfig)
 	}
-	if got.ParserConfig["enable_metadata"] != true {
-		t.Fatalf("enable_metadata = %v, want true", got.ParserConfig["enable_metadata"])
+	if auto["llm_id"] != "kb-llm" {
+		t.Fatalf("auto llm_id = %v, want kb-llm", auto["llm_id"])
 	}
-	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
-	if !ok || meta["author"] != "team" {
-		t.Fatalf("metadata = %#v, want author=team", got.ParserConfig["metadata"])
+	pinned, ok := got.ParserConfig["Extractor:Pinned"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extractor:Pinned missing: %#v", got.ParserConfig)
+	}
+	if pinned["llm_id"] != "doc-llm" {
+		t.Fatalf("pinned llm_id = %v, want doc-llm", pinned["llm_id"])
+	}
+	meta, ok := auto["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("auto metadata missing: %#v", auto)
+	}
+	if enabled, _ := meta["enabled"].(bool); !enabled {
+		t.Fatalf("auto metadata.enabled = %v, want true", meta["enabled"])
+	}
+	if !metadataFieldKeys(meta)["author"] {
+		t.Fatalf("auto metadata missing author field: %#v", meta["metadata"])
+	}
+	// Legacy flat keys must not be written: the pipeline ignores them.
+	if _, ok := got.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("flat enable_metadata written: %#v", got.ParserConfig)
+	}
+	if _, ok := got.ParserConfig["metadata_config"]; ok {
+		t.Fatalf("flat metadata_config written: %#v", got.ParserConfig)
 	}
 	// A document-only key must survive the merge.
 	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
 		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
+	}
+	// The pipeline consumer must be able to read the merged config.
+	consumerMeta, ok := common.ExtractorMetadataConfig(map[string]any(got.ParserConfig))
+	if !ok {
+		t.Fatalf("consumer cannot read extractor metadata: %#v", got.ParserConfig)
+	}
+	if enabled, _ := consumerMeta["enabled"].(bool); !enabled {
+		t.Fatalf("consumer metadata.enabled = %v, want true", consumerMeta["enabled"])
 	}
 }
 
@@ -1431,16 +1494,28 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"llm_id":          "kb-llm",
-		"enable_metadata": true,
-		"metadata":        map[string]interface{}{"author": "team"},
+		"llm_id": "kb-llm",
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{
+				map[string]any{"key": "document_name", "type": "string"},
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("set kb parser_config: %v", err)
 	}
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
 	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
-		"location":      "loc-1",
-		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+		"location": "loc-1",
+		"parser_config": entity.JSONMap{
+			"chunk_token_num": 128,
+			"Extractor:AutoExtractDefault": map[string]any{
+				"llm_id": "",
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1468,26 +1543,46 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload doc: %v", err)
 	}
-	if got.ParserConfig["llm_id"] != "kb-llm" {
-		t.Fatalf("persisted llm_id = %v, want kb-llm", got.ParserConfig["llm_id"])
+	auto, ok := got.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extractor:AutoExtractDefault missing: %#v", got.ParserConfig)
 	}
-	if got.ParserConfig["enable_metadata"] != true {
-		t.Fatalf("persisted enable_metadata = %v, want true", got.ParserConfig["enable_metadata"])
+	if auto["llm_id"] != "kb-llm" {
+		t.Fatalf("persisted node llm_id = %v, want kb-llm", auto["llm_id"])
 	}
-	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
-	if !ok || meta["author"] != "team" {
-		t.Fatalf("persisted metadata = %#v, want author=team", got.ParserConfig["metadata"])
+	meta, ok := auto["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("persisted node metadata missing: %#v", auto)
+	}
+	if enabled, _ := meta["enabled"].(bool); !enabled {
+		t.Fatalf("persisted metadata.enabled = %v, want true", meta["enabled"])
+	}
+	if !metadataFieldKeys(meta)["author"] {
+		t.Fatalf("persisted metadata missing author field: %#v", meta["metadata"])
+	}
+	if _, ok := got.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("flat enable_metadata persisted: %#v", got.ParserConfig)
 	}
 	// A document-only key must survive the merge.
 	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
 		t.Fatalf("chunk_token_num dropped from persisted parser_config: %#v", got.ParserConfig)
 	}
+	// The pipeline consumer must read the persisted config, proving the flag
+	// travelled from Ingest all the way to a consumer-readable shape.
+	consumerMeta, ok := common.ExtractorMetadataConfig(map[string]any(got.ParserConfig))
+	if !ok {
+		t.Fatalf("consumer cannot read persisted extractor metadata: %#v", got.ParserConfig)
+	}
+	if enabled, _ := consumerMeta["enabled"].(bool); !enabled {
+		t.Fatalf("consumer metadata.enabled = %v, want true", consumerMeta["enabled"])
+	}
 }
 
 // TestStartParseDocuments_ApplyKBUsesDatasetDefaults covers a dataset whose
-// parser_config sets none of llm_id / enable_metadata / metadata: the merged
-// document config must fall back to llm_id nil, enable_metadata false and an
-// empty metadata map, matching the Python apply_kb branch.
+// parser_config sets neither llm_id nor modular metadata: each Extractor
+// node's metadata must reset to the disabled default
+// ({enabled:false, metadata:[], built_in_metadata:[]}) instead of keeping
+// stale fields, and no legacy flat keys may appear.
 func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1495,8 +1590,20 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
 	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
-		"location":      "loc-1",
-		"parser_config": entity.JSONMap{"chunk_token_num": 128},
+		"location": "loc-1",
+		"parser_config": entity.JSONMap{
+			"chunk_token_num": 128,
+			"Extractor:AutoExtractDefault": map[string]any{
+				"llm_id": "",
+				"metadata": map[string]any{
+					"enabled": true,
+					"metadata": []any{
+						map[string]any{"key": "stale", "type": "string"},
+					},
+					"built_in_metadata": []any{},
+				},
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1526,12 +1633,34 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	if v, ok := got.ParserConfig["llm_id"]; !ok || v != nil {
 		t.Fatalf("llm_id = %#v, want nil", got.ParserConfig["llm_id"])
 	}
-	if got.ParserConfig["enable_metadata"] != false {
-		t.Fatalf("enable_metadata = %#v, want false", got.ParserConfig["enable_metadata"])
+	if _, ok := got.ParserConfig["enable_metadata"]; ok {
+		t.Fatalf("flat enable_metadata = %#v, want absent", got.ParserConfig["enable_metadata"])
 	}
-	meta, ok := got.ParserConfig["metadata"].(map[string]interface{})
-	if !ok || len(meta) != 0 {
-		t.Fatalf("metadata = %#v, want empty map", got.ParserConfig["metadata"])
+	// The dataset expressed no metadata config, so the top-level source of
+	// truth is the disabled default.
+	topMeta, ok := got.ParserConfig["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("top-level metadata missing: %#v", got.ParserConfig)
+	}
+	if enabled, _ := topMeta["enabled"].(bool); enabled {
+		t.Fatalf("top-level metadata.enabled = %v, want false", topMeta["enabled"])
+	}
+	auto, ok := got.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extractor:AutoExtractDefault missing: %#v", got.ParserConfig)
+	}
+	meta, ok := auto["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("node metadata missing: %#v", auto)
+	}
+	if enabled, _ := meta["enabled"].(bool); enabled {
+		t.Fatalf("node metadata.enabled = %v, want false", meta["enabled"])
+	}
+	if fields, _ := meta["metadata"].([]any); len(fields) != 0 {
+		t.Fatalf("node metadata fields = %#v, want empty", meta["metadata"])
+	}
+	if builtIn, _ := meta["built_in_metadata"].([]any); len(builtIn) != 0 {
+		t.Fatalf("node built_in_metadata = %#v, want empty", meta["built_in_metadata"])
 	}
 	// A document-only key must survive the merge.
 	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
@@ -1549,16 +1678,32 @@ func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
 
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
-		"llm_id":          "kb-llm",
-		"enable_metadata": true,
-		"metadata":        map[string]interface{}{"author": "team"},
+		"llm_id": "kb-llm",
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "author", "type": "string"},
+			},
+			"built_in_metadata": []any{},
+		},
 	}).Error; err != nil {
 		t.Fatalf("set kb parser_config: %v", err)
 	}
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
 	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
-		"location":      "loc-1",
-		"parser_config": entity.JSONMap{"llm_id": "doc-llm", "chunk_token_num": 128},
+		"location": "loc-1",
+		"parser_config": entity.JSONMap{
+			"llm_id":          "doc-llm",
+			"chunk_token_num": 128,
+			"Extractor:AutoExtractDefault": map[string]any{
+				"llm_id": "node-llm",
+				"metadata": map[string]any{
+					"enabled":           false,
+					"metadata":          []any{},
+					"built_in_metadata": []any{},
+				},
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1588,6 +1733,20 @@ func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
 	if got.ParserConfig["llm_id"] != "doc-llm" {
 		t.Fatalf("persisted llm_id = %v, want doc-llm", got.ParserConfig["llm_id"])
 	}
+	node, ok := got.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("Extractor:AutoExtractDefault missing: %#v", got.ParserConfig)
+	}
+	if node["llm_id"] != "node-llm" {
+		t.Fatalf("node llm_id = %v, want node-llm", node["llm_id"])
+	}
+	nodeMeta, ok := node["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("node metadata missing: %#v", node)
+	}
+	if enabled, _ := nodeMeta["enabled"].(bool); enabled {
+		t.Fatalf("node metadata.enabled merged without apply_kb: %#v", nodeMeta)
+	}
 	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
 		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
 	}
@@ -1614,8 +1773,20 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 	}
 	insertTestDoc(t, "doc-1", "kb-1", 9, 4)
 	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
-		"location":      "loc-1",
-		"parser_config": entity.JSONMap{"llm_id": "doc-llm"},
+		"location": "loc-1",
+		"parser_config": entity.JSONMap{
+			"llm_id": "doc-llm",
+			"Extractor:AutoExtractDefault": map[string]any{
+				"llm_id": "",
+				"metadata": map[string]any{
+					"enabled": true,
+					"metadata": []any{
+						map[string]any{"key": "author", "type": "string"},
+					},
+					"built_in_metadata": []any{},
+				},
+			},
+		},
 	}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
@@ -1648,7 +1819,9 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 	if len(publisher.messages) != 0 {
 		t.Fatalf("expected no ingestion task to be published, got %d", len(publisher.messages))
 	}
-	// The caller's original parser_config must be untouched when the persist fails.
+	// The caller's original parser_config must be untouched when the persist
+	// fails, including nested component nodes (the merge works on a deep
+	// copy and is only assigned back after a successful persist).
 	if doc.ParserConfig["llm_id"] != "doc-llm" {
 		t.Fatalf("input doc.ParserConfig mutated on failure: %#v", doc.ParserConfig)
 	}
@@ -1657,6 +1830,23 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 	}
 	if _, ok := doc.ParserConfig["metadata"]; ok {
 		t.Fatalf("metadata leaked into input doc.ParserConfig on failure: %#v", doc.ParserConfig)
+	}
+	node, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
+	if !ok {
+		t.Fatalf("input Extractor node missing on failure: %#v", doc.ParserConfig)
+	}
+	if node["llm_id"] != "" {
+		t.Fatalf("input node llm_id mutated on failure: %#v", node)
+	}
+	nodeMeta, ok := node["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("input node metadata missing on failure: %#v", node)
+	}
+	if enabled, _ := nodeMeta["enabled"].(bool); !enabled {
+		t.Fatalf("input node metadata.enabled mutated on failure: %#v", nodeMeta)
+	}
+	if !metadataFieldKeys(nodeMeta)["author"] {
+		t.Fatalf("input node metadata fields mutated on failure: %#v", nodeMeta)
 	}
 }
 

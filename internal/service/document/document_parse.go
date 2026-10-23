@@ -112,28 +112,57 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	return nil
 }
 
-// applyKnowledgebaseParserConfig merges the dataset-scoped parser_config keys
-// (llm_id, enable_metadata, metadata) into the document's existing config and
-// persists the merged result before parsing when ApplyKB is requested.
+// applyKnowledgebaseParserConfig merges the dataset-scoped parser_config into
+// the document's existing component-scoped config and persists the merged
+// result before parsing when ApplyKB is requested.
+//
+// The dataset may contribute a top-level llm_id (used to fill empty Extractor
+// / Compiler node llm_ids) and a top-level modular metadata object
+// (parser_config["metadata"] = {enabled, metadata, built_in_metadata}). Those
+// are scoped onto the document's existing Extractor nodes via
+// service.ApplyComponentScopedParserConfig, which also strips legacy flat
+// metadata fields. The document's own component nodes and unrelated keys are
+// preserved. Nested maps/slices are deep-copied so a failed persist cannot
+// mutate the caller's document or the source dataset. On a persistence
+// failure the document's in-memory config is left untouched.
 func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase) error {
 	if doc == nil || kb == nil {
 		return fmt.Errorf("apply dataset parser config: document and dataset are required")
 	}
-	merged := entity.JSONMap{}
-	for k, v := range doc.ParserConfig {
-		merged[k] = v
+
+	merged := deepCopyJSONMap(doc.ParserConfig)
+	if merged == nil {
+		merged = entity.JSONMap{}
 	}
-	merged["llm_id"] = kb.ParserConfig["llm_id"]
-	if v, ok := kb.ParserConfig["enable_metadata"]; ok {
-		merged["enable_metadata"] = v
+
+	// Carry the dataset's llm_id through both as the helper's fill value and
+	// as a top-level key (nil when the dataset does not set one).
+	var llmID string
+	if v, ok := kb.ParserConfig["llm_id"]; ok {
+		if s, ok := v.(string); ok {
+			llmID = s
+		}
+		merged["llm_id"] = deepCopyValue(v)
 	} else {
-		merged["enable_metadata"] = false
+		merged["llm_id"] = nil
 	}
+
+	// Carry the dataset's modular metadata object when present. When absent
+	// the dataset expresses "no metadata config", which the pipeline reads as
+	// disabled — mirror the Python apply_kb defaults by scoping the disabled
+	// default onto the nodes instead of leaving stale node fields behind.
 	if v, ok := kb.ParserConfig["metadata"]; ok {
-		merged["metadata"] = v
+		merged["metadata"] = deepCopyValue(v)
 	} else {
-		merged["metadata"] = map[string]interface{}{}
+		merged["metadata"] = map[string]any{
+			"enabled":           false,
+			"metadata":          []any{},
+			"built_in_metadata": []any{},
+		}
 	}
+
+	merged = service.ApplyComponentScopedParserConfig(merged, llmID)
+
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 		"parser_config": entity.JSONMap(merged),
 	}); err != nil {
