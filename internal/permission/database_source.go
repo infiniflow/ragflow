@@ -1248,6 +1248,19 @@ func fileResource(kind ResourceKind, file *entity.File, datasetIDs []string, dat
 	if ownerUserID == "" {
 		ownerUserID = strings.TrimSpace(file.TenantID)
 	}
+	if file.ParentID == file.ID {
+		return Resource{
+			Ref:               ResourceRef{Kind: kind, ID: file.ID},
+			TenantID:          file.TenantID,
+			CreatedBy:         file.CreatedBy,
+			OwnerUserID:       ownerUserID,
+			Visibility:        VisibilityTenant,
+			TenantRequirement: TenantMember,
+			OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
+			TenantOperations:  []Operation{OperationRead, OperationCreate},
+			Active:            true,
+		}
+	}
 	return Resource{
 		Ref:                 ResourceRef{Kind: kind, ID: file.ID},
 		TenantID:            file.TenantID,

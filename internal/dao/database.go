@@ -261,6 +261,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migratePermissions(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate permissions: %w", err)
 		}
+		if err = migrateTenantDefaultModels(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant default models: %w", err)
+		}
 		if err = migrateTenantModelProviderUserUniqueIndex(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate tenant model provider unique index: %w", err)
 		}

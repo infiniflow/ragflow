@@ -35,6 +35,7 @@ func TestSkillSpacePermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
 	for _, membership := range []entity.UserTenant{
 		{ID: "skill-owner-membership", UserID: "owner", TenantID: "team", Role: string(permission.RoleOwner), Status: &active},
 		{ID: "skill-member-membership", UserID: "member", TenantID: "team", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &active},
+		{ID: "skill-member-personal-owner", UserID: "member", TenantID: "member", Role: string(permission.RoleOwner), InvitedBy: "member", Status: &active},
 		{ID: "skill-outsider-membership", UserID: "outsider", TenantID: "other", Role: string(permission.RoleOwner), Status: &active},
 	} {
 		if err := db.Create(&membership).Error; err != nil {
@@ -81,11 +82,12 @@ func TestSkillSpacePermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
 		t.Fatalf("outsider read should be hidden: code=%d err=%v", code, err)
 	}
 
-	if _, code, err := service.CreateSpace(ctx, "member", &CreateSpaceRequest{Name: "denied"}); err == nil || code != common.CodeNotFound {
-		t.Fatalf("member create should require owner membership: code=%d err=%v", code, err)
+	created, code, err := service.CreateSpace(ctx, "member", &CreateSpaceRequest{Name: "personal"})
+	if err != nil || code != common.CodeSuccess || created["tenant_id"] != "member" {
+		t.Fatalf("member should create a personal skill space without switching tenants: result=%#v code=%d err=%v", created, code, err)
 	}
-	if tenantID, err := resolveSkillSpaceTenantID(ctx, "owner", "default", permission.OperationUse); err != nil || tenantID != "team" {
-		t.Fatalf("default skill space tenant = %q, err=%v; want team", tenantID, err)
+	if tenantID, err := resolveSkillSpaceTenantID(ctx, "owner", "default", permission.OperationUse); err != nil || tenantID != "owner" {
+		t.Fatalf("default skill space tenant = %q, err=%v; want owner's personal tenant", tenantID, err)
 	}
 
 	updated, code, err := service.UpdateSpace(ctx, "owner", space.ID, &UpdateSpaceRequest{Description: "updated"})
