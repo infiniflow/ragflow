@@ -534,6 +534,59 @@ export function collectCanvasIssues({
       });
     }
 
+    if (label === Operator.DataOperations) {
+      const blank = (value: unknown) =>
+        value == null || (typeof value === 'string' && !value.trim());
+      const incompleteKeys = ['select_keys', 'remove_keys'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            blank(typeof row === 'string' ? row : row?.name),
+          ),
+      );
+      const requiredFields: Record<string, string[]> = {
+        updates: ['key', 'value'],
+        rename_keys: ['old_key', 'new_key'],
+        filter_values: ['key', 'operator', 'value'],
+      };
+      const incompleteRows = Object.entries(requiredFields).some(
+        ([field, required]) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            required.some((key) => blank(row?.[key])),
+          ),
+      );
+      if (incompleteKeys || incompleteRows) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.dataOperationsEntriesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
+    if (label === Operator.Invoke && Array.isArray(form?.variables)) {
+      const nonblank = (value: unknown) =>
+        typeof value === 'string' && value.trim().length > 0;
+      if (
+        form.variables.some(
+          (row: any) =>
+            !nonblank(row?.key) ||
+            (!nonblank(row?.ref) &&
+              (row?.value == null ||
+                (typeof row.value === 'string' && !nonblank(row.value)))),
+        )
+      ) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.invokeVariablesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
@@ -652,13 +705,16 @@ export function collectCanvasIssues({
       // Same always-on policy as the Agent model check: an empty operator
       // must flag on load, not only after edits.
       const groupId = form?.compilation_template_group_id;
-      if (!groupId) {
+      if (!form?.compilation_template_id?.trim() && !groupId?.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+          blocksRun: true,
         });
       } else if (
+        !form?.compilation_template_id?.trim() &&
+        groupId &&
         compilationTemplateGroupIds &&
         !compilationTemplateGroupIds.has(groupId)
       ) {

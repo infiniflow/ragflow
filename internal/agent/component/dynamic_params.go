@@ -16,7 +16,9 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content and input options in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
+// entries, Invoke mappings, Compiler configuration, and input options in saved drafts.
+// All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
 }
@@ -72,25 +74,13 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "dataoperations":
-		for _, field := range []string{"select_keys", "remove_keys"} {
-			if values, ok := params[field].([]any); ok && containsBlank(values) {
-				return fmt.Errorf("[%s] %s does not support empty entries", component, field)
-			}
-		}
-		for field, required := range map[string][]string{
-			"updates": {"key", "value"}, "rename_keys": {"old_key", "new_key"},
-			"filter_values": {"key", "operator", "value"},
-		} {
-			if err := validateRows(component, params, field, required); err != nil {
-				return err
-			}
-		}
+		return validateDataOperationsParams(component, params, draft)
 	case "agent":
 		if values, ok := params["tools"].([]any); ok && containsBlank(values) {
 			return fmt.Errorf("[%s] tools does not support empty entries", component)
 		}
 	case "invoke":
-		if err := validateInvokeVariables(component, params); err != nil {
+		if err := validateInvokeVariables(component, params, draft); err != nil {
 			return err
 		}
 	case "loop":
@@ -111,7 +101,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "compiler":
-		if !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
+		if !draft && !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
 			return fmt.Errorf("[%s] %w", component, ErrCompilationTemplateRequired)
 		}
 	}
@@ -182,8 +172,9 @@ func validateRows(component string, params map[string]any, field string, require
 // literal (value). The two sources are alternatives — a reference row has
 // no literal and a literal row has no reference — so a row with neither
 // is still rejected. Omitted and null variables carry no rows to check;
-// any other non-array value is malformed and rejected.
-func validateInvokeVariables(component string, params map[string]any) error {
+// any other non-array value is malformed and rejected. Drafts retain unfinished
+// mappings while still rejecting malformed containers, rows, and field types.
+func validateInvokeVariables(component string, params map[string]any, draft bool) error {
 	raw, present := params["variables"]
 	if !present || raw == nil {
 		return nil
@@ -194,7 +185,17 @@ func validateInvokeVariables(component string, params map[string]any) error {
 	}
 	for i, raw := range rows {
 		row, ok := raw.(map[string]any)
-		if !ok || !isNonBlankString(row["key"]) || !invokeRowHasSource(row) {
+		if !ok || row == nil {
+			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
+		}
+		for _, key := range []string{"key", "ref"} {
+			if value := row[key]; value != nil {
+				if _, ok := value.(string); !ok {
+					return fmt.Errorf("[%s] variables[%d] is incomplete: %s must be a string", component, i, key)
+				}
+			}
+		}
+		if !draft && (!isNonBlankString(row["key"]) || !invokeRowHasSource(row)) {
 			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
 		}
 	}
@@ -280,4 +281,63 @@ func containsEmpty(values []any) bool {
 		}
 	}
 	return false
+}
+
+func validateDataOperationsParams(component string, params map[string]any, draft bool) error {
+	for _, field := range []string{"select_keys", "remove_keys", "updates", "rename_keys", "filter_values"} {
+		raw := params[field]
+		if raw == nil {
+			continue
+		}
+		var rows []any
+		switch values := raw.(type) {
+		case []any:
+			rows = values
+		case []string:
+			for _, value := range values {
+				rows = append(rows, value)
+			}
+		case []map[string]any:
+			for _, value := range values {
+				rows = append(rows, value)
+			}
+		default:
+			return fmt.Errorf("[%s] %s must be an array", component, field)
+		}
+		for index, rawRow := range rows {
+			if field == "select_keys" || field == "remove_keys" {
+				value, ok := rawRow.(string)
+				if !ok {
+					return fmt.Errorf("[%s] %s[%d] must be a string", component, field, index)
+				}
+				if !draft && strings.TrimSpace(value) == "" {
+					return fmt.Errorf("[%s] %s does not support empty entries", component, field)
+				}
+				continue
+			}
+			row, ok := rawRow.(map[string]any)
+			if !ok || row == nil {
+				return fmt.Errorf("[%s] %s[%d] must be an object", component, field, index)
+			}
+			required := []string{"key", "value"}
+			if field == "rename_keys" {
+				required = []string{"old_key", "new_key"}
+			}
+			if field == "filter_values" {
+				required = []string{"key", "operator", "value"}
+			}
+			for _, key := range required {
+				value := row[key]
+				if key != "value" && value != nil {
+					if _, ok := value.(string); !ok {
+						return fmt.Errorf("[%s] %s[%d].%s must be a string", component, field, index, key)
+					}
+				}
+				if !draft && (value == nil || isBlank(value)) {
+					return fmt.Errorf("[%s] %s[%d] is incomplete", component, field, index)
+				}
+			}
+		}
+	}
+	return nil
 }
