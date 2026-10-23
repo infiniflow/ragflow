@@ -61,8 +61,8 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 	if len(result.JSON) != 2 {
 		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
@@ -161,8 +161,8 @@ func TestEmailParser_EmlTextChunkText(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 
 	item := result.JSON[0].ToMap()
@@ -352,8 +352,8 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("output format = %q, want json", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("output = %t, want true", result.Produced())
 	}
 	if len(result.JSON) == 0 {
 		t.Fatalf("expected non-empty JSON items")
@@ -1069,7 +1069,7 @@ func TestRecoverParse_IsolatesPanic(t *testing.T) {
 // TestRecoverParse_PassesThrough verifies a normal parser result is returned
 // unchanged with panicked=false.
 func TestRecoverParse_PassesThrough(t *testing.T) {
-	want := ParseResult{OutputFormat: "json", JSON: []DocItem{NewTextJSONItem("hello")}}
+	want := ParseResult{JSON: []DocItem{NewTextJSONItem("hello")}}
 	res, panicked := recoverParse(func() ParseResult {
 		return want
 	})
@@ -1326,8 +1326,8 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON: want non-empty items")
@@ -1339,7 +1339,7 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 }
 
 // TestEmailParserTextOutputRemoved verifies the Email parser has no "text"
-// output path. A setup requesting output_format "text" must be ignored and the
+// output path. A setup requesting produced "text" must be ignored and the
 // result must be JSON, never a Text payload.
 func TestEmailParserTextOutputRemoved(t *testing.T) {
 	ctx := context.Background()
@@ -1354,16 +1354,16 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "to", "subject", "body"},
+		"produced": "text",
+		"fields":   []string{"from", "to", "subject", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("email must ignore text output_format and emit json, got OutputFormat=%q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("email must ignore text produced and emit json, got produced=%t", result.Produced())
 	}
 	if len(result.JSON) == 0 {
 		t.Fatalf("email json output must contain items, got empty")

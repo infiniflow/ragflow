@@ -53,8 +53,8 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "sample.pdf"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)

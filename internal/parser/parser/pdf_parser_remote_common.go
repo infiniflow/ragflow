@@ -22,9 +22,8 @@ func pdfItemsToResult(filename string, items []map[string]any, pageCount int) Pa
 	}
 	pageCount = normalizePDFPageCount(pageCount, items)
 	return ParseResult{
-		OutputFormat: "json",
-		File:         pdfFileMeta(filename, pageCount),
-		JSON:         MapsToItems(items),
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -118,10 +117,9 @@ func pdfMarkdownToResult(ctx context.Context, filename, markdown string, pageCou
 		// Same text fallback as NormalizeResult: keep the backend
 		// markdown as raw text instead of failing the task.
 		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			Warnings:     append(res.Warnings, "markdown normalization fell back to text: "+res.Err.Error()),
-			JSON:         []DocItem{NewTextJSONItem(markdown)},
+			File:     fileMeta,
+			Warnings: append(res.Warnings, "markdown normalization fell back to text: "+res.Err.Error()),
+			JSON:     []DocItem{NewTextJSONItem(markdown)},
 		}
 	}
 	res.File = fileMeta

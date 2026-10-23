@@ -38,7 +38,7 @@ func TestPDFDispatchNormalizesBeforeOutputsAndEnhancement(t *testing.T) {
 	}
 	setup := schema.ParserSetup{"parse_method": "monkeyocrv2", "monkeyocrv2_server_url": server.URL}
 	result, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypePDF, "sample.pdf", []byte("pdf"), nil, map[string]schema.ParserSetup{"pdf": setup})
-	if err != nil || !handled || result.OutputFormat != "json" || len(result.JSON) == 0 {
+	if err != nil || !handled || !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("dispatch did not emit structured JSON: %+v, %v", result, err)
 	}
 	for _, enabled := range []bool{false, true} {
@@ -92,7 +92,7 @@ func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
 func TestPDFTableEnhancementKeepsDescriptionOutsideTableBody(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+	result := parser.ParseResult{JSON: []parser.DocItem{
 		parser.NewTextJSONItem("Before"),
 		parser.TableItem{Table: &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, Extra: map[string]any{"image": visionTestPNGBase64(t), "page_number": 3}},
 		parser.NewTextJSONItem("After"),
@@ -146,7 +146,7 @@ func TestVisionEnhancementSkipsBackendDescribedImages(t *testing.T) {
 		"doc_type_kwd": "image", "layout": "figure",
 		"text": "Caption", "image": png,
 	})
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{marked, plain}}
+	result := parser.ParseResult{JSON: []parser.DocItem{marked, plain}}
 	enhanced, handled, err := maybeDispatchVisionEnhancement(t.Context(), nil, utility.FileTypePDF, result, map[string]any{"tenant_id": "tenant-1"}, visionSettings{}, progress.Window{})
 	if err != nil || !handled {
 		t.Fatalf("enhancement failed: %v", err)
@@ -174,7 +174,7 @@ func TestVisionEnhancementSkipsBackendDescribedImages(t *testing.T) {
 }
 
 func TestStripBackendDescribedResultClearsMarker(t *testing.T) {
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+	result := parser.ParseResult{JSON: []parser.DocItem{
 		parser.DocItemFromMap(map[string]any{"doc_type_kwd": "image", "text": "t", backendDescribedKey: true}),
 		parser.NewTextJSONItem("plain"),
 	}}

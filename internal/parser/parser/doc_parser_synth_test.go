@@ -128,8 +128,8 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 	if pr.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", pr.Err)
 	}
-	if pr.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want %q", pr.OutputFormat, "json")
+	if !pr.Produced() {
+		t.Fatalf("produced = %t, want true", pr.Produced())
 	}
 	if len(pr.JSON) == 0 {
 		t.Fatalf("ParseWithResult returned 0 JSON items, want at least 1")
