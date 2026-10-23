@@ -2850,6 +2850,97 @@ func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 	}
 }
 
+func TestOpenAICompatSeedHistory(t *testing.T) {
+	storedTurns := func() []map[string]any {
+		return []map[string]any{
+			{"role": "user", "content": "earlier question"},
+			{"role": "assistant", "content": "earlier answer"},
+		}
+	}
+	systemOnly := []map[string]interface{}{
+		{"role": "system", "content": "Be concise."},
+		{"role": "user", "content": "next question"},
+	}
+	greetingFirst := []map[string]interface{}{
+		{"role": "assistant", "content": "Hi, how can I help?"},
+		{"role": "user", "content": "next question"},
+	}
+	conversation := []map[string]interface{}{
+		{"role": "user", "content": "q1"},
+		{"role": "assistant", "content": "a1"},
+		{"role": "user", "content": "q2"},
+	}
+	singleUser := []map[string]interface{}{{"role": "user", "content": "next question"}}
+
+	cases := []struct {
+		name     string
+		stored   []map[string]any
+		messages []map[string]interface{}
+		want     []map[string]any
+	}{
+		{
+			name:     "fresh session takes the system instructions",
+			messages: systemOnly,
+			want:     []map[string]any{{"role": "system", "content": "Be concise."}},
+		},
+		{
+			name:     "fresh session takes a leading assistant greeting",
+			messages: greetingFirst,
+			want:     []map[string]any{{"role": "assistant", "content": "Hi, how can I help?"}},
+		},
+		{
+			name:     "stored turns survive a system-only client context",
+			stored:   storedTurns(),
+			messages: systemOnly,
+			want: []map[string]any{
+				{"role": "user", "content": "earlier question"},
+				{"role": "assistant", "content": "earlier answer"},
+			},
+		},
+		{
+			name:     "stored turns survive a client context without a user turn",
+			stored:   storedTurns(),
+			messages: greetingFirst,
+			want: []map[string]any{
+				{"role": "user", "content": "earlier question"},
+				{"role": "assistant", "content": "earlier answer"},
+			},
+		},
+		{
+			name:     "client conversation replaces stored turns",
+			stored:   storedTurns(),
+			messages: conversation,
+			want: []map[string]any{
+				{"role": "user", "content": "q1"},
+				{"role": "assistant", "content": "a1"},
+			},
+		},
+		{
+			name:     "single user message keeps stored turns",
+			stored:   storedTurns(),
+			messages: singleUser,
+			want: []map[string]any{
+				{"role": "user", "content": "earlier question"},
+				{"role": "assistant", "content": "earlier answer"},
+			},
+		},
+		{
+			name:     "single user message on a fresh session seeds nothing",
+			messages: singleUser,
+			want:     nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := openAICompatSeedHistory(tc.stored, tc.messages)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("seed history = %#v, want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
 func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sessionID, sessionOwner string) {
 	t.Helper()
 	if err := dao.DB.Create(&entity.UserCanvas{
