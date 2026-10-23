@@ -194,6 +194,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
+		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
+
 		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
 
