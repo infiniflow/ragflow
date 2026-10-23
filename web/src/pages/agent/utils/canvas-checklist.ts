@@ -687,13 +687,16 @@ export function collectCanvasIssues({
       // Same always-on policy as the Agent model check: an empty operator
       // must flag on load, not only after edits.
       const groupId = form?.compilation_template_group_id;
-      if (!groupId) {
+      if (!form?.compilation_template_id?.trim() && !groupId?.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+          blocksRun: true,
         });
       } else if (
+        !form?.compilation_template_id?.trim() &&
+        groupId &&
         compilationTemplateGroupIds &&
         !compilationTemplateGroupIds.has(groupId)
       ) {
