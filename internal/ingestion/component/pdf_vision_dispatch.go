@@ -55,6 +55,45 @@ const (
 
 var monkeyOCRv2ImagePattern = regexp.MustCompile(`!\[([^]]*)\]\(([^)]+)\)`)
 
+// monkeyOCRv2ImageBudget tracks the remaining document image budget and the
+// omissions caused by the per-image and document limits so the parse result
+// can surface them as warnings.
+type monkeyOCRv2ImageBudget struct {
+	remaining   int
+	oversized   int
+	docOverflow int
+}
+
+// charge bills size bytes against the per-image limit and the remaining
+// document budget, counting a refusal for the parse warnings.
+func (b *monkeyOCRv2ImageBudget) charge(size int) bool {
+	if size > monkeyOCRv2MaxImageBytes {
+		b.oversized++
+		return false
+	}
+	if size > max(b.remaining, 0) {
+		b.docOverflow++
+		return false
+	}
+	b.remaining -= size
+	return true
+}
+
+func (b *monkeyOCRv2ImageBudget) warnings() []string {
+	var warnings []string
+	if b.oversized > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"omitted %d embedded image payload(s) larger than the %d-byte per-image limit",
+			b.oversized, monkeyOCRv2MaxImageBytes))
+	}
+	if b.docOverflow > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"omitted %d embedded image payload(s) after reaching the %d-byte document image budget",
+			b.docOverflow, monkeyOCRv2MaxDocumentImageBytes))
+	}
+	return warnings
+}
+
 var (
 	pdfVisionPromptLoader  = (prompts.EmbeddedPromptLoader{}).Load
 	pdfVisionPageRenderer  = defaultRenderPDFVisionPages
@@ -269,14 +308,14 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	items, err := monkeyOCRv2ExtractItems(zipBytes)
+	items, warnings, err := monkeyOCRv2ExtractItems(zipBytes)
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	return monkeyOCRv2JSONParseResult(filename, items), nil
+	return monkeyOCRv2JSONParseResult(filename, items, warnings), nil
 }
 
-func monkeyOCRv2JSONParseResult(filename string, items []map[string]any) parser.ParseResult {
+func monkeyOCRv2JSONParseResult(filename string, items []map[string]any, warnings []string) parser.ParseResult {
 	pageCount := 0
 	for _, item := range items {
 		if page, ok := mineruJSONInt(item["page_number"]); ok && page > pageCount {
@@ -285,6 +324,7 @@ func monkeyOCRv2JSONParseResult(filename string, items []map[string]any) parser.
 	}
 	return parser.ParseResult{
 		OutputFormat: "json",
+		Warnings:     warnings,
 		File: map[string]any{
 			"name":         filename,
 			"page_count":   pageCount,
@@ -397,19 +437,19 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 	return time.Duration(seconds) * time.Second
 }
 
-func monkeyOCRv2ExtractItems(zipBytes []byte) ([]map[string]any, error) {
+func monkeyOCRv2ExtractItems(zipBytes []byte) ([]map[string]any, []string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
+		return nil, nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
 	}
 	if len(reader.File) > monkeyOCRv2MaxZIPMembers {
-		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains too many files")
+		return nil, nil, fmt.Errorf("MonkeyOCRv2 ZIP contains too many files")
 	}
 	var uncompressed uint64
 	for _, file := range reader.File {
 		uncompressed += file.UncompressedSize64
 		if uncompressed > monkeyOCRv2MaxUncompressedBytes {
-			return nil, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
+			return nil, nil, fmt.Errorf("MonkeyOCRv2 ZIP is too large after extraction")
 		}
 	}
 	var canonicalJSON, legacyJSON []*zip.File
@@ -439,33 +479,33 @@ func monkeyOCRv2ExtractItems(zipBytes []byte) ([]map[string]any, error) {
 		}
 	}
 	var items []map[string]any
-	imageBudget := monkeyOCRv2MaxDocumentImageBytes
+	imageBudget := &monkeyOCRv2ImageBudget{remaining: monkeyOCRv2MaxDocumentImageBytes}
 	for _, file := range candidates {
 		rc, openErr := file.Open()
 		if openErr != nil {
-			return nil, openErr
+			return nil, nil, openErr
 		}
 		data, readErr := io.ReadAll(rc)
 		rc.Close()
 		if readErr != nil {
-			return nil, readErr
+			return nil, nil, readErr
 		}
 		var raw any
 		if err = json.Unmarshal(data, &raw); err != nil {
-			return nil, fmt.Errorf("parse %s: %w", file.Name, err)
+			return nil, nil, fmt.Errorf("parse %s: %w", file.Name, err)
 		}
-		items = append(items, monkeyOCRv2LayoutItems(raw, images, &imageBudget)...)
+		items = append(items, monkeyOCRv2LayoutItems(raw, images, imageBudget)...)
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
+		return nil, nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
 	}
-	return items, nil
+	return items, imageBudget.warnings(), nil
 }
 
 // monkeyOCRv2LayoutItems converts MonkeyOCRv2 layouts into JSON parser items
 // that carry page positions. budget is the remaining number of image bytes
 // that may still be inlined for the document.
-func monkeyOCRv2LayoutItems(raw any, images map[string]*zip.File, budget *int) []map[string]any {
+func monkeyOCRv2LayoutItems(raw any, images map[string]*zip.File, budget *monkeyOCRv2ImageBudget) []map[string]any {
 	if object, ok := raw.(map[string]any); ok {
 		for _, key := range []string{"layouts", "content_list", "results", "items"} {
 			if value, exists := object[key]; exists {
@@ -500,9 +540,25 @@ func monkeyOCRv2LayoutItems(raw any, images map[string]*zip.File, budget *int) [
 		if match := monkeyOCRv2ImagePattern.FindStringSubmatch(strings.TrimSpace(text)); len(match) == 3 &&
 			strings.HasPrefix(strings.TrimSpace(match[2]), "data:image/") &&
 			match[0] == strings.TrimSpace(text) {
-			item := map[string]any{"text": match[1], "image": strings.TrimSpace(match[2]), "doc_type_kwd": "image", "layout": "figure"}
-			monkeyOCRv2SetPosition(item, position)
-			return []map[string]any{item}
+			uri := strings.TrimSpace(match[2])
+			payload := uri
+			if i := strings.IndexByte(payload, ','); i >= 0 {
+				payload = payload[i+1:]
+			}
+			// Inline data-URI images share the document image budget; bill the
+			// decoded payload, not the URI text.
+			if budget == nil || budget.charge(base64.StdEncoding.DecodedLen(len(payload))) {
+				item := map[string]any{"text": match[1], "image": uri, "doc_type_kwd": "image", "layout": "figure"}
+				monkeyOCRv2SetPosition(item, position)
+				return []map[string]any{item}
+			}
+			// Over a limit: keep the positioned item without the image bytes.
+			if len(position) == 5 {
+				item := map[string]any{"text": match[1], "doc_type_kwd": "image", "layout": "figure"}
+				monkeyOCRv2SetPosition(item, position)
+				return []map[string]any{item}
+			}
+			return nil
 		}
 		docType, layout := "text", "text"
 		switch label {
@@ -585,7 +641,7 @@ func monkeyOCRv2LayoutPosition(object map[string]any) []any {
 // monkeyOCRv2EmbeddedImage resolves a markdown image reference against the
 // ZIP's images. When the image is missing or exceeds the remaining budget the
 // item is kept without image bytes if a position exists; otherwise nil.
-func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, position []any, budget *int) map[string]any {
+func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, position []any, budget *monkeyOCRv2ImageBudget) map[string]any {
 	match := monkeyOCRv2ImagePattern.FindStringSubmatch(markdown)
 	if len(match) != 3 {
 		return nil
@@ -599,10 +655,17 @@ func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, posi
 		return item
 	}
 	file := images[path.Base(strings.Trim(strings.TrimSpace(match[2]), `"'`))]
-	if file == nil || file.UncompressedSize64 > monkeyOCRv2MaxImageBytes {
+	if file == nil {
 		return positionsOnly()
 	}
-	if budget != nil && file.UncompressedSize64 > uint64(max(*budget, 0)) {
+	if file.UncompressedSize64 > monkeyOCRv2MaxImageBytes {
+		if budget != nil {
+			budget.oversized++
+		}
+		return positionsOnly()
+	}
+	if budget != nil && file.UncompressedSize64 > uint64(max(budget.remaining, 0)) {
+		budget.docOverflow++
 		return positionsOnly()
 	}
 	rc, err := file.Open()
@@ -611,11 +674,18 @@ func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, posi
 	}
 	data, err := io.ReadAll(io.LimitReader(rc, monkeyOCRv2MaxImageBytes+1))
 	rc.Close()
-	if err != nil || len(data) > monkeyOCRv2MaxImageBytes || (budget != nil && len(data) > *budget) {
+	if err != nil || len(data) > monkeyOCRv2MaxImageBytes {
+		if budget != nil {
+			budget.oversized++
+		}
 		return positionsOnly()
 	}
 	if budget != nil {
-		*budget -= len(data)
+		if len(data) > max(budget.remaining, 0) {
+			budget.docOverflow++
+			return positionsOnly()
+		}
+		budget.remaining -= len(data)
 	}
 	mediaType := mime.TypeByExtension(path.Ext(file.Name))
 	if mediaType == "" {

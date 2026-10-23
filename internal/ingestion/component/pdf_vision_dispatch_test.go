@@ -46,7 +46,7 @@ func TestMonkeyOCRv2ExtractItemsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	items, err := monkeyOCRv2ExtractItems(buffer.Bytes())
+	items, _, err := monkeyOCRv2ExtractItems(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestMonkeyOCRv2ExtractItemsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	items, err := monkeyOCRv2ExtractItems(buffer.Bytes())
+	items, _, err := monkeyOCRv2ExtractItems(buffer.Bytes())
 	if err != nil {
 		t.Fatal(err)
 	}
