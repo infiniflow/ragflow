@@ -153,6 +153,34 @@ func TestCropMediaSectionPositionsHasNoContextBands(t *testing.T) {
 	}
 }
 
+func TestCropMediaSectionPositionsSpansPages(t *testing.T) {
+	// A figure spanning two pages stitches body-only segments in page
+	// order: no context bands, no dimming, first page on top.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(200, 400, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(200, 400, color.RGBA{0, 0, 255, 255}),
+	}
+	positions := []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 120, Top: 300, Bottom: 100}}
+	b64 := CropMediaSectionPositions(positions, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	// Spanning convention: Top is local to the first page, Bottom local
+	// to the last. Page 0 contributes rows [300,400], page 1 rows [0,100],
+	// plus two 6px stitch gaps: 100 + 100 + 12.
+	if bounds := img.Bounds(); bounds.Dx() != 100 || bounds.Dy() != 212 {
+		t.Fatalf("spanning media crop bounds = %v, want 100x212", bounds)
+	}
+	if r, _, _, _ := img.At(0, 0).RGBA(); uint8(r>>8) < 200 {
+		t.Error("top rows should be page-0 red, got dimmed or wrong content")
+	}
+	if _, _, b, _ := img.At(0, 150).RGBA(); uint8(b>>8) < 200 {
+		t.Error("bottom rows should be page-1 blue, got dimmed or wrong content")
+	}
+}
+
 func TestCropSectionImage_ContextPadding(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
