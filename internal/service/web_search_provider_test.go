@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"ragflow/internal/service/youcom"
 )
 
 func TestWebSearchFuncGatedByProvider(t *testing.T) {
@@ -455,58 +457,6 @@ func TestResolveWebSearchProviderStillRequiresKeysForKeyedProviders(t *testing.T
 	}
 }
 
-func TestYouComEndpointForPicksKeylessWithoutAKey(t *testing.T) {
-	cases := []struct {
-		name   string
-		apiKey string
-		want   string
-	}{
-		{name: "no key", apiKey: "", want: youComKeylessWebSearchEndpoint},
-		{name: "whitespace key", apiKey: "   ", want: youComKeylessWebSearchEndpoint},
-		{name: "key set", apiKey: "ydc-test", want: youComWebSearchEndpoint},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := youComEndpointFor(tc.apiKey); got != tc.want {
-				t.Fatalf("endpoint = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestYouComContentDiscardsBlankSnippetsAndDescriptions(t *testing.T) {
-	cases := []struct {
-		name   string
-		result youComWebSearchResult
-		want   string
-	}{
-		{
-			name:   "joins non-blank passages",
-			result: youComWebSearchResult{Snippets: []string{"a", "   ", "b"}, Description: "ignored"},
-			want:   "a\nb",
-		},
-		{
-			name:   "falls back to the description",
-			result: youComWebSearchResult{Snippets: []string{"  "}, Description: " desc "},
-			want:   "desc",
-		},
-		{
-			name:   "whitespace-only description yields nothing",
-			result: youComWebSearchResult{Description: "   "},
-			want:   "",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := youComContent(tc.result); got != tc.want {
-				t.Fatalf("content = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestRetrieveYouComWebSearchSendsNoAuthHeaderWhenKeyless(t *testing.T) {
 	var gotAuth string
 	var gotUserAgent string
@@ -535,8 +485,8 @@ func TestRetrieveYouComWebSearchSendsNoAuthHeaderWhenKeyless(t *testing.T) {
 	if gotAuth != "" {
 		t.Fatalf("X-API-Key = %q, want empty", gotAuth)
 	}
-	if gotUserAgent != youComWebSearchUserAgent {
-		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, youComWebSearchUserAgent)
+	if gotUserAgent != youcom.UserAgent {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, youcom.UserAgent)
 	}
 	if gotQuery != "What is RAGFlow?" {
 		t.Fatalf("query = %q, want %q", gotQuery, "What is RAGFlow?")

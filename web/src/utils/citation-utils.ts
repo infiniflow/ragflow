@@ -32,6 +32,17 @@ export const normalizeCitationDigits = (text: string) => {
 
 export type CitationKey = number | string;
 
+// Knowledge-base citation markers are positional indices produced by
+// strconv.Itoa, so they stay numeric and small. Sixteen-digit hex agent IDs
+// exceed Number.MAX_SAFE_INTEGER and must keep their string form; leading-zero
+// values are opaque ids for the same reason.
+const maxNumericCitationIndexDigits = 15;
+
+const isNumericCitationIndex = (value: string) =>
+  /^\d+$/.test(value) &&
+  value.length <= maxNumericCitationIndexDigits &&
+  (value.length === 1 || value[0] !== '0');
+
 export const parseCitationIndex = (value: string): CitationKey => {
   const normalized = normalizeCitationDigits(value);
   const markerMatch = normalized.match(
@@ -39,6 +50,9 @@ export const parseCitationIndex = (value: string): CitationKey => {
   );
   if (markerMatch) {
     const captured = markerMatch[1];
+    if (/^\s*\[?ID:/i.test(normalized)) {
+      return isNumericCitationIndex(captured) ? Number(captured) : captured;
+    }
     return /^\d+$/.test(captured) ? Number(captured) : captured;
   }
   if (/^\d+$/.test(normalized)) return Number(normalized);
@@ -54,9 +68,9 @@ export const citationMarkerReg =
 // key is the chunk id an agent answer embeds in its [ID:<chunkId>] markers;
 // match it against the chunk's own id, never positionally: the payload
 // ships in retrieval order, which is unrelated to the order the answer
-// cites passages in, so a positional read permutes the sources. A chunk id
-// is 16 hex chars — an all-digit id would parse as a position (~0.05% per
-// id), accepted and recorded here so it is not rediscovered as a mystery.
+// cites passages in, so a positional read permutes the sources. A 16-char
+// hex chunk id stays a string even when all its characters are digits;
+// parseCitationIndex only treats short decimal markers as positions.
 export const resolveCitationChunk = (
   chunks:
     | IReferenceChunk[]

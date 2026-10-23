@@ -27,10 +27,29 @@ describe('parseCitationIndex', () => {
     expect(parseCitationIndex('[3]')).toBe(3);
   });
 
+  it('keeps short explicit numeric ids as positional indexes', () => {
+    expect(parseCitationIndex('[ID:0]')).toBe(0);
+    expect(parseCitationIndex('[ID:12]')).toBe(12);
+    expect(parseCitationIndex('[ID:123456789012345]')).toBe(123456789012345);
+  });
+
   it('parses hex chunk-id markers as strings', () => {
     expect(parseCitationIndex('[ID:a2d067519c9e0db1]')).toBe(
       'a2d067519c9e0db1',
     );
+  });
+
+  it('preserves all-digit hex ids instead of converting them', () => {
+    expect(parseCitationIndex('[ID:0000123456789012]')).toBe(
+      '0000123456789012',
+    );
+    expect(parseCitationIndex('[ID:1234567890123456]')).toBe(
+      '1234567890123456',
+    );
+  });
+
+  it('keeps short leading-zero ids as strings', () => {
+    expect(parseCitationIndex('[ID:0123]')).toBe('0123');
   });
 });
 
@@ -87,5 +106,13 @@ describe('buildCitationDisplayMap', () => {
     expect(map.get('b3e178620da1fc42')).toBe(0);
     expect(map.get('a2d067519c9e0db1')).toBe(1);
     expect(map.size).toBe(2);
+  });
+
+  it('uses numeric keys for short explicit numeric ids', () => {
+    const map = buildCitationDisplayMap('[ID:0] [ID:1] [ID:0]');
+    expect([...map.entries()]).toEqual([
+      [0, 0],
+      [1, 1],
+    ]);
   });
 });
