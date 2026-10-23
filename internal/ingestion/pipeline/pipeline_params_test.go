@@ -9,6 +9,15 @@ import (
 	"ragflow/internal/entity"
 )
 
+func buildTestParserConfig(t *testing.T, dsl []byte, overrides map[string]any) entity.JSONMap {
+	t.Helper()
+	config, err := BuildParserConfig(dsl, overrides)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+
 // generalDSL returns a minimal DSL resembling the "general" template's component
 // structure, with one Parser and one Chunker component.
 func generalDSL(t *testing.T) []byte {
@@ -213,7 +222,7 @@ func TestBuildParserConfig_ShallowMerge_NestedParam(t *testing.T) {
 		},
 	}
 
-	result := BuildParserConfig(dslJSON, overrides)
+	result := buildTestParserConfig(t, dslJSON, overrides)
 	chunker, ok := result["Chunker:xyz"].(map[string]any)
 	if !ok {
 		t.Fatal("expected Chunker:xyz in result")
@@ -266,7 +275,7 @@ func TestBuildParserConfig_FlattensNestedParserSetups(t *testing.T) {
 		},
 	}
 
-	result := BuildParserConfig(dslJSON, overrides)
+	result := buildTestParserConfig(t, dslJSON, overrides)
 	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
 	if !ok {
 		t.Fatal("expected Parser:HipSignsRhyme in result")
@@ -422,7 +431,7 @@ func TestBuildParserConfig_ScalarOverridePreservesOtherDefaults(t *testing.T) {
 			"chunk_size": float64(1024),
 		},
 	}
-	result := BuildParserConfig(dslJSON, overrides)
+	result := buildTestParserConfig(t, dslJSON, overrides)
 	chunker, ok := result["Chunker:LegalReadersDecide"].(map[string]any)
 	if !ok {
 		t.Fatal("expected Chunker:LegalReadersDecide in result")
@@ -441,7 +450,7 @@ func TestBuildParserConfig_UnknownCPNIDNotPresentInResult(t *testing.T) {
 	overrides := map[string]any{
 		"Parser:Unknown": map[string]any{"chunk_size": float64(256)},
 	}
-	result := BuildParserConfig(dslJSON, overrides)
+	result := buildTestParserConfig(t, dslJSON, overrides)
 	// Unknown cpnID should be dropped by CleanComponentParams; the result should
 	// still contain the DSL-defined components with their defaults.
 	if _, ok := result["Parser:Unknown"]; ok {
@@ -452,16 +461,18 @@ func TestBuildParserConfig_UnknownCPNIDNotPresentInResult(t *testing.T) {
 	}
 }
 
-func TestBuildParserConfig_FallbackOnDSLError(t *testing.T) {
-	result := BuildParserConfig([]byte("not json"), map[string]any{"key": "val"})
-	if result["key"] != "val" {
-		t.Error("expected fallback to return raw config on DSL error")
+func TestBuildParserConfigRejectsInvalidDSL(t *testing.T) {
+	for _, dsl := range []string{"not json", `{}`, `{"components":{"Extractor:first":{},"Extractor:second":{}}}`} {
+		result, err := BuildParserConfig([]byte(dsl), map[string]any{"key": "val"})
+		if err == nil || result != nil {
+			t.Fatalf("invalid DSL must return an error without config: config=%#v err=%v", result, err)
+		}
 	}
 }
 
 func TestBuildParserConfig_AllComponentsPresent(t *testing.T) {
 	dslJSON := generalDSL(t)
-	result := BuildParserConfig(dslJSON, nil)
+	result := buildTestParserConfig(t, dslJSON, nil)
 	// Both components from the DSL fixture should be present.
 	if _, ok := result["Parser:HipSignsRhyme"]; !ok {
 		t.Error("expected Parser:HipSignsRhyme")
@@ -500,7 +511,7 @@ func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
 					"tags": map[string]any{"top_n": 5, "tag_file_id": "file-123"},
 				},
 			}
-			result := BuildParserConfig(dslJSON, overrides)
+			result := buildTestParserConfig(t, dslJSON, overrides)
 			params, ok := result[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
@@ -606,7 +617,7 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 					},
 				},
 			}
-			result := BuildParserConfig(dslJSON, overrides)
+			result := buildTestParserConfig(t, dslJSON, overrides)
 			params, ok := result[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
@@ -953,7 +964,7 @@ func TestBuildParserConfig_CompilerRuntimeParamsSurvive(t *testing.T) {
 			"thinking":                      "disabled",
 		},
 	}
-	result := BuildParserConfig(dslJSON, raw)
+	result := buildTestParserConfig(t, dslJSON, raw)
 	params, ok := result["Compiler:NewBoxesLove"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Compiler entry in built parser_config, got %#v", result)
@@ -1042,7 +1053,7 @@ func TestBuildParserConfig_KeepsTitleChunkerPerMethodKeys(t *testing.T) {
 			"groupChunkTokenCap":     2048,
 		},
 	}
-	params, ok := BuildParserConfig(dslJSON, overrides)["TitleChunker:StaleSnapshot"].(map[string]any)
+	params, ok := buildTestParserConfig(t, dslJSON, overrides)["TitleChunker:StaleSnapshot"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected TitleChunker params to survive, got %#v", params)
 	}
@@ -1091,7 +1102,7 @@ func TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates(t *testing.T
 					"root_chunk_as_heading": true,
 				},
 			}
-			params, ok := BuildParserConfig(dslJSON, overrides)[s.CpnID].(map[string]any)
+			params, ok := buildTestParserConfig(t, dslJSON, overrides)[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: component %q missing from built parser_config", ref, s.CpnID)
 			}

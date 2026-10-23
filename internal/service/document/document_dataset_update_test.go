@@ -1,40 +1,157 @@
 package document
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
-// TestIsPresentationFile pins the name-based presentation guard used by the
-// parser_id / chunk_method switch in document_dataset_update.go. A WPS
-// presentation (dps/dpt) must be treated as a presentation on a par with ppt/
-// pptx/pages, so the API allows switching its chunk_method to "presentation".
-func TestIsPresentationFile(t *testing.T) {
-	p := func(s string) *string { return &s }
-
-	cases := []struct {
-		name string
-		in   *string
-		want bool
-	}{
-		{"nil name is not presentation", nil, false},
-		{"ppt is presentation", p("deck.ppt"), true},
-		{"pptx is presentation", p("deck.pptx"), true},
-		{"pages is presentation", p("deck.pages"), true},
-		{"wps presentation dps is presentation", p("deck.dps"), true},
-		{"wps presentation dpt is presentation", p("deck.dpt"), true},
-		{"wps presentation dps is case-insensitive", p("DECK.DPS"), true},
-		{"pdf is not presentation", p("report.pdf"), false},
-		{"wps doc is not presentation", p("note.wps"), false},
-		{"wps sheet et is not presentation", p("sheet.et"), false},
+func TestUpdateDatasetDocumentUsesEffectiveParserForConfig(t *testing.T) {
+	for _, changeMethod := range []bool{false, true} {
+		name := "document selection"
+		if changeMethod {
+			name = "chunk method switch"
+		}
+		t.Run(name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+			req := &UpdateDatasetDocumentRequest{ParserConfig: map[string]any{
+				"ManualChunker:NineInsectsFind": map[string]any{"hierarchy": 2},
+				"GeneralChunker:SixApplesFall":  map[string]any{"chunk_token_size": 123},
+			}}
+			present := map[string]bool{"parser_config": true}
+			if changeMethod {
+				req.ChunkMethod = new("manual")
+				req.ParserID, req.PipelineID = new(""), new("")
+				present["chunk_method"] = true
+				present["parser_id"], present["pipeline_id"] = true, true
+			} else if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_id", "manual").Error; err != nil {
+				t.Fatal(err)
+			}
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("update: code=%d err=%v", code, err)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			chunker, ok := doc.ParserConfig["ManualChunker:NineInsectsFind"].(map[string]any)
+			if doc.ParserID != "manual" || !ok || chunker["hierarchy"] != float64(2) {
+				t.Fatalf("target template config lost: parser=%q config=%#v", doc.ParserID, doc.ParserConfig)
+			}
+			if _, ok := doc.ParserConfig["GeneralChunker:SixApplesFall"]; ok {
+				t.Fatalf("config retained a node from the dataset template: %#v", doc.ParserConfig)
+			}
+		})
 	}
+}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := isPresentationFile(tc.in); got != tc.want {
-				t.Fatalf("isPresentationFile(%v) = %v, want %v", tc.in, got, tc.want)
+func TestUpdateDatasetDocumentKeepsDocumentCanvasForConfigPatch(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+	const pipelineID = "1234567890abcdef1234567890abcdef"
+	if err := db.Create(&entity.UserCanvas{
+		ID: pipelineID, UserID: "user-1", TenantID: new("tenant-1"), Permission: string(entity.TenantPermissionMe),
+		DSL: entity.JSONMap{
+			"components": map[string]any{
+				"Parser:custom": map[string]any{"obj": map[string]any{
+					"component_name": "Parser", "params": map[string]any{},
+				}},
+			},
+		},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("pipeline_id", pipelineID).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{"Parser:custom": map[string]any{"vlm": map[string]any{"llm_id": "vision-model"}}},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("update: code=%d err=%v", code, err)
+	}
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser, ok := doc.ParserConfig["Parser:custom"].(map[string]any)
+	if !ok || !reflect.DeepEqual(parser["vlm"], map[string]any{"llm_id": "vision-model"}) || doc.PipelineID == nil || *doc.PipelineID != pipelineID {
+		t.Fatalf("document canvas config lost: %#v", doc)
+	}
+}
+
+func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
+	for _, failure := range []string{"unknown builtin", "unknown builtin without config", "empty canvas", "malformed canvas", "invalid selection"} {
+		t.Run(failure, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "old.docx", 0, 0)
+			insertTestFile(t, "file-1", "folder-1", "old.docx", new("old.docx"))
+			insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+			req := &UpdateDatasetDocumentRequest{
+				Name: new("new.docx"), ParseType: new(1), ParserID: new("missing-parser"),
+				MetaFields:   map[string]any{"author": "must-not-save"},
+				ParserConfig: map[string]any{"Parser:HipSignsRhyme": map[string]any{"vlm": map[string]any{"llm_id": "must-not-save"}}},
+			}
+			present := map[string]bool{"name": true, "parse_type": true, "parser_id": true, "parser_config": true, "meta_fields": true}
+			wantError := "unknown builtin parser_id"
+			switch failure {
+			case "unknown builtin without config":
+				req.ParserConfig = nil
+				delete(present, "parser_config")
+			case "empty canvas", "malformed canvas":
+				const pipelineID = "1234567890abcdef1234567890abcdef"
+				dsl := entity.JSONMap{}
+				wantError = "has no DSL"
+				if failure == "malformed canvas" {
+					dsl["graph"] = map[string]any{}
+					wantError = "DSL has no components"
+				}
+				if err := db.Create(&entity.UserCanvas{
+					ID: pipelineID, UserID: "user-1", TenantID: new("tenant-1"), Permission: string(entity.TenantPermissionMe), DSL: dsl,
+				}).Error; err != nil {
+					t.Fatal(err)
+				}
+				req.ParseType, req.ParserID, req.PipelineID = new(2), nil, new(pipelineID)
+				delete(present, "parser_id")
+				present["pipeline_id"] = true
+			case "invalid selection":
+				req.ParseType = new(2)
+				wantError = "parser_id must not be set"
+			}
+			engine := newMetadataDocEngine(map[string]map[string]any{"doc-1": {"author": "original"}}, map[string]string{"doc-1": "kb-1"})
+			svc := testDocumentService(t)
+			svc.docEngine = engine
+			svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+			_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), wantError) {
+				t.Fatalf("expected %q, got code=%d err=%v", wantError, code, err)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if doc.Name == nil || *doc.Name != "old.docx" || doc.ParserID != "naive" || (doc.PipelineID != nil && *doc.PipelineID != "") || len(doc.ParserConfig) != 0 {
+				t.Fatalf("rejected request changed document: %#v", doc)
+			}
+			file, err := dao.NewFileDAO().GetByID(t.Context(), db, "file-1")
+			if err != nil || file.Name != "old.docx" {
+				t.Fatalf("rejected request changed file: file=%#v err=%v", file, err)
+			}
+			if !reflect.DeepEqual(engine.records["doc-1"], map[string]any{"author": "original"}) {
+				t.Fatalf("rejected request changed metadata: %#v", engine.records)
 			}
 		})
 	}

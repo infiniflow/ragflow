@@ -200,7 +200,10 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 			zap.Error(err))
 		return rawConfig
 	}
+	return cleanComponentParams(schemas, rawConfig)
+}
 
+func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]interface{}) map[string]interface{} {
 	validCPNs := make(map[string]map[string]struct{}, len(schemas))
 	componentNames := make(map[string]string, len(schemas))
 	for _, s := range schemas {
@@ -374,17 +377,16 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 // BuildParserConfig builds the final parser_config by starting from the DSL
 // defaults for every component, then overlaying the cleaned incoming overrides.
 // This ensures all components from the current pipeline are present while
-// stripping stale params from other pipelines.
-func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.JSONMap {
-	cleaned := CleanComponentParams(dslJSON, rawConfig)
-	defaults, err := ComponentParamsDefaults(dslJSON)
+// stripping stale params from other pipelines. Invalid DSL returns an error.
+func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) (entity.JSONMap, error) {
+	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
-		common.Warn("BuildParserConfig: failed to extract DSL defaults, using cleaned only",
-			zap.Error(err))
-		return entity.JSONMap(cleaned)
+		return nil, err
 	}
-	result := make(entity.JSONMap, len(defaults))
-	for cpnID, params := range defaults {
+	cleaned := cleanComponentParams(schemas, rawConfig)
+	result := make(entity.JSONMap, len(schemas))
+	for _, component := range schemas {
+		cpnID, params := component.CpnID, component.ParamsDefaults
 		base := make(map[string]interface{}, len(params))
 		for k, v := range params {
 			base[k] = v
@@ -398,7 +400,7 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		}
 		result[cpnID] = base
 	}
-	return result
+	return result, nil
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the

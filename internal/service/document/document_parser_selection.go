@@ -189,7 +189,12 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 		return nil, false
 	}
 	raw := map[string]interface{}(base)
-	cleaned := pipelinepkg.BuildParserConfig(dslJSON, raw)
+	cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, raw)
+	if err != nil {
+		common.Warn("document: invalid target pipeline DSL",
+			zap.String("parser_id", target), zap.Error(err))
+		return nil, false
+	}
 	// The dataset-level metadata group is parser-independent; keep it so the
 	// target pipeline's Extractor node inherits the dataset setting instead of
 	// falling back to disabled.
