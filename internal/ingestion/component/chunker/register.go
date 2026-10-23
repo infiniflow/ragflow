@@ -112,10 +112,10 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// lives in canonicalChunkID (common.go); this loop only re-derives it as
 	// a fallback for chunks whose id was not already stamped upstream.
 	//
-	// A chunk id may already be stamped (e.g. by the streamed crop-upload
-	// path, which keys MinIO by the canonical id). Reuse it so the id is
-	// computed exactly once; both routes derive the identity through the
-	// shared helpers, so the crop-time key and this id are identical and
+	// A chunk id may already be stamped (by the streamed crop-upload path,
+	// or from title-family media positions and finalized headings). Reuse it so
+	// the identity is not re-derived after upload; both routes derive it through
+	// the shared helpers, so the crop-time key and this id are identical and
 	// cannot diverge. For chunks that bypassed crop, fall back to deriving
 	// it here from the already-finalized text — a captionless image folds
 	// its payload identity in (mediaChunkIdentity), so distinct images in
