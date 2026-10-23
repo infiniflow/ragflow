@@ -17,7 +17,8 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 }
 
 // ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
-// entries, Invoke mappings, Compiler configuration, and input options in saved drafts.
+// entries, Invoke mappings, Compiler configuration, input options, and Loop settings
+// in saved drafts.
 // All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -84,11 +85,28 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return err
 		}
 	case "loop":
-		if err := validateRows(component, params, "loop_variables", []string{"variable"}); err != nil {
-			return err
-		}
-		if err := validateRows(component, params, "loop_termination_condition", []string{"variable", "operator", "value"}); err != nil {
-			return err
+		for field, required := range map[string][]string{
+			"loop_variables": {"variable"}, "loop_termination_condition": {"variable", "operator", "value"},
+		} {
+			raw := params[field]
+			if raw == nil {
+				continue
+			}
+			rows, ok := raw.([]any)
+			if !ok {
+				return fmt.Errorf("[%s] %s must be an array", component, field)
+			}
+			for i, raw := range rows {
+				row, ok := raw.(map[string]any)
+				if !ok || row == nil {
+					return fmt.Errorf("[%s] %s[%d] must be an object", component, field, i)
+				}
+				for _, key := range required {
+					if !draft && (row[key] == nil || isBlank(row[key])) {
+						return fmt.Errorf("[%s] %s[%d] is incomplete", component, field, i)
+					}
+				}
+			}
 		}
 	case "iteration":
 		return validateIterationOutputs(component, params)
