@@ -15,7 +15,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message content and Iteration outputs in saved drafts.
 // All other component checks remain the same as ValidateDynamicEntries.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -100,8 +100,8 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 		if err := validateRows(component, params, "loop_termination_condition", []string{"variable", "operator", "value"}); err != nil {
 			return err
 		}
-	case "iteration":
-		return validateIterationOutputs(component, params)
+	case "iteration", "parallel":
+		return validateIterationOutputs(component, params, draft)
 	case "variableaggregator":
 		return validateVariableAggregatorGroups(component, params)
 	case "userfillup":
@@ -237,14 +237,20 @@ func validateVariableAggregatorGroups(component string, params map[string]any) e
 	return nil
 }
 
-func validateIterationOutputs(component string, params map[string]any) error {
+func validateIterationOutputs(component string, params map[string]any, draft bool) error {
+	if params["outputs"] == nil {
+		return nil
+	}
 	outputs, ok := params["outputs"].(map[string]any)
 	if !ok {
-		return nil
+		return fmt.Errorf("[%s] outputs must be an object", component)
 	}
 	for name, rawOutput := range outputs {
 		output, ok := rawOutput.(map[string]any)
-		if isBlank(name) || !ok || output == nil || !isNonBlankString(output["ref"]) {
+		if !ok || output == nil {
+			return fmt.Errorf("[%s] outputs.%s is incomplete: must be an object", component, name)
+		}
+		if !draft && (isBlank(name) || !isNonBlankString(output["ref"])) {
 			return fmt.Errorf("[%s] outputs.%s is incomplete", component, name)
 		}
 	}

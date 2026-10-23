@@ -3609,6 +3609,8 @@ This process aggregates variables from multiple branches into a single variable 
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
       checklistTitle: 'The following issues may affect running or publishing',
+      iterationOutputsIncomplete:
+        'Complete the iteration output names and references',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:
