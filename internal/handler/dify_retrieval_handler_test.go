@@ -498,12 +498,13 @@ func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
 
 func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
 	cases := []struct {
-		name, method, url, body string
-		want                    int
+		name, method, url, body  string
+		wantPageSize, wantWindow int
 	}{
-		{"default top_k", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test"}`, 1024},
-		{"top_k above 64", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 100}}`, 100},
-		{"GET top_k", "GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test&top_k=200", "", 200},
+		{"default top_k", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test"}`, 1024, 1024},
+		{"top_k above 64", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 100}}`, 100, 100},
+		{"GET top_k", "GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test&top_k=200", "", 200, 200},
+		{"top_k below 64 keeps the default window", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 10}}`, 10, 64},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -522,11 +523,14 @@ func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 			}
-			if got.PageSize != tc.want {
-				t.Errorf("PageSize = %d, want %d", got.PageSize, tc.want)
+			if got.PageSize != tc.wantPageSize {
+				t.Errorf("PageSize = %d, want %d", got.PageSize, tc.wantPageSize)
 			}
-			if got.RerankCandidatesCount == nil || *got.RerankCandidatesCount != tc.want {
-				t.Errorf("RerankCandidatesCount = %v, want %d", got.RerankCandidatesCount, tc.want)
+			if got.RerankCandidatesCount == nil {
+				t.Fatal("RerankCandidatesCount is nil")
+			}
+			if *got.RerankCandidatesCount != tc.wantWindow {
+				t.Errorf("RerankCandidatesCount = %d, want %d", *got.RerankCandidatesCount, tc.wantWindow)
 			}
 		})
 	}

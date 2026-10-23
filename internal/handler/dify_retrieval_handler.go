@@ -268,6 +268,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// Chunk retrieval. Without RerankCandidatesCount the service defaults the
 	// window to 64 and rejects any top_k above it, including the 1024 default.
+	// Keep 64 as the floor so a small top_k still ranks the same candidates.
+	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
 		Question:              req.Query,
 		TenantIDs:             []string{kb.TenantID},
@@ -275,7 +277,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		DocIDs:                docIDs,
 		Page:                  1,
 		PageSize:              pageSize,
-		RerankCandidatesCount: &pageSize,
+		RerankCandidatesCount: &rerankWindow,
 		KNNTopK:               topK,
 		SimilarityThreshold:   scoreThreshold,
 		EmbeddingModel:        embModel,
