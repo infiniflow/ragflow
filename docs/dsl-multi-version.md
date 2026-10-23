@@ -110,6 +110,7 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
   - 归属校验：确认 `canvas_category = dataflow_canvas`，否则报错（决策 §3-3）。
 - **document**（文件级）：`file2document.go` 同理，绑定/变更 pipeline 时写 `pipeline_version_id = GetLatest(canvasID).ID`；未变更则保留。
 - **手动选版本（C2）**：新增请求字段 `pipeline_version_id`（可选）。传入时校验其属于该 `pipeline_id` 的 canvas，写该值（取代“默认最新”）。
+  - **handler 字段白名单（v5.3 补充）**：`internal/handler/dataset.go` 的 `createDatasetAllowedFields` 与 `updateDatasetAllowedFields` 必须放行该字段，否则请求在 handler 层即被拒（code 101 `Extra inputs are not permitted`），service 层永远收不到。该白名单是独立于 service 校验的**第二道闸**，仅显式登记的字段可通过；新增 `pipeline_version_id` 须同时登记到创建与更新两个白名单（PR #21261 已落地，对应 `dataset_allowed_fields_test.go`）。
 - **C3 切版本重置参数**：当 `pipeline_version_id` 被显式改为另一版本时，调用 `ResolveComponentParamsDefaults(ctx, parserID, &canvasID, versionID)` 取得该版本 default，将 dataset/document 的 `parser_config`（component params）重置为该 default（范围见 §12 A3）。
 - **回落契约（v5.1 新增，必读）**：`pipeline_id`（画布容器）与 `pipeline_version_id`（容器内快照）是「容器⊃快照」关系，`pipeline_version_id` 必须在 `pipeline_id` 的上下文里解析。任何解析都必须遵守下面两条回落链，缺一不可，否则会出现「钉被清空 / 误用最新 / 误用 builtin 默认」三类缺陷：
   - **版本回落链**：`req.PipelineVersionID` → `lockedKB.PipelineVersionID`（已钉版本，不可跳过）→ `GetLatest(canvas)`。请求未带版本时，**必须先回落到已钉版本**，仅当已钉版本也为空才用 latest。绝不允许「请求没带就直接取 latest」——那会让「钉旧版本」的数据集在改配置时被悄悄升级到最新结构。
@@ -192,6 +193,7 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
 ## 7. 服务/API 变更
 
 - `agent.go` `UpdateAgent`（agent 与 dataflow 共用，经 `canvas_category` 区分）：`patch` 含 `dsl` 时调 `SaveOrReplaceLatestTx`（携 `release`，dataflow 恒 false）——**不改**。
+- **handler 字段白名单放行 `pipeline_version_id`（v5.3 补充）**：`internal/handler/dataset.go` 的 `createDatasetAllowedFields` / `updateDatasetAllowedFields` 已登记 `pipeline_version_id`。这是“绑定具体版本”得以进入 service 层的前置条件——未登记时 create/update dataset 请求携带该字段会被 handler 直接以 `code 101` 拒绝，service 的粘性快照逻辑无从触发（见 §5 C2 注释）。该改动仅“显式放行目标字段”，未知字段仍按白名单拒绝，不退化成“全放行”。
 - `DeleteVersion`：增加引用扫描 —— 查 `knowledgebase`/`document` 中 `pipeline_version_id = 待删版本ID` 的引用数；**允许删除**（B2.1 弹窗已二次确认），引用方因版本缺失自动进入 Missing（§6.2）。仅 dataflow 生效（引用扫描范围见 §12 A4）。
 - 版本列表接口（`ListByCanvasID`，已按 create_time DESC 满足 E1）：返回含 `alias` 字段（A2/F1）。
 - 版本详情/下载接口已存在（`version-dialog` 仅查看/下载，无删除/载入编辑入口 —— 前端需补 B2 删除按钮与 C2 选版本入口）。
@@ -225,6 +227,7 @@ PipelineVersionID *string `gorm:"column:pipeline_version_id;size:32;index" json:
 - T7 dataset `UpdateDataset`：pipeline 未变更 → 保留原 versionID（B4）；pipeline 变更 → 重写为新 GetLatest；手动 versionID 生效且做归属校验。
 - T7f（B2 对应）`UpdateDataset` **单字段 PATCH**：只发 `pipeline_version_id=v-new`、省略 `pipeline_id`，且数据集已钉 `v-old` → 断言 `pipeline_version_id` 变为 `v-new`（**未被清空**），且 `parser_config` 按 `v-new` 默认整体重置（C3/A3），归属校验以已绑 `PipelineID` 为上下文。
 - T7g（B1 对应）`UpdateDataset` **钉旧版本 + 只改 parser_config**：数据集钉 `v-old`（≠latest），PATCH 只带 `parser_config`、不带 `pipeline_version_id` → 断言重建所用 DSL 来自 `v-old`（**非 latest**），`parser_config` 结构与 `v-old` 默认一致（粘性快照 B4 不被破坏）。
+- T7h（v5.3 白名单）`createDatasetAllowedFields` / `updateDatasetAllowedFields` 含 `pipeline_version_id`：断言 create/update dataset 请求携带该字段不被 handler 白名单以 `code 101` 拒绝（端到端经此闸进入 service）；对抗：未知字段 `__bogus_field__` 在两白名单中仍为 false（白名单是“显式放行”而非“全放行”）。对应 `internal/handler/dataset_allowed_fields_test.go`。
 - T8 document 绑定同样写 versionID（粘性）。
 - T9 `DeleteVersion` 引用扫描：引用存在时允许删除、引用方 Missing；无引用正常删。
 - T10 运行时 `loadDSLFromCanvas` 按 versionID 取 `user_canvas_version.dsl`；版本缺失 → 解析 fail（C4）。
