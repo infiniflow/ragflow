@@ -20,6 +20,7 @@ import {
   usePipelineOperatorNodes,
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
+import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import {
   getOperatorType,
@@ -40,10 +41,6 @@ export interface IDocumentPipelineDialogProps {
   // Currently pinned canvas version id (design section 5). Empty when the
   // dataset/document binds the latest version.
   pipelineVersionId?: string;
-  // Latest concrete version id of the bound canvas (design section 8: when the
-  // document is unpinned we must still pre-select a specific version rather than
-  // leave the field empty and surface the "Latest version" placeholder).
-  latestVersionId?: string;
   parserConfig?: Record<string, any>;
 }
 
@@ -51,7 +48,6 @@ export function useDocumentPipelineForm({
   parserId,
   pipelineId,
   pipelineVersionId,
-  latestVersionId,
   parserConfig,
 }: IDocumentPipelineDialogProps) {
   const { t } = useTranslation();
@@ -101,7 +97,7 @@ export function useDocumentPipelineForm({
       // Design section 8: an unpinned document still pre-selects the latest
       // concrete version so the UI shows a specific version, never the
       // "Latest version" placeholder. A pinned value wins when present.
-      pipeline_version_id: pipelineVersionId || latestVersionId || '',
+      pipeline_version_id: pipelineVersionId || '',
       parser_config: transformSavedParserConfigToForm(parserConfig),
     },
   });
@@ -123,6 +119,17 @@ export function useDocumentPipelineForm({
   const selectedPipelineId = isPipelineMode
     ? selectedDataFlowId
     : selectedBuiltinId;
+  // The canvas version list drives the selector, the D1/D2/D3 non-latest `!`
+  // indicator and the T29 Missing (unparseable) detection. We fetch it inside
+  // the hook so the latest id is a *reactive* value: it resolves after mount
+  // and the adoption effect below re-fires when it does. (Reading it from a
+  // static prop captured before the fetch would freeze it at undefined.)
+  const {
+    data: versions = [],
+    loading: versionListLoading,
+    isError: versionListError,
+  } = useFetchCanvasVersionList(isPipelineMode ? selectedDataFlowId : undefined);
+  const latestVersionId = versions[0]?.id;
   // The saved parser_config only belongs to the pipeline (and parse type) it
   // was saved with — expose its id only while that exact pipeline is selected,
   // so that after switching, defaults come purely from the new pipeline's DSL.
@@ -162,11 +169,12 @@ export function useDocumentPipelineForm({
   }, [selectedPipelineId, savedPipelineId, form]);
 
   // Design section 8 (T37): an unpinned document must never show the "Latest
-  // version" pseudo-value, so default the field to the latest concrete version
-  // id. The version list loads asynchronously, so adopt the latest id once it
-  // becomes available. We only adopt while the field is still empty, so a
-  // user's manual selection of an older version is preserved and a stable
-  // latest id will not re-fire this effect after adoption.
+  // version" pseudo-value, so adopt the latest concrete version id once the
+  // version list resolves (it loads asynchronously, hence the effect rather
+  // than the form default). `latestVersionId` is reactive (derived from the
+  // fetch above), so this re-fires when the list arrives. We only adopt while
+  // the field is still empty, so a user's manual selection of an older version
+  // is preserved and a stable latest id will not re-fire this effect.
   useEffect(() => {
     if (!pipelineVersionId && latestVersionId && !form.getValues('pipeline_version_id')) {
       form.setValue('pipeline_version_id', latestVersionId);
@@ -243,5 +251,9 @@ export function useDocumentPipelineForm({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
+    versions,
+    latestVersionId,
+    versionListLoading,
+    versionListError,
   };
 }

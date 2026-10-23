@@ -136,6 +136,18 @@ export default function DatasetSetting() {
     !!knowledgeDetails?.pipeline_version_outdated &&
     (pipelineVersionId ?? '') === (knowledgeDetails?.pipeline_version_id ?? '');
 
+  // Design section 8 (T37): an unpinned dataset must still pre-select the latest
+  // concrete canvas version instead of the "Latest version" placeholder. We only
+  // fill an empty field, so a saved pin or a user selection wins. This effect
+  // runs after the on-mount form.reset (which sets an unpinned dataset to ''),
+  // so the latest concrete id wins once the version list resolves.
+  useEffect(() => {
+    const savedPin = knowledgeDetails?.pipeline_version_id;
+    if (!savedPin && canvasVersions?.length && !form.getValues('pipeline_version_id')) {
+      form.setValue('pipeline_version_id', canvasVersions[0].id);
+    }
+  }, [knowledgeDetails, canvasVersions, form]);
+
   const { operatorNodes, loading: operatorNodesLoading } =
     usePipelineOperatorNodes(
       selectedPipelineId,

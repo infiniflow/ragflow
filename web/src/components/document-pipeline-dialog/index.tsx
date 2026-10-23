@@ -30,7 +30,6 @@ import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
-import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
 import { useCallback } from 'react';
 import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -59,8 +58,6 @@ export function DocumentPipelineDialog({
 }: IProps) {
   const { t } = useTranslation();
 
-  let latestVersionId: string | undefined;
-
   const {
     form,
     parseType,
@@ -72,11 +69,14 @@ export function DocumentPipelineDialog({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
+    versions,
+    latestVersionId,
+    versionListLoading,
+    versionListError,
   } = useDocumentPipelineForm({
     parserId,
     pipelineId,
     pipelineVersionId,
-    latestVersionId,
     parserConfig,
   });
 
@@ -95,17 +95,9 @@ export function DocumentPipelineDialog({
     name: 'pipeline_version_id',
   });
 
-  // The canvas version list drives the selector, the D1/D2/D3 non-latest `!`
-  // indicator and the T29 Missing (unparseable) detection. The backend returns
-  // versions newest-first, so versions[0] is the latest.
-  const {
-    data: versions = [],
-    loading: versionListLoading,
-    isError: versionListError,
-  } = useFetchCanvasVersionList(selectedPipelineId);
-  // Assigned here (after the version list resolves) so the form hook adopts it
-  // as the default selection for an unpinned document (design section 8).
-  latestVersionId = versions[0]?.id;
+  // versions / latestVersionId / versionListLoading / versionListError come
+  // from the form hook, which fetches the canvas version list reactively.
+  // versions is newest-first, so versions[0] is the latest.
   // A selected version is only Missing when the list has finished loading and
   // the id is genuinely absent. While loading (initial mount of a pinned doc,
   // or after switching pipelines) the list is empty, so treating absence as
