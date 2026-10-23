@@ -301,17 +301,17 @@ func TestParseListSyncLogs(t *testing.T) {
 	}
 }
 
-func TestTokenStatsParse(t *testing.T) {
+func TestModelStatsParse(t *testing.T) {
 	tests := []struct {
 		input  string
 		params map[string]interface{}
 	}{
-		{"TOKEN STATS;", map[string]interface{}{}},
-		{"token stats today", map[string]interface{}{"days": 1}},
-		{"TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';", map[string]interface{}{"days": 7, "provider_name": "openai", "instance_name": "production", "model_name": "gpt-4o"}},
-		{"TOKEN STATS FROM '2026-10-01' TO '2026-10-07' BY DAY, MODEL", map[string]interface{}{"from": "2026-10-01", "to": "2026-10-07", "group_by": "day,model"}},
-		{"TOKEN STATS DAYS 1 BY INSTANCE", map[string]interface{}{"days": 1, "group_by": "instance"}},
-		{"TOKEN STATS BY DAY, PROVIDER", map[string]interface{}{"group_by": "day,provider"}},
+		{"SHOW MODEL STATS;", map[string]interface{}{}},
+		{"show model stats today", map[string]interface{}{"days": 1}},
+		{"SHOW MODEL STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';", map[string]interface{}{"days": 7, "provider": "openai", "instance": "production", "model": "gpt-4o"}},
+		{"SHOW MODEL STATS FROM '2026-10-01' TO '2026-10-07' BY DATE, MODEL", map[string]interface{}{"start": "2026-10-01", "end": "2026-10-07", "by": "date,model"}},
+		{"SHOW MODEL STATS DAYS 1 BY INSTANCE", map[string]interface{}{"days": 1, "by": "instance"}},
+		{"SHOW MODEL STATS BY DATE, PROVIDER", map[string]interface{}{"by": "date,provider"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -319,24 +319,24 @@ func TestTokenStatsParse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cmd.Type != "api_token_stats" || !reflect.DeepEqual(cmd.Params, tt.params) {
+			if cmd.Type != "api_show_model_stats" || !reflect.DeepEqual(cmd.Params, tt.params) {
 				t.Fatalf("got %#v, want params %#v", cmd, tt.params)
 			}
 		})
 	}
 }
 
-func TestTokenStatsRejectsInvalidConditions(t *testing.T) {
+func TestModelStatsRejectsInvalidConditions(t *testing.T) {
 	for _, input := range []string{
-		"TOKEN STATS DAYS 0", "TOKEN STATS DAYS -1", "TOKEN STATS DAYS 1.5",
-		"TOKEN STATS TODAY DAYS 7", "TOKEN STATS DAYS 7 FROM '2026-10-01' TO '2026-10-07'",
-		"TOKEN STATS FROM '2026-02-30' TO '2026-03-01'", "TOKEN STATS FROM '2026-10-07' TO '2026-10-01'",
-		"TOKEN STATS FROM '2026-10-01'", "TOKEN STATS TO '2026-10-07'",
-		"TOKEN STATS INSTANCE 'production'", "TOKEN STATS PROVIDER 'openai' MODEL 'gpt-4o'",
-		"TOKEN STATS PROVIDER ''", "TOKEN STATS PROVIDER 'openai' PROVIDER 'other'",
-		"TOKEN STATS PROVIDER 'openai", `TOKEN STATS PROVIDER "openai`,
-		"TOKEN STATS BY MODEL, INSTANCE", "TOKEN STATS BY DAY, DAY", "TOKEN STATS BY DATE", "TOKEN STATS BY DAY,",
-		"TOKEN STATS BY MODEL BY DAY", "TOKEN STATS GROUP 'support'", "TOKEN STATS garbage", "TOKEN STATS; LIST DATASETS;",
+		"SHOW MODEL STATS DAYS 0", "SHOW MODEL STATS DAYS -1", "SHOW MODEL STATS DAYS 1.5",
+		"SHOW MODEL STATS TODAY DAYS 7", "SHOW MODEL STATS DAYS 7 FROM '2026-10-01' TO '2026-10-07'",
+		"SHOW MODEL STATS FROM '2026-02-30' TO '2026-03-01'", "SHOW MODEL STATS FROM '2026-10-07' TO '2026-10-01'",
+		"SHOW MODEL STATS FROM '2026-10-01'", "SHOW MODEL STATS TO '2026-10-07'",
+		"SHOW MODEL STATS INSTANCE 'production'", "SHOW MODEL STATS PROVIDER 'openai' MODEL 'gpt-4o'",
+		"SHOW MODEL STATS PROVIDER ''", "SHOW MODEL STATS PROVIDER 'openai' PROVIDER 'other'",
+		"SHOW MODEL STATS PROVIDER 'openai", `SHOW MODEL STATS PROVIDER "openai`,
+		"SHOW MODEL STATS BY MODEL, INSTANCE", "SHOW MODEL STATS BY DATE, DAY", "SHOW MODEL STATS BY DAY", "SHOW MODEL STATS BY DATE,",
+		"SHOW MODEL STATS BY MODEL BY DATE", "SHOW MODEL STATS GROUP 'support'", "SHOW MODEL STATS garbage", "TOKEN STATS", "SHOW MODEL STATS 'openai'", "SHOW MODEL STATS; LIST DATASETS;",
 	} {
 		t.Run(input, func(t *testing.T) {
 			if _, err := NewParser(input).Parse(APIMode); err == nil {

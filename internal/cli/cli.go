@@ -481,7 +481,7 @@ Configuration File:
 
 Commands:
   SQL commands (use quotes): "LIST USERS", "CREATE USER 'email' 'password'", etc.
-  Token usage: "TOKEN STATS DAYS 7 BY MODEL" (current user)
+  Token usage: "SHOW MODEL STATS DAYS 7 BY MODEL" (current user)
   Filesystem commands (no quotes): ls datasets, search "keyword", cat path, etc.
   Skill commands:
     install-skill <space> <path|url> [options]  Install a skill from local path or remote URL
@@ -829,11 +829,11 @@ Commands (User Mode):
   LIST DEFAULT MODELS;                                   - List default models
   LIST TOKENS;                                           - List API tokens
   LIST PROVIDERS;                                        - List available LLM providers
-  TOKEN STATS [TODAY | DAYS n | FROM 'date' TO 'date']    - Show current user's token usage
+  SHOW MODEL STATS [TODAY | DAYS n | FROM 'date' TO 'date']    - Show current user's token usage
     [PROVIDER 'name' [INSTANCE 'name' [MODEL 'name']]]
-    [BY PROVIDER | INSTANCE | MODEL | DAY[, PROVIDER | INSTANCE | MODEL]];
-    Defaults: last 7 calendar days; group by the next resource level.
-    Example: TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' BY DAY, MODEL;
+    [BY PROVIDER | INSTANCE | MODEL | DATE[, PROVIDER | INSTANCE | MODEL]];
+    Defaults: today; group by the next resource level.
+    Example: SHOW MODEL STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' BY DATE, MODEL;
   CREATE TOKEN;                                          - Create new API token
   ADD PROVIDER 'name';                                   - Create a provider without API key
   ADD PROVIDER 'name' 'api_key';                         - Create a provider with API key

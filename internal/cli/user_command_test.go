@@ -159,13 +159,13 @@ func TestAPIListIngestionTasksOmitsDatasetIDWhenAbsent(t *testing.T) {
 	}
 }
 
-const tokenStatsFixture = `{"code":0,"message":"success","data":{"period":{"from":"2026-10-17","to":"2026-10-23","timezone":"Asia/Shanghai"},"filters":{"provider_name":"openai","instance_name":"production","model_name":null},"group_by":["day","model"],"summary":{"input_tokens":120000,"output_tokens":30000,"total_tokens":150000},"rows":[{"date":"2026-10-23","provider_name":"openai","instance_name":"production","model_name":"gpt-4o","input_tokens":120000,"output_tokens":30000,"total_tokens":150000}]}}`
+const modelStatsFixture = `{"code":0,"message":"success","data":{"period":{"from":"2026-10-17","to":"2026-10-23","timezone":"Asia/Shanghai"},"filters":{"provider_name":"openai","instance_name":"production","model_name":null},"group_by":["date","model"],"summary":{"input_tokens":120000,"output_tokens":30000,"total_tokens":150000},"rows":[{"date":"2026-10-23","provider_name":"openai","instance_name":"production","model_name":"gpt-4o","input_tokens":120000,"output_tokens":30000,"total_tokens":150000}]}}`
 
-func TestTokenStatsRequestAndJSON(t *testing.T) {
+func TestModelStatsRequestAndJSON(t *testing.T) {
 	for _, auth := range []string{"login", "api"} {
 		t.Run(auth, func(t *testing.T) {
 			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != "GET" || r.URL.Path != "/api/v1/stats/token" {
+				if r.Method != "GET" || r.URL.Path != "/api/v1/system/stats/model" {
 					t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 				}
 				wantAuth := "session-token"
@@ -175,12 +175,12 @@ func TestTokenStatsRequestAndJSON(t *testing.T) {
 				if r.Header.Get("Authorization") != wantAuth {
 					t.Errorf("authorization = %q", r.Header.Get("Authorization"))
 				}
-				wantQuery := url.Values{"days": {"7"}, "provider_name": {"openai"}, "instance_name": {"production"}, "group_by": {"day,model"}}
+				wantQuery := url.Values{"days": {"7"}, "provider": {"openai"}, "instance": {"production"}, "by": {"date,model"}}
 				if !reflect.DeepEqual(r.URL.Query(), wantQuery) {
 					t.Errorf("query = %v, want %v", r.URL.Query(), wantQuery)
 				}
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprint(w, tokenStatsFixture)
+				fmt.Fprint(w, modelStatsFixture)
 			}))
 			token := "session-token"
 			client.LoginToken = &token
@@ -190,9 +190,9 @@ func TestTokenStatsRequestAndJSON(t *testing.T) {
 				client.APIKey = &key
 				client.useAPIKey = true
 			}
-			c := tokenStatsCLI(client, OutputFormatJSON)
-			output := captureTokenStatsOutput(t, func() {
-				if err := c.execute("TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' BY DAY, MODEL;"); err != nil {
+			c := modelStatsCLI(client, OutputFormatJSON)
+			output := captureModelStatsOutput(t, func() {
+				if err := c.execute("SHOW MODEL STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' BY DATE, MODEL;"); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -206,30 +206,30 @@ func TestTokenStatsRequestAndJSON(t *testing.T) {
 			if err := json.Unmarshal([]byte(output), &data); err != nil {
 				t.Fatalf("JSON output invalid: %v: %s", err, output)
 			}
-			if data.Summary.Total != 150000 || len(data.Rows) != 1 || !reflect.DeepEqual(data.GroupBy, []string{"day", "model"}) {
+			if data.Summary.Total != 150000 || len(data.Rows) != 1 || !reflect.DeepEqual(data.GroupBy, []string{"date", "model"}) {
 				t.Fatalf("incomplete JSON output: %s", output)
 			}
 		})
 	}
 }
 
-func TestTokenStatsDefaultAndDateRequests(t *testing.T) {
+func TestModelStatsDefaultAndDateRequests(t *testing.T) {
 	for _, tt := range []struct{ input, query string }{
-		{"TOKEN STATS", ""},
-		{"TOKEN STATS TODAY", "days=1"},
-		{"TOKEN STATS FROM '2026-10-01' TO '2026-10-07' PROVIDER 'a & b' INSTANCE 'prod/eu' MODEL 'x+y' BY MODEL", "from=2026-10-01&group_by=model&instance_name=prod%2Feu&model_name=x%2By&provider_name=a+%26+b&to=2026-10-07"},
+		{"SHOW MODEL STATS", ""},
+		{"SHOW MODEL STATS TODAY", "days=1"},
+		{"SHOW MODEL STATS FROM '2026-10-01' TO '2026-10-07' PROVIDER 'a & b' INSTANCE 'prod/eu' MODEL 'x+y' BY MODEL", "by=model&end=2026-10-07&instance=prod%2Feu&model=x%2By&provider=a+%26+b&start=2026-10-01"},
 	} {
 		t.Run(tt.input, func(t *testing.T) {
 			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.RawQuery != tt.query {
 					t.Errorf("query=%q, want %q", r.URL.RawQuery, tt.query)
 				}
-				fmt.Fprint(w, tokenStatsFixture)
+				fmt.Fprint(w, modelStatsFixture)
 			}))
 			token := "session"
 			client.LoginToken = &token
-			c := tokenStatsCLI(client, OutputFormatJSON)
-			captureTokenStatsOutput(t, func() {
+			c := modelStatsCLI(client, OutputFormatJSON)
+			captureModelStatsOutput(t, func() {
 				if err := c.execute(tt.input); err != nil {
 					t.Fatal(err)
 				}
@@ -238,21 +238,21 @@ func TestTokenStatsDefaultAndDateRequests(t *testing.T) {
 	}
 }
 
-func TestTokenStatsRequiresAuthorization(t *testing.T) {
-	c := tokenStatsCLI(NewHTTPClient(), OutputFormatTable)
-	if err := c.execute("TOKEN STATS"); err == nil || !strings.Contains(err.Error(), "no authorization") {
+func TestModelStatsRequiresAuthorization(t *testing.T) {
+	c := modelStatsCLI(NewHTTPClient(), OutputFormatTable)
+	if err := c.execute("SHOW MODEL STATS"); err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("expected authorization error, got %v", err)
 	}
 }
 
-func TestTokenStatsOutput(t *testing.T) {
+func TestModelStatsOutput(t *testing.T) {
 	for _, format := range []OutputFormat{OutputFormatTable, OutputFormatPlain} {
 		t.Run(string(format), func(t *testing.T) {
-			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, tokenStatsFixture) }))
+			client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, modelStatsFixture) }))
 			token := "session"
 			client.LoginToken = &token
-			output := captureTokenStatsOutput(t, func() {
-				if err := tokenStatsCLI(client, format).execute("TOKEN STATS"); err != nil {
+			output := captureModelStatsOutput(t, func() {
+				if err := modelStatsCLI(client, format).execute("SHOW MODEL STATS"); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -268,7 +268,7 @@ func TestTokenStatsOutput(t *testing.T) {
 	}
 }
 
-func TestTokenStatsResponseErrorsAndEmpty(t *testing.T) {
+func TestModelStatsResponseErrorsAndEmpty(t *testing.T) {
 	for _, tt := range []struct {
 		name       string
 		status     int
@@ -292,7 +292,7 @@ func TestTokenStatsResponseErrorsAndEmpty(t *testing.T) {
 			token := "session"
 			client.LoginToken = &token
 			var err error
-			output := captureTokenStatsOutput(t, func() { err = tokenStatsCLI(client, OutputFormatTable).execute("TOKEN STATS") })
+			output := captureModelStatsOutput(t, func() { err = modelStatsCLI(client, OutputFormatTable).execute("SHOW MODEL STATS") })
 			if tt.wantError {
 				if err == nil || !strings.Contains(err.Error(), tt.want) {
 					t.Fatalf("error=%v, want %s", err, tt.want)
@@ -312,11 +312,11 @@ func TestTokenStatsResponseErrorsAndEmpty(t *testing.T) {
 	}
 }
 
-func tokenStatsCLI(client *HTTPClient, format OutputFormat) *CLI {
+func modelStatsCLI(client *HTTPClient, format OutputFormat) *CLI {
 	return &CLI{Config: &CommandLineConfig{CLIMode: APIMode, OutputFormat: format, APIClientConfig: APIModeConfig{CurrentAPIServer: "test"}}, APIServerClientMap: map[string]*HTTPClient{"test": client}}
 }
 
-func captureTokenStatsOutput(t *testing.T, run func()) string {
+func captureModelStatsOutput(t *testing.T, run func()) string {
 	t.Helper()
 	original := os.Stdout
 	reader, writer, err := os.Pipe()
@@ -332,24 +332,24 @@ func captureTokenStatsOutput(t *testing.T, run func()) string {
 	return <-output
 }
 
-func TestTokenStatsGroupingColumns(t *testing.T) {
+func TestModelStatsGroupingColumns(t *testing.T) {
 	for _, tt := range []struct{ group, header string }{
 		{`["provider"]`, "provider input tokens output tokens total tokens"},
 		{`["instance"]`, "provider instance input tokens output tokens total tokens"},
 		{`["model"]`, "provider instance model input tokens output tokens total tokens"},
-		{`["day"]`, "date input tokens output tokens total tokens"},
-		{`["day","provider"]`, "date provider input tokens output tokens total tokens"},
-		{`["day","instance"]`, "date provider instance input tokens output tokens total tokens"},
-		{`["day","model"]`, "date provider instance model input tokens output tokens total tokens"},
+		{`["date"]`, "date input tokens output tokens total tokens"},
+		{`["date","provider"]`, "date provider input tokens output tokens total tokens"},
+		{`["date","instance"]`, "date provider instance input tokens output tokens total tokens"},
+		{`["date","model"]`, "date provider instance model input tokens output tokens total tokens"},
 	} {
 		t.Run(tt.group, func(t *testing.T) {
-			body := strings.Replace(tokenStatsFixture, `["day","model"]`, tt.group, 1)
-			result, err := handleTokenStatsResponse(&Response{StatusCode: 200, Body: []byte(body)})
+			body := strings.Replace(modelStatsFixture, `["date","model"]`, tt.group, 1)
+			result, err := handleModelStatsResponse(&Response{StatusCode: 200, Body: []byte(body)})
 			if err != nil {
 				t.Fatal(err)
 			}
 			result.SetOutputFormat(OutputFormatPlain)
-			output := captureTokenStatsOutput(t, result.PrintOut)
+			output := captureModelStatsOutput(t, result.PrintOut)
 			for _, line := range strings.Split(output, "\n") {
 				if strings.Contains(line, "input tokens") && strings.Contains(line, "output tokens") {
 					if header := strings.Join(strings.Fields(line), " "); header != tt.header {

@@ -208,29 +208,31 @@ The parser uses the SQL-like command grammar documented in this guide.
 
 ## Token usage statistics
 
-`TOKEN STATS` queries the current user's usage through `GET /api/v1/stats/token`.
-The endpoint contract is proposed for backend implementation; the CLI does not
+`SHOW MODEL STATS` queries the current user's usage through `GET /api/v1/system/stats/model`.
+The endpoint is registered upstream with a not-implemented handler. The response
+contract below is proposed for backend implementation; the CLI does not
 calculate usage or access the database. Authentication uses the current connection's
 login token or API key. No user or tenant ID is sent.
 
 ```sql
-TOKEN STATS;
-TOKEN STATS TODAY;
-TOKEN STATS DAYS 7;
-TOKEN STATS FROM '2026-10-01' TO '2026-10-07';
-TOKEN STATS DAYS 7 PROVIDER 'openai';
-TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production';
-TOKEN STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';
-TOKEN STATS DAYS 7 BY PROVIDER;
-TOKEN STATS DAYS 7 BY INSTANCE;
-TOKEN STATS DAYS 7 BY MODEL;
-TOKEN STATS DAYS 7 BY DAY;
-TOKEN STATS DAYS 7 BY DAY, MODEL;
+SHOW MODEL STATS;
+SHOW MODEL STATS TODAY;
+SHOW MODEL STATS DAYS 7;
+SHOW MODEL STATS FROM '2026-10-01' TO '2026-10-07';
+SHOW MODEL STATS DAYS 7 PROVIDER 'openai';
+SHOW MODEL STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production';
+SHOW MODEL STATS DAYS 7 PROVIDER 'openai' INSTANCE 'production' MODEL 'gpt-4o';
+SHOW MODEL STATS DAYS 7 BY PROVIDER;
+SHOW MODEL STATS DAYS 7 BY INSTANCE;
+SHOW MODEL STATS DAYS 7 BY MODEL;
+SHOW MODEL STATS DAYS 7 BY DATE;
+SHOW MODEL STATS DAYS 7 BY DATE, MODEL;
 ```
 
 Keywords are case-insensitive. Names must be quoted; the semicolon is optional.
+Positional model filters are not accepted.
 `INSTANCE` requires `PROVIDER`; `MODEL` requires both. A `BY` clause selects
-one resource dimension (`PROVIDER`, `INSTANCE`, `MODEL`), `DAY`, or `DAY` followed
+one resource dimension (`PROVIDER`, `INSTANCE`, `MODEL`), `DATE`, or `DATE` followed
 by a comma and one resource dimension. Model groups (`GROUP`) are not supported.
 
 The backend resolves omitted defaults:
@@ -246,8 +248,8 @@ An explicit `BY` overrides this default. Instance rows include their provider;
 model rows include both provider and instance, keeping identically named models
 in different instances separate.
 
-Time is evaluated by the backend in its reported timezone. The default is seven
-calendar days including today. `TODAY` maps to `days=1`; `DAYS 7` includes today
+Time is evaluated by the backend in its reported timezone. The default is today.
+`TODAY` maps to `days=1`; `DAYS 7` includes today
 and the previous six days. A `FROM`/`TO` range includes both dates. The current
 day ends at the query time. `DAYS`, `TODAY`, and `FROM`/`TO` are mutually exclusive.
 
@@ -258,14 +260,14 @@ the entire `data` object without human-readable headings. Unknown input/output
 counts appear as `N/A` in text and `null` in JSON, rather than zero.
 
 ```bash
-bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output json "TOKEN STATS DAYS 7 BY MODEL"
-bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output plain "TOKEN STATS TODAY BY DAY"
+bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output json "SHOW MODEL STATS DAYS 7 BY MODEL"
+bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output plain "SHOW MODEL STATS TODAY BY DATE"
 ```
 
 ### Proposed API contract
 
 ```http
-GET /api/v1/stats/token?days=7&provider_name=openai&instance_name=production&group_by=day,model
+GET /api/v1/system/stats/model?days=7&provider=openai&instance=production&by=date,model
 Authorization: <login_token>
 ```
 
@@ -276,11 +278,11 @@ The backend must authenticate and restrict the query to the current user
 | Query parameter | Contract |
 |---|---|
 | `days` | Positive integer; omitted by CLI unless explicitly selected |
-| `from`, `to` | Paired `YYYY-MM-DD` dates, inclusive; mutually exclusive with `days` |
-| `provider_name` | Optional provider name |
-| `instance_name` | Optional instance name; requires provider |
-| `model_name` | Optional model name; requires provider and instance |
-| `group_by` | `provider`, `instance`, `model`, `day`, `day,provider`, `day,instance`, `day,model` |
+| `start`, `end` | Paired `YYYY-MM-DD` dates, inclusive; mutually exclusive with `days` |
+| `provider` | Optional provider name |
+| `instance` | Optional instance name; requires provider |
+| `model` | Optional model name; requires provider and instance |
+| `by` | `provider`, `instance`, `model`, `date`, `date,provider`, `date,instance`, `date,model` |
 
 ```json
 {
@@ -297,7 +299,7 @@ The backend must authenticate and restrict the query to the current user
       "instance_name": "production",
       "model_name": null
     },
-    "group_by": ["day", "model"],
+    "group_by": ["date", "model"],
     "summary": {
       "input_tokens": 120000,
       "output_tokens": 30000,
@@ -318,14 +320,14 @@ The backend must authenticate and restrict the query to the current user
 }
 ```
 
-`code`, `data.period`, `data.summary`, and `summary.total_tokens` are required.
+`code`, `data.period`, `data.summary`, `summary.total_tokens`, and `data.group_by` are required.
 All token counts are nonnegative integers; unavailable input/output counts are
 `null`. `group_by` is the effective grouping, including defaults. `filters`
 reflects the resolved selection, with unselected fields set to `null`. `rows`
 contains exactly the dimensions requested plus parent identities, and token
 metrics. There is no pagination in this contract. Summary and rows use the same
 query scope; the summary is calculated by the backend, never from displayed rows.
-Rows should be ordered by total tokens descending; when grouped by day, date
+Rows should be ordered by total tokens descending; when grouped by date, date
 ascending comes first, then total tokens descending within each date. The CLI
 preserves the returned order.
 

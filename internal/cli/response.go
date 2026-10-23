@@ -1333,8 +1333,8 @@ func (r *ChatCompletionsResponse) PrintOut() {
 	fmt.Printf("Time: %f\n", r.Duration)
 }
 
-// tokenStatsData is the GET /api/v1/stats/token response payload.
-type tokenStatsData struct {
+// modelStatsData is the GET /api/v1/system/stats/model response payload.
+type modelStatsData struct {
 	Period *struct {
 		From     string `json:"from"`
 		To       string `json:"to"`
@@ -1346,36 +1346,36 @@ type tokenStatsData struct {
 		ModelName    *string `json:"model_name"`
 	} `json:"filters"`
 	GroupBy []string           `json:"group_by"`
-	Summary *tokenStatsMetrics `json:"summary"`
-	Rows    []tokenStatsRow    `json:"rows"`
+	Summary *modelStatsMetrics `json:"summary"`
+	Rows    []modelStatsRow    `json:"rows"`
 }
 
-type tokenStatsMetrics struct {
+type modelStatsMetrics struct {
 	InputTokens  *int64 `json:"input_tokens"`
 	OutputTokens *int64 `json:"output_tokens"`
 	TotalTokens  *int64 `json:"total_tokens"`
 }
 
-type tokenStatsRow struct {
+type modelStatsRow struct {
 	Date         string `json:"date,omitempty"`
 	ProviderName string `json:"provider_name,omitempty"`
 	InstanceName string `json:"instance_name,omitempty"`
 	ModelName    string `json:"model_name,omitempty"`
-	tokenStatsMetrics
+	modelStatsMetrics
 }
 
-// TokenStatsResponse displays the usage summary and grouped details.
-type TokenStatsResponse struct {
-	Data         tokenStatsData
+// ModelStatsResponse displays the usage summary and grouped details.
+type ModelStatsResponse struct {
+	Data         modelStatsData
 	Duration     float64
 	OutputFormat OutputFormat
 }
 
-func (r *TokenStatsResponse) Type() string                        { return "token_stats" }
-func (r *TokenStatsResponse) TimeCost() float64                   { return r.Duration }
-func (r *TokenStatsResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
+func (r *ModelStatsResponse) Type() string                        { return "model_stats" }
+func (r *ModelStatsResponse) TimeCost() float64                   { return r.Duration }
+func (r *ModelStatsResponse) SetOutputFormat(format OutputFormat) { r.OutputFormat = format }
 
-func (r *TokenStatsResponse) PrintOut() {
+func (r *ModelStatsResponse) PrintOut() {
 	if r.OutputFormat == OutputFormatJSON {
 		data, _ := json.MarshalIndent(r.Data, "", "  ")
 		fmt.Println(string(data))
@@ -1406,7 +1406,7 @@ func (r *TokenStatsResponse) PrintOut() {
 	// Include parent identities even when the query spans multiple instances.
 	day, resource := false, ""
 	for _, dimension := range d.GroupBy {
-		if dimension == "day" {
+		if dimension == "date" {
 			day = true
 		} else {
 			resource = dimension
@@ -1448,35 +1448,35 @@ func formatTokenCount(value *int64) string {
 	return strconv.FormatInt(*value, 10)
 }
 
-func handleTokenStatsResponse(response *Response) (ResponseIf, error) {
+func handleModelStatsResponse(response *Response) (ResponseIf, error) {
 	if response.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get token stats: HTTP %d, body: %s", response.StatusCode, response.Body)
+		return nil, fmt.Errorf("failed to get model stats: HTTP %d, body: %s", response.StatusCode, response.Body)
 	}
 	var result struct {
 		Code    *int            `json:"code"`
 		Message string          `json:"message"`
-		Data    *tokenStatsData `json:"data"`
+		Data    *modelStatsData `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body, &result); err != nil {
-		return nil, fmt.Errorf("token stats failed: invalid JSON (%w)", err)
+		return nil, fmt.Errorf("model stats failed: invalid JSON (%w)", err)
 	}
 	if result.Code == nil {
-		return nil, fmt.Errorf("token stats response is missing code")
+		return nil, fmt.Errorf("model stats response is missing code")
 	}
 	if *result.Code != 0 {
-		return nil, fmt.Errorf("token stats failed: %s", result.Message)
+		return nil, fmt.Errorf("model stats failed: %s", result.Message)
 	}
 	if result.Data == nil || result.Data.Period == nil || result.Data.Summary == nil || result.Data.Summary.TotalTokens == nil {
-		return nil, fmt.Errorf("token stats response is missing data, period or summary totals")
+		return nil, fmt.Errorf("model stats response is missing data, period or summary totals")
 	}
 	if result.Data.GroupBy == nil {
-		return nil, fmt.Errorf("token stats response is missing group_by")
+		return nil, fmt.Errorf("model stats response is missing group_by")
 	}
 	switch strings.Join(result.Data.GroupBy, ",") {
-	case "", "provider", "instance", "model", "day", "day,provider", "day,instance", "day,model":
+	case "", "provider", "instance", "model", "date", "date,provider", "date,instance", "date,model":
 	default:
-		return nil, fmt.Errorf("token stats response has unsupported group_by")
+		return nil, fmt.Errorf("model stats response has unsupported group_by")
 	}
 
-	return &TokenStatsResponse{Data: *result.Data, Duration: response.Duration}, nil
+	return &ModelStatsResponse{Data: *result.Data, Duration: response.Duration}, nil
 }

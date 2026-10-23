@@ -319,8 +319,6 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 }
 func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	switch cmd.Type {
-	case "api_token_stats":
-		return c.APITokenStatsCommand(commandCount, cmd)
 	case "api_register_user":
 		return c.RegisterUser(commandCount, cmd)
 	case "api_login_user":
@@ -516,6 +514,8 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowConcurrencyCommand(commandCount, cmd)
 	case "api_show_quota":
 		return c.APIShowQuotaCommand(commandCount, cmd)
+	case "api_show_model_stats":
+		return c.APIShowModelStatsCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":

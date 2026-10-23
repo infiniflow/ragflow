@@ -3946,8 +3946,8 @@ func (c *CLI) APIShowQuotaCommand(commandCount int, cmd *Command) (ResponseIf, e
 	return HandleCommonDataResponse(resp, "get quota")
 }
 
-// APITokenStatsCommand queries token usage for the authenticated user.
-func (c *CLI) APITokenStatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+// APIShowModelStatsCommand queries token usage for the authenticated user.
+func (c *CLI) APIShowModelStatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	client, err := c.apiModeClient()
 	if err != nil {
 		return nil, err
@@ -3956,15 +3956,15 @@ func (c *CLI) APITokenStatsCommand(commandCount int, cmd *Command) (ResponseIf, 
 	for key, value := range cmd.Params {
 		query.Set(key, fmt.Sprint(value))
 	}
-	path := "/stats/token"
+	path := "/system/stats/model"
 	if len(query) > 0 {
 		path += "?" + query.Encode()
 	}
 	response, err := client.Request(commandCount, http.MethodGet, path, client.AuthKind(), nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get token stats: %w", err)
+		return nil, fmt.Errorf("failed to get model stats: %w", err)
 	}
-	result, err := handleTokenStatsResponse(response)
+	result, err := handleModelStatsResponse(response)
 	if err != nil {
 		return nil, err
 	}

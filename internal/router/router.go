@@ -643,7 +643,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
+				system.GET("/stats/chat", r.statsHandler.GetChatStats)
+				system.GET("/stats/group", r.statsHandler.GetGroupStats)
+				system.GET("/stats/model", r.statsHandler.GetModelStats)
 
 				config := system.Group("/config")
 				{
