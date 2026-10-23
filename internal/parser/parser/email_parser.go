@@ -27,11 +27,13 @@ import (
 	"mime/quotedprintable"
 	"net/mail"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
+	htmlcharset "golang.org/x/net/html/charset"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
@@ -172,20 +174,34 @@ func targetFieldsSet(fields []string) map[string]bool {
 
 // rfc2047Decoder decodes RFC 2047 encoded-words (e.g. "=?utf-8?B?...?=") in
 // header values. utf-8 is handled natively by mime; the CharsetReader covers
-// the non-UTF-8 charsets via charsetEncoding.
+// the non-UTF-8 charsets via charsetEncoding, and every other WHATWG label
+// (windows-1250 to windows-1258, iso-8859-2 to iso-8859-16, koi8-r, ...) via
+// htmlcharset.Lookup, as decodeWithCharset does for mail bodies.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
 		if enc, ok := charsetEncoding(charset); ok {
+			return transform.NewReader(input, enc.NewDecoder()), nil
+		}
+		if enc, _ := htmlcharset.Lookup(charset); enc != nil {
 			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
 	},
 }
 
+// latin1EncodedWordRe matches the charset of an RFC 2047 encoded-word
+// labelled ISO-8859-1, with an optional RFC 2231 language suffix. Go's mime
+// package decodes iso-8859-1 itself, byte for byte, without asking the
+// CharsetReader, so the curly quotes, dashes and euro sign that Outlook writes
+// under that label came out as C1 control characters.
+var latin1EncodedWordRe = regexp.MustCompile(`(?i)=\?(?:iso-8859-1|latin1)(\*[^?]*)?\?`)
+
 // decodeHeaderWord decodes any RFC 2047 encoded-words in a header value,
-// leaving undecodable values untouched.
+// leaving undecodable values untouched. An ISO-8859-1 encoded-word is read as
+// windows-1252, as WHATWG specifies for that label and as the HTML path
+// already reads it; the two differ only in bytes 0x80-0x9F.
 func decodeHeaderWord(val string) string {
-	decoded, err := rfc2047Decoder.DecodeHeader(val)
+	decoded, err := rfc2047Decoder.DecodeHeader(latin1EncodedWordRe.ReplaceAllString(val, "=?windows-1252$1?"))
 	if err != nil {
 		return val
 	}
