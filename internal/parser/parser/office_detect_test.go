@@ -73,7 +73,6 @@ func TestDOCXParser_FallsBackToDOCForOLEHeader(t *testing.T) {
 func TestDOCXParser_JSONEmptyIRReturnsError(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 
 	orig := docxExtract
 	defer func() { docxExtract = orig }()
@@ -88,40 +87,16 @@ func TestDOCXParser_JSONEmptyIRReturnsError(t *testing.T) {
 	}
 }
 
-// TestDOCXParser_MarkdownViewErrorPropagated locks Finding 3: when the
-// native backend's Markdown view fails but the other views survive,
-// OpenAndExtract surfaces the Markdown error via mdErr and the Markdown output
-// path must fail loud instead of silently emitting empty markdown. The JSON
-// path is unaffected because it is built from the IR view.
-func TestDOCXParser_MarkdownViewErrorPropagated(t *testing.T) {
+// TestDOCXParser_AllViewsEmptyReturnsError locks the engine-level contract
+// at the parser boundary: when the native backend opens the document but
+// every view (IR / Markdown / PlainText) is empty, OpenAndExtract reports a
+// joined error, and the parser must fail loud rather than silently emit
+// empty JSON. (office_oxide always returns a structured IR for an openable
+// doc, so this all-empty error is simulated via the seam rather than a real
+// fixture.)
+func TestDOCXParser_AllViewsEmptyReturnsError(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
-
-	orig := docxExtract
-	defer func() { docxExtract = orig }()
-	docxExtract = func(data []byte, format string) (string, string, string, error, error) {
-		// IR and plain text survive; only the Markdown view fails.
-		return "<ir/>", "", "plain text fallback", fmt.Errorf("markdown boom"), nil
-	}
-
-	res := p.ParseWithResult(ctx, "broken.docx", []byte("PK\x03\x04"))
-	if res.Err == nil {
-		t.Fatal("expected error when only the Markdown view fails, got nil")
-	}
-}
-
-// TestDOCXParser_AllViewsEmptyMarkdownReturnsError locks the engine-level
-// contract from Finding 1 at the parser boundary: when the native backend
-// opens the document but every view (IR / Markdown / PlainText) is empty,
-// OpenAndExtract reports a joined error, and the default Markdown output path
-// must fail loud rather than silently emit empty markdown. (office_oxide
-// always returns a structured IR for an openable doc, so this all-empty error
-// is simulated via the seam rather than a real fixture.)
-func TestDOCXParser_AllViewsEmptyMarkdownReturnsError(t *testing.T) {
-	ctx := t.Context()
-	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
 
 	orig := docxExtract
 	defer func() { docxExtract = orig }()

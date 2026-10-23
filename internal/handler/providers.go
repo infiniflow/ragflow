@@ -17,7 +17,7 @@
 package handler
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -179,6 +178,44 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
+	apiKey := strings.TrimSpace(c.Query("api_key"))
+	baseURL := strings.TrimSpace(c.Query("base_url"))
+	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+		if err == nil {
+			for _, model := range instanceModels {
+				if _, ok := model["max_tokens"]; !ok {
+					if contextLength, ok := model["context_length"]; ok && contextLength != nil {
+						model["max_tokens"] = contextLength
+					}
+				}
+			}
+			common.SuccessWithData(c, instanceModels, "success")
+			return
+		}
+		if apiKey == "" && baseURL == "" {
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL)
+	if err != nil {
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) {
+			common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+		} else {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		}
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+// FetchProviderModels returns the bundled model catalog, optionally enriched
+// with models discovered from the configured provider endpoint. Admin uses the
+// same catalog behavior while resolving its system-scoped provider data.
+func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL string) ([]map[string]interface{}, error) {
 	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
@@ -186,10 +223,17 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	}
 
 	// 2. Attempt live API fetch when the provider has enough connection data.
-	apiKey := c.Query("api_key")
-	baseURL := c.Query("base_url")
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
+	// remoteFetchErr records why a requested live fetch produced nothing, so it
+	// can be reported when the catalog has no fallback. For a provider that
+	// bundles models an unreachable upstream is not worth failing the request
+	// over — the catalog is still usable — but for one whose whole model list
+	// comes from the live call, an empty result with a swallowed error is
+	// indistinguishable from "this provider serves nothing".
+	var remoteFetchErr error
 
 	bedrockProvider := strings.EqualFold(providerName, "Bedrock")
 	bedrockAPIKeyAuth := false
@@ -219,7 +263,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 					ApiKey: &apiKey,
 					Region: &region,
 				}
-				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
+				if liveModels, err := driver.ListModels(ctx, apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
 						legacyMaxTokens := 0
@@ -235,16 +279,16 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 						})
 					}
 				} else if bedrockAPIKeyAuth {
-					common.ErrorWithCode(c, common.CodeServerError, err.Error())
-					return
+					return nil, common.NewCodedError(common.CodeServerError, err.Error())
+				} else {
+					remoteFetchErr = err
 				}
 			}
 		}
 	}
 	if remoteFetched && bedrockAPIKeyAuth {
 		if len(remoteModels) == 0 {
-			common.ErrorWithCode(c, common.CodeDataError, "No Bedrock models were discovered")
-			return
+			return nil, common.NewCodedError(common.CodeDataError, "No Bedrock models were discovered")
 		}
 		remoteNames := make(map[string]struct{}, len(remoteModels))
 		for _, model := range remoteModels {
@@ -263,10 +307,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		staticModels = filtered
 	}
 
-	// 3. Both empty — return empty success
+	// 3. Nothing to show. A failed live fetch is reported here rather than being
+	// flattened into an empty list: the model list callback is the only signal
+	// the user gets about whether the base URL and key are right, and an empty
+	// success makes a wrong credential look like a provider with no models.
 	if len(staticModels) == 0 && len(remoteModels) == 0 {
-		common.SuccessWithData(c, []map[string]interface{}{}, "success")
-		return
+		if remoteFetchErr != nil {
+			return nil, common.NewCodedError(common.CodeDataError, remoteFetchErr.Error())
+		}
+		return []map[string]interface{}{}, nil
 	}
 
 	// 4. Merge: static as base, remote overrides on name conflicts.
@@ -275,7 +324,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	// 5. Fill missing model types using only the merged list.
 	fillProviderModelMapTypes(result)
 
-	common.SuccessWithData(c, result, "success")
+	return result, nil
 }
 
 // mergeProviderModels collapses the bundled catalog listing and a live upstream
@@ -411,50 +460,6 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 	common.SuccessWithData(c, model, "success")
 }
 
-type CreateProviderInstanceRequest struct {
-	InstanceName string                            `json:"instance_name" binding:"required"`
-	APIKey       json.RawMessage                   `json:"api_key"`
-	BaseURL      string                            `json:"base_url"`
-	Region       string                            `json:"region"`
-	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
-}
-
-// normalizeAPIKey accepts api_key as either a JSON string or a JSON object
-// (credential bundles such as XunFei Spark's
-// {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
-// the string form persisted on the instance.
-func normalizeAPIKey(raw json.RawMessage) string {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, raw); err != nil {
-		return trimmed
-	}
-	return buf.String()
-}
-
-// instanceNamePattern restricts an instance name to digits, underscores,
-// hyphens, and ASCII letters in both cases.
-var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
-
-// validateInstanceName rejects an empty instance name or one carrying any
-// character outside digits, underscores, hyphens, and ASCII letters.
-func validateInstanceName(instanceName string) error {
-	if instanceName == "" {
-		return errors.New("instance name is required")
-	}
-	if !instanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
-	}
-	return nil
-}
-
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -463,19 +468,19 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	var req CreateProviderInstanceRequest
+	var req service.CreateProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
-	if err := validateInstanceName(req.InstanceName); err != nil {
+	if err := service.ValidateProviderInstanceName(req.InstanceName); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	userID := c.GetString("user_id")
-	apiKey := normalizeAPIKey(req.APIKey)
+	apiKey := service.NormalizeAPIKey(req.APIKey)
 
 	// If the request body only contains "instance_name", create a name-only
 	// instance without API key validation or model creation.
@@ -584,7 +589,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, normalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -686,14 +691,6 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 	common.SuccessWithData(c, taskResponse, "success")
 }
 
-type AlterProviderInstanceRequest struct {
-	InstanceName string                             `json:"instance_name"`
-	APIKey       json.RawMessage                    `json:"api_key"`
-	BaseURL      string                             `json:"base_url"`
-	Region       string                             `json:"region"`
-	ModelInfo    *[]service.CreateInstanceModelInfo `json:"model_info" binding:"required"`
-}
-
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
@@ -708,7 +705,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	var req AlterProviderInstanceRequest
+	var req service.AlterProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
@@ -720,7 +717,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, service.NormalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -729,17 +726,13 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	common.SuccessWithMessage(c, "success")
 }
 
-type DropProviderInstanceRequest struct {
-	Instances []string `json:"instances" binding:"required,min=1,dive,required"`
-}
-
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
-	var req DropProviderInstanceRequest
+	var req service.DropProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -798,14 +791,6 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	common.SuccessWithData(c, modelInstances, "success")
 }
 
-type AlterModelRequest struct {
-	ModelID   string      `json:"model_id"`
-	Status    string      `json:"status"`
-	MaxTokens int         `json:"max_tokens"`
-	ModelType interface{} `json:"model_type"`
-	Extra     interface{} `json:"extra"`
-}
-
 func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -819,7 +804,7 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 		return
 	}
 
-	var req AlterModelRequest
+	var req service.AlterModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -923,10 +908,6 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 	common.ErrorWithCode(c, code, "success")
 }
 
-type DropInstanceModelRequest struct {
-	ModelNames []string `json:"model_name"`
-}
-
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -939,7 +920,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 
-	var req DropInstanceModelRequest
+	var req service.DropInstanceModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return

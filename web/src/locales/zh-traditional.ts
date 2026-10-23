@@ -108,7 +108,7 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
@@ -217,6 +217,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      parsingMode: '解析方式',
       builtInSuffix: ' (built in)',
       settings: '設置',
       autoMetadataTip:
@@ -241,8 +242,6 @@ export default {
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
       chinese: '中文',
@@ -708,18 +707,18 @@ export default {
       chatModelTip: '所有新創建的知識庫都會使用默認的聊天模型。',
       ttsModel: '語音合成模型',
       ttsModelTip:
-        '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，請前往「模型供應商」頁面，確認你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
       embeddingModelTip:
-        '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
+        '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
-        '所有新創建的知識庫都將使用默認的 img2txt 模型。它可以描述圖片或視頻。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
+        '所有新創建的知識庫都將使用默認的 img2txt 模型。它可以描述圖片或視頻。如未顯示可選模型，請前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
       sequence2txtModel: 'speech2Txt模型',
       sequence2txtModelTip:
-        '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。',
+        '所有新創建的知識庫都將使用默認的 ASR 模型。使用此模型將語音翻譯為相應的文本。如未顯示可選模型，請前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
       rerankModel: 'rerank模型',
-      rerankModelTip: `默認的 reranking 模型。如未顯示可選模型，請根據 https://ragflow.io/docs/dev/supported_models 確認你的模型供應商是否提供該模型。`,
+      rerankModelTip: `默認的 reranking 模型。如未顯示可選模型，請前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。`,
       workspace: '工作空間',
       upgrade: '升級',
       addLlmTitle: '添加Llm',

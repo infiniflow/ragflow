@@ -345,6 +345,10 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		return
+	}
 
 	ctx := c.Request.Context()
 	members, code, err := h.tenantService.ListMembers(ctx, user.ID, tenantID)
@@ -502,6 +506,10 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		return
+	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -552,12 +560,15 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
-
 	var body struct {
 		UserID string `json:"user_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "user_id is required")
+		return
+	}
+	if body.UserID != user.ID && !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
 		return
 	}
 
@@ -570,7 +581,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
-// AcceptTenantInvite accepts a pending team invitation, transitioning role invite → normal.
+// AcceptTenantInvite accepts a pending invitation, transitioning membership status to joined.
 // @Summary Accept tenant invitation
 // @Tags tenants
 // @Produce json
@@ -588,7 +599,6 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
 		return
 	}
-
 	ctx := c.Request.Context()
 	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
 	if err != nil {
@@ -596,4 +606,9 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, true, "success")
+}
+
+func matchesActiveTenant(c *gin.Context, tenantID string) bool {
+	activeTenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	return activeTenantID == "" || activeTenantID == tenantID
 }

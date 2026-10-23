@@ -199,13 +199,30 @@ type closingLocker struct {
 	db *gorm.DB
 }
 
-func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
+func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
 	sqlDB, _ := l.db.DB()
 	_ = sqlDB.Close()
-	return ConnectorLockLease{}, false
+	return ConnectorLockLease{}, false, nil
 }
 
 func (l closingLocker) Unlock(connectorID, kbID string) {}
+
+type cancelingErrorLocker struct {
+	cancel      context.CancelFunc
+	beforeError func()
+}
+
+func (l cancelingErrorLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
+	if l.cancel != nil {
+		l.cancel()
+	}
+	if l.beforeError != nil {
+		l.beforeError()
+	}
+	return ConnectorLockLease{}, false, errors.New("lock backend unavailable")
+}
+
+func (l cancelingErrorLocker) Unlock(connectorID, kbID string) {}
 
 // DeleteDocument records one delete.
 func (d *fakeDeleter) DeleteDocument(ctx context.Context, docID string) error {
@@ -706,8 +723,9 @@ func TestNATSTaskWorkerClaimsAndAcksOnSuccess(t *testing.T) {
 	}
 }
 
-// TestNATSTaskWorkerAcksUnclaimableMessage verifies duplicate/stale messages do not redeliver forever.
-func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
+// TestNATSTaskWorkerNacksRunningUnclaimableMessage keeps a delivery pending
+// until the active owner completes or restores the task to schedule state.
+func TestNATSTaskWorkerNacksRunningUnclaimableMessage(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
@@ -718,6 +736,20 @@ func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
+	if handle.acks != 0 || handle.nacks != 1 {
+		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
+	}
+}
+
+func TestNATSTaskWorkerAcksMissingTaskMessage(t *testing.T) {
+	db := setupSyncerDB(t)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "missing-task", TaskType: common.TaskTypeSyncer}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, nil, nil)
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "missing-task", Handle: handle})
+
 	if handle.acks != 1 || handle.nacks != 0 {
 		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
 	}
@@ -754,6 +786,75 @@ func TestNATSTaskWorkerRetriesStillScheduledUnclaimedTask(t *testing.T) {
 	scheduler.timerMu.Unlock()
 	if timer == nil {
 		t.Fatalf("scheduled prune retry timer was not registered")
+	}
+}
+
+// TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation verifies that a
+// restored task is still published when worker cancellation races with a lock error.
+func TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	published := make(chan string, 1)
+	broker := &fakeSyncTaskBroker{onPublish: func(taskID string) { published <- taskID }}
+	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
+	t.Cleanup(scheduler.stopTimers)
+	ctx, cancel := context.WithCancel(t.Context())
+	failedReschedule := false
+	worker := NewTaskWorker(
+		make(chan TaskEnvelope, 1),
+		taskDAO,
+		taskService,
+		nil,
+		cancelingErrorLocker{
+			cancel: cancel,
+			beforeError: func() {
+				if err := db.Callback().Update().Before("gorm:update").Register("test:fail_first_reschedule", func(tx *gorm.DB) {
+					if !failedReschedule && tx.Statement.Table == "sync_logs" {
+						failedReschedule = true
+						tx.AddError(errors.New("temporary reschedule failure"))
+					}
+				}); err != nil {
+					t.Fatalf("register reschedule failure callback: %v", err)
+				}
+			},
+		},
+	).WithScheduler(scheduler)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
+
+	worker.handle(ctx, TaskEnvelope{TaskID: "task-1", Handle: handle})
+
+	if handle.acks != 1 || handle.nacks != 0 {
+		t.Fatalf("settlement acks=%d nacks=%d, want ack without nack", handle.acks, handle.nacks)
+	}
+	if !failedReschedule {
+		t.Fatal("reschedule failure callback was not exercised")
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load restored task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("task status = %s, want schedule", task.Status)
+	}
+	scheduler.timerMu.Lock()
+	timer := scheduler.timers["task-1"]
+	if timer != nil {
+		timer.Reset(time.Millisecond)
+	}
+	scheduler.timerMu.Unlock()
+	if timer == nil {
+		t.Fatal("lock-error retry timer was not registered")
+	}
+
+	select {
+	case taskID := <-published:
+		if taskID != "task-1" {
+			t.Fatalf("published task ID = %q, want task-1", taskID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("lock-error retry was not published after worker cancellation")
 	}
 }
 

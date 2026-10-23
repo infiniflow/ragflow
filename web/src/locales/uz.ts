@@ -558,7 +558,7 @@ export default {
       webCrawl: 'Veb-tarraqlash',
       chunkNumber: 'Bo‘laklar',
       uploadDate: 'Yuklash sanasi',
-      chunkMethod: 'Bo‘laklash usuli',
+      parsingMode: 'Tahlil rejimi',
       enabled: 'Yoqish',
       disabled: 'O‘chirish',
       action: 'Amal',
@@ -750,7 +750,7 @@ export default {
       dataFlowPlaceholder: 'Iltimos, pipelineni tanlang.',
       buildItFromScratch: 'Noldan qurish',
       dataFlow: 'Pipeline',
-      parseType: 'Tahlil rejimi',
+      parsingMode: 'Tahlil rejimi',
       manualSetup: 'Maxsus ingestsiya pipeline',
       builtIn: 'Ichki tahlil shabloni',
       noConfigChunkerHint:
@@ -774,8 +774,6 @@ export default {
         '«Jamoa» qilib belgilansa, jamoangizning barcha a’zolari to‘plamni boshqarishi mumkin.',
       chunkTokenNumberTip:
         'Bu bo‘lak yaratish uchun token chegarasini belgilaydi. Bu chegaradan kam tokenli segment keyingi segmentlar bilan chegaradan oshmaguncha birlashtiriladi va aynan shu nuqtada bo‘lak yaratiladi. Chegara oshsa ham, ajratgich uchraguniga qadar yangi bo‘lak yaratilmaydi.',
-      chunkMethod: 'Bo‘laklash usuli',
-      chunkMethodTip: 'O‘ng tomondagi maslahatlarni ko‘ring.',
       upload: 'Yuklash',
       english: 'Ingliz tili',
       chinese: 'Xitoy tili',
@@ -1220,9 +1218,6 @@ export default {
       },
       cancel: 'Bekor qilish',
       chatSetting: 'Chat sozlashi',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'Hujjatni tahlil qilish davomida mundarija ma’lumotlari generatsiya qilingan (Umumiy usuldagi ‘Mundarija ajratib olishni yoqish’ opsiyasini ko‘ring). Bu katta modelga foydalanuvchi so‘roviga tegishli mundarija elementlarini qaytarish imkonini beradi, shu orqali ushbu elementlardan tegishli bo‘laklarni olish va tartiblash jarayonida ularga vazn qo‘llash mumkin. Bu yondashuv kitoblardagi inson axborot izlash xatti-harakatiga taqlid qiladi.',
       batchDeleteSessions: 'Ommaviy o‘chirish',
       deleteSelectedConfirm: 'Tanlangan {{count}} sessiya(o‘chirilsinmi)?',
       showChunkMetadata: 'Bo‘lak metadatasini ko‘rsatish',
@@ -2096,19 +2091,19 @@ export default {
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini https://ragflow.io/docs/dev/supported_models’dan tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini “Model provayderlari” sahifasidan tekshiring.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart ASR modeli. Ovozni mos matnga ko‘chirish uchun shu modeldan foydalaning.',
       rerankModel: 'Rerank',
       rerankModelTip:
-        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       ttsModel: 'TTS',
       ttsModelTip:
-        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       workspace: 'ish maydoni',
       upgrade: 'Yangilash',
       addLlmTitle: 'LLM qo‘shish',

@@ -61,7 +61,7 @@ func TestEnsureMonkeyOCRFromEnvSkipsBlankAPIServer(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRAPIServer, "")
 
 	svc := &ModelProviderService{}
-	if err := svc.ensureMonkeyOCRFromEnv(context.Background(), "tenant-id"); err != nil {
+	if err := svc.ensureMonkeyOCRFromEnv(context.Background(), "user-id", "tenant-id"); err != nil {
 		t.Fatalf("ensureMonkeyOCRFromEnv: %v", err)
 	}
 }
@@ -319,8 +319,8 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "user-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -337,7 +337,7 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 	activeStatus := "1"
 	for _, row := range []interface{}{
 		&entity.UserTenant{ID: "user-tenant-bedrock", UserID: "user-1", TenantID: "tenant-bedrock", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-bedrock", TenantID: "tenant-bedrock", ProviderName: "Bedrock"},
+		&entity.TenantModelProvider{ID: "provider-bedrock", UserID: "user-1", TenantID: "tenant-bedrock", ProviderName: "Bedrock"},
 	} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("failed to seed %T: %v", row, err)
@@ -485,12 +485,18 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	if err := db.Create(&entity.UserTenant{
 		ID:        "user-tenant-member",
 		UserID:    "member-1",
-		TenantID:  "tenant-1",
+		TenantID:  "user-1",
 		Role:      string(permission.RoleNormal),
 		InvitedBy: "user-1",
 		Status:    &activeStatus,
 	}).Error; err != nil {
 		t.Fatalf("seed tenant member: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "member-1-owner", UserID: "member-1", TenantID: "member-1",
+		Role: string(permission.RoleOwner), InvitedBy: "member-1", Status: &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed member's personal tenant: %v", err)
 	}
 
 	ctx := t.Context()
@@ -505,7 +511,7 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	}
 
 	factory := NewModelFactory()
-	access := ModelAccess{UserID: "member-1", TenantID: "tenant-1"}
+	access := ModelAccess{UserID: "member-1", TenantID: "user-1"}
 	if _, err = factory.resolveConfig(ctx, access, entity.ModelTypeChat, "model-1"); err != nil {
 		t.Fatalf("member should be able to use the tenant model: %v", err)
 	}
@@ -534,7 +540,7 @@ func TestListProvidersOfTenantExcludesOtherTenants(t *testing.T) {
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
 		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "Anthropic"},
+		&entity.TenantModelProvider{ID: "provider-2", UserID: "owner-2", TenantID: "tenant-2", ProviderName: "Anthropic"},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -559,7 +565,7 @@ func TestListProviderInstancesUsesOwnedTenantProvider(t *testing.T) {
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
 		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-2", UserID: "owner-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "other-default", APIKey: "sk-other", Status: "active", Extra: "{}"},
 	}
 	for _, row := range rows {
@@ -590,7 +596,7 @@ func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
 		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-2", UserID: "owner-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "default", APIKey: "sk-other", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-2", ProviderID: "provider-2", InstanceID: "instance-2", ModelName: "foreign-model", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -625,7 +631,7 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
 		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-2", UserID: "owner-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "default", APIKey: "sk-other", Status: "active", Extra: "{}"},
 	}
 	for _, row := range rows {
@@ -642,8 +648,11 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 	if instance["id"] != "instance-1" || instance["provider_id"] != "provider-1" {
 		t.Fatalf("ShowProviderInstance() = %v, want user-1's own-tenant instance", instance)
 	}
+	if instance["api_key"] != "sk-test" {
+		t.Fatalf("ShowProviderInstance() api_key = %v, want owner credential", instance["api_key"])
+	}
 
-	if _, code, err = service.ShowProviderInstance(t.Context(), "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeDataError {
+	if _, code, err = service.ShowProviderInstance(t.Context(), "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeNotFound {
 		t.Fatalf("ShowProviderInstance() for another tenant's provider = (%v, %v), want hidden provider", code, err)
 	}
 }
@@ -688,7 +697,7 @@ func TestModelFactoryResolveModelConfigByID(t *testing.T) {
 	seedModelProviderServiceScope(t, db)
 
 	ctx := t.Context()
-	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
@@ -708,6 +717,7 @@ func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *te
 	useModelProviderServiceTestDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "user-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -747,13 +757,13 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 		{
 			name: "model ID",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 			},
 		},
 		{
 			name: "provider instance",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "user-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
 			},
 		},
 	}
@@ -1009,8 +1019,8 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-own", TenantID: "tenant-1", ProviderName: "OpenAI"},
-		&entity.TenantModelProvider{ID: "provider-other", TenantID: "tenant-2", ProviderName: "Anthropic"},
+		&entity.TenantModelProvider{ID: "provider-own", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-other", UserID: "owner-2", TenantID: "tenant-2", ProviderName: "Anthropic"},
 		&entity.TenantModelInstance{ID: "instance-own", ProviderID: "provider-own", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModelInstance{ID: "instance-other", ProviderID: "provider-other", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-active", ProviderID: "provider-own", InstanceID: "instance-own", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
@@ -1084,7 +1094,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	rows := []interface{}{
-		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-openai", ProviderID: "provider-openai", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		// Catalog says tools are supported; the tenant disabled them.
 		&entity.TenantModel{ID: "model-on-off", ProviderID: "provider-openai", InstanceID: "instance-openai", ModelName: toolsOn, ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
@@ -1132,7 +1142,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "ut-1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "tenant-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
 	}

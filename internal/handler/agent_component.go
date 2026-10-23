@@ -203,16 +203,30 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// debug works on a single component without standing up the
 	// full canvas compile.
 	//
-	// Seed state.Sys["tenant_id"] with the canvas owner so that
-	// components which resolve LLM credentials from the tenant
-	// tables (e.g. AgentComponent) can find the API key in single-
-	// component debug mode. Mirrors Python's @add_tenant_id_to_kwargs
-	// decorator for the debug endpoint.
+	// Seed the authenticated caller identity (sys.user_id / sys.tenant_id)
+	// through the same entry the run bootstrap uses, so components that
+	// authorize against it (e.g. knowledge retrieval) and components that
+	// resolve LLM credentials from the tenant tables (e.g. AgentComponent)
+	// behave in single-component debug mode exactly as they do in a real
+	// run. Mirrors Python's @add_tenant_id_to_kwargs decorator and keeps the
+	// two paths from drifting. The request body must not override either key.
+	//
+	// Also seed cpnID@param inputs into state.Outputs so a single-component
+	// debug can resolve the {{cpn@param}} references its prompt/template
+	// declares (e.g. Agent reading an upstream Retrieval's
+	// formalized_content) without running the upstream components. Split on
+	// the first '@' because cpn IDs may contain ':' but never '@'; SetVar
+	// nests any dotted tail the same way getVarLocked reads it back.
 	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
-	debugState.Sys["tenant_id"] = user.ID
+	debugState.SeedIdentity(user.ID, user.ID)
 	for key, value := range inputs {
-		if strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" {
+		switch {
+		case strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" && key != "sys.user_id":
 			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
+		case strings.Contains(key, "@"):
+			if idx := strings.Index(key, "@"); idx > 0 && idx < len(key)-1 {
+				debugState.SetVar(key[:idx], key[idx+1:], value)
+			}
 		}
 	}
 	// Permission checks in Retrieval use the authenticated caller and the

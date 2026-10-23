@@ -10,7 +10,7 @@ const defaultValues = {
   topPEnabled: true,
   presencePenaltyEnabled: true,
   frequencyPenaltyEnabled: true,
-  maxTokensEnabled: true,
+  maxTokensEnabled: false,
   items: [],
 };
 

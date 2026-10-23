@@ -20,6 +20,8 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
+
+	"ragflow/internal/common"
 )
 
 func TestParseIngestorConfigReadsWorkerAndCompilerSettings(t *testing.T) {
@@ -125,6 +127,110 @@ func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 			config := &Config{}
 			if err := config.ParseIngestorConfig(v); err != nil {
 				t.Fatalf("ParseIngestorConfig rejected page_concurrency=%d: %v (validation moved to resolver)", tc.value, err)
+			}
+		})
+	}
+}
+
+// TestGetIngestorMaxConcurrentWorkers pins the precedence
+// CLI > environment > config file > default(1) and the inclusive [1, 256]
+// range guard on the FINAL value. An out-of-range or non-integer value at
+// any layer is a fatal startup error.
+func TestGetIngestorMaxConcurrentWorkers(t *testing.T) {
+	const envKey = common.EnvIngestorMaxConcurrentWorkers
+
+	cases := []struct {
+		name       string
+		configured int
+		env        string // "" means leave unset
+		argValue   *int
+		want       int
+		wantErr    bool
+	}{
+		{"default", 0, "", nil, 1, false},
+		{"config only", 5, "", nil, 5, false},
+		{"env overrides config", 5, "8", nil, 8, false},
+		{"cli overrides env and config", 5, "8", intPtr(12), 12, false},
+		{"env invalid errors", 5, "notanint", nil, 0, true},
+		{"env only", 0, "9", nil, 9, false},
+		{"config above range errors", 300, "", nil, 0, true},
+		{"cli below range errors", 0, "", intPtr(0), 0, true},
+		{"cli above range errors", 0, "", intPtr(1000), 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// t.Setenv restores the previous value after the subtest.
+			t.Setenv(envKey, tc.env)
+			c := &Config{}
+			if err := c.ParseIngestorConfig(viper.New()); err != nil {
+				t.Fatalf("ParseIngestorConfig: %v", err)
+			}
+			c.ingestor.MaxConcurrentWorkers = tc.configured
+			got, err := c.GetIngestorMaxConcurrentWorkers(tc.argValue)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
+						tc.configured, tc.env, tc.argValue)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.env, tc.argValue)
+			}
+		})
+	}
+}
+
+// TestGetIngestorPageConcurrency pins the precedence
+// CLI > environment > config file > default(2) and the inclusive [1, 16]
+// range guard on the FINAL value. An out-of-range or non-integer value at
+// any layer is a fatal startup error.
+func TestGetIngestorPageConcurrency(t *testing.T) {
+	const envKey = common.EnvIngestorPageConcurrency
+
+	cases := []struct {
+		name       string
+		configured int
+		env        string // "" means leave unset
+		argValue   *int
+		want       int
+		wantErr    bool
+	}{
+		{"default", 0, "", nil, 2, false},
+		{"config only", 6, "", nil, 6, false},
+		{"env overrides config", 6, "8", nil, 8, false},
+		{"cli overrides env and config", 6, "8", intPtr(12), 12, false},
+		{"env invalid errors", 6, "notanint", nil, 0, true},
+		{"env only", 0, "9", nil, 9, false},
+		{"config above range errors", 20, "", nil, 0, true},
+		{"cli below range errors", 0, "", intPtr(0), 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(envKey, tc.env)
+			c := &Config{}
+			if err := c.ParseIngestorConfig(viper.New()); err != nil {
+				t.Fatalf("ParseIngestorConfig: %v", err)
+			}
+			c.ingestor.PageConcurrency = tc.configured
+			got, err := c.GetIngestorPageConcurrency(tc.argValue)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
+						tc.configured, tc.env, tc.argValue)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.env, tc.argValue)
 			}
 		})
 	}

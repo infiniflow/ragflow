@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -231,7 +232,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if customDelimiter {
 		units = splitGeneralUnits(units, primaryPattern, false)
@@ -265,7 +266,6 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			media := cloneChunkDoc(unit)
 			media.Text = normalizeGeneralNewlines(media.Text)
 			media.DocType = itemDocType(media)
-			media.CKType = media.DocType
 			chunks = append(chunks, media)
 		}
 	}
@@ -291,9 +291,8 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 }
 
 // sortPDFUnits orders each contiguous positioned run by physical reading
-// order. Coordinate-free units are barriers: they stay at their parser
-// positions and preserve their relative order instead of being moved to the
-// end of the document.
+// order. Units with explicit parser order or without coordinates are barriers:
+// they stay at their parser positions and preserve their relative order.
 func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	type positionedUnit struct {
 		unit       schema.ChunkDoc
@@ -303,7 +302,7 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	ordered := make([]positionedUnit, 0, len(units))
 	for _, unit := range units {
 		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
-		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok})
+		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok && !unit.PreserveOrder})
 	}
 	runStart := -1
 	flush := func(end int) {
@@ -402,19 +401,38 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 		return emptyOutputs(), nil
 	}
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
-	if !customDelimiter {
+	recordPrefixes := chunk.CustomDelimiterPrefixes(c.param.Delimiters)
+	recordGrouped := false
+	if len(recordPrefixes) > 0 {
+		units, recordGrouped = groupDOCXUnitsByRecordBoundary(units, recordPrefixes)
+	}
+	splitPattern := primaryPattern
+	if recordGrouped {
+		// Grouped records join paragraphs with "\n"; bare "\n" in the default
+		// delimiter list must not re-split them (#20496).
+		splitPattern = chunk.CompileDelimiterListPattern(c.param.Delimiters)
+	}
+	if !customDelimiter && !recordGrouped {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 		units = separateGeneralTextBlocks(units)
 	}
-	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
-	if customDelimiter {
+	if recordGrouped {
+		units = splitGeneralUnitsPreservingRecordPrefix(units, splitPattern, recordPrefixes)
+	} else {
+		units = splitGeneralUnits(units, splitPattern, !customDelimiter)
+	}
+	if customDelimiter || recordGrouped {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	} else {
 		units = mergeDOCXUnits(units, c.param.ChunkTokenSize)
 	}
-	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "")
+	overlapSep := ""
+	if recordGrouped {
+		overlapSep = "\n"
+	}
+	units = applyGeneralOverlap(units, c.param.OverlappedPercent, overlapSep)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
@@ -446,6 +464,76 @@ func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
 		previousText = i
 	}
 	return units
+}
+
+// groupDOCXUnitsByRecordBoundary merges consecutive text paragraphs into one
+// unit until a paragraph begins with a custom (backtick) delimiter prefix.
+// DOCX upstream emits one paragraph per unit, so a custom delimiter that only
+// appears at the start of each logical record must group paragraphs rather
+// than split within a single paragraph (#20496).
+func groupDOCXUnitsByRecordBoundary(units []schema.ChunkDoc, recordPrefixes []string) ([]schema.ChunkDoc, bool) {
+	if len(recordPrefixes) == 0 {
+		return units, false
+	}
+	grouped := make([]schema.ChunkDoc, 0, len(units))
+	var current *schema.ChunkDoc
+	sawBoundary := false
+	flush := func() {
+		if current == nil {
+			return
+		}
+		grouped = append(grouped, *current)
+		current = nil
+	}
+	for _, unit := range units {
+		if itemDocType(unit) != "text" {
+			flush()
+			media := cloneChunkDoc(unit)
+			media.DocType = itemDocType(media)
+			grouped = append(grouped, media)
+			continue
+		}
+		if strings.TrimSpace(unit.Text) == "" {
+			continue
+		}
+		text := cloneChunkDoc(unit)
+		text.DocType = "text"
+		clearStructuralLayout(&text)
+		if docxTextStartsRecordBoundary(text.Text, recordPrefixes) {
+			sawBoundary = true
+			flush()
+			current = &text
+			continue
+		}
+		if !sawBoundary {
+			flush()
+			grouped = append(grouped, text)
+			continue
+		}
+		if current == nil {
+			current = &text
+			continue
+		}
+		mergeGeneralChunk(current, text, "\n")
+	}
+	flush()
+	if !sawBoundary {
+		return units, false
+	}
+	return grouped, true
+}
+
+func docxTextStartsRecordBoundary(text string, recordPrefixes []string) bool {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	for _, prefix := range recordPrefixes {
+		if prefix == "" {
+			continue
+		}
+		if strings.HasPrefix(text, prefix) || strings.HasPrefix(trimmed, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // mergeDOCXUnits keeps the previous text merge target across intervening
@@ -627,7 +715,7 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 		return emptyOutputs(), nil
 	}
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if !customDelimiter {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
@@ -652,7 +740,7 @@ type markdownSplit struct {
 }
 
 // splitMarkdownUnits expands only text units while retaining the semantic
-// parser type on every piece. Markdown heading detection depends on ck_type,
+// parser type on every piece. Markdown heading detection depends on layout,
 // so the generic splitter's type normalization cannot be used here.
 func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) markdownSplit {
 	result := markdownSplit{
@@ -663,12 +751,15 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
-		if !keepDelimiter || unit.CKType == "heading" {
+		if !keepDelimiter || isHeadingLayout(unit.Layout) {
 			unit.Text = strings.TrimSpace(unit.Text)
 		}
 		unit.DocType = itemDocType(unit)
+		// Media units are content attachments, not block-kind boundaries.
+		// Base normalized the media type here, so an image-only heading
+		// folded into the preceding chunk; preserve that behavior.
 		if unit.DocType == "table" || unit.DocType == "image" {
-			unit.CKType = unit.DocType
+			clearStructuralLayout(&unit)
 		}
 		shortHeading := isShortMarkdownHeading(unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
@@ -748,7 +839,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			joinSep = "\n"
 		}
 		if itemDocType(unit) == "table" {
-			if current >= 0 && merged[current].CKType == "heading" && previousShortHeading {
+			if current >= 0 && isHeadingLayout(merged[current].Layout) && previousShortHeading {
 				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
 				if !imagesOK {
 					merged = append(merged, cloneChunkDoc(unit))
@@ -769,7 +860,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 				mergeGeneralMetadata(&table, heading)
 				table.Image = mergedImage
 				table.DocType = "table"
-				table.CKType = "table"
 				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
 				merged[current] = table
 				current = -1
@@ -789,9 +879,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			}
 			standalone := cloneChunkDoc(unit)
 			standalone.DocType = "image"
-			if standalone.CKType == "" {
-				standalone.CKType = "image"
-			}
 			standalone.TKNums = intPtr(generalUnitTokens(standalone))
 			merged = append(merged, standalone)
 			continue
@@ -799,9 +886,6 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 
 		unit = cloneChunkDoc(unit)
 		unit.DocType = "text"
-		if unit.CKType == "" {
-			unit.CKType = "text"
-		}
 		unit.TKNums = intPtr(generalUnitTokens(unit))
 		if current < 0 {
 			merged = append(merged, unit)
@@ -812,13 +896,13 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 
 		previous := &merged[current]
 		unitTokens := generalUnitTokens(unit)
-		if startsBlock && unit.CKType == "heading" && previous.CKType != "heading" {
+		if startsBlock && isHeadingLayout(unit.Layout) && !isHeadingLayout(previous.Layout) {
 			merged = append(merged, unit)
 			current = len(merged) - 1
 			currentTokens = unitTokens
 			continue
 		}
-		forceMerge := previous.CKType == "heading" && previousShortHeading
+		forceMerge := isHeadingLayout(previous.Layout) && previousShortHeading
 		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
 		if !imagesOK {
 			merged = append(merged, unit)
@@ -850,8 +934,8 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 		mergeGeneralChunk(previous, unit, joinSep)
 		previous.Image = mergedImage
 		previous.DocType = "text"
-		if startsBlock || unit.CKType != "heading" {
-			previous.CKType = "text"
+		if startsBlock || !isHeadingLayout(unit.Layout) {
+			clearStructuralLayout(previous)
 		}
 		currentTokens = projected
 		previous.TKNums = intPtr(currentTokens)
@@ -860,7 +944,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 }
 
 func isShortMarkdownHeading(unit schema.ChunkDoc) bool {
-	if unit.CKType != "heading" {
+	if !isHeadingLayout(unit.Layout) {
 		return false
 	}
 	return tokenizeStr(markdownHeadingContent(unit.Text)) < 50
@@ -964,12 +1048,12 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		if itemDocType(unit) == "table" && tableDataOf(unit) != nil {
-			chunks = append(chunks, c.splitSpreadsheetTable(unit)...)
+			chunks = append(chunks, c.splitSpreadsheetTable(unit, upstream.DocID)...)
 			continue
 		}
 		chunks = append(chunks, cloneChunkDoc(unit))
 	}
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
@@ -984,17 +1068,27 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 // whole; a split whose matrix cannot be aligned to the markup rows drops
 // positions rather than pointing every sub-table row at the full matrix (R1).
 //
+// The budget covers data rows only — the replicated header is fixed
+// boilerplate and does not consume the per-part allowance (see
+// splitLargeTable). docID attributes the oversized-header warning.
+//
 // The legacy path merged adjacent rows by token budget into multi-row chunks
 // and deferred the header; a segment now passes through whole unless the
 // budget forces a cut, and the header repeats in every part.
-func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []schema.ChunkDoc {
+func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, docID string) []schema.ChunkDoc {
 	td := tableDataOf(unit)
 	if td == nil {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
-	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr)
+	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr, docID)
 	if ranges == nil {
-		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+		// The whole table fits one chunk: render it as HTML on Text so the
+		// persisted content and the id (hash of Text) stay byte-consistent and
+		// the UI can display a real table. TableData is dropped, never indexed.
+		out := cloneChunkDoc(unit)
+		out.Text = tableutil.RenderTableHTML(td)
+		out.TableData = nil
+		return []schema.ChunkDoc{out}
 	}
 	var matrix [][]float64
 	// Spreadsheet items only: PDF items write layout boxes into the same
@@ -1021,11 +1115,12 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
-		// Text carries a plain-text rendering (no markup) for the rare embed
-		// path without a downstream TableChunker; the structured TableData is
-		// the authoritative content for chunkers that read it.
-		piece.Text = tableutil.RenderTableText(&part)
-		piece.TableData = &part
+		// Text carries the sub-table rendered as HTML so the persisted content
+		// and the chunk id (hash of Text) stay byte-consistent and the UI can
+		// display a real table. The structured TableData is dropped here and is
+		// never serialized to the index.
+		piece.Text = tableutil.RenderTableHTML(&part)
+		piece.TableData = nil
 		piece.Positions = nil
 		lo := headerRows + ranges[i][0]
 		hi := headerRows + ranges[i][1]
@@ -1054,7 +1149,7 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 		return emptyOutputs(), nil
 	}
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
@@ -1089,7 +1184,7 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 
 		count := generalUnitTokens(unit)
 		unit.DocType = "text"
-		unit.CKType = "text"
+		clearStructuralLayout(&unit)
 		unit.TKNums = intPtr(count)
 		if count > target {
 			merged = append(merged, cloneChunkDoc(unit))
@@ -1178,7 +1273,7 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 }
 
 func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
-	if positions := mergePositionMatrix(first, second); len(positions) > 0 {
+	if positions := mergePositionMatrix(first, second); positions != nil {
 		encoded, err := json.Marshal(positions)
 		if err == nil {
 			return encoded
@@ -1224,13 +1319,69 @@ func joinGeneralOverlapText(prefix, text, separator string) string {
 	return prefix + separator + text
 }
 
+// splitGeneralUnitsPreservingRecordPrefix is splitGeneralUnits, except a
+// leading custom-delimiter record prefix (for example "问：") is kept on the
+// first fragment. Inline delimiter matches are still dropped in splitByDelim
+// drop mode.
+func splitGeneralUnitsPreservingRecordPrefix(units []schema.ChunkDoc, pattern *regexp.Regexp, recordPrefixes []string) []schema.ChunkDoc {
+	result := make([]schema.ChunkDoc, 0, len(units))
+	for _, unit := range units {
+		unit = cloneChunkDoc(unit)
+		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		unit.DocType = itemDocType(unit)
+		clearStructuralLayout(&unit)
+		prefix, rest := peelLeadingRecordPrefix(unit.Text, recordPrefixes)
+		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(rest) {
+			unit.Text = prefix + rest
+			unit.TKNums = intPtr(tokenizeStr(unit.Text))
+			result = append(result, unit)
+			continue
+		}
+		parts := splitByDelim(rest, pattern, false)
+		filtered := make([]string, 0, len(parts))
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" {
+				continue
+			}
+			filtered = append(filtered, part)
+		}
+		if len(filtered) > 0 {
+			filtered[0] = prefix + filtered[0]
+		}
+		for _, piece := range sliceGeneralSplitPieces(unit, filtered) {
+			result = append(result, piece)
+		}
+	}
+	return result
+}
+
+func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest string) {
+	if len(prefixes) == 0 {
+		return "", text
+	}
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	leadingWS := text[:len(text)-len(trimmed)]
+	for _, p := range prefixes {
+		if p == "" {
+			continue
+		}
+		if strings.HasPrefix(text, p) {
+			return p, text[len(p):]
+		}
+		if strings.HasPrefix(trimmed, p) {
+			return leadingWS + p, trimmed[len(p):]
+		}
+	}
+	return "", text
+}
+
 func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) []schema.ChunkDoc {
 	result := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
-		unit.CKType = unit.DocType
+		clearStructuralLayout(&unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)

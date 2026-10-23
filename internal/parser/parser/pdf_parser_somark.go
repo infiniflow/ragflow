@@ -13,19 +13,21 @@ import (
 	"strings"
 )
 
+// parsePDFWithSoMark submits a PDF and converts the task result into parser
+// output. Explicit tenant configuration never borrows a global endpoint or key.
 func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
 	baseURL := strings.TrimSpace(parser.SoMarkBaseURL)
-	if baseURL == "" {
+	if baseURL == "" && !parser.UseTenantModelConfig {
 		baseURL = strings.TrimSpace(common.GetEnv(common.EnvSOMarkBaseUrl))
 	}
 	if baseURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark requires somark_base_url or SOMARK_BASE_URL")}
 	}
 	apiKey := parser.SoMarkAPIKey
-	if strings.TrimSpace(apiKey) == "" {
+	if strings.TrimSpace(apiKey) == "" && !parser.UseTenantModelConfig {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
 	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
@@ -40,9 +42,11 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if len(items) == 0 {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark returned no usable blocks")}
 	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
+	return pdfItemsToResult(filename, items, pageCount)
 }
 
+// soMarkSubmit uploads a PDF with the supplied credentials and parser options,
+// applying environment defaults only when no tenant instance was selected.
 func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -55,19 +59,19 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	}
 	_ = writer.WriteField("output_formats", "json")
 	elementFormats, _ := json.Marshal(map[string]any{
-		"image":   envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
-		"formula": envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
-		"table":   envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
-		"cs":      envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
+		"image":   parser.envOrDefault(common.EnvSOMarkImageFormat, parser.SoMarkImageFormat, "url"),
+		"formula": parser.envOrDefault(common.EnvSOMarkFormulaFormat, parser.SoMarkFormulaFormat, "latex"),
+		"table":   parser.envOrDefault(common.EnvSOMarkTableFormat, parser.SoMarkTableFormat, "html"),
+		"cs":      parser.envOrDefault(common.EnvSOMarkCSFormat, parser.SoMarkCSFormat, "image"),
 	})
 	featureConfig, _ := json.Marshal(map[string]any{
-		"enable_text_cross_page":         envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
-		"enable_table_cross_page":        envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
-		"enable_title_level_recognition": envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
-		"enable_inline_image":            envOrBool(common.EnvSOMarkEnableInlineImage, parser.SoMarkEnableInlineImage),
-		"enable_table_image":             envOrBool(common.EnvSOMarkEnableTableImage, parser.SoMarkEnableTableImage),
-		"enable_image_understanding":     envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
-		"keep_header_footer":             envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
+		"enable_text_cross_page":         parser.envOrBool(common.EnvSOMarkEnableTextCrossPage, parser.SoMarkEnableTextCrossPage),
+		"enable_table_cross_page":        parser.envOrBool(common.EnvSOMarkEnableTableCrossPage, parser.SoMarkEnableTableCrossPage),
+		"enable_title_level_recognition": parser.envOrBool(common.EnvSOMarkEnableTitleLevelRecognition, parser.SoMarkEnableTitleLevelRecognition),
+		"enable_inline_image":            parser.envOrBool(common.EnvSOMarkEnableInlineImage, parser.SoMarkEnableInlineImage),
+		"enable_table_image":             parser.envOrBool(common.EnvSOMarkEnableTableImage, parser.SoMarkEnableTableImage),
+		"enable_image_understanding":     parser.envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
+		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
 	})
 	_ = writer.WriteField("element_formats", string(elementFormats))
 	_ = writer.WriteField("feature_config", string(featureConfig))
@@ -221,17 +225,26 @@ func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]a
 	}
 }
 
-func envOrDefault(envKey, configured, fallback string) string {
+// envOrDefault prefers configured values, then the environment for named
+// engines only, then the built-in fallback.
+func (p *PDFParser) envOrDefault(envKey, configured, fallback string) string {
 	if configured != "" {
 		return configured
 	}
-	if raw := strings.TrimSpace(common.GetEnv(envKey)); raw != "" {
-		return raw
+	if !p.UseTenantModelConfig {
+		if raw := strings.TrimSpace(common.GetEnv(envKey)); raw != "" {
+			return raw
+		}
 	}
 	return fallback
 }
 
-func envOrBool(envKey string, configured bool) bool {
+// envOrBool preserves tenant instance values, including explicit false, while
+// named engines retain their environment override.
+func (p *PDFParser) envOrBool(envKey string, configured bool) bool {
+	if p.UseTenantModelConfig {
+		return configured
+	}
 	if raw := strings.TrimSpace(common.GetEnv(envKey)); raw != "" {
 		switch strings.ToLower(raw) {
 		case "1", "true", "yes", "on":

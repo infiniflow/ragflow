@@ -332,6 +332,14 @@ func mergeQueritParams(defaults, runtimeParams queritParams, provided map[string
 }
 
 func validateQueritParams(params queritParams) error {
+	if err := ValidateSearchFilters(map[string]any{
+		"site_include":     params.SiteInclude,
+		"site_exclude":     params.SiteExclude,
+		"country_include":  params.CountryInclude,
+		"language_include": params.LanguageInclude,
+	}, false); err != nil {
+		return err
+	}
 	if params.Count < 1 {
 		return fmt.Errorf("count must be at least 1")
 	}

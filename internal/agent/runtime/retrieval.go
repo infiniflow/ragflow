@@ -76,7 +76,6 @@ type RetrievalRequest struct {
 	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
-	TOCEnhance               bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
 	// DocScope restricts retrieval to a set of document ids (the doc_id list
@@ -201,7 +200,7 @@ var ErrBm25ServiceMissing = errors.New(
 )
 
 // ErrRegexpNotSupported is returned when the underlying doc engine does not
-// implement regex matching on chunk content (e.g. Infinity).
+// implement regex matching on chunk content (no SearchByRegexp method).
 var ErrRegexpNotSupported = errors.New(
 	"grep_chunks: regex matching is not supported by this document engine",
 )

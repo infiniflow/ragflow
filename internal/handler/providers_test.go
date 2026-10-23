@@ -33,7 +33,7 @@ func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var req DropProviderInstanceRequest
+			var req service.DropProviderInstanceRequest
 			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +74,7 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -241,8 +241,8 @@ func TestValidateInstanceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
-				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			if err := service.ValidateProviderInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("ValidateProviderInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
 			}
 		})
 	}

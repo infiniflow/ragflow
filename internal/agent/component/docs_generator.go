@@ -342,7 +342,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 			}
 		}
 	}
-	if !strings.Contains(content, "{{") {
+	if !strings.Contains(content, "{") {
 		// The think cut itself is the greedy re.sub(r"^.*</think>", "", s,
 		// re.DOTALL) pattern (as in generator.py). The unconditional trim —
 		// applied even when no think block is present — mirrors Python's
@@ -470,11 +470,13 @@ func formatExtension(format string) string {
 
 // sanitizeFilename applies the plan §2.11.5 helper: strip forbidden
 // chars, collapse whitespace, cap the base at 180 chars, and append the
-// conventional extension when missing. Returns "file.<ext>" when the
-// resulting base is empty.
+// conventional extension when missing. The whole name is then cut to the
+// 255-byte filename limit on a rune boundary, keeping the extension.
+// Returns "file.<ext>" when the resulting base is empty.
 func sanitizeFilename(raw, ext string) string {
 	const forbidden = `\/:*?"<>|`
 	const maxBase = 180
+	const maxBytes = 255
 	trimmed := strings.TrimSpace(raw)
 	// Strip control characters first; they're never valid in filenames.
 	var b strings.Builder
@@ -488,16 +490,16 @@ func sanitizeFilename(raw, ext string) string {
 		b.WriteRune(r)
 	}
 	base := strings.Join(strings.Fields(b.String()), "_")
-	if len(base) > maxBase {
-		base = base[:maxBase]
+	if runes := []rune(base); len(runes) > maxBase {
+		base = string(runes[:maxBase])
 	}
 	if base == "" {
 		return "file" + ext
 	}
 	if ext != "" && !strings.HasSuffix(strings.ToLower(base), strings.ToLower(ext)) {
-		return base + ext
+		base += ext
 	}
-	return base
+	return utility.TruncateFilename(base, maxBytes)
 }
 
 // renderTXT / renderMarkdown / renderHTML live in

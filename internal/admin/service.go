@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
+	"path/filepath"
 	"ragflow/internal/agent/sandbox"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -39,6 +41,7 @@ import (
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
 	"regexp"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -47,25 +50,26 @@ import (
 
 // Service admin service layer
 type Service struct {
-	userDAO             *dao.UserDAO
-	licenseDAO          *dao.LicenseDAO
-	timeRecordDAO       *dao.TimeRecordDAO
-	systemSettingsDAO   *dao.SystemSettingsDAO
-	tenantDAO           *dao.TenantDAO
-	userTenantDAO       *dao.UserTenantDAO
-	fileDAO             *dao.FileDAO
-	documentDAO         *dao.DocumentDAO
-	taskDAO             *dao.TaskDAO
-	kbDAO               *dao.KnowledgebaseDAO
-	canvasDAO           *dao.UserCanvasDAO
-	chatDAO             *dao.ChatDAO
-	chatSessionDAO      *dao.ChatSessionDAO
-	apiTokenDAO         *dao.APITokenDAO
-	api4ConvDAO         *dao.API4ConversationDAO
-	llmDAO              *dao.LLMDAO
-	ingestionTaskDAO    *dao.IngestionTaskDAO
-	ingestionTaskLogDao *dao.IngestionTaskLogDAO
-	ingestionTaskSvc    *servicepkg.IngestionTaskService
+	userDAO              *dao.UserDAO
+	licenseDAO           *dao.LicenseDAO
+	timeRecordDAO        *dao.TimeRecordDAO
+	systemSettingsDAO    *dao.SystemSettingsDAO
+	tenantDAO            *dao.TenantDAO
+	userTenantDAO        *dao.UserTenantDAO
+	fileDAO              *dao.FileDAO
+	documentDAO          *dao.DocumentDAO
+	taskDAO              *dao.TaskDAO
+	kbDAO                *dao.KnowledgebaseDAO
+	canvasDAO            *dao.UserCanvasDAO
+	chatDAO              *dao.ChatDAO
+	chatSessionDAO       *dao.ChatSessionDAO
+	apiTokenDAO          *dao.APITokenDAO
+	api4ConvDAO          *dao.API4ConversationDAO
+	llmDAO               *dao.LLMDAO
+	ingestionTaskDAO     *dao.IngestionTaskDAO
+	ingestionTaskLogDao  *dao.IngestionTaskLogDAO
+	ingestionTaskSvc     *servicepkg.IngestionTaskService
+	modelProviderService *servicepkg.ModelProviderService
 
 	BillingProductDAO      *dao.BillingProductDAO
 	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
@@ -78,25 +82,26 @@ type Service struct {
 // NewService create admin service
 func NewService() *Service {
 	return &Service{
-		userDAO:             dao.NewUserDAO(),
-		licenseDAO:          dao.NewLicenseDAO(),
-		timeRecordDAO:       dao.NewTimeRecordDAO(),
-		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
-		tenantDAO:           dao.NewTenantDAO(),
-		userTenantDAO:       dao.NewUserTenantDAO(),
-		fileDAO:             dao.NewFileDAO(),
-		documentDAO:         dao.NewDocumentDAO(),
-		taskDAO:             dao.NewTaskDAO(),
-		kbDAO:               dao.NewKnowledgebaseDAO(),
-		canvasDAO:           dao.NewUserCanvasDAO(),
-		chatDAO:             dao.NewChatDAO(),
-		chatSessionDAO:      dao.NewChatSessionDAO(),
-		apiTokenDAO:         dao.NewAPITokenDAO(),
-		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
-		llmDAO:              dao.NewLLMDAO(),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
-		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+		userDAO:              dao.NewUserDAO(),
+		licenseDAO:           dao.NewLicenseDAO(),
+		timeRecordDAO:        dao.NewTimeRecordDAO(),
+		systemSettingsDAO:    dao.NewSystemSettingsDAO(),
+		tenantDAO:            dao.NewTenantDAO(),
+		userTenantDAO:        dao.NewUserTenantDAO(),
+		fileDAO:              dao.NewFileDAO(),
+		documentDAO:          dao.NewDocumentDAO(),
+		taskDAO:              dao.NewTaskDAO(),
+		kbDAO:                dao.NewKnowledgebaseDAO(),
+		canvasDAO:            dao.NewUserCanvasDAO(),
+		chatDAO:              dao.NewChatDAO(),
+		chatSessionDAO:       dao.NewChatSessionDAO(),
+		apiTokenDAO:          dao.NewAPITokenDAO(),
+		api4ConvDAO:          dao.NewAPI4ConversationDAO(),
+		llmDAO:               dao.NewLLMDAO(),
+		ingestionTaskDAO:     dao.NewIngestionTaskDAO(),
+		ingestionTaskLogDao:  dao.NewIngestionTaskLogDAO(),
+		ingestionTaskSvc:     servicepkg.NewIngestionTaskService(),
+		modelProviderService: servicepkg.NewModelProviderService(),
 
 		BillingProductDAO:      dao.NewBillingProductDAO(),
 		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
@@ -113,19 +118,6 @@ func (s *Service) Logout(ctx context.Context, user interface{}) error {
 		return s.userDAO.UpdateAccessToken(ctx, dao.DB, u, invalidToken)
 	}
 	return nil
-}
-
-// ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
-}
-
-func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
-}
-
-func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
 }
 
 // GetUserByToken get user by access token
@@ -273,18 +265,15 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatModel,
-		EmbdID:    embeddingModel,
-		ASRID:     asrModel,
-		Img2TxtID: vlmModel,
-		RerankID:  rerankModel,
-		TTSID:     ttsModel,
-		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err = tx.Create(tenant).Error; err != nil {
+	if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
+		rollbackTx()
+		return nil, fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+	}
+	if err = dao.NewTenantDAO().Create(ctx, tx, tenant); err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
 	}
@@ -298,6 +287,13 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 	}
 	if err = tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
@@ -568,7 +564,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -585,6 +581,7 @@ func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map
 	result := make([]map[string]interface{}, 0, len(tokens))
 	for _, token := range tokens {
 		result = append(result, map[string]interface{}{
+			"user_id":     token.UserID,
 			"tenant_id":   token.TenantID,
 			"token":       token.Token,
 			"beta":        token.Beta,
@@ -609,7 +606,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return nil, fmt.Errorf("tenant not found")
 	}
@@ -622,6 +619,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
+		UserID:   &user.ID,
 		Token:    key,
 		Beta:     &beta,
 	}
@@ -632,6 +630,7 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	}
 
 	return map[string]interface{}{
+		"user_id":     user.ID,
 		"tenant_id":   tenantID,
 		"token":       key,
 		"beta":        beta,
@@ -651,7 +650,7 @@ func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) 
 	}
 
 	// 2. Get user's tenants
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, user.ID)
+	userTenants, err := s.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, user.ID, "owner")
 	if err != nil || len(userTenants) == 0 {
 		return fmt.Errorf("tenant not found")
 	}
@@ -777,11 +776,12 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	for _, serverStatus := range serverList {
 		now := time.Now()
 		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
-		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
+		if now.Sub(serverStatus.Timestamp) < 5*globalConfig.GetHeartbeatInterval() {
 			serverItem.Status = "alive"
 		} else {
 			serverItem.Status = "timeout"
@@ -1329,13 +1329,133 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 	return UpdateServer(message.ServerName, status)
 }
 
-// InitDefaultAdmin initialize default admin user
-// This matches Python's init_default_admin behavior
+// adminBootstrapPasswordFile is where a generated first-superuser password is
+// stored when neither DEFAULT_SUPERUSER_PASSWORD nor ADMIN_DEFAULT_PASSWORD
+// is set. docker/.env documents this path on the container logs volume.
+const adminBootstrapPasswordFile = "logs/admin_bootstrap_password.txt"
+
+// configuredSuperuserNickname returns DEFAULT_SUPERUSER_NICKNAME when it is
+// non-empty after trim, and "admin" otherwise. The unset default matches
+// Python's init_default_admin.
+func configuredSuperuserNickname() string {
+	if nickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname)); nickname != "" {
+		return nickname
+	}
+	return "admin"
+}
+
+// configuredSuperuserEmail returns DEFAULT_SUPERUSER_EMAIL when it is
+// non-empty after trim, and "admin@ragflow.io" otherwise. The unset default
+// matches Python's init_default_admin.
+func configuredSuperuserEmail() string {
+	if email := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserEmail)); email != "" {
+		return email
+	}
+	return "admin@ragflow.io"
+}
+
+// configuredSuperuserPassword reads the password for a new superuser.
+// DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is used
+// when the canonical name is empty. The boolean is false when both are empty.
+func configuredSuperuserPassword() (string, bool) {
+	if password := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword)); password != "" {
+		return password, true
+	}
+	if password := strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword)); password != "" {
+		return password, true
+	}
+	return "", false
+}
+
+// superuserPasswordForNewAdmin returns the configured password, or a generated
+// password written once to adminBootstrapPasswordFile. It does not fall back
+// to a public default. A write failure refuses creation of the first superuser.
+func superuserPasswordForNewAdmin() (string, error) {
+	if password, ok := configuredSuperuserPassword(); ok {
+		return password, nil
+	}
+	password, err := bootstrapSuperuserPassword(adminBootstrapPasswordFile)
+	if err != nil {
+		return "", fmt.Errorf("refuse to create the first superuser: %w", err)
+	}
+	return password, nil
+}
+
+func bootstrapSuperuserPassword(path string) (string, error) {
+	existing, err := readBootstrapPassword(path)
+	if err != nil {
+		return "", err
+	}
+	if existing != "" {
+		return existing, nil
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return "", fmt.Errorf("replace empty bootstrap password file: %w", err)
+	}
+
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate bootstrap password: %w", err)
+	}
+	password := hex.EncodeToString(buf)
+	if err := writeBootstrapPassword(path, password); err != nil {
+		if stored, readErr := readBootstrapPassword(path); readErr == nil && stored != "" {
+			return stored, nil
+		}
+		return "", err
+	}
+	common.Info("Wrote generated superuser password", zap.String("file", path))
+	return password, nil
+}
+
+func readBootstrapPassword(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read bootstrap password: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func writeBootstrapPassword(path, password string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create bootstrap password directory: %w", err)
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	remove := true
+	defer func() {
+		_ = file.Close()
+		if remove {
+			_ = os.Remove(path)
+		}
+	}()
+	if err := file.Chmod(0o600); err != nil {
+		return fmt.Errorf("restrict bootstrap password file: %w", err)
+	}
+	if _, err := file.WriteString(password + "\n"); err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("write bootstrap password: %w", err)
+	}
+	remove = false
+	return nil
+}
+
+// InitDefaultAdmin creates the first superuser when none is active.
+// When DEFAULT_SUPERUSER_NICKNAME and DEFAULT_SUPERUSER_EMAIL are unset,
+// the nickname and email still match Python's init_default_admin
+// ("admin" and "admin@ragflow.io"). The password path does not: it uses
+// DEFAULT_SUPERUSER_PASSWORD or ADMIN_DEFAULT_PASSWORD, or a generated
+// secret, and it does not use Python's literal "admin".
 func (s *Service) InitDefaultAdmin() error {
-	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
-	defaultNickname := "admin"
-	defaultEmail := "admin@ragflow.io"
-	defaultPassword := "admin"
+	defaultNickname := configuredSuperuserNickname()
+	defaultEmail := configuredSuperuserEmail()
 
 	// Query superusers
 	var users []*entity.User
@@ -1345,6 +1465,11 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
+		defaultPassword, err := superuserPasswordForNewAdmin()
+		if err != nil {
+			return err
+		}
+
 		userID := common.GenerateToken()
 		accessToken := common.GenerateToken()
 		status := "1"
@@ -1423,8 +1548,11 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		ID:   userID,
 		Name: &tenantName,
 	}
+	if err := dao.ApplyDefaultTenantInviteEnabled(context.Background(), dao.DB, tenant); err != nil {
+		return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+	}
 
-	if err := dao.DB.Create(tenant).Error; err != nil {
+	if err := dao.NewTenantDAO().Create(context.Background(), dao.DB, tenant); err != nil {
 		return err
 	}
 

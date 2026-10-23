@@ -285,6 +285,8 @@ func TestSearchBotsRetrieval_WhitespaceOnlyKbID(t *testing.T) {
 func TestSearchBotsRetrieval_DefaultsApplied(t *testing.T) {
 	// Verify that when optional fields are omitted, the handler applies
 	// defaults matching Python bot_api.py retrieval_test endpoint.
+	// similarity_threshold / vector_similarity_weight / top_k must reach the
+	// service as nil: it resolves them against the saved search_config.
 	_, mockSvc, r := setupSearchbotsTest("user1")
 
 	body := `{"kb_ids": ["kb1"], "question": "does this default?"}`
@@ -307,20 +309,20 @@ func TestSearchBotsRetrieval_DefaultsApplied(t *testing.T) {
 	if svcReq.Size == nil || *svcReq.Size != 30 {
 		t.Errorf("Size = %v, want 30", nullableInt(svcReq.Size))
 	}
-	if svcReq.TopK == nil || *svcReq.TopK != 1024 {
-		t.Errorf("TopK = %v, want 1024", nullableInt(svcReq.TopK))
-	}
 	if svcReq.UseKG == nil || *svcReq.UseKG != false {
 		t.Errorf("UseKG = %v, want false", nullableBool(svcReq.UseKG))
 	}
 	if svcReq.Keyword == nil || *svcReq.Keyword != false {
 		t.Errorf("Keyword = %v, want false", nullableBool(svcReq.Keyword))
 	}
-	if svcReq.SimilarityThreshold == nil || *svcReq.SimilarityThreshold != 0.0 {
-		t.Errorf("SimilarityThreshold = %v, want 0.0", nullableFloat(svcReq.SimilarityThreshold))
+	if svcReq.TopK != nil {
+		t.Errorf("TopK = %v, want nil (resolved by the service)", nullableInt(svcReq.TopK))
 	}
-	if svcReq.VectorSimilarityWeight == nil || *svcReq.VectorSimilarityWeight != 0.3 {
-		t.Errorf("VectorSimilarityWeight = %v, want 0.3", nullableFloat(svcReq.VectorSimilarityWeight))
+	if svcReq.SimilarityThreshold != nil {
+		t.Errorf("SimilarityThreshold = %v, want nil (resolved by the service)", nullableFloat(svcReq.SimilarityThreshold))
+	}
+	if svcReq.VectorSimilarityWeight != nil {
+		t.Errorf("VectorSimilarityWeight = %v, want nil (resolved by the service)", nullableFloat(svcReq.VectorSimilarityWeight))
 	}
 }
 

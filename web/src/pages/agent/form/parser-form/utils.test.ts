@@ -311,5 +311,26 @@ describe('parser-form utils', () => {
       });
       expect(normalizeParserFormValues(once)).toEqual(once);
     });
+
+    it('drops the retired per-setup output_format from every family', () => {
+      // The Go Parser normalizes all setups to JSON, so a stored legacy value
+      // is dead config that must not survive a load/save round-trip.
+      const normalized = normalizeParserFormValues({
+        setups: [
+          { fileFormat: FileType.PDF, output_format: 'markdown' },
+          {
+            fileFormat: FileType.Audio,
+            output_format: 'text',
+            vlm: { llm_id: 'whisper@OpenAI' },
+          },
+        ],
+      });
+      expect(normalized.setups[0]).toEqual({ fileFormat: FileType.PDF });
+      // Audio keeps its per-setup ASR model; only output_format goes.
+      expect(normalized.setups[1]).toEqual({
+        fileFormat: FileType.Audio,
+        vlm: { llm_id: 'whisper@OpenAI' },
+      });
+    });
   });
 });

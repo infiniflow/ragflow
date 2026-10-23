@@ -21,7 +21,7 @@ import (
 	"strings"
 )
 
-// EnvModelAssetsDir points at a directory that plays the role of `ragflow_deps/`:
+// EnvModelAssetsDir points at a directory that plays the role of `deps/`:
 // downloaded model assets stored in the HuggingFace repo layout, i.e.
 // `<dir>/huggingface.co/<repo>/<file>` (plus loose files that are not HF repos, such as
 // the cl100k BPE table). It is how a deployment keeps model assets outside the checkout -
@@ -36,11 +36,11 @@ const EnvModelAssetsDir = "MODEL_ASSETS_DIR"
 
 // ModelAssetCandidates returns the paths to try, in priority order, for one asset when
 // MODEL_ASSETS_DIR is set. `relative` is the shipped name - either
-// "ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model" or a bare
+// "deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model" or a bare
 // "cl100k_base.tiktoken" - and the candidates let an operator point at any of the three
 // sensible roots:
 //
-//	<dir>/huggingface.co/<repo>/<file>   the ragflow_deps-like root
+//	<dir>/huggingface.co/<repo>/<file>   the deps-like root
 //	<dir>/<repo>/<file>                  a huggingface.co-like root
 //	<dir>/<file>                         a flat directory holding the files
 //
@@ -50,7 +50,7 @@ func ModelAssetCandidates(relative string) []string {
 	if root == "" {
 		return nil
 	}
-	rel := strings.TrimPrefix(filepath.ToSlash(relative), "ragflow_deps/")
+	rel := strings.TrimPrefix(filepath.ToSlash(relative), "deps/")
 	out := make([]string, 0, 3)
 	seen := make(map[string]struct{}, 3)
 	add := func(p string) {

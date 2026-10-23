@@ -14,8 +14,9 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/permission"
-	"ragflow/internal/utility"
+	servercfg "ragflow/internal/server"
 )
 
 // buildAgentMCPTools binds the saved tool selection to servers the canvas can use.
@@ -25,8 +26,8 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		return nil, nil
 	}
 	var selections []struct {
-		ID    string                  `json:"mcp_id"`
-		Tools map[string]utility.Tool `json:"tools"`
+		ID    string                    `json:"mcp_id"`
+		Tools map[string]mcpclient.Tool `json:"tools"`
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -82,11 +83,13 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		for key, value := range server.Variables {
 			variables[key] = fmt.Sprint(value)
 		}
+		allowPrivateHosts := servercfg.MCPAllowPrivateHosts()
 		for _, name := range slices.Sorted(maps.Keys(selection.Tools)) {
 			descriptor := selection.Tools[name]
 			descriptor.Name = name
-			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, utility.CallOptions{
+			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, mcpclient.CallOptions{
 				URL: server.URL, ServerType: server.ServerType, Headers: headers, Variables: variables, Timeout: timeout,
+				AllowPrivateHosts: allowPrivateHosts,
 			})
 			adapter.SetVisibleName(fmt.Sprintf("%s_%d", name, toolIndex))
 			toolIndex++

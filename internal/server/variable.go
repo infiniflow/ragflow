@@ -36,7 +36,7 @@ type Variables struct {
 type VariableStore interface {
 	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key string, value string, exp time.Duration) bool
-	SetNX(ctx context.Context, key string, value string, exp time.Duration) bool
+	SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error)
 }
 
 var (
@@ -144,7 +144,11 @@ func GetOrCreateKey(ctx context.Context, store VariableStore, key string, newVal
 	common.Info("Generating new value for key", zap.String("key", key))
 
 	// Try to set with NX (only if not exists) - ensures atomicity
-	if store.SetNX(ctx, key, newValue, SecretKeyTTL) {
+	created, err := store.SetNX(ctx, key, newValue, SecretKeyTTL)
+	if err != nil {
+		return "", fmt.Errorf("failed to create key %q: %w", key, err)
+	}
+	if created {
 		common.Info("New value stored successfully", zap.String("key", key))
 		return newValue, nil
 	}

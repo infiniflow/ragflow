@@ -85,22 +85,6 @@ func (p *PaddleOCRLocalModel) AudioSpeechWithSender(ctx context.Context, modelNa
 	return fmt.Errorf("%s no such method", p.Name())
 }
 
-// For different model, paddleOCR have different url_suffix:
-// e.g.PaddleOCR-VL: /layout-parsing   |   PP-OCRv5: /ocr
-// We select `PaddleOCR-VL` here
-type paddleLocalOCRResponse struct {
-	LogId     string `json:"logId"`
-	ErrorCode int    `json:"errorCode"`
-	ErrorMsg  string `json:"errorMsg"`
-	Result    struct {
-		LayoutParsingResults []struct {
-			Markdown struct {
-				Text string `json:"text"`
-			} `json:"markdown"`
-		} `json:"layoutParsingResults"`
-	} `json:"result"`
-}
-
 func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if len(content) == 0 {
 		return nil, fmt.Errorf("local PaddleOCR requires file content, but content is empty")
@@ -109,11 +93,10 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	algorithm := paddleOCRAlgorithm(ocrConfig, apiConfig)
 	apiConfig = paddleOCRResolvedAPIConfig(apiConfig)
 
-	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	base64Str := base64.StdEncoding.EncodeToString(content)
 
@@ -127,9 +110,11 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	}
 
 	reqData := map[string]interface{}{
-		"file":      base64Str,
-		"fileType":  fileType,
-		"algorithm": algorithm,
+		"file":                      base64Str,
+		"fileType":                  fileType,
+		"algorithm":                 algorithm,
+		"useDocOrientationClassify": false,
+		"useDocUnwarping":           false,
 	}
 
 	jsonData, err := json.Marshal(reqData)
@@ -183,45 +168,18 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var ocrResp paddleLocalOCRResponse
-	if err := json.Unmarshal(respBody, &ocrResp); err != nil {
-		common.Error("paddleocr local submit: parse failed",
-			err,
-			zap.String("driver", p.Name()),
-			zap.String("url", url),
-			zap.String("body", logBody(respBody)))
-		return nil, fmt.Errorf("failed to parse local PaddleOCR response: %w, raw: %s", err, logBody(respBody))
+	response, err := parsePaddleOCRResultBody(respBody)
+	if err != nil {
+		common.Error("paddleocr local result: parse failed", err,
+			zap.String("driver", p.Name()), zap.String("url", url),
+			zap.Int("body_bytes", len(respBody)))
+		return nil, fmt.Errorf("local PaddleOCR result: %w", err)
 	}
-
-	if ocrResp.ErrorCode != 0 {
-		common.Error("paddleocr local submit: task failed",
-			fmt.Errorf("errorCode %d", ocrResp.ErrorCode),
-			zap.String("driver", p.Name()),
-			zap.String("url", url),
-			zap.Int("error_code", ocrResp.ErrorCode),
-			zap.String("error_msg", ocrResp.ErrorMsg))
-		return nil, fmt.Errorf("local PaddleOCR task failed: %s (errorCode: %d)", ocrResp.ErrorMsg, ocrResp.ErrorCode)
+	if len(response.Warnings) > 0 {
+		common.Warn("paddleocr local result: partial failure", zap.String("driver", p.Name()), zap.Strings("warnings", response.Warnings))
 	}
-
-	common.Info("paddleocr local submit: ok",
-		zap.String("driver", p.Name()),
-		zap.String("url", url),
-		zap.Int("status", resp.StatusCode),
-		zap.String("log_id", ocrResp.LogId))
-
-	var fullMarkdown strings.Builder
-	for _, layoutRes := range ocrResp.Result.LayoutParsingResults {
-		if layoutRes.Markdown.Text != "" {
-			fullMarkdown.WriteString(layoutRes.Markdown.Text)
-			fullMarkdown.WriteString("\n\n")
-		}
-	}
-
-	extractedText := strings.TrimSpace(fullMarkdown.String())
-
-	return &OCRFileResponse{
-		Text: &extractedText,
-	}, nil
+	common.Info("paddleocr local submit: ok", zap.String("driver", p.Name()), zap.String("url", url), zap.Int("status", resp.StatusCode))
+	return response, nil
 }
 
 func (p *PaddleOCRLocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
@@ -269,4 +227,8 @@ func (p *PaddleOCRLocalModel) ListTasks(ctx context.Context, apiConfig *APIConfi
 
 func (p *PaddleOCRLocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
+}
+
+func (p *PaddleOCRLocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

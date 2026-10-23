@@ -126,29 +126,23 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 	id := c.Param("id")
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid document id",
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "invalid document id")
 		return
 	}
 
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "document not found",
-		})
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "document not found")
 		return
 	}
 
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationRead); err != nil {
-		respondHTTPPermissionError(c, err, false)
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": doc,
-	})
+	common.SuccessWithData(c, doc, "")
 }
 
 // GetThumbnail Get thumbnails for documents.
@@ -376,7 +370,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -431,7 +425,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationDeleteContent); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1072,7 +1066,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			common.ResponseWithCodeData(c, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 	mapped := make([]map[string]interface{}, len(data))
@@ -1083,7 +1077,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		common.ResponseWithCodeData(c, common.CodeServerError, mapped, strings.Join(errMsgs, "\n"))
 		return
 	}
-	common.SuccessNoMessage(c, mapped)
+	common.SuccessWithData(c, mapped, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1112,7 +1106,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1140,7 +1134,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
@@ -1196,8 +1190,23 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	// Authorize the caller before serving file bytes. Answer exactly like the
-	// missing-document case so dataset existence is not leaked.
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+	// missing-document case so document existence is not leaked.
+	doc, err := h.documentService.GetDocumentByID(ctx, docID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			return
+		}
+		common.Error("DownloadDocument failed to load document", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
+		return
+	}
+	if doc == nil || doc.KbID != datasetID {
+		common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+		return
+	}
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, true)
 		return
 	}
@@ -1555,7 +1564,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1651,7 +1660,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, data)
+	common.SuccessWithData(c, data, "success")
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {

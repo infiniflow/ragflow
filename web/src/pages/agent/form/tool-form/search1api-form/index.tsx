@@ -20,6 +20,7 @@ function Search1APIForm() {
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues: values,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
 
   useWatchFormChange(form);

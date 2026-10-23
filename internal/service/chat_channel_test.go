@@ -2,7 +2,9 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -285,4 +287,192 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 	if _, err = dao.NewChatChannel().GetByID(ctx, dao.DB, "cc-1"); err == nil {
 		t.Fatal("expected deleted record to be gone")
 	}
+}
+
+func countChannelSessions(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+
+	var count int64
+	if err := db.Model(&entity.ChatSession{}).Count(&count).Error; err != nil {
+		t.Fatalf("failed to count sessions: %v", err)
+	}
+	return count
+}
+
+func TestGetOrCreateForChannelNamesFromFirstQueryAndChannelName(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	session, err := NewChatSessionService().GetOrCreateForChannel(
+		t.Context(), "dialog-1", "cc-1", "discord-channel-1", "你好，帮我查一下退款政策", "Discord 客服",
+	)
+	if err != nil {
+		t.Fatalf("GetOrCreateForChannel failed: %v", err)
+	}
+	if session.ID != channelSessionID("dialog-1", "cc-1", "discord-channel-1") {
+		t.Fatalf("unexpected session id: %s", session.ID)
+	}
+	if session.DialogID != "dialog-1" {
+		t.Fatalf("unexpected dialog id: %s", session.DialogID)
+	}
+	if session.Name == nil || *session.Name != "(channel: Discord 客服) 你好，帮我查一下退款政策" {
+		t.Fatalf("unexpected session name: %v", session.Name)
+	}
+}
+
+func TestGetOrCreateForChannelKeepsNameAfterFirstMessage(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	svc := NewChatSessionService()
+	ctx := t.Context()
+
+	first, err := svc.GetOrCreateForChannel(ctx, "dialog-1", "cc-1", "discord-channel-1", "第一句", "客服")
+	if err != nil {
+		t.Fatalf("first GetOrCreateForChannel failed: %v", err)
+	}
+
+	second, err := svc.GetOrCreateForChannel(ctx, "dialog-1", "cc-1", "discord-channel-1", "第二句", "改过的名字")
+	if err != nil {
+		t.Fatalf("second GetOrCreateForChannel failed: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected the same session, got %s and %s", first.ID, second.ID)
+	}
+	if second.Name == nil || *second.Name != "(channel: 客服) 第一句" {
+		t.Fatalf("expected the first name to stick, got %v", second.Name)
+	}
+	if count := countChannelSessions(t, db); count != 1 {
+		t.Fatalf("expected 1 session, got %d", count)
+	}
+}
+
+func TestGetOrCreateForChannelTruncatesLongFirstQuery(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	query := strings.Repeat("长", 300)
+	session, err := NewChatSessionService().GetOrCreateForChannel(
+		t.Context(), "dialog-1", "cc-1", "discord-channel-1", query, "客服",
+	)
+	if err != nil {
+		t.Fatalf("GetOrCreateForChannel failed: %v", err)
+	}
+	if session.Name == nil {
+		t.Fatal("expected a session name")
+	}
+	name := *session.Name
+	if utf8.RuneCountInString(name) != channelSessionNameMaxRunes {
+		t.Fatalf("expected %d runes, got %d", channelSessionNameMaxRunes, utf8.RuneCountInString(name))
+	}
+	if !strings.HasPrefix(name, "(channel: 客服) ") {
+		t.Fatalf("expected the channel prefix to survive, got %q", name)
+	}
+	wantPrefix := "(channel: 客服) " + string([]rune(query)[:channelSessionNameMaxRunes-utf8.RuneCountInString("(channel: 客服) ")])
+	if name != wantPrefix {
+		t.Fatalf("unexpected truncated name: %q", name)
+	}
+}
+
+func TestGetOrCreateForChannelNormalizesWhitespace(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	session, err := NewChatSessionService().GetOrCreateForChannel(
+		t.Context(), "dialog-1", "cc-1", "discord-channel-1", "你好\n\n帮我\t查一下", "客服",
+	)
+	if err != nil {
+		t.Fatalf("GetOrCreateForChannel failed: %v", err)
+	}
+	if session.Name == nil || *session.Name != "(channel: 客服) 你好 帮我 查一下" {
+		t.Fatalf("unexpected session name: %v", session.Name)
+	}
+}
+
+func TestGetOrCreateForChannelStripsMentionMarkupFromName(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	session, err := NewChatSessionService().GetOrCreateForChannel(
+		t.Context(), "dialog-1", "cc-1", "discord-channel-1", "<@1562356664286445598> 林黛玉是谁", "cc",
+	)
+	if err != nil {
+		t.Fatalf("GetOrCreateForChannel failed: %v", err)
+	}
+	if session.Name == nil || *session.Name != "(channel: cc) 林黛玉是谁" {
+		t.Fatalf("unexpected session name: %v", session.Name)
+	}
+}
+
+func TestChannelSessionNameStripsMentionMarkup(t *testing.T) {
+	tests := []struct {
+		name        string
+		firstQuery  string
+		channelName string
+		want        string
+	}{
+		{
+			name:        "user mention prefix",
+			firstQuery:  "<@1562356664286445598> 林黛玉是谁",
+			channelName: "cc",
+			want:        "(channel: cc) 林黛玉是谁",
+		},
+		{
+			name:        "nickname mention and role mention",
+			firstQuery:  "<@!42> <@&7> 查一下退款政策",
+			channelName: "客服",
+			want:        "(channel: 客服) 查一下退款政策",
+		},
+		{
+			name:        "channel mention",
+			firstQuery:  "<#99> 历史消息",
+			channelName: "客服",
+			want:        "(channel: 客服) 历史消息",
+		},
+		{
+			name:        "mention only falls back to the channel label",
+			firstQuery:  "<@1562356664286445598>",
+			channelName: "cc",
+			want:        "(channel: cc)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := channelSessionName(tt.firstQuery, tt.channelName); got != tt.want {
+				t.Fatalf("channelSessionName(%q, %q) = %q, want %q", tt.firstQuery, tt.channelName, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
+	t.Run("blank query uses the channel label", func(t *testing.T) {
+		db := setupServiceTestDB(t)
+		pushServiceDB(t, db)
+
+		session, err := NewChatSessionService().GetOrCreateForChannel(
+			t.Context(), "dialog-1", "cc-1", "discord-channel-1", "  \n ", "客服",
+		)
+		if err != nil {
+			t.Fatalf("GetOrCreateForChannel failed: %v", err)
+		}
+		if session.Name == nil || *session.Name != "(channel: 客服)" {
+			t.Fatalf("unexpected session name: %v", session.Name)
+		}
+	})
+
+	t.Run("blank query and channel name use the legacy name", func(t *testing.T) {
+		db := setupServiceTestDB(t)
+		pushServiceDB(t, db)
+
+		session, err := NewChatSessionService().GetOrCreateForChannel(
+			t.Context(), "dialog-1", "cc-1", "discord-channel-1", "", "",
+		)
+		if err != nil {
+			t.Fatalf("GetOrCreateForChannel failed: %v", err)
+		}
+		if session.Name == nil || *session.Name != "channel:cc-1:discord-channel-1" {
+			t.Fatalf("unexpected session name: %v", session.Name)
+		}
+	})
 }

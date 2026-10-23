@@ -49,11 +49,10 @@ func TestSplitGeneralChildrenSlicesPositionsAbut(t *testing.T) {
 	chunk := schema.ChunkDoc{
 		Text:         "aaa;bbb",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,10,20,0,100]]`),
 		Positions:    json.RawMessage(`[[1,10,20,0,100]]`),
 	}
-	pattern := compileChildrenPattern([]string{";"})
+	pattern := compileDelimPattern([]string{";"})
 	got := splitGeneralChildren([]schema.ChunkDoc{chunk}, pattern)
 	if len(got) != 2 {
 		t.Fatalf("children pieces = %d, want 2", len(got))

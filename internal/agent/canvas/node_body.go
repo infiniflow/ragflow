@@ -144,6 +144,9 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 	// (compose.Interrupt) and resumes from the orchestrator's
 	// compose.ResumeWithData call.
 	if strings.EqualFold(name, "UserFillUp") {
+		if err := runtime.ValidateUserFillUpOptions(params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := resolveComponentFactory(ctx); factory != nil {
@@ -185,6 +188,9 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 	return func(_ context.Context, in map[string]any) (map[string]any, error) {
 		out := make(map[string]any, len(in)+2)
 		for k, v := range in {
+			if k == "state" {
+				continue
+			}
 			out[k] = v
 		}
 		out["__cpn_id__"] = cpnID
@@ -357,7 +363,7 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			return out, nil
 		}
 		for k, v := range out {
-			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
+			if k == "__cpn_id__" || k == "__legacy_noop__" {
 				continue
 			}
 			state.SetVar(outputCpnID, k, v)

@@ -29,7 +29,6 @@ package chunker
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -72,17 +71,14 @@ func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	return c.invoke(ctx, inputs)
 }
 
+// invoke collapses the decoded upstream payload into a single chunk.
 func (c *OneChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {
@@ -119,7 +115,6 @@ func emitOne(text, docType string) map[string]any {
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
-		CKType:  docType,
 	}})
 }
 
@@ -149,7 +144,6 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			// Strip parser coordinate tags (see emitOne).
 			Text:         removeTag(text),
 			DocType:      docType,
-			CKType:       docType,
 			Image:        it.Image,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
@@ -174,7 +168,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	if strings.TrimSpace(merged) == "" && img == "" {
 		return emptyOutputs()
 	}
-	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	out := schema.ChunkDoc{Text: merged, DocType: "text"}
 	// Multi-item merge produces a single text-only chunk mirroring Python
 	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would

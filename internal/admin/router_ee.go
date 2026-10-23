@@ -74,11 +74,6 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/system/soft-fingerprint", r.handler.ShowSoftFingerprint)
 	protected.DELETE("/system/soft-fingerprint", r.handler.DeleteSoftFingerprint)
 
-	protected.GET("/fingerprint", r.handler.GetFingerprint)
-	protected.POST("/license", r.handler.SetLicense)
-	protected.POST("/license/config", r.handler.UpdateLicenseConfig)
-	protected.GET("/license", r.handler.ShowLicense)
-
 	// Token statistics
 	protected.GET("/stats/token", r.handler.GetTokenStats)
 	protected.GET("/stats/token/users", r.handler.GetTokenUsersStats)
@@ -116,6 +111,9 @@ func RegisterEERouter(protected *gin.RouterGroup, r *Router) {
 	protected.GET("/users/plan/summary", r.handler.ShowUsersPlanSummary)
 	protected.GET("/users/plan", r.handler.ShowUsersPlan)
 	protected.GET("/users/quota/summary", r.handler.ShowUsersQuotaSummary)
+	protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
+	protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
+	protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 	protected.GET("/ingestion/tasks/summary", r.handler.ShowIngestionTasksSummary)
 	protected.GET("/data/summary", r.handler.ShowDataSummary)
 	protected.GET("/data/orphan", r.handler.ShowDataOrphan)

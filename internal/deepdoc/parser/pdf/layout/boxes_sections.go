@@ -55,7 +55,7 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 	sections := make([]pdf.Section, 0, len(boxes))
 	for _, b := range boxes {
 		t := strings.TrimSpace(b.Text)
-		if t == "" {
+		if t == "" && b.LayoutType != pdf.LayoutTypeFigure {
 			continue
 		}
 
@@ -144,25 +144,6 @@ func InlinePNGDataURL(raw string) string {
 		}
 	}
 	return "data:image/png;base64," + cleaned
-}
-
-func SectionsToMarkdown(sections []pdf.Section) string {
-	var b strings.Builder
-	for _, s := range sections {
-		if s.LayoutType == pdf.LayoutTypeTitle {
-			b.WriteString("\n## ")
-		}
-		imgURL := InlinePNGDataURL(s.Image)
-		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && strings.TrimSpace(s.Text) == "")) && imgURL != "" {
-			b.WriteString("\n![Image](")
-			b.WriteString(imgURL)
-			b.WriteString(")")
-			continue
-		}
-		b.WriteString(s.Text)
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 // SectionsToJSON converts Sections to a Python-compatible JSON dict format.

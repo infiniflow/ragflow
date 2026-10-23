@@ -41,6 +41,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
+  decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -103,6 +104,9 @@ const MarkdownCode = (props: any) => {
   const { children, className, ...rest } = props;
   const restProps = omit(rest, 'node');
   const match = /language-(\w+)/.exec(className || '');
+  // Code content is literal for react-markdown, so the &lt;/&gt; entities
+  // restored by unescapeAngleBrackets survive parsing; decode them back.
+  const codeText = decodeAngleBracketEntities(String(children));
   return match ? (
     <SyntaxHighlighter
       {...restProps}
@@ -110,20 +114,13 @@ const MarkdownCode = (props: any) => {
       language={match[1]}
       wrapLongLines
     >
-      {String(children).replace(/\n$/, '')}
+      {codeText.replace(/\n$/, '')}
     </SyntaxHighlighter>
   ) : (
     <code {...restProps} className={classNames(className, 'text-wrap')}>
-      {children}
+      {codeText}
     </code>
   );
-};
-
-const formatMetadataValue = (value: unknown) => {
-  if (Array.isArray(value)) return value.join(', ');
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
 };
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
@@ -280,21 +277,6 @@ const MarkdownContent = ({
               className={classNames(styles.chunkContentText)}
               dir="auto"
             ></div>
-            {chunkItem?.document_metadata &&
-              Object.keys(chunkItem.document_metadata).length > 0 && (
-                <section className="space-y-1 border border-border-default rounded p-2">
-                  {Object.entries(chunkItem.document_metadata).map(
-                    ([key, value]) => (
-                      <div key={key} className="text-xs">
-                        <span className="text-text-secondary">{key}:</span>{' '}
-                        <span className="text-text-primary">
-                          {formatMetadataValue(value)}
-                        </span>
-                      </div>
-                    ),
-                  )}
-                </section>
-              )}
             {documentId && (
               <section className="flex gap-1">
                 {fileThumbnail ? (

@@ -54,10 +54,20 @@ var (
 	}
 )
 
+// modelFileLayout is the layout model filename. Override seam: a downstream
+// build variant assigns this at init/startup, before any inference runs. Set
+// once, never mutated during serving.
+var modelFileLayout = "layout.ort"
+
+// dlaPostprocessFn is the DLA post-processing function. Override seam: a
+// downstream build variant assigns this at init/startup, before any inference
+// runs. Defaults to dlaPostprocess; set once, never mutated during serving.
+var dlaPostprocessFn = dlaPostprocess
+
 // RunDLA runs layout detection on a page image.
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
-	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "layout.ort"), "images",
+	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileLayout), "images",
 		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0")
 	if err != nil {
 		return DLAResult{}, err
@@ -71,7 +81,7 @@ func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error)
 	if err := checkOutputLength("dla", len(out), dlaMaxBoxes*6); err != nil {
 		return DLAResult{}, err
 	}
-	res := dlaPostprocess(out, sf)
+	res := dlaPostprocessFn(out, sf)
 	res.W, res.H = img.W, img.H
 	return res, nil
 }
