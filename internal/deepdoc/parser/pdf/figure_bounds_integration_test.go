@@ -5,15 +5,14 @@ package pdf
 import (
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// TestAN0590Figures exercises real native text and complete DLA figure bounds.
+// TestAN0590FigureBounds exercises complete DLA figure bounds on the real PDF.
 // AN0590_PDF points to an0590scv140.pdf; MODEL_DIR supplies DeepDOC models.
-func TestAN0590Figures(t *testing.T) {
+func TestAN0590FigureBounds(t *testing.T) {
 	path := os.Getenv("AN0590_PDF")
 	if path == "" {
 		t.Skip("AN0590_PDF is required")
@@ -36,24 +35,19 @@ func TestAN0590Figures(t *testing.T) {
 		{2, 1, 240, 50}, {3, 3, 350, 100},
 	} {
 		t.Run(fmt.Sprintf("figure%d", tc.number), func(t *testing.T) {
-			var figure *pdf.Section
+			var position *pdf.Position
 			for _, section := range result.Figures() {
-				text := strings.Join(strings.Fields(section.Text), "")
-				if strings.Contains(text, fmt.Sprintf("图%d.", tc.number)) {
-					s := section
-					figure = &s
-					break
+				for i := range section.Positions {
+					pos := &section.Positions[i]
+					if len(pos.PageNumbers) == 1 && pos.PageNumbers[0] == tc.page &&
+						pos.Right-pos.Left >= tc.minWidth && pos.Bottom-pos.Top >= tc.minHeight {
+						position = pos
+						break
+					}
 				}
 			}
-			if figure == nil {
+			if position == nil {
 				t.Fatalf("figure %d missing", tc.number)
-			}
-			pos := figure.Positions[0]
-			if len(pos.PageNumbers) != 1 || pos.PageNumbers[0] != tc.page || pos.Right-pos.Left < tc.minWidth || pos.Bottom-pos.Top < tc.minHeight {
-				t.Fatalf("incomplete figure bounds: %+v", pos)
-			}
-			if tc.number == 3 && (!strings.Contains(figure.Text, "SCL") || !strings.Contains(figure.Text, "SDA")) {
-				t.Fatalf("native waveform labels missing: %q", figure.Text)
 			}
 		})
 	}

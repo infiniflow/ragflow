@@ -716,30 +716,3 @@ func (p *Parser) buildTextBoxes(ctx context.Context, pageImg image.Image,
 	common.Debug("ocrMergeChars result", zap.Int("page", pageNum), zap.Int("boxes", len(filtered)))
 	return filtered
 }
-
-// recognizeMissingText OCRs detected text boxes not covered by native text.
-// Detection never controls which native characters are retained.
-func (p *Parser) recognizeMissingText(ctx context.Context, img image.Image, native []pdf.TextBox, analyzer pdf.DocAnalyzer, page int, zoom float64) []pdf.TextBox {
-	detected, scale, err := p.detectBoxes(ctx, img, analyzer, page, zoom)
-	if err != nil || len(detected) == 0 {
-		return native
-	}
-	missing := detected[:0]
-	for _, candidate := range detected {
-		covered := false
-		for _, box := range native {
-			if util.OverlapRatioA(&candidate.box, &box) >= 0.4 {
-				covered = true
-				break
-			}
-		}
-		if !covered {
-			missing = append(missing, candidate)
-		}
-	}
-	recognized := p.buildTextBoxes(ctx, img, missing, make([][]pdf.TextChar, len(missing)), analyzer, scale, page)
-	for i := range recognized {
-		recognized[i].IsOCR = true
-	}
-	return append(native, recognized...)
-}
