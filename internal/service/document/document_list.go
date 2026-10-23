@@ -78,7 +78,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, document.KbID, permission.OperationRead) != nil {
+		if document == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, document.ID, document.KbID, permission.OperationRead) != nil {
 			continue
 		}
 
@@ -118,7 +118,6 @@ func (s *DocumentService) ListDocumentsByDatasetIDWithOptions(ctx context.Contex
 	if err != nil {
 		return nil, 0, err
 	}
-
 	responses := make([]*entity.DocumentListItem, len(documents))
 	for i, doc := range documents {
 		responses[i] = doc

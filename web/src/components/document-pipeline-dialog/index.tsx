@@ -109,7 +109,7 @@ export function DocumentPipelineDialog({
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[50vw] text-text-primary">
         <DialogHeader>
-          <DialogTitle>{t('knowledgeDetails.chunkMethod')}</DialogTitle>
+          <DialogTitle>{t('knowledgeDetails.parsingMode')}</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>

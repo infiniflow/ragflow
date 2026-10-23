@@ -225,7 +225,7 @@ export default function DatasetSetting() {
                   <FormItem className="items-center space-y-0">
                     <div className="flex items-center gap-1">
                       <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
-                        {t('knowledgeConfiguration.parseType')}
+                        {t('knowledgeConfiguration.parsingMode')}
                       </FormLabel>
                       <div className="text-muted-foreground w-3/4">
                         <FormField

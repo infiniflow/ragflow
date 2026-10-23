@@ -1252,11 +1252,14 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, dialog.TenantID)
-		if err != nil || tenant.LLMID == "" {
+		membership, err := NewTenantService().defaultModelMembership(ctx, userID, dialog.TenantID)
+		if err != nil || membership.LLMID == "" {
 			return fail(errors.New("no default chat model for tenant"))
 		}
-		dialog.LLMID = tenant.LLMID
+		dialog.LLMID = membership.LLMID
+		if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+			dialog.TenantLLMID = membership.TenantLLMID
+		}
 		if dialog.LLMSetting == nil {
 			dialog.LLMSetting = entity.JSONMap{}
 		}

@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
 
@@ -176,4 +177,8 @@ func setAuthIdentity(c *gin.Context, identity *service.AuthIdentity) {
 	c.Set("user", identity.User)
 	c.Set("user_id", identity.User.ID)
 	c.Set("tenant_id", identity.TenantID)
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID:   identity.User.ID,
+		TenantID: identity.TenantID,
+	}))
 }
