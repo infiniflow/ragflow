@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -323,10 +325,96 @@ func TestDoclingPageCountFallsBackToProvenanceThenDocuments(t *testing.T) {
 	withProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
 		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 4.0}}},
 	}}}}
-	if got := doclingPageCount(withProv); got != 4 {
+	if got := doclingPageCount(withProv, 0); got != 4 {
 		t.Fatalf("provenance page count = %d, want 4", got)
 	}
-	if got := doclingPageCount([]doclingDocument{{MDContent: "x"}}); got != 1 {
-		t.Fatalf("no page info page count = %d, want 1 (document count)", got)
+	noPages := []doclingDocument{{MDContent: "x"}}
+	if got := doclingPageCount(noPages, 50); got != 50 {
+		t.Fatalf("metadata-less response must report source PDF pages = %d, want 50", got)
+	}
+	if got := doclingPageCount(noPages, 0); got != 1 {
+		t.Fatalf("unreadable source page count = %d, want 1 (document count)", got)
+	}
+}
+
+func TestDoclingSourcePageCount(t *testing.T) {
+	if got := doclingSourcePageCount(buildDoclingPDFWithCount(t, 50)); got != 50 {
+		t.Fatalf("source page count = %d, want 50", got)
+	}
+	if got := doclingSourcePageCount([]byte("%PDF-1.4\nmock")); got != 0 {
+		t.Fatalf("unopenable PDF must yield 0, got %d", got)
+	}
+	if got := doclingSourcePageCount(buildDoclingPDFWithCount(t, 1<<30)); got != 0 {
+		t.Fatalf("implausible /Count must be ignored, got %d", got)
+	}
+}
+
+// buildDoclingPDFWithCount emits a minimal valid PDF whose /Pages /Count is
+// the supplied value, mirroring the deepdoc plaintext test fixture.
+func buildDoclingPDFWithCount(t *testing.T, count int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	off1 := buf.Len()
+	fmt.Fprintf(&buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+	off2 := buf.Len()
+	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count %d >>\nendobj\n", count)
+	off3 := buf.Len()
+	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>\nendobj\n")
+	xrefStart := buf.Len()
+	buf.WriteString("xref\n0 4\n")
+	buf.WriteString("0000000000 65535 f \n")
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off1)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off2)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off3)
+	fmt.Fprintf(&buf, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefStart)
+	return buf.Bytes()
+}
+
+func TestDoclingAttachPositionsMatchesOccurrencesInOrder(t *testing.T) {
+	content := map[string]any{"texts": []any{
+		map[string]any{"text": "Repeated paragraph.", "prov": []any{
+			map[string]any{"page_no": 2.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+		map[string]any{"text": "Repeated paragraph.", "prov": []any{
+			map[string]any{"page_no": 5.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+	}}
+	res := ParseResult{JSON: MapsToItems([]map[string]any{
+		{"text": "Repeated paragraph."},
+		{"text": "Repeated paragraph."},
+	})}
+	res = doclingAttachPositions(res, content)
+	first, _ := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
+	second, _ := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
+	if len(first) != 1 || first[0][0] != 2 {
+		t.Fatalf("first occurrence must take page 2: %#v", first)
+	}
+	if len(second) != 1 || second[0][0] != 5 {
+		t.Fatalf("second occurrence must take page 5: %#v", second)
+	}
+}
+
+func TestDoclingAttachPositionsKeepsLeadingDigits(t *testing.T) {
+	content := map[string]any{"texts": []any{
+		map[string]any{"text": "2026 Outlook", "prov": []any{
+			map[string]any{"page_no": 3.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+		map[string]any{"text": "Introduction", "prov": []any{
+			map[string]any{"page_no": 4.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+	}}
+	res := ParseResult{JSON: MapsToItems([]map[string]any{
+		{"text": "2026 Outlook"},
+		{"text": "1. Introduction"},
+	})}
+	res = doclingAttachPositions(res, content)
+	digits, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
+	if !ok || len(digits) != 1 || digits[0][0] != 3 {
+		t.Fatalf("leading digits are content and must match: %#v", res.JSON[0].ToMap())
+	}
+	numbered, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
+	if !ok || len(numbered) != 1 || numbered[0][0] != 4 {
+		t.Fatalf("numbered list prefix must strip for the match: %#v", res.JSON[1].ToMap())
 	}
 }

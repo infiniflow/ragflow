@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -8,8 +9,11 @@ import (
 	"io"
 	"maps"
 	"ragflow/internal/common"
+	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/ledongthuc/pdf"
 
 	models "ragflow/internal/entity/models"
 )
@@ -88,6 +92,8 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		},
 	}
 
+	sourcePages := doclingSourcePageCount(data)
+
 	var lastErr error
 	for _, candidate := range payloads {
 		url := baseURL + candidate.endpoint
@@ -119,7 +125,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
 			continue
 		}
-		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat); ok {
+		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat, sourcePages); ok {
 			return res
 		}
 		lastErr = fmt.Errorf("%s: standard response contained no parsed document", candidate.endpoint)
@@ -215,7 +221,7 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
 }
 
-func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string, sourcePages int) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ParseResult{}, false
@@ -233,7 +239,7 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 			docs = append(docs, *result.Result)
 		}
 	}
-	pageCount := doclingPageCount(docs)
+	pageCount := doclingPageCount(docs, sourcePages)
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
 			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, outputFormat, pageCount), doc.JSONContent), true
@@ -252,7 +258,7 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 // documents: the size of json_content.pages when present, otherwise the
 // highest page_no found in any provenance entry. It falls back to the number
 // of documents only when the response carries no page information.
-func doclingPageCount(docs []doclingDocument) int {
+func doclingPageCount(docs []doclingDocument, sourcePages int) int {
 	total := 0
 	for _, doc := range docs {
 		count := 0
@@ -272,9 +278,35 @@ func doclingPageCount(docs []doclingDocument) int {
 		total += count
 	}
 	if total == 0 {
+		// No page metadata at all: report the source PDF's pages rather
+		// than the number of returned documents.
+		if sourcePages > 0 {
+			return sourcePages
+		}
 		return len(docs)
 	}
 	return total
+}
+
+// doclingMaxSourcePageCount bounds a catalog /Count read from the source PDF;
+// a corrupt or malicious value far beyond any real document is ignored.
+const doclingMaxSourcePageCount = 1_000_000
+
+// doclingSourcePageCount counts the pages of the source PDF so a Docling
+// response without page metadata still reports the real page count. It
+// returns 0 when the bytes cannot be opened or the count is implausible.
+func doclingSourcePageCount(data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	reader, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0
+	}
+	if pages := reader.NumPage(); pages > 0 && pages <= doclingMaxSourcePageCount {
+		return pages
+	}
+	return 0
 }
 
 func doclingTextEntries(content map[string]any) []map[string]any {
@@ -330,6 +362,15 @@ func doclingNormalizeText(text string) string {
 	return strings.Join(strings.Fields(text), " ")
 }
 
+var doclingMarkdownPrefix = regexp.MustCompile(`^(#{1,6}\s+|[-*]\s+|\d+\.\s+)`)
+
+// doclingStripMarkdownPrefix removes one recognized Markdown heading or list
+// marker. Leading digits elsewhere are content ("2026 Outlook") and stay.
+func doclingStripMarkdownPrefix(text string) (string, bool) {
+	stripped := doclingMarkdownPrefix.ReplaceAllString(text, "")
+	return stripped, stripped != text
+}
+
 // doclingAttachPositions copies page positions from Docling's structured
 // json_content onto JSON items whose text matches a Docling text element. Items
 // without a match are left unchanged.
@@ -337,16 +378,23 @@ func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult
 	if res.Err != nil || len(res.JSON) == 0 || len(content) == 0 {
 		return res
 	}
-	byText := map[string][][]any{}
+	// Group positions per Docling text entry so repeated text keeps its own
+	// provenance: the i-th parsed occurrence takes the i-th entry's
+	// positions instead of every position of every identical entry.
+	byText := map[string][][][]any{}
 	for _, entry := range doclingTextEntries(content) {
 		text := doclingNormalizeText(stringValue(entry["text"]))
 		if text == "" {
 			continue
 		}
+		var positions [][]any
 		for _, prov := range doclingProvs(entry) {
 			if pos := doclingProvPosition(prov); pos != nil {
-				byText[text] = append(byText[text], pos)
+				positions = append(positions, pos)
 			}
+		}
+		if len(positions) > 0 {
+			byText[text] = append(byText[text], positions)
 		}
 	}
 	if len(byText) == 0 {
@@ -354,13 +402,27 @@ func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult
 	}
 	itemMaps := make([]map[string]any, len(res.JSON))
 	matched := false
+	used := map[string]int{}
 	for i, item := range res.JSON {
 		m := item.ToMap()
-		text := doclingNormalizeText(strings.TrimLeft(stringValue(m["text"]), "#-*0123456789. "))
-		if rows := byText[text]; len(rows) > 0 && text != "" {
-			m["positions"] = rows
-			m["_pdf_positions"] = rows
-			matched = true
+		text := doclingNormalizeText(stringValue(m["text"]))
+		matches, ok := byText[text]
+		if !ok {
+			// List and heading markers are not content, but leading digits
+			// can be; only retry without a recognized Markdown prefix.
+			if stripped, changed := doclingStripMarkdownPrefix(text); changed {
+				if matches, ok = byText[stripped]; ok {
+					text = stripped
+				}
+			}
+		}
+		if ok && text != "" {
+			if idx := used[text]; idx < len(matches) {
+				m["positions"] = matches[idx]
+				m["_pdf_positions"] = matches[idx]
+				used[text]++
+				matched = true
+			}
 		}
 		itemMaps[i] = m
 	}
