@@ -503,7 +503,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunk',
       uploadDate: 'Data caricamento',
-      chunkMethod: 'Metodo di chunking',
+      parsingMode: 'Modalità di analisi',
       enabled: 'Abilita',
       disabled: 'Disabilita',
       action: 'Azione',
@@ -697,7 +697,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowPlaceholder: 'Seleziona una pipeline.',
       buildItFromScratch: 'Costruiscilo da zero',
       dataFlow: 'Pipeline',
-      parseType: 'Tipo di analisi',
+      parsingMode: 'Modalità di analisi',
       manualSetup: 'Pipeline',
       builtIn: 'Integrato',
       titleDescription:
@@ -720,8 +720,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         "Se impostato su 'Team', tutti i membri del team potranno gestire il dataset.",
       chunkTokenNumberTip:
         'Imposta in qualche modo la soglia di token per creare un chunk. Un segmento con meno token di questa soglia sarà combinato con i segmenti successivi finché il conteggio dei token non supera la soglia, a quel punto viene creato un chunk. Non viene creato un nuovo chunk a meno che non si incontri un delimitatore, anche se la soglia viene superata.',
-      chunkMethod: 'Metodo di chunking',
-      chunkMethodTip: 'Visualizza i suggerimenti a destra.',
       upload: 'Carica',
       english: 'Inglese',
       chinese: 'Cinese',

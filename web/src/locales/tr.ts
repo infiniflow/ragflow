@@ -548,7 +548,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       webCrawl: 'Web taraması',
       chunkNumber: 'Parçalar',
       uploadDate: 'Yükleme tarihi',
-      chunkMethod: 'Parçalama yöntemi',
+      parsingMode: 'Ayrıştırma modu',
       enabled: 'Etkinleştir',
       disabled: 'Devre dışı bırak',
       action: 'İşlem',
@@ -753,7 +753,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataFlowPlaceholder: 'Lütfen bir hat seçin.',
       buildItFromScratch: 'Sıfırdan oluştur',
       dataFlow: 'Hat',
-      parseType: 'Ayrıştırma türü',
+      parsingMode: 'Ayrıştırma modu',
       manualSetup: 'Hat',
       builtIn: 'Yerleşik',
       noConfigChunkerHint:
@@ -775,8 +775,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       permissionsTip: `'Takım' olarak ayarlandığında, tüm takım üyeleri bu dataset'i yönetebilir.`,
       chunkTokenNumberTip:
         'Bir parça oluşturmak için token eşiğini belirler. Bu eşiğin altındaki tokenlı bir bölüm, token sayısı eşiği aşana kadar sonraki bölümlerle birleştirilir ve bu noktada bir parça oluşturulur. Eşik aşılsa bile bir sınırlayıcı ile karşılaşılmadıkça yeni parça oluşturulmaz.',
-      chunkMethod: 'Parçalama yöntemi',
-      chunkMethodTip: 'Sağdaki ipuçlarına bakın.',
       upload: 'Yükle',
       english: 'İngilizce',
       chinese: 'Çince',

@@ -320,7 +320,7 @@ export default {
       webCrawl: 'الزحف على شبكة الإنترنت',
       chunkNumber: 'قطع',
       uploadDate: 'تاريخ التحميل',
-      chunkMethod: 'طريقة التقطيع',
+      parsingMode: 'نمط التحليل',
       enabled: 'يُمكَِن',
       disabled: 'إبطال',
       action: 'فعل',
@@ -489,7 +489,7 @@ export default {
       dataFlowPlaceholder: 'الرجاء تحديد خط أنابيب.',
       buildItFromScratch: 'بنائها من الصفر',
       dataFlow: 'خط أنابيب',
-      parseType: 'نوع التحليل',
+      parsingMode: 'نمط التحليل',
       manualSetup: 'اختر خط الأنابيب',
       builtIn: 'مدمج',
       titleDescription:
@@ -511,8 +511,6 @@ export default {
         'إذا تم تعيينه على "فريق"، فسيتمكن جميع أعضاء فريقك من إدارة قاعدة المعرفة.',
       chunkTokenNumberTip:
         'إنه يعين نوعًا ما عتبة الرمز المميز لإنشاء قطعة. سيتم دمج المقطع الذي يحتوي على عدد أقل من الرموز المميزة من هذا الحد مع المقاطع التالية حتى يتجاوز عدد الرموز المميزة الحد، وعند هذه النقطة يتم إنشاء القطعة. لا يتم إنشاء أي قطعة جديدة ما لم تتم مواجهة محدد، حتى لو تم تجاوز الحد.',
-      chunkMethod: 'طريقة التقطيع',
-      chunkMethodTip: 'عرض النصائح على اليمين.',
       upload: 'رفع',
       english: 'إنجليزي',
       chinese: 'الصينية',
