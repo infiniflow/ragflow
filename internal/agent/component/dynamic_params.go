@@ -15,7 +15,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message and Compiler configuration in saved drafts.
 // All other component checks remain the same as ValidateDynamicEntries.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -111,7 +111,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "compiler":
-		if !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
+		if !draft && !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
 			return fmt.Errorf("[%s] %w", component, ErrCompilationTemplateRequired)
 		}
 	}
