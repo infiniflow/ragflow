@@ -12,6 +12,7 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -179,6 +180,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	toolAliases, err := indexedToolNameAliases(ctx, tools)
+	if err != nil {
+		return nil, fmt.Errorf("index tool aliases: %w", err)
+	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -195,7 +200,8 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: &roundLimitedChatModel{ToolCallingChatModel: chatModel, remaining: maxSteps / 2},
 		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: tools,
+			Tools:       tools,
+			ToolAliases: toolAliases,
 		},
 		// Python's streaming tool loop consumes the complete provider
 		// response before deciding whether the round contains a tool call.
@@ -785,6 +791,8 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 	}
 	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	toolInfoByName := make(map[string][]byte, len(tools))
+	var deduped []einotool.BaseTool
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
 		if err != nil {
@@ -793,17 +801,163 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		if info == nil || strings.TrimSpace(info.Name) == "" {
 			return nil, fmt.Errorf("agent tool info: missing name")
 		}
-		if _, exists := toolNames[info.Name]; exists {
-			return nil, fmt.Errorf("duplicate agent tool name %q", info.Name)
+		infoJSON, err := json.Marshal(info)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: marshal: %w", err)
 		}
-		toolNames[info.Name] = struct{}{}
+		name := info.Name
+		if _, exists := toolNames[name]; exists {
+			if bytes.Equal(toolInfoByName[name], infoJSON) {
+				// Identical tool definition registered more than once (e.g.
+				// agent-level tools and canvas nodes). The model cannot
+				// distinguish them, so keep the first occurrence.
+				common.Warn("agent: dropping identical duplicate tool", zap.String("name", name))
+				continue
+			}
+			// Same name but different configuration: assign a unique name
+			// rather than silently dropping the second definition.
+			name = uniqueAgentToolName(name, toolNames)
+			common.Warn("agent: renamed tool with duplicate name to keep distinct configuration",
+				zap.String("original", info.Name), zap.String("assigned", name))
+		}
+		toolNames[name] = struct{}{}
+		toolInfoByName[name] = infoJSON
+		if name != info.Name {
+			deduped = append(deduped, wrapRenamedTool(tool, name))
+		} else {
+			deduped = append(deduped, tool)
+		}
 	}
 	for _, subAgent := range p.SubAgents {
 		name := uniqueAgentToolName(subAgent.Name, toolNames)
 		toolNames[name] = struct{}{}
-		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
+		deduped = append(deduped, &subAgentTool{name: name, spec: subAgent})
 	}
-	return tools, nil
+	return deduped, nil
+}
+
+// indexedToolNameAliases lets the model call an indexed tool by its bare
+// name. MCP tools are exposed as <name>_<index> so that equally named tools
+// from different servers stay distinct, but models often call the bare
+// <name> they read in the prompt. Without an alias the eino ToolsNode fails
+// the whole run with "tool ... not found". A bare name is aliased only when
+// it is not itself a tool and exactly one <name>_<digits> tool matches it;
+// ambiguous names stay unresolved.
+func indexedToolNameAliases(ctx context.Context, tools []einotool.BaseTool) (map[string]compose.ToolAliasConfig, error) {
+	names := make(map[string]struct{}, len(tools))
+	candidates := make(map[string][]string)
+	for _, tool := range tools {
+		info, err := tool.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: %w", err)
+		}
+		names[info.Name] = struct{}{}
+		if base, ok := indexedToolBaseName(info.Name); ok {
+			candidates[base] = append(candidates[base], info.Name)
+		}
+	}
+	var aliases map[string]compose.ToolAliasConfig
+	for base, matches := range candidates {
+		if _, exists := names[base]; exists || len(matches) != 1 {
+			continue
+		}
+		if aliases == nil {
+			aliases = make(map[string]compose.ToolAliasConfig)
+		}
+		aliases[matches[0]] = compose.ToolAliasConfig{NameAliases: []string{base}}
+	}
+	return aliases, nil
+}
+
+// indexedToolBaseName splits "<base>_<digits>" and returns base.
+func indexedToolBaseName(name string) (string, bool) {
+	i := strings.LastIndexByte(name, '_')
+	if i <= 0 || i == len(name)-1 {
+		return "", false
+	}
+	for _, r := range name[i+1:] {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	return name[:i], true
+}
+
+// wrapRenamedTool returns a tool whose Info advertises the assigned unique
+// name while preserving all underlying Eino execution interfaces
+// (Invokable, Streamable, EnhancedInvokable, EnhancedStreamable).
+func wrapRenamedTool(tool einotool.BaseTool, name string) einotool.BaseTool {
+	if t, ok := tool.(einotool.EnhancedStreamableTool); ok {
+		return &renamedEnhancedStreamableTool{EnhancedStreamableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.EnhancedInvokableTool); ok {
+		return &renamedEnhancedInvokableTool{EnhancedInvokableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.StreamableTool); ok {
+		return &renamedStreamableTool{StreamableTool: t, name: name}
+	}
+	if t, ok := tool.(einotool.InvokableTool); ok {
+		return &renamedInvokableTool{InvokableTool: t, name: name}
+	}
+	return &renamedTool{BaseTool: tool, name: name}
+}
+
+type renamedInvokableTool struct {
+	einotool.InvokableTool
+	name string
+}
+
+func (t *renamedInvokableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.InvokableTool, t.name)
+}
+
+type renamedStreamableTool struct {
+	einotool.StreamableTool
+	name string
+}
+
+func (t *renamedStreamableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.StreamableTool, t.name)
+}
+
+type renamedEnhancedInvokableTool struct {
+	einotool.EnhancedInvokableTool
+	name string
+}
+
+func (t *renamedEnhancedInvokableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.EnhancedInvokableTool, t.name)
+}
+
+type renamedEnhancedStreamableTool struct {
+	einotool.EnhancedStreamableTool
+	name string
+}
+
+func (t *renamedEnhancedStreamableTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.EnhancedStreamableTool, t.name)
+}
+
+type renamedTool struct {
+	einotool.BaseTool
+	name string
+}
+
+func (t *renamedTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	return renamedToolInfo(ctx, t.BaseTool, t.name)
+}
+
+func renamedToolInfo(ctx context.Context, tool einotool.BaseTool, name string) (*schema.ToolInfo, error) {
+	info, err := tool.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, nil
+	}
+	renamed := *info
+	renamed.Name = name
+	return &renamed, nil
 }
 
 type subAgentTool struct {
