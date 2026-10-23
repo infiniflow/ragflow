@@ -15,8 +15,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
-// All other component checks remain the same as ValidateDynamicEntries.
+// ValidateDraftDynamicEntries allows unfinished Message content and aggregation groups in saved drafts.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
 }
@@ -103,7 +102,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 	case "iteration":
 		return validateIterationOutputs(component, params)
 	case "variableaggregator":
-		return validateVariableAggregatorGroups(component, params)
+		return validateVariableAggregatorGroups(component, params, draft)
 	case "userfillup":
 		return validateInputOptions(component, params)
 	case "exesql":
@@ -212,25 +211,56 @@ func invokeRowHasSource(row map[string]any) bool {
 	return value != nil && !isBlank(value)
 }
 
-func validateVariableAggregatorGroups(component string, params map[string]any) error {
-	if groups, ok := params["groups"].([]any); ok {
-		for i, rawGroup := range groups {
-			group, ok := rawGroup.(map[string]any)
-			if !ok || group == nil {
-				return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
+func validateVariableAggregatorGroups(component string, params map[string]any, draft bool) error {
+	var p variableAggregatorParam
+	if err := p.Update(params); err != nil {
+		return fmt.Errorf("[%s] %w", component, err)
+	}
+	if !draft && len(p.Groups) == 0 {
+		return fmt.Errorf("[%s] groups is incomplete", component)
+	}
+	for i, group := range p.Groups {
+		if !draft && !isNonBlankString(group["group_name"]) {
+			return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
+		}
+		raw, exists := group["variables"]
+		if !exists {
+			if draft {
+				continue
 			}
-			if !isNonBlankString(group["group_name"]) {
-				return fmt.Errorf("[%s] groups[%d] is incomplete", component, i)
+			return fmt.Errorf("[%s] groups[%d].variables is incomplete", component, i)
+		}
+		var variables []any
+		switch v := raw.(type) {
+		case []any:
+			variables = v
+		case []map[string]any:
+			for _, entry := range v {
+				variables = append(variables, entry)
 			}
-			variables, ok := group["variables"].([]any)
-			if !ok {
-				return fmt.Errorf("[%s] groups[%d].variables is incomplete", component, i)
-			}
-			for j, rawVariable := range variables {
-				variable, ok := rawVariable.(map[string]any)
-				if !ok || variable == nil || !isNonBlankString(variable["value"]) {
-					return fmt.Errorf("[%s] groups[%d].variables[%d] is incomplete", component, i, j)
+		default:
+			return fmt.Errorf("[%s] groups[%d].variables must be a list", component, i)
+		}
+		if !draft && len(variables) == 0 {
+			return fmt.Errorf("[%s] groups[%d].variables is incomplete", component, i)
+		}
+		for j, raw := range variables {
+			switch v := raw.(type) {
+			case string:
+			case map[string]any:
+				if v == nil {
+					return fmt.Errorf("[%s] groups[%d].variables[%d] must be a selector", component, i, j)
 				}
+				if value, exists := v["value"]; exists {
+					if _, ok := value.(string); !ok {
+						return fmt.Errorf("[%s] groups[%d].variables[%d].value must be a string", component, i, j)
+					}
+				}
+			default:
+				return fmt.Errorf("[%s] groups[%d].variables[%d] must be a selector", component, i, j)
+			}
+			if !draft && normalizeSelectorRef(raw) == "" {
+				return fmt.Errorf("[%s] groups[%d].variables[%d] is incomplete", component, i, j)
 			}
 		}
 	}

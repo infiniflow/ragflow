@@ -96,7 +96,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
-			if test.component["component_name"] == "Message" {
+			if test.component["component_name"] == "Message" || test.name == "aggregated variable" {
 				if draftErr != nil {
 					t.Fatalf("draft rejected Message: %v", draftErr)
 				}
