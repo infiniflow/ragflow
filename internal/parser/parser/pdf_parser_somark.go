@@ -176,7 +176,13 @@ func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any
 				continue
 			}
 			if item := soMarkBlockToItem(block, keepHeaderFooter); item != nil {
-				if pos := soMarkBlockPosition(block, pageNum); pos != nil {
+				// A block may carry its own 0-based page_idx; it wins over the
+				// enclosing page value, which stays as the fallback.
+				blockPage := pageNum
+				if raw, ok := numericAny(block["page_idx"]); ok && raw >= 0 {
+					blockPage = int(raw)
+				}
+				if pos := soMarkBlockPosition(block, blockPage); pos != nil {
 					item["positions"] = [][]any{pos}
 					item["_pdf_positions"] = [][]any{pos}
 				}

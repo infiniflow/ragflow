@@ -177,6 +177,27 @@ func TestSoMarkItemsEmitPagePositions(t *testing.T) {
 	}
 }
 
+func TestSoMarkItemsPreferBlockPageIdx(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": float64(0), "blocks": []any{
+			map[string]any{"type": "text", "content": "own page", "page_idx": float64(4), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "page fallback", "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+		}},
+	}}}}
+	items, _ := soMarkItems(result, false)
+	if len(items) != 2 {
+		t.Fatalf("items=%d, want 2", len(items))
+	}
+	rows, _ := items[0]["_pdf_positions"].([][]any)
+	if len(rows) != 1 || rows[0][0] != float64(5) {
+		t.Fatalf("block page_idx must win: %#v", items[0]["_pdf_positions"])
+	}
+	rows, _ = items[1]["_pdf_positions"].([][]any)
+	if len(rows) != 1 || rows[0][0] != float64(1) {
+		t.Fatalf("missing page_idx must fall back to page_num: %#v", items[1]["_pdf_positions"])
+	}
+}
+
 func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
