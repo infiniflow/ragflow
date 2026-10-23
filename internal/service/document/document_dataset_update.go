@@ -655,6 +655,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		DatasetID:            doc.KbID,
 		ParserID:             doc.ParserID,
 		PipelineID:           doc.PipelineID,
+		PipelineVersionID:    doc.PipelineVersionID,
 		ParserConfig:         doc.ParserConfig,
 		SourceType:           doc.SourceType,
 		Type:                 doc.Type,

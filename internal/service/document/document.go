@@ -147,6 +147,7 @@ type UpdateDatasetDocumentResponse struct {
 	DatasetID            string                      `json:"dataset_id"`
 	ParserID             string                      `json:"parser_id"`
 	PipelineID           *string                     `json:"pipeline_id,omitempty"`
+	PipelineVersionID    *string                     `json:"pipeline_version_id,omitempty"`
 	ParserConfig         map[string]interface{}      `json:"parser_config"`
 	SourceType           string                      `json:"source_type"`
 	Type                 string                      `json:"type"`
