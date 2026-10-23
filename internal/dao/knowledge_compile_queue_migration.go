@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const knowledgeCompileQueueTargetVersion = "v1.0.0-rc3.dev4"
+const knowledgeCompileQueueTargetVersion = "v1.0.0-rc3.dev5"
 
 // migrateKnowledgeCompileQueues runs with queue producers and workers stopped.
 // Each dataset is copied transactionally; rerunning replaces its copied rows

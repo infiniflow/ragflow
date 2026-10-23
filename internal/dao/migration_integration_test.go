@@ -190,7 +190,7 @@ func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}, &entity.SystemSettings{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := setDatabaseMigrationVersion(ctx, db, permissionMigrationTargetVersion); err != nil {
+	if err := setDatabaseMigrationVersion(ctx, db, tenantDefaultModelsTargetVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err = migrateKnowledgeCompileQueues(ctx, db); err != nil {

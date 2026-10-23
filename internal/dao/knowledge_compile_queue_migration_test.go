@@ -103,7 +103,7 @@ func TestMigrateKnowledgeCompileQueuesPreservesEventsAndLease(t *testing.T) {
 	for _, tc := range []struct{ version, want string }{
 		{permissionMigrationTargetVersion, knowledgeCompileQueueTargetVersion},
 		{knowledgeCompileQueueTargetVersion, knowledgeCompileQueueTargetVersion},
-		{"v1.0.0-rc3.dev5", "v1.0.0-rc3.dev5"},
+		{"v1.0.0-rc3.dev6", "v1.0.0-rc3.dev6"},
 	} {
 		writeDatabaseVersion(t, db, tc.version)
 		if err := migrateKnowledgeCompileQueues(t.Context(), db); err != nil {
@@ -121,14 +121,16 @@ func TestMigrateKnowledgeCompileQueuesPreservesEventsAndLease(t *testing.T) {
 
 func TestMigrateKnowledgeCompileQueuesResumesAfterInvalidPayload(t *testing.T) {
 	for _, queue := range []struct {
-		column string
-		table  string
+		column  string
+		table   string
+		version string
 	}{
-		{"backlog_doc_ids", (entity.KnowledgeCompileBacklog{}).TableName()},
-		{"inflight_doc_ids", (entity.KnowledgeCompileInflight{}).TableName()},
+		{"backlog_doc_ids", (entity.KnowledgeCompileBacklog{}).TableName(), permissionMigrationTargetVersion},
+		{"inflight_doc_ids", (entity.KnowledgeCompileInflight{}).TableName(), tenantDefaultModelsTargetVersion},
 	} {
 		t.Run(queue.column, func(t *testing.T) {
 			db := setupKnowledgeCompileMigrationDB(t)
+			writeDatabaseVersion(t, db, queue.version)
 			for _, id := range []string{"", "a", "b"} {
 				if err := db.Create(&entity.KnowledgeCompileDataset{DatasetID: id}).Error; err != nil {
 					t.Fatal(err)
@@ -145,8 +147,8 @@ func TestMigrateKnowledgeCompileQueuesResumesAfterInvalidPayload(t *testing.T) {
 			if err := migrateKnowledgeCompileQueues(t.Context(), db); err == nil {
 				t.Fatal("invalid source must fail migration")
 			}
-			if got := databaseVersion(t, db); got != permissionMigrationTargetVersion {
-				t.Fatalf("failed migration advanced version=%q, want %q", got, permissionMigrationTargetVersion)
+			if got := databaseVersion(t, db); got != queue.version {
+				t.Fatalf("failed migration advanced version=%q, want %q", got, queue.version)
 			}
 			if !db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, queue.column) {
 				t.Fatal("failed migration dropped source column")
