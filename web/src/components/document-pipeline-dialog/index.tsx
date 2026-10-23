@@ -59,6 +59,8 @@ export function DocumentPipelineDialog({
 }: IProps) {
   const { t } = useTranslation();
 
+  let latestVersionId: string | undefined;
+
   const {
     form,
     parseType,
@@ -74,6 +76,7 @@ export function DocumentPipelineDialog({
     parserId,
     pipelineId,
     pipelineVersionId,
+    latestVersionId,
     parserConfig,
   });
 
@@ -100,7 +103,9 @@ export function DocumentPipelineDialog({
     loading: versionListLoading,
     isError: versionListError,
   } = useFetchCanvasVersionList(selectedPipelineId);
-  const latestId = versions[0]?.id;
+  // Assigned here (after the version list resolves) so the form hook adopts it
+  // as the default selection for an unpinned document (design section 8).
+  latestVersionId = versions[0]?.id;
   // A selected version is only Missing when the list has finished loading and
   // the id is genuinely absent. While loading (initial mount of a pinned doc,
   // or after switching pipelines) the list is empty, so treating absence as
@@ -114,7 +119,7 @@ export function DocumentPipelineDialog({
     !versionListError &&
     !versions.some((v) => v.id === selectedVersionId);
   const versionOutdated =
-    !!selectedVersionId && !versionMissing && selectedVersionId !== latestId;
+    !!selectedVersionId && !versionMissing && selectedVersionId !== latestVersionId;
 
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {

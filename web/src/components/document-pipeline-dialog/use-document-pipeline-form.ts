@@ -40,6 +40,10 @@ export interface IDocumentPipelineDialogProps {
   // Currently pinned canvas version id (design section 5). Empty when the
   // dataset/document binds the latest version.
   pipelineVersionId?: string;
+  // Latest concrete version id of the bound canvas (design section 8: when the
+  // document is unpinned we must still pre-select a specific version rather than
+  // leave the field empty and surface the "Latest version" placeholder).
+  latestVersionId?: string;
   parserConfig?: Record<string, any>;
 }
 
@@ -47,6 +51,7 @@ export function useDocumentPipelineForm({
   parserId,
   pipelineId,
   pipelineVersionId,
+  latestVersionId,
   parserConfig,
 }: IDocumentPipelineDialogProps) {
   const { t } = useTranslation();
@@ -93,7 +98,10 @@ export function useDocumentPipelineForm({
       parse_type: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
       parser_id: parserId || '',
       pipeline_id: pipelineId || '',
-      pipeline_version_id: pipelineVersionId || '',
+      // Design section 8: an unpinned document still pre-selects the latest
+      // concrete version so the UI shows a specific version, never the
+      // "Latest version" placeholder. A pinned value wins when present.
+      pipeline_version_id: pipelineVersionId || latestVersionId || '',
       parser_config: transformSavedParserConfigToForm(parserConfig),
     },
   });
@@ -152,6 +160,18 @@ export function useDocumentPipelineForm({
       form.setValue('pipeline_version_id', '');
     }
   }, [selectedPipelineId, savedPipelineId, form]);
+
+  // Design section 8 (T37): an unpinned document must never show the "Latest
+  // version" pseudo-value, so default the field to the latest concrete version
+  // id. The version list loads asynchronously, so adopt the latest id once it
+  // becomes available. We only adopt while the field is still empty, so a
+  // user's manual selection of an older version is preserved and a stable
+  // latest id will not re-fire this effect after adoption.
+  useEffect(() => {
+    if (!pipelineVersionId && latestVersionId && !form.getValues('pipeline_version_id')) {
+      form.setValue('pipeline_version_id', latestVersionId);
+    }
+  }, [pipelineVersionId, latestVersionId, form]);
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 
