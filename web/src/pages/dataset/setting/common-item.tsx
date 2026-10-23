@@ -1,4 +1,5 @@
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
+import { useIsDatasetOwner } from '@/pages/dataset/contexts/knowledge-base-context';
 import {
   FormControl,
   FormField,
@@ -86,13 +87,14 @@ export const LLMSelect = ({
   ownerTenantId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
+  const locked = useIsDatasetOwner() === false;
   return (
     <ModelTreeSelect
       modelTypes={ModelTypeMap.llm_id}
       onChange={(value) => {
         field.onChange(value);
       }}
-      disabled={disabled && !isEdit}
+      disabled={(disabled && !isEdit) || locked}
       value={field.value}
       placeholder={t('embeddingModelPlaceholder')}
       ownerTenantId={ownerTenantId}

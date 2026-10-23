@@ -185,6 +185,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			txCode = code
 			return authErr
 		}
+		// Invited members can update the rest of the dataset. The embedding
+		// model stays on the owner's account, so a member save is not rejected
+		// for lacking that model.
+		if embdIDProvided && userID != lockedKB.TenantID {
+			embdIDProvided = false
+		}
 		if sel != nil || pipelineID != nil || req.ParserConfig != nil || req.ParserConfigProvided {
 			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
 			effective, resolveErr := service.Resolve(current, sel)
