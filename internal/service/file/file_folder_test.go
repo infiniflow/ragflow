@@ -318,8 +318,8 @@ func TestFileService_CreateFolderRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().CreateFolder(t.Context(), "user-1", "child", foreignFolder.ID, FileTypeFolder)
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("CreateFolder error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("CreateFolder error = %v, want resource not found", err)
 	}
 	children, err := dao.NewFileDAO().ListByParentID(t.Context(), dao.DB, foreignFolder.ID)
 	if err != nil {
@@ -379,8 +379,8 @@ func TestFileService_UploadRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().UploadFile(t.Context(), "user-1", foreignFolder.ID, nil, 1024)
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("UploadFile error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("UploadFile error = %v, want resource not found", err)
 	}
 }
 

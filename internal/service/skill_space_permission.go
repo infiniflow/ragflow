@@ -27,7 +27,7 @@ import (
 func resolveSkillSpaceTenantID(ctx context.Context, userID, spaceID string, operation permission.Operation) (string, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	if spaceID == defaultSkillSpaceID {
-		return requireOwnedTenantID(ctx, userID)
+		return requireCurrentTenantID(ctx, userID)
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)

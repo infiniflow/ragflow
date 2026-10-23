@@ -29,6 +29,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
 	"ragflow/internal/dao"
 	"ragflow/internal/dao/transaction"
 )
@@ -130,7 +131,16 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, i
 
 	// Enrich with knowledge base names
 	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
+	checker := permission.NewDatabaseChecker(dao.DB)
 	for _, chat := range chats {
+		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: permission.ResourceKindChat,
+			ID:   chat.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		chat.Chat.OperatorPermission = access.PermissionMask
 		kbNames, datasetIDs := s.getDatasetNamesAndIDs(ctx, chat.KBIDs)
 		chatsWithKBNames = append(chatsWithKBNames, &ChatWithKBNames{
 			Chat:         &chat.Chat,
@@ -173,7 +183,16 @@ type CreateChatRequest struct {
 }
 
 func (s *ChatService) Create(ctx context.Context, userID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
-	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "chat", permission.ActionWrite); err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
@@ -203,7 +222,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	if llmIDValue, ok := req["llm_id"]; ok {
 		llmID := stringFromValue(llmIDValue)
 		llmSetting, _ := mapFromValue(req["llm_setting"])
-		tenantLLMID, err := resolveCreateLLMID(ctx, llmID, userID, llmSetting)
+		tenantLLMID, err := resolveCreateLLMID(ctx, llmID, tenantID, llmSetting)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -214,7 +233,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 
 	if rerankIDValue, ok := req["rerank_id"]; ok {
 		rerankID := stringFromValue(rerankIDValue)
-		tenantRerankID, err := resolveCreateRerankID(ctx, rerankID, userID)
+		tenantRerankID, err := resolveCreateRerankID(ctx, rerankID, tenantID)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -250,7 +269,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	}
 	if stringFromValue(req["llm_id"]) != "" && !isTruthy(req["tenant_llm_id"]) {
 		llmSetting, _ := mapFromValue(req["llm_setting"])
-		tenantLLMID, err := resolveCreateLLMID(ctx, stringFromValue(req["llm_id"]), userID, llmSetting)
+		tenantLLMID, err := resolveCreateLLMID(ctx, stringFromValue(req["llm_id"]), tenantID, llmSetting)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -297,15 +316,20 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	filterCreateChatPersistedFields(req)
 
 	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
-		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, tenantID, string(entity.StatusValid))
 	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	req["name"] = name
 
-	chat := buildCreateChatEntity(req, userID)
-	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
+	chat := buildCreateChatEntity(req, tenantID)
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.chatDAO.Create(ctx, tx, chat); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindChat, chat.ID)
+	}); err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
 
@@ -1281,6 +1305,14 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	if err != nil {
 		return nil, err
 	}
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindChat,
+		ID:   chat.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	chat.OperatorPermission = access.PermissionMask
 
 	// Step 4: Build response with kb_names (same as Python _build_chat_response)
 	// Resolve kb_ids to kb_names

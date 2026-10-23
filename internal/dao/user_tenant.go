@@ -140,8 +140,12 @@ func (dao *UserTenantDAO) GetMembersByTenantID(ctx context.Context, db *gorm.DB,
 			"user.status AS is_active, user.is_anonymous, user.is_superuser, "+
 			"DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s') AS update_date").
 		Joins("JOIN user ON user_tenant.user_id = user.id").
-		Where("user_tenant.tenant_id = ? AND user_tenant.status = ? AND user_tenant.role != ?",
-			tenantID, "1", "owner").
+		Where("user_tenant.tenant_id = ? AND user_tenant.status IN ? AND user_tenant.role != ?",
+			tenantID, []string{
+				entity.TenantMembershipStatusJoined,
+				entity.TenantMembershipStatusInvited,
+				entity.TenantMembershipStatusRequested,
+			}, "owner").
 		Scan(&results).Error
 	return results, err
 }

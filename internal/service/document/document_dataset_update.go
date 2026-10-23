@@ -22,14 +22,6 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
-	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -46,18 +38,35 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	for _, doc := range documents {
 		documentByID[doc.ID] = doc
 	}
-
+	accessibleDocuments := make(map[string]*entity.Document, len(documentIDs))
 	for _, docID := range documentIDs {
 		doc, ok := documentByID[docID]
-		if !ok {
-			result[docID] = map[string]string{"error": "Document not found"}
+		if !ok || doc.KbID != datasetID {
+			result[docID] = map[string]string{"error": "Document not found in this dataset."}
 			hasError = true
 			continue
 		}
-
-		if doc.KbID != datasetID {
-			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+			result[docID] = map[string]string{"error": "Permission denied"}
 			hasError = true
+			continue
+		}
+		accessibleDocuments[docID] = doc
+	}
+	if len(accessibleDocuments) == 0 {
+		if hasError {
+			return result, common.CodeServerError, fmt.Errorf("partial failure")
+		}
+		return result, common.CodeSuccess, nil
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return result, common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+
+	for _, docID := range documentIDs {
+		doc, ok := accessibleDocuments[docID]
+		if !ok {
 			continue
 		}
 
@@ -114,10 +123,6 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
@@ -132,6 +137,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
+	}
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {

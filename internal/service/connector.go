@@ -278,6 +278,13 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 
 // CreateConnector creates a connector owned by the current user.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkFeatureAction(ctx, userID, "file", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
 		return nil, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
 	}
@@ -301,7 +308,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 
 	connector := &entity.Connector{
 		ID:          common.GenerateUUID(),
-		TenantID:    userID,
+		TenantID:    tenantID,
 		Name:        req.Name,
 		Source:      req.Source,
 		InputType:   connectorInputTypePoll,
@@ -312,7 +319,12 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 		Status:      connectorStatusUnstarted,
 	}
 
-	if err := s.connectorDAO.Create(ctx, dao.DB, connector); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.connectorDAO.Create(ctx, tx, connector); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindConnector, connector.ID)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -350,7 +362,7 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID, requested
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireOwnedTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx, userID)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 		}

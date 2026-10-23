@@ -798,7 +798,6 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 const (
 	TenantRoleOwner  = "owner"
 	TenantRoleNormal = "normal"
-	TenantRoleInvite = "invite"
 	TenantRoleAdmin  = "admin"
 )
 
@@ -885,55 +884,51 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 		}
 		return nil, common.CodeDataError, err
 	}
-
-	// Reject if already a member or has a pending invitation.
-	userTenant, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
-	if err == nil {
-		if userTenant != nil {
-			switch {
-			case userTenant.Role == TenantRoleOwner:
-				return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
-			case userTenant.Role == TenantRoleInvite:
-				return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
-			case strings.TrimSpace(userTenant.Role) != "":
-				return nil, common.CodeDataError, fmt.Errorf("user is already a member")
-			}
-		}
-	}
-	if err != nil && !dao.IsNotFoundErr(err) {
-		return nil, common.CodeServerError, err
-	}
-
-	status := string(entity.StatusValid)
-	ut := &entity.UserTenant{
-		ID:        common.GenerateUUID(),
-		UserID:    invitee.ID,
-		TenantID:  tenantID,
-		Role:      TenantRoleInvite,
-		InvitedBy: userID,
-		Status:    &status,
-	}
+	var membership entity.UserTenant
 	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.userTenantDAO.Create(ctx, tx, ut); err != nil {
-			return fmt.Errorf("failed to create invitation: %w", err)
+		var existing entity.UserTenant
+		loadErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND tenant_id = ?", invitee.ID, tenantID).Take(&existing).Error
+		if loadErr != nil && !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load existing Tenant membership: %w", loadErr)
 		}
-		return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.invited", "user", invitee.ID, "tenant_membership", ut.ID, "invite", 0, 0, nil,
-			map[string]interface{}{"user_id": invitee.ID, "email": invitee.Email, "role": ut.Role, "invited_by": userID, "status": status})
+		if errors.Is(loadErr, gorm.ErrRecordNotFound) {
+			status := entity.TenantMembershipStatusInvited
+			membership = entity.UserTenant{ID: common.GenerateUUID(), UserID: invitee.ID, TenantID: tenantID, InvitedBy: userID, Status: &status}
+			if err := tx.Create(&membership).Error; err != nil {
+				return fmt.Errorf("failed to create invitation: %w", err)
+			}
+			return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.invited", "user", invitee.ID, "tenant_membership", membership.ID, "invite", 0, 0, nil,
+				map[string]interface{}{"user_id": invitee.ID, "email": invitee.Email, "role": membership.Role, "invited_by": userID, "status": status})
+		}
+		oldStatus := tenantMembershipStatus(existing.Status)
+		switch oldStatus {
+		case entity.TenantMembershipStatusJoined:
+			if existing.Role == TenantRoleOwner {
+				return common.NewCodedError(common.CodeDataError, "user is already the tenant owner")
+			}
+			return common.NewCodedError(common.CodeDataError, "user is already a member")
+		case entity.TenantMembershipStatusInvited:
+			return common.NewCodedError(common.CodeDataError, "user already has a pending invitation")
+		case entity.TenantMembershipStatusRequested, entity.TenantMembershipStatusRejected, entity.TenantMembershipStatusLeft, entity.TenantMembershipStatusRemoved:
+		default:
+			return common.NewCodedError(common.CodeConflict, "Tenant membership has an unsupported status")
+		}
+		before := map[string]interface{}{"user_id": invitee.ID, "role": existing.Role, "status": oldStatus, "invited_by": existing.InvitedBy}
+		status := entity.TenantMembershipStatusInvited
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{"role": "", "status": status, "invited_by": userID}).Error; err != nil {
+			return fmt.Errorf("reinvite Tenant member: %w", err)
+		}
+		existing.Role, existing.InvitedBy, existing.Status = "", userID, &status
+		membership = existing
+		return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.invited", "user", invitee.ID, "tenant_membership", membership.ID, "invite", 0, 0, before,
+			map[string]interface{}{"user_id": invitee.ID, "email": invitee.Email, "role": membership.Role, "invited_by": userID, "status": status})
 	})
 	if err != nil {
 		return nil, tenantRoleErrorCode(err), err
 	}
 
-	avatar := ""
-	if invitee.Avatar != nil {
-		avatar = *invitee.Avatar
-	}
-	return &AddMemberResponse{
-		ID:       invitee.ID,
-		Avatar:   avatar,
-		Email:    invitee.Email,
-		Nickname: invitee.Nickname,
-	}, common.CodeSuccess, nil
+	return tenantMemberResponse(invitee), common.CodeSuccess, nil
 }
 
 // RemoveMember removes a user from the tenant. The owner may remove members,
@@ -943,65 +938,58 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	if userID != "" && userID == targetUserID {
-		var removed bool
-		err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var invitation entity.UserTenant
-			err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("user_id = ? AND tenant_id = ? AND role = ? AND status = ?", userID, tenantID, TenantRoleInvite, string(entity.StatusValid)).
-				Take(&invitation).Error
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("load pending tenant invitation: %w", err)
-			}
-			if err := tx.Unscoped().Where("id = ?", invitation.ID).Delete(&entity.UserTenant{}).Error; err != nil {
-				return fmt.Errorf("failed to decline tenant invitation: %w", err)
-			}
-			removed = true
-			return recordTenantPermissionChange(tx, tenantID, userID, "tenant.invitation.declined", "user", userID, "tenant_membership", invitation.ID, "decline", 0, 0,
-				map[string]interface{}{"user_id": userID, "role": invitation.Role, "invited_by": invitation.InvitedBy, "status": invitation.Status},
-				map[string]interface{}{"declined": true})
-		})
-		if err != nil {
+	if userID != targetUserID {
+		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
 			return tenantRoleErrorCode(err), err
 		}
-		if removed {
-			return common.CodeSuccess, nil
-		}
-	}
-
-	if userID == targetUserID {
-		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, 0); err != nil {
-			return tenantRoleErrorCode(err), err
-		}
-	} else if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
-		return tenantRoleErrorCode(err), err
 	}
 	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var targetMembership entity.UserTenant
+		var membership entity.UserTenant
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("user_id = ? AND tenant_id = ? AND status = ?", targetUserID, tenantID, string(entity.StatusValid)).
-			Take(&targetMembership).Error; err != nil {
+			Where("user_id = ? AND tenant_id = ?", targetUserID, tenantID).Take(&membership).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return common.NewCodedError(common.CodeDataError, "user is not a tenant member")
+				return common.NewCodedError(common.CodeDataError, "user has no Tenant membership or invitation")
 			}
-			return fmt.Errorf("failed to load tenant member: %w", err)
+			return fmt.Errorf("load Tenant membership: %w", err)
 		}
-		if targetMembership.Role == TenantRoleOwner {
-			return common.NewCodedError(common.CodeArgumentError, "cannot remove the tenant owner")
+		oldStatus := tenantMembershipStatus(membership.Status)
+		if oldStatus == entity.TenantMembershipStatusRemoved || oldStatus == entity.TenantMembershipStatusRejected || oldStatus == entity.TenantMembershipStatusLeft {
+			return nil
 		}
-		if err := tx.Unscoped().Where("id = ?", targetMembership.ID).Delete(&entity.UserTenant{}).Error; err != nil {
-			return fmt.Errorf("failed to remove member: %w", err)
+		if membership.Role == TenantRoleOwner {
+			return common.NewCodedError(common.CodeArgumentError, "cannot remove or leave the tenant owner")
 		}
+
+		newStatus := entity.TenantMembershipStatusRemoved
 		eventType, actionType := "tenant.member.removed", "remove"
-		if targetMembership.Role == TenantRoleInvite {
+		if userID == targetUserID {
+			switch oldStatus {
+			case entity.TenantMembershipStatusInvited:
+				newStatus = entity.TenantMembershipStatusRejected
+				eventType, actionType = "tenant.invitation.declined", "reject"
+			case entity.TenantMembershipStatusJoined:
+				newStatus = entity.TenantMembershipStatusLeft
+				eventType, actionType = "tenant.member.left", "leave"
+			default:
+				return common.NewCodedError(common.CodeDataError, "user has no active Tenant membership or invitation")
+			}
+		} else if oldStatus == entity.TenantMembershipStatusInvited {
 			eventType, actionType = "tenant.invitation.revoked", "revoke"
 		}
-		return recordTenantPermissionChange(tx, tenantID, userID, eventType, "user", targetUserID, "tenant_membership", targetMembership.ID, actionType, 0, 0,
-			map[string]interface{}{"user_id": targetUserID, "role": targetMembership.Role, "invited_by": targetMembership.InvitedBy, "status": targetMembership.Status},
-			map[string]interface{}{"removed": true})
+
+		before := map[string]interface{}{
+			"user_id": membership.UserID, "role": membership.Role,
+			"invited_by": membership.InvitedBy, "status": oldStatus,
+		}
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", membership.ID).
+			Updates(map[string]interface{}{"role": "", "status": newStatus}).Error; err != nil {
+			return fmt.Errorf("update Tenant membership status: %w", err)
+		}
+		after := map[string]interface{}{
+			"user_id": membership.UserID, "role": "",
+			"invited_by": membership.InvitedBy, "status": newStatus,
+		}
+		return recordTenantPermissionChange(tx, tenantID, userID, eventType, "user", targetUserID, "tenant_membership", membership.ID, actionType, 0, 0, before, after)
 	})
 	if err != nil {
 		return tenantRoleErrorCode(err), err
@@ -1014,19 +1002,17 @@ func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID strin
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-	if err != nil || existing == nil {
-		return common.CodeDataError, fmt.Errorf("no pending invitation found")
-	}
-	if existing.Role != TenantRoleInvite {
-		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
-	}
-	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var membership entity.UserTenant
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ? AND user_id = ? AND tenant_id = ? AND role = ? AND status = ?", existing.ID, userID, tenantID, TenantRoleInvite, string(entity.StatusValid)).
-			Take(&membership).Error; err != nil {
-			return fmt.Errorf("reload pending Tenant invitation: %w", err)
+			Where("user_id = ? AND tenant_id = ?", userID, tenantID).Take(&membership).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.NewCodedError(common.CodeDataError, "no pending invitation found")
+			}
+			return fmt.Errorf("load pending Tenant invitation: %w", err)
+		}
+		if tenantMembershipStatus(membership.Status) != entity.TenantMembershipStatusInvited {
+			return common.NewCodedError(common.CodeArgumentError, "no pending invitation to accept")
 		}
 		role, err := resolveTenantInviteRole(tx, tenantID)
 		if err != nil {
@@ -1035,11 +1021,13 @@ func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID strin
 		if strings.TrimSpace(role.value) == "" {
 			return common.NewCodedError(common.CodeConflict, "Tenant default role is invalid")
 		}
-		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Update("role", role.value).Error; err != nil {
+		status := entity.TenantMembershipStatusJoined
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", membership.ID).
+			Updates(map[string]interface{}{"role": role.value, "status": status}).Error; err != nil {
 			return fmt.Errorf("accept Tenant invitation: %w", err)
 		}
-		before := map[string]interface{}{"user_id": userID, "role": membership.Role}
-		after := map[string]interface{}{"user_id": userID, "role": role.value}
+		before := map[string]interface{}{"user_id": userID, "role": membership.Role, "status": tenantMembershipStatus(membership.Status)}
+		after := map[string]interface{}{"user_id": userID, "role": role.value, "status": status}
 		if role.roleID != nil {
 			after["role_id"] = *role.roleID
 		}
@@ -1052,4 +1040,19 @@ func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID strin
 		return tenantRoleErrorCode(err), err
 	}
 	return common.CodeSuccess, nil
+}
+
+func tenantMembershipStatus(status *string) string {
+	if status == nil {
+		return ""
+	}
+	return *status
+}
+
+func tenantMemberResponse(user *entity.User) *AddMemberResponse {
+	avatar := ""
+	if user.Avatar != nil {
+		avatar = *user.Avatar
+	}
+	return &AddMemberResponse{ID: user.ID, Avatar: avatar, Email: user.Email, Nickname: user.Nickname}
 }

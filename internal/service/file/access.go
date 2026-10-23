@@ -22,6 +22,30 @@ func checkFileAccess(ctx context.Context, userID string, file *entity.File, oper
 	}, operation)
 }
 
+func fileRequestSubject(ctx context.Context, identity string) (string, string, error) {
+	subject, ok := permission.SubjectFromContext(ctx)
+	if !ok {
+		return identity, identity, nil
+	}
+	if subject.UserID == "" || subject.UserID != identity {
+		return "", "", permission.ErrInvalidSubject
+	}
+	tenantID := subject.TenantID
+	if tenantID == "" {
+		tenantID = identity
+	}
+	return subject.UserID, tenantID, nil
+}
+
+func tenantFileContext(ctx context.Context, userID, tenantID string) (context.Context, error) {
+	if subject, ok := permission.SubjectFromContext(ctx); ok {
+		if subject.UserID != "" && subject.UserID != userID || subject.TenantID != "" && subject.TenantID != tenantID {
+			return nil, permission.ErrInvalidSubject
+		}
+	}
+	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID}), nil
+}
+
 func (s *FileService) checkFileTreeAccess(ctx context.Context, userID string, file *entity.File, operation permission.Operation) error {
 	if err := checkFileAccess(ctx, userID, file, operation); err != nil {
 		return err

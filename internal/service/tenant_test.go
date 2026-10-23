@@ -132,22 +132,33 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-removal failed: %v", err)
 	}
-	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, db, "user-abc", "tenant-xyz"); !dao.IsNotFoundErr(err) {
-		t.Fatalf("self-membership remains after removal: %v", err)
+	var membership entity.UserTenant
+	if err := db.Where("user_id = ? AND tenant_id = ?", "user-abc", "tenant-xyz").Take(&membership).Error; err != nil {
+		t.Fatalf("read self-membership after leaving: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusLeft || membership.Role != "" {
+		t.Fatalf("self-membership after leaving = %+v, want left status and empty role", membership)
 	}
 }
 
 func TestDeclineOwnTenantInviteAllowed(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
-	seedTenantMembership(t, db, "invite", "invitee-user", "tenant-xyz", TenantRoleInvite)
+	status := entity.TenantMembershipStatusInvited
+	if err := db.Create(&entity.UserTenant{ID: "invite", UserID: "invitee-user", TenantID: "tenant-xyz", Status: &status}).Error; err != nil {
+		t.Fatalf("seed pending invitation: %v", err)
+	}
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 
 	code, err := s.RemoveMember(t.Context(), "invitee-user", "tenant-xyz", "invitee-user")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("RemoveMember(invitation self-decline) = (%v, %v), want success", code, err)
 	}
-	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(t.Context(), db, "invitee-user", "tenant-xyz"); !dao.IsNotFoundErr(err) {
-		t.Fatalf("pending invitation remains after decline: %v", err)
+	var membership entity.UserTenant
+	if err := db.Where("user_id = ? AND tenant_id = ?", "invitee-user", "tenant-xyz").Take(&membership).Error; err != nil {
+		t.Fatalf("read declined invitation: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusRejected || membership.Role != "" {
+		t.Fatalf("declined invitation = %+v, want rejected status and empty role", membership)
 	}
 }
 
@@ -181,7 +192,6 @@ func TestTenantRoleConstants(t *testing.T) {
 	cases := map[string]string{
 		TenantRoleOwner:  "owner",
 		TenantRoleNormal: "normal",
-		TenantRoleInvite: "invite",
 		TenantRoleAdmin:  "admin",
 	}
 	for got, want := range cases {
