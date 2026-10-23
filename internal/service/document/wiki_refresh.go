@@ -35,8 +35,7 @@ const sourceChunkAvailabilityBatchSize = 1000
 // disabled/enabled document is allowed to expose: its ordinary source chunks and
 // its per-document final compiled products (tree / structure / mindmap — the wiki
 // variant is hidden at write time, see markCompiledProductsHidden). Wiki staging
-// rows, unknown-kwd rows and the TOC row are skipped; see
-// loadAvailabilityToggleChunkIDs.
+// rows and unknown-kwd rows are skipped; see loadAvailabilityToggleChunkIDs.
 func (s *DocumentService) updateDocumentChunkAvailability(ctx context.Context, tenantID, datasetID, documentID string, available int) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("document engine not initialized")
@@ -64,9 +63,8 @@ func (s *DocumentService) updateDocumentChunkAvailability(ctx context.Context, t
 // availability follows the document status: source chunks (no compile_kwd) and
 // final compiled products (a compile_kwd mapping to a non-wiki variant). Skipped:
 // the wiki variant (wiki_page / wiki_section), whose per-document rows are
-// staging for the dataset-level merge, unknown-kwd rows such as the
-// wiki_map_active state row or the legacy, KB-scoped wiki_page_graph blob, and
-// the TOC row (toc_kwd=toc), which only the TOC enhancer reads and stays hidden.
+// staging for the dataset-level merge, and unknown-kwd rows such as the
+// wiki_map_active state row or the legacy, KB-scoped wiki_page_graph blob.
 func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, indexName, datasetID, documentID string) ([]string, error) {
 	ids := make([]string, 0)
 	for offset := 0; ; offset += sourceChunkAvailabilityBatchSize {
@@ -76,7 +74,7 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 			KbIDs:        []string{datasetID},
 			Offset:       offset,
 			Limit:        sourceChunkAvailabilityBatchSize,
-			SelectFields: []string{"id", "compile_kwd", "type_kwd", "toc_kwd"},
+			SelectFields: []string{"id", "compile_kwd", "type_kwd"},
 			Filter:       map[string]any{"doc_id": []string{documentID}},
 		})
 		cancel()
@@ -87,7 +85,7 @@ func (s *DocumentService) loadAvailabilityToggleChunkIDs(ctx context.Context, in
 			break
 		}
 		for _, row := range result.Chunks {
-			if enginetypes.IsNavigationRow(row) || strings.TrimSpace(documentStoreString(row["toc_kwd"])) == "toc" {
+			if enginetypes.IsNavigationRow(row) {
 				continue
 			}
 			if kwd := strings.TrimSpace(documentStoreString(row["compile_kwd"])); kwd != "" {

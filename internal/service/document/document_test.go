@@ -27,7 +27,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -334,8 +333,7 @@ func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.Searc
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
 		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
 		{"id": "nav-1", "compile_kwd": "dataset_nav"},
-		{"id": "toc-1", "toc_kwd": []interface{}{"toc"}},
-	}, Total: 8}, nil
+	}, Total: 7}, nil
 }
 
 func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, _, _ string) error {
@@ -2776,35 +2774,6 @@ func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	}
 	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
 		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
-	}
-}
-
-// The Extractor writes the TOC row with available_int=0, and only the TOC
-// enhancer reads it. Re-enabling a document must not expose it to retrieval.
-func TestUpdateDocumentChunkAvailabilityKeepsTOCHidden(t *testing.T) {
-	docEngine := &sourceAvailabilityDocEngine{}
-	svc := testDocumentService(t)
-	svc.docEngine = docEngine
-
-	for _, status := range []int{0, 1} {
-		if err := svc.updateDocumentChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", status); err != nil {
-			t.Fatalf("updateDocumentChunkAvailability(%d) failed: %v", status, err)
-		}
-	}
-	if !slices.Contains(docEngine.search.SelectFields, "toc_kwd") {
-		t.Fatalf("SelectFields = %v, want toc_kwd", docEngine.search.SelectFields)
-	}
-	if len(docEngine.updateConditions) != 2 {
-		t.Fatalf("UpdateChunks calls = %d, want 2", len(docEngine.updateConditions))
-	}
-	for i, want := range []int{0, 1} {
-		ids, _ := docEngine.updateConditions[i]["id"].([]string)
-		if slices.Contains(ids, "toc-1") {
-			t.Fatalf("call %d updated ids = %v, want the TOC row excluded", i, ids)
-		}
-		if got := docEngine.updateValues[i]["available_int"]; got != want {
-			t.Fatalf("call %d available_int = %#v, want %d", i, got, want)
-		}
 	}
 }
 

@@ -35,9 +35,6 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 		"related_question",
 		"vision_llm_describe_prompt",
 		"vision_llm_figure_describe_prompt",
-		"toc_from_text_system",
-		"toc_from_text_user",
-		"assign_toc_levels",
 	}
 	for _, name := range names {
 		got, err := (EmbeddedPromptLoader{}).Load(name)
