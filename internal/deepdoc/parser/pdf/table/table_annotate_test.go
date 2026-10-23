@@ -481,6 +481,26 @@ func TestMatchTableRegions_BelowThreshold(t *testing.T) {
 	}
 }
 
+func TestMatchTableRegions_SkipsFigureBoxes(t *testing.T) {
+	// Nested/double-detected table+figure: the full-extent figure geometry
+	// box must not enter the table's BoxIdx, otherwise its extent leaks
+	// into TableItem.Positions (HTML cross-region, NoMerge mislabel).
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50, LayoutType: pdf.LayoutTypeTable},
+		{X0: 0, X1: 100, Top: 0, Bottom: 50, LayoutType: pdf.LayoutTypeFigure},
+	}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},
+	}
+	matches := MatchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].BoxIdx) != 1 || matches[0].BoxIdx[0] != 0 {
+		t.Errorf("figure box leaked into table match, got %v", matches[0].BoxIdx)
+	}
+}
+
 // MockTableBuilder is a test-only pdf.TableBuilder with a configurable GroupCells.
 type MockTableBuilder struct {
 	GroupCellsFn func(cells []pdf.TSRCell) [][]pdf.TSRCell

@@ -37,6 +37,12 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 // Each table region is matched if at least one box overlaps it (>40% of box
 // area) or if there are no boxes at all (image-only PDF), matching Python's
 // _table_transformer_job which processes every table DLA region.
+//
+// Figure-layout boxes are skipped: AnnotateBoxLayouts appends one full-extent
+// geometry box per figure/equation region, and a nested/double-detected
+// table+figure pair would otherwise pull the whole figure extent into the
+// table's BoxIdx (and from there into Positions, boxInCrop and R/C
+// annotations, causing HTML cross-region and NoMerge mislabels).
 func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64) []TableMatch {
 	var matches []TableMatch
 	for _, r := range regions {
@@ -45,6 +51,9 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 		}
 		var matched []int
 		for i, b := range boxes {
+			if b.LayoutType == pdf.LayoutTypeFigure {
+				continue
+			}
 			if regionOverlapsBox(r, b, scale) {
 				matched = append(matched, i)
 			}
