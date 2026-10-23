@@ -588,6 +588,27 @@ export function collectCanvasIssues({
     }
 
     if (
+      label === Operator.Loop &&
+      (form?.loop_variables?.some(
+        (row: Record<string, any>) => !row?.variable?.trim(),
+      ) ||
+        form?.loop_termination_condition?.some(
+          (row: Record<string, any>) =>
+            !row?.variable?.trim() ||
+            !row?.operator?.trim() ||
+            row.value == null ||
+            (typeof row.value === 'string' && !row.value.trim()),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.loopRowsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
       label === Operator.Iteration &&
       Object.entries(form?.outputs ?? {}).some(
         ([name, output]) =>

@@ -3614,6 +3614,8 @@ This process aggregates variables from multiple branches into a single variable 
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
       checklistTitle: 'The following issues may affect running or publishing',
+      loopRowsIncomplete:
+        'Complete the loop variables and termination conditions',
       iterationOutputsIncomplete:
         'Complete the iteration output names and references',
       issueNotConnected: 'This step is not connected to anything',
