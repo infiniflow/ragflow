@@ -31,6 +31,32 @@ const BACKFILLED_PROMPT_CONFIG_KEYS = [
   'refine_multiturn',
 ] as const;
 
+// The values `useCreateChatDialog` seeds (pages/next-chats/hooks/use-create-chat.ts),
+// minus `system`, which the caller supplies. Kept explicit rather than imported
+// because that hook is a React hook and cannot be called outside a component;
+// the point of the assertion is that a backfilled assistant behaves like one
+// created through the UI.
+const CREATE_DIALOG_DEFAULTS = {
+  quote: true,
+  keyword: false,
+  tts: false,
+  refine_multiturn: false,
+} as const;
+
+describe('promptConfigDefaults', () => {
+  it('matches the defaults the create dialog seeds', () => {
+    const defaults = promptConfigDefaults(SYSTEM_PROMPT);
+
+    expect(defaults).toMatchObject(CREATE_DIALOG_DEFAULTS);
+    // The `{knowledge}` and `{date}` placeholders in the prompt cannot resolve
+    // without these rows, and `knowledge` is required.
+    expect(defaults.parameters).toEqual([
+      { key: 'knowledge', optional: false },
+      { key: 'date', optional: true },
+    ]);
+  });
+});
+
 describe('withPromptConfigDefaults', () => {
   it('fills in keys that a chat created through the API omits', () => {
     // Shape returned by POST /api/v1/chats with a minimal prompt_config.
@@ -46,7 +72,7 @@ describe('withPromptConfigDefaults', () => {
     }
     expect(merged.keyword).toBe(false);
     expect(merged.tts).toBe(false);
-    expect(merged.refine_multiturn).toBe(true);
+    expect(merged.refine_multiturn).toBe(false);
   });
 
   it('does not overwrite values the chat already has', () => {
@@ -87,14 +113,25 @@ describe('withPromptConfigDefaults', () => {
   it('treats null as missing for keys that have a default', () => {
     // The API can persist `keyword: null`, which the schema rejects just like a
     // missing key, so keeping it verbatim would leave the form unvalidatable.
+    // `refine_multiturn` matters most: the backend reads null as disabled, so
+    // the default must not silently switch it on.
     const merged = withPromptConfigDefaults(
-      { keyword: null, tts: null, parameters: null } as any,
+      {
+        keyword: null,
+        tts: null,
+        parameters: null,
+        refine_multiturn: null,
+      } as any,
       SYSTEM_PROMPT,
     );
 
     expect(merged.keyword).toBe(false);
     expect(merged.tts).toBe(false);
-    expect(merged.parameters).toEqual([]);
+    expect(merged.refine_multiturn).toBe(false);
+    expect(merged.parameters).toEqual([
+      { key: 'knowledge', optional: false },
+      { key: 'date', optional: true },
+    ]);
   });
 
   it('keeps null for keys that have no default', () => {

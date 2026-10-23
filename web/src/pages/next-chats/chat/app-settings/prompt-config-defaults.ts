@@ -17,20 +17,17 @@
 import { PromptConfig } from '@/interfaces/database/chat';
 
 /**
- * Chat assistants created through the REST API / SDK may carry a
- * `prompt_config` that omits keys `useChatSettingSchema` marks as required
- * (`keyword`, `tts`, `system`, `refine_multiturn`, ...). Such a chat can never
- * pass form validation, so the settings panel's Save button silently does
- * nothing — the user has no way to change the model, prompt or retrieval
- * settings.
+ * The `prompt_config` a newly created assistant starts with.
  *
- * These defaults backfill only the missing keys, leaving every value the chat
- * already has untouched, so an API-created chat becomes editable.
+ * These values must stay in step with `useCreateChatDialog`
+ * (`pages/next-chats/hooks/use-create-chat.ts`). They are not arbitrary: an
+ * empty `parameters` list leaves the `{knowledge}` and `{date}` placeholders in
+ * the prompt unresolved, and flipping `refine_multiturn` on would enable
+ * multi-turn refinement the user never asked for. A backfilled assistant should
+ * behave like one created through the UI, not like a differently configured one.
  *
- * `system` is required by the schema and must be non-empty, so it cannot simply
- * be skipped. It falls back to the same prompt the UI puts on a newly created
- * assistant, which keeps the save valid without inventing a prompt of our own;
- * a chat that already has one never sees this value.
+ * `system` is passed in because the caller resolves it through `t`; it falls
+ * back to the same `chat.systemInitialValue` the create dialog uses.
  */
 export function promptConfigDefaults(
   systemPrompt: string,
@@ -40,9 +37,14 @@ export function promptConfigDefaults(
     keyword: false,
     tts: false,
     system: systemPrompt,
-    refine_multiturn: true,
-    parameters: [],
+    refine_multiturn: false,
+    parameters: [
+      { key: 'knowledge', optional: false },
+      { key: 'date', optional: true },
+    ],
     reasoning: false,
+    // Optional in the schema, but `null` is not: defaulting it keeps a persisted
+    // null from making the form unvalidatable.
     cross_languages: [],
   };
 }
