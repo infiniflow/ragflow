@@ -25,7 +25,7 @@ import (
 // Prompt templates for retrieval, chat, and ingestion are embedded here so
 // callers can load them independently of the working directory.
 
-//go:embed citation_prompt.md ask_summary.md keyword_prompt.md cross_languages_sys_prompt.md cross_languages_user_prompt.md meta_filter.md related_question.md vision_llm_describe_prompt.md vision_llm_figure_describe_prompt.md toc_from_text_system.md toc_from_text_user.md assign_toc_levels.md
+//go:embed citation_prompt.md ask_summary.md keyword_prompt.md cross_languages_sys_prompt.md cross_languages_user_prompt.md meta_filter.md related_question.md vision_llm_describe_prompt.md vision_llm_figure_describe_prompt.md
 var templatesFS embed.FS
 
 // EmbeddedPromptLoader serves the bundled .md templates by name. Load returns

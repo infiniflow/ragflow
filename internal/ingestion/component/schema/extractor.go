@@ -116,14 +116,8 @@ type MetadataExtractConfig struct {
 	BuiltInMetadata []common.MetadataFieldDef `json:"built_in_metadata,omitempty"`
 }
 
-// TOCExtractConfig configures table-of-contents extraction. The TOC is built
-// once per document from all chunks and appended as one extra chunk.
-type TOCExtractConfig struct {
-	Enabled bool `json:"enabled"`
-}
-
 // ExtractorParam is the static configuration for the Extractor component.
-// Fully modularized into base settings and 6 sub-extraction tasks.
+// Fully modularized into base settings and 5 sub-extraction tasks.
 type ExtractorParam struct {
 	// Base settings
 	LLMID string `json:"llm_id,omitempty"`
@@ -134,7 +128,6 @@ type ExtractorParam struct {
 	Tags      TagExtractConfig      `json:"tags,omitempty"`
 	Summary   SummaryExtractConfig  `json:"summary,omitempty"`
 	Metadata  MetadataExtractConfig `json:"metadata,omitempty"`
-	TOC       TOCExtractConfig      `json:"toc,omitempty"`
 }
 
 // Defaults returns the default ExtractorParam.
