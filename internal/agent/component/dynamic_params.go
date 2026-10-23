@@ -20,7 +20,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 
 // ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
 // entries, Invoke mappings, Compiler configuration, input options, Loop settings,
-// Iteration outputs, and search filters in saved drafts.
+// Iteration outputs, SQL connections, and search filters in saved drafts.
 // All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -112,7 +112,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 	case "userfillup":
 		return runtime.ValidateUserFillUpOptions(params, draft)
 	case "exesql":
-		if err := validateExeSQLParams(params); err != nil {
+		if err := validateExeSQLParams(params, draft); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "compiler":
