@@ -1298,8 +1298,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       },
       cancel: 'İptal',
       chatSetting: 'Sohbet ayarı',
-      tocEnhance: 'SayfaDizini',
-      tocEnhanceTip: ` Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu (Genel yöntemindeki 'İçindekiler Tablosu Çıkarmayı Etkinleştir' seçeneğine bakın). Bu, büyük modelin kullanıcının sorgusuyla ilgili içindekiler öğelerini döndürmesine olanak tanır, böylece bu öğeleri kullanarak ilgili parçaları alır ve sıralama işleminde bu parçalara ağırlık uygular. Bu yaklaşım, kitaplarda insan bilgi arama davranışını taklit eder.`,
       batchDeleteSessions: 'Toplu sil',
       deleteSelectedConfirm: 'Seçilen {{count}} oturum(lar) silinsin mi?',
       showChunkMetadata: 'Parça meta verilerini göster',

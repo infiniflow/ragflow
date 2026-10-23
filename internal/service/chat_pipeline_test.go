@@ -49,7 +49,6 @@ func dialForTest(llmid string) *entity.Chat {
 			"refine_multiturn": false,
 			"keyword":          false,
 			"use_kg":           false,
-			"toc_enhance":      false,
 		},
 		KBIDs:                  []interface{}{},
 		VectorSimilarityWeight: 0.3,
