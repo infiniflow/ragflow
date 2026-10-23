@@ -325,10 +325,6 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc
 		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
 			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
 		}
-		cm := strings.TrimSpace(*req.ChunkMethod)
-		if !validDocumentChunkMethods[cm] {
-			return common.CodeDataError, fmt.Errorf("Field: <chunk_method> - Message: <`chunk_method` %s doesn't exist> - Value: <%s>", cm, cm)
-		}
 	}
 
 	if present["name"] {
@@ -509,13 +505,6 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		UpdateTime:           doc.UpdateTime,
 		UpdateDate:           doc.UpdateDate,
 	}, nil
-}
-
-// validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.
-var validDocumentChunkMethods = map[string]bool{
-	"naive": true, "manual": true, "qa": true, "table": true, "paper": true,
-	"book": true, "laws": true, "presentation": true, "picture": true,
-	"one": true, "knowledge_graph": true, "email": true, "tag": true,
 }
 
 // pythonFloatRepr formats a float the way Python's str()/repr() does:

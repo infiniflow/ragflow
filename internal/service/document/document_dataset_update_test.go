@@ -11,6 +11,30 @@ import (
 	"ragflow/internal/service"
 )
 
+func TestUpdateDatasetDocumentChunkMethodAcceptsCurrentTemplates(t *testing.T) {
+	for _, method := range []string{"general", "audio"} {
+		t.Run(method, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+				ChunkMethod: &method,
+			}, map[string]bool{"chunk_method": true})
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("select %s: code=%d err=%v", method, code, err)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.ParserID != method || doc.ParserID != method {
+				t.Fatalf("selection not saved: response=%q stored=%q want=%q", resp.ParserID, doc.ParserID, method)
+			}
+		})
+	}
+}
+
 func TestUpdateDatasetDocumentUsesEffectiveParserForConfig(t *testing.T) {
 	for _, changeMethod := range []bool{false, true} {
 		name := "document selection"
@@ -92,7 +116,7 @@ func TestUpdateDatasetDocumentKeepsDocumentCanvasForConfigPatch(t *testing.T) {
 }
 
 func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
-	for _, failure := range []string{"unknown builtin", "unknown builtin without config", "empty canvas", "malformed canvas", "invalid selection"} {
+	for _, failure := range []string{"unknown builtin", "unknown builtin without config", "empty canvas", "malformed canvas", "invalid selection", "knowledge_graph", "tag"} {
 		t.Run(failure, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
@@ -108,6 +132,11 @@ func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
 			present := map[string]bool{"name": true, "parse_type": true, "parser_id": true, "parser_config": true, "meta_fields": true}
 			wantError := "unknown builtin parser_id"
 			switch failure {
+			case "knowledge_graph", "tag":
+				req.ParseType, req.ParserID, req.ChunkMethod = nil, nil, &failure
+				delete(present, "parse_type")
+				delete(present, "parser_id")
+				present["chunk_method"] = true
 			case "unknown builtin without config":
 				req.ParserConfig = nil
 				delete(present, "parser_config")
