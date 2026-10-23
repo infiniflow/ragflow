@@ -121,6 +121,7 @@ const svgIcons = [
   LLMFactory.TrustedRouter,
   LLMFactory.EmpirioLabs,
   LLMFactory.AIStupidLevel,
+  LLMFactory.HostingerRouter,
 ];
 
 export const LlmIcon = ({

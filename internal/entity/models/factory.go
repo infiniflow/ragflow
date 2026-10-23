@@ -201,6 +201,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	case "new api":
 		return NewNewAPIModel(baseURL, urlSuffix), nil
+	case "hostinger router":
+		return NewHostingerRouterModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
