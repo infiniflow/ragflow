@@ -71,6 +71,11 @@ const methods = {
     url: deleteVersion,
     method: 'delete',
   },
+  updateVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      updateVersionApi(config.agentId, config.versionId),
+    method: 'put',
+  },
   listAgents: {
     url: listAgents,
     method: 'get',

@@ -821,7 +821,7 @@ export const useFetchVersionList = () => {
 // versions for the currently selected dataflow canvas. The backend returns them
 // newest-first (design section 7/E1) and includes the free-text alias (A2/F1).
 export const useFetchCanvasVersionList = (canvasId?: string) => {
-  const { data, isFetching: loading } = useQuery<
+  const { data, isFetching: loading, isError } = useQuery<
     Array<{
       id: string;
       title: string;
