@@ -157,6 +157,8 @@ type UpdateChunkRequest struct {
 	// ImageUpdateMode is one of append (default), replace, remove.
 	ImageBase64     *string `json:"image_base64,omitempty"`
 	ImageUpdateMode *string `json:"image_update_mode,omitempty"`
+	// TouchChunkImageFields is set when the client sends image_base64 and/or image_update_mode.
+	TouchChunkImageFields bool `json:"-"`
 }
 
 // RemoveChunksRequest request for removing chunks
