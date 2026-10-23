@@ -608,6 +608,23 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      label === Operator.Iteration &&
+      Object.entries(form?.outputs ?? {}).some(
+        ([name, output]) =>
+          !name.trim() ||
+          typeof (output as Record<string, unknown>)?.ref !== 'string' ||
+          !(output as Record<string, string>).ref.trim(),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.iterationOutputsIncomplete',
+        blocksRun: true,
+      });
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
