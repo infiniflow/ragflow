@@ -304,12 +304,13 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	migrateChainModelTables(t, db)
-	// Mirror the dataset package's own fixture: a resolvable tenant embedding
-	// reference keeps CreateDataset on its real path (no embedding override).
-	if err := dao.DB.Model(&entity.Tenant{}).Where("id = ?", "tenant-1").Update(
+	// Mirror the dataset package's own fixture: the membership carries the
+	// resolved embedding model id, keeping CreateDataset on its real path
+	// (no embedding override).
+	if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", "user-1", "tenant-1").Update(
 		"tenant_embd_id", "embd-1",
 	).Error; err != nil {
-		t.Fatalf("set tenant embd id: %v", err)
+		t.Fatalf("set membership embd id: %v", err)
 	}
 
 	ctx := t.Context()
