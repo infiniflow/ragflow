@@ -43,8 +43,13 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		return emptyPDFResult(filename)
 	}
 	serverURL := strings.TrimSpace(parser.DoclingServerURL)
+	client := common.GetSSRFHTTPClient()
 	if serverURL == "" {
+		// DOCLING_SERVER_URL is set by the deployment, not by a pipeline, and
+		// Docling Serve usually runs beside RAGFlow as a Compose or Kubernetes
+		// service, so the environment URL may name a private host.
 		serverURL = strings.TrimSpace(common.GetEnv(common.EnvDoclingServerURL))
+		client = common.GetSchemeSafeLongHTTPClient()
 	}
 	if serverURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: Docling requires docling_server_url or DOCLING_SERVER_URL")}
@@ -91,7 +96,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	var lastErr error
 	for _, candidate := range payloads {
 		url := baseURL + candidate.endpoint
-		resp, err := models.PostJSONRequest(context.Background(), common.GetSSRFHTTPClient(), url, auth, candidate.body())
+		resp, err := models.PostJSONRequest(context.Background(), client, url, auth, candidate.body())
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", candidate.endpoint, err)
 			continue
