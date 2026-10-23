@@ -535,3 +535,114 @@ func TestParseAPIShowGroup(t *testing.T) {
 		})
 	}
 }
+
+func TestParseAPIDeleteGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "delete a specific group",
+			input:          "DELETE GROUP 'rag-default';",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+		{
+			name:           "delete a specific group without trailing semicolon",
+			input:          "DELETE GROUP 'rag-default'",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_delete_model_group" {
+				t.Fatalf("Command Type = %v, expected api_delete_model_group", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPIListGroups(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "list all groups",
+			input:          "LIST GROUPS;",
+			expectedParams: map[string]interface{}{},
+		},
+		{
+			name:           "list all groups without trailing semicolon",
+			input:          "LIST GROUPS",
+			expectedParams: map[string]interface{}{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_list_model_groups" {
+				t.Fatalf("Command Type = %v, expected api_list_model_groups", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}
+
+func TestParseAPICreateGroup(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedParams map[string]interface{}
+	}{
+		{
+			name:           "create a group",
+			input:          "CREATE GROUP 'rag-default';",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+		{
+			name:           "create a group without trailing semicolon",
+			input:          "CREATE GROUP 'rag-default'",
+			expectedParams: map[string]interface{}{"group_name": "rag-default"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewParser(tt.input)
+			cmd, err := p.Parse(APIMode)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			if cmd.Type != "api_create_model_group" {
+				t.Fatalf("Command Type = %v, expected api_create_model_group", cmd.Type)
+			}
+
+			if !reflect.DeepEqual(cmd.Params, tt.expectedParams) {
+				t.Errorf("Params = %#v, expected %#v", cmd.Params, tt.expectedParams)
+			}
+		})
+	}
+}

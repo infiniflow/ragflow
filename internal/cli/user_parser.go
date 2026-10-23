@@ -163,9 +163,23 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListEnvironments()
 	case TokenVars:
 		return p.parseAPIListVariables()
+	case TokenGroups:
+		return p.parseAPIListModelGroups()
 	default:
 		return nil, fmt.Errorf("unknown LIST target: %s", p.curToken.Value)
 	}
+}
+
+// LIST GROUPS;
+func (p *Parser) parseAPIListModelGroups() (*Command, error) {
+	cmd := NewCommand("api_list_model_groups")
+	p.nextToken() // consume GROUPS
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	return cmd, nil
 }
 
 func (p *Parser) parseAPIListDatasets() (*Command, error) {
@@ -1208,6 +1222,79 @@ func (p *Parser) parseAPIShowGroupStats() (*Command, error) {
 	return cmd, nil
 }
 
+// ADD 'model@instance@provider' GROUP 'group_name';
+// DELETE 'model@instance@provider' GROUP 'group_name';
+func (p *Parser) parseAPIAddGroupModel() (*Command, error) {
+	modelNameOrID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
+	}
+	p.nextToken() // consume model identifier
+
+	if p.curToken.Type != TokenGroup {
+		return nil, fmt.Errorf("expected GROUP after model identifier, got %s", p.curToken.Value)
+	}
+	p.nextToken() // consume GROUP
+
+	groupName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected group name: %w", err)
+	}
+	p.nextToken() // consume group_name
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_add_group_model")
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+	cmd.Params["group_name"] = groupName
+	return cmd, nil
+}
+
+// DELETE 'model@instance@provider' GROUP 'group_name';
+func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
+	modelNameOrID, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected model identifier in format 'model@instance@provider': %w", err)
+	}
+	p.nextToken() // consume model identifier
+
+	if p.curToken.Type != TokenGroup {
+		return nil, fmt.Errorf("expected GROUP after model identifier, got %s", p.curToken.Value)
+	}
+	p.nextToken() // consume GROUP
+
+	groupName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected group name: %w", err)
+	}
+	p.nextToken() // consume group_name
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_delete_group_model")
+	if common.IsCompositeModelName(modelNameOrID) {
+		cmd.Params["composite_model_name"] = modelNameOrID
+	} else if common.IsUUID(modelNameOrID) {
+		cmd.Params["model_id"] = modelNameOrID
+	} else {
+		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	}
+	cmd.Params["group_name"] = groupName
+	return cmd, nil
+}
+
 // endregion SHOW commands
 
 // region CREATE commands
@@ -1234,9 +1321,30 @@ func (p *Parser) parseAPICreateCommands() (*Command, error) {
 		return p.parseDevCreateMetadataStore()
 	case TokenProvider:
 		return p.parseAPICreateProviderInstance()
+	case TokenGroup:
+		return p.parseAPIModelCreateGroup()
 	default:
 		return nil, fmt.Errorf("unknown CREATE target: %s", p.curToken.Value)
 	}
+}
+
+// CREATE GROUP 'group_name';
+func (p *Parser) parseAPIModelCreateGroup() (*Command, error) {
+	p.nextToken() // consume GROUP
+	groupName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, err
+	}
+	p.nextToken()
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_create_model_group")
+	cmd.Params["group_name"] = groupName
+	return cmd, nil
 }
 
 // CREATE DATASET 'abc';
@@ -1578,6 +1686,8 @@ func (p *Parser) parseAPIAddCommands() (*Command, error) {
 		return p.parseAddAPIServer()
 	case TokenAdmin:
 		return p.parseAddAdminServer()
+	case TokenQuotedString:
+		return p.parseAPIAddGroupModel()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -1990,6 +2100,10 @@ func (p *Parser) parseAPIDeleteCommands() (*Command, error) {
 		return p.parseAPIDeleteAdminServer()
 	case TokenAPI:
 		return p.parseAPIDeleteAPIServer()
+	case TokenGroup:
+		return p.parseAPIDeleteGroup()
+	case TokenQuotedString:
+		return p.parseAPIDeleteGroupModel()
 	default:
 		return nil, fmt.Errorf("unknown DELETE target: %s", p.curToken.Value)
 	}
@@ -2022,6 +2136,26 @@ func (p *Parser) parseAPIDeleteProvider() (*Command, error) {
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// DELETE GROUP 'group_name';
+func (p *Parser) parseAPIDeleteGroup() (*Command, error) {
+	p.nextToken() // consume GROUP
+
+	groupName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected group name: %w", err)
+	}
+	p.nextToken() // consume group_name
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	cmd := NewCommand("api_delete_model_group")
+	cmd.Params["group_name"] = groupName
 	return cmd, nil
 }
 

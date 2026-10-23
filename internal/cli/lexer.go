@@ -571,6 +571,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenPanic, Value: ident}
 	case "GROUP":
 		return Token{Type: TokenGroup, Value: ident}
+	case "GROUPS":
+		return Token{Type: TokenGroups, Value: ident}
 	case "BY":
 		return Token{Type: TokenBy, Value: ident}
 	case "DATE":

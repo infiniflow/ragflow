@@ -35,7 +35,22 @@ func (h *ModelGroupHandler) CreateModelGroup(c *gin.Context) {
 	return
 }
 
+func (h *ModelGroupHandler) DeleteModelGroup(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "DeleteModelGroup not implemented")
+	return
+}
+
 func (h *ModelGroupHandler) ShowModelGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "ShowModelGroup not implemented")
+	return
+}
+
+func (h *ModelGroupHandler) AddModelToGroup(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "AddModelToGroup not implemented")
+	return
+}
+
+func (h *ModelGroupHandler) RemoveModelFromGroup(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "RemoveModelFromGroup not implemented")
 	return
 }

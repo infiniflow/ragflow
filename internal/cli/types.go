@@ -218,6 +218,7 @@ const (
 	TokenBy
 	TokenDate
 	TokenGroup
+	TokenGroups
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

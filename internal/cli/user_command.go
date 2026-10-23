@@ -1256,6 +1256,46 @@ func (c *CLI) APIListProvidersCommand(commandCount int, cmd *Command) (ResponseI
 	return HandleCommonResponse(resp, "list providers")
 }
 
+// APIListGroupsCommand lists all groups
+// LIST GROUPS;
+func (c *CLI) APIListGroupsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", "/groups", httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "list groups")
+}
+
+// APICreateGroupCommand CREATE GROUP 'group_name'
+func (c *CLI) APICreateGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	groupName, ok := cmd.Params["group_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("group name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"name": groupName,
+	}
+
+	resp, err := httpClient.Request(commandCount, "POST", "/groups", httpClient.AuthKind(), nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create group: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "create group")
+}
+
 // APIDeleteProviderCommand deletes a provider
 // DELETE PROVIDER <name>
 func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (ResponseIf, error) {
@@ -1277,6 +1317,131 @@ func (c *CLI) APIDeleteProviderCommand(commandCount int, cmd *Command) (Response
 	}
 
 	return HandleSimpleResponse(resp, "delete provider")
+}
+
+// APIListModelGroupCommand LIST GROUPS
+func (c *CLI) APIListModelGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	url := "/models/groups"
+
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get group")
+}
+
+// APIAddGroupModelCommand ADD 'model@instance@provider' GROUP 'group_name'
+func (c *CLI) APIAddGroupModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	groupName, ok := cmd.Params["group_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("group name not provided")
+	}
+
+	payload := map[string]interface{}{}
+	if v, ok := cmd.Params["composite_model_name"].(string); ok && v != "" {
+		payload["composite_model_name"] = v
+	} else if v, ok := cmd.Params["model_id"].(string); ok && v != "" {
+		payload["model_id"] = v
+	} else {
+		return nil, fmt.Errorf("model identifier not provided")
+	}
+
+	url := utils.APIPath("/models/groups", groupName) + "/model"
+
+	resp, err := httpClient.Request(commandCount, "POST", url, httpClient.AuthKind(), nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add model to group: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "add model to group")
+}
+
+// APIDeleteGroupModelCommand DELETE 'model@instance@provider' GROUP 'group_name'
+func (c *CLI) APIDeleteGroupModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	groupName, ok := cmd.Params["group_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("group name not provided")
+	}
+
+	payload := map[string]interface{}{}
+	if v, ok := cmd.Params["composite_model_name"].(string); ok && v != "" {
+		payload["composite_model_name"] = v
+	} else if v, ok := cmd.Params["model_id"].(string); ok && v != "" {
+		payload["model_id"] = v
+	} else {
+		return nil, fmt.Errorf("model identifier not provided")
+	}
+
+	url := utils.APIPath("/models/groups", groupName) + "/model"
+
+	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete model from group: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "delete model from group")
+}
+
+// APICreateModelGroupCommand CREATE GROUP 'group_name'
+func (c *CLI) APICreateModelGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	groupName, ok := cmd.Params["group_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("group name not provided")
+	}
+
+	payload := map[string]interface{}{
+		"name": groupName,
+	}
+
+	resp, err := httpClient.Request(commandCount, "POST", "/models/groups", httpClient.AuthKind(), nil, payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create group: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "create group")
+}
+
+// APIDeleteModelGroupCommand DELETE GROUP 'group_name'
+func (c *CLI) APIDeleteModelGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	groupName, ok := cmd.Params["group_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("group name not provided")
+	}
+
+	url := utils.APIPath("/models/groups", groupName)
+
+	resp, err := httpClient.Request(commandCount, "DELETE", url, httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete group: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, "delete group")
 }
 
 // APIDropDatasetCommand DROP DATASET 'dataset_name'
