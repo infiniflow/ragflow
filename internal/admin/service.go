@@ -265,13 +265,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatModel,
-		EmbdID:    embeddingModel,
-		ASRID:     asrModel,
-		Img2TxtID: vlmModel,
-		RerankID:  rerankModel,
-		TTSID:     ttsModel,
-		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
@@ -294,6 +287,13 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 	}
 	if err = tx.Create(userTenant).Error; err != nil {
 		rollbackTx()

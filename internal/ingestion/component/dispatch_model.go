@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -63,39 +64,35 @@ func configuredAudioModelID(setup schema.ParserSetup) string {
 	return getStringOr(setup, "llm_id", "")
 }
 
-// defaultResolveTenantModelByType resolves the tenant's configured default for
-// modelType, requiring a nonempty default model reference first. It then tries
-// the enrolled tenant-model ID and falls back to the configured reference if
-// that ID is absent or cannot be resolved.
+// defaultResolveTenantModelByType resolves the current member's configured default.
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	tenantDAO := dao.NewTenantDAO()
-	tenant, err := tenantDAO.GetByID(ctx, db, tenantID)
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, 0, fmt.Errorf("load default model settings for tenant %s: %w", tenantID, err)
 	}
 	var modelID string
 	switch modelType {
 	case entity.ModelTypeChat:
-		modelID = tenant.LLMID
+		modelID = membership.LLMID
 	case entity.ModelTypeEmbedding:
-		modelID = tenant.EmbdID
+		modelID = membership.EmbdID
 	case entity.ModelTypeRerank:
-		modelID = tenant.RerankID
+		modelID = membership.RerankID
 	case entity.ModelTypeSpeech2Text:
-		modelID = tenant.ASRID
+		modelID = membership.ASRID
 	case entity.ModelTypeImage2Text:
-		modelID = tenant.Img2TxtID
+		modelID = membership.Img2TxtID
 	case entity.ModelTypeTTS:
-		modelID = *tenant.TTSID
+		modelID = stringValue(membership.TTSID)
 	case entity.ModelTypeOCR:
-		modelID = *tenant.OCRID
+		modelID = stringValue(membership.OCRID)
 	default:
 		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
 	}
 	if modelID == "" {
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
-	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
+	if tenantModelID := tenantModelIDByType(membership, modelType); tenantModelID != "" {
 		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
 			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
@@ -177,25 +174,36 @@ func ocrProviderAliases(providerName string) []string {
 	}
 }
 
-func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
-	if tenant == nil {
+func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
+	membershipDAO := dao.NewUserTenantDAO()
+	if subject, ok := permission.SubjectFromContext(ctx); ok && subject.UserID != "" && (subject.TenantID == "" || subject.TenantID == tenantID) {
+		membership, err := membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
+		if err == nil {
+			return membership, nil
+		}
+	}
+	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
+}
+
+func tenantModelIDByType(membership *entity.UserTenant, modelType entity.ModelType) string {
+	if membership == nil {
 		return ""
 	}
 	switch modelType {
 	case entity.ModelTypeChat:
-		return stringValue(tenant.TenantLLMID)
+		return stringValue(membership.TenantLLMID)
 	case entity.ModelTypeEmbedding:
-		return stringValue(tenant.TenantEmbdID)
+		return stringValue(membership.TenantEmbdID)
 	case entity.ModelTypeRerank:
-		return stringValue(tenant.TenantRerankID)
+		return stringValue(membership.TenantRerankID)
 	case entity.ModelTypeSpeech2Text:
-		return stringValue(tenant.TenantASRID)
+		return stringValue(membership.TenantASRID)
 	case entity.ModelTypeImage2Text:
-		return stringValue(tenant.TenantImg2TxtID)
+		return stringValue(membership.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return stringValue(tenant.TenantTTSID)
+		return stringValue(membership.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return stringValue(tenant.TenantOCRID)
+		return stringValue(membership.TenantOCRID)
 	default:
 		return ""
 	}

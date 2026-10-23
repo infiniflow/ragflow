@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
@@ -249,7 +250,7 @@ func (f *fakeDocumentService) GetDocumentByID(ctx context.Context, id string) (*
 	if f.doc != nil {
 		return f.doc, nil
 	}
-	return nil, fmt.Errorf("document not found")
+	return nil, gorm.ErrRecordNotFound
 }
 func (f *fakeDocumentService) UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error) {
 	f.updateCalled = true
@@ -386,6 +387,7 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	if err := db.AutoMigrate(
 		&entity.Knowledgebase{},
 		&entity.UserTenant{},
+		&entity.Document{},
 	); err != nil {
 		t.Fatalf("failed to migrate permission tables: %v", err)
 	}
@@ -399,6 +401,12 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		Status:     sptr(string(entity.StatusValid)),
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID: "doc-1", KbID: "kb-owner", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		CreatedBy: "owner-user", Type: "pdf", Suffix: "pdf", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert document: %v", err)
 	}
 	if err := db.Create(&entity.UserTenant{
 		ID:       "ut-owner",
@@ -444,12 +452,15 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 		handler gin.HandlerFunc
 		status  int
 	}{
-		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusForbidden},
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusOK},
 		{"metadata summary", http.MethodGet, "/api/v1/datasets/kb-owner/metadata/summary?doc_ids=doc-1", "", gin.Params{{Key: "dataset_id", Value: "kb-owner"}}, h.MetadataSummaryByDataset, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
+			c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+				UserID: "user-1", TenantID: "tenant-owner",
+			}))
 			c.Params = tt.params
 			tt.handler(c)
 			if w.Code != tt.status {
@@ -465,6 +476,13 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 			}
 			if resp.Code != common.CodeForbidden || resp.Message != "Permission denied" || resp.Data != nil {
 				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+			var responseFields map[string]json.RawMessage
+			if err := json.Unmarshal(w.Body.Bytes(), &responseFields); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := responseFields["data"]; !ok {
+				t.Fatalf("permission error response is missing data field: %s", w.Body.String())
 			}
 			if fake.metadataKBID != "" {
 				t.Fatal("GetMetadataSummary should not be called without dataset access")
@@ -683,19 +701,20 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.Knowledgebase{},
+		&entity.Document{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	if err := db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")}).Error; err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert tenant: %v", err)
 	}
 	if err := db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: role, Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert user_tenant: %v", err)
 	}
-	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid)), LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"}).Error; err != nil {
 		t.Fatalf("insert tenant owner: %v", err)
 	}
 	pipelineID := "pipe-1"
@@ -1228,6 +1247,7 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.Knowledgebase{},
+		&entity.Document{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -1235,15 +1255,19 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	// Insert user
 	db.Create(&entity.User{ID: "user-1", Nickname: "test", Email: "test@test.com", Password: sptr("x")})
 	// Insert tenant
-	db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
+	db.Create(&entity.Tenant{ID: "tenant-1"})
 	// Insert user_tenant mapping
-	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))})
+	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid)), LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
 	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "normal", Status: sptr(string(entity.StatusValid))})
-	// Insert knowledgebase
+	// Insert knowledgebase and its document for the resource-level access check.
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
 		CreatedBy: "user-1", Permission: string(entity.TenantPermissionTeam),
 		Status: sptr(string(entity.StatusValid)),
+	})
+	db.Create(&entity.Document{
+		ID: "doc-1", KbID: "ds-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		CreatedBy: "user-1", Type: "pdf", Suffix: "pdf", Status: sptr(string(entity.StatusValid)),
 	})
 
 	return db
@@ -2130,8 +2154,10 @@ func downloadHandlerWithAccessDB(t *testing.T) *DocumentHandler {
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
 	return &DocumentHandler{
-		documentService: &fakeDocumentService{},
-		datasetService:  dataset.NewDatasetService(),
+		documentService: &fakeDocumentService{doc: &document.DocumentResponse{
+			ID: "doc-1", KbID: "ds-1", CreatedBy: "user-1", Type: "pdf", Status: sptr(string(entity.StatusValid)),
+		}},
+		datasetService: dataset.NewDatasetService(),
 	}
 }
 
@@ -2182,9 +2208,39 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	}
 }
 
+func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	h.documentService = &fakeDocumentService{docErr: errors.New("database connection failed")}
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response envelope, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	if resp["message"] != "Failed to download document" {
+		t.Fatalf("unexpected client-visible error: %v", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "database connection failed") {
+		t.Fatal("database error detail leaked to the client")
+	}
+}
+
 func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
 	h := downloadHandlerWithAccessDB(t)
-	h.documentService = &fakeDocumentService{downloadErr: errors.New("database connection failed")}
+	h.documentService = &fakeDocumentService{
+		doc: &document.DocumentResponse{
+			ID: "doc-1", KbID: "ds-1", CreatedBy: "user-1", Type: "pdf", Status: sptr(string(entity.StatusValid)),
+		},
+		downloadErr: errors.New("database connection failed"),
+	}
 	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
 
 	h.DownloadDocument(c)

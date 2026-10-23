@@ -36,15 +36,16 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
-		ASRID:     "asr-a",
-		Img2TxtID: "img2txt-a",
-		RerankID:  "rerank-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err = db.Create(&entity.UserTenant{
+		ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: &status,
+		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 
 	return db

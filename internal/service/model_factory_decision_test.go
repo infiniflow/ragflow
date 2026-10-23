@@ -51,9 +51,9 @@ func TestModelTypesFromBitmaskIncludesDecision(t *testing.T) {
 func TestDefaultModelRefsIncludesDecision(t *testing.T) {
 	name := "minimax-m3@cbn@OpenAI-API-Compatible"
 	rowID := "d806c1155725406b840821e9e2897f01"
-	tenant := &entity.Tenant{DecisionID: &name, TenantDecisionID: &rowID}
+	membership := &entity.UserTenant{DecisionID: &name, TenantDecisionID: &rowID}
 
-	gotName, gotID := defaultModelRefs(tenant, entity.ModelTypeDecision)
+	gotName, gotID := defaultModelRefs(membership, entity.ModelTypeDecision)
 	if gotName != name {
 		t.Errorf("name = %q, want %q", gotName, name)
 	}
@@ -62,6 +62,6 @@ func TestDefaultModelRefsIncludesDecision(t *testing.T) {
 	}
 
 	if n, id := defaultModelRefs(nil, entity.ModelTypeDecision); n != "" || id != "" {
-		t.Errorf("nil tenant = (%q, %q), want empty", n, id)
+		t.Errorf("nil membership = (%q, %q), want empty", n, id)
 	}
 }
