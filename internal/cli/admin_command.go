@@ -558,68 +558,6 @@ func (c *CLI) AdminListServicesCommand(commandCount int, cmd *Command) (Response
 	return HandleCommonResponse(resp, "list services")
 }
 
-// AdminStartServiceCommand starts a service (admin mode only)
-func (c *CLI) AdminStartServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	serviceName, ok := cmd.Params["service_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("service_name not provided")
-	}
-
-	endPoint := utils.APIPath("/admin/services", serviceName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "POST", endPoint, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to start service: %w", err)
-	}
-
-	return HandleCommonDataResponse(resp, "start service")
-}
-
-// AdminRestartServiceCommand restarts a service (admin mode only)
-func (c *CLI) AdminRestartServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	serviceName, ok := cmd.Params["service_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("service_name not provided")
-	}
-
-	endPoint := utils.APIPath("/admin/services", serviceName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", endPoint, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to restart service: %w", err)
-	}
-
-	return HandleCommonDataResponse(resp, "restart service")
-}
-
-// AdminShutdownServiceCommand shuts down a service (admin mode only)
-func (c *CLI) AdminShutdownServiceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	serviceName, ok := cmd.Params["service_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("service_name not provided")
-	}
-
-	endPoint := utils.APIPath("/admin/services", serviceName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to shutdown service: %w", err)
-	}
-
-	return HandleCommonDataResponse(resp, "shutdown service")
-}
 
 // AdminShowService show service (admin mode only)
 func (c *CLI) AdminShowService(commandCount int, cmd *Command) (ResponseIf, error) {
@@ -1083,27 +1021,6 @@ func (c *CLI) ListAdminIngestors(commandCount int, cmd *Command) (ResponseIf, er
 	}
 
 	return HandleCommonResponse(resp, "list ingestors")
-}
-
-func (c *CLI) AdminShutdownIngestor(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	ingestorName, ok := cmd.Params["ingestor_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("ingestor_name not provided")
-	}
-	payload := map[string]interface{}{
-		"ingestor_name": ingestorName,
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", "/admin/ingestors", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to shutdown ingestor: %w", err)
-	}
-
-	return HandleCommonDataResponse(resp, "shutdown ingestor")
 }
 
 func (c *CLI) UserListMessageQueueCommand(commandCount int, cmd *Command) (ResponseIf, error) {

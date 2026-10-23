@@ -587,12 +587,12 @@ func main() {
 			os.Exit(1)
 		}
 	case common.ServerTypeIngestion:
-		if err = ingestorpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		if err = ingestorpkg.Run(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeFileSyncer:
-		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		if err = syncerpkg.Run(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}

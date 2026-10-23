@@ -1916,3 +1916,105 @@ func TestTaskExecutionDeadlineCapsConnectorTimeout(t *testing.T) {
 func testLockLease() ConnectorLockLease {
 	return ConnectorLockLease{ExpiresAt: time.Now().Add(connectorLockTTL)}
 }
+
+func TestSyncer_Stop_Nil(t *testing.T) {
+	var s *Syncer
+	s.Stop(t.Context())
+}
+
+func TestSyncer_Stop_NormalAndTimeout(t *testing.T) {
+	t.Run("normal exit cancels context and closes executor", func(t *testing.T) {
+		cancelled := false
+		cancel := func() { cancelled = true }
+
+		s := &Syncer{
+			cancel:   cancel,
+			executor: NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1}),
+		}
+		s.Stop(t.Context())
+
+		if !cancelled {
+			t.Fatal("expected cancel func to be invoked")
+		}
+	})
+
+	t.Run("timeout exit returns within deadline when worker is blocked", func(t *testing.T) {
+		cancelled := false
+		cancel := func() { cancelled = true }
+
+		timeoutCtx, timeoutCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer timeoutCancel()
+
+		s := &Syncer{
+			cancel:   cancel,
+			executor: NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1}),
+		}
+		workerRelease := make(chan struct{})
+		defer close(workerRelease)
+		s.workerGroup.Add(1)
+		go func() {
+			<-workerRelease
+			s.workerGroup.Done()
+		}()
+
+		start := time.Now()
+		s.Stop(timeoutCtx)
+		duration := time.Since(start)
+
+		if !cancelled {
+			t.Fatal("expected cancel func to be invoked on timeout")
+		}
+		if duration > 500*time.Millisecond {
+			t.Fatalf("Stop took %v, expected it to return promptly on timeout", duration)
+		}
+	})
+
+	t.Run("concurrent calls honor independent context deadlines", func(t *testing.T) {
+		s := &Syncer{
+			executor: NewSyncJobExecutor(SyncJobExecutorConfig{WorkerCount: 1}),
+		}
+		workerRelease := make(chan struct{})
+		var releaseOnce sync.Once
+		defer releaseOnce.Do(func() { close(workerRelease) })
+
+		s.workerGroup.Add(1)
+		go func() {
+			<-workerRelease
+			s.workerGroup.Done()
+		}()
+
+		ctxShort, cancelShort := context.WithTimeout(t.Context(), 20*time.Millisecond)
+		defer cancelShort()
+
+		ctxLong, cancelLong := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancelLong()
+
+		doneShort := make(chan time.Duration, 1)
+		doneLong := make(chan time.Duration, 1)
+
+		go func() {
+			start := time.Now()
+			s.Stop(ctxShort)
+			doneShort <- time.Since(start)
+		}()
+
+		go func() {
+			start := time.Now()
+			s.Stop(ctxLong)
+			doneLong <- time.Since(start)
+		}()
+
+		dShort := <-doneShort
+		if dShort > 200*time.Millisecond {
+			t.Fatalf("call with short deadline took too long: %v", dShort)
+		}
+
+		// Unblock the worker so call with longer deadline completes normally
+		releaseOnce.Do(func() { close(workerRelease) })
+
+		dLong := <-doneLong
+		if dLong > 500*time.Millisecond {
+			t.Fatalf("call with long deadline took too long: %v", dLong)
+		}
+	})
+}

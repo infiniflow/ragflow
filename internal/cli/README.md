@@ -9,7 +9,7 @@ This is the Go implementation of the RAGFlow command-line interface.
 - Virtual Filesystem for intuitive resource management
 - Support for major commands, including:
   - User management: LOGIN, REGISTER, CREATE USER, DROP USER, LIST USERS, etc.
-  - Service management: LIST SERVICES, SHOW SERVICE, STARTUP/SHUTDOWN/RESTART SERVICE
+  - Service management: LIST SERVICES, SHOW SERVICE
   - Role management: CREATE ROLE, DROP ROLE, LIST ROLES, GRANT/REVOKE PERMISSION
   - Dataset management via Virtual Filesystem: `ls`, `search`, `mkdir`, `cat`, `rm`
   - Model management: SET/RESET DEFAULT LLM/VLM/EMBEDDING/etc.
@@ -171,9 +171,6 @@ SHOW USER 'john';
 -- Service management
 LIST SERVICES;
 SHOW SERVICE 1;
-STARTUP SERVICE 1;
-SHUTDOWN SERVICE 1;
-RESTART SERVICE 1;
 PING;
 
 -- Role management
