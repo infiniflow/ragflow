@@ -15,7 +15,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message content and SQL connections in saved drafts.
 // All other component checks remain the same as ValidateDynamicEntries.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -107,7 +107,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 	case "userfillup":
 		return validateInputOptions(component, params)
 	case "exesql":
-		if err := validateExeSQLParams(params); err != nil {
+		if err := validateExeSQLParams(params, draft); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "compiler":

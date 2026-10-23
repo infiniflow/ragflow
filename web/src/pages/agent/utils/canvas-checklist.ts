@@ -25,6 +25,7 @@ import {
   RetrievalFrom,
   VariableRegex,
 } from '../constant';
+import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-form';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
 import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
@@ -516,6 +517,18 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      label === Operator.ExeSQL &&
+      !ExeSQLFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
@@ -547,10 +560,11 @@ export function collectCanvasIssues({
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
           const isRetrieval = tool?.component_name === Operator.Retrieval;
+          const isExeSQL = tool?.component_name === Operator.ExeSQL;
           const needsApiKey = ApiKeyRequiredOperators.includes(
             tool?.component_name,
           );
-          if (!isRetrieval && !needsApiKey) {
+          if (!isRetrieval && !isExeSQL && !needsApiKey) {
             continue;
           }
           // Point at the concrete tool under the concrete agent — the Tool
@@ -565,6 +579,14 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
+          if (isExeSQL && !ExeSQLFormSchema.safeParse(tool?.params).success) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.nodeFormInvalid',
+              blocksRun: true,
+            });
+          }
           if (isRetrieval) {
             issues.push(
               ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
