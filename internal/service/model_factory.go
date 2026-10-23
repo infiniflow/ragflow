@@ -652,9 +652,6 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if modelEntity == nil {
 		return nil, fmt.Errorf("%w: tenant model %q not found", errModelConfigUnavailable, modelRef)
 	}
-	if !strings.EqualFold(modelEntity.Status, "active") {
-		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
-	}
 
 	modelType := entity.ModelType(modelEntity.ModelType)
 	if modelType == 0 {
@@ -703,6 +700,9 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instanceEntity.InstanceName, err)
 		}
+	}
+	if !strings.EqualFold(modelEntity.Status, "active") {
+		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
 	if !strings.EqualFold(instanceEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceEntity.InstanceName)
@@ -864,13 +864,13 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 	if instance == nil {
 		return nil, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
-	if !strings.EqualFold(instance.Status, "active") {
-		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
-	}
 	if access.UserID != "" {
 		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
+	}
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
 	}
 	extra, err := decodeModelInstanceExtra(instance.Extra)
 	if err != nil {
