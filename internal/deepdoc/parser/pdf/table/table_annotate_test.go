@@ -349,9 +349,9 @@ func TestAnnotateBoxLayouts_EquationMappedToFigure(t *testing.T) {
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "equation", Confidence: 0.9},
 	}
-	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 0)
+	boxes = ConsolidateFigures(AnnotateBoxLayouts(boxes, regions, 3.0, 0))
 	if len(boxes) != 1 {
-		t.Fatalf("expected 1 box, got %d", len(boxes))
+		t.Fatalf("unexpected assembled box count: %d", len(boxes))
 	}
 	if boxes[0].LayoutType != "figure" {
 		t.Errorf("equation → LayoutType: got %q, want 'figure'", boxes[0].LayoutType)
@@ -374,9 +374,9 @@ func TestAnnotateBoxLayouts_MixedTypesLayoutNo(t *testing.T) {
 		{X0: 0, Y0: 600, X1: 150, Y1: 660, Label: "text", Confidence: 0.9},  // text-1
 		{X0: 600, Y0: 0, X1: 900, Y1: 60, Label: "figure", Confidence: 0.9}, // figure-0 (PDF: x0=200, x1=300)
 	}
-	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 0)
+	boxes = ConsolidateFigures(AnnotateBoxLayouts(boxes, regions, 3.0, 0))
 	if len(boxes) != 3 {
-		t.Fatalf("expected 3 boxes, got %d", len(boxes))
+		t.Fatalf("unexpected assembled box count: %d", len(boxes))
 	}
 	// Check that text and figure indices are independent
 	if boxes[0].LayoutNo != "text-0" {

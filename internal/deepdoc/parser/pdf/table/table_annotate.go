@@ -65,7 +65,6 @@ type annRegion struct {
 	x0, y0, x1, y1 float64
 	label          string
 	score          float64
-	visited        bool
 	typeIndex      int
 }
 
@@ -280,11 +279,11 @@ func nmsIoU(a, b pdf.DLARegion) float64 {
 // AnnotateBoxLayouts assigns LayoutType and LayoutNo to boxes based on DLA
 // regions.  Returns the filtered slice (Python pops CID-garbled boxes and
 // garbage-layout boxes at wrong positions - Go mirrors with compact).
-// Also creates synthetic figure boxes for unmatched figure/equation regions.
+// Also creates a complete geometry box for every figure/equation region.
 //
 // Before annotation, regions are de-duplicated (layouts_cleanup) and sorted
-// top-to-bottom (sort_Y_firstly) to match Python, and unmatched figure and
-// equation regions receive SEPARATE synthetic namespaces (figure-N /
+// top-to-bottom (sort_Y_firstly), and figure and equation regions receive
+// separate geometry namespaces (figure-N /
 // equation-N) so they never collide.
 // FilteredDLARegions returns the DLA regions after per-class NMS, the
 // confidence filter, Y-sort, and cleanup — i.e. the exact set fed to
@@ -413,7 +412,6 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 					dropped[i] = true
 					continue
 				}
-				cands[bestJ].visited = true
 				// Python: equation mapped to "figure" for layout_type
 				if ty == pdf.LayoutTypeEquation {
 					boxes[i].LayoutType = pdf.LayoutTypeFigure
@@ -446,28 +444,21 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	}
 	boxes = compacted
 
-	// Synthetic figure boxes for unmatched figure/equation regions (Python:
-	// layout_recognizer.py:145-155).  Python numbers each unmatched region with
-	// its index WITHIN the per-type list that also includes already-visited
-	// regions (enumerate([lt for lt in lts if lt["type"] == ty])), so we reuse
-	// the per-type typeIndex computed above rather than a separate
-	// unvisited-only counter. Python keeps figure-N / equation-N in SEPARATE
-	// namespaces, so the typeIndex is keyed by the original type label.
+	// Keep one geometry box per figure/equation, independently of its text.
+	// ConsolidateFigures combines it with matching labels after text cleanup.
 	for j := range cands {
-		if cands[j].visited {
-			continue
-		}
 		if cands[j].label != pdf.LayoutTypeFigure && cands[j].label != pdf.LayoutTypeEquation {
 			continue
 		}
 		boxes = append(boxes, pdf.TextBox{
-			X0:         cands[j].x0,
-			X1:         cands[j].x1,
-			Top:        cands[j].y0,
-			Bottom:     cands[j].y1,
-			Text:       "",
-			LayoutType: pdf.LayoutTypeFigure,
-			LayoutNo:   fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+			X0:           cands[j].x0,
+			X1:           cands[j].x1,
+			Top:          cands[j].y0,
+			Bottom:       cands[j].y1,
+			Text:         "",
+			LayoutType:   pdf.LayoutTypeFigure,
+			LayoutNo:     fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+			LayoutRegion: &pdf.DLARegion{X0: cands[j].x0, Y0: cands[j].y0, X1: cands[j].x1, Y1: cands[j].y1, Label: cands[j].label, Confidence: cands[j].score},
 		})
 	}
 

@@ -589,21 +589,30 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 		anchor := indices[0]
 		for _, idx := range indices[1:] {
 			b := boxes[idx]
-			boxes[anchor].Text += "\n" + b.Text
+			if b.Text != "" {
+				if boxes[anchor].Text != "" {
+					boxes[anchor].Text += "\n"
+				}
+				boxes[anchor].Text += b.Text
+			}
+			if boxes[anchor].LayoutRegion == nil {
+				boxes[anchor].LayoutRegion = b.LayoutRegion
+			}
 			boxes[anchor].X0 = math.Min(boxes[anchor].X0, b.X0)
 			boxes[anchor].X1 = math.Max(boxes[anchor].X1, b.X1)
 			boxes[anchor].Top = math.Min(boxes[anchor].Top, b.Top)
 			boxes[anchor].Bottom = math.Max(boxes[anchor].Bottom, b.Bottom)
 			removeSet[idx] = true
 		}
+		if region := boxes[anchor].LayoutRegion; region != nil {
+			boxes[anchor].X0, boxes[anchor].X1 = region.X0, region.X1
+			boxes[anchor].Top, boxes[anchor].Bottom = region.Y0, region.Y1
+		}
 	}
 }
 
 // ConsolidateFigures merges figure boxes that share the same LayoutNo
-// (i.e., belong to the same DLA figure region) into a single pdf.TextBox.
-// Matches Python's _extract_table_figure + insert_table_figures which pops
-// individual figure boxes and re-inserts one consolidated figure block
-// per DLA region with combined text.
+// into one block, using the matched DLA region for the complete image bounds.
 //
 // Figure boxes whose text matches the data-source discard pattern
 // (r"(数据|资料|图表)*来源[:： ]") are removed entirely — matching Python's

@@ -276,12 +276,9 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 // page-local and the OCR call path is selected here.
 //
 //   - Clean embedded chars (count > 0 and not garbled):
-//     use ocrMergeChars, which detect-merges chars into boxes and falls
-//     back to single-image OCR recognize for empty boxes.
-//   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR,
-//     then fall back to ocrMergeChars if detect succeeds but recognize
-//     produced no useful output. Synthetic chars are appended to support
-//     subsequent median calculations.
+//     group the native characters directly, independently of OCR detection.
+//   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR.
+//     Synthetic chars support subsequent median calculations.
 //
 // updatedChars includes synthetic OCR chars when detect+recognize was
 // used; callers must use the returned slice instead of the original.
@@ -316,28 +313,36 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	if renderErr == nil && pageImg != nil {
 		hasCleanChars := len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars)
 		if hasCleanChars {
+			valid := make([]pdf.TextChar, 0, len(chars))
+			for _, c := range chars {
+				if math.IsNaN(c.X0) || math.IsNaN(c.X1) || math.IsNaN(c.Top) || math.IsNaN(c.Bottom) ||
+					math.IsInf(c.X0, 0) || math.IsInf(c.X1, 0) || math.IsInf(c.Top, 0) || math.IsInf(c.Bottom, 0) ||
+					c.X0 >= c.X1 || c.Top >= c.Bottom || util.IsGarbledText(c.Text, 0.3) {
+					continue
+				}
+				valid = append(valid, c)
+			}
+			if len(valid) > 0 {
+				return lyt.CharsToBoxes(valid, pg, p.Config.SortByTop), valid, false
+			}
+		}
+		label := "scan page"
+		if len(chars) > 0 && !isScanNoise {
+			label = "garbled page"
+		}
+		ocrBoxes = p.ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label, zoom)
+		ocrUsed = ocrBoxes != nil
+		if ocrUsed {
+			// Synthetic OCR chars feed downstream median calculations.
+			for j := range ocrBoxes {
+				for _, r := range ocrBoxes[j].Text {
+					chars = append(chars, pdf.TextChar{Text: string(r), PageNumber: pg})
+					break
+				}
+			}
+		} else if len(chars) > 0 {
 			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
 			ocrUsed = ocrBoxes != nil
-		} else {
-			label := "scan page"
-			if len(chars) > 0 && !isScanNoise {
-				label = "garbled page"
-			}
-			ocrBoxes = p.ocrDetectAndRecognize(ctx, pageImg, docAnalyzer, pg, label, zoom)
-			ocrUsed = ocrBoxes != nil
-			if ocrUsed {
-				// Synthetic OCR chars feed downstream median calculations.
-				for j := range ocrBoxes {
-					for _, r := range ocrBoxes[j].Text {
-						chars = append(chars, pdf.TextChar{Text: string(r), PageNumber: pg})
-						break
-					}
-				}
-			} else if len(chars) > 0 {
-				// Detect failed but chars exist: try the merge path.
-				ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg, zoom)
-				ocrUsed = ocrBoxes != nil
-			}
 		}
 	}
 
@@ -557,9 +562,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// Drop single-character ASCII boxes that repeat verbatim many times on
 	// the SAME page — these are the rotated watermark glyphs from
 	// templated PDFs (issue #18145). Post-process placement so the same
-	// signal covers both the char-path (passed through CharsToBoxes) and
-	// the OCR-merge path (passed through ocrMergeChars); a layout-stage
-	// filter would have only caught the former.
+	// signal covers both native-character boxes and OCR-derived boxes.
 	boxes = lyt.FilterWatermarkBoxes(boxes)
 
 	// Page-level content removal on intact box geometry. These MUST run before

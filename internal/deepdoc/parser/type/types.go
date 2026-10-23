@@ -117,8 +117,11 @@ type TextBox struct {
 	Pages      []int
 	LayoutType string
 	LayoutNo   string
-	ColID      int
-	R          int
+	// LayoutRegion is the matched figure/equation region in PDF-point space.
+	// Text bounds remain unchanged until the figure is assembled.
+	LayoutRegion *DLARegion
+	ColID        int
+	R            int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
