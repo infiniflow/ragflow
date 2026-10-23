@@ -22,9 +22,9 @@ func seedCanvasLimit(t *testing.T, db *gorm.DB, canvasID string) {
 }
 
 // seedVersions inserts n released version rows directly so the test starts at a
-// known count without going through SaveOrReplaceLatestTx (which would trigger
-// the unrelated unpublished-excess cleanup). Released rows are used so that
-// deleteAllUnpublishedExcessTx never trims them and count assertions stay exact.
+// known count without going through SaveOrReplaceLatestTx. All versions are kept
+// (keep-all policy): no version row is ever auto-deleted on write, so count
+// assertions stay exact regardless of release state.
 func seedVersions(t *testing.T, db *gorm.DB, canvasID string, n int) {
 	t.Helper()
 	for i := 0; i < n; i++ {

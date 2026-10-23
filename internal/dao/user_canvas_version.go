@@ -109,15 +109,14 @@ type UserCanvasVersionDAO struct{}
 
 // SaveOrReplaceLatestVersionOptions controls a version-history save.
 type SaveOrReplaceLatestVersionOptions struct {
-	NewID           string
-	UserCanvasID    string
-	Title           *string
-	Description     *string
-	Alias           *string
-	DSL             entity.JSONMap
-	Release         bool
-	KeepUnpublished int
-	SameDSL         func(entity.JSONMap) bool
+	NewID        string
+	UserCanvasID string
+	Title        *string
+	Description  *string
+	Alias        *string
+	DSL          entity.JSONMap
+	Release      bool
+	SameDSL      func(entity.JSONMap) bool
 	// ForceNew bypasses the same-DSL in-place refresh so a manual Save always
 	// INSERTs a fresh version row (design §5.1: every manual Save yields a new
 	// version, even when the DSL is byte-identical to the previous one). When
@@ -335,9 +334,6 @@ func (dao *UserCanvasVersionDAO) UpdateTx(ctx context.Context, tx *gorm.DB, id s
 // SaveOrReplaceLatestTx inserts or refreshes a version using the caller's
 // transaction.
 func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error) {
-	if opts.KeepUnpublished <= 0 {
-		opts.KeepUnpublished = 20
-	}
 	var parent struct {
 		ID string
 	}
@@ -385,7 +381,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 			if opts.Description != nil {
 				latest.Description = opts.Description
 			}
-			return &latest, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
+			return &latest, nil
 		}
 	}
 	// Reaching this point means we are about to INSERT a NEW version row (the
@@ -415,7 +411,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 	if err = tx.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, err
 	}
-	return row, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
+	return row, nil
 }
 
 func (opts SaveOrReplaceLatestVersionOptions) sameDSL(dsl entity.JSONMap) bool {
@@ -423,22 +419,4 @@ func (opts SaveOrReplaceLatestVersionOptions) sameDSL(dsl entity.JSONMap) bool {
 		return opts.SameDSL(dsl)
 	}
 	return reflect.DeepEqual(dsl, opts.DSL)
-}
-
-func (dao *UserCanvasVersionDAO) deleteAllUnpublishedExcessTx(ctx context.Context, tx *gorm.DB, canvasID string, keep int) error {
-	if keep < 0 {
-		keep = 0
-	}
-	var ids []string
-	if err := tx.WithContext(ctx).Model(&entity.UserCanvasVersion{}).
-		Where(map[string]interface{}{"user_canvas_id": canvasID, "release": false}).
-		Order("create_time DESC").
-		Pluck("id", &ids).Error; err != nil {
-		return err
-	}
-	if len(ids) <= keep {
-		return nil
-	}
-	ids = ids[keep:]
-	return tx.WithContext(ctx).Where("id IN ?", ids).Delete(&entity.UserCanvasVersion{}).Error
 }
