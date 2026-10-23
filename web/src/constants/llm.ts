@@ -116,6 +116,7 @@ export enum LLMFactory {
   TrustedRouter = 'TrustedRouter',
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
+  HostingerRouter = 'Hostinger Router',
 }
 
 // Please lowercase the file name
@@ -214,6 +215,7 @@ export const IconMap = {
   [LLMFactory.TrustedRouter]: 'trustedrouter',
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
 };
 
 /**
@@ -264,6 +266,7 @@ export const APIMapUrl = {
   [LLMFactory.EmpirioLabs]:
     'https://platform.empiriolabs.ai/dashboard/api-keys',
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
