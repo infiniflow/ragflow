@@ -98,7 +98,7 @@ describe('Run preflight', () => {
       useSaveGraphBeforeOpeningDebugDrawer(show),
     );
     useGraphStore.setState({
-      nodes: [node('Message', { text: 'hello' }), node('Compiler', {})],
+      nodes: [node('Message', { text: 'hello' }), node('Parser', {})],
     });
     await act(async () => {
       await result.current.handleRun();

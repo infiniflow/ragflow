@@ -46,6 +46,7 @@ var ChinesePunctRegex = regexp.MustCompile(`[,，;；、\r\n]+`)
 const (
 	pagerankAdjustRetryCount = 2
 	pagerankAdjustLockCount  = 256
+	infinityMaxInsertRows    = 8192
 )
 
 var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
@@ -470,17 +471,20 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	}
 
 	// Insert chunks to dataset
-	_, err = table.Insert(insertChunks)
-	if err != nil {
-		common.Warn("Infinity insert failed",
-			zap.String("tableName", tableName),
-			zap.Int("rows", len(insertChunks)),
-			zap.Strings("rowFields", rowFieldNames(insertChunks)),
-			zap.Error(err))
-		if isConnectionLevelError(err) {
-			e.client.dropConnectionFor(db, "InsertChunks")
+	for start := 0; start < len(insertChunks); start += infinityMaxInsertRows {
+		end := min(start+infinityMaxInsertRows, len(insertChunks))
+		batch := insertChunks[start:end]
+		if _, err = table.Insert(batch); err != nil {
+			common.Warn("Infinity insert failed",
+				zap.String("tableName", tableName),
+				zap.Int("rows", len(batch)),
+				zap.Strings("rowFields", rowFieldNames(batch)),
+				zap.Error(err))
+			if isConnectionLevelError(err) {
+				e.client.dropConnectionFor(db, "InsertChunks")
+			}
+			return nil, fmt.Errorf("failed to insert chunks to dataset: %w", err)
 		}
-		return nil, fmt.Errorf("failed to insert chunks to dataset: %w", err)
 	}
 
 	common.Info("InfinityConnection.InsertChunks result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
