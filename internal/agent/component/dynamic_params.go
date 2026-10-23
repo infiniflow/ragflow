@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"ragflow/internal/agent/runtime"
 	"strings"
+
+	"ragflow/internal/agent/tool"
 )
 
 // ErrCompilationTemplateRequired identifies a Compiler component without a
@@ -18,7 +20,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 
 // ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
 // entries, Invoke mappings, Compiler configuration, input options, Loop settings,
-// Iteration outputs, and SQL connections in saved drafts.
+// Iteration outputs, SQL connections, and search filters in saved drafts.
 // All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -50,13 +52,8 @@ func validateDynamicEntries(value any, draft bool) error {
 }
 
 func validateDynamicParams(component string, params map[string]any, draft bool) error {
-	for _, field := range []string{
-		"include_domains", "exclude_domains", "site_include", "site_exclude",
-		"country_include", "language_include",
-	} {
-		if values, ok := params[field].([]any); ok && containsBlank(values) {
-			return fmt.Errorf("[%s] %s does not support empty entries", component, field)
-		}
+	if err := tool.ValidateSearchFilters(params, draft); err != nil {
+		return fmt.Errorf("[%s] %w", component, err)
 	}
 	// Delimiter entries are split tokens, not names: whitespace-only values
 	// ("\n", "\t") are valid delimiters — the chunker form's default row is a

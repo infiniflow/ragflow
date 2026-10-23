@@ -395,6 +395,36 @@ function findToolCanvasNode(
   return toolNodeId ? nodeMap.get(toolNodeId) : undefined;
 }
 
+function collectSearchFilterIssues(
+  params: Record<string, any> | undefined,
+  target: IssueTarget,
+): CanvasIssue[] {
+  const incomplete = [
+    'include_domains',
+    'exclude_domains',
+    'site_include',
+    'site_exclude',
+    'country_include',
+    'language_include',
+  ].some(
+    (field) =>
+      Array.isArray(params?.[field]) &&
+      params[field].some(
+        (value: unknown) => typeof value !== 'string' || !value.trim(),
+      ),
+  );
+  return incomplete
+    ? [
+        {
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.nodeFormInvalid',
+          blocksRun: true,
+        },
+      ]
+    : [];
+}
+
 export function collectCanvasIssues({
   nodes,
   edges,
@@ -516,6 +546,8 @@ export function collectCanvasIssues({
         blocksRun: true,
       });
     }
+
+    issues.push(...collectSearchFilterIssues(form, target));
 
     if (
       label === Operator.UserFillUp &&
@@ -672,9 +704,6 @@ export function collectCanvasIssues({
           const needsApiKey = ApiKeyRequiredOperators.includes(
             tool?.component_name,
           );
-          if (!isRetrieval && !needsApiKey) {
-            continue;
-          }
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool
@@ -687,6 +716,7 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
+          issues.push(...collectSearchFilterIssues(tool?.params, toolTarget));
           if (isRetrieval) {
             issues.push(
               ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
