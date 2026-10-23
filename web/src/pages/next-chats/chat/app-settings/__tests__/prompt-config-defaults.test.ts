@@ -134,7 +134,47 @@ describe('withPromptConfigDefaults', () => {
     ]);
   });
 
-  it('keeps null for keys that have no default', () => {
+  it('drops null from non-defaulted fields the schema rejects', () => {
+    // `prologue`, `empty_response`, the per-provider keys and
+    // `web_search_provider` are `.optional()` with no default: a surviving null
+    // fails the whole form, and dropping the key is the only honest answer
+    // because there is no value to substitute.
+    const merged = withPromptConfigDefaults(
+      {
+        prologue: null,
+        empty_response: null,
+        brave_api_key: null,
+        tavily_api_key: null,
+        web_search_provider: null,
+        system: 'keep me',
+      } as any,
+      SYSTEM_PROMPT,
+    );
+
+    for (const key of [
+      'prologue',
+      'empty_response',
+      'brave_api_key',
+      'tavily_api_key',
+      'web_search_provider',
+    ]) {
+      expect(merged).not.toHaveProperty(key);
+    }
+    // A value that is present is untouched.
+    expect(merged.system).toBe('keep me');
+  });
+
+  it('falls back to the default for a null on a defaulted field', () => {
+    const merged = withPromptConfigDefaults(
+      { reasoning: null, quote: null } as any,
+      SYSTEM_PROMPT,
+    );
+
+    expect(merged.reasoning).toBe(false);
+    expect(merged.quote).toBe(true);
+  });
+
+  it('keeps null for the one field the schema declares nullable', () => {
     // `agentic_rag: null` means "no per-chat override" — rewriting it would
     // change what the assistant inherits.
     const merged = withPromptConfigDefaults(
@@ -143,6 +183,38 @@ describe('withPromptConfigDefaults', () => {
     );
 
     expect(merged.agentic_rag).toBeNull();
+  });
+
+  it('repairs parameter rows the schema would reject', () => {
+    // A persisted row without `optional` fails `z.boolean()`, and a row without
+    // a key fails `z.string().min(1)` — either one blocks the save.
+    const merged = withPromptConfigDefaults(
+      {
+        parameters: [
+          { key: 'knowledge' }, // known row: inherits required
+          { key: 'date' }, // known row: inherits optional
+          { key: 'custom' }, // unknown row: never silently made mandatory
+          { optional: true }, // no key: unusable
+          { key: '   ', optional: false }, // blank key: unusable
+        ],
+      } as any,
+      SYSTEM_PROMPT,
+    );
+
+    expect(merged.parameters).toEqual([
+      { key: 'knowledge', optional: false },
+      { key: 'date', optional: true },
+      { key: 'custom', optional: true },
+    ]);
+  });
+
+  it('keeps a boolean optional flag a row already carries', () => {
+    const merged = withPromptConfigDefaults(
+      { parameters: [{ key: 'knowledge', optional: true }] } as any,
+      SYSTEM_PROMPT,
+    );
+
+    expect(merged.parameters).toEqual([{ key: 'knowledge', optional: true }]);
   });
 
   it('handles a missing or null prompt_config', () => {
@@ -194,5 +266,16 @@ describe('mergePromptConfigForSubmit', () => {
       use_kg: true,
     });
     expect(mergePromptConfigForSubmit(null, undefined)).toEqual({});
+  });
+
+  it('does not send back a null the form never touched', () => {
+    // Otherwise the value survives the PUT and fails the very next load.
+    const merged = mergePromptConfigForSubmit(
+      { prologue: null, use_kg: true } as any,
+      { keyword: true } as any,
+    );
+
+    expect(merged).not.toHaveProperty('prologue');
+    expect(merged.use_kg).toBe(true);
   });
 });

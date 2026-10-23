@@ -17,6 +17,39 @@
 import { PromptConfig } from '@/interfaces/database/chat';
 
 /**
+ * Fields the schema declares as `.nullable()`, so `null` is a real value rather
+ * than a missing one. `agentic_rag: null` means "no per-chat override"; every
+ * other field rejects `null`.
+ */
+const NULLABLE_FIELDS = new Set<string>(['agentic_rag']);
+
+/**
+ * Drops `null` from fields the schema cannot accept, leaving `agentic_rag`
+ * alone.
+ *
+ * The API persists `null` far more often than the types suggest. For a key with
+ * a default the caller's spread restores the default afterwards; for one
+ * without — `prologue`, `empty_response`, the per-provider API keys,
+ * `web_search_provider` — omission is the only honest answer, because the
+ * schema rejects `null` and materialising `''` would invent a value the user
+ * never entered. A single surviving `null` makes the whole form unvalidatable,
+ * so every one has to go.
+ */
+function withoutNulls(config: Partial<PromptConfig>): Partial<PromptConfig> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(config)) {
+    if (value === undefined) {
+      continue;
+    }
+    if (value === null && !NULLABLE_FIELDS.has(key)) {
+      continue;
+    }
+    result[key] = value;
+  }
+  return result as Partial<PromptConfig>;
+}
+
+/**
  * The `prompt_config` a newly created assistant starts with.
  *
  * These values must stay in step with `useCreateChatDialog`
@@ -50,31 +83,60 @@ export function promptConfigDefaults(
 }
 
 /**
+ * Normalises `parameters` rows so the schema accepts them.
+ *
+ * A row persisted without `optional` fails `z.boolean()`, and a row without a
+ * usable `key` cannot satisfy `z.string().min(1)` — either one blocks the save.
+ * Known rows inherit the flag the create dialog gives them; unknown rows default
+ * to optional so a variable the user added is never silently made mandatory.
+ */
+function normalizeParameters(
+  rows: PromptConfig['parameters'] | undefined,
+  defaults: Partial<PromptConfig>,
+): PromptConfig['parameters'] {
+  if (!Array.isArray(rows)) {
+    return defaults.parameters ?? [];
+  }
+  const knownOptional = new Map(
+    (defaults.parameters ?? []).map(({ key, optional }) => [key, optional]),
+  );
+  return rows
+    .filter(
+      (row): row is { key: string; optional: boolean } =>
+        !!row && typeof row.key === 'string' && row.key.trim() !== '',
+    )
+    .map((row) => ({
+      ...row,
+      optional:
+        typeof row.optional === 'boolean'
+          ? row.optional
+          : (knownOptional.get(row.key) ?? true),
+    }));
+}
+
+/**
  * Fills in the keys `useChatSettingSchema` requires, so a chat persisted with an
  * incomplete `prompt_config` becomes editable instead of failing validation on
  * every save.
  *
- * A `null` is treated as missing for keys that have a default — the API can
- * persist `keyword: null`, which the schema rejects just like a missing key.
- * Keys without a default keep their `null`: `agentic_rag: null` means "no
- * override", and rewriting it would change what the chat inherits. An
- * explicitly empty `system` is likewise kept, so validation points at the field
- * the user needs to fill rather than at a value we substituted.
+ * `undefined` and, for defaulted keys, `null` are both treated as missing — the
+ * API can persist `keyword: null`, which the schema rejects just like an absent
+ * key. `null` on non-defaulted keys is dropped rather than replaced, and an
+ * explicitly empty `system` is kept, so validation points at the field the user
+ * needs to fill rather than at a value we substituted.
  */
 export function withPromptConfigDefaults(
   promptConfig: Partial<PromptConfig> | null | undefined,
   systemPrompt: string,
 ): Partial<PromptConfig> {
   const defaults = promptConfigDefaults(systemPrompt);
-  const merged: Partial<PromptConfig> = { ...defaults };
-  for (const [key, value] of Object.entries(promptConfig ?? {})) {
-    const isDefaultedKey = Object.prototype.hasOwnProperty.call(defaults, key);
-    // `undefined` never clobbers a default; for a defaulted key neither does
-    // `null`. Spreading either one verbatim is how the backfill silently fails.
-    if (value !== undefined && (value !== null || !isDefaultedKey)) {
-      (merged as Record<string, unknown>)[key] = value;
-    }
-  }
+  const merged: Partial<PromptConfig> = {
+    ...defaults,
+    ...withoutNulls(promptConfig ?? {}),
+  };
+
+  merged.parameters = normalizeParameters(merged.parameters, defaults);
+
   return merged;
 }
 
@@ -87,10 +149,16 @@ export function withPromptConfigDefaults(
  * the parsed values alone would silently delete them. Starting from the
  * persisted config keeps undeclared fields, while the submitted values still
  * win for every field the form does own.
+ *
+ * Nulls are dropped here too: a persisted `prologue: null` the form never
+ * touched would otherwise be sent straight back and rejected on the next load.
  */
 export function mergePromptConfigForSubmit(
   persisted?: Partial<PromptConfig> | null,
   submitted?: Partial<PromptConfig> | null,
 ): Partial<PromptConfig> {
-  return { ...(persisted ?? {}), ...(submitted ?? {}) };
+  return {
+    ...withoutNulls(persisted ?? {}),
+    ...withoutNulls(submitted ?? {}),
+  };
 }
