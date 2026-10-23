@@ -20,17 +20,10 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
-
-// Variables holds all runtime variables that can be changed during system operation
-// Unlike Config, these can be modified at runtime
-type Variables struct {
-	//SecretKey string `json:"secret_key"`
-}
 
 // VariableStore interface for persistent storage (e.g., Redis)
 type VariableStore interface {
@@ -39,54 +32,12 @@ type VariableStore interface {
 	SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error)
 }
 
-var (
-	globalVariables *Variables
-	variablesOnce   sync.Once
-	variablesMu     sync.RWMutex
-)
-
 const (
-	// DefaultSecretKey is used when no secret key is found in storage
-	DefaultSecretKey = "infiniflow-token"
 	// SecretKeyRedisKey is the Redis key for storing secret key
 	SecretKeyRedisKey = "ragflow:system:secret_key"
 	// SecretKeyTTL is the TTL for secret key in Redis (0 = no expiration)
 	SecretKeyTTL = 0
 )
-
-// InitVariables initializes all runtime variables from persistent storage
-// This should be called after Config and Cache are initialized
-func InitVariables(store VariableStore) error {
-	var initErr error
-	variablesOnce.Do(func() {
-		globalVariables = &Variables{}
-
-		//// secret key
-		//generatedKey, err := utility.GenerateSecretKey()
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to generate secret key: %w", err)
-		//}
-		//
-		//// Initialize SecretKey
-		//secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
-		//if err != nil {
-		//	initErr = fmt.Errorf("failed to initialize secret key: %w", err)
-		//} else {
-		//	globalVariables.SecretKey = secretKey
-		//	common.Info("Secret key initialized from store")
-		//}
-
-		common.Info("Server variables initialized successfully")
-	})
-	return initErr
-}
-
-// GetVariables returns the global variables instance
-//func GetVariables() *Variables {
-//	variablesMu.RLock()
-//	defer variablesMu.RUnlock()
-//	return globalVariables
-//}
 
 // GetSecretKey returns the current secret key
 func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
@@ -105,16 +56,6 @@ func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
 	}
 	return secretKey, nil
 }
-
-// SetSecretKey updates the secret key at runtime
-//func SetSecretKey(key string) {
-//	variablesMu.Lock()
-//	defer variablesMu.Unlock()
-//	if globalVariables != nil {
-//		globalVariables.SecretKey = key
-//		common.Info("Secret key updated at runtime")
-//	}
-//}
 
 // GetOrCreateKey gets a key from store, or creates it if not exists
 // - If key exists in store, returns the stored value
@@ -167,102 +108,4 @@ func GetOrCreateKey(ctx context.Context, store VariableStore, key string, newVal
 
 	// If still empty, use our generated value
 	return newValue, nil
-}
-
-// RefreshVariables refreshes all variables from storage
-// Call this when you want to reload variables from persistent storage
-func RefreshVariables(ctx context.Context, store VariableStore) error {
-	if store == nil {
-		return fmt.Errorf("store is nil")
-	}
-
-	variablesMu.Lock()
-	defer variablesMu.Unlock()
-
-	if globalVariables == nil {
-		globalVariables = &Variables{}
-	}
-
-	// Refresh SecretKey
-	secretKey, err := store.Get(ctx, SecretKeyRedisKey)
-	if err != nil {
-		common.Warn("Failed to refresh secret key from store", zap.Error(err))
-		return err
-	}
-	if secretKey != "" {
-		//globalVariables.SecretKey = secretKey
-		common.Info("Secret key refreshed from store")
-	}
-
-	return nil
-}
-
-// VariableWatcher watches for variable changes in storage
-// This can be used to detect changes made by other instances
-type VariableWatcher struct {
-	store    VariableStore
-	stopChan chan struct{}
-	wg       sync.WaitGroup
-}
-
-// NewVariableWatcher creates a new variable watcher
-func NewVariableWatcher(store VariableStore) *VariableWatcher {
-	return &VariableWatcher{
-		store:    store,
-		stopChan: make(chan struct{}),
-	}
-}
-
-// Start starts watching for variable changes
-func (w *VariableWatcher) Start(interval time.Duration) {
-	w.wg.Go(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		ctx := context.Background()
-		for {
-			select {
-			case <-ticker.C:
-				if err := RefreshVariables(ctx, w.store); err != nil {
-					common.Debug("Failed to refresh variables", zap.Error(err))
-				}
-			case <-w.stopChan:
-				return
-			}
-		}
-	})
-	common.Info("Variable watcher started", zap.Duration("interval", interval))
-}
-
-// Stop stops the variable watcher
-func (w *VariableWatcher) Stop() {
-	close(w.stopChan)
-	w.wg.Wait()
-	common.Info("Variable watcher stopped")
-}
-
-// SaveToStorage saves current variables to persistent storage
-func SaveToStorage(store VariableStore) error {
-	if store == nil {
-		return fmt.Errorf("store is nil")
-	}
-
-	variablesMu.RLock()
-	defer variablesMu.RUnlock()
-
-	if globalVariables == nil {
-		return fmt.Errorf("variables not initialized")
-	}
-
-	// Save SecretKey
-	//if !store.Set(SecretKeyRedisKey, globalVariables.SecretKey, SecretKeyTTL) {
-	//	return fmt.Errorf("failed to save secret key to store")
-	//}
-
-	common.Info("Variables saved to storage")
-	return nil
-}
-
-// WithTimeout creates a context with timeout for variable operations
-func WithTimeout(timeout time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), timeout)
 }
