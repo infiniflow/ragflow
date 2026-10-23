@@ -26,41 +26,46 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestJSONArrayLen locks the inflight/backlog count derivation (plan v4.1
-// §9.3): counts are BacklogEntry array lengths, not deduplicated doc counts.
-func TestJSONArrayLen(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want int
-	}{
-		{name: "empty", in: "", want: 0},
-		{name: "empty array", in: "[]", want: 0},
-		{name: "single entry", in: `[{"doc_id":"d1","event_type":"completed","seq":1}]`, want: 1},
-		{name: "two entries same doc", in: `[{"doc_id":"d1","event_type":"completed","seq":1},{"doc_id":"d1","event_type":"deleted","seq":2}]`, want: 2},
-		{name: "malformed", in: "{not json", want: 0},
-		{name: "null", in: "null", want: 0},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := jsonArrayLen(tc.in); got != tc.want {
-				t.Fatalf("jsonArrayLen(%q) = %d, want %d", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
 // setupCompilationStatusTestDB migrates the minimal schema for
 // GetDatasetCompilationStatus (Knowledgebase for the Accessible check plus the
 // KnowledgeCompileDataset scheduling row) and pushes it onto dao.DB.
 func setupCompilationStatusTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.KnowledgeCompileDataset{}); err != nil {
+	if err := db.AutoMigrate(&entity.KnowledgeCompileDataset{}, &entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}); err != nil {
 		t.Fatalf("migrate knowledge_compile_docs: %v", err)
 	}
 	pushServiceDB(t, db)
 	return db
+}
+
+func TestCompilationQueueCountsPreserveDuplicatesAndRouting(t *testing.T) {
+	db := setupCompilationStatusTestDB(t)
+	entries := []entity.KnowledgeCompileEntry{
+		{DatasetID: "kb", DocID: "same", QueuePosition: 1, TaskTypes: []string{"Graph"}},
+		{DatasetID: "kb", DocID: "same", QueuePosition: 2, TaskTypes: []string{"Graph"}},
+		{DatasetID: "kb", DocID: "timeline", QueuePosition: 3, Variants: []string{"structure"}, TaskTypes: []string{"Timeline"}},
+		{DatasetID: "kb", DocID: "structure", QueuePosition: 4, Variants: []string{"structure"}},
+		{DatasetID: "kb", DocID: "wiki", QueuePosition: 5, Variants: []string{"wiki"}},
+		{DatasetID: "kb", DocID: "unscoped", QueuePosition: 6},
+		{DatasetID: "other-kb", DocID: "same", QueuePosition: 1, TaskTypes: []string{"Graph"}},
+	}
+	for _, table := range []string{(entity.KnowledgeCompileBacklog{}).TableName(), (entity.KnowledgeCompileInflight{}).TableName()} {
+		if err := db.Table(table).Create(&entries).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			kind string
+			want int
+		}{
+			{"", 6}, {"Graph", 4}, {"Timeline", 3}, {"PageIndex", 2}, {"Wiki", 2},
+		} {
+			count, err := countCompilationStatusEntries(db, table, "kb", tc.kind)
+			if err != nil || count != tc.want {
+				t.Fatalf("%s kind=%q count=%d want=%d err=%v", table, tc.kind, count, tc.want, err)
+			}
+		}
+	}
 }
 
 // insertCompilationOwnerKB inserts a valid KB owned by userID (TenantID ==
@@ -128,8 +133,6 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	row := entity.KnowledgeCompileDataset{
 		DatasetID:       "kb-full",
 		TenantID:        "user-1",
-		BacklogDocIDs:   `[{"doc_id":"d3","event_type":"completed","task_types":["Timeline"]}]`,
-		InflightDocIDs:  `[{"doc_id":"d1","event_type":"completed","task_types":["Graph"]},{"doc_id":"d2","event_type":"completed","task_types":["Graph"]}]`,
 		State:           entity.DatasetStateRunning,
 		ErrorMsg:        "merge failed: boom",
 		Progress:        0.72,
@@ -139,6 +142,17 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatalf("insert scheduling row: %v", err)
+	}
+	if err := db.Create(&entity.KnowledgeCompileBacklog{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{
+		DatasetID: row.DatasetID, DocID: "d3", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Timeline"},
+	}}).Error; err != nil {
+		t.Fatalf("insert backlog: %v", err)
+	}
+	if err := db.Create(&[]entity.KnowledgeCompileInflight{
+		{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{DatasetID: row.DatasetID, DocID: "d1", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Graph"}}},
+		{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{DatasetID: row.DatasetID, DocID: "d2", QueuePosition: 2, EventType: "completed", TaskTypes: []string{"Graph"}}},
+	}).Error; err != nil {
+		t.Fatalf("insert inflight: %v", err)
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
@@ -176,11 +190,9 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 	// Owner is user-1; a different user-2 must be denied.
 	insertCompilationOwnerKB(t, "kb-other", "user-1")
 	if err := dao.DB.Create(&entity.KnowledgeCompileDataset{
-		DatasetID:      "kb-other",
-		TenantID:       "user-1",
-		BacklogDocIDs:  "[]",
-		InflightDocIDs: "[]",
-		State:          entity.DatasetStatePending,
+		DatasetID: "kb-other",
+		TenantID:  "user-1",
+		State:     entity.DatasetStatePending,
 	}).Error; err != nil {
 		t.Fatalf("insert scheduling row: %v", err)
 	}
