@@ -377,10 +377,9 @@ export const useSendMessageWithSse = () => {
                 // Swallow parse errors silently
               }
             }
-          } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') {
-              break;
-            }
+          } catch {
+            // A failed reader stays errored.
+            break;
           }
         }
         setDoneValue(body, true);
