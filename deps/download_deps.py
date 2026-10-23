@@ -101,6 +101,13 @@ def stagehand_url(arch: str) -> str:
     return f"{gh_proxy()}https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/{STAGEHAND_SERVER_VERSION}/stagehand-server-v3-linux-{arch}"
 
 
+def noto_cjk_font_url() -> str:
+    """Noto Sans CJK SC variable TTF, rendered into PDFs by the Go backend
+    (internal/agent/component/io/pdf_writer.go). It is a GitHub raw URL, so the
+    gh-proxy prefix applies behind the GFW."""
+    return f"{gh_proxy()}https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf"
+
+
 # Mirrors internal/common.DeepDocModelFiles (Go in-process DeepDoc backend).
 # These are the ONLY weights the Go backend loads; the full InfiniFlow/deepdoc
 # repo also ships .onnx (Python-only), which this Go-only script deliberately
@@ -360,6 +367,15 @@ def main():
             os.unlink(target)
             raise RuntimeError(f"Invalid downloaded dependency: {filename}")
     _install_stagehand()
+
+    # ── Noto Sans CJK SC font (rendered into PDFs by the Go backend) ─────────
+    print("== NotoSansCJKsc-VF.ttf ==")
+    font = os.path.join(SCRIPT_DIR, "NotoSansCJKsc-VF.ttf")
+    if os.path.isfile(font) and os.path.getsize(font) > 0:
+        print("  ✓ NotoSansCJKsc-VF.ttf already present")
+    else:
+        print(f"Downloading NotoSansCJKsc-VF.ttf from {noto_cjk_font_url()}...")
+        download_with_progress(noto_cjk_font_url(), font)
 
     # Download the Go DeepDoc `.ort` weights so this script is a one-stop for a
     # Go dev's runtime resources: models (below) from a single invocation.

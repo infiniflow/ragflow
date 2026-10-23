@@ -85,6 +85,14 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
+# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# GitHub at main-image build time. gopdf reads it at runtime from
+# /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
+    mkdir -p /usr/local/share/fonts/truetype/noto && \
+    cp /tmp/NotoSansCJKsc-VF.ttf /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf
+
 # Setup apt
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
@@ -99,10 +107,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     chmod 1777 /tmp && \
     apt update && \
     apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
-    mkdir -p /usr/local/share/fonts/truetype/noto && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
-        -o /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf \
-        https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf && \
     fc-cache -f && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
