@@ -112,6 +112,7 @@ func setupDecisionConfigDB(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&entity.Tenant{},
+		&entity.UserTenant{},
 		&entity.Chat{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
@@ -122,6 +123,17 @@ func setupDecisionConfigDB(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+}
+
+func seedTenantDecisionDefault(t *testing.T, db *gorm.DB, tenantID string, decisionID string, tenantDecisionID *string) {
+	t.Helper()
+	status := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-" + tenantID, UserID: tenantID, TenantID: tenantID, Role: "owner", Status: &status,
+		DecisionID: &decisionID, TenantDecisionID: tenantDecisionID,
+	}).Error; err != nil {
+		t.Fatalf("seed owner model settings: %v", err)
+	}
 }
 
 func seedDecisionModel(t *testing.T, db *gorm.DB, tenantID, modelName string, modelType int) (providerID, instanceID, modelID string) {
@@ -148,9 +160,7 @@ func TestResolveDecisionBackendUsesTenantDefault(t *testing.T) {
 	setupDecisionConfigDB(t)
 	db := dao.DB
 	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "decision-model-preview", int(entity.ModelTypeDecision))
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &modelID}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", modelID, nil)
 	if err := db.Create(&entity.Chat{ID: "chat-1", TenantID: "tenant-1", LLMSetting: entity.JSONMap{}, PromptConfig: entity.JSONMap{}, KBIDs: entity.JSONSlice{}}).Error; err != nil {
 		t.Fatalf("seed chat: %v", err)
 	}
@@ -176,9 +186,7 @@ func TestResolveDecisionBackendPrefersChatOverride(t *testing.T) {
 	db := dao.DB
 	_, _, tenantModel := seedDecisionModel(t, db, "tenant-1", "tenant-model", int(entity.ModelTypeDecision))
 	_, _, chatModel := seedDecisionModel(t, db, "tenant-1", "chat-model", int(entity.ModelTypeDecision))
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &tenantModel}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", tenantModel, nil)
 	if err := db.Create(&entity.Chat{ID: "chat-1", TenantID: "tenant-1", LLMSetting: entity.JSONMap{}, PromptConfig: entity.JSONMap{}, KBIDs: entity.JSONSlice{}, DecisionID: &chatModel}).Error; err != nil {
 		t.Fatalf("seed chat: %v", err)
 	}
@@ -195,9 +203,7 @@ func TestResolveDecisionBackendRejectsWrongModelType(t *testing.T) {
 	setupDecisionConfigDB(t)
 	db := dao.DB
 	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "chat-model", int(entity.ModelTypeChat))
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &modelID}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", modelID, nil)
 
 	srv := decisionStub(t, []float64{0.9, 0.9, 0.9, 0.9}, 200, nil)
 	defer srv.Close()
@@ -213,9 +219,7 @@ func TestResolveDecisionBackendRejectsForeignTenant(t *testing.T) {
 	setupDecisionConfigDB(t)
 	db := dao.DB
 	_, _, modelID := seedDecisionModel(t, db, "tenant-2", "decision-model-preview", int(entity.ModelTypeDecision))
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &modelID}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", modelID, nil)
 
 	srv := decisionStub(t, []float64{0.9, 0.9, 0.9, 0.9}, 200, nil)
 	defer srv.Close()
@@ -234,9 +238,7 @@ func TestDecisionModelIDPrefersResolvedRowID(t *testing.T) {
 	db := dao.DB
 	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "resolved", int(entity.ModelTypeDecision))
 	composite := "resolved@systemone@chat"
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &composite, TenantDecisionID: &modelID}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", composite, &modelID)
 
 	got := decisionModelIDFor(context.Background(), decisionScope{tenantID: "tenant-1"})
 	if got != modelID {
@@ -249,9 +251,7 @@ func TestDecisionModelIDFallsBackToRequestedValue(t *testing.T) {
 	setupDecisionConfigDB(t)
 	db := dao.DB
 	_, _, modelID := seedDecisionModel(t, db, "tenant-1", "legacy", int(entity.ModelTypeDecision))
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", DecisionID: &modelID}).Error; err != nil {
-		t.Fatalf("seed tenant: %v", err)
-	}
+	seedTenantDecisionDefault(t, db, "tenant-1", modelID, nil)
 
 	if got := decisionModelIDFor(context.Background(), decisionScope{tenantID: "tenant-1"}); got != modelID {
 		t.Errorf("model id = %q, want %q", got, modelID)
@@ -270,9 +270,7 @@ func TestDecisionBackendCacheIsScopedToTenant(t *testing.T) {
 	_, _, modelID := seedDecisionModel(t, db, "tenant-a", "shared", int(entity.ModelTypeDecision))
 	for _, tenantID := range []string{"tenant-a", "tenant-b"} {
 		id := modelID
-		if err := db.Create(&entity.Tenant{ID: tenantID, TenantDecisionID: &id}).Error; err != nil {
-			t.Fatalf("seed tenant %s: %v", tenantID, err)
-		}
+		seedTenantDecisionDefault(t, db, tenantID, "", &id)
 	}
 
 	if got := resolveDecisionBackend(withDecisionScope(context.Background(), "tenant-a", "")); got == nil {
