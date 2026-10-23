@@ -236,7 +236,7 @@
               "input_mode": "constant",
               "type": "string",
               "value": "",
-              "variable": ""
+              "variable": "loop_input"
             }
           ],
           "maximum_loop_count": 50,
@@ -2290,7 +2290,7 @@
                 "input_mode": "constant",
                 "type": "string",
                 "value": "",
-                "variable": ""
+                "variable": "loop_input"
               }
             ],
             "maximum_loop_count": 50,

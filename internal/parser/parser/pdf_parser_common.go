@@ -299,9 +299,26 @@ var pdfParseMethodSpellings = map[string]string{
 // IsPDFParseMethod reports whether raw names a PDF parse method rather than
 // a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
 // layout_recognizer selectors resolved separately, so they report false.
+//
+// A method backed by a registered external analyzer factory (see
+// RegisterAnalyzerFactory — e.g. "deepdoc_ee" in the EE build) is a real PDF
+// parse method even though it is absent from the built-in whitelist: it is
+// routed to the DeepDoc dispatch path. Recognizing it here keeps
+// IsPDFParseMethod consistent with validateParseMethod and stops the routing
+// code (pdf_vision_dispatch.go and the ingestion config migration) from
+// misclassifying a registered method as a VLM model selector.
 func IsPDFParseMethod(raw string) bool {
-	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
-	return ok
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if _, ok := pdfParseMethodSpellings[key]; ok {
+		return true
+	}
+	// Registered external methods are keyed by their normalized token (see
+	// RegisterAnalyzerFactory / resolveDocAnalyzerForMethod), so look them up
+	// via normalizePDFParseMethod rather than the raw key.
+	if _, ok := analyzerFactories[normalizePDFParseMethod(raw)]; ok {
+		return true
+	}
+	return false
 }
 
 func normalizePDFParseMethod(raw string) string {

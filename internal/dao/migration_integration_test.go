@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
+
 	"gorm.io/gorm"
 )
 
@@ -134,7 +136,7 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 	}
 }
 
-func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.T) {
+func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
@@ -155,22 +157,29 @@ func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.
 	})
 	ctx := context.Background()
 	assertModifyColumnTypesTablesAbsent(t, db.WithContext(ctx), "knowledge_compile_docs")
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		if db.Migrator().HasTable(model) {
+			t.Fatalf("%T already exists; this test requires an empty database", model)
+		}
+	}
 	if err = db.WithContext(ctx).Exec(`CREATE TABLE knowledge_compile_docs (
 		dataset_id varchar(64) NOT NULL PRIMARY KEY,
-		backlog_doc_ids text NOT NULL,
-		inflight_doc_ids text NOT NULL
+		backlog_doc_ids longtext NOT NULL,
+		inflight_doc_ids longtext NOT NULL
 	)`).Error; err != nil {
 		t.Fatalf("failed to create legacy knowledge_compile_docs: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := db.WithContext(context.Background()).Exec("DROP TABLE IF EXISTS knowledge_compile_docs").Error; err != nil {
-			t.Errorf("failed to drop knowledge_compile_docs test table: %v", err)
+		for _, table := range []string{"knowledge_compile_docs", "knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight"} {
+			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
+				t.Errorf("failed to drop %s test table: %v", table, err)
+			}
 		}
 	})
 
-	legacyBacklog := knowledgeCompileBacklogFixture(480)
-	if len(legacyBacklog) >= 65535 {
-		t.Fatalf("legacy fixture is %d bytes, want less than TEXT's 65,535-byte limit", len(legacyBacklog))
+	legacyBacklog := knowledgeCompileBacklogFixture(600)
+	if len(legacyBacklog) <= 65535 {
+		t.Fatalf("fixture is %d bytes, want more than TEXT's 65,535-byte limit", len(legacyBacklog))
 	}
 	if err = db.WithContext(ctx).Exec(
 		"INSERT INTO knowledge_compile_docs (dataset_id, backlog_doc_ids, inflight_doc_ids) VALUES (?, ?, '[]')",
@@ -178,46 +187,34 @@ func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.
 	).Error; err != nil {
 		t.Fatalf("failed to seed legacy backlog: %v", err)
 	}
-	if err = modifyColumnTypes(ctx, db); err != nil {
-		t.Fatalf("modifyColumnTypes failed: %v", err)
+	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}); err != nil {
+		t.Fatal(err)
+	}
+	if err = migrateKnowledgeCompileQueues(ctx, db); err != nil {
+		t.Fatalf("migrateKnowledgeCompileQueues failed: %v", err)
 	}
 
 	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
-		columnType, nullable, ok, err := columnDefinition(ctx, db, "knowledge_compile_docs", column)
-		if err != nil {
-			t.Fatalf("failed to read %s definition: %v", column, err)
-		}
-		if !ok || columnType != "longtext" || nullable {
-			t.Errorf("%s definition = %q nullable=%v exists=%v, want longtext NOT NULL", column, columnType, nullable, ok)
+		if db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
+			t.Errorf("source column %s still exists", column)
 		}
 	}
-
-	var preserved string
-	if err = db.WithContext(ctx).Raw(
-		"SELECT backlog_doc_ids FROM knowledge_compile_docs WHERE dataset_id = ?", "kb1",
-	).Scan(&preserved).Error; err != nil {
-		t.Fatalf("failed to read migrated backlog: %v", err)
+	var entries []entity.KnowledgeCompileEntry
+	if err := db.Table((entity.KnowledgeCompileBacklog{}).TableName()).Order("queue_position").Find(&entries).Error; err != nil {
+		t.Fatal(err)
 	}
-	if preserved != legacyBacklog {
-		t.Fatal("migration changed the existing backlog")
+	if len(entries) != 600 {
+		t.Fatalf("migrated %d events, want 600", len(entries))
 	}
-
-	oversizedBacklog := knowledgeCompileBacklogFixture(600)
-	if len(oversizedBacklog) <= 65535 {
-		t.Fatalf("oversized fixture is %d bytes, want more than TEXT's 65,535-byte limit", len(oversizedBacklog))
+	for i, entry := range entries {
+		if entry.DocID != fmt.Sprintf("%032d", i) || entry.QueuePosition != int64(i+1) || entry.EventType != "doc_completed" || len(entry.TaskTypes) != 1 || entry.TaskTypes[0] != "Graph" {
+			t.Fatalf("unexpected event %d: %+v", i, entry)
+		}
 	}
-	if err = db.WithContext(ctx).Exec(
-		"UPDATE knowledge_compile_docs SET backlog_doc_ids = ? WHERE dataset_id = ?",
-		oversizedBacklog, "kb1",
-	).Error; err != nil {
-		t.Fatalf("failed to store backlog larger than MySQL TEXT: %v", err)
-	}
-	if err = db.WithContext(ctx).Raw(
-		"SELECT backlog_doc_ids FROM knowledge_compile_docs WHERE dataset_id = ?", "kb1",
-	).Scan(&preserved).Error; err != nil {
-		t.Fatalf("failed to read oversized backlog: %v", err)
-	}
-	if preserved != oversizedBacklog {
-		t.Fatal("oversized backlog was truncated")
+	for _, table := range []string{"knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight"} {
+		var count int64
+		if err := db.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND non_unique = 0", table).Scan(&count).Error; err != nil || count != 0 {
+			t.Fatalf("%s must have no primary key or unique indexes: count=%d err=%v", table, count, err)
+		}
 	}
 }

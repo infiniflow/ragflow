@@ -144,6 +144,9 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 	// (compose.Interrupt) and resumes from the orchestrator's
 	// compose.ResumeWithData call.
 	if strings.EqualFold(name, "UserFillUp") {
+		if err := runtime.ValidateUserFillUpOptions(params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := resolveComponentFactory(ctx); factory != nil {
