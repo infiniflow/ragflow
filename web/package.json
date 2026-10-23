@@ -190,7 +190,7 @@
     "terser-webpack-plugin": "^5.3.11",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "vite": "^7.2.7",
+    "vite": "^7.3.7",
     "vite-plugin-html": "^3.2.2",
     "vite-plugin-static-copy": "^3.1.4",
     "vite-svg-loader": "^5.1.0"

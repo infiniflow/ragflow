@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
+
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
@@ -114,6 +116,9 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	}
 	if factory == nil {
 		return nil, fmt.Errorf("agent tool: nil factory for %q", name)
+	}
+	if err := ValidateSearchFilters(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("agent tool %s: %s", name, err))
 	}
 	return factory(params)
 }
