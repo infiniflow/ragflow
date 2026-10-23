@@ -3,6 +3,7 @@ package component
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/agent/runtime"
 	"strings"
 )
 
@@ -16,7 +17,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 }
 
 // ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
-// entries, Invoke mappings, and Compiler configuration in saved drafts.
+// entries, Invoke mappings, Compiler configuration, and input options in saved drafts.
 // All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -94,7 +95,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 	case "variableaggregator":
 		return validateVariableAggregatorGroups(component, params)
 	case "userfillup":
-		return validateInputOptions(component, params)
+		return runtime.ValidateUserFillUpOptions(params, draft)
 	case "exesql":
 		if err := validateExeSQLParams(params); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
@@ -246,21 +247,6 @@ func validateIterationOutputs(component string, params map[string]any) error {
 		output, ok := rawOutput.(map[string]any)
 		if isBlank(name) || !ok || output == nil || !isNonBlankString(output["ref"]) {
 			return fmt.Errorf("[%s] outputs.%s is incomplete", component, name)
-		}
-	}
-	return nil
-}
-
-func validateInputOptions(component string, params map[string]any) error {
-	if inputs, ok := params["inputs"].(map[string]any); ok {
-		for key, raw := range inputs {
-			entry, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			if values, ok := entry["options"].([]any); ok && containsBlank(values) {
-				return fmt.Errorf("[%s] inputs.%s.options does not support empty entries", component, key)
-			}
 		}
 	}
 	return nil

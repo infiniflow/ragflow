@@ -101,7 +101,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 			case "invoke variable row not a map", "invoke variable nil row", "invoke variable with numeric key", "invoke variables not an array", "invoke variables object":
 				invokeDraft = false
 			}
-			if test.component["component_name"] == "Message" || test.component["component_name"] == "DataOperations" || test.component["component_name"] == "Compiler" || invokeDraft {
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "DataOperations" || test.component["component_name"] == "Compiler" || invokeDraft || test.name == "input option" {
 				if draftErr != nil {
 					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
 				}

@@ -516,6 +516,24 @@ export function collectCanvasIssues({
       });
     }
 
+    if (
+      label === Operator.UserFillUp &&
+      Object.values(form?.inputs ?? {}).some(
+        (input: any) =>
+          Array.isArray(input?.options) &&
+          input.options.some(
+            (option: unknown) => typeof option === 'string' && !option.trim(),
+          ),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.inputOptionsIncomplete',
+        blocksRun: true,
+      });
+    }
+
     if (label === Operator.DataOperations) {
       const blank = (value: unknown) =>
         value == null || (typeof value === 'string' && !value.trim());

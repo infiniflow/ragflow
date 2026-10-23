@@ -2892,6 +2892,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Message cannot be empty',
+      inputOptionsIncomplete: 'Dropdown options cannot contain empty entries',
       dataOperationsEntriesIncomplete:
         'Complete all data operation entries before running',
       invokeVariablesIncomplete:
