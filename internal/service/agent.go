@@ -971,7 +971,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *Crea
 	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
-	if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+	if err := component.ValidateDraftDynamicEntries(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
@@ -1194,7 +1194,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := component.ValidateIntegerParameters(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := component.ValidateDynamicEntries(dslMap); err != nil {
+		validateEntries := component.ValidateDraftDynamicEntries
+		if release {
+			validateEntries = component.ValidateDynamicEntries
+		}
+		if err := validateEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
 		if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap); err != nil {
@@ -2252,6 +2256,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.Error(err))
 			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "compile: "+err.Error())
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
+			if _, ok := errors.AsType[*runtime.UserFacingError](err); ok {
+				return nil, err
+			}
 			if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
 				return nil, runtime.NewUserFacingError("ExeSQL configuration is incomplete. Set the database connection details before running the agent.")
 			}

@@ -12,27 +12,33 @@ var ErrCompilationTemplateRequired = errors.New("Compilation Template Group does
 
 // ValidateDynamicEntries rejects blank values in repeatable Agent parameters.
 func ValidateDynamicEntries(dsl map[string]any) error {
-	return validateDynamicEntries(dsl)
+	return validateDynamicEntries(dsl, false)
 }
 
-func validateDynamicEntries(value any) error {
+// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// All other component checks remain the same as ValidateDynamicEntries.
+func ValidateDraftDynamicEntries(dsl map[string]any) error {
+	return validateDynamicEntries(dsl, true)
+}
+
+func validateDynamicEntries(value any, draft bool) error {
 	switch node := value.(type) {
 	case map[string]any:
 		if name, ok := node["component_name"].(string); ok {
 			if params, ok := node["params"].(map[string]any); ok {
-				if err := validateDynamicParams(name, params); err != nil {
+				if err := validateDynamicParams(name, params, draft); err != nil {
 					return err
 				}
 			}
 		}
 		for _, child := range node {
-			if err := validateDynamicEntries(child); err != nil {
+			if err := validateDynamicEntries(child, draft); err != nil {
 				return err
 			}
 		}
 	case []any:
 		for _, child := range node {
-			if err := validateDynamicEntries(child); err != nil {
+			if err := validateDynamicEntries(child, draft); err != nil {
 				return err
 			}
 		}
@@ -40,7 +46,7 @@ func validateDynamicEntries(value any) error {
 	return nil
 }
 
-func validateDynamicParams(component string, params map[string]any) error {
+func validateDynamicParams(component string, params map[string]any, draft bool) error {
 	for _, field := range []string{
 		"include_domains", "exclude_domains", "site_include", "site_exclude",
 		"country_include", "language_include",
@@ -59,6 +65,9 @@ func validateDynamicParams(component string, params map[string]any) error {
 	}
 	switch strings.ToLower(component) {
 	case "message":
+		if draft {
+			return nil
+		}
 		if err := validateMessageContent(params); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
 		}
@@ -126,6 +135,9 @@ func validateMessageContent(params map[string]any) error {
 			return fmt.Errorf("content does not support empty value")
 		}
 	case []string:
+		if len(values) == 0 {
+			return fmt.Errorf("content does not support empty value")
+		}
 		for _, value := range values {
 			if strings.TrimSpace(value) == "" {
 				return fmt.Errorf("content does not support empty entries")

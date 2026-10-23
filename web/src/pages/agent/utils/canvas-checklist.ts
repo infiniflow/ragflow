@@ -52,6 +52,7 @@ export type CanvasIssue = {
   type: CanvasIssueType;
   messageKey: string;
   messageParams?: Record<string, string>;
+  blocksRun?: boolean;
 };
 
 export type CanvasChecklistInputs = {
@@ -503,11 +504,15 @@ export function collectCanvasIssues({
       });
     }
 
-    if (label === Operator.Message && isEmptyMessageContent(form?.content)) {
+    if (
+      label === Operator.Message &&
+      isEmptyMessageContent(form && 'text' in form ? form.text : form?.content)
+    ) {
       issues.push({
         ...target,
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.messageMsg',
+        blocksRun: true,
       });
     }
 
