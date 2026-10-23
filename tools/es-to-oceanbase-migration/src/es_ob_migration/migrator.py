@@ -127,6 +127,10 @@ class ESToOceanBaseMigrator:
                 console.print("\n[bold yellow]Resuming from previous progress...[/]")
                 progress = self.progress_manager.load_progress(es_index, ob_table)
                 console.print(f"  Previously migrated: {progress.migrated_documents:,} documents")
+                # The scan restarts from the first document and inserts are upserts, so a
+                # resumed run counts every document again instead of adding to the old count.
+                progress.migrated_documents = 0
+                progress.failed_documents = 0
             else:
                 # Fresh start - check if table already exists
                 if self.ob_client.table_exists(ob_table):
@@ -159,6 +163,7 @@ class ESToOceanBaseMigrator:
             console.print("\n[bold blue]Step 4: Migrating data...[/]")
             data_converter = RAGFlowDataConverter()
 
+            failed_before = progress.failed_documents
             migrated = self._migrate_data(
                 es_index=es_index,
                 ob_table=ob_table,
@@ -169,7 +174,10 @@ class ESToOceanBaseMigrator:
             )
 
             result["migrated_documents"] = migrated
-            result["failed_documents"] = progress.failed_documents
+            result["failed_documents"] = progress.failed_documents - failed_before
+
+            if result["failed_documents"] > 0:
+                raise RuntimeError(f"{result['failed_documents']:,} documents failed to insert; rerun with --resume to retry")
 
             # Step 7: Mark completed
             self.progress_manager.mark_completed(progress)
