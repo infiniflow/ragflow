@@ -50,6 +50,7 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
+	modelGroupHandler    *handler.ModelGroupHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
@@ -87,6 +88,7 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
+	modelGroupHandler *handler.ModelGroupHandler,
 	fileCommitHandler *handler.FileCommitHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
@@ -123,6 +125,7 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
+		modelGroupHandler:    modelGroupHandler,
 		fileCommitHandler:    fileCommitHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
@@ -571,6 +574,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
+
+				model.POST("/groups", r.modelGroupHandler.CreateModelGroup)
+				model.GET("/groups", r.modelGroupHandler.ShowModelGroup)
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())

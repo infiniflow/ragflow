@@ -516,6 +516,10 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowQuotaCommand(commandCount, cmd)
 	case "api_show_model_stats":
 		return c.APIShowModelStatsCommand(commandCount, cmd)
+	case "api_show_group_stats":
+		return c.APIShowGroupStatsCommand(commandCount, cmd)
+	case "api_show_model_group":
+		return c.APIShowModelGroupCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":

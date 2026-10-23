@@ -3988,3 +3988,67 @@ func (c *CLI) APIShowModelStatsCommand(commandCount int, cmd *Command) (Response
 
 	return HandleCommonResponse(resp, "get model stats")
 }
+
+func (c *CLI) APIShowGroupStatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the query with url.Values rather than Sprintf: filter values are
+	// caller-supplied and may contain characters that need percent-encoding.
+	query := netUrl.Values{}
+	if days, ok := cmd.Params["days"].(int); ok && days > 0 {
+		query.Set("days", fmt.Sprintf("%d", days))
+	}
+	if v, ok := cmd.Params["start"].(string); ok && v != "" {
+		query.Set("start", v)
+	}
+	if v, ok := cmd.Params["end"].(string); ok && v != "" {
+		query.Set("end", v)
+	}
+	if v, ok := cmd.Params["group"].(string); ok && v != "" {
+		query.Set("group", v)
+	}
+	if v, ok := cmd.Params["by"].(string); ok && v != "" {
+		query.Set("by", v)
+	}
+
+	url := "/system/stats/group"
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group stats: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get group stats")
+}
+
+func (c *CLI) APIShowModelGroupCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	httpClient, err := c.apiModeClient()
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the query with url.Values rather than Sprintf: the group name is
+	// caller-supplied and may contain characters that need percent-encoding.
+	query := netUrl.Values{}
+	if v, ok := cmd.Params["group_name"].(string); ok && v != "" {
+		query.Set("group_name", v)
+	}
+
+	url := "/models/groups"
+	if encoded := query.Encode(); encoded != "" {
+		url += "?" + encoded
+	}
+
+	resp, err := httpClient.Request(commandCount, "GET", url, httpClient.AuthKind(), nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get group: %w", err)
+	}
+
+	return HandleCommonResponse(resp, "get group")
+}

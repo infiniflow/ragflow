@@ -217,6 +217,7 @@ const (
 	TokenPanic
 	TokenBy
 	TokenDate
+	TokenGroup
 	// Literals
 	TokenIdentifier
 	TokenQuotedString

@@ -641,6 +641,8 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowConcurrency()
 	case TokenQuota:
 		return p.parseAPIShowQuota()
+	case TokenGroup:
+		return p.parseAPIShowGroup()
 	default:
 		return nil, fmt.Errorf("unknown SHOW target: %s", p.curToken.Value)
 	}
@@ -1063,7 +1065,6 @@ func (p *Parser) parseAPIShowModelStats() (*Command, error) {
 	}
 
 	// Optional grouping dimension: BY DATE | BY MODEL | BY INSTANCE | BY PROVIDER.
-	// BY is not a reserved keyword, so it arrives as a bare identifier.
 	if p.curToken.Type == TokenBy {
 		p.nextToken() // consume BY
 		switch {
@@ -1077,6 +1078,124 @@ func (p *Parser) parseAPIShowModelStats() (*Command, error) {
 			cmd.Params["by"] = "date"
 		default:
 			return nil, fmt.Errorf("unknown MODEL STATS dimension: %s", p.curToken.Value)
+		}
+		p.nextToken() // consume the dimension token
+	}
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW GROUP ...
+func (p *Parser) parseAPIShowGroup() (*Command, error) {
+	p.nextToken() // consume GROUP
+
+	if p.curToken.Type == TokenStats {
+		return p.parseAPIShowGroupStats()
+	}
+
+	groupName, err := p.parseQuotedString()
+	if err != nil {
+		return nil, fmt.Errorf("expected group name: %w", err)
+	}
+	p.nextToken() // consume group_name
+
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+	cmd := NewCommand("api_show_model_group")
+	cmd.Params["group_name"] = groupName
+	return cmd, nil
+}
+
+// SHOW GROUP STATS [<time range>]
+//
+//	['<group>' [BY <dimension>]]
+//	[BY <dimension>]
+//
+// Time range (optional, defaults to today when omitted):
+//
+//	FROM '<start>' TO '<end>'
+//	DAYS <n>
+//
+// Optional single group filter: '<group>' (a quoted string).
+// Dimension (optional): BY DATE | BY MODEL | BY GROUP.
+//
+// Examples:
+//
+//	SHOW GROUP STATS;
+//	SHOW GROUP STATS DAYS 7;
+//	SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31';
+//	SHOW GROUP STATS DAYS 7 'rag-default';
+//	SHOW GROUP STATS DAYS 30 'rag-default' BY DATE;
+//	SHOW GROUP STATS DAYS 30 'rag-default' BY MODEL;
+//	SHOW GROUP STATS DAYS 30 BY DATE;
+//	SHOW GROUP STATS DAYS 30 BY GROUP;
+//	SHOW GROUP STATS DAYS 30 BY MODEL;
+//	SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31' BY GROUP;
+//	SHOW GROUP STATS FROM '2024-01-01' TO '2024-01-31' 'rag-default' BY DATE;
+func (p *Parser) parseAPIShowGroupStats() (*Command, error) {
+	p.nextToken() // consume STATS
+	cmd := NewCommand("api_show_group_stats")
+
+	// Optional time range. Omitted => backend defaults to today.
+	switch p.curToken.Type {
+	case TokenDays:
+		p.nextToken() // consume DAYS
+		days, err := p.parseNumber()
+		if err != nil {
+			return nil, fmt.Errorf("expected number of days after DAYS: %w", err)
+		}
+		cmd.Params["days"] = days
+		p.nextToken() // consume the integer token
+	case TokenFrom:
+		p.nextToken() // consume FROM
+		start, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected start date after FROM: %w", err)
+		}
+		p.nextToken() // consume start
+		if p.curToken.Type != TokenTo {
+			return nil, fmt.Errorf("expected TO after FROM start, got %s", p.curToken.Value)
+		}
+		p.nextToken() // consume TO
+		end, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected end date after TO: %w", err)
+		}
+		p.nextToken() // consume end
+		cmd.Params["start"] = start
+		cmd.Params["end"] = end
+	case TokenSemicolon, TokenEOF:
+		// No time range; nothing to consume here.
+	}
+
+	// Optional single group filter.
+	if p.curToken.Type == TokenQuotedString {
+		group, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken() // consume group
+		cmd.Params["group"] = group
+	}
+
+	// Optional grouping dimension: BY DATE | BY MODEL | BY GROUP.
+	if p.curToken.Type == TokenBy {
+		p.nextToken() // consume BY
+		switch {
+		case p.curToken.Type == TokenDate:
+			cmd.Params["by"] = "date"
+		case p.curToken.Type == TokenModel:
+			cmd.Params["by"] = "model"
+		case p.curToken.Type == TokenGroup:
+			cmd.Params["by"] = "group"
+		default:
+			return nil, fmt.Errorf("unknown GROUP STATS dimension: %s", p.curToken.Value)
 		}
 		p.nextToken() // consume the dimension token
 	}
