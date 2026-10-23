@@ -548,6 +548,27 @@ export function collectCanvasIssues({
       }
     }
 
+    if (label === Operator.Invoke && Array.isArray(form?.variables)) {
+      const nonblank = (value: unknown) =>
+        typeof value === 'string' && value.trim().length > 0;
+      if (
+        form.variables.some(
+          (row: any) =>
+            !nonblank(row?.key) ||
+            (!nonblank(row?.ref) &&
+              (row?.value == null ||
+                (typeof row.value === 'string' && !nonblank(row.value)))),
+        )
+      ) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.invokeVariablesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,

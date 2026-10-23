@@ -15,9 +15,8 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content and
-// DataOperations entries in saved drafts.
-// All other component checks remain the same as ValidateDynamicEntries.
+// ValidateDraftDynamicEntries allows unfinished Message content, DataOperations
+// entries, and Invoke mappings in saved drafts. All other checks remain unchanged.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
 }
@@ -79,7 +78,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] tools does not support empty entries", component)
 		}
 	case "invoke":
-		if err := validateInvokeVariables(component, params); err != nil {
+		if err := validateInvokeVariables(component, params, draft); err != nil {
 			return err
 		}
 	case "loop":
@@ -171,8 +170,9 @@ func validateRows(component string, params map[string]any, field string, require
 // literal (value). The two sources are alternatives — a reference row has
 // no literal and a literal row has no reference — so a row with neither
 // is still rejected. Omitted and null variables carry no rows to check;
-// any other non-array value is malformed and rejected.
-func validateInvokeVariables(component string, params map[string]any) error {
+// any other non-array value is malformed and rejected. Drafts retain unfinished
+// mappings while still rejecting malformed containers, rows, and field types.
+func validateInvokeVariables(component string, params map[string]any, draft bool) error {
 	raw, present := params["variables"]
 	if !present || raw == nil {
 		return nil
@@ -183,7 +183,17 @@ func validateInvokeVariables(component string, params map[string]any) error {
 	}
 	for i, raw := range rows {
 		row, ok := raw.(map[string]any)
-		if !ok || !isNonBlankString(row["key"]) || !invokeRowHasSource(row) {
+		if !ok || row == nil {
+			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
+		}
+		for _, key := range []string{"key", "ref"} {
+			if value := row[key]; value != nil {
+				if _, ok := value.(string); !ok {
+					return fmt.Errorf("[%s] variables[%d] is incomplete: %s must be a string", component, i, key)
+				}
+			}
+		}
+		if !draft && (!isNonBlankString(row["key"]) || !invokeRowHasSource(row)) {
 			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
 		}
 	}

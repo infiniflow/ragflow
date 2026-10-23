@@ -96,7 +96,12 @@ func TestValidateDynamicEntries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
-			if test.component["component_name"] == "Message" || test.component["component_name"] == "DataOperations" {
+			invokeDraft := test.component["component_name"] == "Invoke"
+			switch test.name {
+			case "invoke variable row not a map", "invoke variable nil row", "invoke variable with numeric key", "invoke variables not an array", "invoke variables object":
+				invokeDraft = false
+			}
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "DataOperations" || invokeDraft {
 				if draftErr != nil {
 					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
 				}

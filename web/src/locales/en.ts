@@ -2894,6 +2894,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       messageMsg: 'Message cannot be empty',
       dataOperationsEntriesIncomplete:
         'Complete all data operation entries before running',
+      invokeVariablesIncomplete:
+        'Complete all variable mappings before running',
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
