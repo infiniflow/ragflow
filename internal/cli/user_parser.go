@@ -812,8 +812,14 @@ func (p *Parser) parseAPIShowProviderModel(providerName string) (*Command, error
 }
 
 // SHOW MODEL 'model_name';
+// SHOW MODEL STATS [<time range>] ['<provider>' ['<instance>' ['<model>']]] [BY <dimension>]
 func (p *Parser) parseAPIShowModel() (*Command, error) {
 	p.nextToken() // consume MODEL
+
+	// SHOW MODEL STATS ...
+	if p.curToken.Type == TokenStats {
+		return p.parseAPIShowModelStats()
+	}
 
 	modelName, err := p.parseQuotedString()
 	if err != nil {
@@ -958,6 +964,122 @@ func (p *Parser) parseAPIShowConcurrency() (*Command, error) {
 func (p *Parser) parseAPIShowQuota() (*Command, error) {
 	p.nextToken() // consume QUOTA
 	cmd := NewCommand("api_show_quota")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
+	return cmd, nil
+}
+
+// SHOW MODEL STATS [<time range>]
+//
+//	['<provider>' ['<instance>' ['<model>']]]
+//	[BY <dimension>]
+//
+// Time range (optional, defaults to today when omitted):
+//
+//	FROM '<start>' TO '<end>'
+//	DAYS <n>
+//
+// Filters (optional, in order): provider, then instance, then model.
+// Dimension (optional): BY DATE | BY MODEL | BY INSTANCE | BY PROVIDER.
+//
+// Examples:
+//
+//	SHOW MODEL STATS;
+//	SHOW MODEL STATS DAYS 7;
+//	SHOW MODEL STATS FROM '2024-01-01' TO '2024-01-31';
+//	SHOW MODEL STATS DAYS 7 'openai';
+//	SHOW MODEL STATS DAYS 7 'openai' 'prod-instance' 'gpt-4o';
+//	SHOW MODEL STATS DAYS 7 BY DATE;
+//	SHOW MODEL STATS DAYS 30 'openai' 'prod' BY MODEL;
+//	SHOW MODEL STATS FROM '2024-01-01' TO '2024-01-31' 'azure' BY INSTANCE;
+func (p *Parser) parseAPIShowModelStats() (*Command, error) {
+	p.nextToken() // consume STATS
+	cmd := NewCommand("api_show_model_stats")
+
+	// Optional time range. Omitted => backend defaults to today.
+	switch p.curToken.Type {
+	case TokenDays:
+		p.nextToken() // consume DAYS
+		days, err := p.parseNumber()
+		if err != nil {
+			return nil, fmt.Errorf("expected number of days after DAYS: %w", err)
+		}
+		cmd.Params["days"] = days
+		p.nextToken() // consume the integer token
+	case TokenFrom:
+		p.nextToken() // consume FROM
+		start, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected start date after FROM: %w", err)
+		}
+		p.nextToken() // consume start
+		if p.curToken.Type != TokenTo {
+			return nil, fmt.Errorf("expected TO after FROM start, got %s", p.curToken.Value)
+		}
+		p.nextToken() // consume TO
+		end, err := p.parseQuotedString()
+		if err != nil {
+			return nil, fmt.Errorf("expected end date after TO: %w", err)
+		}
+		p.nextToken() // consume end
+		cmd.Params["start"] = start
+		cmd.Params["end"] = end
+	case TokenSemicolon, TokenEOF:
+		// No time range; nothing to consume here.
+	}
+
+	// Optional filters: provider, then instance, then model (each a quoted string).
+	if p.curToken.Type == TokenQuotedString {
+		provider, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		p.nextToken() // consume provider
+		cmd.Params["provider"] = provider
+
+		if p.curToken.Type == TokenQuotedString {
+			var instance string
+			instance, err = p.parseQuotedString()
+			if err != nil {
+				return nil, err
+			}
+			p.nextToken() // consume instance
+			cmd.Params["instance"] = instance
+
+			if p.curToken.Type == TokenQuotedString {
+				var model string
+				model, err = p.parseQuotedString()
+				if err != nil {
+					return nil, err
+				}
+				p.nextToken() // consume model
+				cmd.Params["model"] = model
+			}
+		}
+	}
+
+	// Optional grouping dimension: BY DATE | BY MODEL | BY INSTANCE | BY PROVIDER.
+	// BY is not a reserved keyword, so it arrives as a bare identifier.
+	if p.curToken.Type == TokenBy {
+		p.nextToken() // consume BY
+		switch {
+		case p.curToken.Type == TokenModel:
+			cmd.Params["by"] = "model"
+		case p.curToken.Type == TokenInstance:
+			cmd.Params["by"] = "instance"
+		case p.curToken.Type == TokenProvider:
+			cmd.Params["by"] = "provider"
+		case p.curToken.Type == TokenDate:
+			cmd.Params["by"] = "date"
+		default:
+			return nil, fmt.Errorf("unknown MODEL STATS dimension: %s", p.curToken.Value)
+		}
+		p.nextToken() // consume the dimension token
+	}
 
 	// Semicolon is optional
 	if p.curToken.Type == TokenSemicolon {

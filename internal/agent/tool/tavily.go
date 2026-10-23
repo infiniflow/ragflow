@@ -303,6 +303,12 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	var provided map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(argsJSON), &provided)
 	p = mergeTavilyParams(t.defaults, p, provided)
+	if err := ValidateSearchFilters(map[string]any{
+		"include_domains": p.IncludeDomains,
+		"exclude_domains": p.ExcludeDomains,
+	}, false); err != nil {
+		return tavilyErrJSON(fmt.Errorf("tavily: %w", err)), nil
+	}
 
 	apiKey := p.APIKey
 	if apiKey == "" {
