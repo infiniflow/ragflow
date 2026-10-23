@@ -708,6 +708,8 @@ export default {
       parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      parserSettingsChangeWarning:
+        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',

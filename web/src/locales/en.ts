@@ -772,6 +772,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      parserSettingsChangeWarning:
+        'Updated parser settings apply only to newly uploaded files. To apply these settings to existing files, update their parser settings and re-parse them.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
