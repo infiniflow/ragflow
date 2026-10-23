@@ -229,11 +229,13 @@ type IngestDocumentRequest struct {
 type StartParseOptions struct {
 	// ApplyKB scopes the dataset's parser_config (llm_id and the modular
 	// metadata object: enabled, metadata, built_in_metadata) onto the document's
-	// existing Extractor nodes before parsing. When the dataset does not set
-	// llm_id it is left untouched on nodes that already have one and cleared
-	// to an empty value otherwise; when it does not set metadata, each
-	// Extractor node's metadata is reset to the disabled default
-	// ({enabled:false, metadata:[], built_in_metadata:[]}).
+	// existing Extractor nodes before parsing. The dataset llm_id only fills
+	// Extractor/Compiler nodes whose llm_id is empty; explicit per-node values
+	// are preserved and no top-level llm_id is written. When the dataset sets
+	// modular metadata it replaces each Extractor node's metadata; when it
+	// sets none, each node's metadata is reset to the disabled default
+	// ({enabled:false, metadata:[], built_in_metadata:[]}) with no top-level
+	// metadata key left behind.
 	ApplyKB bool
 	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool

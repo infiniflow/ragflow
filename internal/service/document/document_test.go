@@ -1462,6 +1462,9 @@ func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 		t.Fatalf("auto metadata missing author field: %#v", meta["metadata"])
 	}
 	// Legacy flat keys must not be written: the pipeline ignores them.
+	if _, ok := got.ParserConfig["llm_id"]; ok {
+		t.Fatalf("top-level llm_id written: %#v", got.ParserConfig)
+	}
 	if _, ok := got.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("flat enable_metadata written: %#v", got.ParserConfig)
 	}
@@ -1560,6 +1563,9 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 	if !metadataFieldKeys(meta)["author"] {
 		t.Fatalf("persisted metadata missing author field: %#v", meta["metadata"])
 	}
+	if _, ok := got.ParserConfig["llm_id"]; ok {
+		t.Fatalf("top-level llm_id persisted: %#v", got.ParserConfig)
+	}
 	if _, ok := got.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("flat enable_metadata persisted: %#v", got.ParserConfig)
 	}
@@ -1630,20 +1636,16 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload doc: %v", err)
 	}
-	if v, ok := got.ParserConfig["llm_id"]; !ok || v != nil {
-		t.Fatalf("llm_id = %#v, want nil", got.ParserConfig["llm_id"])
+	if _, ok := got.ParserConfig["llm_id"]; ok {
+		t.Fatalf("top-level llm_id = %#v, want absent", got.ParserConfig["llm_id"])
 	}
 	if _, ok := got.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("flat enable_metadata = %#v, want absent", got.ParserConfig["enable_metadata"])
 	}
-	// The dataset expressed no metadata config, so the top-level source of
-	// truth is the disabled default.
-	topMeta, ok := got.ParserConfig["metadata"].(map[string]any)
-	if !ok {
-		t.Fatalf("top-level metadata missing: %#v", got.ParserConfig)
-	}
-	if enabled, _ := topMeta["enabled"].(bool); enabled {
-		t.Fatalf("top-level metadata.enabled = %v, want false", topMeta["enabled"])
+	// The dataset expressed no metadata config, so no top-level metadata key
+	// may be left behind.
+	if _, ok := got.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level metadata = %#v, want absent", got.ParserConfig["metadata"])
 	}
 	auto, ok := got.ParserConfig["Extractor:AutoExtractDefault"].(map[string]any)
 	if !ok {
@@ -1665,6 +1667,14 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	// A document-only key must survive the merge.
 	if _, ok := got.ParserConfig["chunk_token_num"]; !ok {
 		t.Fatalf("chunk_token_num dropped from parser_config: %#v", got.ParserConfig)
+	}
+	// The pipeline consumer must read the reset node config as disabled.
+	consumerMeta, ok := common.ExtractorMetadataConfig(map[string]any(got.ParserConfig))
+	if !ok {
+		t.Fatalf("consumer cannot read node extractor metadata: %#v", got.ParserConfig)
+	}
+	if enabled, _ := consumerMeta["enabled"].(bool); enabled {
+		t.Fatalf("consumer metadata.enabled = %v, want false", consumerMeta["enabled"])
 	}
 }
 
