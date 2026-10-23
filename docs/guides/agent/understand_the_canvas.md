@@ -46,11 +46,15 @@ Operation Steps:
 
 ![Use variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.jpg)
 ## Save & Run
-After configuration, click **Save** to save the Agent. During debugging, click **Run** at the top of the canvas, enter test questions and observe the execution result of each component. If a component returns no output, check input variables, model configuration, knowledge base permissions, external interface addresses or tool configuration.
+For a **Workflow**, click **Save** after configuration. During debugging, click **Run** at the top of the canvas, enter test questions and observe the execution result of each component. If a component returns no output, check input variables, model configuration, knowledge base permissions, external interface addresses or tool configuration.
+
+For an **Ingestion pipeline**, save the configuration and [validate it with a test knowledge base](./ingestion_pipeline/test_run.md).
 
 ![Save and run](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/save_and_run.jpg)
 ## Component Connection Rules
 Connections define component execution order. Sequential components run along a single path. Branch components such as `Switch` and `Categorize` route workflows to different exits according to conditions. `Iteration` executes sub-processes in loops. Components not connected to the execution path will not run. Before deleting a component, check upstream/downstream connections and variable references to avoid missing inputs for subsequent nodes.
 
 ## Configuration Panel
-Click any canvas component to open the right-side configuration panel, which displays fields, input variables, output variables and runtime parameters. Recommended workflow: confirm which variable the component reads → configure processing logic → verify downstream nodes reference correct outputs.
+Click any canvas component to open the right-side configuration panel, which displays fields, input variables, output variables and execution settings. Recommended workflow: confirm which variable the component reads → configure processing logic → verify downstream nodes reference correct outputs.
+
+For slow workflows, see [Improve Agent Response Time](./best_practices/accelerate_agent_question_answering.md).

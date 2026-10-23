@@ -123,7 +123,7 @@ Tool calling, sub-agents, reflection rounds, and a larger message window size al
 
 ### Advanced Settings
 
-Advanced settings are used to control context management, exception handling, output format, and other runtime behavior for the Agent node. In most cases, keep the default configuration. When you need to optimize Agent execution results or adapt to a specific business scenario, adjust these settings based on actual requirements.
+Advanced settings are used to control context management, exception handling, output format, and other execution settings for the Agent node. In most cases, keep the default configuration. When you need to optimize Agent execution results or adapt to a specific business scenario, adjust these settings based on actual requirements.
 
 Parameter description:
 
@@ -155,10 +155,9 @@ Configuration steps:
 1. Click the knowledge retrieval component.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
 3. In **Retrieval source**, select one or more knowledge bases, or select **Memory**.
-4. Adjust **Similarity threshold**, **Keyword similarity weight**, and **Top N** as needed.
+4. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
 5. For cross-language retrieval, select a **Cross-language search** language.
-6. For graph multi-hop Q&A, enable **Use knowledge graph**.
-7. Click **Run** to test the retrieval results.
+6. Click **Run** to test the retrieval results.
 
 ![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_1.jpg)
 
@@ -168,7 +167,9 @@ Configuration steps:
 
 **Similarity threshold** is used to filter low-relevance chunks. The higher the threshold, the stricter the returned content, but useful information may be missed.
 
-**Keyword similarity weight** is used to control the weight of vector similarity in the overall similarity score. When retrieving from multiple knowledge bases together, make sure they use the same embedding model.
+**Keyword similarity weight** controls the full-text keyword weight in the combined retrieval score. Its default is `0.7`, with a corresponding vector weight of `1 - 0.7 = 0.3`. The panel shows both weights. Increasing the keyword weight favors keyword matching; decreasing it favors vector similarity. When retrieving from multiple knowledge bases together, make sure they use the same embedding model.
+
+**Rerank candidate count** controls the number of retrieval candidates available for reranking. The default shown in the panel is `64`. This is separate from **Top N**, which limits the results passed to downstream components.
 
 **Top N** specifies the number of chunks sent to subsequent components. Too few chunks may result in insufficient information, while too many chunks may increase response time and context pressure.
 

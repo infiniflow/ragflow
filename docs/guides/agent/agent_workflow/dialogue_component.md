@@ -18,7 +18,7 @@ The message is used to output static or dynamic messages to users, and is usuall
 
 Write the output content in the message. Type `/` or click the variable button to insert component outputs.
 
-If multiple messages are added, the system randomly selects one of them to send. When the `Begin` component selects `Webhook` and the response method is `Final response`, the reply message component can set an HTTP status code in the range of 200 to 399.
+If multiple messages are added, they are combined and sent together. When the `Begin` component selects `Webhook` and the response method is `Final response`, the reply message component can set an HTTP status code in the range of 200 to 399.
 
 ![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_1.jpg)
 
@@ -47,5 +47,19 @@ Recommendations:
 - Paragraph text: Collect detailed requirement descriptions
 - File upload: Receive contracts, reports or screenshots
 - Boolean: Confirm continue/cancel operations
+
+### Example: collect appointment details
+
+Enable **Guiding question** and set the message to `Please enter your name and preferred appointment time.` Add these Input fields:
+
+| Name | Type | Key | Optional |
+| --- | --- | --- | --- |
+| Name | Single-line text | `customer_name` | Off |
+| Preferred appointment time | Single-line text | `appointment_time` | Off |
+| Notes | Paragraph text | `notes` | On |
+
+**Name** is the label shown to the user; **Key** identifies the value for later references. Turning **Optional** off makes a field required.
+
+Connect a **Message** after Await Response. Insert `customer_name` and `appointment_time` from the Await Response outputs using the variable selector. Run the workflow, submit the form, and check that execution resumes with those values. This example collects a preference; it does not create an appointment in an external system.
 
 ![User Input Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_input_component.jpg)

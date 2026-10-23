@@ -19,6 +19,40 @@ Configuration:
 2. **Code**: Select Python or JavaScript and write business logic.
 3. **Return Value**: Define output data returned to downstream components.
 
+### Minimal example
+
+Add two **Input** parameters, `first` and `second`, and bind them to text variables. Define one **Return Value** named `result` with type string. Use either example:
+
+```python
+def main(first: str, second: str):
+    return first + second
+```
+
+```javascript
+async function main(args) {
+  return args.first + args.second;
+}
+```
+
+In **Test run**, enter `Hello, ` for `first` and `world!` for `second`. The expected business output is `result: "Hello, world!"`. In a downstream **Message**, use the variable selector to insert this Code component's `result`.
+
+The returned value is assigned to one business output. To return several fields, return an object and configure that business output as an object rather than defining several business outputs.
+
+### Read the output
+
+| Output | Meaning | Use |
+| --- | --- | --- |
+| Business output, such as `result` | The value returned by `main`, validated against the configured type. | Calculations and downstream data processing. |
+| `content` | Text representation of the returned value. | Prompts and text display. |
+| `actual_type` | The detected return type. | Diagnose a type mismatch. |
+| `attachments` | Files collected from execution, when present. | File output and download handling. |
+
+### If the test fails
+
+- Check that Input names match the Python function arguments or JavaScript `args` properties.
+- Check that the returned value matches the Return Value type. Printing a value does not replace returning it.
+- For missing packages, unavailable runners, or connection errors, ask an administrator to check the active provider. See the [Sandbox FAQ](../../../administrator/sandbox/faq.md).
+
 ![Code Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/code_component.jpg)
 
 
@@ -30,6 +64,13 @@ Processing Modes:
 - **Split**: Split text by specified delimiters (comma, line break, space etc.)
 
 Configure script content with variables inserted via `/`. Output results can be referenced by subsequent nodes.
+
+| Mode | Configure | Output |
+| --- | --- | --- |
+| Split | Select the input variable and delimiters. | `result`: an array of text segments. |
+| Merge | Enter **Script** and insert variables with `/`. | `result`: the completed text. |
+
+For example, splitting `red,blue` with a comma produces `["red", "blue"]`. A downstream **Iteration** can process that array. In Merge mode, a Script containing `Hello, ` followed by an inserted name variable produces a single greeting.
 
 ![Text Processing Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/text_processing_component.jpg)
 
@@ -62,13 +103,13 @@ Supported Operations:
 
 
 
-## Variable Assignor Component
-Variable Assignor writes or updates variables during workflow execution. It can save upstream results to target variables and support overwrite, clear, append and arithmetic operations for numbers, arrays and objects.
+## Variable Assigner Component
+Variable Assigner updates a target variable during workflow execution. Available operations depend on the selected variable type.
 
 Configuration Steps:
 1. Click the **Variable Assigner** component and add a new variable rule under **Variables**.
 2. Select the target variable to be updated.
-3. Select an assignment operation, such as **Overwrite**, **Set**, **Append**, or **Add**.
+3. Select an operation from the list available for that variable type.
 4. If the selected operation requires a value, select a variable from the right panel or enter a fixed value.
 5. To update multiple variables at once, continue adding variable rules. The system will execute them sequentially in the order they are added.
 
@@ -78,16 +119,19 @@ Parameter Description：
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| Target Variable | Variable | Yes | Select the variable to be written or updated. Supports component output variables, system variables, environment variables, session variables, and other variable types. |
+| Target Variable | Variable | Yes | Select a target from the variable selector, such as a Begin input or Conversation variable. The selected type determines the available operations. |
 | Operation | Enum | Yes | Select the operation to be performed on the target variable. The system will automatically display available operations based on the variable type. |
 | Value | Variable / Constant | Conditional | The value used for the operation. You can select another variable or enter a fixed value (depending on the supported operation type). Some operations do not require a value. |
 
-Supported Operations:
-| Operation | Requires Value | Description |
-| ---- | ---- | ---- |
-| Overwritten by | Yes | Overwrite target variable with another variable's value |
-| Set | Yes | Assign fixed constant value to target variable |
-| Clear | No | Empty the target variable |
+Supported operations by target type:
+
+| Target type | Available operations |
+| --- | --- |
+| Text | **Overwritten by**, **Clear**, **Set** |
+| Number | **Overwritten by**, **Clear**, **Set**, **Add**, **Subtract**, **Multiply**, **Divide** |
+| Array | **Overwritten by**, **Clear**, **Append**, **Extend**, **Remove first**, **Remove last** |
+
+**Overwritten by** uses another variable; **Set** assigns a constant. **Append** adds one element, while **Extend** adds elements from another array. **Clear**, **Remove first**, and **Remove last** do not require a value. Fill the value or variable selector shown for other operations. Arrays do not provide **Set** in the current UI.
 
 
 
@@ -124,12 +168,14 @@ Supported Operations：
 Operation Configuration Description：
 | Operation | Description | Configuration |
 |---|---|---|
-| Nth | Retrieves an element at a specified position from the list. | Configure **N** to specify the element index (starting from 0). |
+| Nth | Retrieves an element at a specified position from the list. | Set **N** to a positive position starting from `1`: `N=1` selects the first item. The result is an array containing that item. |
 | Head | Retrieves elements from the beginning of the list. | Configure the return count **N** to return the first N elements. |
 | Tail | Retrieves elements from the end of the list. | Configure the return count **N** to return the last N elements. |
 | Filter | Filters list elements based on conditions. | Configure filter conditions and retain only elements that meet the requirements. |
 | Sort | Sorts elements in the list. | Configure the sorting field and order (ascending or descending). |
 | Drop duplicates | Removes duplicate elements from the list. | No additional configuration required. Returns the deduplicated list. |
+
+For Nth, `N=0` or a positive position beyond the list length returns an empty array when Strict mode is disabled and an error when enabled.
 
 Strict Mode:
 - Enabled: Return error when input data format is abnormal
@@ -137,7 +183,7 @@ Strict Mode:
 
 
 ## Variable Aggregator Component
-Variable Aggregator combines multiple independent variables into one output group for unified reference by downstream nodes. Widely used in multi-branch conditional workflows to collect data from different branches.
+Variable Aggregator selects a value from candidate variables in each group, providing a common output for downstream nodes after conditional branches. It does not combine all candidate values into an array or merge them into an object.
 
 Configuration Steps：
 1. Add the **Variable Aggregator** component to the canvas and select it.
@@ -145,11 +191,11 @@ Configuration Steps：
 3. Click **Add** to add additional variables to aggregate.
 4. To create a new variable group, click the **+** icon. To delete a variable group, click the delete button.
 5. Save the configuration, then click **Run** at the top of the page to test the execution result.
-6. The aggregated variables will be output through the corresponding variable group name (for example, **Group0**) and can be referenced by subsequent nodes.
+6. The selected value is output under the corresponding group name (for example, **Group0**) and can be referenced by subsequent nodes.
 
 > **Note**
 >
-> A variable group can contain multiple variables. Multiple variable groups can also be created based on different business requirements for separate aggregation.
+> Each group checks its candidate variables in configuration order and returns the first resolved value that evaluates to true. Missing values, `false`, numeric `0`, empty strings, and empty collections are skipped. If no candidate qualifies, the group has no output key. Create separate groups when separate outputs are needed; do not use this selection rule when zero or false must be preserved as the result.
 
 Parameter Description：
 | Parameter | Required | Description |
@@ -163,7 +209,7 @@ Parameter Description：
 Output Result：
 | Output | Description |
 |---|---|
-| Group0 (or other variable group name) | Outputs the variables after aggregation in the current variable group. The output can be directly referenced by subsequent nodes. |
+| Group0 (or other variable group name) | Outputs the first qualifying value in the group, not all configured variables. Subsequent nodes can reference this value. |
 
 Usage Instructions：
 | Operation | Description |

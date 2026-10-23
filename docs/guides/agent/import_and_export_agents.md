@@ -20,6 +20,6 @@ sidebar_custom_props: {
 
 ![Upload Agent JSON file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_3.jpg)
 ## Export Agent
-Open an Agent, click **Manage** in the upper right corner, then click export.
+Open an Agent, click **Management** in the upper right corner, then select **Export**.
 
 ![Export an Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/export_an_agent.jpg)

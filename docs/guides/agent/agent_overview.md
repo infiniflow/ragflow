@@ -27,3 +27,7 @@ Agents are commonly used in the following scenarios:
 The `Retrieval` component can be used inside an Agent to query knowledge bases. Retrieval can also be used as a tool under the Agent component, allowing the LLM to autonomously decide when to perform retrieval.
 
 For example, an after-sales Agent can first use `Categorize` to judge the type of user questions, then use `Retrieval` to query product materials. If the user requests installation reservation, an HTTP request is used to call the external work order system. Finally, the `Message` component outputs the result.
+
+## Try a complete workflow
+
+Follow [Build a Customer Support Agent](./quickstarts/build_customer_support_agent.md) for a complete example with sample content, prompts, two branches, and expected test results.

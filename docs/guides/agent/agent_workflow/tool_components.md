@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Tool Components
 
-Tool components connect external search, databases, HTTP APIs, email sending, document generation, financial queries, and browser automation capabilities to Agents. When building Agents, first understand each tool's purpose and security boundaries.
+Tool components connect external search, databases, HTTP APIs, email sending, document generation, financial queries, and web content extraction capabilities to Agents. When building Agents, first understand each tool's purpose and security boundaries.
 
 ## Tool Selection Suggestions
 
@@ -20,7 +20,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
-| Browser automation | Browser | Access web pages, read page content, or perform multi-step browser tasks. |
+| Web content extraction | Browser | Extract page content using natural-language instructions. |
 
 ## Web Page and Information Retrieval
 
@@ -41,9 +41,6 @@ Tavily is a web search service for LLMs. It is suitable for retrieving general w
 | Max Results | integer | No | 6 | Maximum number of results. |
 | Days | integer | No | 14 | Time range in days for news retrieval. |
 | Include Answer | boolean | No | false | Whether to request Tavily's answer field. |
-| Include Raw Content | boolean | No | false | Whether to request raw page content. |
-| Include Images | boolean | No | false | Whether to request images. |
-| Include Image Descriptions | boolean | No | false | Whether to request image descriptions. |
 
 #### Supported Parameter Values
 
@@ -58,15 +55,17 @@ Tavily is a web search service for LLMs. It is suitable for retrieving general w
 
 | Configuration Item | Example Value |
 | --- | --- |
-| URLs | `["https://www.ragflow.io/docs/dev/"]` |
-| Extract Depth | basic |
-| Format | markdown |
-| API Key |  |
-| Include Images | false |
+| Query | RAGFlow knowledge retrieval |
+| Topic | general |
+| Search Depth | basic |
+| Max Results | 6 |
+| API Key | `<Tavily API key>` |
 
 #### Output Result
 
-The output usually contains search result summaries, titles, links, snippets, and optional image information. `formalized_content` is commonly passed to the Agent to generate answers, while JSON is used by subsequent nodes to read structured fields.
+The output usually contains search result titles, links, and snippets. `formalized_content` is commonly passed to the Agent to generate answers, while JSON is used by subsequent nodes to read structured fields.
+
+For a simple search workflow, connect **Begin → Tavily Search → Agent → Message**. Use `sys.query` as **Query**, insert Tavily Search's `formalized_content` into the Agent's user prompt, and insert the Agent's `content` into Message. Ask a focused question and check that the search output contains relevant sources before assessing the final answer.
 
 ![Tavily Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_search.jpg)
 
@@ -82,7 +81,6 @@ Tavily Extract reads the body content of one or more known URLs. A common workfl
 | Extract Depth | string | No | basic | `advanced` can extract more tables and embedded content, with higher cost and latency. |
 | Format | string | No | markdown | Extraction result format. Options are `markdown` or `text`. |
 | API Key | string | No | Empty | Tavily API key. |
-| Include Images | boolean | No | false | Whether to include images. |
 
 #### Supported Parameter Values
 
@@ -101,13 +99,42 @@ Tavily Extract reads the body content of one or more known URLs. A common workfl
 | Extract Depth | basic |
 | Format | markdown |
 | API Key |  |
-| Include Images | false |
 
 #### Output Result
 
-The output contains the page body, title, URL, and extraction status. `formalized_content` is commonly used as Agent context, while JSON preserves the structured extraction result for each URL.
+The output `json` contains the extracted page results. Select the required page content from `json` and pass it to the Agent prompt.
 
 ![Tavily Extract](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_extract.jpg)
+
+### Querit Search
+
+Querit Search finds web pages for a query. Configure **API Key** and **Query**, then adjust these options as needed:
+
+| Setting | Description |
+| --- | --- |
+| Result count | Maximum number of documents. Defaults to `10`. |
+| Chunks per document | Number of content chunks requested for each document. |
+| Sites to include / Sites to exclude | Limit results to selected sites or exclude them. |
+| Time range | Restrict results by date. |
+| Countries to include / Languages to include | Restrict results by country or language. |
+
+For example, set **Query** to `RAGFlow knowledge retrieval`, **Result count** to `5`, and leave the optional filters empty. If the component API key is empty, the server uses `QUERIT_API_KEY` when configured.
+
+The outputs are `formalized_content` for downstream prompts and `json` for the raw response.
+
+### Querit Contents
+
+Querit Contents retrieves content from known URLs. Pass links from a search component or enter them directly.
+
+| Setting | Description |
+| --- | --- |
+| API Key | Querit API key. Uses the server's `QUERIT_API_KEY` if empty. |
+| URLs | One to ten absolute HTTP or HTTPS URLs. |
+| Format | `markdown` (default), `text`, or `html`. |
+| Crawl timeout | Per-page timeout in seconds. Defaults to `10`. |
+| Include page metadata | Request additional page metadata. |
+
+For example, use `https://www.ragflow.io` as the URL and keep **Format** set to `markdown`. The output is `json`, containing the raw response. Select the required content from that response before passing it to an Agent.
 
 ### Google
 
@@ -206,7 +233,6 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 | api_key | string | Node configuration | Empty | Optional Keenable API key. |
 | mode | string | Node configuration | pro | `pro` for deeper retrieval or `realtime` for low latency. `realtime` requires an API key. |
 | top_n | integer | Node configuration | 10 | Maximum number of results. |
-| KEENABLE_API_URL | Environment variable | Deployment configuration | `https://api.keenable.ai` | Service API base URL. Production environments must use HTTPS. Local loopback addresses can use HTTP. |
 
 #### Configuration Example
 
@@ -217,7 +243,6 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 | API Key |  |
 | Mode | pro |
 | Top N | 10 |
-| Keenable API URL | `https://api.keenable.ai` |
 
 #### Output Result
 
@@ -244,7 +269,7 @@ Sofya is a web search API for AI Agents. It returns the text of the result pages
 
 | Configuration Item | Example Value |
 | --- | --- |
-| Query | RAGFlow Go release |
+| Query | RAGFlow release |
 | API Key | `<your-sofya-api-key>` |
 | Search Depth | basic |
 | Top N | 10 |
@@ -281,7 +306,7 @@ If the Agent switches to a channel that does not offer the node's search service
 
 | Configuration Item | Example Value |
 | --- | --- |
-| Query | RAGFlow Go release |
+| Query | RAGFlow release |
 | API Key | `<your-search1api-api-key>` |
 | Channel | general |
 | Search Service | google |
@@ -358,7 +383,7 @@ The GitHub component searches repositories through the GitHub Repository Search 
 
 #### Output Result
 
-The output contains repository, issue, code, or user search entries, usually including names, links, summaries, update times, and other information. The output includes repository names, links, descriptions, and stars.
+The output contains matching repository names, links, descriptions, and star counts.
 
 ![GitHub](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/GitHub.jpg)
 
@@ -529,7 +554,7 @@ The output contains SQL execution results, field names, and record content. You 
 
 ### Yahoo Finance
 
-The Yahoo Finance component queries stock quotes, company profiles, historical market data, financial statements, and news through `yfinance`, and outputs the selected content as a Markdown report.
+The Yahoo Finance component queries stock quotes, company profiles, historical market data, financial statements, and news. It returns the selected content as a Markdown report.
 
 #### Parameter Description
 
@@ -538,17 +563,12 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 | stock_code | string | Yes | `{sys.query}` | Stock code or company name. Use exchange-standard codes when possible. |
 | info | boolean | Node configuration | true | Output company and quote information. |
 | history | boolean | Node configuration | false | Output historical market data. |
-| count | boolean | Node configuration | false | Share count switch defined by the code. |
+| count | boolean | Node configuration | false | Include share-count statistics. |
 | financials | boolean | Node configuration | false | Output earnings dates and other financial calendar events returned by Yahoo Finance. |
-| income_stmt | boolean | Node configuration | false | Income statement switch defined by the code. |
+| income_stmt | boolean | Node configuration | false | Include annual and quarterly income statements. |
 | balance_sheet | boolean | Node configuration | false | Output balance sheet and quarterly balance sheet. |
 | cash_flow_statement | boolean | Node configuration | false | Output cash flow statement and quarterly cash flow statement. |
 | news | boolean | Node configuration | true | Output related news. |
-
-#### Supported Values
-
-| Parameter | Supported Value | Description |
-| --- | --- | --- |
 
 #### Configuration Example
 
@@ -566,7 +586,7 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 
 #### Output Result
 
-The output contains a financial query report and structured market data, which can be used by subsequent Agents to generate market overviews or indicator explanations.
+The output `report` is a Markdown report containing the selected financial information. Insert `report` into a downstream Agent prompt to generate a market overview or explain indicators.
 
 ### WenCai
 WenCai is used to screen financial data such as stocks, indices, funds, Hong Kong stocks, U.S. stocks, futures, and other instruments based on natural-language conditions.
@@ -576,7 +596,7 @@ WenCai is used to screen financial data such as stocks, indices, funds, Hong Kon
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Stock selection or financial condition, such as "A-shares with P/E ratio below 20". |
-| top_n | integer | Node configuration | 10 | Maximum number of results. The frontend default may be 20. |
+| top_n | integer | Node configuration | 20 | Maximum number of results. |
 | query_type | string | Node configuration | stock | Supports `stock`, `zhishu`, `fund`, `hkstock`, `usstock`, `threeboard`, `conbond`, `insurance`, `futures`, `lccp`, and `foreign_exchange`. |
 
 #### Supported Query Types
@@ -661,52 +681,59 @@ The output contains sending status and error information. `success` being `true`
 
 ![Email](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/email.jpg)
 
+### MCP tools
+
+MCP connects an Agent to tools provided by a configured MCP server. Add MCP tools through the **Agent** component's tool selector; they are not a standalone HTTP Request node.
+
+1. Configure the MCP server and its authentication in the application's MCP server settings.
+2. Open the **Agent** component, use its tool selector to choose the server, and select the tools to expose.
+3. Describe when to use those tools in **System prompt**, then run a small test task.
+
+The running user must have permission to use the selected server. Tool arguments and results follow each server's tool schema; downstream Agent output remains the Agent's response. If a call fails, check server access, authentication, and required arguments.
+
 ### HTTP Request
 
 The HTTP Request component calls external HTTP APIs, allowing business systems, third-party services, or self-built APIs to be connected to Agent workflows.
 
-#### Parameter Description
+#### Configuration
 
-| Field | Type | Required | Default Value | Description |
-| --- | --- | --- | --- | --- |
-| url | string | Yes | Empty | API address. Canvas variables can be used.  |
-| method | string | Yes | get | Supports `get`, `post`, and `put`. |
-| headers | string/object | No | Empty | Request headers in JSON object format. Variables can be used in values. |
-| variables | array[object] | No | `[]` | Request parameter list. Each item usually contains `key`, `value`, and `ref`. |
-| timeout | integer | No | 60 | Request timeout in seconds. |
-| proxy | string | No | Empty | Optional HTTP/HTTPS proxy address. |
-| clean_html | boolean | No | false | Whether to clean HTML tags from the response. |
-| body | string | No | Empty | Raw request body. |
-| content_type | string | No | Empty | POST/PUT default to `application/json`. |
-
-#### Supported Values
-
-| Parameter | Supported Value | Description |
-| --- | --- | --- |
-| Method | GET | GET request. |
-| Method | POST | POST request. |
-| Method | PUT | PUT request. |
-| Proxy | HTTP | HTTP proxy. |
-| Proxy | HTTPS | HTTPS proxy address. |
+| Setting | Description |
+| --- | --- |
+| Url | API address. Insert canvas variables as needed. |
+| Method | Select GET, POST, or PUT. |
+| Timeout | Request timeout in seconds. Defaults to `60`. |
+| Headers | Request headers as a JSON object. |
+| Proxy | Optional proxy address. |
+| Clean HTML | Remove HTML markup from the response. |
+| Parameter | Click `+` to add request parameters and set their values using constants or variables. |
 
 #### Configuration Example
 
-| Configuration Item | Example Value |
+| Setting | Example Value |
 | --- | --- |
-| URL | `https://1.1.1.1/cdn-cgi/trace` |
+| Url | `https://httpbin.org/get` |
 | Method | GET |
+| Timeout | 60 |
 | Headers | `{}` |
-| Variables | `[]` |
-| Timeout | 30 |
-| Proxy |  |
-| Clean HTML | false |
-| Data Type | json |
-| Body |  |
-| Content Type |  |
+| Parameter | `topic` = `ragflow` |
 
 #### Output Result
 
-The output contains response status code, response headers, and response body. Text responses can be passed to the Agent for summarization, while JSON responses can be read by subsequent nodes.
+The business output is `result`, a string containing the response body. Pass the text to an Agent for summarization, or parse a JSON response body before accessing its fields.
+
+If a URL is rejected, the output can contain `_ERROR` with a null `result`. Check for errors before consuming the response. Other request failures can surface as component execution errors.
+
+#### Example: request, response, and next step
+
+Connect **Begin → HTTP Request → Message**. Set **URL** to `https://httpbin.org/get`, **Method** to GET, and add a parameter named `topic` with the fixed value `ragflow`.
+
+If the service is accessible from the server, its JSON response body includes:
+
+```json
+{"args": {"topic": "ragflow"}}
+```
+
+The component returns that body as the string `result`. In **Message**, insert HTTP Request's `result` to display it. To use only `args.topic`, first parse `result` in a Code component. If the test returns `_ERROR`, resolve that failure before consuming the result.
 
 ![HTTP Request](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/http_request.jpg)
 
@@ -725,10 +752,9 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 | filename                         | string  | No       | Empty         | File name. If empty, it is generated automatically, and illegal file name characters are cleaned. |
 | header_text                      | string  | No       | Empty         | Header text. Applies to PDF/DOCX.                                                                 |
 | footer_text                      | string  | No       | Empty         | Footer text. Applies to PDF/DOCX.                                                                 |
-| watermark_text                   | string  | No       | Empty         | Watermark text. Supported by PDF/DOCX/HTML according to the implementation.                       |
+| watermark_text                   | string  | No       | Empty         | Watermark text. Available for PDF, DOCX, and HTML.                       |
 | add_page_numbers                 | boolean | No       | true          | Whether to add page numbers. Mainly used for PDF/DOCX.                                            |
 | add_timestamp                    | boolean | No       | true          | Whether to add generation time.                                                                   |
-| include_download_info_in_content | boolean | No       | false         | Whether to keep the download information marker in the content.                                   |
 | font_size                        | number  | No       | 12            | Font size, which must be greater than or equal to 12.                                             |
 
 #### Supported Values
@@ -746,8 +772,7 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 
 | Configuration Item                                              | Example Value          |
 |-----------------------------------------------------------------|------------------------|
-| Content                                                         | `# RAGFlow Agent       |
-| Test This document is generated by the DocGenerator component.` |                        |
+| Content                                                         | `# RAGFlow Agent` |
 | Output Format                                                   | pdf                    |
 | Filename                                                        | ragflow-agent-test.pdf |
 | Header Text                                                     | RAGFlow                |
@@ -755,53 +780,36 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 | Watermark Text                                                  | DRAFT                  |
 | Add Page Numbers                                                | true                   |
 | Add Timestamp                                                   | true                   |
-| Include Download Info In Content                                | false                  |
 | Font Size                                                       | 12                     |
 
 #### Output Result
 
-The output contains generated file attachment information, download links, and file names. Users can preview, download, or pass the file to subsequent nodes for further processing.
+The output includes `doc_id`, `filename`, `mime_type`, and `size`. `download` is a string containing a JSON download descriptor, not a bare URL. `download_info` contains the corresponding structured metadata, including download and preview URLs. Use those URL fields to construct links, or pass the descriptor to a Message component for attachment handling.
 
 ![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.jpg)
 
 ### Browser (Browser)
 
-Browser is an LLM-driven browser automation component. It can access web pages, perform multi-step operations, read page content, upload source files, and collect downloaded files based on natural-language tasks. It depends on the configured model and the browser automation dependencies in the runtime environment.
+Browser uses a configured chat model and a natural-language instruction to extract web page content.
 
 #### Parameter Description
 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
-| llm_id | string | Yes | Empty | Configured chat model ID used by Browser. |
-| prompts | string | Yes | `{sys.query}` | Natural-language browser task. Canvas variables are supported. |
-| headless | boolean | No | true | Whether to run the browser in headless mode. |
-| enable_default_extensions | boolean | No | false | Whether to enable default `browser-use` extensions. |
-| chromium_sandbox | boolean | No | false | Whether to enable the Chromium sandbox. In Docker root environments, keep this disabled in general. |
-| upload_sources | array/string | No | `[]` | File IDs, URLs, or upstream variable references for the browser task. |
-
-#### Supported Values
-
-| Parameter | Supported Value | Description |
-| --- | --- | --- |
-| Upload Sources | File ID | File ID uploaded to RAGFlow. |
-| Upload Sources | URL | Accessible file or web page URL. |
-| Upload Sources | Upstream variable reference | File or resource reference from a previous node. |
+| llm_id | string | Yes | Empty | Configured chat model ID used for extraction. |
+| prompts | string | Yes | `{sys.query}` | Extraction instruction. Canvas variables are supported. |
+| headless | boolean | No | true | Whether to run the browser without a visible window. |
 
 #### Configuration Example
 
 | Configuration Item | Example Value |
 | --- | --- |
 | LLM ID | `<configured chat model ID>` |
-| Prompt | Open https://www.ragflow.io, identify the main navigation items, and return them as a concise bullet list. |
-| Max Steps | 10 |
+| Prompt | Extract the main navigation labels from https://www.ragflow.io and return a concise bullet list. |
 | Headless | true |
-| Enable Default Extensions | false |
-| Chromium Sandbox | false |
-| Persist Session | true |
-| Upload Sources | `[]` |
-| URL |  |
-| Timeout | 0 |
 
 #### Output Result
 
-The output contains the browser task execution summary, extracted page content, and any generated download file information. Avoid assigning Browser tasks that involve login, payment, or irreversible submissions.
+`content` contains the extracted text. Insert this field into a downstream Agent prompt or Message.
+
+Test a small extraction task and check the returned content before connecting downstream components.
