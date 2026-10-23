@@ -15,7 +15,7 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message content and Agent tool entries in saved drafts.
 // All other component checks remain the same as ValidateDynamicEntries.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -86,8 +86,8 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			}
 		}
 	case "agent":
-		if values, ok := params["tools"].([]any); ok && containsBlank(values) {
-			return fmt.Errorf("[%s] tools does not support empty entries", component)
+		if err := validateAgentToolEntries(params["tools"], draft); err != nil {
+			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "invoke":
 		if err := validateInvokeVariables(component, params); err != nil {
@@ -295,4 +295,37 @@ func containsEmpty(values []any) bool {
 		}
 	}
 	return false
+}
+
+func validateAgentToolEntries(raw any, draft bool) error {
+	if raw == nil {
+		return nil
+	}
+	var values []any
+	switch tools := raw.(type) {
+	case []any:
+		values = tools
+	case []string:
+		for _, tool := range tools {
+			values = append(values, tool)
+		}
+	default:
+		return errors.New("tools must be an array")
+	}
+	for _, raw := range values {
+		incomplete := false
+		switch tool := raw.(type) {
+		case string:
+			incomplete = strings.TrimSpace(tool) == ""
+		case map[string]any:
+			_, _, ok := agentToolObject(tool)
+			incomplete = !ok
+		default:
+			return errors.New("tools entries must be strings or objects")
+		}
+		if incomplete && !draft {
+			return errors.New("tools does not support empty entries")
+		}
+	}
+	return nil
 }
