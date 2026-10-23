@@ -41,15 +41,40 @@ type ScanResult struct {
 	Findings   []Finding
 }
 
+// compiledThreatPattern pairs a threat pattern with its compiled regex so a
+// scan never recompiles the rules and a malformed pattern fails loudly at
+// package initialization instead of being silently skipped.
+type compiledThreatPattern struct {
+	ThreatPattern
+	re *regexp.Regexp
+}
+
+// compiledThreatPatterns is built once at package initialization. A rule with
+// an invalid regex panics here (regexp.MustCompile) rather than being dropped
+// by a silent `continue` at scan time — a bad pattern must break the build,
+// not ship as a dead rule.
+var compiledThreatPatterns = mustCompileThreatPatterns(ThreatPatterns)
+
+func mustCompileThreatPatterns(patterns []ThreatPattern) []compiledThreatPattern {
+	compiled := make([]compiledThreatPattern, 0, len(patterns))
+	for _, p := range patterns {
+		compiled = append(compiled, compiledThreatPattern{
+			ThreatPattern: p,
+			re:             regexp.MustCompile("(?i:" + p.Pattern + ")"),
+		})
+	}
+	return compiled
+}
+
 // Scanner performs security scans on skill content
 type Scanner struct {
-	patterns []ThreatPattern
+	patterns []compiledThreatPattern
 }
 
 // NewScanner creates a new security scanner
 func NewScanner() *Scanner {
 	return &Scanner{
-		patterns: ThreatPatterns,
+		patterns: compiledThreatPatterns,
 	}
 }
 
@@ -79,13 +104,8 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 	lines := strings.Split(content, "\n")
 
 	for _, pattern := range s.patterns {
-		re, err := regexp.Compile("(?i:" + pattern.Pattern + ")")
-		if err != nil {
-			continue
-		}
-
 		for i, line := range lines {
-			if matches := re.FindString(line); matches != "" {
+			if matches := pattern.re.FindString(line); matches != "" {
 				findings = append(findings, Finding{
 					PatternID:   pattern.PatternID,
 					Severity:    pattern.Severity,
