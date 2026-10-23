@@ -22,14 +22,6 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
-	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -46,18 +38,47 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	for _, doc := range documents {
 		documentByID[doc.ID] = doc
 	}
-
+	accessibleDocuments := make(map[string]*entity.Document, len(documentIDs))
+	var permissionDenied error
+	otherFailures := 0
 	for _, docID := range documentIDs {
 		doc, ok := documentByID[docID]
-		if !ok {
-			result[docID] = map[string]string{"error": "Document not found"}
+		if !ok || doc.KbID != datasetID {
+			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+			otherFailures++
 			hasError = true
 			continue
 		}
-
-		if doc.KbID != datasetID {
-			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+			result[docID] = map[string]string{"error": "Permission denied"}
+			if permissionresponse.IsPermissionError(err) {
+				permissionDenied = err
+			} else {
+				otherFailures++
+			}
 			hasError = true
+			continue
+		}
+		accessibleDocuments[docID] = doc
+	}
+	if len(accessibleDocuments) == 0 {
+		if hasError {
+			if permissionDenied != nil && otherFailures == 0 {
+				code, normalizedErr := permissionresponse.Normalize(permissionDenied)
+				return result, code, normalizedErr
+			}
+			return result, common.CodeServerError, fmt.Errorf("partial failure")
+		}
+		return result, common.CodeSuccess, nil
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return result, common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+
+	for _, docID := range documentIDs {
+		doc, ok := accessibleDocuments[docID]
+		if !ok {
 			continue
 		}
 
@@ -114,10 +135,11 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
+
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
@@ -133,7 +155,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-
 	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
 		return nil, code, err
 	}
@@ -167,7 +188,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
 			permission.Subject{UserID: userID, TenantID: kb.TenantID},
-			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID},
+			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
 			permission.OperationUse,
@@ -190,13 +211,8 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		} else {
 			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
-			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
-			if tenantErr == nil && tenant != nil {
-				cleaned = service.ApplyComponentScopedParserConfig(
-					cleaned,
-					tenant.LLMID,
-				)
-			}
+			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 				"parser_config": cleaned,
 			}); err != nil {

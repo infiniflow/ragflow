@@ -524,7 +524,7 @@ func (h *CompilationModelHandler) resolve(c *gin.Context, requirement permission
 	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
 		c.Request.Context(), permission.Subject{UserID: user.ID}, tenantID, requirement,
 	); err != nil {
-		respondPermissionFailure(c, err, false)
+		respondPermissionError(c, err, false)
 		return nil, "", false
 	}
 	return user, tenantID, true

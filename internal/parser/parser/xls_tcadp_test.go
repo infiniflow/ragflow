@@ -35,7 +35,6 @@ func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
-		"output_format":                "json",
 		"chunk_rows":                   50,
 		"tcadp_apiserver":              server.URL,
 		"tcadp_api_key":                "tcadp-secret",
@@ -74,7 +73,6 @@ func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -107,7 +105,6 @@ func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -120,7 +117,7 @@ func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 }
 
-func TestXLSXParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+func TestXLSXParser_ParseWithResult_TCADPIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
@@ -143,15 +140,14 @@ func TestXLSXParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "markdown",
 		"tcadp_apiserver": server.URL,
 	})
 	res := p.ParseWithResult(ctx, "sample.xlsx", []byte("mock xlsx content"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.Markdown == "" {
-		t.Fatal("Markdown is empty; want rendered content")
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON is empty; want rendered content")
 	}
 }
 
@@ -240,7 +236,6 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
-		"output_format":                "json",
 		"chunk_rows":                   50,
 		"tcadp_apiserver":              "https://tcadp.example.com",
 		"tcadp_api_key":                "secret",
@@ -249,9 +244,6 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	})
 	if got, want := p.ParseMethod, "TCADP parser"; got != want {
 		t.Fatalf("ParseMethod = %q, want %q", got, want)
-	}
-	if got, want := p.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
 	if got, want := p.TCADPAPIServer, "https://tcadp.example.com"; got != want {
 		t.Fatalf("TCADPAPIServer = %q, want %q", got, want)

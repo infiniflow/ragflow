@@ -119,8 +119,7 @@ export default function Agent() {
     saveGraph();
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  // The canvas checklist only surfaces issues to the user; it never gates
-  // the save/run/explore/publish/embed entry points.
+  // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
     ownerTenantId: agentDetail?.tenant_id,
     canvasID: id,

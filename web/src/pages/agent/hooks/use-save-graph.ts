@@ -1,3 +1,4 @@
+import message from '@/components/ui/message';
 import {
   useFetchAgent,
   useResetAgent,
@@ -8,10 +9,12 @@ import {
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
+import i18n from '@/locales/config';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import useGraphStore from '../store';
+import { collectCanvasIssues } from '../utils/canvas-checklist';
 import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
@@ -23,8 +26,7 @@ export const useSaveGraph = (
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
-  // Saving is always allowed, even with unresolved canvas issues — those are
-  // only surfaced to the user by the canvas checklist (useCanvasChecklist).
+  // Draft saving is independent of run-readiness checks.
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
@@ -61,6 +63,18 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
+      const { nodes, edges, editedNodeFormIds } = useGraphStore.getState();
+      const issue = collectCanvasIssues({
+        nodes: nextNodes ?? nodes,
+        edges,
+        editedNodeFormIds,
+      }).find((issue) => issue.blocksRun);
+      if (issue) {
+        message.error(
+          `${issue.nodeName}: ${i18n.t(issue.messageKey, issue.messageParams)}`,
+        );
+        return;
+      }
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time

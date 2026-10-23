@@ -74,7 +74,6 @@ export interface PromptConfig {
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
-  toc_enhance?: boolean;
   /** The knowledge layer to read, or null to leave the template's default in force. */
   ontology?: IOntologyBinding | null;
 }

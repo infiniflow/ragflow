@@ -36,14 +36,13 @@ type UserCanvasVersionDAO struct{}
 
 // SaveOrReplaceLatestVersionOptions controls a version-history save.
 type SaveOrReplaceLatestVersionOptions struct {
-	NewID           string
-	UserCanvasID    string
-	Title           *string
-	Description     *string
-	DSL             entity.JSONMap
-	Release         bool
-	KeepUnpublished int
-	SameDSL         func(entity.JSONMap) bool
+	NewID        string
+	UserCanvasID string
+	Title        *string
+	Description  *string
+	DSL          entity.JSONMap
+	Release      bool
+	SameDSL      func(entity.JSONMap) bool
 }
 
 // NewUserCanvasVersionDAO returns a zero-value DAO. The struct is stateless
@@ -160,9 +159,6 @@ func (dao *UserCanvasVersionDAO) CreateTx(ctx context.Context, tx *gorm.DB, v *e
 // SaveOrReplaceLatestTx inserts or refreshes a version using the caller's
 // transaction.
 func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error) {
-	if opts.KeepUnpublished <= 0 {
-		opts.KeepUnpublished = 20
-	}
 	var parent struct {
 		ID string
 	}
@@ -207,7 +203,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 			if opts.Description != nil {
 				latest.Description = opts.Description
 			}
-			return &latest, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
+			return &latest, nil
 		}
 	}
 	row := &entity.UserCanvasVersion{
@@ -221,7 +217,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 	if err = tx.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, err
 	}
-	return row, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
+	return row, nil
 }
 
 func (opts SaveOrReplaceLatestVersionOptions) sameDSL(dsl entity.JSONMap) bool {
@@ -229,22 +225,4 @@ func (opts SaveOrReplaceLatestVersionOptions) sameDSL(dsl entity.JSONMap) bool {
 		return opts.SameDSL(dsl)
 	}
 	return reflect.DeepEqual(dsl, opts.DSL)
-}
-
-func (dao *UserCanvasVersionDAO) deleteAllUnpublishedExcessTx(ctx context.Context, tx *gorm.DB, canvasID string, keep int) error {
-	if keep < 0 {
-		keep = 0
-	}
-	var ids []string
-	if err := tx.WithContext(ctx).Model(&entity.UserCanvasVersion{}).
-		Where(map[string]interface{}{"user_canvas_id": canvasID, "release": false}).
-		Order("create_time DESC").
-		Pluck("id", &ids).Error; err != nil {
-		return err
-	}
-	if len(ids) <= keep {
-		return nil
-	}
-	ids = ids[keep:]
-	return tx.WithContext(ctx).Where("id IN ?", ids).Delete(&entity.UserCanvasVersion{}).Error
 }

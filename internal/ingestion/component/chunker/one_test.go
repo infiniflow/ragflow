@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func oneChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("OneChunker.Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks not []map[string]any: %T", out["chunks"])
 	}

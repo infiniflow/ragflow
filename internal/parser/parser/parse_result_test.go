@@ -85,14 +85,6 @@ func TestParseResult_Contract(t *testing.T) {
 			wantFmt: "markdown",
 		},
 		{
-			name: "text family only",
-			in: ParseResult{
-				OutputFormat: "text",
-				Text:         "raw text",
-			},
-			wantFmt: "text",
-		},
-		{
 			name:    "failure clears payload",
 			in:      ParseResult{Err: errSentinel},
 			wantErr: true,
@@ -107,7 +99,7 @@ func TestParseResult_Contract(t *testing.T) {
 				if tc.in.OutputFormat != "" {
 					t.Errorf("OutputFormat on failure = %q, want empty", tc.in.OutputFormat)
 				}
-				if tc.in.JSON != nil || tc.in.Markdown != "" || tc.in.Text != "" {
+				if tc.in.JSON != nil || tc.in.Markdown != "" {
 					t.Errorf("payload fields must be zero on failure; got %+v", tc.in)
 				}
 				return
@@ -203,13 +195,11 @@ func payloadFamily(r ParseResult) string {
 		return "json"
 	case "markdown":
 		return "markdown"
-	case "text":
-		return "text"
 	}
 	return ""
 }
 
-var allPayloadFamilies = []string{"json", "markdown", "text"}
+var allPayloadFamilies = []string{"json", "markdown"}
 
 func isPayloadZero(r ParseResult, family string) bool {
 	switch family {
@@ -217,8 +207,6 @@ func isPayloadZero(r ParseResult, family string) bool {
 		return r.JSON == nil
 	case "markdown":
 		return r.Markdown == ""
-	case "text":
-		return r.Text == ""
 	}
 	return false
 }

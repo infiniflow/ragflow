@@ -564,7 +564,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
-      chunkMethod: 'Chunking method',
+      parsingMode: 'Parsing mode',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
@@ -769,7 +769,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse mode',
+      parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
       noConfigChunkerHint:
@@ -793,8 +793,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunking method',
-      chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -1254,8 +1252,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
-      naiveSettings: 'Naive settings',
-      agenticSettings: 'Agentic settings',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
       agenticTemplate: 'Agentic template',
       agenticTemplateTip:
         'The system template the agentic RAG agent runs with. Editing it overrides the shipped default for this chat; reset to restore it.',
@@ -1399,8 +1397,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
@@ -3212,6 +3208,11 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Message cannot be empty',
+      inputOptionsIncomplete: 'Dropdown options cannot contain empty entries',
+      dataOperationsEntriesIncomplete:
+        'Complete all data operation entries before running',
+      invokeVariablesIncomplete:
+        'Complete all variable mappings before running',
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
@@ -3914,6 +3915,7 @@ This process aggregates variables from multiple branches into a single variable 
       nodeFormInvalid: 'Invalid settings, please fix them first',
       apiKeyRequired: 'Please enter the API Key',
       apiKeyMissing: 'No API key configured, please enter one first',
+      agentToolsMissing: 'Agent tools contain an empty entry',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
       extractorKeywordsTopNMissing:
@@ -3929,6 +3931,10 @@ This process aggregates variables from multiple branches into a single variable 
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
       checklistTitle: 'The following issues may affect running or publishing',
+      loopRowsIncomplete:
+        'Complete the loop variables and termination conditions',
+      iterationOutputsIncomplete:
+        'Complete the iteration output names and references',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:

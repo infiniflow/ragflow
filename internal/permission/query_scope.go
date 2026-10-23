@@ -67,6 +67,8 @@ func resourceTable(kind ResourceKind) (string, bool) {
 	switch kind {
 	case ResourceKindDataset:
 		return "knowledgebase", true
+	case ResourceKindDocument:
+		return "document", true
 	case ResourceKindCanvas:
 		return "user_canvas", true
 	case ResourceKindAgentSession:

@@ -47,11 +47,6 @@ func respondPermissionErrorIf(c *gin.Context, err error, hideResource bool) bool
 	return true
 }
 
-func respondPermissionFailure(c *gin.Context, err error, hideResource bool) {
-	code, message := permissionErrorResult(err, hideResource)
-	common.ErrorWithCode(c, code, message)
-}
-
 func respondHTTPPermissionError(c *gin.Context, err error, hideResource bool) {
 	code, message := permissionErrorResult(err, hideResource)
 	common.ResponseWithHttpCodeData(c, int(code), code, nil, message)

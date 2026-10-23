@@ -8,7 +8,7 @@ title: Check System Status
 
 ## Check Whether Services Are Running Normally
 
-After entering the Admin UI, open the **Service status** page to view the status reported by the Go services and their configured dependencies. Each row contains the service type, name, host, port, status, an `elapsed` diagnostic value, and an optional message.
+After entering the Admin UI, open the **Service status** page to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. Use **Actions** to view the `elapsed` diagnostic value and any status message.
 
 ![Check Whether Services Are Normal](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
 

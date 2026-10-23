@@ -223,10 +223,10 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `ragflow_deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
+   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
 
 3. サービスをビルドします:
 

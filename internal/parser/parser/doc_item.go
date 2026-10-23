@@ -77,7 +77,8 @@ func (t TableItem) ToMap() map[string]any {
 }
 
 // ImageItem is an embedded image. Text is the alt text, Image the data
-// URL/base64 payload (possibly empty when omitted).
+// URL/base64 payload (possibly empty when omitted). Parsers emit standard
+// base64 with padding and no CR/LF in the payload.
 type ImageItem struct {
 	Text      string
 	Image     string
@@ -174,17 +175,17 @@ func DocItemFromMap(m map[string]any) DocItem {
 func textItemFromMap(m map[string]any) DocItem {
 	return TextItem{
 		Text:  stringField(m, "text"),
-		Extra: extraFromMap(m, "text", DocTypeKey, "ck_type"),
+		Extra: extraFromMap(m, "text", DocTypeKey),
 	}
 }
 
 func imageItemFromMap(m map[string]any) DocItem {
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"text", "image", DocTypeKey, "ck_type", "sheet"}
+	skip := []string{"text", "image", DocTypeKey, "sheet"}
 	if pos != nil {
 		// Parsed into the typed field: it owns "positions", so strip it from
 		// Extra. Both [][]float64 (office/xlsx) and [][]any (PDF crop regions
-		// from normalizePDFPositions) parse here, so the old [][]any-only
+		// from normalizeDeepDocPositions) parse here, so the old [][]any-only
 		// Extra fallback is gone.
 		skip = append(skip, "positions")
 	}
@@ -208,7 +209,7 @@ func tableItemFromMap(m map[string]any) DocItem {
 		return RawItem{M: m}
 	}
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"table", DocTypeKey, "ck_type", "sheet"}
+	skip := []string{"table", DocTypeKey, "sheet"}
 	if pos != nil {
 		skip = append(skip, "positions")
 	}
@@ -269,10 +270,6 @@ func ItemsToMaps(items []DocItem) []map[string]any {
 // present, so a stray Extra key can never shadow text/table/image/doc_type_kwd.
 func mergeExtra(m, extra map[string]any) map[string]any {
 	for k, v := range extra {
-		// ck_type is retired; a stray Extra key must not resurrect it.
-		if k == "ck_type" {
-			continue
-		}
 		if _, ok := m[k]; !ok {
 			m[k] = v
 		}
@@ -385,7 +382,7 @@ func wireToPositions(raw any, hasSheet bool) Positions {
 // into the historical wire form for ToMap. The wire container type is preserved
 // per vocabulary so the parser output is byte-for-byte unchanged:
 //   - AbsoluteBox (PDF)  -> [][]any  (int page + float64 coords), matching the
-//     shape normalizePDFPositions already emitted and keeping the page a
+//     shape normalizeDeepDocPositions already emitted and keeping the page a
 //     genuine int (a [][]float64 container would coerce it to float64).
 //   - RowColumnBox (xlsx/csv) -> [][]float64, matching the historical
 //     spreadsheet wire the ingestion indexer consumes.

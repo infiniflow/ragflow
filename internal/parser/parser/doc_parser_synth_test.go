@@ -157,11 +157,4 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 			t.Errorf("parsed JSON missing %q; got:\n%s", want, got)
 		}
 	}
-
-	pText := NewDOCParser()
-	pText.ConfigureFromSetup(map[string]any{"output_format": "text"})
-	prText := pText.ParseWithResult(context.Background(), "synthetic.doc", data)
-	if prText.OutputFormat != "text" {
-		t.Errorf("configured text OutputFormat = %q, want text", prText.OutputFormat)
-	}
 }

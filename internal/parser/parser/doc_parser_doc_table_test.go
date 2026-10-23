@@ -89,24 +89,53 @@ func TestDOCParser_TableEmittedAsStructuredItem(t *testing.T) {
 // TestDOCParser_NoTableDocStaysTextItem pins the fallback for a .doc whose IR
 // yields no structured sections: the parser must still emit the flattened text
 // as a single text item (never silently drop content to 0 chunks). The fixture
-// is the same table.doc driven through the text output format, which bypasses
-// the IR sections path and must keep the legacy behavior intact.
-func TestDOCParser_TextOutputFormatStaysText(t *testing.T) {
+// is the same table.doc; with the legacy text output path removed the parser
+// only emits JSON, so the fallback is exercised through the JSON item below.
+func TestDOCParser_NoTableDocStaysTextItem(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("testdata", "table.doc"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}
 
 	p := NewDOCParser()
-	p.OutputFormat = "text"
 	res := p.ParseWithResult(context.Background(), "table.doc", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", res.Err)
 	}
-	if res.OutputFormat != "text" {
-		t.Fatalf("OutputFormat = %q, want text", res.OutputFormat)
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
 	}
-	if strings.TrimSpace(res.Text) == "" {
-		t.Fatalf("text output is empty: %#v", res)
+	if len(res.JSON) == 0 {
+		t.Fatalf("doc with no structured sections must still emit a text item, got empty JSON")
+	}
+	gotText := false
+	for _, it := range res.JSON {
+		if txt, ok := it.ToMap()["text"].(string); ok && strings.TrimSpace(txt) != "" {
+			gotText = true
+		}
+	}
+	if !gotText {
+		t.Fatalf("doc fallback produced no non-empty text item: %#v", res.JSON)
+	}
+}
+
+// TestDOCParserTextOutputRemoved verifies the DOC parser has no "text" output
+// path. The parser only emits JSON regardless of any output_format request.
+func TestDOCParserTextOutputRemoved(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "table.doc"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	p := NewDOCParser()
+	res := p.ParseWithResult(context.Background(), "table.doc", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult error: %v", res.Err)
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("DOC must ignore text output_format and emit json, got OutputFormat=%q", res.OutputFormat)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatalf("DOC json output must contain items, got empty")
 	}
 }

@@ -62,7 +62,6 @@ type SearchDatasetsRequest struct {
 	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
-	ForceRefresh             bool                   `json:"force_refresh"`
 
 	KnowledgeCompilationScope string `json:"knowledge_compilation_scope,omitempty"`
 }

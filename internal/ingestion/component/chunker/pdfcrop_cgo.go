@@ -30,6 +30,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -141,10 +142,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		if isMediaChunk(ck) && canonicalChunkText(ck) == "" {
 			continue
 		}
-		raw := ck.PDFPositions
-		if len(raw) == 0 {
-			raw = ck.Positions
-		}
+		raw := cropPositionMatrix(ck)
 		if len(raw) == 0 {
 			continue
 		}
@@ -178,12 +176,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			}()
 
 			ck := out[chunkIdx]
-			raw := ck.PDFPositions
-			if len(raw) == 0 {
-				raw = ck.Positions
-			}
-			var matrix [][]any
-			if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+			raw := cropPositionMatrix(ck)
+			matrix, ok := decodePositionRows(raw)
+			if !ok || len(matrix) == 0 {
 				return
 			}
 			positions := util.PositionsFromMatrix(matrix)
@@ -240,15 +235,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					// so the MinIO object is stored under exactly the key the
 					// decorator (imageUploadDecorator) later exposes as
 					// ck["id"] and the persist/retrieval path looks it up by.
-					// canonicalChunkText is the single source for that id text:
-					// it folds media context and strips position tags, so the
-					// value equals the tag-stripped (finalized) text the
-					// decorator derives — for every chunk type, including
-					// image/table chunks whose text still carries position tags
-					// when there is no media context. crop depends only on
-					// positions, so reading the canonical text here does not
-					// alter the cropped image or the chunker's later output
-					// text.
+					// Preserve a pre-stamped position-only media id; otherwise
+					// derive it from canonical text (folded media context and
+					// stripped position tags), matching the decorator's text.
 					chunkID := canonicalChunkID(docID, out[chunkIdx])
 					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, rawBytes); uerr == nil {
 						out[chunkIdx].ImgID = imgID
@@ -284,10 +273,31 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch cropChunkType(ck) {
 	case "image", "table", "text":
-		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
+		return hasCropRegion(ck)
 	default:
 		return false
 	}
+}
+
+// cropPositionMatrix selects _pdf_positions when it contains a positive-area
+// box, otherwise positions. Inspect every row so a page-only first row does
+// not hide a crop region in a later row. Return nil if neither has a region.
+func cropPositionMatrix(ck schema.ChunkDoc) json.RawMessage {
+	for _, raw := range []json.RawMessage{ck.PDFPositions, ck.Positions} {
+		for _, row := range parser.PDFPositionRowsFromJSON(raw) {
+			if row[2] > row[1] && row[4] > row[3] {
+				return raw
+			}
+		}
+	}
+	return nil
+}
+
+// hasCropRegion reports whether the chunk carries a position with a
+// positive-area box. A page-only position (page number, no geometry) carries
+// page identity for the indexer but no region, so it must not trigger a crop.
+func hasCropRegion(ck schema.ChunkDoc) bool {
+	return len(cropPositionMatrix(ck)) > 0
 }
 
 // cropChunkType returns the content type that selects the crop. Callers must

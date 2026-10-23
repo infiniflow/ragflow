@@ -25,7 +25,6 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
 import { AudioFormFields } from './audio-form-fields';
-import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { HtmlFormFields } from './html-form-fields';
 import { ImageFormFields } from './image-form-fields';
@@ -99,15 +98,9 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
         }
       >
         <div className="space-y-5">
-          <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+          <Widget prefix={prefix}></Widget>
         </div>
       </Collapse>
-      <div className="hidden">
-        <OutputFormatFormField
-          prefix={prefix}
-          fileType={fileFormat as FileType}
-        />
-      </div>
     </Card>
   );
 }

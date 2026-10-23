@@ -25,8 +25,11 @@ import (
 	"sort"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/parser"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -44,17 +47,28 @@ type ManualChunkerComponent struct {
 // params as TitleChunker (method is pinned to "group"); the position resort is
 // automatic based on whether the upstream payload carries coordinates.
 func NewManualChunker(params map[string]any) (runtime.Component, error) {
-	// method is pinned to "group": ManualChunker's entire value-add is the
-	// physical-position resort, which only fires inside the group path.
-	// A caller must not downgrade it to "naive"/"title" (that would skip the
-	// resort and silently diverge from Python's manual.py), so method is
-	// deliberately ignored here even if passed in params.
-	conf := map[string]any{"method": "group"}
+	// method, chunk_token_cap, and include_heading_content are pinned for
+	// ManualChunker. The chunker's entire value-add is the physical-position
+	// resort inside the group method, so method must stay "group". The cap
+	// and the heading-content flag are title-chunker-family params that the
+	// group path does not honour (see chunkFromRecords: it passes tokenCap=0
+	// and only the hierarchy path reads include_heading_content). The
+	// operator form is not promised to apply them; we strip them here
+	// instead of accepting and silently ignoring them downstream. See issue
+	// #20139.
+	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
+	dropped := make([]string, 0, 3)
 	for k, v := range params {
-		if k == "method" {
+		switch k {
+		case "method", "chunk_token_cap", "include_heading_content":
+			dropped = append(dropped, k)
 			continue
 		}
 		conf[k] = v
+	}
+	if len(dropped) > 0 {
+		common.Warn("ManualChunker: ignoring operator-form params that do not apply to this chunker",
+			zap.Strings("dropped", dropped))
 	}
 	p := defaultsTitle()
 	p.Update(conf)
@@ -169,6 +183,10 @@ func sortRecordsByPosition(records []lineRecord) {
 // structured `_pdf_positions` key first and falls back to the legacy
 // `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
 // len(row) >= 5 here.
+//
+// The matrix is decoded through parser.PDFPositionRowsFromJSON, so the matrix
+// form and the legacy flat 5-tuple are both understood and the chunker shares
+// one position decoder with the parser boundary and the crop path.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -179,15 +197,11 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	var mat [][]float64
-	if err := json.Unmarshal(raw, &mat); err != nil || len(mat) == 0 {
+	rows := parser.PDFPositionRowsFromJSON(raw)
+	if len(rows) == 0 {
 		return nil, false
 	}
-	row := mat[0]
-	if len(row) < 5 {
-		return nil, false
-	}
-	return row, true
+	return rows[0], true
 }
 
 // init registers ManualChunker under CategoryIngestion.

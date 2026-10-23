@@ -6,6 +6,7 @@ import {
   getOperatorType,
   transformParserConfigSetups,
 } from '@/utils/pipeline-operator';
+import { upperFirst } from 'lodash';
 import {
   IngestionTaskStatus,
   ParserGapReason,
@@ -83,6 +84,25 @@ export const getDocumentRunningStatus = (
 export const getDocumentProgressMessage = (
   document: Pick<IDocumentInfo, 'latest_ingestion_event'>,
 ) => document.latest_ingestion_event?.message || '-';
+
+/**
+ * Label shown in the dataset table's parse column. A built-in pipeline renders
+ * its parser id with the first letter capitalized ("general" -> "General"); a
+ * canvas pipeline keeps the user-chosen title (falling back to the raw id)
+ * untouched. "naive" is the legacy alias of the built-in general pipeline.
+ */
+export const getDocumentParserLabel = (
+  document: Pick<
+    IDocumentInfo,
+    'pipeline_id' | 'pipeline_name' | 'chunk_method'
+  >,
+) => {
+  const { pipeline_id, pipeline_name, chunk_method } = document;
+  if (pipeline_id) {
+    return pipeline_name || pipeline_id;
+  }
+  return upperFirst(chunk_method === 'naive' ? 'general' : chunk_method);
+};
 
 /**
  * Whether a cancel request is currently in flight for the document.
@@ -405,6 +425,39 @@ export function getSavedParserConfig(
   return {
     setups: transformParserConfigSetups(parserEntry),
   };
+}
+
+/**
+ * Whether auto-metadata generation is switched on for the config a document
+ * actually runs with. Accepts both shapes a document row can carry: the
+ * pipeline shape (an Extractor operator node whose `metadata` group owns the
+ * enabled flag, matching transformExtractorConfigToForm's precedence) and the
+ * legacy flat shape (a top-level `enable_metadata`).
+ */
+export function isAutoMetadataEnabled(
+  parserConfig: Record<string, any> | undefined,
+): boolean {
+  if (!parserConfig) {
+    return false;
+  }
+  const extractor = Object.entries(parserConfig).find(
+    ([operatorId]) => getOperatorType(operatorId) === Operator.Extractor,
+  )?.[1];
+  if (extractor) {
+    const group =
+      extractor.metadata !== undefined && !Array.isArray(extractor.metadata)
+        ? extractor.metadata
+        : extractor.metadata_config;
+    if (group?.enabled !== undefined) {
+      return Boolean(group.enabled);
+    }
+    return (
+      extractor.enable_metadata === 1 || extractor.enable_metadata === true
+    );
+  }
+  return (
+    parserConfig.enable_metadata === 1 || parserConfig.enable_metadata === true
+  );
 }
 
 export function findParserGap(

@@ -66,7 +66,6 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":             "OpenDataLoader",
-		"output_format":            "json",
 		"opendataloader_apiserver": server.URL,
 		"opendataloader_api_key":   "odl-secret",
 		"hybrid":                   "docling-fast",
@@ -86,7 +85,7 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
 	}
 }
 
-func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) {
+func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallbackToJSON(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/file_parse" {
@@ -101,7 +100,6 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":             "OpenDataLoader",
-		"output_format":            "markdown",
 		"opendataloader_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -109,8 +107,14 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderMarkdownFallback(t *testing.T) 
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(res.Markdown, "ODL Title") {
-		t.Fatalf("Markdown = %q, want ODL Title", res.Markdown)
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "ODL Title") {
+		t.Fatalf("JSON text = %q, want ODL Title", text.String())
 	}
 }
 

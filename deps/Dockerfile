@@ -1,4 +1,4 @@
-# Build from ragflow_deps/ after running download_deps.py:
+# Build from deps/ after running download_deps.py:
 # docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 FROM scratch
 

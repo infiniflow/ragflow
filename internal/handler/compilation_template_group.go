@@ -76,7 +76,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
 		c.Request.Context(), permission.Subject{UserID: user.ID}, tenantID, permission.TenantMember,
 	); err != nil {
-		respondPermissionFailure(c, err, false)
+		respondPermissionError(c, err, false)
 		return
 	}
 	orderby := c.DefaultQuery("orderby", "create_time")

@@ -254,7 +254,7 @@ func TestParsePDFWithDeepDocOptions_RoutesRegisteredMethodToFactory(t *testing.T
 		return &deepdoctype.ParseResult{}, nil
 	}
 	res := parsePDFWithDeepDocOptions(context.Background(), "f.pdf", []byte("dummy"),
-		pdfPostProcessOptions{outputFormat: "json", parseMethod: "ext_wire"}, parseFn)
+		pdfPostProcessOptions{parseMethod: "ext_wire"}, parseFn)
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}
@@ -281,7 +281,7 @@ func TestParsePDFWithDeepDocOptions_EmptyMethodUsesInProcess(t *testing.T) {
 		return &deepdoctype.ParseResult{}, nil
 	}
 	res := parsePDFWithDeepDocOptions(context.Background(), "f.pdf", []byte("dummy"),
-		pdfPostProcessOptions{outputFormat: "json"}, parseFn)
+		pdfPostProcessOptions{}, parseFn)
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}

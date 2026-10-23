@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
@@ -67,7 +67,6 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":       "Docling",
-		"output_format":      "markdown",
 		"docling_server_url": server.URL,
 		"docling_api_key":    "doc-secret",
 	})
@@ -77,11 +76,17 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
+	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if got, want := res.Markdown, "Chunk A\n\nChunk B"; got != want {
-		t.Fatalf("Markdown = %q, want %q", got, want)
+	var got strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		got.WriteString(text)
+		got.WriteString("\n")
+	}
+	if !strings.Contains(got.String(), "Chunk A") || !strings.Contains(got.String(), "Chunk B") {
+		t.Fatalf("JSON text = %q, want both chunks", got.String())
 	}
 }
 
@@ -132,7 +137,6 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":       "Docling",
-		"output_format":      "json",
 		"docling_server_url": server.URL,
 	})
 
@@ -235,7 +239,6 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 
 			setup := map[string]any{
 				"parse_method":       "Docling",
-				"output_format":      "markdown",
 				"docling_server_url": server.URL,
 			}
 			maps.Copy(setup, tt.setup)

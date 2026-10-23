@@ -12,6 +12,7 @@ import {
   findDocumentsParserGaps,
   findFilesParserGaps,
   findParserGap,
+  getDocumentParserLabel,
   getDocumentRunningStatus,
   getDocumentProgressMessage,
   getFileTypeByExtension,
@@ -39,6 +40,45 @@ describe('isDocumentStopping', () => {
       isDocumentStopping({ ingestion_status: IngestionTaskStatus.RUNNING }),
     ).toBe(false);
     expect(isDocumentStopping({ ingestion_status: undefined })).toBe(false);
+  });
+});
+
+describe('getDocumentParserLabel', () => {
+  const builtin = (chunk_method: string) => ({
+    pipeline_id: '',
+    pipeline_name: '',
+    chunk_method,
+  });
+
+  it('capitalizes the first letter of a built-in parser id', () => {
+    expect(getDocumentParserLabel(builtin('paper'))).toBe('Paper');
+    expect(getDocumentParserLabel(builtin('knowledge_graph'))).toBe(
+      'Knowledge_graph',
+    );
+  });
+
+  it('maps the legacy naive alias onto the general pipeline', () => {
+    expect(getDocumentParserLabel(builtin('naive'))).toBe('General');
+  });
+
+  it('keeps a canvas pipeline title in its original format', () => {
+    expect(
+      getDocumentParserLabel({
+        pipeline_id: 'abc123',
+        pipeline_name: 'my custom pipeline',
+        chunk_method: 'naive',
+      }),
+    ).toBe('my custom pipeline');
+  });
+
+  it('falls back to the raw pipeline id when the title is empty', () => {
+    expect(
+      getDocumentParserLabel({
+        pipeline_id: 'abc123',
+        pipeline_name: '',
+        chunk_method: 'naive',
+      }),
+    ).toBe('abc123');
   });
 });
 

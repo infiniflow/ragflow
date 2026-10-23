@@ -74,7 +74,7 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		return nil, "", ""
 	}
 	if err := h.datasetSvc.CheckAccess(c.Request.Context(), permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+		respondPermissionError(c, err, false)
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg
