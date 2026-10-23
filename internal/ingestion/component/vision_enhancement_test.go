@@ -553,10 +553,6 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 	}
 }
 
-func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
-	t.Skip("markdown is normalized to JSON at dispatch time (NormalizeMarkdown); the component no longer receives a markdown-only ParseResult, so this legacy path guard is obsolete")
-}
-
 func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)

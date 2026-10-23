@@ -121,14 +121,26 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 // item, mirroring the historical markdown→JSON fallback. A cancelled context
 // is fatal and preserves the file metadata for callers.
 func (p *PDFParser) NormalizeMarkdown(ctx context.Context, filename, markdown string) ParseResult {
+	return p.normalizePDFMarkdown(ctx, filename, markdown, ensurePDFResultFile(nil, filename))
+}
+
+// normalizePDFMarkdown converts a PDF backend Markdown response into the
+// structured JSON contract and applies the same item policies as
+// NormalizeResult. fileMeta seeds the result File: remote-backed producers
+// (mineru/docling/opendataloader) carry page_count, while the local Markdown
+// path only needs the filename. The cancellation and empty/error fallback
+// paths preserve fileMeta so callers can still report which document failed.
+// NormalizeMarkdown and pdfMarkdownToResult share this implementation so the
+// two markdown entry points can never diverge in conversion or item policy.
+func (p *PDFParser) normalizePDFMarkdown(ctx context.Context, filename, markdown string, fileMeta map[string]any) ParseResult {
 	if err := ctx.Err(); err != nil {
-		return ParseResult{Err: err, File: ensurePDFResultFile(nil, filename)}
+		return ParseResult{Err: err, File: fileMeta}
 	}
 	converted := parsePDFMarkdown(ctx, filename, markdown)
 	if converted.Err != nil {
 		if ctx.Err() != nil {
 			// Cancellation is fatal; preserve file metadata for callers.
-			converted.File = ensurePDFResultFile(converted.File, filename)
+			converted.File = fileMeta
 			return converted
 		}
 		// Mirror the historical markdown→JSON fallback: a backend
@@ -143,6 +155,9 @@ func (p *PDFParser) NormalizeMarkdown(ctx context.Context, filename, markdown st
 		converted.Err = nil
 	} else if len(converted.JSON) == 0 {
 		converted.JSON = []DocItem{NewTextJSONItem(markdown)}
+	}
+	if converted.File == nil {
+		converted.File = fileMeta
 	}
 	return p.NormalizeResult(ctx, filename, converted)
 }

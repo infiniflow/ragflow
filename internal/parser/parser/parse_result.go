@@ -28,10 +28,9 @@
 // markdown responses are normalized to JSON inside the parser package before
 // they reach the component, so no raw markdown travels on this struct either.
 //
-// Go parser callers consume only the structured ParseResult contract. The
-// legacy `Parse(filename, []byte) error` interface has been removed so parser
-// dispatch, ingestion, and service paths all share the same typed payload
-// contract.
+// Parser callers consume the structured ParseResult payload. Use Produced to
+// check whether a result carries a usable payload: Err is nil and JSON or File
+// is non-nil.
 
 package parser
 

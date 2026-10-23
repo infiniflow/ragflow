@@ -46,8 +46,15 @@ func TestPDFParser_NormalizeMarkdown_ConvertsToJSON(t *testing.T) {
 
 // TestPDFParser_NormalizeMarkdown_DoesNotFetchRemoteImages pins that backend
 // markdown normalization never pulls remote image URLs (untrusted OCR response,
-// deterministic local normalization only).
+// deterministic local normalization only). ssrfAllowLoopback is enabled so the
+// SSRF guard does not reject the loopback request before the handler runs; that
+// would make requests stay 0 regardless and mask a regression where NormalizeMarkdown
+// started fetching remote images.
 func TestPDFParser_NormalizeMarkdown_DoesNotFetchRemoteImages(t *testing.T) {
+	prev := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = prev })
+
 	var requests int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++

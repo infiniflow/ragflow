@@ -1340,7 +1340,9 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 
 // TestEmailParserTextOutputRemoved verifies the Email parser has no "text"
 // output path. A setup requesting produced "text" must be ignored and the
-// result must be JSON, never a Text payload.
+// result must be JSON, identical to a default-config parse. This pins that the
+// removed text path cannot silently reappear: the "text" produced value must
+// not change the emitted JSON.
 func TestEmailParserTextOutputRemoved(t *testing.T) {
 	ctx := context.Background()
 	raw := strings.Join([]string{
@@ -1352,20 +1354,46 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 		"Hello, world!",
 	}, "\r\n")
 
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{
-		"produced": "text",
-		"fields":   []string{"from", "to", "subject", "body"},
-	})
+	fields := []string{"from", "to", "subject", "body"}
 
-	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
+	withText := NewEmailParser()
+	withText.ConfigureFromSetup(map[string]any{
+		"produced": "text",
+		"fields":   fields,
+	})
+	textResult := withText.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	defaultCfg := NewEmailParser()
+	defaultCfg.ConfigureFromSetup(map[string]any{
+		"fields": fields,
+	})
+	defaultResult := defaultCfg.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	for _, result := range []ParseResult{textResult, defaultResult} {
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if !result.Produced() {
+			t.Fatalf("email must emit json, got produced=%t", result.Produced())
+		}
+		if len(result.JSON) == 0 {
+			t.Fatalf("email json output must contain items, got empty")
+		}
 	}
-	if !result.Produced() {
-		t.Fatalf("email must ignore text produced and emit json, got produced=%t", result.Produced())
+
+	// The "text" produced config must be ignored: the JSON payload is
+	// identical to the default-config parse.
+	if len(textResult.JSON) != len(defaultResult.JSON) {
+		t.Fatalf("email json item count changed by produced=text: %d vs %d",
+			len(textResult.JSON), len(defaultResult.JSON))
 	}
-	if len(result.JSON) == 0 {
-		t.Fatalf("email json output must contain items, got empty")
+	for i := range textResult.JSON {
+		a, b := textResult.JSON[i].ToMap(), defaultResult.JSON[i].ToMap()
+		if a["text"] != b["text"] {
+			t.Errorf("email item %d text differs under produced=text: %q vs %q", i, a["text"], b["text"])
+		}
+		if a["doc_type_kwd"] != b["doc_type_kwd"] {
+			t.Errorf("email item %d doc_type_kwd differs under produced=text: %v vs %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
+		}
 	}
 }
