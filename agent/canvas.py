@@ -492,6 +492,9 @@ class Canvas(Graph):
                 waiting_on[cpn_id] = []
             else:
                 waiting_on[cpn_id] = [c for c in cpn.get_dependency_ids() if c != cpn_id]
+                if cpn.component_name.lower() == "variableaggregator":
+                    # Candidate values from unselected branches are optional.
+                    waiting_on[cpn_id] = [c for c in waiting_on[cpn_id] if c in finished or c in window]
 
         while True:
             # A dependency that is neither finished nor still in the window will never
