@@ -3952,9 +3952,17 @@ func (c *CLI) APIShowModelStatsCommand(commandCount int, cmd *Command) (Response
 	if err != nil {
 		return nil, err
 	}
+	// Forward only the parameters this command defines. The parser already
+	// rejects unknown clauses, but an explicit list keeps a future parser
+	// addition from leaking into the query string unchecked.
 	query := netUrl.Values{}
-	for key, value := range cmd.Params {
-		query.Set(key, fmt.Sprint(value))
+	if days, ok := cmd.Params["days"].(int); ok && days > 0 {
+		query.Set("days", fmt.Sprintf("%d", days))
+	}
+	for _, key := range []string{"start", "end", "provider", "instance", "model", "by"} {
+		if value, ok := cmd.Params[key].(string); ok && value != "" {
+			query.Set(key, value)
+		}
 	}
 	path := "/system/stats/model"
 	if len(query) > 0 {

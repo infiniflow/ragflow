@@ -230,108 +230,29 @@ SHOW MODEL STATS DAYS 7 BY DATE, MODEL;
 ```
 
 Keywords are case-insensitive. Names must be quoted; the semicolon is optional.
-Positional model filters are not accepted.
-`INSTANCE` requires `PROVIDER`; `MODEL` requires both. A `BY` clause selects
-one resource dimension (`PROVIDER`, `INSTANCE`, `MODEL`), `DATE`, or `DATE` followed
-by a comma and one resource dimension. Model groups (`GROUP`) are not supported.
+Positional model filters are not accepted. `INSTANCE` requires `PROVIDER`; `MODEL`
+requires both. `BY` selects one resource dimension (`PROVIDER`, `INSTANCE`, `MODEL`),
+`DATE`, or `DATE` followed by a comma and one resource dimension. `DAYS`, `TODAY`,
+and `FROM`/`TO` are mutually exclusive. `GROUP` is not supported.
 
-The backend resolves omitted defaults:
-
-| Scope | Default detail grouping |
+| Parameter | Value |
 |---|---|
-| All usage | Provider |
-| Provider | Instance |
-| Provider + instance | Model |
-| Provider + instance + model | Summary only |
-
-An explicit `BY` overrides this default. Instance rows include their provider;
-model rows include both provider and instance, keeping identically named models
-in different instances separate.
-
-Time is evaluated by the backend in its reported timezone. The default is today.
-`TODAY` maps to `days=1`; `DAYS 7` includes today
-and the previous six days. A `FROM`/`TO` range includes both dates. The current
-day ends at the query time. `DAYS`, `TODAY`, and `FROM`/`TO` are mutually exclusive.
-
-All CLI labels and local errors are in English; resource names retain their
-original spelling. Table output shows the resolved period, timezone, filters,
-summary and detail rows. Plain output has no table borders. JSON output contains
-the entire `data` object without human-readable headings. Unknown input/output
-counts appear as `N/A` in text and `null` in JSON, rather than zero.
-
-```bash
-bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output json "SHOW MODEL STATS DAYS 7 BY MODEL"
-bin/ragflow-cli -h localhost:9380 -t "$RAGFLOW_API_KEY" --output plain "SHOW MODEL STATS TODAY BY DATE"
-```
-
-### Proposed API contract
-
-```http
-GET /api/v1/system/stats/model?days=7&provider=openai&instance=production&by=date,model
-Authorization: <login_token>
-```
-
-API keys use `Authorization: Bearer <api_key>`, following existing CLI behavior.
-The backend must authenticate and restrict the query to the current user
-(`tenant_id = user.ID`); it must not trust a client-supplied tenant ID.
-
-| Query parameter | Contract |
-|---|---|
-| `days` | Positive integer; omitted by CLI unless explicitly selected |
-| `start`, `end` | Paired `YYYY-MM-DD` dates, inclusive; mutually exclusive with `days` |
+| `days` | Positive integer; `TODAY` sends `days=1` |
+| `start`, `end` | Paired `YYYY-MM-DD` dates, inclusive |
 | `provider` | Optional provider name |
 | `instance` | Optional instance name; requires provider |
 | `model` | Optional model name; requires provider and instance |
 | `by` | `provider`, `instance`, `model`, `date`, `date,provider`, `date,instance`, `date,model` |
 
+Text output shows the period, timezone, active filters, grouping, totals, and detail
+rows; plain output has no borders, and JSON output prints the `data` object. Unknown
+input/output counts appear as `N/A` in text and `null` in JSON, not zero.
+
+The backend resolves omitted filters and grouping, evaluates time in its reported
+timezone, scopes the query to the current user (`tenant_id = user.ID`), and returns:
+
 ```json
-{
-  "code": 0,
-  "message": "success",
-  "data": {
-    "period": {
-      "from": "2026-10-17",
-      "to": "2026-10-23",
-      "timezone": "Asia/Shanghai"
-    },
-    "filters": {
-      "provider_name": "openai",
-      "instance_name": "production",
-      "model_name": null
-    },
-    "group_by": ["date", "model"],
-    "summary": {
-      "input_tokens": 120000,
-      "output_tokens": 30000,
-      "total_tokens": 150000
-    },
-    "rows": [
-      {
-        "date": "2026-10-23",
-        "provider_name": "openai",
-        "instance_name": "production",
-        "model_name": "gpt-4o",
-        "input_tokens": 120000,
-        "output_tokens": 30000,
-        "total_tokens": 150000
-      }
-    ]
-  }
-}
+{"code":0,"data":{"period":{"from":"2026-10-17","to":"2026-10-23","timezone":"Asia/Shanghai"},"filters":{"provider_name":"openai","instance_name":"production","model_name":null},"group_by":["date","model"],"summary":{"input_tokens":120000,"output_tokens":30000,"total_tokens":150000},"rows":[{"date":"2026-10-23","provider_name":"openai","instance_name":"production","model_name":"gpt-4o","input_tokens":120000,"output_tokens":30000,"total_tokens":150000}]}}
 ```
 
-`code`, `data.period`, `data.summary`, `summary.total_tokens`, and `data.group_by` are required.
-All token counts are nonnegative integers; unavailable input/output counts are
-`null`. `group_by` is the effective grouping, including defaults. `filters`
-reflects the resolved selection, with unselected fields set to `null`. `rows`
-contains exactly the dimensions requested plus parent identities, and token
-metrics. There is no pagination in this contract. Summary and rows use the same
-query scope; the summary is calculated by the backend, never from displayed rows.
-Rows should be ordered by total tokens descending; when grouped by date, date
-ascending comes first, then total tokens descending within each date. The CLI
-preserves the returned order.
-
-For summary-only queries, return `group_by: []` and `rows: []`. For no usage,
-return `rows: []` and zero summary counts (or `null` for unavailable splits).
-HTTP errors and nonzero application `code` values are reported as command errors;
-backend error messages must be in English.
+This shape still needs backend sign-off before callers rely on it.
