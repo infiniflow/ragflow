@@ -624,6 +624,39 @@ func CropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]
 	return cropSectionPositionsRaster(positions, decodedImages, zoom)
 }
 
+// CropMediaSectionPositions crops typed PDF positions for image/table
+// previews: exactly the position bounds, no context bands, no edge dimming.
+//
+// Python: cropout in _extract_table_figure (pdf_parser.py) — figure/table
+// previews are clean DLA-snapped crops, while only text previews go through
+// crop() with its 120pt context bands and putalpha(128) edge dimming.
+// Routing media through CropSectionPositions reuses the text path and
+// tacks darkened neighbour content above/below every figure.
+//
+// Implementation reuses buildSectionRasterPlan and drops its top/bottom
+// context segments (isEdge): the body segments are computed identically in
+// both paths, so there is no second page-spanning loop to keep in sync.
+func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
+	plan, ok := buildSectionRasterPlan(positions, decodedImages, zoom)
+	if !ok {
+		return ""
+	}
+	body := plan.segments[:0]
+	for _, s := range plan.segments {
+		if !s.isEdge {
+			body = append(body, s)
+		}
+	}
+	plan.segments = body
+	if len(plan.segments) == 0 {
+		return ""
+	}
+	if !measureSectionRasterPlan(plan, decodedImages) {
+		return ""
+	}
+	return encodeCroppedImage(renderSectionRaster(plan, decodedImages))
+}
+
 // CropSectionPositionsRasterLimited rejects a section before rendering when
 // the planned stitched raster exceeds maxPixels.
 func CropSectionPositionsRasterLimited(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64, maxPixels int64) image.Image {
