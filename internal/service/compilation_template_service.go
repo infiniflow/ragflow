@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
@@ -160,6 +161,284 @@ func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
 	return presets, nil
 }
 
+// ontologyDatatypeKinds are the datatype ranges an ontology template may
+// declare for a datatype property. The declared range decides which JSON value
+// the projection writes into the entity row's `attr` column, so an unknown one
+// has to be rejected at save time rather than silently mis-stored later.
+var ontologyDatatypeKinds = map[string]bool{
+	"string": true, "list": true,
+	"int": true, "integer": true,
+	"float": true, "number": true,
+	"bool": true, "boolean": true,
+	"date": true,
+}
+
+const (
+	// maxOntologyEnumValues bounds a declared closed value set. An enum is
+	// rendered into every extraction prompt, so an unbounded one is a prompt-size
+	// bug wearing a declaration's clothes.
+	maxOntologyEnumValues = 64
+	// maxOntologyTermLength bounds one alias or enum value, for the same reason.
+	maxOntologyTermLength = 64
+)
+
+// validateOntologyTemplate checks the cross-references a standard ontology
+// template carries: rdfs:subClassOf (class `parent`), and a property's
+// `domain` / `range` / `datatype`. Every one of them is a reference from one
+// field to another, so none can be checked inside the per-field loop.
+//
+// A dangling reference is not a cosmetic problem: the projection flips edges
+// whose endpoints do not match the declaration, so a typo in `range` silently
+// kills every edge of that property (see ontology.md §8).
+func validateOntologyTemplate(configMap map[string]interface{}) error {
+	fieldsOf := func(section string) []map[string]interface{} {
+		sec, _ := configMap[section].(map[string]interface{})
+		raw, _ := sec["fields"].([]interface{})
+		out := make([]map[string]interface{}, 0, len(raw))
+		for _, f := range raw {
+			if fm, ok := f.(map[string]interface{}); ok {
+				out = append(out, fm)
+			}
+		}
+		return out
+	}
+
+	classes := map[string]bool{}
+	parentOf := map[string][]string{}
+	terms := make([]declaredTerm, 0, 8)
+	for _, f := range fieldsOf("entity") {
+		name := strings.TrimSpace(yamlStr(f["type"]))
+		if name == "" {
+			continue
+		}
+		classes[name] = true
+		terms = append(terms, declaredTerm{
+			kind:    "class",
+			name:    name,
+			aliases: splitTemplateValues(f["aliases"]),
+		})
+		if parents := splitTypeList(yamlStr(f["parent"])); len(parents) > 0 {
+			parentOf[name] = parents
+		}
+	}
+	if len(classes) == 0 {
+		return errors.New("ontology template must declare at least one class")
+	}
+
+	// A class may declare several superclasses (`|`-separated), so both checks
+	// below walk the whole parent set rather than one chain.
+	for child, parents := range parentOf {
+		for _, p := range parents {
+			if !classes[p] {
+				return fmt.Errorf("class %q declares unknown parent %q", child, p)
+			}
+		}
+	}
+	// A cyclic parent chain would make the inherited-attribute walk used by the
+	// ontology queries (class -> all its attributes) never terminate.
+	for child := range parentOf {
+		seen := map[string]bool{}
+		queue := append([]string{}, parentOf[child]...)
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			if cur == "" || seen[cur] {
+				continue
+			}
+			if cur == child {
+				return fmt.Errorf("class %q has a cyclic parent chain", child)
+			}
+			seen[cur] = true
+			queue = append(queue, parentOf[cur]...)
+		}
+	}
+
+	for _, f := range fieldsOf("relation") {
+		name := strings.TrimSpace(yamlStr(f["type"]))
+		if name == "" {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(yamlStr(f["kind"])))
+		domain := strings.TrimSpace(yamlStr(f["domain"]))
+		rangeRaw := strings.TrimSpace(yamlStr(f["range"]))
+		datatype := strings.ToLower(strings.TrimSpace(yamlStr(f["datatype"])))
+		enumValues := splitTemplateValues(f["enum"])
+		required, _ := templateBool(f["required"])
+		terms = append(terms, declaredTerm{
+			kind:    "property",
+			name:    name,
+			aliases: splitTemplateValues(f["aliases"]),
+		})
+
+		if kind == "" {
+			// Infer from the declaration: a range naming a declared class is an
+			// object property, anything else a datatype property.
+			kind = "datatype"
+			for _, r := range splitTypeList(rangeRaw) {
+				if classes[r] {
+					kind = "object"
+					break
+				}
+			}
+		}
+
+		switch kind {
+		case "object":
+			if len(splitTypeList(domain)) == 0 {
+				return fmt.Errorf("object property %q declares no domain", name)
+			}
+			if len(splitTypeList(rangeRaw)) == 0 {
+				return fmt.Errorf("object property %q declares no range", name)
+			}
+			for _, d := range splitTypeList(domain) {
+				if !classes[d] {
+					return fmt.Errorf("property %q declares unknown domain class %q", name, d)
+				}
+			}
+			for _, r := range splitTypeList(rangeRaw) {
+				if !classes[r] {
+					return fmt.Errorf("property %q declares unknown range class %q", name, r)
+				}
+			}
+			// A closed value set and a mandatory value are both datatype-property
+			// ideas. On an object property they would be silently ignored, which is
+			// worse than refusing them: "required" there could only mean a minimum
+			// cardinality, and that judgment needs a review queue this build does
+			// not have yet.
+			if len(enumValues) > 0 {
+				return fmt.Errorf("object property %q declares an enum, which only applies to datatype properties", name)
+			}
+			if required {
+				return fmt.Errorf("object property %q declares required, which only applies to datatype properties", name)
+			}
+		case "datatype":
+			if len(splitTypeList(domain)) == 0 {
+				return fmt.Errorf("datatype property %q declares no domain", name)
+			}
+			for _, d := range splitTypeList(domain) {
+				if !classes[d] {
+					return fmt.Errorf("property %q declares unknown domain class %q", name, d)
+				}
+			}
+			if datatype != "" && !ontologyDatatypeKinds[datatype] {
+				return fmt.Errorf("property %q declares unsupported datatype %q", name, datatype)
+			}
+			if len(enumValues) > maxOntologyEnumValues {
+				return fmt.Errorf("property %q declares %d enum values, at most %d are allowed", name, len(enumValues), maxOntologyEnumValues)
+			}
+			for _, v := range enumValues {
+				if utf8.RuneCountInString(v) > maxOntologyTermLength {
+					return fmt.Errorf("property %q declares an enum value longer than %d characters", name, maxOntologyTermLength)
+				}
+			}
+		default:
+			return fmt.Errorf("property %q has invalid kind %q (want object or datatype)", name, kind)
+		}
+	}
+	return validateDeclaredAliases(terms)
+}
+
+// declaredTerm is one class or property plus the alternative names it declares.
+// Aliases are resolved back to their term at compile time, so two terms claiming
+// the same string would resolve to whichever the map happened to hold.
+type declaredTerm struct {
+	kind    string
+	name    string
+	aliases []string
+}
+
+// validateDeclaredAliases rejects an alias that collides with another term of the
+// same kind, or with its own name.
+//
+// The collision is not cosmetic: the compiler maps every alias back to its
+// canonical name (ontologyTermIndex), so two claimants would put the same row in
+// different classes depending on map order — a model graph that changes between
+// restarts. A term aliasing itself is refused for the same reason: it reads as a
+// pasted duplicate and its mapping is a no-op.
+//
+// Class and property namespaces are checked separately on purpose. A class and a
+// property sharing a name is a warning-level finding the model graph already
+// reports (class_property_name_collision), not an error, and the two alias maps
+// are separate so the ambiguity cannot leak across kinds.
+func validateDeclaredAliases(terms []declaredTerm) error {
+	for _, kind := range []string{"class", "property"} {
+		owner := map[string]string{}
+		for _, t := range terms {
+			if t.kind == kind {
+				owner[strings.ToLower(t.name)] = t.name
+			}
+		}
+		for _, t := range terms {
+			if t.kind != kind {
+				continue
+			}
+			for _, alias := range t.aliases {
+				if utf8.RuneCountInString(alias) > maxOntologyTermLength {
+					return fmt.Errorf("%s %q declares an alias longer than %d characters", kind, t.name, maxOntologyTermLength)
+				}
+				if strings.EqualFold(alias, t.name) {
+					return fmt.Errorf("%s %q lists itself as an alias", kind, t.name)
+				}
+				if prev, taken := owner[strings.ToLower(alias)]; taken && !strings.EqualFold(prev, t.name) {
+					return fmt.Errorf("%s %q declares alias %q, which already names %s %q", kind, t.name, alias, kind, prev)
+				}
+				owner[strings.ToLower(alias)] = t.name
+			}
+		}
+	}
+	return nil
+}
+
+// splitTemplateValues reads a declared value list from a template field. The
+// editor writes a YAML list, a hand-edited config may carry a "|"-separated
+// string; both mean the same closed set.
+func splitTemplateValues(v interface{}) []string {
+	var raw []string
+	switch x := v.(type) {
+	case string:
+		raw = strings.Split(x, "|")
+	case []string:
+		raw = x
+	case []interface{}:
+		raw = make([]string, 0, len(x))
+		for _, item := range x {
+			raw = append(raw, yamlStr(item))
+		}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := map[string]bool{}
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+// templateBool reads a declared boolean, tolerating the string form a hand-edited
+// config may carry. reported is false when the field is absent.
+func templateBool(v interface{}) (value, reported bool) {
+	switch x := v.(type) {
+	case nil:
+		return false, false
+	case bool:
+		return x, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(x)) {
+		case "true", "yes", "1":
+			return true, true
+		case "false", "no", "0", "":
+			return false, true
+		}
+	}
+	return false, false
+}
+
 // ValidateTemplatePayload validates a single template payload, mirroring the
 // Python compilation_template_validation module. It returns an error describing
 // the first problem found.
@@ -228,6 +507,14 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 				if utf8.RuneCountInString(yamlStr(fm["rule"])) > 1024 {
 					return fmt.Errorf("%s field rule is too long", capitalizeTitle(section))
 				}
+			}
+		}
+		// Ontology templates additionally carry cross-references between fields
+		// (class parent, property domain / range / datatype), which the per-field
+		// loop above cannot see.
+		if kccommon.IsOntologyKind(yamlStr(configMap["kind"])) || kccommon.IsOntologyKind(yamlStr(req["kind"])) {
+			if err := validateOntologyTemplate(configMap); err != nil {
+				return err
 			}
 		}
 		if configMap["kind"] == "wiki" || req["kind"] == "wiki" {

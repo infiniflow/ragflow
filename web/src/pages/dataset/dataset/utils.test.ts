@@ -550,6 +550,32 @@ describe('getSavedParserConfig', () => {
     ]);
   });
 
+  // The shape the settings form actually saves: the per-format map sits under
+  // the form field's name. Treating the wrapper as the map makes `setups` a file
+  // format, and then every type — including the ones declared right there — is
+  // reported unsupported (a false block, reproduced from a real dataset).
+  it('unwraps the form-shaped Parser entry (per-format map under `setups`)', () => {
+    const knowledgeBase = {
+      parser_config: {
+        'Parser:HipSignsRhyme': {
+          setups: {
+            pdf: { parse_method: 'DeepDOC' },
+            markdown: { parse_method: 'naive' },
+          },
+        },
+        File: {},
+      },
+    };
+    const config = getSavedParserConfig(knowledgeBase);
+    expect(config?.setups.map((x) => x.fileFormat).sort()).toEqual([
+      'markdown',
+      'pdf',
+    ]);
+    // The declared family is what the parse-click check reads, so a markdown
+    // document must not be blocked.
+    expect(findFilesParserGaps(['series.md'], config!)).toEqual([]);
+  });
+
   it('ignores non-parser operator entries', () => {
     const knowledgeBase = {
       parser_config: {

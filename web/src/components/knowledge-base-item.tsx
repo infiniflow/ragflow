@@ -46,6 +46,7 @@ function DatasetLabel({ text }: { text: string }) {
 export function useDisableDifferenceEmbeddingDataset(
   name: string,
   canvasID?: string,
+  allowEmptyDatasets = false,
 ) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
@@ -117,7 +118,7 @@ export function useDisableDifferenceEmbeddingDataset(
         ),
         value: item.id,
         disabled:
-          item.chunk_count === 0 ||
+          (!allowEmptyDatasets && item.chunk_count === 0) ||
           item.chunk_method === DocumentParserType.Tag ||
           (selectedEmbedBaseName !== '' &&
             getEmbeddingBaseName(
@@ -125,7 +126,7 @@ export function useDisableDifferenceEmbeddingDataset(
             ) !== selectedEmbedBaseName),
       };
     });
-  }, [datasetList, selectedEmbedBaseName]);
+  }, [allowEmptyDatasets, datasetList, selectedEmbedBaseName]);
 
   const handleSearchChange = useCallback((value: string) => {
     setSearchString(value);
@@ -145,14 +146,28 @@ export function KnowledgeBaseFormField({
   showVariable = false,
   name = 'dataset_ids',
   label,
+  tooltip,
   required = false,
   canvasID,
+  allowEmptyDatasets = false,
 }: {
   showVariable?: boolean;
   name?: string;
   label?: ReactNode;
+  /** Defaults to the conversation-datasets explanation; the knowledge scope explains itself. */
+  tooltip?: ReactNode;
   required?: boolean;
   canvasID?: string;
+  /**
+   * Whether a dataset whose original-chunk count is zero may be selected.
+   *
+   * It may not for a conversation dataset — nothing would be retrieved from it —
+   * but the knowledge layer's datasets are exactly the other case: compiled rows
+   * are emitted as index chunks and deliberately left out of the document's
+   * chunk_count (see countOriginalChunkIDs), so a dataset that only carries them
+   * reads as empty while being the only place there is anything to read.
+   */
+  allowEmptyDatasets?: boolean;
 }) {
   const { t } = useTranslation();
 
@@ -163,7 +178,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name, canvasID);
+  } = useDisableDifferenceEmbeddingDataset(name, canvasID, allowEmptyDatasets);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -210,7 +225,7 @@ export function KnowledgeBaseFormField({
   return (
     <RAGFlowFormItem
       name={name}
-      tooltip={t('chat.knowledgeBasesTip')}
+      tooltip={tooltip ?? t('chat.knowledgeBasesTip')}
       required={required}
       label={label ?? t('chat.knowledgeBases')}
     >

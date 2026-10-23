@@ -1625,15 +1625,70 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	common.Info("knowledge_compile: mergeStructureDataset entry",
 		zap.String("kb_id", kb),
 		zap.Int("products", len(products)))
-	// Bucket by (template, lower(name), compile kind) for entities and
-	// (template, lower(from), lower(type), lower(to), compile kind) for relations —
-	// relations have no "name" and must not be silently dropped (review issue 3),
-	// and the relation type + compile kind keep distinct structure kinds and
-	// distinct relation types from collapsing into one dataset row.
-	type ekey struct{ template, name, ckwd string }
-	type rkey struct{ template, from, typ, to, ckwd string }
+	// Bucket by (template, lower(name), class, compile kind) for entities and
+	// (template, lower(from), from class, relation type, lower(to), to class,
+	// compile kind) for relations — relations have no "name" and must not be
+	// silently dropped (review issue 3), and the relation type + compile kind
+	// keep distinct structure kinds and distinct relation types from collapsing
+	// into one dataset row.
+	//
+	// The classes are part of the key. A dataset row carries one
+	// entity_type_kwd / from_type_kwd / to_type_kwd, so folding two classes that
+	// share a name into one row would make the class filter answer with one of
+	// them and lose the other (ontology2.md §3.2). Endpoint classes are keyed for
+	// the same reason on relations: a polymorphic property is drawn and counted
+	// as one edge per domain→range combination, and that distinction cannot
+	// survive being folded into a single row.
+	type ekey struct{ template, name, typ, ckwd string }
+	type rkey struct{ template, from, ftyp, rtyp, to, ttyp, ckwd string }
 	entByKey := make(map[ekey]*StructureBucket, 16)
 	relByKey := make(map[rkey]*StructureBucket, 16)
+	// First bucket seen for one (template, lower(name), compile kind). The
+	// relation pass below uses it to print endpoints in the casing a row actually
+	// stored, and a name may now have several buckets (one per class).
+	entByName := make(map[string]*StructureBucket, 16)
+	// Pass 1: the classes this batch knows each name by. An entity whose class is
+	// the model's fallback ("other" / empty) is a missing answer rather than a
+	// class, so it is resolved onto the name's only class when there is exactly
+	// one — the same instance seen with and without a class must not become two
+	// dataset rows. With two or more classes there is nothing to resolve onto and
+	// the fallback stays unclassified.
+	productTypes := make(map[string]string, 16)
+	productTypesAmbiguous := make(map[string]bool, 4)
+	for _, p := range products {
+		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
+			continue
+		}
+		nameKey := normalizedStructureEntityName(metaString(p.Meta, "name"))
+		if nameKey == "" {
+			continue
+		}
+		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		if structureEntityTypeKey(typ) == "" {
+			typ = strings.TrimSpace(metaString(p.Meta, "type"))
+		}
+		if structureEntityTypeKey(typ) == "" {
+			continue
+		}
+		if prev, seen := productTypes[nameKey]; seen && structureEntityTypeKey(prev) != structureEntityTypeKey(typ) {
+			productTypesAmbiguous[nameKey] = true
+			continue
+		}
+		productTypes[nameKey] = typ
+	}
+	// resolveProductClass returns the class to key a name+fallback pair under:
+	// the fallback itself when the name has no single class (or several), otherwise
+	// that class. The result is used for both the identity key and the stored
+	// column, so a key and the class it stands for can never disagree.
+	resolveProductClass := func(nameKey, class string) string {
+		if nameKey == "" || structureEntityTypeKey(class) != "" || productTypesAmbiguous[nameKey] {
+			return class
+		}
+		if resolved := productTypes[nameKey]; resolved != "" {
+			return resolved
+		}
+		return class
+	}
 	// The authoritative Python (dataset_structure_merger._do_build) merges EVERY
 	// structure-kind doc row unconditionally — dataset scope is driven by the
 	// task type (structure_graph/timeline/structure_mindmap), NOT by a template
@@ -1669,10 +1724,33 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if relType == "" {
 				relType = "related"
 			}
-			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
+			fromName := normalizedStructureEntityName(from)
+			toName := normalizedStructureEntityName(to)
+			fromType := resolveProductClass(fromName, strings.TrimSpace(metaString(p.Meta, "from_type")))
+			toType := resolveProductClass(toName, strings.TrimSpace(metaString(p.Meta, "to_type")))
+			k := rkey{
+				template: template,
+				from:     fromName,
+				ftyp:     structureEntityTypeKey(fromType),
+				rtyp:     structureRelationType(relType),
+				to:       toName,
+				ttyp:     structureEntityTypeKey(toType),
+				ckwd:     ckwd,
+			}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
+				b = &StructureBucket{
+					Name: from + " -> " + to, Type: "relation",
+					FromEntity: from, ToEntity: to,
+					// Endpoint classes come from the doc-level stamp; the
+					// dataset-level pass below re-resolves them from the merged
+					// entity buckets when it can. They are what the class-level
+					// ontology graph is drawn and counted from, so a relation
+					// row without them cannot be placed on it.
+					FromType: fromType, ToType: toType,
+					CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind,
+					RelationType: relType,
+				}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
@@ -1680,31 +1758,68 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		}
 		// entity bucket
 		name := metaString(p.Meta, "name")
-		typ := metaString(p.Meta, "entity_type")
-		if typ == "" {
-			typ = metaString(p.Meta, "type")
+		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		if structureEntityTypeKey(typ) == "" {
+			typ = strings.TrimSpace(metaString(p.Meta, "type"))
 		}
 		if name == "" {
 			continue
 		}
-		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
+		nameKey := normalizedStructureEntityName(name)
+		typ = resolveProductClass(nameKey, typ)
+		k := ekey{template: template, name: nameKey, typ: structureEntityTypeKey(typ), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
 			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
+			if _, seen := entByName[template+"\x00"+k.name+"\x00"+ckwd]; !seen {
+				entByName[template+"\x00"+k.name+"\x00"+ckwd] = b
+			}
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)
 		}
 		appendBucket(b, p)
 	}
 	for key, bucket := range relByKey {
-		if entity := entByKey[ekey{template: key.template, name: key.from, ckwd: key.ckwd}]; entity != nil {
+		if entity := entByName[key.template+"\x00"+key.from+"\x00"+key.ckwd]; entity != nil {
 			bucket.FromEntity = entity.Name
 		}
-		if entity := entByKey[ekey{template: key.template, name: key.to, ckwd: key.ckwd}]; entity != nil {
+		if entity := entByName[key.template+"\x00"+key.to+"\x00"+key.ckwd]; entity != nil {
 			bucket.ToEntity = entity.Name
 		}
 		bucket.Name = bucket.FromEntity + " -> " + bucket.ToEntity
+	}
+	// Fill in each relation bucket's endpoint classes from the dataset-level
+	// entity buckets when the doc-level stamp left them empty. Filling only the
+	// blanks is what keeps this safe: the classes are part of the bucket's
+	// identity, so overwriting a non-empty one with another name-mate's class
+	// would rename a key that the row id is derived from. A name that several
+	// classes share cannot be resolved without guessing at all, so it is skipped.
+	datasetEntityTypes := make(map[string]string, len(entByKey))
+	ambiguous := make(map[string]bool, 4)
+	for _, b := range entByKey {
+		name := normalizedStructureEntityName(b.Name)
+		typ := strings.TrimSpace(b.Type)
+		if name == "" || typ == "" {
+			continue
+		}
+		if prev, seen := datasetEntityTypes[name]; seen && !strings.EqualFold(prev, typ) {
+			ambiguous[name] = true
+			continue
+		}
+		datasetEntityTypes[name] = typ
+	}
+	for _, b := range relByKey {
+		if from := normalizedStructureEntityName(b.FromEntity); strings.TrimSpace(b.FromType) == "" && !ambiguous[from] {
+			if t, ok := datasetEntityTypes[from]; ok {
+				b.FromType = t
+			}
+		}
+		if to := normalizedStructureEntityName(b.ToEntity); strings.TrimSpace(b.ToType) == "" && !ambiguous[to] {
+			if t, ok := datasetEntityTypes[to]; ok {
+				b.ToType = t
+			}
+		}
 	}
 	buckets := make([]StructureBucket, 0, len(entByKey)+len(relByKey))
 	for _, b := range entByKey {
@@ -1712,6 +1827,16 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	}
 	for _, b := range relByKey {
 		buckets = append(buckets, *b)
+	}
+	// A bucket whose rows stated no description still needs searchable text, and
+	// the entity name — or a relation's endpoints and property — is what a reader
+	// would search for. It is filled ONCE per bucket: folding it per row is what
+	// used to repeat the same name as many times as the bucket had rows, so a
+	// dataset row read "korean war\nkorean war\nkorean war\n…".
+	for i := range buckets {
+		if strings.TrimSpace(buckets[i].Description) == "" {
+			buckets[i].Description = structureBucketFallbackDescription(buckets[i])
+		}
 	}
 	common.Info("knowledge_compile: mergeStructureDataset buckets",
 		zap.String("kb_id", kb),
@@ -1732,6 +1857,28 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 
 func normalizedStructureEntityName(name string) string {
 	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+// structureEntityTypeKey normalises an entity or endpoint class for identity
+// keys. The class is part of the identity, not just a display label: folding
+// "apple" the fruit and "apple" the company into one row would leave that row
+// with a single entity_type_kwd, so a class filter would answer with one set and
+// silently drop the other (ontology2.md §3.2, 同名不同义). Case is folded so
+// "Person" and "person" stay the same class.
+//
+// "" and the model's "other" fallback both collapse to the empty key: they mean
+// "no class was assigned", which is a missing answer rather than a class of its
+// own. Keying them apart would give every unclassified instance a second row next
+// to its classified one. mindmap/mind_map are one class spelled two ways.
+func structureEntityTypeKey(typ string) string {
+	typ = strings.ToLower(strings.Join(strings.Fields(typ), " "))
+	if typ == "" || typ == "other" {
+		return ""
+	}
+	if typ == "mindmap" {
+		return "mind_map"
+	}
+	return typ
 }
 
 func preferredStructureEntityType(existing, incoming string) string {
@@ -1759,9 +1906,10 @@ func structureTemplateIdentity(templateID, templateKind string) string {
 }
 
 // appendBucket folds a structure product into a bucket: concatenates its
-// description, unions its source doc/chunk ids, and folds its vector into a true
-// element-wise running mean (review issue 13). VecCount tracks how many vectors
-// have been folded so the mean is order-independent.
+// description, unions its declared attributes, unions its source doc/chunk ids,
+// and folds its vector into a true element-wise running mean (review issue 13).
+// VecCount tracks how many vectors have been folded so the mean is
+// order-independent.
 func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// The product's Content is the doc row's full content_with_weight JSON
 	// (e.g. {"category":"Person","description":"…","name":"…","type":"entity"}),
@@ -1770,34 +1918,26 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
 	desc := structureProductDescription(p.Content)
-	if desc == "" {
-		// Match Python's dataset merger fallback: mindmap entities only carry
-		// name/type, while their dataset row still needs searchable text.
-		// Relations likewise use the endpoint names and relation type when the
-		// source payload has no description.
-		from := metaString(p.Meta, "from")
-		to := metaString(p.Meta, "to")
-		if kind := metaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
-			relType := metaString(p.Meta, "relation_type")
-			if relType == "" {
-				relType = metaString(p.Meta, "type")
-			}
-			if relType == "" {
-				relType = "related"
-			}
-			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
-		} else {
-			desc = strings.TrimSpace(metaString(p.Meta, "name"))
-		}
-	}
 	if desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"
 		}
 		b.Description += desc
 	}
+	// The declared datatype attributes fold like the descriptions do: the
+	// dataset row is the instance, so it has to carry the values its documents
+	// stated. Only the DECLARED attributes reach `attr` (the projection filters
+	// them), so this cannot smuggle model-invented keys into a filterable column.
+	b.Attr = mergeBucketAttrs(b.Attr, chunkJSONObject(p.Meta["attr"]))
 	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	// A bucket can fold rows compiled by different model versions (a publish
+	// does not recompile the corpus). The highest one is reported, because that
+	// is the version the bucket's latest rows come from — and the only honest
+	// answer when they disagree is the newest, not the first seen.
+	if v, ok := metaInt(p.Meta, "compilation_template_version"); ok && int(v) > b.TemplateVersion {
+		b.TemplateVersion = int(v)
+	}
 	// mention_count_int: sum the per-entity mention counts (Python
 	// _struct_merge_graph_entities sums mention_count across the merged entities).
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
@@ -1820,6 +1960,90 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 				b.Vector[i] += (p.Vector[i] - b.Vector[i]) / float32(b.VecCount)
 			}
 		}
+	}
+}
+
+// structureBucketFallbackDescription is the text a bucket gets when none of its
+// rows stated a description: mindmap entities carry only name/type, and their
+// dataset row still has to be searchable. A relation uses its endpoints and
+// property, an entity its name.
+func structureBucketFallbackDescription(b StructureBucket) string {
+	if b.FromEntity != "" || b.ToEntity != "" {
+		relType := strings.TrimSpace(b.RelationType)
+		if relType == "" {
+			relType = "related"
+		}
+		return strings.TrimSpace(strings.Join([]string{b.FromEntity, relType, b.ToEntity}, " "))
+	}
+	return strings.TrimSpace(b.Name)
+}
+
+// mergeBucketAttrs folds one source of declared datatype attributes into a
+// bucket's set, keyed by attribute name.
+func mergeBucketAttrs(into, extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return into
+	}
+	if into == nil {
+		into = make(map[string]any, len(extra))
+	}
+	for key, value := range extra {
+		if value == nil {
+			continue
+		}
+		existing, taken := into[key]
+		if !taken {
+			into[key] = value
+			continue
+		}
+		into[key] = foldBucketAttrValue(existing, value)
+	}
+	return into
+}
+
+// foldBucketAttrValue combines the values two rows state for one attribute.
+//
+// Two lists union their items, order-preserving and without duplicates: each
+// item is its own assertion, and the corpus states them all for the one
+// instance, so keeping only the first row's list would drop the rest. Anything
+// else keeps the value already held — first source wins, the rule every other
+// folded field follows, and the only honest choice for a scalar the documents
+// disagree about (the class panel flags the disagreement rather than picking).
+func foldBucketAttrValue(existing, incoming any) any {
+	first, firstIsList := bucketAttrList(existing)
+	second, secondIsList := bucketAttrList(incoming)
+	if !firstIsList || !secondIsList {
+		return existing
+	}
+	seen := make(map[string]bool, len(first)+len(second))
+	out := make([]any, 0, len(first)+len(second))
+	for _, list := range [][]any{first, second} {
+		for _, item := range list {
+			key := fmt.Sprint(item)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// bucketAttrList reports an attribute value as a list of items, accepting both
+// the []any a JSON payload decodes to and the []string a Go caller may hold.
+func bucketAttrList(value any) ([]any, bool) {
+	switch v := value.(type) {
+	case []any:
+		return v, true
+	case []string:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }
 

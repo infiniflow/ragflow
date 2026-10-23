@@ -1,4 +1,5 @@
 import BackButton from '@/components/back-button';
+import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
 import {
   SelectWithSearch,
   type SelectWithSearchFlagOptionType,
@@ -61,12 +62,18 @@ export default function Compilation() {
             </h2>
           </div>
 
-          <SelectWithSearch
-            options={viewOptions}
-            value={viewMode}
-            onChange={handleViewModeChange}
-            triggerClassName="w-96"
-          />
+          <div className="flex items-center gap-4">
+            {/* The artifacts below were produced by a model at some version.
+                This is the way from the output back to the contract that
+                produced it. */}
+            <CompilationModelsSheet />
+            <SelectWithSearch
+              options={viewOptions}
+              value={viewMode}
+              onChange={handleViewModeChange}
+              triggerClassName="w-96"
+            />
+          </div>
         </section>
       </header>
 

@@ -64,17 +64,173 @@ func TestProjectRelation_FallsBackToKwdColumns(t *testing.T) {
 	}
 }
 
-// TestDedupEntities_OrderPreserving verifies dedup by lowercased name.
-func TestDedupEntities_OrderPreserving(t *testing.T) {
-	in := []StructureGraphNode{
-		{"name": "A", "type": "x"},
-		{"name": "a", "type": "other"}, // dup despite case and type differences
-		{"name": "B", "type": "y"},
-		{"name": ""}, // dropped (empty name)
+// TestProjectRelation_CarriesItsEvidence verifies an assertion names the chunks
+// and documents it came from: without them the ontology view can say an edge
+// exists but not where it was read, which is the only way to judge it.
+func TestProjectRelation_CarriesItsEvidence(t *testing.T) {
+	row := map[string]interface{}{
+		"content_with_weight": `{"from":"Ada","to":"London","type":"born_in","source_chunk_ids":["c2"]}`,
+		"doc_id":              "d1",
+		"source_chunk_ids":    []string{"c1", "c2"},
 	}
-	out := dedupEntities(in)
-	if len(out) != 2 || out[0]["name"] != "A" || out[1]["name"] != "B" {
-		t.Errorf("dedupEntities = %v, want [A B]", out)
+	r := projectRelation(row)
+	if r == nil {
+		t.Fatal("projectRelation returned nil")
+	}
+	if chunks, _ := r["source_chunk_ids"].([]string); !reflect.DeepEqual(chunks, []string{"c2"}) {
+		t.Errorf("source_chunk_ids = %v, want the payload's [c2]", chunks)
+	}
+	if docs, _ := r["document_ids"].([]string); !reflect.DeepEqual(docs, []string{"d1"}) {
+		t.Errorf("document_ids = %v, want [d1]", docs)
+	}
+}
+
+// TestProjectEntity_CarriesItsDocument verifies the entity page can open an
+// instance in the document it was compiled from.
+func TestProjectEntity_CarriesItsDocument(t *testing.T) {
+	row := map[string]interface{}{
+		"content_with_weight": `{"name":"Ada","type":"person"}`,
+		"doc_id":              "d1",
+	}
+	n := projectEntity(row)
+	if n == nil {
+		t.Fatal("projectEntity returned nil")
+	}
+	if docs, _ := n["document_ids"].([]string); !reflect.DeepEqual(docs, []string{"d1"}) {
+		t.Errorf("document_ids = %v, want [d1]", docs)
+	}
+}
+
+// TestProjectRowsCarryTheModelVersion pins the version stamp's read side: a row
+// extracted by a published model version reports it, and a row that predates the
+// column reports nothing rather than version 0 — the two mean different things
+// ("unknown" vs "never published").
+func TestProjectRowsCarryTheModelVersion(t *testing.T) {
+	row := map[string]interface{}{
+		"content_with_weight":              `{"name":"Ada","type":"person"}`,
+		"doc_id":                           "d1",
+		"compilation_template_version_int": float64(3),
+	}
+	node := projectEntity(row)
+	if version := inspectRowInt(node, "version"); version != 3 {
+		t.Errorf("entity version = %v, want 3", node["version"])
+	}
+
+	relation := projectRelation(map[string]interface{}{
+		"content_with_weight":              `{"from":"Ada","to":"London","type":"born_in"}`,
+		"doc_id":                           "d1",
+		"compilation_template_version_int": int64(4),
+	})
+	if relation == nil {
+		t.Fatal("projectRelation returned nil")
+	}
+	if version := inspectRowInt(relation, "version"); version != 4 {
+		t.Errorf("relation version = %v, want 4", relation["version"])
+	}
+
+	unversioned := projectEntity(map[string]interface{}{
+		"content_with_weight": `{"name":"Ada","type":"person"}`,
+		"doc_id":              "d1",
+	})
+	if _, present := unversioned["version"]; present {
+		t.Errorf("unversioned row carries a version: %v", unversioned)
+	}
+}
+
+// TestGraphSourceDocIDsKeepsDatasetScopeHonest pins the dataset-level row: its
+// doc_id is the KB id, so reporting it as a document would send the reader to a
+// document that does not exist. The compiled documents are the source_doc_ids
+// union instead.
+func TestGraphSourceDocIDsKeepsDatasetScopeHonest(t *testing.T) {
+	datasetRow := map[string]interface{}{
+		"doc_id":         "kb1",
+		"scope_kwd":      "dataset",
+		"source_doc_ids": []string{"d1", "d2"},
+	}
+	if docs := graphSourceDocIDs(nil, datasetRow); !reflect.DeepEqual(docs, []string{"d1", "d2"}) {
+		t.Errorf("dataset row documents = %v, want [d1 d2]", docs)
+	}
+	bareDatasetRow := map[string]interface{}{"doc_id": "kb1", "scope_kwd": "dataset"}
+	if docs := graphSourceDocIDs(nil, bareDatasetRow); len(docs) != 0 {
+		t.Errorf("dataset row without source docs = %v, want none", docs)
+	}
+	docRow := map[string]interface{}{"doc_id": "d1", "scope_kwd": "doc"}
+	if docs := graphSourceDocIDs(nil, docRow); !reflect.DeepEqual(docs, []string{"d1"}) {
+		t.Errorf("document row documents = %v, want [d1]", docs)
+	}
+}
+
+// TestMergeEntities_FoldsByNameAndClass covers the identity rule and the fields
+// that must survive the fold: same name + same class is one instance whose
+// sources and quotes are unioned, a different class is a different instance, and
+// an empty name is dropped.
+func TestMergeEntities_FoldsByNameAndClass(t *testing.T) {
+	in := []StructureGraphNode{
+		{
+			"name": "A", "type": "x", "description": "folded",
+			"source_chunk_ids": []string{"c1"}, "document_ids": []string{"d1"},
+			"evidence": []map[string]interface{}{{"quote": "q1", "chunk_id": "c1"}},
+		},
+		{
+			"name": "a", "type": "x", "description": "",
+			"source_chunk_ids": []string{"c2"}, "document_ids": []string{"d2"},
+			"evidence": []map[string]interface{}{{"quote": "q1", "chunk_id": "c1"}, {"quote": "q2", "chunk_id": "c2"}},
+			"scope":    "dataset",
+		},
+		{"name": "A", "type": "y"}, // same name, other class: a different instance
+		{"name": ""},               // dropped (empty name)
+	}
+	out := mergeEntities(in)
+	if len(out) != 2 {
+		t.Fatalf("mergeEntities = %v, want 2 instances", out)
+	}
+	if out[0]["description"] != "folded" {
+		t.Errorf("description was lost in the fold: %v", out[0])
+	}
+	if got := stringSliceValue(out[0]["source_chunk_ids"]); len(got) != 2 {
+		t.Errorf("source chunks not unioned: %v", got)
+	}
+	if got := stringSliceValue(out[0]["document_ids"]); len(got) != 2 {
+		t.Errorf("documents not unioned: %v", got)
+	}
+	evidence, _ := out[0]["evidence"].([]map[string]interface{})
+	if len(evidence) != 2 {
+		t.Errorf("evidence not unioned without duplicates: %v", out[0]["evidence"])
+	}
+	if out[1]["type"] != "y" {
+		t.Errorf("second class should be its own instance: %v", out[1])
+	}
+}
+
+// TestMergeEntities_FoldsAttributes covers the attribute fold: a document row
+// and the dataset row of one instance are the same instance seen twice, and the
+// dataset row is the one that holds the attributes of the documents compiled
+// earlier — so the fold has to keep both sides' values, not just the first's.
+func TestMergeEntities_FoldsAttributes(t *testing.T) {
+	in := []StructureGraphNode{
+		{
+			"name": "Virginia Woolf", "type": "person",
+			"attributes": map[string]interface{}{"occupation": []interface{}{"writer"}},
+		},
+		{
+			"name": "virginia woolf", "type": "person",
+			"attributes": map[string]interface{}{
+				"occupation": []interface{}{"writer", "publisher"},
+				"birth_date": "1882-01-25",
+			},
+		},
+	}
+	out := mergeEntities(in)
+	if len(out) != 1 {
+		t.Fatalf("mergeEntities = %v, want one instance", out)
+	}
+	attrs, _ := out[0]["attributes"].(map[string]interface{})
+	occupations, _ := structureAttrList(attrs["occupation"])
+	if len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %v, want [writer publisher] without duplicates", attrs["occupation"])
+	}
+	if attrs["birth_date"] != "1882-01-25" {
+		t.Errorf("birth_date was dropped in the fold: %v", attrs)
 	}
 }
 

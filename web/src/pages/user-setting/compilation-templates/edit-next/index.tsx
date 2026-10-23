@@ -15,6 +15,7 @@
  */
 
 import BackButton from '@/components/back-button';
+import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -28,6 +29,12 @@ import { useNavigate } from 'react-router';
 import { BlueprintSection } from './components/blueprint-section';
 import { TemplateConfiguration } from './components/template-configuration';
 import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
+import {
+  draftFromSections,
+  validateDraft,
+  type OntologySection,
+} from './ontology/model';
+import { OntologyInspectSheet } from './ontology/inspect-sheet';
 
 const SelectedTemplateIndex = 0;
 
@@ -53,6 +60,51 @@ export default function EditNextCompilationTemplate() {
   });
 
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
+  const isOntology = selectedKind === CompilationTemplateKind.Ontology;
+
+  // A model that was never saved has produced nothing, so the compiled-output
+  // panel stays disabled until the form carries an id.
+  const templateId = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.id`,
+  });
+
+  // The service rejects an ontology template whose cross-references do not
+  // resolve, and that rejection arrives with nothing on screen (see the schema
+  // refinement). Computing the same findings here is what lets the footer say
+  // WHY the save is blocked instead of leaving a dead button.
+  const entitySection = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.config.entity`,
+  }) as OntologySection | undefined;
+  const relationSection = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.config.relation`,
+  }) as OntologySection | undefined;
+  const ontologyIssues = useMemo(
+    () =>
+      isOntology
+        ? validateDraft(draftFromSections(entitySection, relationSection))
+        : [],
+    [entitySection, relationSection, isOntology],
+  );
+
+  // What the model declares, which is what the compiled-output panel can be
+  // asked about: an instance list is per class, an assertion list per property.
+  const ontologyClasses = useMemo(
+    () =>
+      (entitySection?.fields ?? [])
+        .map((field) => String(field.type ?? ''))
+        .filter(Boolean),
+    [entitySection],
+  );
+  const ontologyProperties = useMemo(
+    () =>
+      (relationSection?.fields ?? [])
+        .map((field) => String(field.type ?? ''))
+        .filter(Boolean),
+    [relationSection],
+  );
 
   const handleSave = useMemo(
     () => form.handleSubmit(onSubmit),
@@ -68,6 +120,20 @@ export default function EditNextCompilationTemplate() {
             ? t('knowledgeCompilation.addTemplateGroup')
             : group?.name || t('knowledgeCompilation.editTemplateGroup')}
         </h2>
+        {/* Three questions about the same model, and they need three places:
+            here what it says, the panel below what it produced, and the two
+            sheets here what it produced and whether the version that says it
+            is the one datasets compile with. */}
+        <div className="ml-auto flex items-center gap-3">
+          {isOntology && (
+            <OntologyInspectSheet
+              templateId={templateId}
+              classes={ontologyClasses}
+              properties={ontologyProperties}
+            />
+          )}
+          <CompilationModelsSheet templateId={templateId} />
+        </div>
       </header>
 
       <Form {...form}>
@@ -88,10 +154,23 @@ export default function EditNextCompilationTemplate() {
           </TemplateConfiguration>
 
           <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
+            {ontologyIssues.length > 0 && (
+              <span className="mr-auto text-xs text-[#F0A020]">
+                {t('knowledgeCompilation.ontologySaveBlocked', {
+                  count: ontologyIssues.length,
+                  defaultValue:
+                    '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
+                })}
+              </span>
+            )}
             <Button type="button" variant="outline" onClick={navigateToAgents}>
               {t('common.back')}
             </Button>
-            <Button type="submit" loading={isLoading}>
+            <Button
+              type="submit"
+              loading={isLoading}
+              disabled={ontologyIssues.length > 0}
+            >
               {t('common.save')}
             </Button>
           </footer>

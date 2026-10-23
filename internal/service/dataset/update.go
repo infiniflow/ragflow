@@ -377,6 +377,18 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 				txCode = common.CodeServerError
 				return errors.New("dataset update error. (database error)")
 			}
+			// This path writes parser_config inside its own transaction rather
+			// than through the knowledgebase DAO, so the compilation-model
+			// references the config implies are refreshed here too. Leaving
+			// them to the DAO would skip every edit made through this path, and
+			// the model library would keep counting datasets that no longer
+			// compile against the model.
+			if config, writesConfig := updates["parser_config"]; writesConfig {
+				if err = dao.ReplaceDatasetModelRefs(ctx, tx, lockedKB.ID, lockedKB.TenantID, config); err != nil {
+					txCode = common.CodeServerError
+					return fmt.Errorf("failed to index dataset compilation models: %w", err)
+				}
+			}
 		}
 
 		if connectorsProvided {

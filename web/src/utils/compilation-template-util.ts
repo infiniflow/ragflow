@@ -25,6 +25,9 @@ export function formatKindLabel(t: TFunction, kind: string): string {
   if (kind === CompilationTemplateKind.KnowledgeGraph) {
     return t('knowledgeCompilation.graph');
   }
+  if (kind === CompilationTemplateKind.Ontology) {
+    return t('knowledgeCompilation.ontology', { defaultValue: 'Ontology' });
+  }
   if (kind === CompilationTemplateKind.PageIndex) {
     return 'PageIndex';
   }

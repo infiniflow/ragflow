@@ -21,6 +21,12 @@ const config: Config = {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^human-id$': '<rootDir>/__mocks__/human-id.js',
   },
+  // d3-force and its d3-* dependencies ship as ESM only. The ontology layout
+  // imports them at module scope, so without this jest cannot even parse the
+  // module under test — the failure looks like a syntax error in the test file.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(d3-force|d3-dispatch|d3-quadtree|d3-timer)/)',
+  ],
   setupFilesAfterEnv: ['<rootDir>/jest-setup.ts'],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx,js,jsx}',

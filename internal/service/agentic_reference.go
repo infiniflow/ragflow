@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/permission"
 )
 
 // buildAgenticReference turns the answer's citations into the reference payload
@@ -147,14 +148,53 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 	}, marked
 }
 
+// datasetAccessCheck is the permission predicate a citation scope is filtered
+// with. It is the same CheckDatasetAccess the retrieval paths use, taken as a
+// parameter so the filtering itself can be exercised without a database.
+type datasetAccessCheck func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+
+// filterAuthorizedDatasetIDs keeps the ids the caller may use as a citation
+// scope, in their original order and deduped.
+//
+// An unauthorized id is dropped rather than failing the turn: the binding is
+// deployment or assistant configuration, and one stale or over-broad entry must
+// not take an answer down. Dropping it is also what makes the exclusion safe —
+// with every id dropped the scope is empty, and fetchChunksByIDs resolves
+// nothing, so no chunk outside the caller's reach can enter the reference.
+func filterAuthorizedDatasetIDs(ctx context.Context, check datasetAccessCheck, userID string, datasetIDs []string) []string {
+	out := make([]string, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	subject := permission.Subject{UserID: userID}
+	for _, datasetID := range datasetIDs {
+		datasetID = strings.TrimSpace(datasetID)
+		if datasetID == "" || seen[datasetID] {
+			continue
+		}
+		if err := check(ctx, subject, datasetID, permission.OperationUse); err != nil {
+			common.WarnCtx(ctx, "agentic reference: knowledge dataset not authorized",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+			continue
+		}
+		seen[datasetID] = true
+		out = append(out, datasetID)
+	}
+	return out
+}
+
 // fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
 // engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
 // kb_id / img_id / position_int) so chunksFormat can normalize it. The index is
 // the chat's OWNING tenant's - the same scoping the agent's retrieval tools
 // use.
+//
+// An empty dataset scope resolves nothing. kb_id is what confines the lookup to
+// the datasets the answer was allowed to read, and an absent kb_id term drops
+// out of the engine query, so looking up an id without a scope would resolve a
+// chunk from any dataset in the tenant — the one outcome a citation must never
+// produce.
 func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
 	de := engine.Get()
-	if de == nil || len(ids) == 0 {
+	if de == nil || len(ids) == 0 || len(datasetIDs) == 0 {
 		return nil
 	}
 	req := &enginetypes.SearchRequest{

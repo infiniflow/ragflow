@@ -16,6 +16,24 @@
 
 import { z } from 'zod';
 
+import { draftFromSections, validateDraft } from './ontology/model';
+
+/**
+ * The property-side issue codes, so a finding lands on the section it is about
+ * instead of always on `entity`.
+ */
+const PropertyIssueCodes = [
+  'property_without_type',
+  'duplicate_property',
+  'property_without_description',
+  'invalid_kind',
+  'missing_domain',
+  'unknown_domain',
+  'missing_range',
+  'unknown_range',
+  'unsupported_datatype',
+];
+
 export const buildSectionSchema = (t: (key: string) => string) =>
   z.object({
     description: z.string().optional(),
@@ -50,6 +68,14 @@ export const buildSynthesisSchema = () =>
     })
     .passthrough();
 
+/**
+ * Structured config the section editor carries through verbatim instead of
+ * modelling as a field grid (see ConfigPassthroughKeys in utils.ts). It needs
+ * its own union member so validation does not depend on buildSynthesisSchema
+ * happening to accept an object with unrelated keys.
+ */
+export const buildPassthroughConfigSchema = () => z.object({}).passthrough();
+
 export const buildTemplateSchema = (t: (key: string) => string) =>
   z
     .object({
@@ -61,6 +87,7 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
         z.union([
           buildRaptorConfigSchema(t),
           buildSectionSchema(t),
+          buildPassthroughConfigSchema(),
           buildSynthesisSchema(),
           z.string(),
           z.boolean(),
@@ -78,6 +105,29 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
           message: t('knowledgeCompilation.wikiModeRequired'),
         });
       }
+
+      // An ontology template's cross-references are what the service rejects on
+      // save, and a rejection comes back as `code !== 0` with nothing on screen —
+      // a silent dead button. The check runs here so the save is blocked while
+      // the editor is already listing the same findings, and the reader is
+      // looking at the reason.
+      if (template.kind !== 'ontology') return;
+      const config = template.config as {
+        entity?: { fields?: Record<string, string>[] };
+        relation?: { fields?: Record<string, string>[] };
+      };
+      validateDraft(draftFromSections(config?.entity, config?.relation)).forEach(
+        (issue) => {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [
+              'config',
+              PropertyIssueCodes.includes(issue.code) ? 'relation' : 'entity',
+            ],
+            message: issue.message,
+          });
+        },
+      );
     });
 
 export const buildFormSchema = (t: (key: string) => string) =>

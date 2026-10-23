@@ -56,21 +56,41 @@ export const isConfigMetaKey = (key: string) =>
     'rechunk_rules',
   ].includes(key);
 
+/**
+ * Config keys the section editor does not model: `guideline` carries the
+ * extraction instructions (target / rules_for_entities / rules_for_relations)
+ * for the structure variants, and `base_uri` is the ontology's IRI prefix.
+ *
+ * They are carried through the form verbatim. Anything not listed here is read
+ * as a section and rewritten as `{description: '', fields: []}` — which silently
+ * drops the value from the stored template on the next save.
+ */
+export const ConfigPassthroughKeys: string[] = ['guideline', 'base_uri'];
+
+export const isConfigPassthroughKey = (key: string) =>
+  ConfigPassthroughKeys.includes(key);
+
 export const createEmptyField = (keys: string[]) =>
   Object.fromEntries(keys.map((key) => [key, '']));
 
 export const normalizeSection = (
   section?: ICompilationTemplateSection,
 ): ICompilationTemplateSection => {
-  const fields = section?.fields ?? [];
+  // Unknown keys of the SECTION itself travel through. A section is not only
+  // `{description, fields}`: the builtin ontology template also declares
+  // `entity.output_fields`, and rebuilding the section from the two modelled
+  // keys would drop it — the editor would then save a template without it.
+  const { description, fields, ...rest } = (section ?? {}) as
+    ICompilationTemplateSection & Record<string, unknown>;
   return {
-    description: section?.description ?? '',
-    fields: fields.map((field) =>
+    ...rest,
+    description: description ?? '',
+    fields: (fields ?? []).map((field) =>
       Object.fromEntries(
         Object.entries(field).map(([key, value]) => [key, value ?? '']),
       ),
     ),
-  };
+  } as ICompilationTemplateSection;
 };
 
 export const buildConfigFromBuiltin = (
@@ -146,6 +166,10 @@ export const buildConfigFromBuiltin = (
 
   Object.entries(builtinTemplate.config ?? {}).forEach(([key, value]) => {
     if (isConfigMetaKey(key)) return;
+    if (isConfigPassthroughKey(key)) {
+      sections[key] = value as TemplateSchemaType['config'][string];
+      return;
+    }
     sections[key] = normalizeSection(
       value as ICompilationTemplateSection,
     ) as TemplateSchemaType['config'][string];
@@ -220,6 +244,10 @@ export const transformDetailToForm = (
 
   Object.entries(config).forEach(([key, value]) => {
     if (isConfigMetaKey(key)) return;
+    if (isConfigPassthroughKey(key)) {
+      base[key] = value as TemplateSchemaType['config'][string];
+      return;
+    }
     base[key] = normalizeSection(
       value as ICompilationTemplateSection,
     ) as TemplateSchemaType['config'][string];
@@ -258,6 +286,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     if (key === 'kind') return;
     if (key === 'example' || key === 'instruction') return;
     if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
+    if (isConfigPassthroughKey(key)) {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

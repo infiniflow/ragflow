@@ -464,6 +464,70 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	common.SuccessWithData(c, resp, "success")
 }
 
+// GetOntologyClassEntities handles GET /datasets/<dataset_id>/ontology/classes/<class>/entities
+// — one page of a class's instances.
+//
+// This is the drill-down behind the ontology model graph: the graph itself is a
+// skeleton plus counts, and clicking a class asks which instances it actually
+// has (ontology.md §10.8.4).
+func (h *DatasetArtifactHandler) GetOntologyClassEntities(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	resp, err := h.svc.GetOntologyClassEntities(c.Request.Context(), service.OntologyClassEntitiesInput{
+		TenantID:   tenantID,
+		DatasetID:  c.Param("dataset_id"),
+		Class:      c.Param("class"),
+		TemplateID: c.Query("template_id"),
+		DocumentID: c.Query("document_id"),
+		Offset:     offset,
+		Limit:      limit,
+	})
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+	if resp == nil {
+		resp = &service.OntologyEntityPage{Entities: []service.StructureGraphNode{}}
+	}
+	common.SuccessWithData(c, resp, "success")
+}
+
+// GetOntologyPropertyRelations handles GET /datasets/<dataset_id>/ontology/properties/<property>/relations
+// — one page of a property edge's assertions. source_type / target_type pin one
+// domain → range combination of a polymorphic property, which is how the graph
+// draws it (one edge per combination).
+func (h *DatasetArtifactHandler) GetOntologyPropertyRelations(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	resp, err := h.svc.GetOntologyPropertyRelations(c.Request.Context(), service.OntologyPropertyRelationsInput{
+		TenantID:   tenantID,
+		DatasetID:  c.Param("dataset_id"),
+		Property:   c.Param("property"),
+		SourceType: c.Query("source_type"),
+		TargetType: c.Query("target_type"),
+		TemplateID: c.Query("template_id"),
+		DocumentID: c.Query("document_id"),
+		Offset:     offset,
+		Limit:      limit,
+	})
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+	if resp == nil {
+		resp = &service.OntologyRelationPage{Relations: []service.StructureGraphRelation{}}
+	}
+	common.SuccessWithData(c, resp, "success")
+}
+
 // GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
 // page one document's claim/evidence rows (entity_type_kwd="claim"). The tree
 // UI fetches them per leaf cluster on demand: chunk_ids carries the cluster's

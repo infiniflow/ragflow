@@ -264,6 +264,13 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   documentStructureClaims: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
+  // Ontology model graph drill-down: the graph itself is a class-level skeleton
+  // (classes / object properties / inheritance) plus counts, and these two
+  // pages turn one of its nodes or edges into rows.
+  ontologyClassEntities: (datasetId: string, classType: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/classes/${encodeURIComponent(classType)}/entities`,
+  ontologyPropertyRelations: (datasetId: string, property: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/properties/${encodeURIComponent(property)}/relations`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -413,6 +420,40 @@ export default {
   compilationTemplateGroup: (id: string) =>
     `${restAPIv1}/compilation-template-groups/${id}`,
   wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
+  // The model lifecycle: which version of a template is in force, and who
+  // moved it there. Separate from the template palette above because a save
+  // stops affecting the corpus the moment a model has been published.
+  compilationModels: `${restAPIv1}/compilation-models`,
+  compilationModelCheck: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/check`,
+  compilationModelReview: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/review`,
+  compilationModelPublish: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/publish`,
+  compilationModelReject: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/reject`,
+  compilationModelRetire: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/retire`,
+  compilationModelVersions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/versions`,
+  compilationModelVersionDiff: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/versions/diff`,
+  compilationModelDatasets: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/datasets`,
+  compilationModelTrial: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/trial`,
+  compilationModelInstances: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/instances`,
+  // The assertion queue and the verdicts on it share a path: a review is a
+  // write to the rows the read just listed, not a separate resource.
+  assertionReview: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/assertions/review`,
+  // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
+  compilationTemplateOntologyFix: (id: string) =>
+    `${restAPIv1}/compilation-templates/${id}/ontology-fix`,
+  // The knowledge layer read on its own: the compiled assertions that fit a
+  // declared structure, which is what the agent loop's prefetch calls too.
+  ontologyRetrieval: `${restAPIv1}/retrieval/ontology`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

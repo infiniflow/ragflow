@@ -1,11 +1,29 @@
 import { MessageType, WebSearchProvider } from '@/constants/chat';
 import { IAttachment } from '@/hooks/use-send-message';
+import { IOntologyReceipt } from './ontology-retrieval';
 
 export interface IDocumentDownloadInfo {
   doc_id: string;
   filename: string;
   mime_type: string;
   size?: number;
+}
+
+/**
+ * The assistant's knowledge-layer setting.
+ *
+ * It is one of three layers that may declare the binding — request, agentic
+ * template, assistant — and this is the assistant's, so it can only ever be an
+ * override. `enabled: false` is not the same state as the key being absent: it
+ * blocks a binding a deployment declared on the template, which is the only way
+ * to turn the layer off for one assistant. `null` is the wire form of "no
+ * assistant-level setting at all".
+ */
+export interface IOntologyBinding {
+  model_id?: string;
+  model_version?: number;
+  knowledge_dataset_ids?: string[];
+  enabled?: boolean;
 }
 
 export interface AgenticRagOverride {
@@ -56,6 +74,8 @@ export interface PromptConfig {
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
+  /** The knowledge layer to read, or null to leave the template's default in force. */
+  ontology?: IOntologyBinding | null;
 }
 
 export interface Parameter {
@@ -171,6 +191,11 @@ export interface IReference {
   chunks: IReferenceChunk[];
   doc_aggs: Docagg[];
   total: number;
+  /**
+   * The knowledge layer's receipt for this answer, when the turn read one.
+   * Absent means the turn ran without the layer, never "nothing to report".
+   */
+  ontology?: IOntologyReceipt | null;
 }
 
 export interface IReferenceObject {

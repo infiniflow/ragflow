@@ -1,0 +1,491 @@
+kind: ontology
+display_name: Ontology — ontology-grounded knowledge graph
+description: >-
+  Ontology-grounded knowledge compilation. The classes, their scalar datatype
+  attributes and the object properties between them are declared below and are
+  fixed: the documents only supply instances and values. A property's `kind`
+  says whether it joins two individuals (`object`) or gives an individual a
+  literal (`datatype`); an object property's `domain` and `range` name the
+  classes it may run between, which is what makes the result a typed model
+  graph rather than a bag of triples. `domain`/`range` accept a
+  "|"-separated list when a property is legitimately polymorphic, and a class's
+  `parent` declares rdfs:subClassOf. A class or property may also list `aliases`
+  (the other names it is known by), and a datatype property may declare `enum`
+  (a closed value set) and `required` (every instance is expected to carry it).
+  `aliases` and `enum` are stated to the model; `required` is only judged on the
+  stored rows, because a model told an attribute is mandatory invents a value.
+config:
+  kind: ontology
+  base_uri: http://example.org/ontology#
+  rechunk_rules: |
+    - Group only adjacent source chunks into coherent semantic units for this ontology task.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Keep each section heading with the paragraph it introduces, and split when the topic or section changes.
+    - Keep self-contained tables, infoboxes, lists, quotations and code blocks intact; do not split their internal rows.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
+  guideline:
+    target: >-
+      You are reading a set of articles and populating a fixed ontology. The
+      classes, their attributes and the properties between classes below are
+      the whole vocabulary: your task is to find the class instances the
+      articles support, state their attribute values, and connect them along
+      the declared object properties. Never invent a class, an attribute or a
+      property.
+    rules_for_entities: |
+      - `type` MUST be one of the classes below. Never invent a class, and never merge two classes into one entity.
+      - `name` MUST be the wording the article uses. Merge spelling and alias variants of the same entity into one name.
+      - Emit an entity only when the source states something about it; do not emit bare mentions.
+      - Keep the entity's own language; do not translate names.
+    rules_for_relations: |
+      - Each object property is emitted as a relation. `type` MUST be one of the object properties below; never invent one.
+      - An object property may only run from its declared `domain` to its declared `range`. If either endpoint's class does not match the declaration, do NOT emit the relation.
+      - Direction is always domain -> range, exactly as written in the property's rule.
+      - Both endpoints MUST be entities emitted in this pass, spelled exactly as their `name`.
+      - Never emit a relation whose endpoints are the same entity.
+      - Each datatype attribute is emitted on the entity that owns it, with the attribute name as declared and the value exactly as the source states.
+      - A list-valued attribute takes each value as its own item. Never join several values into one string, and never drop a value the source lists.
+      - Never leave a value as "..." or any placeholder. If the source states no value for an attribute, omit that attribute entirely.
+  entity:
+    description: >-
+      The ontology classes. Emit one entity per class instance the sources
+      support, carrying that class's datatype attributes.
+    # The attribute values travel as one nested object rather than as top-level
+    # keys, because each class carries a different attribute set and the response
+    # skeleton is shared. `shape` is rendered verbatim, so the model fills a map
+    # the projection writes straight into the row's `attr` json column.
+    output_fields:
+      - name: attributes
+        shape: '{"<attribute name from the class list>": "<value>", ...: [...]}'
+        required: false
+        description: >-
+          This entity's datatype attribute values, keyed by attribute name. Only
+          the attributes listed on the entity's own `- type:` entry above are
+          valid. A list-valued attribute takes a JSON array, one item per value.
+          Omit an attribute the source says nothing about.
+      # Every assertion must be traceable to the sentence it came from: an
+      # ontology row a reader cannot check is a claim about the corpus, not
+      # knowledge about it. The gate downstream locates each quote verbatim and
+      # records where it sits in the source, so a quote that was paraphrased
+      # costs the row its evidence rather than being stored as if it were real.
+      - name: evidence
+        type: list
+        required: false
+        description: >-
+          The verbatim source text that states this instance — a CONTIGUOUS
+          substring of the chunk named by `chunk_id`, same words and same order:
+          no paraphrase, no truncation, no added words, kept under 240
+          characters. Quote the source for every instance, including one the
+          source states through a table row, an infobox or a bullet item (quote
+          that raw text, keeping its separators and order). If no single
+          sentence or row states the instance, do not emit it. A quote that
+          cannot be located verbatim is discarded downstream, so never restate,
+          translate or tidy it.
+        shape: >-
+          [{"quote": "<verbatim source sentence, copied exactly>",
+          "chunk_id": "<source chunk id the sentence was taken from>"}]
+    # The first field's key set is what the template editor renders, so it lists
+    # every key an entity field may carry (label / parent / aliases included) even
+    # where the value is empty. `parent` is rdfs:subClassOf; it names another
+    # class. `aliases` are the other names this class is known by: they reach the
+    # prompt as a hint and are resolved back to `type` on the way in, so a model
+    # that answers "company" for a declared `organization` does not create a
+    # second spelling of the same class.
+    fields:
+      - type: agent
+        label: Agent
+        description: Anything that can bear a role — the upper class of person and organization.
+        parent: ''
+        aliases: []
+        rule: |
+          - Declare instances as `person` or `organization`, never as `agent`.
+      - type: person
+        label: Person
+        description: A human individual (author, athlete, official, artist, historical figure).
+        parent: agent
+        rule: |
+          - Use the fullest commonly used name (e.g. "Ada Lovelace", not "Ada").
+          - Do not emit a person for a mere byline or a quoted bystander.
+      - type: organization
+        label: Organization
+        description: A collective body — company, university, government agency, army, sports team, band, NGO.
+        parent: agent
+        aliases: [organisation]
+        rule: |
+          - Use the official name; keep widely used abbreviations only when the source uses them as the name.
+          - A government of a country is an organization, not a place.
+      - type: place
+        label: Place
+        description: A geographic entity — country, province, city, district, region, or natural feature.
+        parent: ''
+        rule: |
+          - Use the source's form, including qualifiers when needed to disambiguate ("Paris, France").
+          - Do not emit a place for a vague deictic ("there", "the region") unless the source resolves it.
+      - type: work
+        label: Work
+        description: A creative or intellectual output — book, article, film, album, song, series, painting, game, software.
+        parent: ''
+        rule: |
+          - Includes software products and published standards, but not physical objects.
+          - Do not emit a work for a section of the same document.
+      - type: event
+        label: Event
+        description: Something that happened at a time — battle, war, election, disaster, tournament, festival, trial.
+        parent: ''
+        rule: |
+          - A period ("the Cold War", "the Renaissance") is an event when the source treats it as a bounded happening.
+          - Do not emit an event for a recurring schedule or a mere date.
+      - type: concept
+        label: Concept
+        description: An abstract entity — field of study, theory, method, ideology, movement, principle, or term.
+        parent: ''
+        rule: |
+          - Use the source's canonical term; put alternative names in `also_known_as`.
+          - A named technology or algorithm is a concept; a physical device is an artifact.
+      - type: taxon
+        label: Taxon
+        description: A biological taxon — species, genus, family, or higher rank.
+        parent: ''
+        rule: |
+          - Keep the binomial or scientific name as the source gives it; put vernacular names in `alias`.
+          - Use this class only for living things and their classifications.
+      - type: artifact
+        label: Artifact
+        description: A manufactured physical thing — building, bridge, ship, aircraft, vehicle, device, instrument, product model.
+        parent: ''
+        rule: |
+          - Use this class when the source describes a physical object; a published standard or a piece of software is a `work`.
+          - Do not emit an artifact for a generic category ("a bridge") with no identified instance.
+  relation:
+    description: >-
+      The ontology properties. `kind: object` entries join two individuals and
+      must declare `domain` and `range` as classes; `kind: datatype` entries give
+      an individual a literal and must declare `domain` as a class plus the
+      literal's `datatype`.
+    # A relation is the stronger claim of the two — it asserts something about
+    # two individuals at once — so the quote has to name both ends. A quote that
+    # mentions only one of them cannot support the edge, and the row is what a
+    # reader will be asked to believe.
+    output_fields:
+      - name: evidence
+        type: list
+        required: false
+        description: >-
+          The verbatim source text that states this relation — a CONTIGUOUS
+          substring of the chunk named by `chunk_id`, same words and same order:
+          no paraphrase, no truncation, no added words, kept under 240
+          characters. The quote must name BOTH endpoints (the source and the
+          target) and the wording that links them; a sentence naming only one
+          end does not support the edge, so do not emit that edge. Quote raw
+          table rows, infoboxes and list items exactly as they appear. A quote
+          that cannot be located verbatim is discarded downstream.
+        shape: >-
+          [{"quote": "<verbatim source sentence naming both endpoints>",
+          "chunk_id": "<source chunk id the sentence was taken from>"}]
+    # The first field's key set drives the template editor, so it lists every
+    # key a property field may carry (`datatype` / `aliases` / `enum` / `required`
+    # included) even where empty.
+    #
+    # `aliases` behave as they do on a class: hinted in the prompt, resolved back
+    # to `type` on the way in. `enum` is a closed value set for a datatype
+    # property — it is stated in the prompt and enforced on the stored value.
+    # `required` is NOT stated in the prompt (a model told an attribute is
+    # mandatory will supply one rather than leave a gap); it is judged on the
+    # stored rows and reported as `missing` on the class's attribute list.
+    fields:
+      # ---------------- Object properties: individual -> individual ----------------
+      - type: born_in
+        kind: object
+        domain: person
+        range: place
+        datatype: ''
+        aliases: []
+        enum: []
+        required: false
+        label: born_in
+        description: A person was born in a place.
+        rule: |
+          - Direction: person -> place. Birthplace only, not residence.
+      - type: died_in
+        kind: object
+        domain: person
+        range: place
+        label: died_in
+        description: A person died in a place.
+        rule: |
+          - Direction: person -> place. Place of death only.
+      - type: citizen_of
+        kind: object
+        domain: person
+        range: place
+        label: citizen_of
+        description: A person holds citizenship or nationality of a place.
+        rule: |
+          - Direction: person -> place. Include every citizenship the source states.
+      - type: member_of
+        kind: object
+        domain: person
+        range: organization
+        label: member_of
+        description: A person is a member of an organization.
+        rule: |
+          - Direction: person -> organization. Membership or employment the source states.
+          - Do not use this for a one-off appearance or a quoted remark.
+      - type: led_by
+        kind: object
+        domain: organization
+        range: person
+        label: led_by
+        description: An organization is led or headed by a person.
+        rule: |
+          - Direction: organization -> person. Use the source's own role wording in the payload description.
+      - type: founded_by
+        kind: object
+        domain: organization
+        range: person
+        label: founded_by
+        description: An organization was founded by a person.
+        rule: |
+          - Direction: organization -> person. Founders only, not later owners or managers.
+      - type: headquartered_in
+        kind: object
+        domain: organization
+        range: place
+        label: headquartered_in
+        description: An organization has its headquarters in a place.
+        rule: |
+          - Direction: organization -> place. Headquarters or seat only.
+      - type: subsidiary_of
+        kind: object
+        domain: organization
+        range: organization
+        label: subsidiary_of
+        description: An organization is a subsidiary, division or branch of another organization.
+        rule: |
+          - Direction: child organization -> parent organization.
+      - type: located_in
+        kind: object
+        domain: place
+        range: place
+        label: located_in
+        description: A place lies within another place.
+        rule: |
+          - Direction: contained place -> containing place.
+          - Do not chain through more than one level; emit one edge per stated containment.
+      - type: part_of
+        kind: object
+        domain: place|event
+        range: place|event
+        label: part_of
+        description: An entity is a component of a larger whole of the same kind.
+        rule: |
+          - Direction: part -> whole. Emit for a sub-event of an event, or a sub-region of a region.
+          - Do not emit part_of where `located_in` already states the containment.
+      - type: created_by
+        kind: object
+        domain: work
+        range: person|organization
+        label: created_by
+        description: A work was created by a person or organization.
+        rule: |
+          - Direction: work -> creator. Author, director, artist, studio, publisher of origin.
+      - type: occurred_in
+        kind: object
+        domain: event
+        range: place
+        label: occurred_in
+        description: An event took place in a place.
+        rule: |
+          - Direction: event -> place. Location of the event, not of its aftermath.
+      - type: participant_in
+        kind: object
+        domain: person|organization
+        range: event
+        label: participant_in
+        description: A person or organization took part in an event.
+        rule: |
+          - Direction: participant -> event. Include every side the source names.
+      - type: influenced_by
+        kind: object
+        domain: person|work|concept
+        range: person|work|concept
+        label: influenced_by
+        description: An entity was influenced by another entity.
+        rule: |
+          - Direction: influenced entity -> influencing entity. The source must state the influence.
+      - type: known_for
+        kind: object
+        domain: person|organization
+        range: work|event|concept
+        label: known_for
+        description: An entity is known for a work, event or concept.
+        rule: |
+          - Direction: entity -> what it is known for. Only when the source ties the two explicitly.
+      - type: is_a
+        kind: object
+        domain: concept|taxon
+        range: concept|taxon
+        label: is_a
+        description: An entity is a narrower instance of a broader concept or taxon.
+        rule: |
+          - Direction: narrower -> broader. This is a classification edge, not a name relation.
+          - Do not emit is_a between two entities of the same name.
+      # ---------------- Datatype properties: individual -> literal ----------------
+      - type: alias
+        kind: datatype
+        domain: agent|place|work|event|concept|taxon|artifact
+        datatype: list
+        label: alias
+        description: Alternative names, spellings or vernacular names of an entity.
+        rule: |
+          - One item per alternative name. Never join several names into one string.
+      - type: birth_date
+        kind: datatype
+        domain: person
+        datatype: date
+        label: birth_date
+        description: The date the person was born.
+      - type: death_date
+        kind: datatype
+        domain: person
+        datatype: date
+        label: death_date
+        description: The date the person died.
+      - type: occupation
+        kind: datatype
+        domain: person
+        datatype: list
+        label: occupation
+        description: Occupations or professions the source attributes to the person.
+      - type: known_role
+        kind: datatype
+        domain: person
+        datatype: string
+        label: known_role
+        description: The role the person is chiefly known for, in the source's wording.
+      - type: founded_date
+        kind: datatype
+        domain: organization
+        datatype: date
+        label: founded_date
+        description: The date the organization was founded.
+      - type: dissolved_date
+        kind: datatype
+        domain: organization
+        datatype: date
+        label: dissolved_date
+        description: The date the organization was dissolved.
+      - type: industry
+        kind: datatype
+        domain: organization
+        datatype: list
+        label: industry
+        description: Industries or sectors the organization operates in.
+      - type: headquarters_name
+        kind: datatype
+        domain: organization
+        datatype: string
+        label: headquarters_name
+        description: The stated location name of the organization's headquarters.
+      - type: region
+        kind: datatype
+        domain: place
+        datatype: string
+        label: region
+        description: The larger region the place belongs to, as the source names it.
+      - type: area
+        kind: datatype
+        domain: place
+        datatype: float
+        label: area
+        description: The area the source states for the place.
+      - type: published_date
+        kind: datatype
+        domain: work
+        datatype: date
+        label: published_date
+        description: The date the work was published or released.
+      - type: genre
+        kind: datatype
+        domain: work
+        datatype: list
+        label: genre
+        description: Genres or categories the work belongs to.
+      - type: language
+        kind: datatype
+        domain: work
+        datatype: string
+        label: language
+        description: The language the work is in, as the source states it.
+      - type: medium
+        kind: datatype
+        domain: work
+        datatype: string
+        label: medium
+        description: The medium or form of the work.
+      - type: start_date
+        kind: datatype
+        domain: event
+        datatype: date
+        label: start_date
+        description: The date the event began.
+      - type: end_date
+        kind: datatype
+        domain: event
+        datatype: date
+        label: end_date
+        description: The date the event ended.
+      - type: outcome
+        kind: datatype
+        domain: event
+        datatype: string
+        label: outcome
+        description: The stated result or outcome of the event.
+      - type: definition
+        kind: datatype
+        domain: concept
+        datatype: string
+        label: definition
+        description: The definition the source gives for the concept.
+      - type: field
+        kind: datatype
+        domain: concept
+        datatype: string
+        label: field
+        description: The field of study or domain the concept belongs to.
+      - type: also_known_as
+        kind: datatype
+        domain: concept
+        datatype: list
+        label: also_known_as
+        description: Alternative terms for the concept.
+      - type: taxonomic_rank
+        kind: datatype
+        domain: taxon
+        datatype: string
+        label: taxonomic_rank
+        description: The rank of the taxon (species, genus, family, …).
+      - type: parent_taxon_name
+        kind: datatype
+        domain: taxon
+        datatype: string
+        label: parent_taxon_name
+        description: The name of the taxon this one belongs to, as the source states it.
+      - type: built_date
+        kind: datatype
+        domain: artifact
+        datatype: date
+        label: built_date
+        description: The date the artifact was built or completed.
+      - type: material
+        kind: datatype
+        domain: artifact
+        datatype: list
+        label: material
+        description: Materials the artifact is made of.
+      - type: purpose
+        kind: datatype
+        domain: artifact
+        datatype: string
+        label: purpose
+        description: The stated purpose or function of the artifact.
+  global_rules: ''
