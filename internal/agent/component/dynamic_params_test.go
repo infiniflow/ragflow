@@ -96,9 +96,9 @@ func TestValidateDynamicEntries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
-			if test.component["component_name"] == "Message" {
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "DataOperations" {
 				if draftErr != nil {
-					t.Fatalf("draft rejected Message: %v", draftErr)
+					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
 				}
 			} else if draftErr == nil || !strings.Contains(draftErr.Error(), test.want) {
 				t.Fatalf("draft validation changed: %v, want %q", draftErr, test.want)

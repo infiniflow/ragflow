@@ -15,7 +15,8 @@ func ValidateDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, false)
 }
 
-// ValidateDraftDynamicEntries allows unfinished Message content in saved drafts.
+// ValidateDraftDynamicEntries allows unfinished Message content and
+// DataOperations entries in saved drafts.
 // All other component checks remain the same as ValidateDynamicEntries.
 func ValidateDraftDynamicEntries(dsl map[string]any) error {
 	return validateDynamicEntries(dsl, true)
@@ -72,19 +73,7 @@ func validateDynamicParams(component string, params map[string]any, draft bool) 
 			return fmt.Errorf("[%s] %w", component, err)
 		}
 	case "dataoperations":
-		for _, field := range []string{"select_keys", "remove_keys"} {
-			if values, ok := params[field].([]any); ok && containsBlank(values) {
-				return fmt.Errorf("[%s] %s does not support empty entries", component, field)
-			}
-		}
-		for field, required := range map[string][]string{
-			"updates": {"key", "value"}, "rename_keys": {"old_key", "new_key"},
-			"filter_values": {"key", "operator", "value"},
-		} {
-			if err := validateRows(component, params, field, required); err != nil {
-				return err
-			}
-		}
+		return validateDataOperationsParams(component, params, draft)
 	case "agent":
 		if values, ok := params["tools"].([]any); ok && containsBlank(values) {
 			return fmt.Errorf("[%s] tools does not support empty entries", component)
@@ -295,4 +284,63 @@ func containsEmpty(values []any) bool {
 		}
 	}
 	return false
+}
+
+func validateDataOperationsParams(component string, params map[string]any, draft bool) error {
+	for _, field := range []string{"select_keys", "remove_keys", "updates", "rename_keys", "filter_values"} {
+		raw := params[field]
+		if raw == nil {
+			continue
+		}
+		var rows []any
+		switch values := raw.(type) {
+		case []any:
+			rows = values
+		case []string:
+			for _, value := range values {
+				rows = append(rows, value)
+			}
+		case []map[string]any:
+			for _, value := range values {
+				rows = append(rows, value)
+			}
+		default:
+			return fmt.Errorf("[%s] %s must be an array", component, field)
+		}
+		for index, rawRow := range rows {
+			if field == "select_keys" || field == "remove_keys" {
+				value, ok := rawRow.(string)
+				if !ok {
+					return fmt.Errorf("[%s] %s[%d] must be a string", component, field, index)
+				}
+				if !draft && strings.TrimSpace(value) == "" {
+					return fmt.Errorf("[%s] %s does not support empty entries", component, field)
+				}
+				continue
+			}
+			row, ok := rawRow.(map[string]any)
+			if !ok || row == nil {
+				return fmt.Errorf("[%s] %s[%d] must be an object", component, field, index)
+			}
+			required := []string{"key", "value"}
+			if field == "rename_keys" {
+				required = []string{"old_key", "new_key"}
+			}
+			if field == "filter_values" {
+				required = []string{"key", "operator", "value"}
+			}
+			for _, key := range required {
+				value := row[key]
+				if key != "value" && value != nil {
+					if _, ok := value.(string); !ok {
+						return fmt.Errorf("[%s] %s[%d].%s must be a string", component, field, index, key)
+					}
+				}
+				if !draft && (value == nil || isBlank(value)) {
+					return fmt.Errorf("[%s] %s[%d] is incomplete", component, field, index)
+				}
+			}
+		}
+	}
+	return nil
 }

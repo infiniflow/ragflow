@@ -516,6 +516,38 @@ export function collectCanvasIssues({
       });
     }
 
+    if (label === Operator.DataOperations) {
+      const blank = (value: unknown) =>
+        value == null || (typeof value === 'string' && !value.trim());
+      const incompleteKeys = ['select_keys', 'remove_keys'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            blank(typeof row === 'string' ? row : row?.name),
+          ),
+      );
+      const requiredFields: Record<string, string[]> = {
+        updates: ['key', 'value'],
+        rename_keys: ['old_key', 'new_key'],
+        filter_values: ['key', 'operator', 'value'],
+      };
+      const incompleteRows = Object.entries(requiredFields).some(
+        ([field, required]) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            required.some((key) => blank(row?.[key])),
+          ),
+      );
+      if (incompleteKeys || incompleteRows) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.dataOperationsEntriesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
     if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
       issues.push({
         ...target,
