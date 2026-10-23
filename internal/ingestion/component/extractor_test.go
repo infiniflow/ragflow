@@ -1368,7 +1368,7 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -1377,16 +1377,16 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	t.Helper()
 	status := "1"
-	tenant := entity.Tenant{
-		ID:     "tenant-1",
-		LLMID:  "gpt-4o@openai",
-		Status: &status,
-	}
-	if tenantLLMID != "" {
-		tenant.TenantLLMID = &tenantLLMID
-	}
+	tenant := entity.Tenant{ID: "tenant-1", Status: &status}
 	if err := db.Create(&tenant).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	membership := entity.UserTenant{ID: "ut-tenant1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", Status: &status, LLMID: "gpt-4o@openai"}
+	if tenantLLMID != "" {
+		membership.TenantLLMID = &tenantLLMID
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",

@@ -33,7 +33,7 @@ import (
 // The judge used to be a process-wide singleton built from the environment.
 // It is now resolved per run from what the operator configured in the UI:
 //
-//	chat.decision_id  ->  tenant.decision_id  ->  the env-configured backend
+//	chat.decision_id  ->  user_tenant.decision_id  ->  the env-configured backend
 //
 // The env backend stays as the last step so an existing deployment keeps its
 // behaviour until it configures a model in the UI, and so a run that carries no
@@ -144,9 +144,9 @@ func decisionModelIDFor(ctx context.Context, scope decisionScope) string {
 		}
 	}
 	if scope.tenantID != "" {
-		var tenant entity.Tenant
-		if err := dao.DB.Where("id = ?", scope.tenantID).First(&tenant).Error; err == nil {
-			if id := resolvedDecisionID(tenant.TenantDecisionID, tenant.DecisionID); id != "" {
+		membership, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, dao.DB, scope.tenantID)
+		if err == nil && membership != nil {
+			if id := resolvedDecisionID(membership.TenantDecisionID, membership.DecisionID); id != "" {
 				return id
 			}
 		}

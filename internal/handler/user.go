@@ -255,6 +255,13 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	operationLog.UserID = user.ID
 
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		common.ResponseWithCodeData(c, common.CodeForbidden, false, "super admin should not login to this page.")
+		operationLog.ErrorCode = uint16(common.CodeForbidden)
+		operationLog.Message = "super admin should not login to this page."
+		return
+	}
+
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())

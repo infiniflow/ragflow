@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
@@ -198,8 +197,7 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 		cleaned["metadata"] = meta
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
-	if tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID); tenantErr == nil && tenant != nil {
-		cleaned = service.ApplyComponentScopedParserConfig(cleaned, tenant.LLMID)
-	}
+	llmID, _ := service.NewTenantService().GetDefaultModelNameForTenant(ctx, kb.TenantID, entity.ModelTypeChat)
+	cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 	return cleaned, true
 }

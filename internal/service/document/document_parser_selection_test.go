@@ -147,6 +147,20 @@ func tableParserConfig() entity.JSONMap {
 	}
 }
 
+func seedDocumentParserTenant(t *testing.T, tenantID, ownerID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.Tenant{ID: tenantID}).Error; err != nil {
+		t.Fatalf("insert tenant: %v", err)
+	}
+	status := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "owner-" + tenantID, UserID: ownerID, TenantID: tenantID, Role: "owner", Status: &status,
+		LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner membership: %v", err)
+	}
+}
+
 // TestResolveDocumentParser_Priority pins the resolution order: the dataset's
 // selection governs the families its config declares, an undeclared family goes
 // to the builtin pipeline that owns it, and failing that to general. Undetermined
@@ -156,8 +170,12 @@ func tableParserConfig() entity.JSONMap {
 func TestResolveDocumentParser_Priority(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-default"}).Error; err != nil {
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
 		t.Fatalf("insert tenant: %v", err)
+	}
+	joined := entity.TenantMembershipStatusJoined
+	if err := dao.DB.Create(&entity.UserTenant{ID: "ut-tenant1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", Status: &joined, LLMID: "llm-default"}).Error; err != nil {
+		t.Fatalf("insert tenant owner membership: %v", err)
 	}
 
 	canvasID := "canvas-1"
@@ -449,11 +467,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	kbConfig := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
@@ -562,11 +576,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	ctx := t.Context()
 	svc := testDocumentService(t)
@@ -652,11 +662,7 @@ func TestUploadLocalDocuments_SwitchesVideoToPicture(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	kb := &entity.Knowledgebase{
 		ID:           "kb-video-block",
@@ -708,11 +714,7 @@ func TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	kb := &entity.Knowledgebase{
 		ID:           "kb-sync",

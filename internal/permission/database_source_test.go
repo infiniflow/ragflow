@@ -689,6 +689,37 @@ func TestDatabaseCheckerAuthorizesFilesThroughLinkedDatasetAccess(t *testing.T) 
 	}
 }
 
+func TestDatabaseSourceResolvesFileOwnerFromItsTenant(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.Document{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "tenant-owner-membership", UserID: "tenant-owner", TenantID: "tenant-1",
+		Role: string(RoleOwner), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID: "legacy-file", TenantID: "tenant-1", CreatedBy: "", Name: "legacy.pdf", Type: "pdf",
+	}).Error; err != nil {
+		t.Fatalf("create legacy file: %v", err)
+	}
+
+	resources, err := (&databaseSource{db: db}).GetResources(context.Background(), []ResourceRef{{Kind: ResourceKindFile, ID: "legacy-file"}})
+	if err != nil {
+		t.Fatalf("load file authorization facts: %v", err)
+	}
+	if len(resources) != 1 || resources[0].TenantID != "tenant-1" || resources[0].OwnerUserID != "tenant-owner" {
+		t.Fatalf("file authorization facts = %+v, want tenant tenant-1 and owner tenant-owner", resources)
+	}
+}
+
 func TestDatabaseCheckerScopesFilesAndFoldersToOwnedFolder(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -749,37 +780,6 @@ func TestFileResourceFallsBackToTenantOwnerWhenCreatorIsMissing(t *testing.T) {
 	}, nil, nil, nil)
 	if resource.OwnerUserID != "owner-user" {
 		t.Fatalf("legacy file owner = %q, want tenant owner %q", resource.OwnerUserID, "owner-user")
-	}
-}
-
-func TestDatabaseSourceResolvesFileOwnerFromItsTenant(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.Document{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
-		t.Fatalf("migrate permission tables: %v", err)
-	}
-
-	valid := string(entity.StatusValid)
-	if err := db.Create(&entity.UserTenant{
-		ID: "tenant-owner-membership", UserID: "tenant-owner", TenantID: "tenant-1",
-		Role: string(RoleOwner), Status: &valid,
-	}).Error; err != nil {
-		t.Fatalf("create tenant owner membership: %v", err)
-	}
-	if err := db.Create(&entity.File{
-		ID: "legacy-file", TenantID: "tenant-1", CreatedBy: "", Name: "legacy.pdf", Type: "pdf",
-	}).Error; err != nil {
-		t.Fatalf("create legacy file: %v", err)
-	}
-
-	resources, err := (&databaseSource{db: db}).GetResources(context.Background(), []ResourceRef{{Kind: ResourceKindFile, ID: "legacy-file"}})
-	if err != nil {
-		t.Fatalf("load file authorization facts: %v", err)
-	}
-	if len(resources) != 1 || resources[0].TenantID != "tenant-1" || resources[0].OwnerUserID != "tenant-owner" {
-		t.Fatalf("file authorization facts = %+v, want tenant tenant-1 and owner tenant-owner", resources)
 	}
 }
 

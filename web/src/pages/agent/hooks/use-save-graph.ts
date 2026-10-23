@@ -1,4 +1,7 @@
 import message from '@/components/ui/message';
+import { ModelTypeMap } from '@/components/model-tree-select';
+import { useModelValidIds } from '@/hooks/use-llm-request';
+import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
@@ -60,15 +63,35 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
+  const { data: agent } = useFetchAgent();
+  const { resolveValidIds } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    agent?.tenant_id,
+  );
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
       const { nodes, edges, editedNodeFormIds } = useGraphStore.getState();
-      const issue = collectCanvasIssues({
+      const inputs = { nodes: nextNodes ?? nodes, edges, editedNodeFormIds };
+      let issue = collectCanvasIssues({
         nodes: nextNodes ?? nodes,
         edges,
         editedNodeFormIds,
       }).find((issue) => issue.blocksRun);
+      if (
+        !issue &&
+        inputs.nodes.some((node) => node.data?.label === Operator.Agent)
+      ) {
+        try {
+          const modelValidIds = await resolveValidIds();
+          issue = collectCanvasIssues({ ...inputs, modelValidIds }).find(
+            (issue) => issue.blocksRun,
+          );
+        } catch {
+          message.error(i18n.t('common.modelUnavailable'));
+          return;
+        }
+      }
       if (issue) {
         message.error(
           `${issue.nodeName}: ${i18n.t(issue.messageKey, issue.messageParams)}`,
@@ -85,7 +108,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [saveGraph, resetAgent, show],
+    [saveGraph, resetAgent, show, resolveValidIds],
   );
 
   return { handleRun, loading };
