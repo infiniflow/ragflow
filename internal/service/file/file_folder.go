@@ -103,31 +103,45 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 		return nil, err
 	}
 
-	// Get files by parent folder ID
+	// Apply file visibility in SQL before count and pagination. Community
+	// permission policy compiles this to correlated EXISTS predicates so large
+	// folders do not need to materialize every candidate ID.
 	excludeSkills := folder.ID == folder.ParentID
-	candidates, err := s.fileDAO.ListCandidateFilesByPfID(ctx, dao.DB, tenantID, pfID, keywords, excludeSkills)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	visibilityScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ScopeQuery{
+		Kind:      permission.ResourceKindFile,
+		Parent:    permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folder.ID},
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, err
 	}
-	refs := make([]permission.ResourceRef, 0, len(candidates))
-	for _, candidate := range candidates {
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills, visibilityScope.Apply)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]permission.ResourceRef, 0, len(files))
+	refsByFileID := make(map[string]permission.ResourceRef, len(files))
+	for _, file := range files {
 		kind := permission.ResourceKindFile
-		if candidate.Type == FileTypeFolder {
+		if file.Type == FileTypeFolder {
 			kind = permission.ResourceKindFolder
 		}
-		refs = append(refs, permission.ResourceRef{Kind: kind, ID: candidate.ID})
+		ref := permission.ResourceRef{Kind: kind, ID: file.ID}
+		if _, exists := refsByFileID[file.ID]; exists {
+			continue
+		}
+		refsByFileID[file.ID] = ref
+		refs = append(refs, ref)
 	}
-	visibleRefs, err := permission.NewDatabaseChecker(dao.DB).FilterResources(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, refs, permission.OperationRead)
+	accesses, err := checker.FilterAccesses(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, refs, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
-	visibleIDs := make([]string, 0, len(visibleRefs))
-	for _, ref := range visibleRefs {
-		visibleIDs = append(visibleIDs, ref.ID)
-	}
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills, visibleIDs)
-	if err != nil {
-		return nil, err
+	if len(accesses) != len(refs) {
+		// The SQL visibility predicate and the resolved permissions must agree.
+		// Fail closed if authorization changed while this page was being read.
+		return nil, permission.ErrPermissionDenied
 	}
 
 	// Get parent folder
@@ -171,18 +185,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 		}
 
 		fileResponse := s.fileInfoToResponse(fileInfo)
-		kind := permission.ResourceKindFile
-		if file.Type == FileTypeFolder {
-			kind = permission.ResourceKindFolder
-		}
-		access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
-			Kind: kind,
-			ID:   file.ID,
-		})
-		if err != nil {
-			return nil, err
-		}
-		fileResponse["operator_permission"] = access.PermissionMask
+		fileResponse["operator_permission"] = accesses[refsByFileID[file.ID]].PermissionMask
 		fileResponses = append(fileResponses, fileResponse)
 	}
 

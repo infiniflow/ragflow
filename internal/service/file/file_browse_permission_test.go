@@ -37,7 +37,7 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
 	ctx := t.Context()
-	list, err := svc.ListFilesForTenant(ctx, "reader", "owner", "", 1, 100, nil, "")
+	list, err := svc.ListFilesForTenant(ctx, "reader", "owner", "", 1, 1, nil, "")
 	if err != nil {
 		t.Fatalf("list shared tenant files: %v", err)
 	}
@@ -46,6 +46,9 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	}
 	if len(list.Files) != 1 || list.Files[0]["id"] != "tags" {
 		t.Fatalf("listed files = %#v, want only readable file tags", list.Files)
+	}
+	if list.Files[0]["operator_permission"] != permission.ResourcePermissionOwner {
+		t.Fatalf("owner file permission mask = %v, want %d", list.Files[0]["operator_permission"], permission.ResourcePermissionOwner)
 	}
 	ancestors, err := svc.GetAllParentFoldersForTenant(ctx, "reader", "owner", "tags")
 	if err != nil {

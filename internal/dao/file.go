@@ -67,15 +67,19 @@ func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenan
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibleIDs ...[]string) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords, excludeSkills)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(visibleIDs) > 0 {
-		query = query.Where("id IN ?", visibleIDs[0])
+	if len(visibilityScopes) > 0 {
+		if visibilityScopes[0] == nil {
+			query = query.Where("1 = 0")
+		} else {
+			query = visibilityScopes[0](query)
+		}
 	}
 
 	// Count total
@@ -105,19 +109,6 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 	return files, total, nil
 }
 
-// ListCandidateFilesByPfID loads only fields needed for permission checks.
-func (dao *FileDAO) ListCandidateFilesByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID, keywords string, excludeSkills bool) ([]entity.File, error) {
-	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords, excludeSkills)
-	if err != nil {
-		return nil, err
-	}
-	var files []entity.File
-	if err := query.Select("id", "type").Find(&files).Error; err != nil {
-		return nil, err
-	}
-	return files, nil
-}
-
 func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pfID, keywords string, excludeSkills bool) (*gorm.DB, error) {
 	query := db.WithContext(ctx).Model(&entity.File{}).
 		Where("tenant_id = ? AND id != ?", tenantID, pfID)
@@ -135,6 +126,49 @@ func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pf
 		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
 	}
 	return query, nil
+}
+
+// ListDescendants loads every direct and nested entry under a folder. It walks
+// folder levels in batches so the caller can authorize a whole tree without a
+// database round trip for every node. Parent IDs are chunked to stay below
+// database parameter limits.
+func (dao *FileDAO) ListDescendants(ctx context.Context, db *gorm.DB, folderID string) ([]entity.File, error) {
+	const parentBatchSize = 500
+	if folderID == "" {
+		return nil, nil
+	}
+	seen := map[string]struct{}{folderID: {}}
+	frontier := []string{folderID}
+	descendants := make([]entity.File, 0)
+	for len(frontier) > 0 {
+		next := make([]string, 0)
+		for start := 0; start < len(frontier); start += parentBatchSize {
+			end := start + parentBatchSize
+			if end > len(frontier) {
+				end = len(frontier)
+			}
+			var children []entity.File
+			if err := db.WithContext(ctx).Model(&entity.File{}).
+				Select("id", "parent_id", "type").
+				Where("parent_id IN ?", frontier[start:end]).
+				Find(&children).Error; err != nil {
+				return nil, err
+			}
+			for i := range children {
+				child := children[i]
+				if _, exists := seen[child.ID]; exists {
+					continue
+				}
+				seen[child.ID] = struct{}{}
+				descendants = append(descendants, child)
+				if child.Type == "folder" {
+					next = append(next, child.ID)
+				}
+			}
+		}
+		frontier = next
+	}
+	return descendants, nil
 }
 
 // GetSubtreeIDs returns pfID itself plus the IDs of all entries nested under

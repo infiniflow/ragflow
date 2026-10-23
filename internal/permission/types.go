@@ -280,6 +280,10 @@ type queryScopePolicy interface {
 	QueryScope(context.Context, Subject, ScopeQuery) (QueryScope, bool, error)
 }
 
+type accessFilterPolicy interface {
+	FilterAccesses(context.Context, Subject, []ResourceRef, Operation) (map[ResourceRef]Access, error)
+}
+
 type resourceOwnerGranter interface {
 	GrantResourceOwner(context.Context, Subject, ResourceRef) error
 }
@@ -426,4 +430,38 @@ func (c *Checker) FilterResources(ctx context.Context, subject Subject, resource
 		return nil, err
 	}
 	return c.policy.FilterResources(ctx, subject, resources, operation)
+}
+
+// FilterAccesses resolves permissions for a batch of resources and returns the
+// effective access for each resource that allows operation. Database-backed
+// policies can load resource facts once for the whole batch.
+func (c *Checker) FilterAccesses(ctx context.Context, subject Subject, resources []ResourceRef, operation Operation) (map[ResourceRef]Access, error) {
+	if c == nil || c.policy == nil {
+		return nil, ErrSourceUnavailable
+	}
+	if !validOperation(operation) {
+		return nil, ErrInvalidPermission
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return nil, err
+	}
+	if batchPolicy, ok := c.policy.(accessFilterPolicy); ok {
+		return batchPolicy.FilterAccesses(ctx, subject, resources, operation)
+	}
+
+	accesses := make(map[ResourceRef]Access, len(resources))
+	for _, resource := range uniqueRefs(resources) {
+		access, err := c.policy.ResolveAccess(ctx, subject, resource)
+		if err != nil {
+			if errorsIsPermissionDenial(err) || errors.Is(err, ErrResourceNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if access.Allows(operation) {
+			accesses[resource] = access
+		}
+	}
+	return accesses, nil
 }
