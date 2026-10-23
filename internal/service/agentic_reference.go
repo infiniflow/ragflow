@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/permission"
 )
 
 // buildAgenticReference turns the answer's citations into the reference payload
@@ -145,6 +146,39 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		"chunks":   chunksFormat(ordered),
 		"doc_aggs": agenticDocAggs(ordered),
 	}, marked
+}
+
+// datasetAccessCheck is the permission predicate a citation scope is filtered
+// with. It is the same CheckDatasetAccess the retrieval paths use, taken as a
+// parameter so the filtering itself can be exercised without a database.
+type datasetAccessCheck func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+
+// filterAuthorizedDatasetIDs keeps the ids the caller may use as a citation
+// scope, in their original order and deduped.
+//
+// An unauthorized id is dropped rather than failing the turn: the binding is
+// deployment or assistant configuration, and one stale or over-broad entry must
+// not take an answer down. Dropping it is also what makes the exclusion safe —
+// with every id dropped the scope is empty, and fetchChunksByIDs resolves
+// nothing, so no chunk outside the caller's reach can enter the reference.
+func filterAuthorizedDatasetIDs(ctx context.Context, check datasetAccessCheck, userID string, datasetIDs []string) []string {
+	out := make([]string, 0, len(datasetIDs))
+	seen := make(map[string]bool, len(datasetIDs))
+	subject := permission.Subject{UserID: userID}
+	for _, datasetID := range datasetIDs {
+		datasetID = strings.TrimSpace(datasetID)
+		if datasetID == "" || seen[datasetID] {
+			continue
+		}
+		if err := check(ctx, subject, datasetID, permission.OperationUse); err != nil {
+			common.WarnCtx(ctx, "agentic reference: knowledge dataset not authorized",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+			continue
+		}
+		seen[datasetID] = true
+		out = append(out, datasetID)
+	}
+	return out
 }
 
 // fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the

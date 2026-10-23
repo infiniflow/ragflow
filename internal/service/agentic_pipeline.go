@@ -119,12 +119,18 @@ func (s *ChatPipelineService) agenticRag(
 	// binding's knowledge scope take its place, so an assertion's cited chunks
 	// still resolve against the dataset they were compiled from.
 	//
+	// The binding says the turn may use a knowledge library; it does not say this
+	// user may read it. Each fallback id therefore has to pass the same
+	// dataset-access check the retrieval path applies before it can scope a
+	// citation lookup: an id the caller cannot read is dropped here, so its
+	// chunks cannot be fetched into the reference payload.
+	//
 	// The two scopes are never merged: references resolve by chunk id, so a
 	// lookup spanning both would let a knowledge-library chunk answer a citation
 	// the conversation's own documents were supposed to explain (and the reverse).
 	referenceDatasets := chatDatasetIDs(chat)
 	if len(referenceDatasets) == 0 && ontology != nil {
-		referenceDatasets = ontology.KnowledgeDatasetIDs
+		referenceDatasets = filterAuthorizedDatasetIDs(ctx, CheckDatasetAccess, userID, ontology.KnowledgeDatasetIDs)
 	}
 
 	go func() {
