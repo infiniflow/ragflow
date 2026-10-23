@@ -58,6 +58,21 @@ func isStandaloneDeepDocServer(st common.ServerType) bool {
 		st == common.ServerTypeDeepDocAscend
 }
 
+// startPProfIfRequested launches the pprof HTTP server on localhost:6060.
+// The blank "net/http/pprof" import above registers the handlers on
+// http.DefaultServeMux, so only the listener needs starting. Both boot
+// paths (standalone DeepDoc and the regular one) call it right after the
+// logger is up, so its startup line lands in the run's log file. A bind
+// failure is logged and non-fatal, matching the previous inline behavior.
+func startPProfIfRequested() {
+	go func() {
+		common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
+		if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+			common.Error("pprof server failed", pprofErr)
+		}
+	}()
+}
+
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
 // into a bootstrap.ServerArgs using the standard library flag package. The accepted
 // syntax is exactly the standard one: every flag works as "-flag value",
@@ -350,6 +365,16 @@ func main() {
 	// (DB/engine/cache/storage/MQ). Boot it and return before the heavy
 	// infrastructure init, so a bare inference container needs no MySQL/Redis.
 	if st := bootstrap.GetServerType(arguments); isStandaloneDeepDocServer(st) {
+		// SetServerName writes into the package-level local variables that
+		// InitLocalVariables allocates; this early boot returns before the
+		// shared InitLocalVariables call below, so it must allocate them
+		// itself. The initializer constructs the in-memory struct only and
+		// touches no external service, so the bare inference container stays
+		// free of MySQL/Redis.
+		if err = server.InitLocalVariables(); err != nil {
+			fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
+			os.Exit(1)
+		}
 		logLevel := bootstrap.SelectedLogLevel(arguments, "")
 		if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
 			logLevel = "info"
@@ -363,6 +388,12 @@ func main() {
 			os.Exit(1)
 		}
 		server.SetServerName(finalName)
+		// The regular pprof block sits after the infrastructure init this
+		// path skips, so --profile must be honored here or the flag the
+		// --deepdoc help text advertises would be silently ignored.
+		if arguments.EnablePProf {
+			startPProfIfRequested()
+		}
 		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
@@ -484,12 +515,7 @@ func main() {
 
 	// Start pprof server if requested
 	if arguments.EnablePProf {
-		go func() {
-			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
-			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
-				common.Error("pprof server failed", pprofErr)
-			}
-		}()
+		startPProfIfRequested()
 	}
 
 	// Initialize database. The migrate mode stops here: it needs neither the
