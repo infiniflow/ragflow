@@ -16,6 +16,15 @@
 
 package entity
 
+const (
+	TenantMembershipStatusRemoved   = "0"
+	TenantMembershipStatusJoined    = "1"
+	TenantMembershipStatusInvited   = "2"
+	TenantMembershipStatusRejected  = "3"
+	TenantMembershipStatusRequested = "4"
+	TenantMembershipStatusLeft      = "5"
+)
+
 // UserTenant user tenant relationship model
 type UserTenant struct {
 	ID        string  `gorm:"column:id;primaryKey;size:32" json:"id"`

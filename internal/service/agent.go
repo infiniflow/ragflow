@@ -429,21 +429,22 @@ func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTempl
 
 // AgentItem is one entry in the list response.
 type AgentItem struct {
-	ID             string  `json:"id"`
-	Avatar         *string `json:"avatar,omitempty"`
-	Title          *string `json:"title,omitempty"`
-	Description    *string `json:"description,omitempty"`
-	Permission     string  `json:"permission"`
-	UserID         string  `json:"user_id"`
-	TenantID       string  `json:"tenant_id"`
-	Nickname       string  `json:"nickname"`
-	TenantAvatar   *string `json:"tenant_avatar,omitempty"`
-	Tags           string  `json:"tags"`
-	CanvasType     *string `json:"canvas_type,omitempty"`
-	CanvasCategory string  `json:"canvas_category"`
-	CreateTime     *int64  `json:"create_time,omitempty"`
-	UpdateTime     *int64  `json:"update_time,omitempty"`
-	ReleaseTime    *int64  `json:"release_time,omitempty"`
+	ID                 string  `json:"id"`
+	Avatar             *string `json:"avatar,omitempty"`
+	Title              *string `json:"title,omitempty"`
+	Description        *string `json:"description,omitempty"`
+	Permission         string  `json:"permission"`
+	UserID             string  `json:"user_id"`
+	TenantID           string  `json:"tenant_id"`
+	Nickname           string  `json:"nickname"`
+	TenantAvatar       *string `json:"tenant_avatar,omitempty"`
+	Tags               string  `json:"tags"`
+	CanvasType         *string `json:"canvas_type,omitempty"`
+	CanvasCategory     string  `json:"canvas_category"`
+	OperatorPermission int32   `json:"operator_permission,omitempty"`
+	CreateTime         *int64  `json:"create_time,omitempty"`
+	UpdateTime         *int64  `json:"update_time,omitempty"`
+	ReleaseTime        *int64  `json:"release_time,omitempty"`
 	// Type discriminates agent vs compilation-template-group items in the merged
 	// /agents response. It is set only for merged items (agent => "agent").
 	Type string `json:"type,omitempty"`
@@ -576,20 +577,21 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 		nickname = c.TenantID
 	}
 	return &AgentItem{
-		ID:             c.ID,
-		Avatar:         c.Avatar,
-		Title:          c.Title,
-		Description:    c.Description,
-		Permission:     c.Permission,
-		UserID:         c.UserID,
-		TenantID:       c.TenantID,
-		Nickname:       nickname,
-		TenantAvatar:   c.TenantAvatar,
-		CanvasType:     c.CanvasType,
-		CanvasCategory: c.CanvasCategory,
-		Tags:           c.Tags,
-		CreateTime:     c.CreateTime,
-		UpdateTime:     c.UpdateTime,
+		ID:                 c.ID,
+		Avatar:             c.Avatar,
+		Title:              c.Title,
+		Description:        c.Description,
+		Permission:         c.Permission,
+		UserID:             c.UserID,
+		TenantID:           c.TenantID,
+		Nickname:           nickname,
+		TenantAvatar:       c.TenantAvatar,
+		CanvasType:         c.CanvasType,
+		CanvasCategory:     c.CanvasCategory,
+		OperatorPermission: c.OperatorPermission,
+		Tags:               c.Tags,
+		CreateTime:         c.CreateTime,
+		UpdateTime:         c.UpdateTime,
 	}
 }
 
@@ -664,6 +666,14 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 
 	agentItems := make([]*AgentItem, len(canvases))
 	for i, c := range canvases {
+		access, accessErr := checker.ResolveAccess(ctx, subject, permission.ResourceRef{
+			Kind: permission.ResourceKindCanvas,
+			ID:   c.ID,
+		})
+		if accessErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf("resolve agent permissions: %w", accessErr)
+		}
+		c.OperatorPermission = access.PermissionMask
 		agentItems[i] = toAgentItem(c)
 	}
 	s.attachReleaseTimes(ctx, agentItems)
@@ -925,6 +935,11 @@ func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *Crea
 		code, permissionErr := permissionresponse.Normalize(permission.ErrUnauthenticated)
 		return nil, code, permissionErr
 	}
+	tenantID, err := prepareAgentCreation(ctx, userID)
+	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
 	if req == nil {
 		return nil, common.CodeArgumentError, errors.New("create agent: nil request")
 	}
@@ -966,6 +981,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *Crea
 	row := &entity.UserCanvas{
 		ID:             common.GenerateUUID(),
 		UserID:         userID,
+		TenantID:       &tenantID,
 		Title:          req.Title,
 		Description:    req.Description,
 		Permission:     req.Permission,
@@ -973,7 +989,14 @@ func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *Crea
 		CanvasCategory: req.CanvasCategory,
 		DSL:            req.DSL,
 	}
-	if err := s.canvasDAO.Create(ctx, dao.DB, row); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.canvasDAO.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{
+			UserID: userID, TenantID: tenantID,
+		}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: row.ID})
+	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 		}
@@ -1057,7 +1080,19 @@ func (s *AgentService) loadCanvasForUser(ctx context.Context, userID, canvasID s
 // Returns dao.ErrUserCanvasNotFound (not 403) when the canvas is missing
 // or belongs to another user.
 func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*entity.UserCanvas, error) {
-	return s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead)
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	canvasInstance.OperatorPermission = access.PermissionMask
+	return canvasInstance, nil
 }
 
 // GetLastPublishTime returns the update_time of the most recently updated
@@ -1162,7 +1197,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := component.ValidateDynamicEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := validateAgentChatModels(ctx, userID, ownerUserID, dslMap); err != nil {
+		if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap); err != nil {
 			return err
 		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
@@ -1460,7 +1495,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if err != nil {
 		return nil, err
 	}
-	agentTenantID := canvasRow.UserID
+	agentTenantID := canvasRow.EffectiveTenantID()
 	newSession := sessionID == ""
 	if sessionID == "" {
 		sessionID = common.GenerateToken()
@@ -1796,10 +1831,8 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
 		root["webhook_payload"] = payload
 	}
-	// Runtime model and resource lookup uses the tenant that owns the canvas.
-	// For user_canvas, that tenant ID is stored in user_id (and exposed as
-	// tenant_id by the Agent API). Keep the actual runner separately in
-	// root["user_id"] for caller-scoped permission checks and conversation data.
+	// Runtime resources use the canvas tenant; root["user_id"] retains the
+	// authenticated runner for caller-scoped permission checks and conversation data.
 	root["tenant_id"] = agentTenantID
 
 	// Preserve the historical RunTracker tenant dimension separately from
