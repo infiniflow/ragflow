@@ -216,7 +216,7 @@ func (s *CompilationTemplateGovernanceService) ReviewAssertionQueue(ctx context.
 		return queue, nil
 	}
 
-	counts, err := reviewCounts(ctx, in.TenantID, datasetIDs)
+	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +231,12 @@ func (s *CompilationTemplateGovernanceService) ReviewAssertionQueue(ctx context.
 		queue.Truncated = true
 	}
 
-	baseFilter := map[string]interface{}{}
+	// The model is a template, and one dataset can be compiled by several of
+	// them: without the template pin the queue would list another model's rows
+	// and a reviewer would be asked to judge assertions this model never made.
+	baseFilter := map[string]interface{}{
+		"compilation_template_ids": []string{template.ID},
+	}
 	applyReviewStatusFilter(baseFilter, status)
 	if class := strings.TrimSpace(in.Class); class != "" {
 		baseFilter["entity_type_kwd"] = []string{class}
@@ -448,7 +453,7 @@ func (s *CompilationTemplateGovernanceService) DecideAssertions(ctx context.Cont
 		result.Updated += len(applicable)
 	}
 
-	counts, err := reviewCounts(ctx, in.TenantID, datasetIDs)
+	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -489,7 +494,11 @@ func reviewScopeDatasets(ctx context.Context, db *gorm.DB, tenantID string, temp
 // reviewCounts counts the three buckets with one query each. Counting is done
 // per bucket instead of deriving "unreviewed = total - decided" so a row whose
 // status was written as an unknown value cannot silently land in the queue.
-func reviewCounts(ctx context.Context, tenantID string, datasetIDs []string) (ModelAssertionReviewCounts, error) {
+//
+// The counts carry the same template pin the queue applies: the headline numbers
+// describe this model's progress, and a dataset shared with another model would
+// otherwise make the total exceed the page's own item count.
+func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs []string) (ModelAssertionReviewCounts, error) {
 	counts := ModelAssertionReviewCounts{}
 	for _, bucket := range []struct {
 		status AssertionReviewStatus
@@ -499,7 +508,10 @@ func reviewCounts(ctx context.Context, tenantID string, datasetIDs []string) (Mo
 		{AssertionReviewAccepted, &counts.Accepted},
 		{AssertionReviewRejected, &counts.Rejected},
 	} {
-		filter := map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}
+		filter := map[string]interface{}{
+			"compilation_template_ids": []string{templateID},
+			"knowledge_graph_kwd":      []string{"entity", "relation"},
+		}
 		applyReviewStatusFilter(filter, bucket.status)
 		_, total, err := reviewSearch(ctx, tenantID, datasetIDs, []string{"id"}, filter, nil, 0, 1)
 		if err != nil {

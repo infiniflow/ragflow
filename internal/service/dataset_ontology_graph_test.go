@@ -585,3 +585,28 @@ func TestAttrValuesAcceptsBothEngineShapes(t *testing.T) {
 		t.Fatalf("malformed = %v, want nil", got)
 	}
 }
+
+// The count scan has to select the bucket the same way GetDatasetStructure does:
+// by the persisted compile kind, not by the template kind column. A row whose two
+// kind columns disagree (an older write, or a template whose kind differs from
+// the compile kind) would otherwise be counted in the panel and missing from the
+// graph it describes.
+func TestDatasetBucketFilterUsesCompileKind(t *testing.T) {
+	filter := datasetBucketFilter("knowledge_graph", "tpl-1")
+
+	kinds, ok := filter["compile_kwd"].([]string)
+	if !ok || len(kinds) != 1 || kinds[0] != "graph" {
+		t.Fatalf("compile_kwd = %v, want the canonical graph kind", filter["compile_kwd"])
+	}
+	if _, present := filter["compilation_template_kind_kwd"]; present {
+		t.Fatalf("filter = %#v, the count scan must not select on the template kind", filter)
+	}
+	scopes, ok := filter["scope_kwd"].([]string)
+	if !ok || len(scopes) != 1 || scopes[0] != "dataset" {
+		t.Fatalf("scope_kwd = %v, want the dataset scope kept", filter["scope_kwd"])
+	}
+	templates, ok := filter["compilation_template_ids"].([]string)
+	if !ok || len(templates) != 1 || templates[0] != "tpl-1" {
+		t.Fatalf("compilation_template_ids = %v, want the template pin kept", filter["compilation_template_ids"])
+	}
+}

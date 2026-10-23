@@ -598,7 +598,10 @@ func TestOntologyABoxRetrievalReportsUnknownCoverage(t *testing.T) {
 
 // Skipping pending assertions is an explicit request, and it has to follow the
 // rows into the search rather than be filtered afterwards: the page is bounded,
-// so a post-filter would return fewer rows than it carried.
+// so a post-filter would return fewer rows than it carried. The condition is the
+// accepted status, not the absence of the unreviewed one — a rejected assertion
+// is also one nobody should read, and a row with no status column at all is
+// unreviewed.
 func TestOntologyABoxRetrievalExcludesUnreviewedWhenAsked(t *testing.T) {
 	svc := newOntologyTestService(guildScope(),
 		&fakeOntologyModel{declared: guildOntology(), ref: OntologyModelRef{ID: "tpl-1"}},
@@ -611,13 +614,16 @@ func TestOntologyABoxRetrievalExcludesUnreviewedWhenAsked(t *testing.T) {
 	if _, err := svc.svc.Retrieve(context.Background(), req); err != nil {
 		t.Fatalf("retrieve: %v", err)
 	}
-	mustNot, ok := svc.searcher.calls[0].Filter["must_not"].(map[string]interface{})
+	must, ok := svc.searcher.calls[0].Filter["must"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("filter = %#v, want the unreviewed rows excluded in the request", svc.searcher.calls[0].Filter)
+		t.Fatalf("filter = %#v, want the accepted rows required in the request", svc.searcher.calls[0].Filter)
 	}
-	statuses, _ := mustNot["review_status_kwd"].([]string)
-	if len(statuses) != 1 || statuses[0] != string(AssertionReviewUnreviewed) {
-		t.Fatalf("must_not = %#v, want the unreviewed status excluded", mustNot)
+	statuses, _ := must["review_status_kwd"].([]string)
+	if len(statuses) != 1 || statuses[0] != string(AssertionReviewAccepted) {
+		t.Fatalf("must = %#v, want only the accepted status selectable", must)
+	}
+	if _, excluded := svc.searcher.calls[0].Filter["must_not"]; excluded {
+		t.Fatalf("filter = %#v, want the accepted selection, not an exclusion list", svc.searcher.calls[0].Filter)
 	}
 }
 

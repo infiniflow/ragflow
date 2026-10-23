@@ -10,6 +10,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -1661,6 +1662,96 @@ func TestBuildHypergraphSkippedWithoutOntology(t *testing.T) {
 		}
 		if len(rows) != 0 {
 			t.Fatalf("%s: wrote %d rows, want 0", name, len(rows))
+		}
+	}
+}
+
+// The draft budget is shared by the whole document, so an earlier root that
+// spends it stops the descent before the later roots are walked at all. A
+// per-root budget would multiply with the root count and bound nothing.
+func TestFlattenSharesBudgetAcrossRoots(t *testing.T) {
+	idx := buildHypergraphIndex([]common.Product{
+		entityRow("Ada Lovelace", "person", nil),
+		entityRow("Grace Hopper", "person", nil),
+		entityRow("London", "place", nil),
+		entityRow("Paris", "place", nil),
+		{Meta: map[string]any{"kind": "relation", "from": "Ada Lovelace", "to": "London", "relation_type": "born_in"}},
+		{Meta: map[string]any{"kind": "relation", "from": "Grace Hopper", "to": "Paris", "relation_type": "born_in"}},
+	}, ontologyParserConfig())
+	if idx == nil {
+		t.Fatal("no hypergraph index for the ontology template")
+	}
+
+	tr := idx.flattenDrafts(2)
+	if len(tr.drafts) != 2 || !tr.truncated {
+		t.Fatalf("drafts = %d truncated = %v, want 2 / true", len(tr.drafts), tr.truncated)
+	}
+	for _, d := range tr.drafts {
+		if d.rootName == "Grace Hopper" {
+			t.Fatalf("the second root was walked after the budget was spent: %v", tr.drafts)
+		}
+	}
+
+	// Under a budget wide enough for the whole document nothing is reported as
+	// cut: the flag must not fire merely because a root reached the limit exactly.
+	full := idx.flattenDrafts(hyperedgeMaxDrafts)
+	if full.truncated {
+		t.Fatalf("small graph reported as truncated (%d drafts)", len(full.drafts))
+	}
+	if len(full.drafts) != 4 {
+		t.Fatalf("drafts = %d, want 4 (two roots x two blocks each)", len(full.drafts))
+	}
+}
+
+// A cut traversal is announced on the progress channel: an operator who sees a
+// partial hypergraph with no message has no way to tell it from a complete one.
+func TestBuildHypergraphReportsBudgetTruncation(t *testing.T) {
+	// One root with more targets than the budget allows, so the cut is reached
+	// inside a single root's descent.
+	const targets = hyperedgeMaxDrafts + 1
+	prods := make([]common.Product, 0, targets+1)
+	prods = append(prods, entityRow("Ada Lovelace", "person", nil))
+	for i := 0; i < targets; i++ {
+		name := fmt.Sprintf("Place %d", i)
+		prods = append(prods, entityRow(name, "place", nil))
+		prods = append(prods, common.Product{Meta: map[string]any{
+			"kind": "relation", "from": "Ada Lovelace", "to": name, "relation_type": "born_in",
+		}})
+	}
+
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(context.Background(), func(component, message string) {
+		if component != "Compiler" {
+			t.Errorf("progress component = %q, want Compiler", component)
+		}
+		messages = append(messages, message)
+	})
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	rows, err := buildHypergraph(ctx, common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, prods)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hyperedges := 0
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind == "hyperedge" {
+			hyperedges++
+		}
+	}
+	if hyperedges != hyperedgeMaxDrafts {
+		t.Fatalf("hyperedges = %d, want the %d-block budget", hyperedges, hyperedgeMaxDrafts)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("progress messages = %v, want exactly one truncation notice", messages)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("%d blocks", hyperedgeMaxDrafts),
+		"d1",
+		fmt.Sprintf("%d-block budget", hyperedgeMaxDrafts),
+		"not walked",
+	} {
+		if !strings.Contains(messages[0], want) {
+			t.Errorf("truncation notice %q missing %q", messages[0], want)
 		}
 	}
 }

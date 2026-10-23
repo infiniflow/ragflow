@@ -745,9 +745,17 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 		for _, row := range res.Chunks {
 			identity := structureRowIdentity(row)
 			idx, ok := byIdentity[identity]
-			if !ok && structureRowClassless(row) {
-				if nameIdentity := structureRowNameIdentity(row); !nameIdentityAmbiguous[nameIdentity] {
-					idx, ok = byNameIdentity[nameIdentity]
+			if !ok {
+				// The name-level fallback covers the two directions a class can be
+				// missing: the stored row carries none (written before classes were
+				// part of the identity) or this batch could not resolve one
+				// (its endpoint entity was compiled in an earlier pass). Both mean
+				// one side has no class to disagree about; a row and a bucket that
+				// each state a different class must never be folded together.
+				nameIdentity := structureRowNameIdentity(row)
+				if candidate, seen := byNameIdentity[nameIdentity]; seen && !nameIdentityAmbiguous[nameIdentity] &&
+					(structureRowClassless(row) || structureBucketClassless(buckets[candidate])) {
+					idx, ok = candidate, true
 				}
 			}
 			if !ok {
@@ -903,6 +911,17 @@ func structureRowNameIdentity(row map[string]interface{}) string {
 		name = structureString(payload["name"])
 	}
 	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name)
+}
+
+// structureBucketClassless reports whether an incoming bucket states no class at
+// all. Only such a bucket may adopt a stored row that does state one: the classes
+// the row carries are then copied into the bucket (see the endpoint-class copy in
+// mergeExistingStructureBuckets), so the row that replaces it keeps them.
+func structureBucketClassless(bucket StructureBucket) bool {
+	if bucket.FromEntity != "" || bucket.ToEntity != "" {
+		return structureEntityTypeKey(bucket.FromType) == "" && structureEntityTypeKey(bucket.ToType) == ""
+	}
+	return structureEntityTypeKey(bucket.Type) == ""
 }
 
 // structureRowClassless reports whether a stored row carries no class at all.

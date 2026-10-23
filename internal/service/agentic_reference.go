@@ -152,9 +152,15 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 // kb_id / img_id / position_int) so chunksFormat can normalize it. The index is
 // the chat's OWNING tenant's - the same scoping the agent's retrieval tools
 // use.
+//
+// An empty dataset scope resolves nothing. kb_id is what confines the lookup to
+// the datasets the answer was allowed to read, and an absent kb_id term drops
+// out of the engine query, so looking up an id without a scope would resolve a
+// chunk from any dataset in the tenant — the one outcome a citation must never
+// produce.
 func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
 	de := engine.Get()
-	if de == nil || len(ids) == 0 {
+	if de == nil || len(ids) == 0 || len(datasetIDs) == 0 {
 		return nil
 	}
 	req := &enginetypes.SearchRequest{

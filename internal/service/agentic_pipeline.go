@@ -100,22 +100,32 @@ func (s *ChatPipelineService) agenticRag(
 	// wins and is still validated strictly, so a bad id from a direct API
 	// caller fails loudly rather than silently running a different agent.
 	//
-	// AsyncChat only dispatches here with a non-empty KB scope, so the
-	// citation lookup below is always kb_id-bounded.
+	// AsyncChat dispatches here with a KB scope or, for a dialog with none, with
+	// a bound knowledge layer. The citation lookup is kb_id-bounded in both
+	// cases: the conversation's own datasets when it has any, the binding's
+	// knowledge datasets otherwise (see referenceDatasets below). An
+	// unconfigured turn is never dispatched here, so the lookup is never left
+	// without a scope.
 	// The template was resolved once above and travels into the run, so the id
 	// that selects the knowledge binding is the same id the run executes.
 	mode := tmpl.ID
 	// The knowledge layer's binding for this turn, resolved once from the three
-	// layers that may declare it (request → template → assistant). Nil means the
+	// layers that may declare it (request → assistant → template). Nil means the
 	// turn runs exactly as it would without the feature.
 	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, mode)
-	// The datasets this answer's citations are looked up in. The knowledge scope
-	// is deliberately NOT added: it is a different dataset set and references
-	// resolve by chunk, so an assertion compiled from this conversation's own
-	// documents resolves through the documents' dataset, while one from a
-	// knowledge library that brought its own documents is reported unresolvable
-	// instead of being resolved behind the conversation's back.
+	// The datasets this answer's citations are looked up in. It starts as the
+	// conversation's own datasets. Only when the dialog has none — an
+	// ontology-only turn, which answers from a knowledge library — does the
+	// binding's knowledge scope take its place, so an assertion's cited chunks
+	// still resolve against the dataset they were compiled from.
+	//
+	// The two scopes are never merged: references resolve by chunk id, so a
+	// lookup spanning both would let a knowledge-library chunk answer a citation
+	// the conversation's own documents were supposed to explain (and the reverse).
 	referenceDatasets := chatDatasetIDs(chat)
+	if len(referenceDatasets) == 0 && ontology != nil {
+		referenceDatasets = ontology.KnowledgeDatasetIDs
+	}
 
 	go func() {
 		defer close(out)

@@ -1352,10 +1352,17 @@ func documentBucketFilter(documentID, templateID string) map[string]interface{} 
 
 // datasetBucketFilter scopes an ontology count scan to one dataset-scope
 // template bucket.
+//
+// The kind predicate is compile_kwd, not compilation_template_kind_kwd: that is
+// the column GetDatasetStructure reads the same bucket with, and the two scans
+// have to agree on which rows belong to the bucket — a kind recorded only on the
+// template columns (a row written before the kind was stamped, or one whose
+// template kind differs from its compile kind) would otherwise be counted here
+// and refused there.
 func datasetBucketFilter(resolvedKind, templateID string) map[string]interface{} {
 	filter := map[string]interface{}{"scope_kwd": []string{"dataset"}}
 	if resolvedKind != "" {
-		filter["compilation_template_kind_kwd"] = []string{resolvedKind}
+		filter["compile_kwd"] = []string{types.CanonicalCompilationKind(resolvedKind)}
 	}
 	if templateID != "" {
 		filter["compilation_template_ids"] = []string{templateID}

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -43,9 +44,48 @@ const (
 	// B part_of A) from expanding forever.
 	hypernodeMaxDepth = 8
 
+	// hyperedgeMaxDrafts bounds how many flattened blocks one document may
+	// contribute. The depth bound alone does not bound the work: flatten emits one
+	// draft per visited entity, and a wide graph multiplies breadth by depth, so a
+	// document with a few hundred connected entities can produce tens of thousands
+	// of drafts — each becoming a row, two hypernode rows and an embedding input.
+	// The budget is global to the document, so it also bounds the sum over roots.
+	hyperedgeMaxDrafts = 2000
+
 	hypernodeKeyRole   = "key"
 	hypernodeValueRole = "value"
 )
+
+// hypergraphTraversal accumulates one document's drafts under a shared budget.
+// The budget lives here rather than in flatten's arguments because it has to hold
+// across roots: a per-root bound would multiply with the root count.
+type hypergraphTraversal struct {
+	limit     int
+	drafts    []hyperedgeDraft
+	truncated bool
+}
+
+// add records one draft, reporting false once the budget is spent. The caller
+// stops without descending further, so a truncated traversal costs no more than
+// the drafts it kept.
+func (t *hypergraphTraversal) add(draft hyperedgeDraft) bool {
+	if len(t.drafts) >= t.limit {
+		t.truncated = true
+		return false
+	}
+	t.drafts = append(t.drafts, draft)
+	return true
+}
+
+// full reports whether the budget is spent. It marks the traversal truncated,
+// because a spent budget means something was left unvisited.
+func (t *hypergraphTraversal) full() bool {
+	if len(t.drafts) < t.limit {
+		return false
+	}
+	t.truncated = true
+	return true
+}
 
 // hypernodeFact is one (path, value) pair of a flattened factual block.
 type hypernodeFact struct {
@@ -287,20 +327,31 @@ func (idx *hypergraphIndex) ownFacts(key, prefix string) []hypernodeFact {
 //
 // seen is per-path, so a diamond (two properties reaching the same entity) still
 // yields both paths while a cycle stops at the repeat instead of recursing.
-func (idx *hypergraphIndex) flatten(root string, facts []hypernodeFact, prefix string, depth int, seen map[string]bool, out *[]hyperedgeDraft) {
+//
+// The traversal stops as soon as the shared budget is spent (see
+// hypergraphTraversal), which bounds the whole document rather than one branch.
+func (idx *hypergraphIndex) flatten(root string, facts []hypernodeFact, prefix string, depth int, seen map[string]bool, out *hypergraphTraversal) {
+	if out.full() {
+		return
+	}
 	cur := append(append([]hypernodeFact{}, facts...), idx.ownFacts(root, prefix)...)
-	*out = append(*out, hyperedgeDraft{
+	if !out.add(hyperedgeDraft{
 		rootName:  idx.nameOf[root],
 		rootClass: idx.classOf[root],
 		depth:     depth,
 		facts:     cur,
-	})
+	}) {
+		return
+	}
 	if depth >= hypernodeMaxDepth {
 		return
 	}
 	for _, e := range idx.outEdges[root] {
 		if seen[e.target] {
 			continue
+		}
+		if out.full() {
+			return
 		}
 		// The traversal segment becomes a path prefix for everything the target
 		// contributes: <class>:<property>. — the term's class and the property
@@ -314,6 +365,20 @@ func (idx *hypergraphIndex) flatten(root string, facts []hypernodeFact, prefix s
 		next[e.target] = true
 		idx.flatten(e.target, cur, childPrefix, depth+1, next, out)
 	}
+}
+
+// flattenDrafts walks every root under one budget shared by the whole document,
+// so a wide first root cannot leave the later roots with a fresh allowance.
+func (idx *hypergraphIndex) flattenDrafts(limit int) *hypergraphTraversal {
+	t := &hypergraphTraversal{limit: limit}
+	for _, root := range idx.roots() {
+		// The budget is shared, so a root is skipped once an earlier one spent it.
+		if t.full() {
+			break
+		}
+		idx.flatten(root, nil, "", 0, map[string]bool{root: true}, t)
+	}
+	return t
 }
 
 // hyperedgePayload renders one draft as OG-RAG's dictionary form. Keys are the
@@ -346,9 +411,15 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 		return nil, nil
 	}
 
-	var drafts []hyperedgeDraft
-	for _, root := range idx.roots() {
-		idx.flatten(root, nil, "", 0, map[string]bool{root: true}, &drafts)
+	traversal := idx.flattenDrafts(hyperedgeMaxDrafts)
+	drafts := traversal.drafts
+	if traversal.truncated {
+		// Silent truncation reads as a complete graph, so the cut is reported where
+		// an operator already watches progress: the document's output is partial,
+		// and the fix is a narrower ontology rather than a longer ingest.
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+			"hypergraph staged %d blocks for doc %s and stopped at the %d-block budget; the remaining roots were not walked",
+			len(drafts), cfg.DocID, hyperedgeMaxDrafts))
 	}
 	if len(drafts) == 0 {
 		return nil, nil

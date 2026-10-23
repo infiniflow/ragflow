@@ -276,15 +276,16 @@ func (s *ChatPipelineService) AsyncChat(
 	// scope, and an empty scope drops that term from the ES query
 	// (buildBoolQueryFromCondition), which would let a cited chunk resolve out
 	// of any KB in the tenant. Falling through keeps an empty scope unreachable
-	// instead of trusting every citation path to defend itself; grep_chunks
-	// already refuses an empty scope, and this keeps fetchChunksByIDs from
-	// disagreeing with it.
+	// instead of trusting every citation path to defend itself; grep_chunks and
+	// fetchChunksByIDs each refuse an empty scope for the same reason.
 	//
 	// The bound knowledge layer is the second thing that makes a turn
 	// agentic-eligible, because a turn with a knowledge layer and no documents
-	// has exactly one way to be answered: the agent, answering from the
-	// compiled assertions. Its citations are scoped to the knowledge datasets,
-	// so the reference lookup still runs with a non-empty scope.
+	// has exactly one way to be answered: the agent, answering from the compiled
+	// assertions. Its citations are scoped to the knowledge datasets: the
+	// reference lookup starts from the conversation's datasets and falls back to
+	// the binding's when there are none, so an ontology-only turn still resolves
+	// against the chunks its assertions were compiled from.
 	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, agenticTemplateIDFor(kwargs))
 	_, agenticSelected := kwargs["agent_mode"].(string)
 	if !agenticSelected {

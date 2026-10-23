@@ -50,10 +50,13 @@ type ontologyBindingPayload struct {
 
 // OntologyBindingFor resolves this turn's knowledge-layer binding.
 //
-// Precedence is request → template → assistant, most specific first. A request
-// that names a model is a caller overriding both defaults for one question; a
-// template's declaration is the deployment's choice of what this agent should
-// read; the assistant's setting is what the person using it chose.
+// Precedence is request → assistant → template, most specific first. A request
+// that names a model is a caller overriding both defaults for one question; the
+// assistant's setting is what the person using it chose, and it can say no; a
+// template's declaration is the deployment's choice of what this agent reads by
+// default. The assistant therefore has to be read before the template: a
+// template that enables the layer for every user of that agent must not override
+// the assistant whose owner switched it off.
 //
 // The resolved binding is complete or it is nothing. A model without a
 // knowledge scope has nowhere to look and a scope without a model has no
@@ -64,11 +67,11 @@ func OntologyBindingFor(kwargs map[string]interface{}, promptConfig entity.JSONM
 	if payload, ok := ontologyBindingPayloadFrom(kwargs[ontologyBindingKey]); ok {
 		return payload.toRunConfig()
 	}
-	if fromTemplate := agentic_rag.TemplateOntologyFor(templateID); fromTemplate != nil {
-		return fromTemplate
-	}
 	if payload, ok := ontologyBindingPayloadFrom(promptConfig[ontologyBindingKey]); ok {
 		return payload.toRunConfig()
+	}
+	if fromTemplate := agentic_rag.TemplateOntologyFor(templateID); fromTemplate != nil {
+		return fromTemplate
 	}
 	return nil
 }

@@ -463,6 +463,67 @@ func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
 	}
 }
 
+// A stored row that states its endpoint classes must still be found by a batch
+// that could not resolve them (its endpoint entity was compiled in an earlier
+// pass). The class copy then fills the bucket from the row, the recomputed id
+// supersedes the old one, and the single row that remains carries the classes
+// the stored row already had — without them the relation drops off the ontology
+// graph on every partial rewrite.
+func TestWriteMergedStructureKeepsStoredClassesForClasslessBucket(t *testing.T) {
+	oldID := "dataset_structure_old_relation"
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{{
+		"id":                            oldID,
+		"compile_kwd":                   "hypergraph",
+		"compilation_template_ids":      []string{"tpl1"},
+		"compilation_template_kind_kwd": "knowledge_graph",
+		"knowledge_graph_kwd":           "relation",
+		"from_entity_kwd":               "acme corp",
+		"to_entity_kwd":                 "beta ltd",
+		"from_type_kwd":                 "organization",
+		"to_type_kwd":                   "organization",
+		"content_with_weight":           `{"type":"supplies","from":"Acme Corp","to":"Beta Ltd","description":"existing"}`,
+		"source_doc_ids":                []string{"d1"},
+	}}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name:         "Acme Corp -> Beta Ltd",
+		Type:         "relation",
+		FromEntity:   "Acme Corp",
+		ToEntity:     "Beta Ltd",
+		RelationType: "supplies",
+		Description:  "recompiled",
+		CompileKwd:   "hypergraph",
+		TemplateID:   "tpl1",
+		TemplateKind: "knowledge_graph",
+	}})
+	if err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	var relations []map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "relation" {
+			relations = append(relations, row)
+		}
+	}
+	if len(relations) != 1 {
+		t.Fatalf("inserted %d relation rows, want exactly 1: %+v", len(relations), eng.insertedChunks)
+	}
+	row := relations[0]
+	if row["from_type_kwd"] != "organization" || row["to_type_kwd"] != "organization" {
+		t.Fatalf("endpoint classes = %v/%v, want the stored organization/organization",
+			row["from_type_kwd"], row["to_type_kwd"])
+	}
+	// The superseded row is deleted, not left beside the new one: the two ids
+	// describe the same assertion.
+	if eng.lastDeleteCond == nil {
+		t.Fatal("the superseded relation row was not deleted")
+	}
+	deleted := firstStringSlice(eng.lastDeleteCond["id"])
+	if len(deleted) != 1 || deleted[0] != oldID {
+		t.Fatalf("deleted ids = %v, want the stored row only", deleted)
+	}
+}
+
 // TestDeleteMergedScopesToMergedWikiRows locks the W1 contract: DeleteMerged
 // must only target dataset-level (available_int=1) wiki merged rows. The
 // structural filter (kb_id + available_int + wiki page/section compile_kwd) is

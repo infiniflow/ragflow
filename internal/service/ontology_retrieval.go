@@ -413,13 +413,20 @@ func (s *OntologyABoxRetrievalService) searchOntologyRows(
 	})
 }
 
-// ontologyFilterWithSkip adds the skip-unreviewed condition, if asked for.
+// ontologyFilterWithSkip keeps only accepted assertions, if asked for.
+//
+// It selects the accepted status rather than excluding the unreviewed one: a
+// rejected assertion is one a reviewer refused, so it must not surface either,
+// and a row with no status column at all (compiled before review existed) is
+// unreviewed by the same rule the review queue counts by. Filtering on the one
+// state the caller asked for is also the only form that stays correct when a
+// status value is written by a client the compiler does not know about.
 func ontologyFilterWithSkip(filter map[string]interface{}, skip bool) map[string]interface{} {
 	if !skip {
 		return filter
 	}
-	return withOntologyFilter(filter, "must_not", map[string]interface{}{
-		"review_status_kwd": []string{string(AssertionReviewUnreviewed)},
+	return withOntologyFilter(filter, "must", map[string]interface{}{
+		"review_status_kwd": []string{string(AssertionReviewAccepted)},
 	})
 }
 

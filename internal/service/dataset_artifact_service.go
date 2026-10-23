@@ -947,12 +947,17 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	if docEngine == nil {
 		return 0, fmt.Errorf("document engine is not initialized")
 	}
-	// The structure compiler stores its output as entity and relation rows only
-	// — knowledge_graph_kwd="graph" stopped being a storage row — so those two
-	// kinds are the document's whole structure graph.
+	// The structure compiler stores its output in five row kinds: the model's
+	// entity and relation rows, the assertion rows the declared domain/range
+	// rejected (dropped_relation, kept so the feedback loop can see them), and
+	// the two families the ontology layer derives from the settled rows
+	// (hyperedge blocks and their hypernode slots). All five carry the document
+	// id, so all five belong to the document's structure graph; leaving the
+	// derived kinds behind would leave a graph that no longer matches the
+	// document it claims to describe.
 	filter := map[string]interface{}{
 		"doc_id":              []string{documentID},
-		"knowledge_graph_kwd": []string{"entity", "relation"},
+		"knowledge_graph_kwd": []string{"entity", "relation", "dropped_relation", "hyperedge", "hypernode"},
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
 	if err != nil {
