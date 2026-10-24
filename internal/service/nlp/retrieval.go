@@ -305,6 +305,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
 			resultChunk["compile_kwd"] = kind
 		}
+		if ids := firstStringSlice(chunk["source_doc_ids"]); len(ids) > 0 {
+			resultChunk["source_doc_ids"] = ids
+		}
 		if v, ok := chunk["important_kwd"]; ok {
 			resultChunk["important_kwd"] = v
 		}
@@ -727,7 +730,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
-		"compile_kwd", "scope_kwd",
+		"compile_kwd", "scope_kwd", "source_doc_ids",
 		"_score",
 	}
 
