@@ -107,15 +107,15 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 
-	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+	if !resultMD.Produced() || len(resultMD.JSON) == 0 {
 		t.Fatalf("resultMD=%+v", resultMD)
 	}
 }
@@ -151,7 +151,7 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Markdown != "selected" {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -175,14 +175,12 @@ func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
 	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		return &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "# Heading\n\nBody"}}}}}, "ocr-model", &modelModule.APIConfig{}, nil
 	}
-	for _, format := range []string{"json", "markdown", ""} {
-		result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{"output_format": format}, "model")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.OutputFormat != "json" || len(result.JSON) == 0 {
-			t.Fatalf("result=%+v", result)
-		}
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{}, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Produced() || len(result.JSON) == 0 {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
@@ -199,7 +197,7 @@ func TestDispatchPaddleOCRPDFRejectsMissingBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatalf("dispatchPaddleOCRPdf without page blocks: expected error, got result %+v", res)
 	}
-	if res.OutputFormat != "" || res.Markdown != "" {
+	if res.Produced() {
 		t.Errorf("expected zero-value result on error, got %+v", res)
 	}
 }
@@ -339,7 +337,7 @@ func TestDispatchPaddleOCRPDFPreservesLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "json" || len(result.JSON) != 7 {
+	if !result.Produced() || len(result.JSON) != 7 {
 		t.Fatalf("result=%+v", result)
 	}
 	if result.JSON[0].ToMap()["positions"] == nil || result.JSON[2].ToMap()["table"] == nil {

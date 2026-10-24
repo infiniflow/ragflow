@@ -1116,6 +1116,7 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 
 var modelIDStringColumns = map[string][]string{
 	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id", "scoring_id"},
+	"user_tenant":   {"scoring_id"},
 	"knowledgebase": {"embd_id"},
 	"dialog":        {"llm_id", "rerank_id", "decision_id"},
 	"memory":        {"embd_id", "llm_id"},

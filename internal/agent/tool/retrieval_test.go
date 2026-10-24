@@ -275,7 +275,6 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		"similarity_threshold":       0.42,
 		"rerank_id":                  "rerank@provider",
 		"cross_languages":            []any{"English", "Chinese"},
-		"toc_enhance":                true,
 		"meta_data_filter":           map[string]any{"method": "manual"},
 	})
 	if err != nil {
@@ -313,7 +312,7 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if len(svc.req.CrossLanguages) != 2 || svc.req.CrossLanguages[1] != "Chinese" {
 		t.Fatalf("CrossLanguages=%#v", svc.req.CrossLanguages)
 	}
-	if !svc.req.TOCEnhance || svc.req.MetaDataFilter["method"] != "manual" {
+	if svc.req.MetaDataFilter["method"] != "manual" {
 		t.Fatalf("enhancement request=%#v", svc.req)
 	}
 }
@@ -349,7 +348,6 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 
 	built, err := BuildByName("retrieval", map[string]any{
 		"rerank_id":        "rerank-1",
-		"toc_enhance":      true,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"empty_response":   "empty",
 		"retrieval_from":   "dataset",
@@ -364,7 +362,7 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
-	if rt.defaults.RerankID != "rerank-1" || !rt.defaults.TOCEnhance {
+	if rt.defaults.RerankID != "rerank-1" {
 		t.Fatalf("enhancement defaults were not parsed: %#v", rt.defaults)
 	}
 	if len(rt.defaults.CrossLanguages) != 1 || rt.defaults.CrossLanguages[0] != "English" {

@@ -2,7 +2,6 @@ package dataset
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -57,76 +56,74 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 	if db == nil {
 		return st, common.CodeSuccess, nil
 	}
-	var row entity.KnowledgeCompileDataset
-	err := db.WithContext(ctx).
-		Where("dataset_id = ?", datasetID).
-		First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return st, common.CodeSuccess, nil // never compiled -> idle
-	}
-	if err != nil {
-		return st, common.CodeServerError, err
-	}
-	st.State = row.State
-	if st.State == "" {
-		st.State = entity.DatasetStateIdle
-	}
-	st.Error = row.ErrorMsg
-	st.Progress = row.Progress
-	st.CurrentPhase = row.CurrentPhase
-	st.ProgressMsg = row.ProgressMsg
-	if requestedKind != "" {
-		inflight, backlog := compilationStatusCounts(row.InflightDocIDs, row.BacklogDocIDs, normalizedKind)
-		if inflight == 0 && backlog == 0 && (row.InflightDocIDs != "" || row.BacklogDocIDs != "") {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row entity.KnowledgeCompileDataset
+		if err := tx.Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil // never compiled -> idle
+			}
+			return err
+		}
+		st.State = row.State
+		if st.State == "" {
+			st.State = entity.DatasetStateIdle
+		}
+		st.Error = row.ErrorMsg
+		st.Progress = row.Progress
+		st.CurrentPhase = row.CurrentPhase
+		st.ProgressMsg = row.ProgressMsg
+		var err error
+		st.Inflight, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
+		if err != nil {
+			return err
+		}
+		st.Backlog, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
+		if err != nil {
+			return err
+		}
+		if requestedKind != "" && st.Inflight == 0 && st.Backlog == 0 {
 			st.State = entity.DatasetStateIdle
 			st.Error = ""
 			st.Progress = 0
 			st.CurrentPhase = ""
 			st.ProgressMsg = ""
 		}
-		st.Inflight = inflight
-		st.Backlog = backlog
-	} else {
-		st.Inflight = jsonArrayLen(row.InflightDocIDs)
-		st.Backlog = jsonArrayLen(row.BacklogDocIDs)
+		st.LastCompletedAt = row.LastCompletedAt
+		st.UpdatedAt = row.UpdatedAt
+		return nil
+	})
+	if err != nil {
+		return CompilationStatus{}, common.CodeServerError, err
 	}
-	st.LastCompletedAt = row.LastCompletedAt
-	st.UpdatedAt = row.UpdatedAt
 	return st, common.CodeSuccess, nil
 }
 
-type compilationStatusEntry struct {
-	Variants  []string `json:"variants"`
-	TaskTypes []string `json:"task_types"`
-}
-
-func compilationStatusCounts(inflightJSON, backlogJSON, kind string) (int, int) {
-	return countCompilationStatusEntries(inflightJSON, kind), countCompilationStatusEntries(backlogJSON, kind)
-}
-
-func countCompilationStatusEntries(raw, kind string) int {
-	entries := parseCompilationStatusEntries(raw)
+func countCompilationStatusEntries(db *gorm.DB, table, datasetID, kind string) (int, error) {
+	query := db.Table(table).Where("dataset_id = ?", datasetID)
+	if kind == "" {
+		var count int64
+		err := query.Count(&count).Error
+		return int(count), err
+	}
+	rows, err := query.Select("variants", "task_types").Rows()
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
 	count := 0
-	for _, entry := range entries {
+	for rows.Next() {
+		var entry entity.KnowledgeCompileEntry
+		if err := db.ScanRows(rows, &entry); err != nil {
+			return 0, err
+		}
 		if compilationStatusEntryMatches(entry, kind) {
 			count++
 		}
 	}
-	return count
+	return count, rows.Err()
 }
 
-func parseCompilationStatusEntries(raw string) []compilationStatusEntry {
-	if raw == "" {
-		return nil
-	}
-	var entries []compilationStatusEntry
-	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
-		return nil
-	}
-	return entries
-}
-
-func compilationStatusEntryMatches(entry compilationStatusEntry, kind string) bool {
+func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind string) bool {
 	for _, taskType := range entry.TaskTypes {
 		if normalizeCompilationKind(taskType) == kind {
 			return true
@@ -168,19 +165,4 @@ func normalizeCompilationKind(kind string) string {
 	default:
 		return ""
 	}
-}
-
-// jsonArrayLen counts the top-level elements of a JSON array stored as TEXT.
-// The *_doc_ids columns hold a `[]BacklogEntry` array ({doc_id,event_type,seq}),
-// so each element is one scheduling entry (NOT a deduplicated doc). Empty or
-// malformed strings count as 0.
-func jsonArrayLen(s string) int {
-	if s == "" {
-		return 0
-	}
-	var arr []json.RawMessage
-	if err := json.Unmarshal([]byte(s), &arr); err != nil {
-		return 0
-	}
-	return len(arr)
 }

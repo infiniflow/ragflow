@@ -53,7 +53,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/python/`: legacy Python client SDK pending deletion.
-- `tools/scripts/download_dev_deps.py` and `ragflow_deps/download_deps.py`: Python downloaders for the Go build's dependencies. `download_dev_deps.py` pulls the native static libraries (pdfium, pdf_oxide, office_oxide, onnxruntime) that `build.sh` links; `download_deps.py` pulls the runtime resources (cl100k BPE table, DeepDoc models, embedding tokenizer assets) and installs the stagehand server into the SDK cache. Versions and URLs are defined inline in each downloader (`tools/scripts/download_dev_deps.py` for native static libraries, `ragflow_deps/download_deps.py` for runtime resources); the tokenizer assets are inlined as `TOKENIZER_ASSETS` in each downloader. Replace these with non-Python preparation before removing Python dependencies.
+- `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`: Python downloaders for the Go build's dependencies. `download_dev_deps.py` pulls the native static libraries (pdfium, pdf_oxide, office_oxide, onnxruntime) that `build.sh` links; `download_deps.py` pulls the runtime resources (cl100k BPE table, DeepDoc models, embedding tokenizer assets) and installs the stagehand server into the SDK cache. Versions and URLs are defined inline in each downloader (`tools/scripts/download_dev_deps.py` for native static libraries, `deps/download_deps.py` for runtime resources); the tokenizer assets are inlined as `TOKENIZER_ASSETS` in each downloader. Replace these with non-Python preparation before removing Python dependencies.
 - `test/`: contains Python tests, including tests that import the legacy Python implementation directly. Migrate needed coverage to Go tests or frontend tests, then remove the Python tests; keep only tests for supported code.
 
 ## Go-Specific Rules
@@ -129,7 +129,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries, Go DeepDoc models, tokenizer assets, and `ragflow_deps/cl100k_base.tiktoken` come from `tools/scripts/download_dev_deps.py` (native static libs) and `ragflow_deps/download_deps.py` (models, cl100k, tokenizer assets); run them with `uv run`. Build the Go resource image with `cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
+Native libraries, Go DeepDoc models, tokenizer assets, and `deps/cl100k_base.tiktoken` come from `tools/scripts/download_dev_deps.py` (native static libs) and `deps/download_deps.py` (models, cl100k, tokenizer assets); run them with `uv run`. Build the Go resource image with `cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
 
 ### Frontend
 ```bash

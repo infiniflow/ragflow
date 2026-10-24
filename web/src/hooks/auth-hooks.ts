@@ -15,7 +15,9 @@
  */
 
 import message from '@/components/ui/message';
-import authorizationUtil from '@/utils/authorization-util';
+import authorizationUtil, {
+  type CredentialStorage,
+} from '@/utils/authorization-util';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -58,13 +60,15 @@ export const useOAuthCallback = () => {
   return currentQueryParameters.get('auth');
 };
 
-export const useAuth = () => {
+export const useAuth = (
+  credentialStorage: CredentialStorage = authorizationUtil,
+) => {
   const auth = useOAuthCallback();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
-    setIsLogin(!!authorizationUtil.getAuthorization() || !!auth);
-  }, [auth]);
+    setIsLogin(!!credentialStorage.getAuthorization() || !!auth);
+  }, [auth, credentialStorage]);
 
   return { isLogin };
 };

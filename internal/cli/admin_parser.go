@@ -255,24 +255,6 @@ func (p *Parser) parseAdminListIngestors() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
-	p.nextToken() // consume Ingestion
-
-	if p.curToken.Type != TokenTasks {
-		return nil, fmt.Errorf("expected TASKS")
-	}
-	p.nextToken() // consume TASKS
-
-	cmd := NewCommand("list_admin_ingestion_tasks")
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
 // LIST PROVIDER 'provider_name' MODELS;
 func (p *Parser) parseAdminListProviderCommands() (*Command, error) {
 	p.nextToken() // consume PROVIDER
@@ -1242,69 +1224,17 @@ func (p *Parser) parseAdminCheckProviderInstance(providerName string) (*Command,
 	return cmd, nil
 }
 
-// STOP INGESTION TASKS 'task_id1 task_id2';
-func (p *Parser) parseAdminStopIngestionTasks() (*Command, error) {
+// STOP commands dispatch ingestion-specific parsing to the EE implementation.
+func (p *Parser) parseAdminStopCommands() (*Command, error) {
 	p.nextToken() // consume STOP
-
-	var cmd *Command
-
 	switch p.curToken.Type {
 	case TokenIngestion:
-		p.nextToken()
-		if p.curToken.Type != TokenTasks {
-			return nil, fmt.Errorf("expected TASKS")
-		}
-		p.nextToken() // consume TASK
-
-		taskString, err := p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-
-		tasks := strings.Split(taskString, " ")
-		p.nextToken() // consume TASK
-
-		cmd = NewCommand("admin_stop_ingestion_tasks")
-		cmd.Params["tasks"] = tasks
+		return p.parseAdminStopIngestionTasks()
 	case TokenUser:
 		return p.parseAdminStopUserCommand()
 	default:
 		return nil, fmt.Errorf("expected USER or INGESTION")
 	}
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
-func (p *Parser) parseAdminRemoveIngestionTasks() (*Command, error) {
-	p.nextToken() // consume INGESTION
-
-	if p.curToken.Type != TokenTasks {
-		return nil, fmt.Errorf("expected TASKS")
-	}
-	p.nextToken() // consume TASKS
-
-	taskString, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	tasks := strings.Split(taskString, " ")
-	p.nextToken() // consume TASKS
-
-	cmd := NewCommand("admin_remove_ingestion_tasks")
-	cmd.Params["tasks"] = tasks
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
 }
 
 // region CREATE commands
@@ -2649,30 +2579,6 @@ func (p *Parser) parseStartIngestion() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseStopIngestion() (*Command, error) {
-	p.nextToken() // consume Stop
-
-	if p.curToken.Type != TokenIngestion {
-		return nil, fmt.Errorf("expect INGESTION")
-	}
-	p.nextToken() // consume Ingest
-
-	taskID, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := NewCommand("admin_stop_ingestion_command")
-	cmd.Params["task_id"] = taskID
-	p.nextToken()
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 func (p *Parser) parseAdminIngestCommand() (*Command, error) {
 	p.nextToken() // consume Ingest
 
@@ -3300,31 +3206,6 @@ func (p *Parser) parseAdminListUserCommand() (*Command, error) {
 	return cmd, nil
 }
 
-// LIST USER 'user@example.com' INGESTION TASKS 'status';
-func (p *Parser) parseAdminListUserIngestionTasks(userName string) (*Command, error) {
-	p.nextToken() // consume INGESTION
-
-	if p.curToken.Type != TokenTasks {
-		return nil, fmt.Errorf("expected TASKS after INGESTION")
-	}
-	p.nextToken()
-
-	cmd := NewCommand("admin_list_user_ingestion_tasks")
-	cmd.Params["user_name"] = userName
-
-	if p.curToken.Type == TokenQuotedString {
-		var status string
-		var err error
-		status, err = p.parseQuotedString()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Params["status"] = status
-		p.nextToken()
-	}
-	return cmd, nil
-}
-
 // LIST USER 'user_name' PROVIDER 'provider_name' INSTANCES;
 // LIST USER 'user_name' PROVIDER 'provider_name' INSTANCE 'instance_name' MODELS;
 func (p *Parser) parseAdminListUserProviderInstanceModels(userName string) (*Command, error) {
@@ -3421,71 +3302,31 @@ func (p *Parser) parseAdminListUserLogs(userName string) (*Command, error) {
 // STOP USER 'user@example.com' INGESTION TASKS 'created';
 func (p *Parser) parseAdminStopUserCommand() (*Command, error) {
 	p.nextToken() // consume USER
-
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	p.nextToken()
-
-	var cmd *Command
 	switch p.curToken.Type {
 	case TokenIngestion:
-		p.nextToken()
-		if p.curToken.Type != TokenTasks {
-			return nil, fmt.Errorf("expected TASKS after INGESTION")
-		}
-		p.nextToken()
-		cmd = NewCommand("admin_stop_user_ingestion_tasks_command")
-		if p.curToken.Type == TokenQuotedString {
-			var status string
-			status, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["status"] = status
-			p.nextToken()
-		}
+		return p.parseAdminStopUserIngestionTasks(userName)
 	default:
 		return nil, fmt.Errorf("expected INGESTION after USER")
 	}
-
-	cmd.Params["user_name"] = userName
-	return cmd, nil
 }
 
 // REMOVE USER 'user@example.com' INGESTION TASKS 'created';
 func (p *Parser) parseAdminRemoveUserCommand() (*Command, error) {
 	p.nextToken() // consume USER
-
 	userName, err := p.parseQuotedString()
 	if err != nil {
 		return nil, err
 	}
 	p.nextToken()
-
-	var cmd *Command
 	switch p.curToken.Type {
 	case TokenIngestion:
-		p.nextToken()
-		if p.curToken.Type != TokenTasks {
-			return nil, fmt.Errorf("expected TASKS after INGESTION")
-		}
-		p.nextToken()
-		cmd = NewCommand("admin_remove_user_ingestion_tasks_command")
-		if p.curToken.Type == TokenQuotedString {
-			var status string
-			status, err = p.parseQuotedString()
-			if err != nil {
-				return nil, err
-			}
-			cmd.Params["status"] = status
-			p.nextToken()
-		}
+		return p.parseAdminRemoveUserIngestionTasks(userName)
 	default:
 		return nil, fmt.Errorf("expected INGESTION after USER")
 	}
-
-	cmd.Params["user_name"] = userName
-	return cmd, nil
 }

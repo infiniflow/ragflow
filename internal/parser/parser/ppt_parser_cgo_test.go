@@ -39,8 +39,8 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if got := res.File["format"]; got != "pptx" {
 		t.Errorf("File[format] = %v, want %q", got, "pptx")
@@ -159,8 +159,7 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	// PPTParser delegates to PPTXParser{format:"ppt"}.
 	p := NewPPTParser()
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 
@@ -172,9 +171,6 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	if p.pptx.ParseMethod != "tcadp" {
 		t.Errorf("PPTParser.pptx.ParseMethod = %q, want %q", p.pptx.ParseMethod, "tcadp")
 	}
-	if p.pptx.OutputFormat != "json" {
-		t.Errorf("PPTParser.pptx.OutputFormat = %q, want %q", p.pptx.OutputFormat, "json")
-	}
 }
 
 // TestPPTXParser_TCADPFileType verifies that a PPTXParser
@@ -185,8 +181,7 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 		t.Fatalf("NewPPTXParser().format = %q, want pptx", p.format)
 	}
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
@@ -248,7 +243,6 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -259,8 +253,8 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 	if gotFileType != wantFileType {
 		t.Errorf("TCADP request file_type = %q, want %q", gotFileType, wantFileType)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("JSON items = 0, want the fixture's parsed content")
@@ -288,7 +282,6 @@ func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
 	p := NewPPTXParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()

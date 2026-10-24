@@ -60,7 +60,7 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
 /**
  * Real-time canvas issues for the checklist panel, debounced so dragging a
  * node does not recompute every frame. The checklist only reports issues to
- * the user; it does not gate any entry points.
+ * the user. Run checks blocking rules synchronously, without this debounce.
  */
 export function useCanvasChecklist({
   ownerTenantId,

@@ -96,7 +96,7 @@ export default {
       webCrawl: 'Rastreo web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Fecha de carga',
-      chunkMethod: 'Método de fragmentación',
+      parsingMode: 'Modo de análisis',
       enabled: 'Habilitar',
       disabled: 'Deshabilitar',
       action: 'Acción',
@@ -169,6 +169,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análisis',
       builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
