@@ -22,27 +22,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *ModelHandler) CreateModelGroup(c *gin.Context) {
+func (h *ProviderHandler) CreateModelGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "CreateModelGroup not implemented")
 	return
 }
 
-func (h *ModelHandler) DeleteModelGroup(c *gin.Context) {
+func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "DeleteModelGroup not implemented")
 	return
 }
 
-func (h *ModelHandler) ShowModelGroup(c *gin.Context) {
+func (h *ProviderHandler) ShowModelGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "ShowModelGroup not implemented")
 	return
 }
 
-func (h *ModelHandler) AddModelToGroup(c *gin.Context) {
+func (h *ProviderHandler) AddModelToGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "AddModelToGroup not implemented")
 	return
 }
 
-func (h *ModelHandler) RemoveModelFromGroup(c *gin.Context) {
+func (h *ProviderHandler) RemoveModelFromGroup(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "RemoveModelFromGroup not implemented")
 	return
 }
