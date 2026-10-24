@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -218,7 +219,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil)
+			got := mineruContentItemToJSON(tc.item)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -232,7 +233,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 	}
 }
 
-func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
+func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	list, err := zw.Create("content_list.json")
@@ -284,9 +285,11 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	if imageItem["text"] != "A figure" {
 		t.Fatalf("image text = %#v", imageItem["text"])
 	}
-	uri, _ := imageItem["image"].(string)
-	if !strings.HasPrefix(uri, "data:image/png;base64,") {
-		t.Fatalf("image data URI = %q", uri)
+	// Non-markdown parse results never inline image payloads (issue #21213):
+	// the chunker crops the region on demand from the source PDF using the
+	// positions below.
+	if payload, ok := imageItem["image"]; ok {
+		t.Fatalf("image item unexpectedly carries an inlined payload: %v", payload)
 	}
 	imgPos, _ := imageItem["_pdf_positions"].([][]any)
 	if len(imgPos) != 1 {
@@ -357,5 +360,62 @@ func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
 	}
 	if len(result.JSON) != 1 {
 		t.Fatalf("items=%v", result.JSON)
+	}
+}
+
+func mineruTestZip(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, data := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestMinerUInlineMarkdownImagesBudgetsPayloads(t *testing.T) {
+	small := []byte("png-data")
+	oversized := make([]byte, parser.MaxImagePayloadBytes+1)
+	for i := range oversized {
+		oversized[i] = 'a'
+	}
+	zipBytes := mineruTestZip(t, map[string][]byte{
+		"images/small.png": small,
+		"images/huge.png":  oversized,
+	})
+	md := "Intro.\n\n![A small figure](images/small.png)\n\n![A huge figure](images/huge.png)\n\n![External](https://example.com/x.png)\n\n![Missing](images/absent.png)\n\nOutro."
+	inlined, warnings := mineruInlineMarkdownImages(md, zipBytes)
+
+	if !strings.Contains(inlined, "![A small figure](data:image/png;base64,") {
+		t.Fatalf("small image not inlined as data URI:\n%s", inlined)
+	}
+	if strings.Contains(inlined, "images/huge.png") || !strings.Contains(inlined, "A huge figure") {
+		t.Fatalf("oversized image must lose its link but keep its alt text:\n%s", inlined)
+	}
+	if !strings.Contains(inlined, "![External](https://example.com/x.png)") {
+		t.Fatalf("external reference must stay untouched:\n%s", inlined)
+	}
+	if !strings.Contains(inlined, "![Missing](images/absent.png)") {
+		t.Fatalf("unmatched reference must stay untouched:\n%s", inlined)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
+		t.Fatalf("warnings = %#v, want one per-image-limit warning", warnings)
+	}
+}
+
+func TestMinerUInlineMarkdownImagesWithoutZipLeavesMarkdown(t *testing.T) {
+	md := "![A figure](images/figure.png)"
+	inlined, warnings := mineruInlineMarkdownImages(md, nil)
+	if inlined != md || len(warnings) != 0 {
+		t.Fatalf("no zip: inlined = %q warnings = %#v", inlined, warnings)
 	}
 }

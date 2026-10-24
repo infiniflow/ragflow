@@ -593,7 +593,10 @@ func dispatchMinerUPDF(
 			return mineruJSONParseResult(filename, items), nil
 		}
 		if v1Markdown != "" {
-			return normalizePDFMarkdown(ctx, filename, result.Markdown, setup), nil
+			inlined, warnings := mineruInlineMarkdownImages(result.Markdown, zipBytes)
+			res := normalizePDFMarkdown(ctx, filename, inlined, setup)
+			res.Warnings = append(res.Warnings, warnings...)
+			return res, nil
 		}
 		if extractErr != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -817,8 +820,6 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 	return zipBytes, nil
 }
 
-const mineruMaxImageBytes = 20 << 20
-
 // mineruExtractJSONItems reads MinerU content_list.json from a zip and
 // emits JSON parser items with captions, embedded zip images, and
 // 1-indexed _pdf_positions so jump-to-source works like DeepDoc.
@@ -828,7 +829,6 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 		return nil, fmt.Errorf("open zip: %w", err)
 	}
 
-	images := make(map[string]*zip.File)
 	var contentList []byte
 	for _, f := range zipReader.File {
 		if strings.HasSuffix(f.Name, "content_list.json") && len(contentList) == 0 {
@@ -845,12 +845,6 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 				return nil, fmt.Errorf("read %s: %w", f.Name, readErr)
 			}
 		}
-		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
-			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
-			images[path.Base(f.Name)] = f
-			images[clean] = f
-			images[strings.ReplaceAll(clean, "\\", "/")] = f
-		}
 	}
 	if len(contentList) == 0 {
 		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
@@ -863,7 +857,7 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 
 	out := make([]map[string]any, 0, len(rawItems))
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images)
+		converted := mineruContentItemToJSON(item)
 		if converted != nil {
 			out = append(out, converted)
 		}
@@ -874,7 +868,11 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	return out, nil
 }
 
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) map[string]any {
+// mineruContentItemToJSON converts one MinerU content_list entry. Image and
+// chart items keep their text and PDF positions but never carry an inlined
+// payload: the chunker crops their images on demand from the source PDF, and
+// the markdown parse path owns budgeted inlining (issue #21213).
+func mineruContentItemToJSON(item map[string]any) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -883,7 +881,6 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 	}
 
 	text := mineruItemText(item, typ)
-	imageURI := ""
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -901,10 +898,7 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 	case "image", "chart":
 		docType = "image"
 		layout = "figure"
-		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			imageURI = mineruZipImageDataURI(images, imgPath)
-		}
-		if text == "" && imageURI == "" {
+		if text == "" && len(mineruItemPositions(item)) == 0 {
 			return nil
 		}
 	case "table":
@@ -931,9 +925,6 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 		if desc, _ := item["vlm_description"].(string); strings.TrimSpace(desc) != "" {
 			jsonItem[backendDescribedKey] = true
 		}
-	}
-	if imageURI != "" {
-		jsonItem["image"] = imageURI
 	}
 	if positions := mineruItemPositions(item); len(positions) > 0 {
 		jsonItem["_pdf_positions"] = positions
@@ -1085,36 +1076,92 @@ func mineruJSONFloatSlice(raw any) []float64 {
 	}
 }
 
-func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
-	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
-	if imgPath == "" {
-		return ""
+// mineruZipImages indexes the image members of a MinerU result zip by their
+// path spellings so markdown image references resolve regardless of
+// separator or leading "./".
+func mineruZipImages(zipBytes []byte) map[string]*zip.File {
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil
 	}
-	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
-	var file *zip.File
-	for _, key := range candidates {
-		if f, ok := images[key]; ok {
-			file = f
-			break
+	images := make(map[string]*zip.File)
+	for _, f := range zipReader.File {
+		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
+			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
+			images[path.Base(f.Name)] = f
+			images[clean] = f
+			images[strings.ReplaceAll(clean, "\\", "/")] = f
 		}
 	}
-	if file == nil || file.UncompressedSize64 > mineruMaxImageBytes {
-		return ""
+	return images
+}
+
+func mineruLookupZipImage(images map[string]*zip.File, imgPath string) *zip.File {
+	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
+	if imgPath == "" {
+		return nil
 	}
-	rc, err := file.Open()
-	if err != nil {
-		return ""
+	for _, key := range []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")} {
+		if f, ok := images[key]; ok {
+			return f
+		}
 	}
-	data, err := io.ReadAll(io.LimitReader(rc, mineruMaxImageBytes+1))
-	rc.Close()
-	if err != nil || len(data) == 0 || len(data) > mineruMaxImageBytes {
-		return ""
+	return nil
+}
+
+var mineruMarkdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
+
+// mineruInlineMarkdownImages materializes the MinerU zip image payloads a
+// service markdown response references, charging each one to the shared
+// embedded-media budget. Payloads the budget omits lose their image link and
+// keep their alt text, and the omissions surface as warnings; the chunker
+// crops the corresponding regions on demand from the source PDF.
+func mineruInlineMarkdownImages(markdown string, zipBytes []byte) (string, []string) {
+	if len(zipBytes) == 0 {
+		return markdown, nil
 	}
-	mediaType := mime.TypeByExtension(path.Ext(file.Name))
-	if mediaType == "" {
-		mediaType = http.DetectContentType(data)
+	images := mineruZipImages(zipBytes)
+	if len(images) == 0 {
+		return markdown, nil
 	}
-	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
+	budget := parser.NewEmbeddedMediaBudget()
+	exhausted := false
+	out := mineruMarkdownImagePattern.ReplaceAllStringFunc(markdown, func(match string) string {
+		sub := mineruMarkdownImagePattern.FindStringSubmatch(match)
+		alt, ref := sub[1], sub[2]
+		if strings.HasPrefix(ref, "data:") || strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+			return match
+		}
+		file := mineruLookupZipImage(images, ref)
+		if file == nil {
+			return match
+		}
+		if exhausted {
+			return alt
+		}
+		rc, err := file.Open()
+		if err != nil {
+			return match
+		}
+		data, readErr := io.ReadAll(io.LimitReader(rc, parser.MaxImagePayloadBytes+1))
+		rc.Close()
+		if readErr != nil || len(data) == 0 {
+			return match
+		}
+		included, keepGoing := budget.Include(data)
+		if !keepGoing {
+			exhausted = true
+		}
+		if !included {
+			return alt
+		}
+		mediaType := mime.TypeByExtension(path.Ext(file.Name))
+		if mediaType == "" {
+			mediaType = http.DetectContentType(data)
+		}
+		return "![" + alt + "](data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data) + ")"
+	})
+	return out, budget.Warnings()
 }
 
 func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
