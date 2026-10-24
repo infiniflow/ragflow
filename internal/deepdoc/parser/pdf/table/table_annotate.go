@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
+	"unicode/utf8"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
@@ -362,6 +364,9 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 
 	// Marks for Python-style pop removal.
 	dropped := make([]bool, len(boxes))
+	// Text of boxes discarded as garbage layouts, with occurrence counts.
+	// Used after compaction to drop surviving duplicates of page decoration.
+	discardedGarbageText := make(map[string]int)
 
 	// Priority order matching Python's findLayout loop.
 	priorityOrder := []string{
@@ -419,6 +424,9 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 				// Garbage layout not at page edge -> pop (Python: bxs.pop(i)).
 				if pdf.GarbageLayoutTypes[ty] && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
 					dropped[i] = true
+					if key := strings.TrimSpace(boxes[i].Text); key != "" {
+						discardedGarbageText[key]++
+					}
 					continue
 				}
 				// Python: equation mapped to "figure" for layout_type
@@ -453,6 +461,11 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	}
 	boxes = compacted
 
+	// Page decoration that the layout pass discarded can still survive as a
+	// second box elsewhere on the same page. Drop those duplicates so the
+	// text does not reach indexing twice.
+	boxes = dropRepeatedGarbageText(boxes, discardedGarbageText)
+
 	// Keep one geometry box per figure/equation, independently of its text.
 	// ConsolidateFigures combines it with matching labels after text cleanup.
 	for j := range cands {
@@ -475,6 +488,40 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 }
 
 // ── garbage layout helpers ────────────────────────────────────────────
+// Cleanup policy for text that the layout pass already discarded as garbage:
+//   - at least two boxes must have been discarded with the same trimmed text,
+//     so a single stray drop cannot silence legitimate content;
+//   - the string must be short (headers/footers/watermarks are short),
+//     which keeps body paragraphs out of reach even on an exact match;
+//   - captions are never removed, preserving the caption handling fixed in
+//     #20767.
+//
+// The pass is page-scoped because AnnotateBoxLayouts owns exactly one page.
+const (
+	repeatedGarbageMinDrops = 2
+	repeatedGarbageMaxRunes = 64
+)
+
+// dropRepeatedGarbageText removes surviving boxes whose trimmed text repeats a
+// string already discarded as garbage on the same page.
+func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]int) []pdf.TextBox {
+	if len(discarded) == 0 {
+		return boxes
+	}
+	kept := boxes[:0]
+	for _, b := range boxes {
+		key := strings.TrimSpace(b.Text)
+		if key != "" &&
+			discarded[key] >= repeatedGarbageMinDrops &&
+			utf8.RuneCountInString(key) <= repeatedGarbageMaxRunes &&
+			!IsCaptionBox(b.Text, b.LayoutType) {
+			continue
+		}
+		kept = append(kept, b)
+	}
+	return kept
+}
+
 // garbageKeepFeat keeps likely false-positive garbage labels.
 func garbageKeepFeat(ty string, box pdf.TextBox, pageImgHeight float64) bool {
 	switch ty {
