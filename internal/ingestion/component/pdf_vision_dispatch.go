@@ -83,10 +83,10 @@ func maybeDispatchPDFVision(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	// The tenant-selected parser and the built-in backends share one
 	// normalization boundary so a future normalization fix cannot miss one
-	// of the two paths. ParseWithResult already normalizes JSON internally,
-	// but markdown stays unconverted there; running it through the same
-	// NormalizeResult keeps markdown→JSON conversion in the parser package
-	// and makes the call idempotent for already-normalized JSON.
+	// of the two paths. PDF markdown engines (MonkeyOCRv2, MinerU V1
+	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
+	// returns, so the NormalizeResult closure below only ever applies item
+	// policies to already-normalized JSON and stays idempotent.
 	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
 		pdf := parser.PDFParser{FlattenMediaToText: flatten}
@@ -273,41 +273,17 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return buildMarkdownOCRDispatchResult(md), nil
+	return normalizePDFMarkdown(ctx, filename, md, setup), nil
 }
 
-func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
-	// Fallback markdown→JSON converter for non-PDF families via
-	// buildParserOutputs/normalizeParserJSON. PDF dispatch results are
-	// normalized earlier by PDFParser.NormalizeResult (parser.parsePDFMarkdown),
-	// so this stays as the final safety net rather than a second PDF boundary.
-	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
-	if err != nil {
-		warnParserNormalizationFallback(filename, "markdown", err)
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	// OCR Markdown is an untrusted backend response. Keep normalization
-	// deterministic and local: embedded data URIs remain available, while
-	// remote image URLs do not introduce network I/O at the Parser boundary.
-	mp.FetchRemoteImages = false
-	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
-	if res.Err != nil {
-		warnParserNormalizationFallback(filename, "markdown", res.Err)
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	if len(res.JSON) == 0 {
-		warnParserNormalizationFallback(filename, "markdown", fmt.Errorf("parser returned no JSON items"))
-		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
-	}
-	return res.JSON
-}
-
-func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
-	// The PDF dispatch boundary converts backend Markdown before enhancement.
-	return parser.ParseResult{
-		OutputFormat: "markdown",
-		Markdown:     md,
-	}
+// normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
+// MinerU V1 fallback) into the structured JSON contract via the parser
+// package's NormalizeMarkdown. This keeps the markdown→JSON boundary in the
+// parser package, matching the NormalizeResult path used for JSON backends, and
+// lets the downstream NormalizeResult closure stay idempotent for JSON.
+func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema.ParserSetup) parser.ParseResult {
+	flatten, _ := setup["flatten_media_to_text"].(bool)
+	return (&parser.PDFParser{FlattenMediaToText: flatten}).NormalizeMarkdown(ctx, filename, md)
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -617,7 +593,10 @@ func dispatchMinerUPDF(
 			return mineruJSONParseResult(filename, items), nil
 		}
 		if v1Markdown != "" {
-			return buildMarkdownOCRDispatchResult(result.Markdown), nil
+			inlined, warnings := mineruInlineMarkdownImages(result.Markdown, zipBytes)
+			res := normalizePDFMarkdown(ctx, filename, inlined, setup)
+			res.Warnings = append(res.Warnings, warnings...)
+			return res, nil
 		}
 		if extractErr != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -841,12 +820,6 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 	return zipBytes, nil
 }
 
-const mineruMaxImageBytes = 20 << 20
-
-// mineruMaxDocumentImageBytes caps the total bytes of zip images inlined as
-// data URIs for one document, so a image-heavy document cannot exhaust memory.
-const mineruMaxDocumentImageBytes = 64 << 20
-
 // mineruExtractJSONItems reads MinerU content_list.json from a zip and
 // emits JSON parser items with captions, embedded zip images, and
 // 1-indexed _pdf_positions so jump-to-source works like DeepDoc.
@@ -856,7 +829,6 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 		return nil, fmt.Errorf("open zip: %w", err)
 	}
 
-	images := make(map[string]*zip.File)
 	var contentList []byte
 	for _, f := range zipReader.File {
 		if strings.HasSuffix(f.Name, "content_list.json") && len(contentList) == 0 {
@@ -873,12 +845,6 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 				return nil, fmt.Errorf("read %s: %w", f.Name, readErr)
 			}
 		}
-		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
-			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
-			images[path.Base(f.Name)] = f
-			images[clean] = f
-			images[strings.ReplaceAll(clean, "\\", "/")] = f
-		}
 	}
 	if len(contentList) == 0 {
 		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
@@ -890,9 +856,8 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	}
 
 	out := make([]map[string]any, 0, len(rawItems))
-	imageBudget := mineruMaxDocumentImageBytes
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSONBudget(item, images, &imageBudget)
+		converted := mineruContentItemToJSON(item)
 		if converted != nil {
 			out = append(out, converted)
 		}
@@ -903,15 +868,11 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	return out, nil
 }
 
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) map[string]any {
-	return mineruContentItemToJSONBudget(item, images, nil)
-}
-
-// mineruContentItemToJSONBudget converts one content_list item. When budget is
-// non-nil it is the remaining number of image bytes that may still be inlined;
-// images that do not fit are left out of the item but the item itself (and its
-// positions) is kept.
-func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, budget *int) map[string]any {
+// mineruContentItemToJSON converts one MinerU content_list entry. Image and
+// chart items keep their text and PDF positions but never carry an inlined
+// payload: the chunker crops their images on demand from the source PDF, and
+// the markdown parse path owns budgeted inlining (issue #21213).
+func mineruContentItemToJSON(item map[string]any) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -920,8 +881,6 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	}
 
 	text := mineruItemText(item, typ)
-	imageURI := ""
-	hasImageFile := false
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -939,11 +898,7 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	case "image", "chart":
 		docType = "image"
 		layout = "figure"
-		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			imageURI = mineruZipImageDataURI(images, imgPath, budget)
-			hasImageFile = mineruZipImageFile(images, imgPath) != nil
-		}
-		if text == "" && imageURI == "" && !hasImageFile {
+		if text == "" && len(mineruItemPositions(item)) == 0 {
 			return nil
 		}
 	case "table":
@@ -970,9 +925,6 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 		if desc, _ := item["vlm_description"].(string); strings.TrimSpace(desc) != "" {
 			jsonItem[backendDescribedKey] = true
 		}
-	}
-	if imageURI != "" {
-		jsonItem["image"] = imageURI
 	}
 	if positions := mineruItemPositions(item); len(positions) > 0 {
 		jsonItem["_pdf_positions"] = positions
@@ -1124,15 +1076,32 @@ func mineruJSONFloatSlice(raw any) []float64 {
 	}
 }
 
-// mineruZipImageFile looks up an image member of the MinerU zip by its
-// content_list img_path.
-func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
+// mineruZipImages indexes the image members of a MinerU result zip by their
+// path spellings so markdown image references resolve regardless of
+// separator or leading "./".
+func mineruZipImages(zipBytes []byte) map[string]*zip.File {
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil
+	}
+	images := make(map[string]*zip.File)
+	for _, f := range zipReader.File {
+		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
+			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
+			images[path.Base(f.Name)] = f
+			images[clean] = f
+			images[strings.ReplaceAll(clean, "\\", "/")] = f
+		}
+	}
+	return images
+}
+
+func mineruLookupZipImage(images map[string]*zip.File, imgPath string) *zip.File {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
 		return nil
 	}
-	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
-	for _, key := range candidates {
+	for _, key := range []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")} {
 		if f, ok := images[key]; ok {
 			return f
 		}
@@ -1140,42 +1109,63 @@ func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	return nil
 }
 
-// mineruZipImageDataURI inlines a zip image as a data URI. When imageBudget is
-// non-nil, an image larger than the remaining budget is skipped and an inlined
-// image's size is deducted from it.
-func mineruZipImageDataURI(images map[string]*zip.File, imgPath string, imageBudget *int) string {
-	file := mineruZipImageFile(images, imgPath)
-	if file == nil || file.UncompressedSize64 > mineruMaxImageBytes {
-		return ""
+var mineruMarkdownImagePattern = regexp.MustCompile(`!\[([^\]]*)\]\(([^)\s]+)[^)]*\)`)
+
+// mineruInlineMarkdownImages materializes the MinerU zip image payloads a
+// service markdown response references, charging each one to the shared
+// embedded-media budget. Payloads the budget omits lose their image link and
+// keep their alt text, and the omissions surface as warnings; the chunker
+// crops the corresponding regions on demand from the source PDF.
+func mineruInlineMarkdownImages(markdown string, zipBytes []byte) (string, []string) {
+	if len(zipBytes) == 0 {
+		return markdown, nil
 	}
-	if imageBudget != nil && file.UncompressedSize64 > uint64(max(*imageBudget, 0)) {
-		return ""
+	images := mineruZipImages(zipBytes)
+	if len(images) == 0 {
+		return markdown, nil
 	}
-	rc, err := file.Open()
-	if err != nil {
-		return ""
-	}
-	data, err := io.ReadAll(io.LimitReader(rc, mineruMaxImageBytes+1))
-	rc.Close()
-	if err != nil || len(data) == 0 || len(data) > mineruMaxImageBytes {
-		return ""
-	}
-	if imageBudget != nil {
-		if len(data) > *imageBudget {
-			return ""
+	budget := parser.NewEmbeddedMediaBudget()
+	exhausted := false
+	out := mineruMarkdownImagePattern.ReplaceAllStringFunc(markdown, func(match string) string {
+		sub := mineruMarkdownImagePattern.FindStringSubmatch(match)
+		alt, ref := sub[1], sub[2]
+		if strings.HasPrefix(ref, "data:") || strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+			return match
 		}
-		*imageBudget -= len(data)
-	}
-	mediaType := mime.TypeByExtension(path.Ext(file.Name))
-	if mediaType == "" {
-		mediaType = http.DetectContentType(data)
-	}
-	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
+		file := mineruLookupZipImage(images, ref)
+		if file == nil {
+			return match
+		}
+		if exhausted {
+			return alt
+		}
+		rc, err := file.Open()
+		if err != nil {
+			return match
+		}
+		data, readErr := io.ReadAll(io.LimitReader(rc, parser.MaxImagePayloadBytes+1))
+		rc.Close()
+		if readErr != nil || len(data) == 0 {
+			return match
+		}
+		included, keepGoing := budget.Include(data)
+		if !keepGoing {
+			exhausted = true
+		}
+		if !included {
+			return alt
+		}
+		mediaType := mime.TypeByExtension(path.Ext(file.Name))
+		if mediaType == "" {
+			mediaType = http.DetectContentType(data)
+		}
+		return "![" + alt + "](data:" + mediaType + ";base64," + base64.StdEncoding.EncodeToString(data) + ")"
+	})
+	return out, budget.Warnings()
 }
 
 func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
 	return parser.ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":         filename,
 			"page_count":   mineruItemPageCount(items),
@@ -1278,9 +1268,8 @@ func dispatchPDFVision(
 		"parse_method": modelID,
 	}
 	return parser.ParseResult{
-		OutputFormat: "json",
-		File:         fileMeta,
-		JSON:         parser.MapsToItems(items),
+		File: fileMeta,
+		JSON: parser.MapsToItems(items),
 	}, nil
 }
 

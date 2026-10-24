@@ -319,8 +319,8 @@ func seedModelProviderServiceScope(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "user-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -485,12 +485,18 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	if err := db.Create(&entity.UserTenant{
 		ID:        "user-tenant-member",
 		UserID:    "member-1",
-		TenantID:  "tenant-1",
+		TenantID:  "user-1",
 		Role:      string(permission.RoleNormal),
 		InvitedBy: "user-1",
 		Status:    &activeStatus,
 	}).Error; err != nil {
 		t.Fatalf("seed tenant member: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "member-1-owner", UserID: "member-1", TenantID: "member-1",
+		Role: string(permission.RoleOwner), InvitedBy: "member-1", Status: &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed member's personal tenant: %v", err)
 	}
 
 	ctx := t.Context()
@@ -505,7 +511,7 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	}
 
 	factory := NewModelFactory()
-	access := ModelAccess{UserID: "member-1", TenantID: "tenant-1"}
+	access := ModelAccess{UserID: "member-1", TenantID: "user-1"}
 	if _, err = factory.resolveConfig(ctx, access, entity.ModelTypeChat, "model-1"); err != nil {
 		t.Fatalf("member should be able to use the tenant model: %v", err)
 	}
@@ -642,8 +648,11 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 	if instance["id"] != "instance-1" || instance["provider_id"] != "provider-1" {
 		t.Fatalf("ShowProviderInstance() = %v, want user-1's own-tenant instance", instance)
 	}
+	if instance["api_key"] != "sk-test" {
+		t.Fatalf("ShowProviderInstance() api_key = %v, want owner credential", instance["api_key"])
+	}
 
-	if _, code, err = service.ShowProviderInstance(t.Context(), "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeDataError {
+	if _, code, err = service.ShowProviderInstance(t.Context(), "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeNotFound {
 		t.Fatalf("ShowProviderInstance() for another tenant's provider = (%v, %v), want hidden provider", code, err)
 	}
 }
@@ -688,7 +697,7 @@ func TestModelFactoryResolveModelConfigByID(t *testing.T) {
 	seedModelProviderServiceScope(t, db)
 
 	ctx := t.Context()
-	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
@@ -748,13 +757,13 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 		{
 			name: "model ID",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 			},
 		},
 		{
 			name: "provider instance",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "user-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
 			},
 		},
 	}

@@ -38,7 +38,7 @@ func TestPDFDispatchNormalizesBeforeOutputsAndEnhancement(t *testing.T) {
 	}
 	setup := schema.ParserSetup{"parse_method": "monkeyocrv2", "monkeyocrv2_server_url": server.URL}
 	result, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypePDF, "sample.pdf", []byte("pdf"), nil, map[string]schema.ParserSetup{"pdf": setup})
-	if err != nil || !handled || result.OutputFormat != "json" || len(result.JSON) == 0 {
+	if err != nil || !handled || !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("dispatch did not emit structured JSON: %+v, %v", result, err)
 	}
 	for _, enabled := range []bool{false, true} {
@@ -71,7 +71,7 @@ func TestPDFDispatchNormalizesBeforeOutputsAndEnhancement(t *testing.T) {
 }
 
 func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}}, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}})
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Caption" || len(table.CellTexts()) != 1 || len(table.CellTexts()[0]) != 1 || table.CellTexts()[0][0] != "Cell" || table.Page != 2 {
 		t.Fatalf("structured table missing: %#v", item)
@@ -82,7 +82,7 @@ func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
 }
 
 func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"}, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"})
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Embedded caption" {
 		t.Fatalf("embedded caption lost: %#v", item)
@@ -92,7 +92,7 @@ func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
 func TestPDFTableEnhancementKeepsDescriptionOutsideTableBody(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+	result := parser.ParseResult{JSON: []parser.DocItem{
 		parser.NewTextJSONItem("Before"),
 		parser.TableItem{Table: &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, Extra: map[string]any{"image": visionTestPNGBase64(t), "page_number": 3}},
 		parser.NewTextJSONItem("After"),
@@ -111,7 +111,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 		"type": "image", "image_caption": []any{"Caption"},
 		"vlm_description": "backend desc",
 		"page_idx":        0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil)
+	})
 	if withDesc == nil {
 		t.Fatal("image item dropped")
 	}
@@ -124,7 +124,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 	withoutDesc := mineruContentItemToJSON(map[string]any{
 		"type": "image", "image_caption": []any{"Caption"},
 		"page_idx": 0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil)
+	})
 	if withoutDesc == nil {
 		t.Fatal("image item dropped")
 	}
@@ -146,7 +146,7 @@ func TestVisionEnhancementSkipsBackendDescribedImages(t *testing.T) {
 		"doc_type_kwd": "image", "layout": "figure",
 		"text": "Caption", "image": png,
 	})
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{marked, plain}}
+	result := parser.ParseResult{JSON: []parser.DocItem{marked, plain}}
 	enhanced, handled, err := maybeDispatchVisionEnhancement(t.Context(), nil, utility.FileTypePDF, result, map[string]any{"tenant_id": "tenant-1"}, visionSettings{}, progress.Window{})
 	if err != nil || !handled {
 		t.Fatalf("enhancement failed: %v", err)
@@ -174,7 +174,7 @@ func TestVisionEnhancementSkipsBackendDescribedImages(t *testing.T) {
 }
 
 func TestStripBackendDescribedResultClearsMarker(t *testing.T) {
-	result := parser.ParseResult{OutputFormat: "json", JSON: []parser.DocItem{
+	result := parser.ParseResult{JSON: []parser.DocItem{
 		parser.DocItemFromMap(map[string]any{"doc_type_kwd": "image", "text": "t", backendDescribedKey: true}),
 		parser.NewTextJSONItem("plain"),
 	}}
@@ -186,5 +186,30 @@ func TestStripBackendDescribedResultClearsMarker(t *testing.T) {
 	}
 	if text, _ := stripped.JSON[0].ToMap()["text"].(string); text != "t" {
 		t.Fatalf("text changed: %q", text)
+	}
+}
+
+func TestMinerUContentItemDropsImageWithoutTextOrPositions(t *testing.T) {
+	if got := mineruContentItemToJSON(map[string]any{"type": "image", "img_path": "images/none.png"}); got != nil {
+		t.Fatalf("image with no text and no positions must be dropped: %#v", got)
+	}
+}
+
+func TestMinerUContentItemKeepsPositionedImageWithoutText(t *testing.T) {
+	got := mineruContentItemToJSON(map[string]any{
+		"type": "image", "img_path": "images/figure.png",
+		"page_idx": 1, "bbox": []any{1.0, 2.0, 3.0, 4.0},
+	})
+	if got == nil {
+		t.Fatal("positioned image item must be kept so the chunker crops on demand")
+	}
+	if _, ok := got["image"]; ok {
+		t.Fatalf("JSON image items never carry payloads (issue #21213): %#v", got)
+	}
+	if got["doc_type_kwd"] != "image" {
+		t.Fatalf("doc_type_kwd = %v, want image", got["doc_type_kwd"])
+	}
+	if _, ok := got["_pdf_positions"]; !ok {
+		t.Fatalf("positions must be kept: %#v", got)
 	}
 }

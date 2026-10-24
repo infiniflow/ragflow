@@ -39,7 +39,8 @@ func TestMigratePermissions(t *testing.T) {
 		t.Fatalf("create existing membership table: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by, status)
-		VALUES ('membership-1', 'user-1', 'tenant-1', 'normal', 'owner-1', '1')`).Error; err != nil {
+		VALUES ('membership-1', 'user-1', 'tenant-1', 'normal', 'owner-1', '1'),
+		('membership-owner', 'tenant-1', 'tenant-1', 'owner', '', '1')`).Error; err != nil {
 		t.Fatalf("create existing membership: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE api_token (tenant_id varchar(32) NOT NULL, token varchar(255) NOT NULL,
@@ -249,5 +250,46 @@ func TestMigrateUserTenantDuplicates(t *testing.T) {
 	}
 	if err := db.Exec("INSERT INTO user_tenant (id, user_id, tenant_id, role) VALUES (?, ?, ?, ?)", "member-duplicate", "user-1", "tenant-1", "normal").Error; err == nil {
 		t.Fatal("duplicate user_tenant membership was accepted after AutoMigrate")
+	}
+}
+
+func TestMigrateLegacyTenantInvitationStatuses(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("auto-migrate user_tenant: %v", err)
+	}
+	joined := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID: "invitation-1", UserID: "user-1", TenantID: "tenant-1", Role: "invite", Status: &joined,
+	}).Error; err != nil {
+		t.Fatalf("create legacy invitation: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "member-1", UserID: "user-2", TenantID: "tenant-1", Role: "normal", Status: &joined,
+	}).Error; err != nil {
+		t.Fatalf("create joined member: %v", err)
+	}
+	if err := migrateLegacyTenantInvitationStatuses(t.Context(), db); err != nil {
+		t.Fatalf("migrate legacy invitations: %v", err)
+	}
+	var invitation, member entity.UserTenant
+	if err := db.Where("id = ?", "invitation-1").Take(&invitation).Error; err != nil {
+		t.Fatalf("read migrated invitation: %v", err)
+	}
+	if invitation.Role != "" || invitation.Status == nil || *invitation.Status != entity.TenantMembershipStatusInvited {
+		status := "<nil>"
+		if invitation.Status != nil {
+			status = *invitation.Status
+		}
+		t.Fatalf("legacy invitation = role %q status %q, want empty role and invited status", invitation.Role, status)
+	}
+	if err := db.Where("id = ?", "member-1").Take(&member).Error; err != nil {
+		t.Fatalf("read joined member: %v", err)
+	}
+	if member.Role != "normal" || member.Status == nil || *member.Status != entity.TenantMembershipStatusJoined {
+		t.Fatalf("joined member changed: role %q status %v", member.Role, member.Status)
 	}
 }

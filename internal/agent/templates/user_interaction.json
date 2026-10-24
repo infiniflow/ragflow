@@ -127,7 +127,6 @@
                                     },
                                     "rerank_id": "",
                                     "similarity_threshold": 0.2,
-                                    "toc_enhance": false,
                                     "rerank_candidates_count": 64,
                                     "top_n": 8,
                                     "use_kg": false
@@ -438,7 +437,6 @@
                                         },
                                         "rerank_id": "",
                                         "similarity_threshold": 0.2,
-                                        "toc_enhance": false,
                                         "rerank_candidates_count": 64,
                                         "top_n": 8,
                                         "use_kg": false

@@ -65,3 +65,40 @@ func TestTenantModelInstanceDAOGetAllInstancesByProviderIDOrdersByCreateTimeDesc
 		}
 	}
 }
+
+func TestTenantModelInstanceDAOCreateUsesCallerTransaction(t *testing.T) {
+	db := setupTenantModelInstanceDAOTestDB(t)
+	dao := NewTenantModelInstanceDAO()
+	instance := &entity.TenantModelInstance{
+		ID: "transactional-instance", InstanceName: "transactional", ProviderID: "provider-1",
+		APIKey: "key", Status: "active", Extra: "{}",
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatalf("begin transaction: %v", tx.Error)
+	}
+	if err := dao.Create(t.Context(), tx, instance); err != nil {
+		t.Fatalf("create instance inside caller transaction: %v", err)
+	}
+	if err := tx.Rollback().Error; err != nil {
+		t.Fatalf("rollback caller transaction: %v", err)
+	}
+	var count int64
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", instance.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count created instances: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("instance count after rollback = %d, want 0", count)
+	}
+
+	if err := dao.Create(t.Context(), db, instance); err != nil {
+		t.Fatalf("create instance with DAO-managed transaction: %v", err)
+	}
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", instance.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count committed instances: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("instance count after DAO transaction = %d, want 1", count)
+	}
+}

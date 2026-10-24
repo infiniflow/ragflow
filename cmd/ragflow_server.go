@@ -47,6 +47,32 @@ import (
 	"ragflow/internal/storage"
 )
 
+// isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
+// inference server (CPU/GPU/Ascend). These boot the ONNX runtime only and never
+// the full RAGFlow infrastructure, so main() returns early for them before
+// initializing Redis/DB/engine/cache/storage/MQ. Every other server type — and
+// the unknown sentinel — returns false.
+func isStandaloneDeepDocServer(st common.ServerType) bool {
+	return st == common.ServerTypeDeepDocCPU ||
+		st == common.ServerTypeDeepDocGPU ||
+		st == common.ServerTypeDeepDocAscend
+}
+
+// startPProfIfRequested launches the pprof HTTP server on localhost:6060.
+// The blank "net/http/pprof" import above registers the handlers on
+// http.DefaultServeMux, so only the listener needs starting. Both boot
+// paths (standalone DeepDoc and the regular one) call it right after the
+// logger is up, so its startup line lands in the run's log file. A bind
+// failure is logged and non-fatal, matching the previous inline behavior.
+func startPProfIfRequested() {
+	go func() {
+		common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
+		if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+			common.Error("pprof server failed", pprofErr)
+		}
+	}()
+}
+
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
 // into a bootstrap.ServerArgs using the standard library flag package. The accepted
 // syntax is exactly the standard one: every flag works as "-flag value",
@@ -334,6 +360,47 @@ func main() {
 		os.Exit(1)
 	}
 
+	// The DeepDoc inference server runs standalone: it only needs the ONNX
+	// runtime and MODEL_DIR, never the full RAGFlow infrastructure
+	// (DB/engine/cache/storage/MQ). Boot it and return before the heavy
+	// infrastructure init, so a bare inference container needs no MySQL/Redis.
+	if st := bootstrap.GetServerType(arguments); isStandaloneDeepDocServer(st) {
+		// SetServerName writes into the package-level local variables that
+		// InitLocalVariables allocates; this early boot returns before the
+		// shared InitLocalVariables call below, so it must allocate them
+		// itself. The initializer constructs the in-memory struct only and
+		// touches no external service, so the bare inference container stays
+		// free of MySQL/Redis.
+		if err = server.InitLocalVariables(); err != nil {
+			fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
+			os.Exit(1)
+		}
+		logLevel := bootstrap.SelectedLogLevel(arguments, "")
+		if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+			logLevel = "info"
+		}
+		if err = common.InitLogger(logLevel, common.FileOutput{}, bootstrap.TempServerName(st, arguments.Name)); err != nil {
+			panic("failed to initialize logger: " + err.Error())
+		}
+		finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, 0)
+		if nameErr != nil {
+			common.Error("invalid server mode", nameErr)
+			os.Exit(1)
+		}
+		server.SetServerName(finalName)
+		// The regular pprof block sits after the infrastructure init this
+		// path skips, so --profile must be honored here or the flag the
+		// --deepdoc help text advertises would be silently ignored.
+		if arguments.EnablePProf {
+			startPProfIfRequested()
+		}
+		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
@@ -448,12 +515,7 @@ func main() {
 
 	// Start pprof server if requested
 	if arguments.EnablePProf {
-		go func() {
-			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
-			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
-				common.Error("pprof server failed", pprofErr)
-			}
-		}()
+		startPProfIfRequested()
 	}
 
 	// Initialize database. The migrate mode stops here: it needs neither the
@@ -532,11 +594,6 @@ func main() {
 	case common.ServerTypeFileSyncer:
 		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			os.Exit(1)
-		}
-	case common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocCPU:
-		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:

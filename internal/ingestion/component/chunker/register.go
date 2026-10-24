@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -68,8 +69,25 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if err != nil {
 		return nil, err
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) == 0 {
+	// Accept the legacy []map[string]any carrier verbatim (no round-trip, so
+	// the id-stamp/upload logic below sees the exact maps the chunker emitted).
+	// The typed []ChunkDoc carrier is normalized via GetChunks, which also
+	// bridges []any-of-map, so this choke point no longer silently skips the
+	// whole id-stamp/upload pass on a carrier-type mismatch.
+	var chunks []map[string]any
+	switch v := out["chunks"].(type) {
+	case []map[string]any:
+		chunks = v
+	default:
+		if typed, ok := schema.GetChunks(out); ok {
+			chunks = schema.ChunkDocsToMaps(typed)
+			// Write the normalized carrier back so the in-place id-stamp and
+			// image-drop mutations below propagate to the emitted envelope
+			// (the legacy []map[string]any path shares the reference already).
+			out["chunks"] = chunks
+		}
+	}
+	if len(chunks) == 0 {
 		return out, nil
 	}
 
@@ -94,10 +112,10 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// lives in canonicalChunkID (common.go); this loop only re-derives it as
 	// a fallback for chunks whose id was not already stamped upstream.
 	//
-	// A chunk id may already be stamped (e.g. by the streamed crop-upload
-	// path, which keys MinIO by the canonical id). Reuse it so the id is
-	// computed exactly once; both routes derive the identity through the
-	// shared helpers, so the crop-time key and this id are identical and
+	// A chunk id may already be stamped (by the streamed crop-upload path,
+	// or from title-family media positions and finalized headings). Reuse it so
+	// the identity is not re-derived after upload; both routes derive it through
+	// the shared helpers, so the crop-time key and this id are identical and
 	// cannot diverge. For chunks that bypassed crop, fall back to deriving
 	// it here from the already-finalized text — a captionless image folds
 	// its payload identity in (mediaChunkIdentity), so distinct images in

@@ -325,6 +325,7 @@ func TestMCPServerPermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create MCP member membership: %v", err)
 	}
+	addMCPOwnerMembership(t, db, "member", "member")
 	if err := db.Create(&entity.MCPServer{
 		ID: "team-server", Name: "shared", TenantID: "team", URL: "https://example.com/mcp",
 		ServerType: mcpServerTypeStreamableHTTP,
@@ -358,13 +359,14 @@ func TestMCPServerPermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
 	}); err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("member connection test should require update permission: %v", err)
 	}
-	if _, code, err := service.CreateMCPServer(ctx, "member", CreateMCPServerRequest{
+	created, code, err := service.CreateMCPServer(ctx, "member", CreateMCPServerRequest{
 		Name: "new", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
-	}); err == nil || code != common.CodeForbidden {
-		t.Fatalf("member create should require an owned tenant: code=%d err=%v", code, err)
+	})
+	if err != nil || code != common.CodeSuccess || created.TenantID != "member" {
+		t.Fatalf("member should create in their personal tenant without switching: result=%+v code=%d err=%v", created, code, err)
 	}
-	if len(captured()) != 0 {
-		t.Fatalf("denied connection/config operations made outbound requests: %d", len(captured()))
+	if len(captured()) == 0 {
+		t.Fatal("MCP creation did not discover tools from the configured server")
 	}
 }
 

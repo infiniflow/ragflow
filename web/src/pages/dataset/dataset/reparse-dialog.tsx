@@ -1,31 +1,71 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
+import {
+  DynamicForm,
+  DynamicFormRef,
+  FormFieldConfig,
+  FormFieldType,
+} from '@/components/dynamic-form';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { memo, useCallback, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { ControllerRenderProps } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 export const ReparseDialog = memo(
   ({
     handleOperationIconClick,
+    chunk_num,
+    enable_metadata = false,
     visible = true,
     hideModal,
   }: DialogProps & {
+    chunk_num: number;
     handleOperationIconClick: (options?: {
       delete: boolean;
       apply_kb: boolean;
     }) => void;
+    enable_metadata?: boolean;
     visible: boolean;
     hideModal: () => void;
   }) => {
+    const [defaultValues, setDefaultValues] = useState<any>(null);
+    const [fields, setFields] = useState<FormFieldConfig[]>([]);
     const { t } = useTranslation();
 
-    // Existing chunks are always dropped on re-ingest, so the dialog only
-    // needs a plain confirmation with no checkboxes. Seed delete: true so the
-    // click payload keeps the drop behavior.
-    const defaultValues = {
-      delete: true,
-      apply_kb: false,
-    };
+    useEffect(() => {
+      // delete has no checkbox in this dialog; seed it so the payload keeps
+      // dropping existing chunks (the backend skips re-parse when delete is
+      // false and the previous task completed).
+      setDefaultValues({
+        delete: true,
+        apply_kb: false,
+      });
+      const applyKBField = {
+        name: 'apply_kb',
+        label: '',
+        type: FormFieldType.Checkbox,
+        defaultValue: false,
+        render: (fieldProps: ControllerRenderProps) => (
+          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
+            <Checkbox
+              {...fieldProps}
+              checked={fieldProps.value}
+              onCheckedChange={(checked: boolean) => {
+                fieldProps.onChange(checked);
+              }}
+            />
+            <span className="ml-2">
+              {t('knowledgeDetails.applyAutoMetadataSettings')}
+            </span>
+          </div>
+        ),
+      };
+      if (enable_metadata) {
+        setFields([applyKBField]);
+      } else {
+        setFields([]);
+      }
+    }, [t, enable_metadata]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
@@ -60,7 +100,11 @@ export const ReparseDialog = memo(
         open={visible}
         okButtonText={t('common.confirm')}
         content={{
-          title: t(`knowledgeDetails.clearChunksReparseTip`),
+          title: t(
+            chunk_num > 0
+              ? `knowledgeDetails.clearChunksReparseTip`
+              : `knowledgeDetails.parseFileTip`,
+          ),
           node: (
             <div>
               <DynamicForm.Root
@@ -68,7 +112,7 @@ export const ReparseDialog = memo(
                   console.log('submit', data);
                 }}
                 ref={formCallbackRef}
-                fields={[]}
+                fields={fields}
                 defaultValues={defaultValues}
               ></DynamicForm.Root>
             </div>

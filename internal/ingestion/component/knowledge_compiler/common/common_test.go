@@ -15,7 +15,7 @@ func TestRetryFailureReporterCoalescesRepeatedErrors(t *testing.T) {
 	reporter := RetryFailureReporter{}
 	err := errors.New("429 rate limit")
 
-	if message, ok := reporter.FailureMessage(1, 6, time.Second, err, false); !ok || !strings.Contains(message, "attempt 1/6") {
+	if message, ok := reporter.FailureMessage(1, 6, time.Second, err, false); !ok || !strings.HasPrefix(message, "[WARN] LLM call failed (attempt 1/6)") {
 		t.Fatalf("first failure = (%q, %v), want an emitted attempt message", message, ok)
 	}
 	if message, ok := reporter.FailureMessage(2, 6, 2*time.Second, err, false); ok || message != "" {
@@ -24,7 +24,7 @@ func TestRetryFailureReporterCoalescesRepeatedErrors(t *testing.T) {
 	if message, ok := reporter.FailureMessage(3, 6, 4*time.Second, err, false); ok || message != "" {
 		t.Fatalf("third repeated failure = (%q, %v), want suppressed", message, ok)
 	}
-	if message, ok := reporter.FailureMessage(4, 6, 8*time.Second, err, false); !ok || !strings.Contains(message, "3 repeated failures") {
+	if message, ok := reporter.FailureMessage(4, 6, 8*time.Second, err, false); !ok || !strings.HasPrefix(message, "[WARN] LLM call failed: 3 repeated failures") {
 		t.Fatalf("fourth failure = (%q, %v), want a coalesced retry update", message, ok)
 	}
 	if message, ok := reporter.RecoveryMessage(5); !ok || !strings.Contains(message, "recovered after 4 failures") {
@@ -94,6 +94,10 @@ func TestGenJSONReportsLLMFailure(t *testing.T) {
 // budget. Without the override GenJSON sleeps ~62s per failed call.
 func TestGenJSONRetryDelayOverride(t *testing.T) {
 	ctx := WithRetryDelay(context.Background(), time.Millisecond)
+	var messages []string
+	ctx = runtime.WithProgressMessageCallback(ctx, func(_, message string) {
+		messages = append(messages, message)
+	})
 	start := time.Now()
 	_, err := GenJSON(ctx, failingChat{err: errors.New("llm down")}, ChatRequest{})
 	if err == nil {
@@ -101,6 +105,9 @@ func TestGenJSONRetryDelayOverride(t *testing.T) {
 	}
 	if time.Since(start) > 5*time.Second {
 		t.Fatalf("override did not shorten retry backoff: %s", time.Since(start))
+	}
+	if len(messages) != 3 || !strings.HasPrefix(messages[0], "[WARN]") || !strings.HasPrefix(messages[1], "[WARN]") || !strings.HasPrefix(messages[2], "[ERROR] LLM call failed after 6 attempts") {
+		t.Fatalf("unexpected retry progress messages: %v", messages)
 	}
 }
 

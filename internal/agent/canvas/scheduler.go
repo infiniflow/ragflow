@@ -71,6 +71,9 @@ func GetRunMeta(ctx context.Context) *RunMeta {
 func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
+		if k == "state" {
+			continue
+		}
 		out[k] = v
 	}
 	return out, nil
@@ -214,7 +217,7 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	}
 	ctxState, _ := runtime.GetStateFromContext(ctx)
 	for k, v := range out {
-		if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
+		if k == "__cpn_id__" || k == "__legacy_noop__" {
 			continue
 		}
 		if state != nil {
