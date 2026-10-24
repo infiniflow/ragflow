@@ -60,24 +60,26 @@ func IsDeferredStream(v any) bool {
 }
 
 type agentMessageEmitterState struct {
-	mu            sync.Mutex
-	emit          AgentMessageEmitter
-	finalize      func() bool
-	reset         func()
-	emitted       bool
-	suppressed    bool
-	runEmitted    bool
-	runSuppressed bool
-	agentContent  strings.Builder
+	mu                sync.Mutex
+	emit              AgentMessageEmitter
+	finalize          func() bool
+	reset             func()
+	emitted           bool
+	suppressed        bool
+	runEmitted        bool
+	runContentEmitted bool
+	runSuppressed     bool
+	agentContent      strings.Builder
 }
 
 type agentDeltaSinkCtxKey struct{}
 type canvasMessageEventEmitterCtxKey struct{}
 
 type agentDeltaSinkState struct {
-	mu      sync.Mutex
-	sink    AgentDeltaSink
-	emitted bool
+	mu             sync.Mutex
+	sink           AgentDeltaSink
+	emitted        bool
+	contentEmitted bool
 }
 
 type componentExecutionOptionsCtxKey struct{}
@@ -245,6 +247,9 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 		if contentDelta != "" || thinkingDelta != "" {
 			sinkState.emitted = true
 		}
+		if contentDelta != "" {
+			sinkState.contentEmitted = true
+		}
 		sinkState.mu.Unlock()
 		return true
 	}
@@ -272,6 +277,7 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 		state.runEmitted = true
 	}
 	if contentDelta != "" {
+		state.runContentEmitted = true
 		state.agentContent.WriteString(contentDelta)
 	}
 	state.mu.Unlock()
@@ -300,6 +306,18 @@ func AgentMessageEventsEmittedRun(ctx context.Context) bool {
 	return state.runEmitted
 }
 
+// AgentMessageContentEmittedRun reports whether any answer-content delta was
+// emitted during the entire canvas run. Thinking-only deltas do not count.
+func AgentMessageContentEmittedRun(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.runContentEmitted
+}
+
 // AgentMessageEventsSuppressedRun reports whether any Agent invocation
 // suppressed terminal message emission during the entire canvas run.
 func AgentMessageEventsSuppressedRun(ctx context.Context) bool {
@@ -321,6 +339,9 @@ func EmitCanvasMessageEvent(ctx context.Context, content string, startToThink, e
 			state.mu.Lock()
 			state.emitted = true
 			state.runEmitted = true
+			if content != "" {
+				state.runContentEmitted = true
+			}
 			state.mu.Unlock()
 		}
 		return true
@@ -347,6 +368,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			state.mu.Lock()
 			state.emitted = true
 			state.runEmitted = true
+			state.runContentEmitted = true
 			state.mu.Unlock()
 			return true
 		}
@@ -356,6 +378,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.runContentEmitted = true
 			}
 			state.mu.Unlock()
 			return true
@@ -366,6 +389,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.runContentEmitted = true
 			}
 			state.mu.Unlock()
 			return true
@@ -389,6 +413,25 @@ func AgentMessageEventsEmitted(ctx context.Context) bool {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	return state.emitted
+}
+
+// AgentMessageContentEmitted reports whether any answer-content delta was
+// emitted during the current invocation. Thinking-only deltas do not count.
+// For deferred consumption by a Message node, the sink's content flag is
+// checked; otherwise the outer emitter's accumulated content is used.
+func AgentMessageContentEmitted(ctx context.Context) bool {
+	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil {
+		sinkState.mu.Lock()
+		defer sinkState.mu.Unlock()
+		return sinkState.contentEmitted
+	}
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.agentContent.Len() > 0
 }
 
 // DeferredAgentMessageEventsEmitted reports whether a deferred Agent has
@@ -432,6 +475,7 @@ func FinalizeAgentMessage(ctx context.Context) {
 		state.mu.Lock()
 		state.emitted = true
 		state.runEmitted = true
+		state.runContentEmitted = true
 		state.mu.Unlock()
 	}
 }
@@ -441,6 +485,7 @@ func ResetAgentMessageEmission(ctx context.Context) {
 	if sinkState := agentDeltaSinkFromContext(ctx); sinkState != nil {
 		sinkState.mu.Lock()
 		sinkState.emitted = false
+		sinkState.contentEmitted = false
 		sinkState.mu.Unlock()
 	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
