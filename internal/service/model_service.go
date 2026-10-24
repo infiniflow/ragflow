@@ -72,6 +72,8 @@ func NewModelProviderService() *ModelProviderService {
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
 		tenantDAO:        dao.NewTenantDAO(),
+		modelGroupDAO:    dao.NewTenantModelGroupDAO(),
+		modelGroupMapDAO: dao.NewTenantModelGroupMapDAO(),
 	}
 }
 
@@ -80,6 +82,8 @@ type ModelProviderService struct {
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
 	tenantDAO        *dao.TenantDAO
+	modelGroupDAO    *dao.TenantModelGroupDAO
+	modelGroupMapDAO *dao.TenantModelGroupMapDAO
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
