@@ -130,14 +130,6 @@ type retrievalEnhancer interface {
 		question string,
 		kbs []*entity.Knowledgebase,
 	) map[string]float64
-	EnhanceTOC(
-		ctx context.Context,
-		chatModel *modelModule.ChatModel,
-		tenantIDs, kbIDs []string,
-		question string,
-		topN int,
-		chunks []map[string]any,
-	) ([]map[string]any, error)
 	RetrieveByChildren(
 		ctx context.Context,
 		chunks []map[string]any,
@@ -300,24 +292,6 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		return []RetrievalChunk{}, nil
 	}
 	rawChunks := res.Chunks
-	if req.TOCEnhance {
-		if a.enhancer == nil {
-			return nil, fmt.Errorf("retrieval: TOC enhancement service is not configured")
-		}
-		rawChunks, err = a.enhancer.EnhanceTOC(
-			ctx,
-			chatModel,
-			datasets.tenantIDs,
-			datasets.kbIDs,
-			query,
-			topN,
-			rawChunks,
-		)
-		if err != nil {
-			common.Warn("agent retrieval: TOC enhancement failed; using retrieval results", zap.Error(err))
-			rawChunks = res.Chunks
-		}
-	}
 	if a.enhancer != nil {
 		rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
 	}
@@ -531,7 +505,7 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	tenantID string,
 ) (*modelModule.ChatModel, error) {
 	method, _ := req.MetaDataFilter["method"].(string)
-	needsChatModel := req.TOCEnhance || method == "auto" || method == "semi_auto"
+	needsChatModel := method == "auto" || method == "semi_auto"
 	if !needsChatModel {
 		return nil, nil
 	}

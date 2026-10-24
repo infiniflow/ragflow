@@ -110,6 +110,10 @@ func TestNeedsCrop(t *testing.T) {
 		{"page-only image position", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
 		{"page-only text position", schema.ChunkDoc{DocType: "text", Positions: jsonPositions(t, []float64{3, 0, 0, 0, 0})}, false},
 		{"zero-area box with coordinates", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 10, 10, 5, 5})}, false},
+		{"page-only PDF positions fall back to a region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 0, 0, 0, 0}), Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"zero-width PDF positions fall back to a region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 10, 10, 5, 100}), Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"zero-height PDF positions fall back to a region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 10, 100, 5, 5}), Positions: jsonPositions(t, []float64{1, 10, 100, 10, 100})}, true},
+		{"neither matrix has a region", schema.ChunkDoc{DocType: "image", PDFPositions: jsonPositions(t, []float64{3, 0, 0, 0, 0}), Positions: jsonPositions(t, []float64{1, 10, 10, 5, 5})}, false},
 
 		// --- A page-only row must not hide a real region in a later row:
 		// mergePositionMatrix sorts page-only rows first.
@@ -122,6 +126,43 @@ func TestNeedsCrop(t *testing.T) {
 		if got := needsCrop(tc.ck); got != tc.want {
 			t.Errorf("%s: needsCrop = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestCropImageChunks_PositionFallback(t *testing.T) {
+	region := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	flatRegion := jsonFlatPosition(t, []float64{1, 10, 100, 10, 100})
+	otherPage := jsonPositions(t, []float64{2, 20, 200, 20, 200})
+	cases := []struct {
+		name         string
+		pdfPositions json.RawMessage
+		positions    json.RawMessage
+	}{
+		{"page-only", jsonPositions(t, []float64{2, 0, 0, 0, 0}), region},
+		{"zero-width", jsonPositions(t, []float64{2, 10, 10, 5, 100}), region},
+		{"zero-height", jsonPositions(t, []float64{2, 10, 100, 5, 5}), region},
+		{"empty", json.RawMessage(`[]`), region},
+		{"null", json.RawMessage(`null`), region},
+		{"short-row", json.RawMessage(`[[2,10,100,5]]`), region},
+		{"page-only-with-flat-fallback", jsonPositions(t, []float64{2, 0, 0, 0, 0}), flatRegion},
+		{"flat-positions-only", nil, flatRegion},
+		{"prefer-flat-PDF-region", flatRegion, otherPage},
+		{"prefer-PDF-region", region, otherPage},
+		{"PDF-region-after-page-only-row", jsonPositions(t, []float64{1, 0, 0, 0, 0}, []float64{1, 10, 100, 10, 100}), otherPage},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunks := []schema.ChunkDoc{{DocType: "image", Text: "figure caption", PDFPositions: tc.pdfPositions, Positions: tc.positions}}
+			// Only page 1 (engine index 0) can render: falling back when a
+			// PDF region exists, or cropping page-only PDF positions, fails.
+			out := cropImageChunks(context.Background(), assertZeroPageEngine{}, chunks)
+			if len(out) != 1 {
+				t.Fatalf("len(out) = %d, want 1", len(out))
+			}
+			if !strings.HasPrefix(out[0].Image, "data:image/png;base64,") {
+				t.Errorf("image = %q, want cropped preview from page 1", out[0].Image)
+			}
+		})
 	}
 }
 

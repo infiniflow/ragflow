@@ -61,7 +61,6 @@ type retrievalArgs struct {
 	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
-	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
 	Highlight                *bool          `json:"highlight,omitempty"`
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
@@ -212,7 +211,6 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
-		TOCEnhance:               args.TOCEnhance,
 		Highlight:                highlightEnabled(args.Highlight),
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
@@ -319,7 +317,6 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.RetrievalFrom == "" && len(args.MemoryIDs) > 0 {
 		args.RetrievalFrom = "memory"
 	}
-	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
 	if args.Highlight == nil {
 		args.Highlight = r.defaults.Highlight
 	}

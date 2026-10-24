@@ -37,8 +37,8 @@ func seedStoredMistralOCRProvider(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "user-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "user-1", TenantID: "user-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: mistralOCRStoredKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	}
@@ -58,7 +58,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	access := ModelAccess{TenantID: "tenant-1", UserID: "user-1"}
+	access := ModelAccess{TenantID: "user-1", UserID: "user-1"}
 	for _, tc := range []struct {
 		name      string
 		modelRef  string
@@ -96,7 +96,7 @@ func TestModelFactoryResolveModelTypeForStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	types, err := NewModelFactory().ResolveModelType(t.Context(), ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
+	types, err := NewModelFactory().ResolveModelType(t.Context(), ModelAccess{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
 	if err != nil {
 		t.Fatalf("ResolveModelType: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestListProvidersOfTenantSkipsStoredMistralOCRProvider(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
-	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"}).Error; err != nil {
+	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "user-1", ProviderName: "OpenAI"}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
 

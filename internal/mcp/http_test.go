@@ -92,6 +92,17 @@ func TestSDKTransportsAndTools(t *testing.T) {
 				if string(got) != string(want) {
 					t.Fatalf("schema mismatch: %s vs %s", got, want)
 				}
+				if tool.Name == "ragflow_retrieval" {
+					var schema struct {
+						Properties map[string]json.RawMessage `json:"properties"`
+					}
+					if err := json.Unmarshal(got, &schema); err != nil {
+						t.Fatal(err)
+					}
+					if _, ok := schema.Properties["force_refresh"]; ok {
+						t.Fatal("retrieval advertises force_refresh")
+					}
+				}
 			}
 			result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_retrieval", Arguments: map[string]any{"question": "hello"}})
 			if err != nil || result.IsError {
@@ -112,11 +123,14 @@ func TestSDKTransportsAndTools(t *testing.T) {
 					}
 				}
 			}
-			for _, args := range []map[string]any{{}, {"question": 3}, {"question": "x", "page": 0}, {"question": "x", "page": 1.5}, {"question": "x", "page_size": 101}, {"question": "x", "top_k": 1025}, {"question": "x", "keyword": "true"}, {"question": "x", "dataset_ids": []any{3}}, {"question": "x", "similarity_threshold": -1}} {
+			for _, args := range []map[string]any{{}, {"question": 3}, {"question": "x", "page": 0}, {"question": "x", "page": 1.5}, {"question": "x", "page_size": 101}, {"question": "x", "top_k": 1025}, {"question": "x", "keyword": "true"}, {"question": "x", "dataset_ids": []any{3}}, {"question": "x", "similarity_threshold": -1}, {"question": "x", "force_refresh": true}, {"question": "x", "force_refresh": false}} {
 				result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_retrieval", Arguments: args})
 				if err != nil || !result.IsError {
 					t.Fatalf("invalid input accepted: %v result=%v err=%v", args, result, err)
 				}
+			}
+			if retrieval.Question != "hello" {
+				t.Fatalf("invalid input reached retrieval: %+v", retrieval)
 			}
 			empty := clientSession(t, hs.URL, mode, "empty")
 			result, err = empty.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_list_datasets"})

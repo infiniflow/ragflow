@@ -78,7 +78,6 @@ type RetrievalRequest struct {
 	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
-	TOCEnhance               bool
 	Highlight                bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string

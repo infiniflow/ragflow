@@ -59,7 +59,6 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{
-			OutputFormat: "json",
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
@@ -74,7 +73,6 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

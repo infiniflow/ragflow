@@ -17,13 +17,16 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
+	modelModule "ragflow/internal/entity/models"
 )
 
 func TestRenderMetaFilterTemplate(t *testing.T) {
@@ -147,9 +150,9 @@ func TestApplyMetaDataFilterManualNotInArray(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No dataset IDs means the request uses the in-memory filter.
-	got, empty := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, []string{"doc1", "doc3"}, nil)
-	if !slices.Equal(got, []string{"doc3"}) || empty {
-		t.Errorf("ApplyMetaDataFilter() = (%v, %v), want ([doc3], false)", got, empty)
+	got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, []string{"doc1", "doc3"}, nil)
+	if !slices.Equal(got, []string{"doc3"}) {
+		t.Errorf("ApplyMetaDataFilter() = %v, want [doc3]", got)
 	}
 }
 
@@ -585,4 +588,133 @@ func TestCompareValuesDirectly(t *testing.T) {
 			t.Errorf("compareValues(%q, %q, %q) = %v, want %v", tt.v1, tt.v2, tt.op, got, tt.want)
 		}
 	}
+}
+
+// ApplyMetaDataFilter's outcomes must stay distinguishable: "the metadata could
+// not narrow the search" (nil) is not the same answer as "no document matches"
+// (["-999"]), because the returned slice is applied as a hard document scope.
+func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
+	base := []string{"doc-1", "doc-2"}
+	metas := common.MetaData{"author": {"Zhang San": {"doc-1"}, "Li Si": {"doc-3"}}}
+
+	// The generator answering with no conditions is the common case: the
+	// question names no metadata. That does not mean "no such document".
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method+" without generated conditions returns no scope", func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"author"}
+			}
+
+			got := ApplyMetaDataFilter(t.Context(), filter, metas, "who wrote it?", chatModel, base, nil)
+
+			if driver.calls != 1 {
+				t.Fatalf("model calls: got %d, want 1", driver.calls)
+			}
+			if got != nil {
+				t.Fatalf("got %v, want nil so the caller keeps its own document scope", got)
+			}
+		})
+	}
+
+	// A generated filter is applied as a hard scope, and an empty result cannot
+	// tell "outside this scope" from a wrong or invented value, so it leaves
+	// the caller's scope unnarrowed rather than matching nothing.
+	for _, tc := range []struct {
+		name   string
+		answer string
+		want   []string
+	}{
+		{
+			name:   "generated conditions selecting only documents outside the scope return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Li Si"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting nothing return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Wang Wu"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting documents in the scope return them",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Zhang San"}], "logic": "and"}`,
+			want:   []string{"doc-1"},
+		},
+	} {
+		t.Run("auto "+tc.name, func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			driver.answer = tc.answer
+
+			got := ApplyMetaDataFilter(t.Context(), map[string]interface{}{"method": "auto"}, metas, "who wrote it?", chatModel, base, nil)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("manual conditions matching nothing return the sentinel", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "nobody"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != NoMatchDocIDSentinel {
+			t.Fatalf("got %v, want [%s]: the user asked for these exact conditions", got, NoMatchDocIDSentinel)
+		}
+	})
+
+	t.Run("manual conditions that match return their documents", func(t *testing.T) {
+		filter := map[string]interface{}{
+			"method": "manual",
+			"logic":  "and",
+			"manual": []interface{}{map[string]interface{}{"key": "author", "op": "=", "value": "Zhang San"}},
+		}
+
+		got := ApplyMetaDataFilter(t.Context(), filter, metas, "", nil, base, nil)
+
+		if len(got) != 1 || got[0] != "doc-1" {
+			t.Fatalf("got %v, want [doc-1]", got)
+		}
+	})
+}
+
+// capturingFilterDriver records the system prompt gen_meta_filter sends and
+// answers with answer, or an empty filter when it is unset, so a test can
+// assert what the model was shown and choose what it generates.
+type capturingFilterDriver struct {
+	*modelModule.DummyModel
+	calls  int
+	system string
+	answer string
+}
+
+func (d *capturingFilterDriver) ChatWithMessages(
+	_ context.Context,
+	_ string,
+	messages []modelModule.Message,
+	_ *modelModule.APIConfig,
+	_ *modelModule.ChatConfig,
+	_ *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	d.calls++
+	if len(messages) > 0 {
+		if s, ok := messages[0].Content.(string); ok {
+			d.system = s
+		}
+	}
+	answer := d.answer
+	if answer == "" {
+		answer = `{"conditions": [], "logic": "and"}`
+	}
+	return &modelModule.ChatResponse{Answer: &answer}, nil
+}
+
+func newCapturingFilterModel(t *testing.T) (*modelModule.ChatModel, *capturingFilterDriver) {
+	t.Helper()
+	driver := &capturingFilterDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	name := "fake-model"
+	return &modelModule.ChatModel{ModelDriver: driver, ModelName: &name, APIConfig: &modelModule.APIConfig{}}, driver
 }

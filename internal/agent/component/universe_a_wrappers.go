@@ -80,7 +80,6 @@ type retrievalParams struct {
 	RerankID                 string
 	EmptyResponse            string
 	CrossLanguages           []string
-	TOCEnhance               bool
 	Highlight                bool
 	UseKG                    bool
 	MetaDataFilter           map[string]any
@@ -138,9 +137,6 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.EmptyResponse = v
 	}
 	out.CrossLanguages = toStringSlice(params["cross_languages"])
-	if v, ok := params["toc_enhance"].(bool); ok {
-		out.TOCEnhance = v
-	}
 	if v, ok := params["highlight"].(bool); ok {
 		out.Highlight = v
 	}
@@ -369,9 +365,6 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	}
 	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
 		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)
-	}
-	if _, ok := out["toc_enhance"]; !ok && c.params.TOCEnhance {
-		out["toc_enhance"] = true
 	}
 	if _, ok := out["highlight"]; !ok && c.params.Highlight {
 		out["highlight"] = true

@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -1014,99 +1013,6 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "show message queue successfully")
-}
-
-type RemoveIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
-	var req RemoveIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	} else {
-		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	}
-}
-
-type StopIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) StopIngestionTasks(c *gin.Context) {
-	var req StopIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		var result []map[string]string
-		for _, task := range tasks {
-			result = append(result, map[string]string{
-				"task_id": task.ID,
-				"status":  task.Status,
-			})
-		}
-
-		common.SuccessWithData(c, result, "Stop tasks successfully")
-	} else {
-		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Stop tasks successfully")
-	}
-}
-
-type ListIngestionTasksRequest struct {
-	Email  *string `json:"email"`
-	Status *string `json:"status"`
-}
-
-// ListIngestionTasks handle list ingestion tasks
-func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	var err error
-	var tasks []map[string]interface{}
-	var req ListIngestionTasksRequest
-	ctx := c.Request.Context()
-
-	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks(ctx)
-	} else {
-		tasks, err = h.service.ListIngestionTasksByCondition(ctx, req.Email, req.Status)
-	}
-
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-	}
-	common.SuccessWithData(c, tasks, "Get all tasks")
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {

@@ -25,7 +25,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
     cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
 
 # Embedding tokenizer assets (internal/tokenizer/embedding_token_limits.md). The Go
-# counters load them from ragflow_deps/huggingface.co/<repo>/<file>; an image without them
+# counters load them from deps/huggingface.co/<repo>/<file>; an image without them
 # counts every tagged model with the calibrated cl100k estimate, the less precise path
 # these counters exist to replace - so a missing asset FAILS THE BUILD instead of shipping
 # a degraded counter nobody notices. The tokenizer.json files that download_deps.py
@@ -37,8 +37,8 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
         intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
         if [ -f "/huggingface.co/$asset" ]; then \
-            mkdir -p "/ragflow/ragflow_deps/huggingface.co/$(dirname "$asset")" && \
-            cp "/huggingface.co/$asset" "/ragflow/ragflow_deps/huggingface.co/$asset" ; \
+            mkdir -p "/ragflow/deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/deps/huggingface.co/$asset" ; \
         else \
             echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
             exit 1 ; \
@@ -146,7 +146,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 # deployments. CI cross-checks the two values.
 #
 # The binary is pre-fetched by `download_deps.py` and shipped via
-# the ragflow_deps image, then written directly to the stagehand-go
+# the deps image, then written directly to the stagehand-go
 # cache path that `local.go:cacheDir()` constructs at runtime —
 # `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
 ARG STAGEHAND_GO_VERSION=v3.21.0
@@ -184,7 +184,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 
 
-# Install Chrome and ChromeDriver for selenium (from ragflow_deps image)
+# Install Chrome and ChromeDriver for selenium (from deps image)
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
     unzip /chrome-linux64.zip && \
     mv chrome-linux64 /opt/chrome && \
