@@ -24,16 +24,13 @@ import (
 func TestAudioParser_ValidExtension(t *testing.T) {
 	ctx := t.Context()
 	p := NewAudioParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-	})
 
 	result := p.ParseWithResult(ctx, "test.mp3", []byte{1, 2, 3, 4})
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "text" {
-		t.Errorf("output_format = %q, want text", result.OutputFormat)
+	if !result.Produced() {
+		t.Errorf("produced = %t, want true", result.Produced())
 	}
 	if name, ok := result.File["name"].(string); !ok || name != "test.mp3" {
 		t.Errorf("name = %q, want test.mp3", name)
@@ -63,26 +60,14 @@ func TestAudioParser_InvalidExtension(t *testing.T) {
 	}
 }
 
-func TestAudioParser_ConfigureNilSafe(t *testing.T) {
-	ctx := t.Context()
-	p := NewAudioParser()
-	p.ConfigureFromSetup(nil)
-	p.ConfigureFromSetup(map[string]any{})
-	// Should not panic.
-	result := p.ParseWithResult(ctx, "test.wav", []byte{})
-	if result.Err != nil {
-		t.Errorf("unexpected error: %v", result.Err)
-	}
-}
-
-func TestAudioParser_DefaultOutputFormat(t *testing.T) {
+func TestAudioParser_Defaultproduced(t *testing.T) {
 	ctx := t.Context()
 	p := NewAudioParser()
 	result := p.ParseWithResult(ctx, "test.flac", []byte{})
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "text" {
-		t.Errorf("output_format = %q, want text (default)", result.OutputFormat)
+	if !result.Produced() {
+		t.Errorf("produced = %t, want true", result.Produced())
 	}
 }

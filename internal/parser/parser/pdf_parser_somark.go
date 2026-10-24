@@ -42,7 +42,7 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if len(items) == 0 {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark returned no usable blocks")}
 	}
-	return pdfItemsToResult(filename, items, parser.OutputFormat, pageCount)
+	return pdfItemsToResult(filename, items, pageCount)
 }
 
 // soMarkSubmit uploads a PDF with the supplied credentials and parser options,

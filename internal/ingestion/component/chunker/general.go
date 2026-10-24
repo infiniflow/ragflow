@@ -756,8 +756,8 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 		}
 		unit.DocType = itemDocType(unit)
 		// Media units are content attachments, not block-kind boundaries.
-		// Base normalized their CKType to DocType here, so an image-only
-		// heading folded into the preceding chunk; preserve that behavior.
+		// Base normalized the media type here, so an image-only heading
+		// folded into the preceding chunk; preserve that behavior.
 		if unit.DocType == "table" || unit.DocType == "image" {
 			clearStructuralLayout(&unit)
 		}

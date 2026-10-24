@@ -749,9 +749,11 @@ func metaStringSlice(m map[string]any, key string) []string {
 // headless / manual chaining reads them from the component output map, so they
 // must be forwarded when present.
 func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]any {
-	// Accept both the []any and []map[string]any chunk carriers (the chunker
-	// emits the latter; buildInputs already handles both). Without this, the
-	// original source chunks would be dropped when the carrier is []map[string]any.
+	// Accept the []any and []map[string]any chunk carriers verbatim (the
+	// legacy chunker emits the latter; buildInputs already handles both). The
+	// default arm accepts the typed []ChunkDoc carrier via GetChunks, which
+	// also bridges legacy forms, so the upstream chunks are never silently
+	// dropped on a type mismatch.
 	var raw []any
 	switch v := inputs["chunks"].(type) {
 	case []any:
@@ -762,7 +764,13 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 			raw = append(raw, m)
 		}
 	default:
-		clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		if typed, ok := schema.GetChunks(inputs); ok {
+			for _, c := range typed {
+				raw = append(raw, c.ToMap())
+			}
+		} else {
+			clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		}
 	}
 	merged := make([]any, 0, len(raw)+len(compiled))
 	for _, r := range raw {
@@ -811,7 +819,8 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	// The upstream pipeline hands chunks over as a []any of map[string]any in
 	// some paths and as a []map[string]any in others (the chunker emits the
 	// latter). Accept both so the knowledge compiler never silently drops the
-	// whole upstream output on a type mismatch.
+	// whole upstream output on a type mismatch. The typed []ChunkDoc carrier is
+	// handled via GetChunks, which also bridges the legacy forms.
 	var raw []map[string]any
 	switch v := inputs["chunks"].(type) {
 	case []any:
@@ -826,7 +835,11 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	case []map[string]any:
 		raw = v
 	default:
-		clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		if typed, ok := schema.GetChunks(inputs); ok {
+			raw = schema.ChunkDocsToMaps(typed)
+		} else {
+			clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		}
 	}
 	clog.Info("knowledge_compiler: buildInputs: accepted chunks from inputs[chunks]", zap.Int("chunks", len(raw)))
 	for _, m := range raw {

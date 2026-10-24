@@ -505,7 +505,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
       action: '操作',
@@ -705,9 +705,11 @@ export default {
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方式',
+      parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      parserSettingsChangeWarning:
+        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -728,8 +730,6 @@ export default {
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
         '建议的生成文本块的 Token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
       chinese: '中文',
@@ -1084,8 +1084,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
-      naiveSettings: 'Naive 设置',
-      agenticSettings: 'Agentic 设置',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
       agenticTemplate: 'Agentic 模板',
       agenticTemplateTip:
         'Agentic RAG 运行时使用的系统模板。编辑后为当前助手覆盖默认模板，可一键重置恢复。',
@@ -1218,8 +1218,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '语言',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
@@ -3009,7 +3007,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       userPrompt: '用户提示词',
       tagFile: '标签文件',
       tagFileTip:
-        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签文件支持 XLSX、XLS、CSV、TXT 格式，每行包含文本和标签两列，多个标签用英文逗号分隔，无需表头。标签提取可能产生额外的 Token 消耗。提取失败时，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3136,6 +3134,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       checklist: '检查清单',
       checklistEmpty: '未发现问题',
       checklistTitle: '以下问题可能影响运行或发布',
+      loopRowsIncomplete: '请完善循环变量和终止条件',
+      iterationOutputsIncomplete: '请完善迭代输出名称和引用',
       issueNotConnected: '该步骤未与任何算子连接',
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',

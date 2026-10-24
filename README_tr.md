@@ -223,10 +223,10 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirir ve açar; `download_deps.py`, cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `ragflow_deps/` altına indirir. İkisi de Python betiğidir; `uv run`, bildirilen bağımlılıkları (`requests` ve model ile tokenizer indirmeleri için `huggingface-hub`) otomatik olarak kurar. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
+   `download_dev_deps.py`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirir ve açar; `download_deps.py`, cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `deps/` altına indirir. İkisi de Python betiğidir; `uv run`, bildirilen bağımlılıkları (`requests` ve model ile tokenizer indirmeleri için `huggingface-hub`) otomatik olarak kurar. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
 
 3. Hizmetleri derleyin:
 

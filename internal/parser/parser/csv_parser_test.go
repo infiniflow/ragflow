@@ -18,8 +18,8 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 
 	// Default output format is "json"
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 
 	// One wire shape: the whole sheet is one segmented HTML table item.
@@ -99,20 +99,17 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 	}
 }
 
-func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
+func TestCSVParser_ConfigureproducedJSON(t *testing.T) {
 	csvData := []byte("col1,col2\nval1,val2\n")
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "test.csv", csvData)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
@@ -127,17 +124,14 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 
 func TestCSVParser_EmptyContent(t *testing.T) {
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "empty.csv", []byte("   \n\n  "))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("len(res.JSON) = %d, want 0", len(res.JSON))

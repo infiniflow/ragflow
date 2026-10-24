@@ -167,7 +167,7 @@ export default {
       webCrawl: 'ウェブクロール',
       chunkNumber: 'チャンク数',
       uploadDate: 'アップロード日',
-      chunkMethod: 'チャンク方法',
+      parsingMode: '解析モード',
       enabled: '有効',
       disabled: '無効',
       action: 'アクション',
@@ -422,8 +422,6 @@ export default {
       chunkTokenNumberTip:
         'チャンクのトークンしきい値を設定します。このしきい値を下回る段落は、次の段落と結合され、しきい値を超えた時点でチャンクが作成されます。新しいチャンクは、デリミタが検出されるまで作成されません。このしきい値が超過されていてもです。',
 
-      chunkMethod: 'チャンク方法',
-      chunkMethodTip: '詳細は右側の説明をご覧ください。',
       upload: 'アップロード',
       english: '英語',
       chinese: '中国語',
@@ -637,7 +635,7 @@ export default {
       dataFlowPlaceholder: 'パイプラインを選択してください。',
       buildItFromScratch: '最初から構築',
       dataFlow: 'パイプライン',
-      parseType: 'パースタイプ',
+      parsingMode: '解析モード',
       manualSetup: 'パイプライン',
       builtIn: '組み込み',
       portugueseBr: 'ポルトガル語（ブラジル）',
@@ -1008,9 +1006,6 @@ export default {
       muteWidget: 'ウィジェットの音声をミュート',
       crossLanguagePlaceholder: '値を選択してください',
       metadataKeys: 'フィルター可能な項目',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'ドキュメントの解析時に目次情報が生成されます（「全般」方式の「目次抽出を有効にする」オプションを参照）。これにより、大規模モデルはユーザーのクエリに関連する目次項目を返すことができ、これらの項目を使って関連チャンクを取得し、並べ替え時にこれらのチャンクへ重み付けを適用します。この手法は、人間が書籍の中で情報を探す際の行動を模倣したものです。',
       batchDeleteSessions: '一括削除',
       deleteSelectedConfirm: '選択した{{count}}件のセッションを削除しますか？',
     },

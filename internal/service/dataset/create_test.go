@@ -22,18 +22,21 @@ func insertCreateDatasetTenant(t *testing.T, tenantID string) {
 	var existing entity.Tenant
 	if err := dao.DB.Where("id = ?", tenantID).First(&existing).Error; err != nil {
 		tn := &entity.Tenant{
-			ID:           tenantID,
-			LLMID:        "llm-default",
-			EmbdID:       "embd-default",
-			TenantEmbdID: sptr("embd-1"),
-			ASRID:        "asr-default",
-			Status:       sptr("1"),
+			ID:     tenantID,
+			Status: sptr("1"),
 		}
 		if err := dao.DB.Create(tn).Error; err != nil {
 			t.Fatalf("insert test tenant: %v", err)
 		}
 	}
 	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
+	if err := dao.DB.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", tenantID, tenantID).
+		Updates(map[string]interface{}{
+			"llm_id": "llm-default", "embd_id": "embd-default", "tenant_embd_id": "embd-1", "asr_id": "asr-default",
+		}).Error; err != nil {
+		t.Fatalf("configure owner model defaults: %v", err)
+	}
 }
 
 func testDatasetCreateService(t *testing.T) *DatasetService {

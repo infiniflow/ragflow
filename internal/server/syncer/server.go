@@ -21,6 +21,7 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/server/local"
 
 	"ragflow/internal/common"
 	"ragflow/internal/server"
@@ -50,6 +51,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
+
+	// Init admin client status in syncer
+	local.InitAdminStatus()
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)

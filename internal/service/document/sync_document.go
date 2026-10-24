@@ -141,7 +141,7 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	doc.ContentHash = nil
 
 	// put 'file' in mysql `document`
-	if err = s.InsertDocument(doc); err != nil {
+	if err = s.InsertDocument(ctx, doc); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 	if err = s.publishSyncDocument(ctx, doc, location); err != nil {

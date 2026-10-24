@@ -716,7 +716,7 @@ func RefuseUnavailableCounter(tokenizerID, calibrationKey string) error {
 		return nil
 	}
 	return fmt.Errorf(
-		"model tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_deps.py`): refusing to count with the calibrated estimate",
+		"model tokenizer %q is declared for %s but its asset is unavailable (check that deps/huggingface.co is present; run `uv run deps/download_deps.py`): refusing to count with the calibrated estimate",
 		tokenizerID, calibrationKey)
 }
 
@@ -740,7 +740,7 @@ func OwnTokenMax(texts []string, counter Counter) int {
 type cl100kCounter struct{ id string }
 
 // CountCL100K is the cl100k_base counter, backed by the BPE table shipped in
-// ragflow_deps (see bpe_loader.go).
+// deps (see bpe_loader.go).
 func CountCL100K() Counter { return cl100kCounter{id: CounterCL100K} }
 
 func (c cl100kCounter) ID() string { return c.id }

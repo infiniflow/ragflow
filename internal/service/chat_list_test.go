@@ -37,12 +37,17 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+
+	if err = db.Create(&entity.UserTenant{
+		ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner",
+		LLMID: "model-a", EmbdID: "embd-a", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 
 	if err = db.Create(&entity.User{

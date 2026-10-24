@@ -117,10 +117,6 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 			if item["layout"] != tc.layout || item["text"] != tc.want {
 				t.Fatalf("title semantics: %v", item)
 			}
-			formatted := pdfItemsToResult("title.pdf", ItemsToMaps(result.JSON), "markdown", 1)
-			if formatted.Markdown != tc.want {
-				t.Fatalf("markdown=%q; want %q", formatted.Markdown, tc.want)
-			}
 		})
 	}
 }

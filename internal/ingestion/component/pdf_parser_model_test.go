@@ -142,7 +142,7 @@ func TestTenantPDFParserModelSelection(t *testing.T) {
 					if form == "id" {
 						ref = "model-b"
 					}
-					setup := schema.ParserSetup{"parse_method": "deepdoc", "output_format": "json", field: ref}
+					setup := schema.ParserSetup{"parse_method": "deepdoc", field: ref}
 					before, _ := json.Marshal(setup)
 					res, handled, err := maybeDispatchPDFVision(t.Context(), db, utility.FileTypePDF,
 						"sample.pdf", []byte("%PDF local protocol fixture"), map[string]any{"tenant_id": "tenant-1"},
@@ -257,7 +257,7 @@ func TestTenantPDFParserMissingModelIDIsHandled(t *testing.T) {
 		for _, field := range []string{"parse_method", "layout_recognizer"} {
 			t.Run(provider+"/"+field, func(t *testing.T) {
 				db, _, requests := tenantPDFParserFixture(t, provider)
-				setup := schema.ParserSetup{"parse_method": "deepdoc", "output_format": "json", field: missingModelID}
+				setup := schema.ParserSetup{"parse_method": "deepdoc", field: missingModelID}
 				before, err := json.Marshal(setup)
 				if err != nil {
 					t.Fatal(err)
@@ -347,7 +347,7 @@ func TestTenantPDFParserMissingModelIDInvokeDoesNotFallback(t *testing.T) {
 			})
 
 			setup := map[string]any{
-				"parse_method": tc.method, "output_format": "json", tc.field: missingModelID,
+				"parse_method": tc.method, tc.field: missingModelID,
 				"somark_base_url": fallback.URL + "/setup/somark", "somark_api_key": "setup-key-must-not-be-used",
 				"opendataloader_apiserver": fallback.URL + "/setup/opendataloader",
 				"opendataloader_api_key":   "setup-key-must-not-be-used",
