@@ -113,12 +113,38 @@ inline std::string ToLowerString(std::string_view s)
     return result;
 }
 
-// ToLowerUTF8 folds ASCII A-Z and upper-case Cyrillic U+0400-U+042F (the
-// two-byte range covering the Russian alphabet) to lower case in place.
-// Byte length is preserved so callers that map token offsets back to the source
-// string keep their indices valid. The Snowball Russian stemmer only accepts
-// lower-case input, so index-side tokens must be folded before stemming;
-// ToLower above is deliberately ASCII-only and leaves Cyrillic untouched.
+// Simple (1:1) lower-case mapping for Cyrillic U+0400-U+04FF. Upper/lower
+// pairs are contiguous inside the main blocks; U+0460-U+0481 and
+// U+048A-U+04BF interleave them (upper first), while U+04C3-U+04CE interleave
+// with the upper case on the odd code point. U+04C0/U+04C1 are the two
+// exceptions Unicode defines outside that pattern.
+[[nodiscard]] constexpr uint32_t ToLowerCyrillic(uint32_t cp) noexcept
+{
+    if (cp >= 0x0400 && cp <= 0x040F)
+        return cp + 0x50;
+    if (cp >= 0x0410 && cp <= 0x042F)
+        return cp + 0x20;
+    if (cp >= 0x0460 && cp <= 0x0481 && (cp & 1) == 0)
+        return cp + 1;
+    if (cp >= 0x048A && cp <= 0x04BF && (cp & 1) == 0)
+        return cp + 1;
+    if (cp == 0x04C0)
+        return 0x04CF;
+    if (cp == 0x04C1)
+        return 0x04C2;
+    if (cp >= 0x04C3 && cp <= 0x04CE && (cp & 1) == 1)
+        return cp + 1;
+    if (cp >= 0x04D0 && cp <= 0x04FF && (cp & 1) == 0)
+        return cp + 1;
+    return cp;
+}
+
+// ToLowerUTF8 folds ASCII A-Z and upper-case Cyrillic U+0400-U+04FF to lower
+// case in place. Byte length is preserved so callers that map token offsets
+// back to the source string keep their indices valid. The Snowball Russian
+// stemmer only accepts lower-case input, so index-side tokens must be folded
+// before stemming; ToLower above is deliberately ASCII-only and leaves
+// Cyrillic untouched.
 inline void ToLowerUTF8(char* data, size_t len)
 {
     for (size_t i = 0; i < len;)
@@ -131,28 +157,24 @@ inline void ToLowerUTF8(char* data, size_t len)
             i += 1;
             continue;
         }
-        if (c == 0xD0 && i + 1 < len)
+        // Cyrillic occupies the two-byte leads D0-D3. All foldings stay inside
+        // the same block, so the encoded length never changes.
+        if (c >= 0xD0 && c <= 0xD3 && i + 1 < len)
         {
             const unsigned char t = static_cast<unsigned char>(data[i + 1]);
-            if (t >= 0x80 && t <= 0x8F)
+            if (t >= 0x80 && t <= 0xBF)
             {
-                // U+0400-U+040F -> U+0450-U+045F (D0 80-8F -> D1 90-9F)
-                data[i] = static_cast<char>(0xD1);
-                data[i + 1] = static_cast<char>(t + 0x10);
+                const uint32_t cp = ((c - 0xD0u) << 6) + (t - 0x80u) + 0x400u;
+                const uint32_t folded = ToLowerCyrillic(cp);
+                if (folded != cp)
+                {
+                    const uint32_t offset = folded - 0x400u;
+                    data[i] = static_cast<char>(0xD0u + (offset >> 6));
+                    data[i + 1] = static_cast<char>(0x80u + (offset & 0x3Fu));
+                }
+                i += 2;
+                continue;
             }
-            else if (t >= 0x90 && t <= 0x9F)
-            {
-                // U+0410-U+041F -> U+0430-U+043F (D0 90-9F -> D0 B0-BF)
-                data[i + 1] = static_cast<char>(t + 0x20);
-            }
-            else if (t >= 0xA0 && t <= 0xAF)
-            {
-                // U+0420-U+042F -> U+0440-U+044F (D0 A0-AF -> D1 80-8F)
-                data[i] = static_cast<char>(0xD1);
-                data[i + 1] = static_cast<char>(t - 0x20);
-            }
-            i += 2;
-            continue;
         }
         // Other multi-byte sequences pass through byte for byte.
         i += 1;

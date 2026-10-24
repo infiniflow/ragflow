@@ -440,23 +440,22 @@ func TestTokenize_RussianFoldsCyrillicBeforeStemming(t *testing.T) {
 	// accepts lower-case input, so an upper-case word would otherwise reach
 	// the suffix table unchanged while the query side folds it with
 	// strings.ToLower.
-	upper, err := New("Russian").Tokenize("ДОГОВОРАМИ")
-	if err != nil {
-		t.Fatalf("Tokenize(Russian, upper) unexpected error: %v", err)
+	var want string
+	for _, form := range []string{"ДОГОВОРАМИ", "Договора", "договорами", "договор"} {
+		got, err := New("Russian").Tokenize(form)
+		if err != nil {
+			t.Fatalf("Tokenize(Russian, %q) unexpected error: %v", form, err)
+		}
+		if want == "" {
+			want = got
+			continue
+		}
+		if got != want {
+			t.Errorf("Tokenize(Russian, %q) = %q, want the shared stem %q", form, got, want)
+		}
 	}
-	lower, err := New("Russian").Tokenize("договорами")
-	if err != nil {
-		t.Fatalf("Tokenize(Russian, lower) unexpected error: %v", err)
-	}
-	base, err := New("Russian").Tokenize("договор")
-	if err != nil {
-		t.Fatalf("Tokenize(Russian, base) unexpected error: %v", err)
-	}
-	if upper != lower {
-		t.Errorf("Tokenize(Russian, upper) = %q, want the lower-case result %q", upper, lower)
-	}
-	if upper != base {
-		t.Errorf("Tokenize(Russian, upper) = %q, want the stemmed form %q", upper, base)
+	if want != "договор" {
+		t.Errorf("Russian stem for the договор forms = %q, want %q", want, "договор")
 	}
 }
 
