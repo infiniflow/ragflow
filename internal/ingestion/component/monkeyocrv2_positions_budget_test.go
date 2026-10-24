@@ -154,3 +154,22 @@ func TestMonkeyOCRv2InlineDataURIPositionsOnlyWithoutPosition(t *testing.T) {
 		t.Fatalf("omission must be counted: %+v", budget)
 	}
 }
+
+func TestMonkeyOCRv2InlineDataURIChargesExactDecodedBytes(t *testing.T) {
+	// 100 decoded bytes base64-encode to 136 chars with "==" padding;
+	// DecodedLen(136) = 102. A 101-byte remaining budget fits the exact
+	// 100 bytes but not the 102-byte maximum estimate.
+	png := bytes.Repeat([]byte{7}, 100)
+	uri := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+	budget := &monkeyOCRv2ImageBudget{remaining: 101}
+	raw := map[string]any{"layouts": []any{
+		map[string]any{"label": "Text", "content": "![a](" + uri + ")", "page_num": float64(1), "bbox": []any{1.0, 2.0, 3.0, 4.0}},
+	}}
+	items := monkeyOCRv2LayoutItems(raw, nil, budget)
+	if len(items) != 1 {
+		t.Fatalf("items=%v", items)
+	}
+	if _, ok := items[0]["image"]; !ok {
+		t.Fatalf("padded payload fitting exactly must be inlined: %#v", items[0])
+	}
+}

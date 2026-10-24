@@ -546,8 +546,17 @@ func monkeyOCRv2LayoutItems(raw any, images map[string]*zip.File, budget *monkey
 				payload = payload[i+1:]
 			}
 			// Inline data-URI images share the document image budget; bill the
-			// decoded payload, not the URI text.
-			if budget == nil || budget.charge(base64.StdEncoding.DecodedLen(len(payload))) {
+			// decoded payload, not the URI text. DecodedLen is a maximum:
+			// subtract the base64 padding so a valid padded payload is
+			// charged its exact decoded byte count.
+			charge := base64.StdEncoding.DecodedLen(len(payload))
+			if strings.HasSuffix(payload, "=") {
+				charge--
+				if strings.HasSuffix(payload, "==") {
+					charge--
+				}
+			}
+			if budget == nil || budget.charge(charge) {
 				item := map[string]any{"text": match[1], "image": uri, "doc_type_kwd": "image", "layout": "figure"}
 				monkeyOCRv2SetPosition(item, position)
 				return []map[string]any{item}
