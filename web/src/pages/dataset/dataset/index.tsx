@@ -34,6 +34,7 @@ import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
 import { useHandleUploadDocument } from './use-upload-document';
 
+/** Wait for catalog success before pruning restored choices, so loading cannot discard them. */
 export default function Dataset() {
   const { t } = useTranslation();
   const {
@@ -58,7 +59,8 @@ export default function Dataset() {
 
   useGoToPreviousPageOnEmpty(documents?.length, loading);
 
-  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
+  const { filters, filterLoaded, onOpenChange, filterGroup } =
+    useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -77,8 +79,8 @@ export default function Dataset() {
   } = useManageMetadata();
 
   useEffect(() => {
-    checkValue(filters);
-  }, [filters]);
+    checkValue(filters, filterLoaded);
+  }, [checkValue, filterLoaded, filters]);
 
   const {
     rowSelection,

@@ -14,9 +14,9 @@
  *  limitations under the License.
  */
 
-import { isArray, isEmpty, isObject, some } from 'lodash';
+import { isArray, isEmpty, isEqual, isObject, some } from 'lodash';
 
-import { FilterValue } from './interface';
+import { FilterCollection, FilterType, FilterValue } from './interface';
 
 // A filter value may hold empty structures (e.g. every field set to an empty
 // array) once the user clears the popover; only values with at least one
@@ -27,4 +27,50 @@ export function hasActiveFilter(value?: FilterValue): boolean {
       ? !isEmpty(fieldValue)
       : isObject(fieldValue) && some(fieldValue, (ids) => !isEmpty(ids)),
   );
+}
+
+/** Group IDs are not selectable, so only leaf IDs can validate selections. */
+const getFilterIds = (filter: FilterType | FilterCollection): string[] => {
+  if (Array.isArray(filter.list)) {
+    return filter.list.flatMap(getFilterIds);
+  }
+  return 'id' in filter ? [filter.id] : [];
+};
+
+/**
+ * Preserve unchanged references so catalog polling does not reset popover drafts.
+ * @param filtersLoaded Only a successful catalog can make an empty result authoritative.
+ */
+export function pruneFilterValue(
+  filterValue: FilterValue,
+  filters: FilterCollection[],
+  filtersLoaded = false,
+): FilterValue {
+  const ids = filters.flatMap(getFilterIds);
+  if (!ids.length) {
+    return filtersLoaded && hasActiveFilter(filterValue) ? {} : filterValue;
+  }
+
+  const value: FilterValue = {};
+  for (const key in filterValue) {
+    const fieldValue = filterValue[key];
+    const options = filters.find((filter) => filter.field === key)?.list ?? [];
+    if (Array.isArray(fieldValue)) {
+      const allowedIds = options.flatMap(getFilterIds);
+      value[key] = fieldValue.filter((id) => allowedIds.includes(id));
+    } else {
+      const nestedValue: Record<string, string[]> = {};
+      for (const nestedKey in fieldValue) {
+        const allowedIds =
+          options
+            .find((option) => option.id === nestedKey)
+            ?.list?.flatMap(getFilterIds) ?? [];
+        nestedValue[nestedKey] = fieldValue[nestedKey].filter((id) =>
+          allowedIds.includes(id),
+        );
+      }
+      value[key] = nestedValue;
+    }
+  }
+  return isEqual(filterValue, value) ? filterValue : value;
 }
