@@ -263,3 +263,78 @@ func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
 		t.Errorf("timing log must not carry payloads while LLM_DEBUG is disabled: %v", fields)
 	}
 }
+
+// resetSharedHTTPClients drops the process-wide client cache so the next Get*
+// call rebuilds it under the test's environment, and restores the previous
+// cache afterwards. A test that changed the env must not leave a client built
+// from it behind for later tests.
+func resetSharedHTTPClients(t *testing.T) {
+	t.Helper()
+	previousSSRF, previousSchemeSafe := ssrfHttpClient, schemeSafeHttpClient
+	ssrfHttpClient, schemeSafeHttpClient = nil, nil
+	t.Cleanup(func() {
+		ssrfHttpClient, schemeSafeHttpClient = previousSSRF, previousSchemeSafe
+	})
+}
+
+func responseHeaderTimeoutOf(t *testing.T, client *http.Client) time.Duration {
+	t.Helper()
+	logging, ok := client.Transport.(*providerLoggingTransport)
+	if !ok {
+		t.Fatalf("client transport = %T, want *providerLoggingTransport", client.Transport)
+	}
+	var inner http.RoundTripper
+	switch tr := logging.base.(type) {
+	case *schemeSafeTransport:
+		inner = tr.base
+	case *strictSSRFTransport:
+		inner = tr.base
+	default:
+		t.Fatalf("inner transport = %T, want scheme-safe or SSRF transport", logging.base)
+	}
+	transport, ok := inner.(*http.Transport)
+	if !ok {
+		t.Fatalf("inner transport base = %T, want *http.Transport", inner)
+	}
+	return transport.ResponseHeaderTimeout
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutDefaults(t *testing.T) {
+	t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "")
+	resetSharedHTTPClients(t)
+
+	if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != schemeSafeResponseHeaderTimeoutDefault {
+		t.Errorf("scheme-safe response header timeout = %v, want %v", got, schemeSafeResponseHeaderTimeoutDefault)
+	}
+	if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != ssrfResponseHeaderTimeoutDefault {
+		t.Errorf("SSRF response header timeout = %v, want %v", got, ssrfResponseHeaderTimeoutDefault)
+	}
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutOverride(t *testing.T) {
+	t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "15s")
+	resetSharedHTTPClients(t)
+
+	if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != 15*time.Second {
+		t.Errorf("scheme-safe response header timeout = %v, want 15s", got)
+	}
+	if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != 15*time.Second {
+		t.Errorf("SSRF response header timeout = %v, want 15s", got)
+	}
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutIgnoresInvalidValues(t *testing.T) {
+	for _, value := range []string{"not-a-duration", "0s", "-5s", "30"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(EnvLLMHTTPResponseHeaderTimeout, value)
+			resetSharedHTTPClients(t)
+
+			if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != schemeSafeResponseHeaderTimeoutDefault {
+				t.Errorf("scheme-safe response header timeout = %v, want default %v for %q", got, schemeSafeResponseHeaderTimeoutDefault, value)
+			}
+			if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != ssrfResponseHeaderTimeoutDefault {
+				t.Errorf("SSRF response header timeout = %v, want default %v for %q", got, ssrfResponseHeaderTimeoutDefault, value)
+			}
+		})
+	}
+}
