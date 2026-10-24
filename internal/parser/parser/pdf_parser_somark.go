@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -173,7 +174,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			continue
 		}
 		pageNumber := pageIndex + 1
-		if n := int(numberValue(page["page_number"])); n > 0 {
+		if n, ok := soMarkPageIndex(page["page_number"]); ok && n > 0 {
 			pageNumber = n
 		}
 		blocks, _ := page["blocks"].([]any)
@@ -189,8 +190,8 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 				// A block may carry its own 0-based page_idx; it wins over the
 				// enclosing page value, which stays as the fallback.
 				blockPage := pageNumber
-				if raw, ok := numericAny(block["page_idx"]); ok && raw >= 0 {
-					blockPage = int(raw) + 1
+				if n, ok := soMarkPageIndex(block["page_idx"]); ok {
+					blockPage = n + 1
 				}
 				if pos := soMarkBlockPosition(block, blockPage); pos != nil {
 					item["positions"] = [][]any{pos}
@@ -206,6 +207,17 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 // soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
 // its 1-based page number into the [page, left, right, top, bottom] position
 // row used by _pdf_positions.
+// soMarkPageIndex validates a SoMark page index before use: JSON numbers
+// arrive as float64, so reject fractional, negative, non-finite, and
+// out-of-int-range values instead of truncating them into a wrong page.
+func soMarkPageIndex(raw any) (int, bool) {
+	f, ok := numericAny(raw)
+	if !ok || math.IsNaN(f) || math.IsInf(f, 0) || f < 0 || f != math.Trunc(f) || f > float64(math.MaxInt32) {
+		return 0, false
+	}
+	return int(f), true
+}
+
 func soMarkBlockPosition(block map[string]any, pageNumber int) []any {
 	bbox, _ := block["bbox"].([]any)
 	if len(bbox) != 4 {

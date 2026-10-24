@@ -169,6 +169,26 @@ func TestSoMarkItemsPreferBlockPageIdx(t *testing.T) {
 	}
 }
 
+func TestSoMarkItemsRejectInvalidPageIdx(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": float64(2), "blocks": []any{
+			map[string]any{"type": "text", "content": "fractional", "page_idx": float64(4.5), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "overflow", "page_idx": float64(1e30), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "valid", "page_idx": float64(7), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+		}},
+	}}}}
+	items, _ := soMarkItems(result, false)
+	if len(items) != 3 {
+		t.Fatalf("items=%d, want 3", len(items))
+	}
+	for i, want := range []float64{3, 3, 8} {
+		rows, _ := items[i]["_pdf_positions"].([][]any)
+		if len(rows) != 1 || rows[0][0] != want {
+			t.Fatalf("item %d page = %#v, want %v (invalid page_idx must fall back to page_num)", i, rows, want)
+		}
+	}
+}
+
 func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
