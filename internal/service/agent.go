@@ -1201,7 +1201,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := validateEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap); err != nil {
+		if err := validateAgentChatModelReferences(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap, !release); err != nil {
 			return err
 		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
@@ -1330,9 +1330,6 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
 			}
-			if err := component.ValidateDynamicEntries(req.DSL); err != nil {
-				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
-			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
 		}
 		if req.Title != nil {
@@ -1344,6 +1341,12 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		}
 	}
 
+	if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dsl); err != nil {
+		return nil, err
+	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+	}
 	canvasInstance.DSL = dsl
 	canvasInstance.Title = title
 	canvasInstance.Description = description
@@ -1776,6 +1779,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
 		return nil, err
 	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("RunAgent: %w", err)
+	}
 	// A trusted boundary may allocate the session id before calling RunAgent so
 	// the effective id is available even when the run emits no events.
 	if !sessionFound || newSession {
@@ -1926,11 +1932,15 @@ func (s *AgentService) runReleasedAgent(ctx context.Context, userID, canvasID, s
 	return s.RunAgent(ctx, userID, canvasID, sessionID, version.ID, userInput, files)
 }
 
-// validateAgentChatModels rejects stale Agent model references before saving or
-// execution. It resolves models in the canvas tenant and checks access for the
-// actual caller. Agent components always invoke a chat model; model-free
+// validateAgentChatModels rejects stale Agent model references before execution.
+// It resolves models in the canvas tenant and checks access for the actual
+// caller. Agent components always invoke a chat model; model-free
 // canvases contain no Agent component and pass through.
 func validateAgentChatModels(ctx context.Context, userID, tenantID string, dsl map[string]any) error {
+	return validateAgentChatModelReferences(ctx, userID, tenantID, dsl, false)
+}
+
+func validateAgentChatModelReferences(ctx context.Context, userID, tenantID string, dsl map[string]any, draft bool) error {
 	c, err := canvas.DecodeFromDSL(dsl)
 	if err != nil {
 		return nil
@@ -1940,11 +1950,21 @@ func validateAgentChatModels(ctx context.Context, userID, tenantID string, dsl m
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
 		}
+		for _, field := range []string{"model_id", "llm_id"} {
+			if value := node.Obj.Params[field]; value != nil {
+				if _, ok := value.(string); !ok {
+					return fmt.Errorf("Agent %s must be a string", field)
+				}
+			}
+		}
 		modelRef, ok := node.Obj.Params["model_id"].(string)
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
 		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, modelRef); err != nil {
+			if draft && (errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound)) && !errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrResourceNotFound) {
+				continue
+			}
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}
@@ -2003,6 +2023,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if err := component.ValidateDynamicEntries(dsl); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
 		}
 
 		// Install a per-run token usage sink so every LLM call inside

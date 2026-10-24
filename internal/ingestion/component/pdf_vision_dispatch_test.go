@@ -107,7 +107,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 
@@ -115,7 +115,7 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+	if !resultMD.Produced() || len(resultMD.JSON) == 0 {
 		t.Fatalf("resultMD=%+v", resultMD)
 	}
 }
@@ -151,7 +151,7 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Markdown != "selected" {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -179,7 +179,7 @@ func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "json" || len(result.JSON) == 0 {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -197,7 +197,7 @@ func TestDispatchPaddleOCRPDFRejectsMissingBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatalf("dispatchPaddleOCRPdf without page blocks: expected error, got result %+v", res)
 	}
-	if res.OutputFormat != "" || res.Markdown != "" {
+	if res.Produced() {
 		t.Errorf("expected zero-value result on error, got %+v", res)
 	}
 }
@@ -337,7 +337,7 @@ func TestDispatchPaddleOCRPDFPreservesLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "json" || len(result.JSON) != 7 {
+	if !result.Produced() || len(result.JSON) != 7 {
 		t.Fatalf("result=%+v", result)
 	}
 	if result.JSON[0].ToMap()["positions"] == nil || result.JSON[2].ToMap()["table"] == nil {

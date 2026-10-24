@@ -57,6 +57,34 @@ func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 	}
 }
 
+func TestSystemVariableRoutesAreNotRegisteredOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/system/variables"},
+		{http.MethodPut, "/api/v1/system/variables"},
+		{http.MethodGet, "/api/v1/system/variables/register_enabled"},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Errorf("%s %s status=%d body=%s; want system variable route to be unavailable on the API service", tt.method, tt.path, resp.Code, resp.Body.String())
+		}
+	}
+}
+
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

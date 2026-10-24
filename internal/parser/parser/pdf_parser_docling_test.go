@@ -76,8 +76,8 @@ func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	var got strings.Builder
 	for _, item := range ItemsToMaps(res.JSON) {
@@ -145,8 +145,8 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want markdown-normalized items")

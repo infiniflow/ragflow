@@ -1052,6 +1052,7 @@ describe('collectCanvasIssues: compiler template group', () => {
         nodeId: 'Compiler:c1',
         type: CanvasIssueType.MissingRequired,
         messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+        blocksRun: true,
       }),
     );
   });

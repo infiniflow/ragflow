@@ -11,6 +11,14 @@ const mockSetAgent = jest.fn();
 const mockResetAgent = jest.fn();
 const mockBuildDslData = jest.fn();
 
+const mockResolveValidIds = jest.fn().mockResolvedValue(new Set(['model']));
+jest.mock('@/hooks/use-llm-request', () => ({
+  useModelValidIds: () => ({ resolveValidIds: mockResolveValidIds }),
+}));
+jest.mock('@/components/model-tree-select', () => ({
+  ModelTypeMap: { llm_id: ['chat'] },
+}));
+
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchAgent: () => ({ data: { title: 'Draft' } }),
   useSetAgent: () => ({ setAgent: mockSetAgent, loading: false }),
@@ -98,7 +106,7 @@ describe('Run preflight', () => {
       useSaveGraphBeforeOpeningDebugDrawer(show),
     );
     useGraphStore.setState({
-      nodes: [node('Message', { text: 'hello' }), node('Compiler', {})],
+      nodes: [node('Message', { text: 'hello' }), node('Parser', {})],
     });
     await act(async () => {
       await result.current.handleRun();

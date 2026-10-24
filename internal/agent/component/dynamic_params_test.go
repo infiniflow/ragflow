@@ -96,9 +96,14 @@ func TestValidateDynamicEntries(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			draftErr := ValidateDraftDynamicEntries(dslWithComponents(test.component))
-			if test.component["component_name"] == "Message" {
+			invokeDraft := test.component["component_name"] == "Invoke"
+			switch test.name {
+			case "invoke variable row not a map", "invoke variable nil row", "invoke variable with numeric key", "invoke variables not an array", "invoke variables object":
+				invokeDraft = false
+			}
+			if test.component["component_name"] == "Message" || test.component["component_name"] == "Agent" || test.component["component_name"] == "DataOperations" || test.component["component_name"] == "Compiler" || test.component["component_name"] == "Loop" || test.component["component_name"] == "Iteration" || test.component["component_name"] == "TokenChunker" || invokeDraft || test.name == "input option" || test.name == "aggregated variable" {
 				if draftErr != nil {
-					t.Fatalf("draft rejected Message: %v", draftErr)
+					t.Fatalf("draft rejected unfinished entries: %v", draftErr)
 				}
 			} else if draftErr == nil || !strings.Contains(draftErr.Error(), test.want) {
 				t.Fatalf("draft validation changed: %v, want %q", draftErr, test.want)

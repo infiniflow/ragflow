@@ -170,9 +170,8 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 
 func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
-		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
-		JSON:         MapsToItems(items),
-		Warnings:     warnings,
+		File:     map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }

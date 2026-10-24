@@ -39,8 +39,8 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if got := res.File["format"]; got != "pptx" {
 		t.Errorf("File[format] = %v, want %q", got, "pptx")
@@ -253,8 +253,8 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 	if gotFileType != wantFileType {
 		t.Errorf("TCADP request file_type = %q, want %q", gotFileType, wantFileType)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("JSON items = 0, want the fixture's parsed content")

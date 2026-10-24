@@ -176,6 +176,101 @@ func TestTitleFamilyKeepsEmptyTextImageItem(t *testing.T) {
 	}
 }
 
+// TestTitleFamilyKeepsPositionOnlyImageItem: PDF figures may carry only
+// coordinates until the on-demand crop runs. Keep them as atomic media chunks
+// even when no caption, inline image or stored reference is available yet.
+func TestTitleFamilyKeepsPositionOnlyImageItem(t *testing.T) {
+	for _, fields := range [][]string{{"positions"}, {"_pdf_positions"}, {"positions", "_pdf_positions"}} {
+		t.Run(strings.Join(fields, "+"), func(t *testing.T) {
+			for _, tc := range titleFamilyComponents(t) {
+				t.Run(tc.name, func(t *testing.T) {
+					item := map[string]any{"text": "", "doc_type_kwd": "image"}
+					for _, field := range fields {
+						item[field] = [][]float64{{1, 10, 100, 10, 100}}
+					}
+					chunks := titleFamilyChunks(t, tc.comp, []map[string]any{
+						{"text": "before figure", "doc_type_kwd": "text"},
+						item,
+						{"text": "after figure", "doc_type_kwd": "text"},
+					})
+					if len(chunks) != 3 || chunks[1]["doc_type_kwd"] != "image" {
+						t.Fatalf("chunks = %#v, want text, image, text", chunks)
+					}
+					ck := chunks[1]
+					if ck["text"] != "" {
+						t.Errorf("image text = %q, want empty caption", ck["text"])
+					}
+					want := [][]any{{float64(1), float64(10), float64(100), float64(10), float64(100)}}
+					for _, field := range fields {
+						if got := ck[field]; !reflect.DeepEqual(got, want) {
+							t.Errorf("%s = %#v, want source coordinates %#v", field, got, want)
+						}
+					}
+					if !strings.Contains(toString(chunks[0]["text"]), "before figure") ||
+						!strings.Contains(toString(chunks[2]["text"]), "after figure") {
+						t.Errorf("neighbor text lost or merged across the image: %#v", chunks)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestTitleFamilyDropsEmptyPositionImageItem: serialized position fields are
+// not a lazy payload unless the position merge retains at least one row.
+func TestTitleFamilyDropsEmptyPositionImageItem(t *testing.T) {
+	for _, value := range []struct {
+		name string
+		pos  any
+	}{
+		{"null", nil},
+		{"empty-array", []any{}},
+		{"empty-row", [][]any{{}}},
+		{"short-row", [][]float64{{1, 10}}},
+	} {
+		t.Run(value.name, func(t *testing.T) {
+			for _, fields := range [][]string{{"positions"}, {"_pdf_positions"}, {"positions", "_pdf_positions"}} {
+				t.Run(strings.Join(fields, "+"), func(t *testing.T) {
+					item := map[string]any{"text": "", "doc_type_kwd": "image"}
+					for _, field := range fields {
+						item[field] = value.pos
+					}
+					for _, tc := range titleFamilyComponents(t) {
+						t.Run(tc.name, func(t *testing.T) {
+							chunks := titleFamilyChunks(t, tc.comp, []map[string]any{
+								{"text": "before figure", "doc_type_kwd": "text"},
+								item,
+								{"text": "after figure", "doc_type_kwd": "text"},
+							})
+							if len(chunks) != 1 || chunks[0]["doc_type_kwd"] != "text" ||
+								chunks[0]["text"] != "before figure\nafter figure\n" {
+								t.Fatalf("chunks = %#v, want one merged text chunk without an empty image", chunks)
+							}
+						})
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestTitleFamilyDropsEmptyPositionsBeforeRootHeading(t *testing.T) {
+	comp, err := NewGroupTitleChunker(map[string]any{
+		"levels":                [][]string{{`^# `}},
+		"root_chunk_as_heading": true,
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	chunks := titleFamilyChunks(t, comp, []map[string]any{
+		{"text": "# Figure context", "doc_type_kwd": "text"},
+		{"text": "", "doc_type_kwd": "image", "positions": []any{}, "_pdf_positions": nil},
+	})
+	if len(chunks) != 1 || chunks[0]["doc_type_kwd"] != "text" || chunks[0]["text"] != "# Figure context\n" {
+		t.Fatalf("chunks = %#v, want only the heading text chunk", chunks)
+	}
+}
+
 // TestTitleFamilyEmptyTextImageUploadsThroughDecorator: the decorated chunker
 // uploads the payload at the chunk id, writes img_id, and drops the raw bytes —
 // the empty-text image chunk must flow through the same decorator path as

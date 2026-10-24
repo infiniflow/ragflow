@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/agent/component"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -698,6 +699,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		if errors.Is(err, ErrAgentStorageError) {
 			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
 		}
+		return nil, common.CodeDataError, err
+	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
 		return nil, common.CodeDataError, err
 	}
 
