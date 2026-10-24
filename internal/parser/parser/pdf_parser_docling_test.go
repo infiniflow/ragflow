@@ -255,3 +255,58 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 		})
 	}
 }
+
+// DOCLING_SERVER_URL is deployment configuration. Docling Serve usually runs
+// beside RAGFlow as a Compose or Kubernetes service, so the environment URL may
+// name a private host.
+func TestPDFParser_ParseWithResult_DoclingEnvServerURLReachesPrivateHost(t *testing.T) {
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"text":"Chunk A"}]`))
+	}))
+	defer server.Close()
+	t.Setenv("DOCLING_SERVER_URL", server.URL)
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{"parse_method": "Docling"})
+
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, want := requestCount.Load(), int32(1); got != want {
+		t.Fatalf("requestCount = %d, want %d", got, want)
+	}
+}
+
+// docling_server_url comes from a pipeline that a tenant can edit, so it keeps
+// the public-address guard.
+func TestPDFParser_ParseWithResult_DoclingSetupServerURLRejectsPrivateHost(t *testing.T) {
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{"text":"Chunk A"}]`))
+	}))
+	defer server.Close()
+	t.Setenv("DOCLING_SERVER_URL", "")
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":       "Docling",
+		"docling_server_url": server.URL,
+	})
+
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err == nil {
+		t.Fatal("ParseWithResult: want the public-address guard to reject a private docling_server_url, got nil")
+	}
+	if !strings.Contains(res.Err.Error(), "non-public address") {
+		t.Fatalf("error = %q, want the public-address guard", res.Err.Error())
+	}
+	if got := requestCount.Load(); got != 0 {
+		t.Fatalf("requestCount = %d, want 0", got)
+	}
+}
