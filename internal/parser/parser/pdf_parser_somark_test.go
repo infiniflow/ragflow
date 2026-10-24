@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,117 @@ func TestSoMarkSubmitMultipartShape(t *testing.T) {
 	}
 	if got := form.Value["api_key"][0]; got != "key" {
 		t.Fatalf("api_key = %q, want key", got)
+	}
+}
+
+func TestSoMarkItemsEmitPagePositions(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": float64(0), "blocks": []any{
+			map[string]any{"type": "text", "content": "first", "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+		}},
+		map[string]any{"page_num": float64(2), "blocks": []any{
+			map[string]any{"type": "text", "content": "swapped", "bbox": []any{200.0, 90.0, 100.0, 50.0}},
+			map[string]any{"type": "text", "content": "no bbox"},
+		}},
+	}}}}
+	items, pageCount := soMarkItems(result, false)
+	if pageCount != 2 || len(items) != 3 {
+		t.Fatalf("pageCount=%d items=%d, want 2/3", pageCount, len(items))
+	}
+	want := [][]any{
+		{float64(1), 10.0, 110.0, 20.0, 40.0},
+		{float64(3), 100.0, 200.0, 50.0, 90.0},
+	}
+	for i, w := range want {
+		for _, key := range []string{"positions", "_pdf_positions"} {
+			rows, _ := items[i][key].([][]any)
+			if len(rows) != 1 || !reflect.DeepEqual(rows[0], w) {
+				t.Fatalf("item %d %s = %#v, want %#v", i, key, items[i][key], w)
+			}
+		}
+	}
+	if _, ok := items[2]["positions"]; ok {
+		t.Fatalf("block without bbox must not carry positions: %#v", items[2])
+	}
+}
+
+func TestSoMarkItemsPreferBlockPageIdx(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": float64(0), "blocks": []any{
+			map[string]any{"type": "text", "content": "own page", "page_idx": float64(4), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "page fallback", "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+		}},
+	}}}}
+	items, _ := soMarkItems(result, false)
+	if len(items) != 2 {
+		t.Fatalf("items=%d, want 2", len(items))
+	}
+	rows, _ := items[0]["_pdf_positions"].([][]any)
+	if len(rows) != 1 || rows[0][0] != float64(5) {
+		t.Fatalf("block page_idx must win: %#v", items[0]["_pdf_positions"])
+	}
+	rows, _ = items[1]["_pdf_positions"].([][]any)
+	if len(rows) != 1 || rows[0][0] != float64(1) {
+		t.Fatalf("missing page_idx must fall back to page_num: %#v", items[1]["_pdf_positions"])
+	}
+}
+
+func TestSoMarkItemsRejectInvalidPageIdx(t *testing.T) {
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
+		map[string]any{"page_num": float64(2), "blocks": []any{
+			map[string]any{"type": "text", "content": "fractional", "page_idx": float64(4.5), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "overflow", "page_idx": float64(1e30), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+			map[string]any{"type": "text", "content": "valid", "page_idx": float64(7), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+		}},
+	}}}}
+	items, _ := soMarkItems(result, false)
+	if len(items) != 3 {
+		t.Fatalf("items=%d, want 3", len(items))
+	}
+	for i, want := range []float64{3, 3, 8} {
+		rows, _ := items[i]["_pdf_positions"].([][]any)
+		if len(rows) != 1 || rows[0][0] != want {
+			t.Fatalf("item %d page = %#v, want %v (invalid page_idx must fall back to page_num)", i, rows, want)
+		}
+	}
+}
+
+func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/parse/async":
+			_, _ = io.Copy(io.Discard, r.Body)
+			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-1"}}`))
+		case "/parse/async_check":
+			_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[{"page_num":1,"blocks":[{"type":"text","content":"hello","bbox":[5,6,50,16]}]}]}}}}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":    "SoMark",
+		"output_format":   "json",
+		"somark_base_url": server.URL,
+		"somark_api_key":  "k",
+	})
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+	rows, ok := ExtractPDFPositions(res.JSON[0].ToMap())
+	if !ok || len(rows) != 1 || len(rows[0]) != 5 {
+		t.Fatalf("positions = %#v ok=%v", rows, ok)
+	}
+	for i, w := range []float64{2, 5, 50, 6, 16} {
+		if got, _ := numericAny(rows[0][i]); got != w {
+			t.Fatalf("positions[0][%d] = %v, want %v (row %#v)", i, rows[0][i], w, rows[0])
+		}
 	}
 }
