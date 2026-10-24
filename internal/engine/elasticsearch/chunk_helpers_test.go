@@ -776,3 +776,38 @@ func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
 	}
 	assertEqual(t, doc["status_int"], 0)
 }
+
+// TestDeleteChunksSurfacesPartialFailures guards against delete_by_query
+// answering 200 with timed_out or failures set while DeleteChunks reports nil.
+func TestDeleteChunksSurfacesPartialFailures(t *testing.T) {
+	cases := map[string]string{
+		"timed_out": `{"deleted":2,"timed_out":true,"failures":[]}`,
+		"failures":  `{"deleted":2,"timed_out":false,"failures":[{"index":"ragflow_tenant","status":500}]}`,
+	}
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				if r.Method == http.MethodHead {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(response))
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatalf("new elasticsearch client: %v", err)
+			}
+			engine := &Engine{client: client}
+			deleted, err := engine.DeleteChunks(t.Context(), map[string]interface{}{"kb_id": "kb-1", "doc_id": "doc-1"}, "ragflow_tenant", "kb-1")
+			if err == nil {
+				t.Fatal("DeleteChunks returned nil error for a partial delete_by_query response")
+			}
+			if deleted != 2 {
+				t.Fatalf("deleted=%d, want 2", deleted)
+			}
+		})
+	}
+}
