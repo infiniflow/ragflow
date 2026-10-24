@@ -572,11 +572,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.modelHandler.CreateModelGroup)
-				model.DELETE("/groups/:group_name", r.modelHandler.DeleteModelGroup)
-				model.GET("/groups", r.modelHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
-				model.POST("/groups/:group_name/model", r.modelHandler.AddModelToGroup)        // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.modelHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
+				model.POST("/groups", r.providerHandler.CreateModelGroup)
+				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)
+				model.GET("/groups", r.providerHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
+				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup)        // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())
