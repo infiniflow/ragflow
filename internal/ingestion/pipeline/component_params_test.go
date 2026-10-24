@@ -3,10 +3,11 @@ package pipeline
 import (
 	"encoding/json"
 	"io/fs"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	builtintemplates "ragflow/internal/ingestion/pipeline/template"
 )
 
 func TestExtractAllComponentParams(t *testing.T) {
@@ -206,7 +207,7 @@ func componentIDs(schemas []ComponentParamsSchema) []string {
 }
 
 func TestExtractAllComponentParams_AllBuiltinTemplates(t *testing.T) {
-	entries, err := fs.ReadDir(builtinTemplateFS, "template")
+	entries, err := fs.ReadDir(builtintemplates.FS(), ".")
 	if err != nil {
 		t.Fatalf("read embedded template dir: %v", err)
 	}
@@ -221,7 +222,7 @@ func TestExtractAllComponentParams_AllBuiltinTemplates(t *testing.T) {
 			continue
 		}
 		tested++
-		raw, err := fs.ReadFile(builtinTemplateFS, filepath.Join("template", name))
+		raw, err := fs.ReadFile(builtintemplates.FS(), name)
 		if err != nil {
 			t.Errorf("%s: read: %v", name, err)
 			continue
