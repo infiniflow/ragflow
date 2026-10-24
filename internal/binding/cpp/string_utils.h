@@ -113,6 +113,59 @@ inline std::string ToLowerString(std::string_view s)
     return result;
 }
 
+// ToLowerUTF8 folds ASCII A-Z and upper-case Cyrillic U+0400-U+042F (the
+// two-byte range covering the Russian alphabet) to lower case in place.
+// Byte length is preserved so callers that map token offsets back to the source
+// string keep their indices valid. The Snowball Russian stemmer only accepts
+// lower-case input, so index-side tokens must be folded before stemming;
+// ToLower above is deliberately ASCII-only and leaves Cyrillic untouched.
+inline void ToLowerUTF8(char* data, size_t len)
+{
+    for (size_t i = 0; i < len;)
+    {
+        const unsigned char c = static_cast<unsigned char>(data[i]);
+        if (c < 0x80)
+        {
+            if ('A' <= c && c <= 'Z')
+                data[i] += 32;
+            i += 1;
+            continue;
+        }
+        if (c == 0xD0 && i + 1 < len)
+        {
+            const unsigned char t = static_cast<unsigned char>(data[i + 1]);
+            if (t >= 0x80 && t <= 0x8F)
+            {
+                // U+0400-U+040F -> U+0450-U+045F (D0 80-8F -> D1 90-9F)
+                data[i] = static_cast<char>(0xD1);
+                data[i + 1] = static_cast<char>(t + 0x10);
+            }
+            else if (t >= 0x90 && t <= 0x9F)
+            {
+                // U+0410-U+041F -> U+0430-U+043F (D0 90-9F -> D0 B0-BF)
+                data[i + 1] = static_cast<char>(t + 0x20);
+            }
+            else if (t >= 0xA0 && t <= 0xAF)
+            {
+                // U+0420-U+042F -> U+0440-U+044F (D0 A0-AF -> D1 80-8F)
+                data[i] = static_cast<char>(0xD1);
+                data[i + 1] = static_cast<char>(t - 0x20);
+            }
+            i += 2;
+            continue;
+        }
+        // Other multi-byte sequences pass through byte for byte.
+        i += 1;
+    }
+}
+
+inline void ToLowerUTF8(const char* data, size_t len, char* out, size_t out_limit)
+{
+    memcpy(out, data, len);
+    ToLowerUTF8(out, len);
+    out[len] = '\0';
+}
+
 inline bool IsUTF8Sep(const uint8_t c) { return c < 128 && !std::isalnum(c); }
 
 template <typename T>

@@ -420,6 +420,46 @@ func TestTokenize_SlovakCzechFoldDiacriticsAndSkipStemming(t *testing.T) {
 	}
 }
 
+func TestTokenize_RussianFoldsCyrillicBeforeStemming(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	// Index-side folding must be Unicode-aware: the Russian stemmer only
+	// accepts lower-case input, so an upper-case word would otherwise reach
+	// the suffix table unchanged while the query side folds it with
+	// strings.ToLower.
+	upper, err := New("Russian").Tokenize("ДОГОВОРАМИ")
+	if err != nil {
+		t.Fatalf("Tokenize(Russian, upper) unexpected error: %v", err)
+	}
+	lower, err := New("Russian").Tokenize("договорами")
+	if err != nil {
+		t.Fatalf("Tokenize(Russian, lower) unexpected error: %v", err)
+	}
+	base, err := New("Russian").Tokenize("договор")
+	if err != nil {
+		t.Fatalf("Tokenize(Russian, base) unexpected error: %v", err)
+	}
+	if upper != lower {
+		t.Errorf("Tokenize(Russian, upper) = %q, want the lower-case result %q", upper, lower)
+	}
+	if upper != base {
+		t.Errorf("Tokenize(Russian, upper) = %q, want the stemmed form %q", upper, base)
+	}
+}
+
 func findEnglishDutchDifferentiator(t *testing.T) languageDifferentiator {
 	t.Helper()
 
