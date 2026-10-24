@@ -24,7 +24,7 @@ func TestConnectorServiceTestConnectorUsesRequestConfig(t *testing.T) {
 		Name:      "conn-1",
 		Source:    "mock",
 		InputType: "poll",
-		Config:    entity.JSONMap{"from": "stored"},
+		Config:    entity.ConnectorConfig{"from": "stored"},
 		Status:    "0",
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)
@@ -123,7 +123,7 @@ func TestConnectorServiceTestConnectorRejectsUnauthorizedConnector(t *testing.T)
 		Name:      "conn-1",
 		Source:    "mock",
 		InputType: "poll",
-		Config:    entity.JSONMap{"ok": true},
+		Config:    entity.ConnectorConfig{"ok": true},
 		Status:    "0",
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)

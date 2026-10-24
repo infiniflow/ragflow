@@ -146,6 +146,8 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
   Set to `true` only for development checkouts that intentionally use a development migration marker. Keep it `false` in production.
 - `RAGFLOW_IMAGE`
   The Go Docker image used by `docker-compose.yml`. Use an official Go image tag documented in its release notes, or use the locally built `ragflow:go-local` tag. The RAGFlow Docker image does not include embedding models.
+- `RAGFLOW_CONNECTOR_KEY`
+  The key that encrypts the credentials of data source connectors in the database. Use 32 random bytes in standard base64, for example the output of `openssl rand -base64 32`. Not set by default, and then credentials are stored as plaintext. When the key is set, the database migration encrypts the credentials that are already stored. If the key is lost, stored credentials cannot be read: enter them again through the connector update API, or delete and re-create the connector.
 
 ### Local embedding service
 
