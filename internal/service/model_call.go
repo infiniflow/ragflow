@@ -378,7 +378,7 @@ func populateModelUsage(usage *common.ModelUsage, info *modelModule.ModelInfo, a
 }
 
 func (s *ModelCallService) ownerTenantID(ctx context.Context, userID string) (string, error) {
-	return requireOwnedTenantID(ctx, userID)
+	return requireCurrentTenantID(ctx, userID)
 }
 
 func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userID string) (*ModelInstanceAndProviderInfo, error) {

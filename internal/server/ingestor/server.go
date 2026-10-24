@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"ragflow/internal/server/local"
 	"strconv"
 	"strings"
 	"time"
@@ -112,7 +113,7 @@ func logTokenizerCounters() {
 	if len(unavailable) > 0 {
 		common.Warn("embedding tokenizers unavailable; models that declare them cannot be ingested until the asset is restored",
 			zap.Strings("unavailable", unavailable),
-			zap.String("hint", "run `uv run ragflow_deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
+			zap.String("hint", "run `uv run deps/download_deps.py`, or set "+common.EnvModelAssetsDir+" to a directory holding them"))
 	}
 }
 
@@ -217,6 +218,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
+
+	// Init admin client status in ingestor
+	local.InitAdminStatus()
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)

@@ -593,9 +593,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// land in the same batch, and completions/deletions can also arrive out of
 	// order across batches. The LAST event for a doc (by backlog append order)
 	// decides its fate, so we must not delete a doc that was re-ingested after
-	// its deletion, nor merge a completion shadowed by a later deletion. No
-	// sequence number is needed: the backlog is an ordered log and the last
-	// write wins, which is exactly the re-parse (completed last) vs delete
+	// its deletion, nor merge a completion shadowed by a later deletion. Queue
+	// positions preserve the backlog's append order and the last write wins,
+	// which is exactly the re-parse (completed last) vs delete
 	// (deleted last) semantics we want.
 	type docState struct {
 		winEvent EventType

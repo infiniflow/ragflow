@@ -216,10 +216,10 @@
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   يقوم `download_dev_deps.py` بتنزيل وفك pdfium وpdf_oxide وoffice_oxide وonnxruntime تحت `~/ragflow-native-libs`؛ ويقوم `download_deps.py` بتنزيل جدول cl100k ونماذج DeepDoc وأصول محلّلات التضمين تحت `ragflow_deps/`. كلاهما برنامج Python؛ ويثبّت `uv run` تبعياته المعلنة تلقائيًا (`requests`، بالإضافة إلى `huggingface-hub` لتنزيل النماذج والمحلّلات). تجاوز هذه الخطوة إذا كنت قد جهّزت الموارد نفسها بوسيلة أخرى. عند التشغيل من جذر المستودع تجد خدمات Go مجلد `internal/rag/res/deepdoc` تلقائيًا؛ وللتشغيل من مجلد آخر عيّن `DEEPDOC_MODEL_DIR` على مساره المطلق.
+   يقوم `download_dev_deps.py` بتنزيل وفك pdfium وpdf_oxide وoffice_oxide وonnxruntime تحت `~/ragflow-native-libs`؛ ويقوم `download_deps.py` بتنزيل جدول cl100k ونماذج DeepDoc وأصول محلّلات التضمين تحت `deps/`. كلاهما برنامج Python؛ ويثبّت `uv run` تبعياته المعلنة تلقائيًا (`requests`، بالإضافة إلى `huggingface-hub` لتنزيل النماذج والمحلّلات). تجاوز هذه الخطوة إذا كنت قد جهّزت الموارد نفسها بوسيلة أخرى. عند التشغيل من جذر المستودع تجد خدمات Go مجلد `internal/rag/res/deepdoc` تلقائيًا؛ وللتشغيل من مجلد آخر عيّن `DEEPDOC_MODEL_DIR` على مساره المطلق.
 
 3. ابنِ الخدمات:
 

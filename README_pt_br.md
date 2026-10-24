@@ -214,10 +214,10 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs`; `download_deps.py` baixa o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `ragflow_deps/`. Ambos são scripts Python; o `uv run` instala automaticamente as dependências declaradas (`requests`, além de `huggingface-hub` para os downloads de modelos e tokenizadores). Pule esta etapa se você já preparou os mesmos recursos por outros meios. Quando iniciado a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
+   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs`; `download_deps.py` baixa o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `deps/`. Ambos são scripts Python; o `uv run` instala automaticamente as dependências declaradas (`requests`, além de `huggingface-hub` para os downloads de modelos e tokenizadores). Pule esta etapa se você já preparou os mesmos recursos por outros meios. Quando iniciado a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
 
 3. Compile os serviços:
 

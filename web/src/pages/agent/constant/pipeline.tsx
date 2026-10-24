@@ -4,66 +4,6 @@ import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
 import { cloneDeep } from 'lodash';
 
-export enum PdfOutputFormat {
-  Json = 'json',
-  Markdown = 'markdown',
-}
-
-export enum SpreadsheetOutputFormat {
-  Json = 'json',
-  Html = 'html',
-}
-
-export enum ImageOutputFormat {
-  Json = 'json',
-}
-
-export enum EmailOutputFormat {
-  Json = 'json',
-  Text = 'text',
-}
-
-export enum TextMarkdownOutputFormat {
-  Text = 'json',
-}
-
-export enum TextJsonOutputFormat {
-  Text = 'text',
-  Json = 'json',
-}
-
-export enum DocxOutputFormat {
-  Markdown = 'markdown',
-  Json = 'json',
-}
-
-export enum PptOutputFormat {
-  Json = 'json',
-}
-
-export enum VideoOutputFormat {
-  Text = 'text',
-}
-
-export enum AudioOutputFormat {
-  Text = 'text',
-}
-
-export const OutputFormatMap = {
-  [FileType.PDF]: PdfOutputFormat,
-  [FileType.Spreadsheet]: SpreadsheetOutputFormat,
-  [FileType.Image]: ImageOutputFormat,
-  [FileType.Email]: EmailOutputFormat,
-  [FileType.TextMarkdown]: TextMarkdownOutputFormat,
-  [FileType.Code]: TextJsonOutputFormat,
-  [FileType.Html]: TextJsonOutputFormat,
-  [FileType.Doc]: DocxOutputFormat,
-  [FileType.Docx]: DocxOutputFormat,
-  [FileType.PowerPoint]: PptOutputFormat,
-  [FileType.Video]: VideoOutputFormat,
-  [FileType.Audio]: AudioOutputFormat,
-};
-
 // The audio parser defaults to the tenant's ASR model, keyed by the
 // useFetchDefaultModelDictionary fields. (The vision model is a single global
 // parser option, not per file type, so video no longer appears here.)
@@ -157,10 +97,9 @@ export const PreprocessLabelKeyMap: Record<PreprocessValue, string> = {
   author: 'author',
 };
 export const initialParserValues = {
+  // The Go Parser component emits structured JSON items only; markdown/text/
+  // html are internal backend representations, never public Parser outputs.
   outputs: {
-    markdown: { type: 'string', value: '' },
-    text: { type: 'string', value: '' },
-    html: { type: 'string', value: '' },
     json: { type: 'Array<object>', value: [] },
   },
   // Global vision enhancement, off by default; the model id is prefilled from
@@ -171,7 +110,6 @@ export const initialParserValues = {
   setups: [
     {
       fileFormat: FileType.PDF,
-      output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
@@ -179,63 +117,52 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Image,
-      output_format: ImageOutputFormat.Json,
       ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Email,
       fields: Object.values(ParserFields),
-      output_format: EmailOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.TextMarkdown,
-      output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Code,
-      output_format: TextJsonOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Html,
-      output_format: TextJsonOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Doc,
-      output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
-      output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.PowerPoint,
-      output_format: PptOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Video,
-      output_format: VideoOutputFormat.Text,
     },
     {
       fileFormat: FileType.Audio,
-      output_format: AudioOutputFormat.Text,
       vlm: { llm_id: '' },
     },
   ],

@@ -269,6 +269,7 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 					"obj": map[string]any{
 						"component_name": "Message",
 						// no params.inputs
+						"params": map[string]any{"text": "hello"},
 					},
 				},
 			},

@@ -62,7 +62,7 @@ const (
 //
 // Returns:
 //   - annotated: page boxes after DLA/TSR annotation write-back (LayoutType,
-//     LayoutNo, R/C/H/SP fields) — same length as input pageBoxes.
+//     LayoutNo, R/C/H/SP fields), plus image geometry.
 //   - tables:    table candidates detected on this page.
 //   - dlaRegions: page-local DLA regions payload.
 func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
@@ -89,6 +89,10 @@ func (p *Parser) enrichOnePageWithDeepDoc(ctx context.Context,
 	// caller should use downstream for layout/text-merge.
 	annotated = append([]pdf.TextBox(nil), pageBoxes...)
 	annotated = tbl.AnnotateBoxLayouts(annotated, regions, scale, float64(pageImg.Bounds().Dy()))
+	for i := range annotated {
+		annotated[i].PageNumber = pg
+		annotated[i].HasPageNumber = true
+	}
 
 	tableMatches := tbl.MatchTableRegions(annotated, regions, scale)
 	var items []pdf.TableItem

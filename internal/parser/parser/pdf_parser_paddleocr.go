@@ -36,7 +36,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	result := ParseResult{OutputFormat: "json", Warnings: append([]string(nil), response.Warnings...)}
+	result := ParseResult{Warnings: append([]string(nil), response.Warnings...)}
 	hasPageCount := pageCount > 0
 	if geometryErr != nil {
 		result.Warnings = append(result.Warnings, "PaddleOCR PDF geometry unavailable: "+geometryErr.Error())

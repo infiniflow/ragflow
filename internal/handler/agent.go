@@ -346,7 +346,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}
 	tenantID := ""
 	if row != nil {
-		tenantID = row.UserID
+		tenantID = row.EffectiveTenantID()
 	}
 	common.SuccessWithData(c, &agentDetailResponse{
 		UserCanvas:      row,
@@ -355,9 +355,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}, "success")
 }
 
-// agentDetailResponse adds the canvas owner's tenant scope and publish time.
-// user_canvas stores the owner identity in user_id, so that value is exposed
-// as tenant_id for resource-scoped selectors.
+// agentDetailResponse adds the canvas tenant scope and publish time.
 type agentDetailResponse struct {
 	*entity.UserCanvas
 	TenantID        string `json:"tenant_id"`
@@ -815,6 +813,30 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.DeleteVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, true, "success")
+}
+
+// ApplyVersion restores a saved workflow as the current agent draft.
+// @Summary Apply Agent Version
+// @Tags agents
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Param version_id path string true "version id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/versions/{version_id}/apply [post]
+func (h *AgentHandler) ApplyVersion(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	versionID := c.Param("version_id")
+	if err := h.agentService.ApplyVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return

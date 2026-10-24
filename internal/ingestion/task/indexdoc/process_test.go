@@ -668,14 +668,14 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 
 // TestProcessChunksForPipeline_StripsPipelineOnlyFields pins the index boundary
 // against the parser/chunker bookkeeping keys: none of them is a chunk-store
-// column, and a strict engine rejects the whole insert over one of them
-// ("Column ck_type not found in table", InfinityException 3013). ES only
-// swallowed them because its mapping is dynamic.
+// column, and a strict engine rejects the whole insert over one of them (e.g.
+// Infinity would reject an unknown column). ES only swallowed them because its
+// mapping is dynamic.
 func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 	ck := map[string]any{
 		"text": "hello",
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
-		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
+		"tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,

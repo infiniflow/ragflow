@@ -34,7 +34,6 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 	result := p.ParseWithResult(t.Context(), "docx_table_image.docx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)

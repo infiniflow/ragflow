@@ -64,10 +64,10 @@ func TestCanvas_ParallelExecution_StaticAnalysis(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"begin": {Obj: CanvasComponentObj{ComponentName: "Begin"}, Downstream: []string{"a", "b", "c"}},
-			"a":     {Obj: CanvasComponentObj{ComponentName: "Message"}, Downstream: []string{"final"}},
-			"b":     {Obj: CanvasComponentObj{ComponentName: "Message"}, Downstream: []string{"final"}},
-			"c":     {Obj: CanvasComponentObj{ComponentName: "Message"}, Downstream: []string{"final"}},
-			"final": {Obj: CanvasComponentObj{ComponentName: "Message"}},
+			"a":     {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "a"}}, Downstream: []string{"final"}},
+			"b":     {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "b"}}, Downstream: []string{"final"}},
+			"c":     {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "c"}}, Downstream: []string{"final"}},
+			"final": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "final"}}},
 		},
 		Path: []string{"begin", "a", "b", "c", "final"},
 	}

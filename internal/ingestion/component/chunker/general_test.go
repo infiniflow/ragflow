@@ -299,7 +299,7 @@ func TestGeneralChunkerPreservesSingleParserUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one chunk", out["chunks"])
 	}

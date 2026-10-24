@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 type imageOCREmbedder struct{ texts []string }
@@ -114,7 +115,7 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 	}
 	const parserID = "Parser:ViewsCaptureLight"
 	config := BuildParserConfig(dsl, map[string]any{parserID: map[string]any{
-		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model", "output_format": "json"},
+		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model"},
 		"enable_vision_enhancement": false,
 	}})
 	for _, row := range []any{
@@ -193,7 +194,7 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks := indexable["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(indexable["chunks"])
 	if len(chunks) != 1 || chunks[0]["text"] != text {
 		t.Fatalf("searchable OCR text was lost: %+v", chunks)
 	}
