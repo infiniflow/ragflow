@@ -256,15 +256,17 @@ class RAGFlowDataConverter:
         # Handle unknown fields -> store in 'extra'
         extra_fields = {}
         for key, value in source.items():
-            if key not in RAGFLOW_COLUMNS and not VECTOR_FIELD_PATTERN.match(key):
+            if key not in RAGFLOW_COLUMNS and key not in {"_id", "_score"} and not VECTOR_FIELD_PATTERN.match(key):
                 extra_fields[key] = value
 
         if extra_fields:
             existing_extra = row.get("extra")
-            if existing_extra and isinstance(existing_extra, dict):
+            if isinstance(existing_extra, str):
+                existing_extra = json.loads(existing_extra)
+            if isinstance(existing_extra, dict):
                 existing_extra.update(extra_fields)
-            else:
-                row["extra"] = json.dumps(extra_fields, ensure_ascii=False)
+                extra_fields = existing_extra
+            row["extra"] = json.dumps(extra_fields, ensure_ascii=False)
 
         return row
 
