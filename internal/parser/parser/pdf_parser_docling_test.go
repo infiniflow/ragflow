@@ -1,8 +1,10 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -253,5 +255,245 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 				t.Fatalf("requestCount = %d, want %d", got, want)
 			}
 		})
+	}
+}
+
+const doclingPositionsResponse = `{"document":{"md_content":"# Docling Title\n\nDocling body.\n\nUnmatched paragraph.\n","json_content":{
+ "pages":{"1":{"page_no":1},"2":{"page_no":2},"3":{"page_no":3}},
+ "texts":[
+  {"label":"section_header","text":"Docling Title","prov":[{"page_no":1,"bbox":{"l":10,"t":700,"r":200,"b":680,"coord_origin":"BOTTOMLEFT"}}]},
+  {"label":"text","text":"Docling body.","prov":[{"page_no":2,"bbox":{"l":15,"t":100,"r":300,"b":140,"coord_origin":"TOPLEFT"}}]}
+ ]}}}`
+
+func TestPDFParser_ParseWithResult_DoclingEmitsPositionsAndPageCount(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		options, _ := body["options"].(map[string]any)
+		if _, chunked := options["do_chunking"]; chunked {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(doclingPositionsResponse))
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":       "Docling",
+		"output_format":      "json",
+		"docling_server_url": server.URL,
+	})
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got := res.File["page_count"]; got != 3 {
+		t.Fatalf("page_count = %v, want 3 (pages, not documents)", got)
+	}
+	want := map[string][]any{
+		"Docling Title": {1, 10.0, 200.0, 680.0, 700.0},
+		"Docling body.": {2, 15.0, 300.0, 100.0, 140.0},
+	}
+	found := map[string]bool{}
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		text := strings.TrimSpace(strings.TrimLeft(stringValue(m["text"]), "# "))
+		rows, ok := ExtractPDFPositions(m)
+		if w, expected := want[text]; expected {
+			if !ok || len(rows) != 1 || len(rows[0]) != 5 {
+				t.Fatalf("%q positions = %#v ok=%v", text, rows, ok)
+			}
+			for i := range w {
+				got, _ := numericAny(rows[0][i])
+				exp, _ := numericAny(w[i])
+				if got != exp {
+					t.Fatalf("%q positions[%d] = %v, want %v (row %#v)", text, i, rows[0][i], w[i], rows[0])
+				}
+			}
+			found[text] = true
+		} else if ok {
+			t.Fatalf("unmatched item %q must not carry positions: %#v", text, rows)
+		}
+	}
+	if len(found) != 2 {
+		t.Fatalf("matched items = %v, want both", found)
+	}
+}
+
+func TestDoclingPageCountFallsBackToProvenanceThenDocuments(t *testing.T) {
+	withProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 4.0}}},
+	}}}}
+	if got := doclingPageCount(withProv, 0); got != 4 {
+		t.Fatalf("provenance page count = %d, want 4", got)
+	}
+	noPages := []doclingDocument{{MDContent: "x"}}
+	if got := doclingPageCount(noPages, 50); got != 50 {
+		t.Fatalf("metadata-less response must report source PDF pages = %d, want 50", got)
+	}
+	if got := doclingPageCount(noPages, 0); got != 1 {
+		t.Fatalf("unreadable source page count = %d, want 1 (document count)", got)
+	}
+}
+
+func TestDoclingSourcePageCount(t *testing.T) {
+	if got := doclingSourcePageCount(buildDoclingPDFWithCount(t, 50)); got != 50 {
+		t.Fatalf("source page count = %d, want 50", got)
+	}
+	if got := doclingSourcePageCount([]byte("%PDF-1.4\nmock")); got != 0 {
+		t.Fatalf("unopenable PDF must yield 0, got %d", got)
+	}
+	if got := doclingSourcePageCount(buildDoclingPDFWithCount(t, 1<<30)); got != 0 {
+		t.Fatalf("implausible /Count must be ignored, got %d", got)
+	}
+}
+
+// buildDoclingPDFWithCount emits a minimal valid PDF whose /Pages /Count is
+// the supplied value, mirroring the deepdoc plaintext test fixture.
+func buildDoclingPDFWithCount(t *testing.T, count int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	off1 := buf.Len()
+	fmt.Fprintf(&buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+	off2 := buf.Len()
+	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count %d >>\nendobj\n", count)
+	off3 := buf.Len()
+	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>\nendobj\n")
+	xrefStart := buf.Len()
+	buf.WriteString("xref\n0 4\n")
+	buf.WriteString("0000000000 65535 f \n")
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off1)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off2)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off3)
+	fmt.Fprintf(&buf, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefStart)
+	return buf.Bytes()
+}
+
+func TestDoclingAttachPositionsMatchesOccurrencesInOrder(t *testing.T) {
+	content := map[string]any{"texts": []any{
+		map[string]any{"text": "Repeated paragraph.", "prov": []any{
+			map[string]any{"page_no": 2.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+		map[string]any{"text": "Repeated paragraph.", "prov": []any{
+			map[string]any{"page_no": 5.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+	}}
+	res := ParseResult{JSON: MapsToItems([]map[string]any{
+		{"text": "Repeated paragraph."},
+		{"text": "Repeated paragraph."},
+	})}
+	res = doclingAttachPositions(res, content)
+	first, _ := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
+	second, _ := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
+	if len(first) != 1 || first[0][0] != 2 {
+		t.Fatalf("first occurrence must take page 2: %#v", first)
+	}
+	if len(second) != 1 || second[0][0] != 5 {
+		t.Fatalf("second occurrence must take page 5: %#v", second)
+	}
+}
+
+func TestDoclingAttachPositionsKeepsLeadingDigits(t *testing.T) {
+	content := map[string]any{"texts": []any{
+		map[string]any{"text": "2026 Outlook", "prov": []any{
+			map[string]any{"page_no": 3.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+		map[string]any{"text": "Introduction", "prov": []any{
+			map[string]any{"page_no": 4.0, "bbox": map[string]any{"l": 10.0, "t": 20.0, "r": 100.0, "b": 40.0}},
+		}},
+	}}
+	res := ParseResult{JSON: MapsToItems([]map[string]any{
+		{"text": "2026 Outlook"},
+		{"text": "1. Introduction"},
+	})}
+	res = doclingAttachPositions(res, content)
+	digits, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
+	if !ok || len(digits) != 1 || digits[0][0] != 3 {
+		t.Fatalf("leading digits are content and must match: %#v", res.JSON[0].ToMap())
+	}
+	numbered, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
+	if !ok || len(numbered) != 1 || numbered[0][0] != 4 {
+		t.Fatalf("numbered list prefix must strip for the match: %#v", res.JSON[1].ToMap())
+	}
+}
+
+func TestDoclingChunkedResultPrefersSourcePageCount(t *testing.T) {
+	body := []byte(`[{"text":"chunk one"},{"text":"chunk two"}]`)
+	res, ok := parseDoclingChunkedResult("a.pdf", body, "json", 9)
+	if !ok {
+		t.Fatal("chunked parse failed")
+	}
+	if got := res.File["page_count"]; got != 9 {
+		t.Fatalf("chunked page_count = %v, want source PDF count 9", got)
+	}
+	res, ok = parseDoclingChunkedResult("a.pdf", body, "json", 0)
+	if !ok {
+		t.Fatal("chunked parse failed")
+	}
+	if got := res.File["page_count"]; got != 2 {
+		t.Fatalf("without source count, page_count = %v, want chunk count 2", got)
+	}
+}
+
+func TestDoclingPageCountSourceLowerBound(t *testing.T) {
+	shortProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 3.0}}},
+	}}}}
+	if got := doclingPageCount(shortProv, 9); got != 9 {
+		t.Fatalf("provenance ending early must not underreport: got %d, want 9", got)
+	}
+	fullProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 12.0}}},
+	}}}}
+	if got := doclingPageCount(fullProv, 9); got != 12 {
+		t.Fatalf("metadata above source count still wins: got %d, want 12", got)
+	}
+}
+
+func TestDoclingProvPositionConvertsBottomLeftOrigin(t *testing.T) {
+	heights := map[int]float64{1: 200}
+	prov := map[string]any{"page_no": 1.0, "bbox": map[string]any{
+		"l": 10.0, "t": 180.0, "r": 50.0, "b": 170.0, "coord_origin": "BOTTOMLEFT",
+	}}
+	pos := doclingProvPosition(prov, heights)
+	if pos == nil {
+		t.Fatal("position dropped")
+	}
+	// BOTTOMLEFT y=180/170 from the bottom become 20/30 from the top.
+	if pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("BOTTOMLEFT not converted: %#v", pos)
+	}
+	// Unknown page height: keep the sorted values rather than guessing.
+	pos = doclingProvPosition(prov, map[int]float64{})
+	if pos == nil || pos[3] != 170.0 || pos[4] != 180.0 {
+		t.Fatalf("missing height must keep sorted values: %#v", pos)
+	}
+	// TOPLEFT boxes are untouched even with a known height.
+	provTL := map[string]any{"page_no": 1.0, "bbox": map[string]any{
+		"l": 10.0, "t": 20.0, "r": 50.0, "b": 30.0, "coord_origin": "TOPLEFT",
+	}}
+	pos = doclingProvPosition(provTL, heights)
+	if pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("TOPLEFT must pass through unchanged: %#v", pos)
+	}
+}
+
+func TestDoclingPageHeightsFromPagesMetadata(t *testing.T) {
+	asMap := map[string]any{"pages": map[string]any{
+		"1": map[string]any{"size": map[string]any{"width": 100.0, "height": 200.0}},
+	}}
+	if h := doclingPageHeights(asMap)[1]; h != 200.0 {
+		t.Fatalf("map-form pages height = %v, want 200", h)
+	}
+	asList := map[string]any{"pages": []any{
+		map[string]any{"page_no": 2.0, "size": map[string]any{"height": 300.0}},
+	}}
+	if h := doclingPageHeights(asList)[2]; h != 300.0 {
+		t.Fatalf("list-form pages height = %v, want 300", h)
 	}
 }
