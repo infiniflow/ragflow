@@ -19,7 +19,7 @@
 # and the embedding tokenizer assets). Run it ONCE and the local environment is
 # ready — you do NOT also need download_deps.py for local development.
 #
-# The image-facing counterpart ragflow_deps/download_deps.py fetches the same
+# The image-facing counterpart deps/download_deps.py fetches the same
 # runtime resources PLUS the stagehand server binary (used by the Browser
 # component) and skips the native `.a` files, because the build stage bakes
 # those into the server binary. Both scripts land the shared runtime resources
@@ -262,10 +262,10 @@ def _repo_root() -> str:
 
 
 REPO_ROOT = _repo_root()
-# Downloaded archives are anchored under ragflow_deps/ (ignored by .gitignore
-# via *.tgz / ragflow_deps/*.zip) regardless of the caller's working directory,
+# Downloaded archives are anchored under deps/ (ignored by .gitignore
+# via *.tgz / deps/*.zip) regardless of the caller's working directory,
 # so a move of this script does not scatter large files into tools/scripts/.
-RAGFLOW_DEPS_DIR = os.path.join(REPO_ROOT, "ragflow_deps")
+RAGFLOW_DEPS_DIR = os.path.join(REPO_ROOT, "deps")
 NATIVE_LIBS_DIR = os.path.expanduser("~/ragflow-native-libs")
 
 
@@ -498,7 +498,7 @@ def _download_ort_archive(archive_path, goos, goarch):
 # The build-facing native `.a` libs above let the server LINK; these let it
 # RUN, parse documents and count tokens. Fetched here too so a developer runs
 # THIS script once and the environment is ready. Landing paths match
-# ragflow_deps/download_deps.py, so re-running that image script never
+# deps/download_deps.py, so re-running that image script never
 # re-downloads an already-present asset. stagehand is deliberately NOT fetched
 # here (Browser component only) — that is download_deps.py's job for images.
 
@@ -515,7 +515,7 @@ HF_DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.re
 
 # Embedding tokenizer assets the Go counters load. Inlined here (no separate
 # manifest file) as the single source of truth this script reads directly; the
-# image script ragflow_deps/download_deps.py carries its own copy (no shared
+# image script deps/download_deps.py carries its own copy (no shared
 # module, by design). One entry per tuple: (repo, file, kind).
 #   runtime - the Go counters load it in production; the runtime images must ship
 #             it and the loader must pin its SHA-1.
@@ -541,7 +541,7 @@ def _hf_download(repo_id, filename, local_dir):
 
 
 def download_cl100k():
-    """Fetch the cl100k BPE table into ragflow_deps/ (skip if already present)."""
+    """Fetch the cl100k BPE table into deps/ (skip if already present)."""
     target = os.path.join(RAGFLOW_DEPS_DIR, "cl100k_base.tiktoken")
     if os.path.isfile(target) and os.path.getsize(target) > 0:
         print("  ✓ cl100k_base.tiktoken already present")
@@ -576,9 +576,9 @@ def download_go_models(use_china_mirrors=False):
     backend with no further setup.
 
     Written into the repo's canonical model directory
-    internal/rag/res/deepdoc/ (one level up from ragflow_deps/). The Go server
+    internal/rag/res/deepdoc/ (one level up from deps/). The Go server
     auto-discovers that directory, and build.sh --test-native defaults MODEL_DIR
-    there too. A copy also lands under ragflow_deps/huggingface.co/InfiniFlow/deepdoc/
+    there too. A copy also lands under deps/huggingface.co/InfiniFlow/deepdoc/
     to keep the dependency image's existing build-context layout."""
     if use_china_mirrors:
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
@@ -621,8 +621,8 @@ def download_go_models(use_china_mirrors=False):
 
 def download_tokenizer_assets(use_china_mirrors=False):
     """Download the embedding tokenizer assets the Go counters load, into
-    ragflow_deps/huggingface.co/<repo>/<file> (the path internal/tokenizer
-    searches and the one ragflow_deps/Dockerfile builds its image from).
+    deps/huggingface.co/<repo>/<file> (the path internal/tokenizer
+    searches and the one deps/Dockerfile builds its image from).
 
     A missing asset is fatal: models declaring its tokenizer refuse ingestion."""
     if use_china_mirrors:
@@ -673,7 +673,7 @@ def main():
 
     This is the local-dev one-stop: one invocation readies the environment. The
     Browser component's server binary is intentionally NOT fetched here — that
-    is the image script's job. Run `uv run ragflow_deps/download_deps.py` for the
+    is the image script's job. Run `uv run deps/download_deps.py` for the
     full image resources (it adds that binary and skips the native .a, which the
     build stage bakes into the binary)."""
     parser = argparse.ArgumentParser(description="Download the native static libraries and runtime resources the local Go dev server needs")
@@ -697,7 +697,7 @@ def main():
     ort_zip = ort_asset_name(ORT_VERSION, ort_target(goos, goarch))
     ort_dir = ort_normalized_dir(ORT_VERSION, goos, goarch)
 
-    # Anchor the downloaded archives to ragflow_deps/ regardless of the
+    # Anchor the downloaded archives to deps/ regardless of the
     # caller's working directory (build.sh invokes this from the repo root).
     os.chdir(RAGFLOW_DEPS_DIR)
 

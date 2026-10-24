@@ -65,8 +65,7 @@ by tenant-model ID or by `model@instance@provider` reference, for example:
 ```json
 {
   "pdf": {
-    "parse_method": "SoMark-model@production@SoMark",
-    "output_format": "json"
+    "parse_method": "SoMark-model@production@SoMark"
   }
 }
 ```

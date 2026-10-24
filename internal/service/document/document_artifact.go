@@ -41,7 +41,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, userID, imageID 
 // composite image ID belongs to an indexed chunk of an accessible document.
 func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrDocumentImageNotFound
 	}
 	bucket, objectKey, ok := strings.Cut(imageID, "-")
@@ -69,7 +69,7 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userI
 // document metadata.
 func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -267,7 +267,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 
 	// Keep access denial indistinguishable from a missing document so callers
 	// cannot probe document IDs.
-	if service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil {
+	if service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
@@ -314,11 +314,21 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 }
 
 // extractDOCPreviewText extracts plain text from a legacy .doc
-// document via the office_oxide-backed DOCParser.
+// document via the office_oxide-backed DOCParser. The parser only emits JSON
+// payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
 	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return "", res.Err
 	}
-	return res.Text, nil
+	if len(res.JSON) == 0 {
+		return "", fmt.Errorf("doc preview: no content extracted")
+	}
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n"), nil
 }

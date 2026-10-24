@@ -553,7 +553,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       webCrawl: 'Veb səhifələrin daranması',
       chunkNumber: 'Fraqmentlər',
       uploadDate: 'Yükləmə tarixi',
-      chunkMethod: 'Fraqmentlərə bölmə üsulu',
+      parsingMode: 'Təhlil rejimi',
       enabled: 'Aktivləşdir',
       disabled: 'Söndür',
       action: 'Əməliyyat',
@@ -768,7 +768,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       dataFlowPlaceholder: 'Konveyer seçin.',
       buildItFromScratch: 'Sıfırdan qur',
       dataFlow: 'Konveyer',
-      parseType: 'Təhlil rejimi',
+      parsingMode: 'Təhlil rejimi',
       manualSetup: 'Fərdi verilənlərin qəbulu konveyeri',
       builtIn: 'Daxili təhlil şablonu',
       noConfigChunkerHint:
@@ -792,8 +792,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
         "'Komanda' seçilərsə, komandanızın bütün üzvləri verilənlər dəstini idarə edə biləcək.",
       chunkTokenNumberTip:
         'Hissə yaratmaq üçün token həddini müəyyən edir. Token sayı bu həddən az olan seqment token sayı həddi keçənə qədər sonrakı seqmentlərlə birləşdirilir və həmin anda hissə yaradılır. Hədd keçilsə belə, ayırıcıya rast gəlinməyincə yeni hissə yaradılmır.',
-      chunkMethod: 'Hissələrə bölmə üsulu',
-      chunkMethodTip: 'Sağdakı məsləhətlərə baxın.',
       upload: 'Yüklə',
       english: 'İngilis dili',
       chinese: 'Çin dili',
@@ -1331,9 +1329,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       },
       cancel: 'Ləğv et',
       chatSetting: 'Söhbət parametri',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        "Sənədin təhlili zamanı mündəricat məlumatı yaradılıb (Ümumi üsuldakı 'Mündəricatın çıxarılmasını aktivləşdir' seçiminə baxın). Bu, böyük modelə istifadəçinin sorğusuna uyğun mündəricat elementlərini qaytarmağa, sonra bu elementlərdən istifadə edərək əlaqəli fraqmentləri tapmağa və sıralama zamanı həmin fraqmentlərə çəki tətbiq etməyə imkan verir. Bu yanaşma insanların kitablarda məlumat axtarma davranışını təqlid edir.",
       batchDeleteSessions: 'Kütləvi sil',
       deleteSelectedConfirm: 'Seçilmiş {{count}} seans silinsin?',
       showChunkMetadata: 'Fraqmentin metaverilənlərini göstər',

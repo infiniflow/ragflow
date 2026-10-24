@@ -213,10 +213,10 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `ragflow_deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
+   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 
 3. Compilez les services :
 

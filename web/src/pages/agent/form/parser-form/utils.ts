@@ -76,8 +76,11 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
       '');
 
   const nextSetups = setups.map((x) => {
-    if (x?.fileFormat === FileType.Audio) return x;
-    const stripped = omit(x, ['vlm', 'flatten_media_to_text']);
+    // output_format is retired on every family: the Go Parser normalizes all
+    // setups to JSON, so a stored value is dead config that must not survive
+    // a load/save round-trip.
+    if (x?.fileFormat === FileType.Audio) return omit(x, ['output_format']);
+    const stripped = omit(x, ['vlm', 'flatten_media_to_text', 'output_format']);
     if (x?.fileFormat !== FileType.Image) return stripped;
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local

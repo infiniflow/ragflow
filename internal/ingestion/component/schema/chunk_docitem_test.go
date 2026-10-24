@@ -179,19 +179,19 @@ func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
 		{
 			name: "text with extra passthrough",
 			maps: []map[string]any{
-				{"text": "hello", parser.DocTypeKey: parser.DocTypeText, "ck_type": "heading", "layout": "1", "page_number": 3},
+				{"text": "hello", parser.DocTypeKey: parser.DocTypeText, "layout": "1", "page_number": 3},
 			},
 		},
 		{
 			name: "image with extra passthrough",
 			maps: []map[string]any{
-				{"text": "alt", "image": "data:image/png;base64,xxx", parser.DocTypeKey: parser.DocTypeImage, "ck_type": "image", "page_number": 2},
+				{"text": "alt", "image": "data:image/png;base64,xxx", parser.DocTypeKey: parser.DocTypeImage, "page_number": 2},
 			},
 		},
 		{
 			name: "table with sheet and positions",
 			maps: []map[string]any{
-				{"table": &entity.TableData{}, parser.DocTypeKey: parser.DocTypeTable, "ck_type": parser.DocTypeTable, "sheet": "s", "positions": [][]float64{{1, 2}}, "sheet_index": 0},
+				{"table": &entity.TableData{}, parser.DocTypeKey: parser.DocTypeTable, "sheet": "s", "positions": [][]float64{{1, 2}}, "sheet_index": 0},
 			},
 		},
 		{
@@ -203,7 +203,8 @@ func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
 		{
 			name: "mixed typed and opaque",
 			maps: []map[string]any{
-				{"text": "a", parser.DocTypeKey: parser.DocTypeText, "ck_type": "text"},
+				{"text": "a", parser.DocTypeKey: parser.DocTypeText},
+
 				{"foo": "bar"},
 			},
 		},

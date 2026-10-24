@@ -18,7 +18,7 @@ func TestPDFNormalizeResultPositionsAndMetadata(t *testing.T) {
 	file := map[string]any{"outline": []string{"Chapter"}, "page_count": 20, "parse_method": "selected-model"}
 	input := map[string]any{"text": "caption", "layout": "caption", "doc_type_kwd": "text", "page_number": 2,
 		"positions": []any{[]any{2.0, 10.0, 30.0, 20.0, 40.0}, []any{3.0, math.NaN(), 30.0, 20.0, 40.0}, []any{4, 0, 0, 0, 0}}}
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", File: file, Warnings: []string{"source warning"}, JSON: MapsToItems([]map[string]any{input, {"text": "", "page_number": 4, "positions": []float64{4, 0, 0, 0, 0}}})})
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{File: file, Warnings: []string{"source warning"}, JSON: MapsToItems([]map[string]any{input, {"text": "", "page_number": 4, "positions": []float64{4, 0, 0, 0, 0}}})})
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -52,8 +52,8 @@ func TestPDFNormalizeResultMarkdownAndCancellation(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++ }))
 	defer server.Close()
-	result := NewPDFParser().NormalizeResult(t.Context(), "ocr.pdf", ParseResult{OutputFormat: "markdown", Markdown: "| A | B |\n| --- | --- |\n| one | two |\n\n![remote](" + server.URL + "/image.png)"})
-	if result.Err != nil || result.OutputFormat != "json" || result.Markdown != "" || requests != 0 {
+	result := NewPDFParser().NormalizeMarkdown(t.Context(), "ocr.pdf", "| A | B |\n| --- | --- |\n| one | two |\n\n![remote]("+server.URL+"/image.png)")
+	if result.Err != nil || len(result.JSON) == 0 || requests != 0 {
 		t.Fatalf("result=%+v requests=%d", result, requests)
 	}
 	var table *entity.TableData
@@ -67,7 +67,7 @@ func TestPDFNormalizeResultMarkdownAndCancellation(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result = NewPDFParser().NormalizeResult(ctx, "ocr.pdf", ParseResult{OutputFormat: "markdown", Markdown: "body"})
+	result = NewPDFParser().NormalizeMarkdown(ctx, "ocr.pdf", "body")
 	if !errors.Is(result.Err, context.Canceled) {
 		t.Fatalf("cancellation = %+v", result)
 	}
@@ -84,7 +84,7 @@ func TestPDFMarkdownBackendDoesNotFetchRemoteImages(t *testing.T) {
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNotFound) }))
 	defer server.Close()
-	result := pdfMarkdownToResult(t.Context(), "remote.pdf", "![remote]("+server.URL+"/image.png)", "json", 1)
+	result := pdfMarkdownToResult(t.Context(), "remote.pdf", "![remote]("+server.URL+"/image.png)", 1)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -95,7 +95,7 @@ func TestPDFMarkdownBackendDoesNotFetchRemoteImages(t *testing.T) {
 
 func TestPDFNormalizeResultKeepsTCADPPageWithoutCrop(t *testing.T) {
 	items := tcadpAnyToItems(map[string]any{"type": "text", "content": "page text", "page_num": 7})
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems(items)})
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems(items)})
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -115,7 +115,7 @@ func TestPDFNormalizeResultKeepsTCADPPageWithoutCrop(t *testing.T) {
 
 func TestPDFNormalizeResultInfersStructuredTable(t *testing.T) {
 	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell"}}}}
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{"table": table, "page_number": 3}})})
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{"table": table, "page_number": 3}})})
 	item := result.JSON[0].ToMap()
 	if item["doc_type_kwd"] != "table" {
 		t.Fatalf("table classified incorrectly: %#v", item)
@@ -129,7 +129,7 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 	p := NewPDFParser()
 	p.FlattenMediaToText = true
 	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell"}}}, Caption: "Caption"}
-	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: []DocItem{
+	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: []DocItem{
 		TableItem{Table: table, Extra: map[string]any{"text": "Footnote"}},
 		ImageItem{Text: "Figure", Image: "image-data", Positions: Positions{AbsoluteBox{PageNumber: 2, Left: 1, Right: 5, Top: 2, Bottom: 6}}},
 		TextItem{Text: "Title", Extra: map[string]any{"layout": "heading"}},
@@ -141,9 +141,6 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 		fields := item.ToMap()
 		if fields["doc_type_kwd"] != "text" {
 			t.Fatalf("flattened item %d still has media type: %#v", i, fields)
-		}
-		if _, ok := fields["ck_type"]; ok {
-			t.Fatalf("flattened item %d still carries the retired ck_type: %#v", i, fields)
 		}
 	}
 	text, _ := result.JSON[0].ToMap()["text"].(string)
@@ -164,8 +161,8 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 }
 
 func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
-		"doc_type_kwd": "table", "ck_type": "table", "layout": "table", "text": "Recognized text without cells",
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
+		"doc_type_kwd": "table", "layout": "table", "text": "Recognized text without cells",
 	}})})
 	if result.Err != nil {
 		t.Fatal(result.Err)
@@ -174,17 +171,14 @@ func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 	if item["doc_type_kwd"] != "text" || item["text"] != "Recognized text without cells" {
 		t.Fatalf("unstructured table kept an inconsistent subtype: %#v", item)
 	}
-	if _, ok := item["ck_type"]; ok {
-		t.Fatalf("retired ck_type survived normalization: %#v", item)
-	}
 }
 
 func TestPDFNormalizeResultKeepsPositionedUnstructuredTables(t *testing.T) {
 	for _, flatten := range []bool{false, true} {
 		p := NewPDFParser()
 		p.FlattenMediaToText = flatten
-		result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
-			"doc_type_kwd": "table", "ck_type": "table", "text": "Recognized table without cells",
+		result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
+			"doc_type_kwd": "table", "text": "Recognized table without cells",
 			"positions": [][]any{{2, 10, 30, 20, 40}},
 		}})})
 		if result.Err != nil || len(result.JSON) != 1 {
@@ -209,7 +203,7 @@ func TestPDFNormalizeResultRecoversUnclosedTableCells(t *testing.T) {
 		"<table><tr><td>Cell value</td></tr>",
 		"<table><tr><td>Cell value",
 	} {
-		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{{
+		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
 			"doc_type_kwd": "table", "text": markup,
 		}})})
 		if result.Err != nil || len(result.JSON) != 1 {
@@ -270,22 +264,16 @@ func TestProjectPDFTablePreservesExistingStructureAndNotes(t *testing.T) {
 	}
 }
 
-func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
+func TestPDFTableDescriptionUsesTextItem(t *testing.T) {
 	table := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}
 	item := map[string]any{"table": table, "doc_type_kwd": "table", "text": "Footnote", "page_number": 3}
-	for _, format := range []string{"json", "markdown"} {
-		result := pdfItemsToResult("sample.pdf", []map[string]any{item}, format, 3)
-		if result.Err != nil {
-			t.Fatal(result.Err)
-		}
-		if format == "json" {
-			result = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", result)
-			if len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != nil || result.JSON[1].ToMap()["text"] != "Footnote" || result.JSON[1].ToMap()["page_number"] != 3 {
-				t.Fatalf("table description not separated: %#v", result.JSON)
-			}
-		} else if !strings.Contains(result.Markdown, "Cell value") || !strings.Contains(result.Markdown, "Footnote") {
-			t.Fatalf("table description lost: %s", result.Markdown)
-		}
+	result := pdfItemsToResult("sample.pdf", []map[string]any{item}, 3)
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	result = NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", result)
+	if len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != nil || result.JSON[1].ToMap()["text"] != "Footnote" || result.JSON[1].ToMap()["page_number"] != 3 {
+		t.Fatalf("table description not separated: %#v", result.JSON)
 	}
 	if item["text"] != "Footnote" {
 		t.Fatal("source item mutated")
@@ -295,8 +283,8 @@ func TestPDFTableDescriptionUsesTextItemForBothOutputs(t *testing.T) {
 func TestPDFWhitespaceTableDescriptionCannotHideCells(t *testing.T) {
 	item := map[string]any{"table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Cell value"}}}}, "doc_type_kwd": "table", "text": " \n "}
 	results := []ParseResult{
-		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 1)),
-		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems([]map[string]any{item})}),
+		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 1)),
+		NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{item})}),
 	}
 	for _, result := range results {
 		if result.Err != nil || len(result.JSON) != 1 {
@@ -324,7 +312,7 @@ func TestPDFNormalizeResultPreservesAdjacentTables(t *testing.T) {
 				originalText := item["text"]
 				p := NewPDFParser()
 				p.FlattenMediaToText = flatten
-				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+				result := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
 				if result.Err != nil {
 					t.Fatal(result.Err)
 				}
@@ -379,7 +367,7 @@ func TestPDFNormalizeResultIsIdempotent(t *testing.T) {
 			"doc_type_kwd": "table", "text": markup, "page_number": 3,
 			"positions": [][]any{{3, 10, 30, 20, 40}}, "_preserve_order": true,
 		}
-		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, "json", 3))
+		once := p.NormalizeResult(t.Context(), "sample.pdf", pdfItemsToResult("sample.pdf", []map[string]any{item}, 3))
 		if once.Err != nil {
 			t.Fatal(once.Err)
 		}
@@ -413,7 +401,7 @@ func TestPDFNormalizeResultKeepsTCADPPageOnlyPosition(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
 	}
-	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{OutputFormat: "json", JSON: MapsToItems(items)})
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems(items)})
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -495,9 +483,9 @@ func TestPDFNormalizeResultCancellationPreservesFile(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	result := NewPDFParser().NormalizeResult(ctx, "cancel.pdf", ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"parse_method": "mineru"},
-		JSON:         MapsToItems([]map[string]any{{"text": "hi", "doc_type_kwd": "text"}}),
+
+		File: map[string]any{"parse_method": "mineru"},
+		JSON: MapsToItems([]map[string]any{{"text": "hi", "doc_type_kwd": "text"}}),
 	})
 	if !errors.Is(result.Err, context.Canceled) {
 		t.Fatalf("err = %v", result.Err)
@@ -510,7 +498,7 @@ func TestPDFNormalizeResultCancellationPreservesFile(t *testing.T) {
 func TestPDFMarkdownToResultPreservesFileOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result := pdfMarkdownToResult(ctx, "cancel.pdf", "body", "json", 3)
+	result := pdfMarkdownToResult(ctx, "cancel.pdf", "body", 3)
 	if !errors.Is(result.Err, context.Canceled) {
 		t.Fatalf("err = %v", result.Err)
 	}

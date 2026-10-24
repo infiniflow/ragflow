@@ -475,6 +475,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       redoAll: 'Mevcut parçaları temizle',
       applyAutoMetadataSettings: 'Global otomatik meta veri ayarlarını uygula',
       parseFileTip: 'Ayrıştırmak istediğinizden emin misiniz?',
+      clearChunksReparseTip:
+        'Yeniden ayrıştırmak için parçaları temizlemek istediğinizden emin misiniz?',
       parseFile: 'Dosyayı ayrıştır',
       emptyMetadata: 'Meta veri yok',
       metadataField: 'Meta veri alanı',
@@ -546,7 +548,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       webCrawl: 'Web taraması',
       chunkNumber: 'Parçalar',
       uploadDate: 'Yükleme tarihi',
-      chunkMethod: 'Parçalama yöntemi',
+      parsingMode: 'Ayrıştırma modu',
       enabled: 'Etkinleştir',
       disabled: 'Devre dışı bırak',
       action: 'İşlem',
@@ -751,7 +753,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataFlowPlaceholder: 'Lütfen bir hat seçin.',
       buildItFromScratch: 'Sıfırdan oluştur',
       dataFlow: 'Hat',
-      parseType: 'Ayrıştırma türü',
+      parsingMode: 'Ayrıştırma modu',
       manualSetup: 'Hat',
       builtIn: 'Yerleşik',
       noConfigChunkerHint:
@@ -773,8 +775,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       permissionsTip: `'Takım' olarak ayarlandığında, tüm takım üyeleri bu dataset'i yönetebilir.`,
       chunkTokenNumberTip:
         'Bir parça oluşturmak için token eşiğini belirler. Bu eşiğin altındaki tokenlı bir bölüm, token sayısı eşiği aşana kadar sonraki bölümlerle birleştirilir ve bu noktada bir parça oluşturulur. Eşik aşılsa bile bir sınırlayıcı ile karşılaşılmadıkça yeni parça oluşturulmaz.',
-      chunkMethod: 'Parçalama yöntemi',
-      chunkMethodTip: 'Sağdaki ipuçlarına bakın.',
       upload: 'Yükle',
       english: 'İngilizce',
       chinese: 'Çince',
@@ -1296,8 +1296,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       },
       cancel: 'İptal',
       chatSetting: 'Sohbet ayarı',
-      tocEnhance: 'SayfaDizini',
-      tocEnhanceTip: ` Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu (Genel yöntemindeki 'İçindekiler Tablosu Çıkarmayı Etkinleştir' seçeneğine bakın). Bu, büyük modelin kullanıcının sorgusuyla ilgili içindekiler öğelerini döndürmesine olanak tanır, böylece bu öğeleri kullanarak ilgili parçaları alır ve sıralama işleminde bu parçalara ağırlık uygular. Bu yaklaşım, kitaplarda insan bilgi arama davranışını taklit eder.`,
       batchDeleteSessions: 'Toplu sil',
       deleteSelectedConfirm: 'Seçilen {{count}} oturum(lar) silinsin mi?',
       showChunkMetadata: 'Parça meta verilerini göster',
@@ -2535,7 +2533,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navDeleteNodeDescription:
         'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
       representationEmpty:
-        'Pipeline derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
+        'Hat derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
       claimsPanelTitle: 'İddia · {{name}}',
       claimsTotal: 'Toplam {{count}}',
@@ -2728,6 +2726,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       oneChunkTitle: 'Not',
       oneChunkDescription:
         'Ayrıştırılan tüm bölümler sırayla tek bir parçada birleştirilecektir.',
+      enableVisionEnhancement: 'Görsel geliştirmeyi etkinleştir',
+      enableVisionEnhancementTip:
+        'Görüntü ve tablo bloklarını ayrıştırmak için görsel model kullanın; kapalıyken bunlar düz metin olarak işlenir.',
       flattenMediaToText: 'Görsel modeli devre dışı bırak',
       flattenMediaToTextTip:
         'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
@@ -2920,6 +2921,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       addPageNumbers: 'Sayfa Numarası Ekle',
       addTimestamp: 'Zaman Damgası Ekle',
       watermarkText: 'Filigran Metni',
+      headerText: 'Üst Bilgi Metni',
+      footerText: 'Alt Bilgi Metni',
+      includeDownloadInfoInContent: 'İndirme bilgisini içeriğe ekle',
+      contentPlaceholder: 'Markdown içeriği girin...',
+      filenamePlaceholder:
+        'document.ext (boş bırakılırsa otomatik oluşturulur)',
+      contentRequired: 'İçerik gereklidir',
+      fontSizeMin: 'Yazı tipi boyutu en az 12 olmalıdır',
       channel: 'Kanal',
       channelTip: `Bileşenin girdisi üzerinde metin araması veya haber araması yapın`,
       text: 'Metin',

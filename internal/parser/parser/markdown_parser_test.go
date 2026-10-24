@@ -24,8 +24,8 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want at least one item")
@@ -273,9 +273,6 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 		switch kd {
 		case "table":
 			tableCount++
-			if _, ok := item["ck_type"]; ok {
-				t.Errorf("retired ck_type present on table item: %#v", item)
-			}
 			td, ok := item["table"].(*entity.TableData)
 			if !ok || td == nil {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
@@ -397,15 +394,11 @@ func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":          "deepdoc",
-		"output_format":         "json",
 		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
 		"flatten_media_to_text": false,
 	})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want %q", p.OutputFormat, "json")
 	}
 	if p.VLM == nil {
 		t.Fatal("VLM is nil; want map")
@@ -648,9 +641,6 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on table item: %#v", item)
-			}
 		}
 	}
 	concat := all.String()
@@ -713,9 +703,6 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on table item: %#v", item)
-			}
 		}
 	}
 
@@ -760,9 +747,6 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<div") || strings.Contains(text, "<style") {
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on non-table item: %q", text)
-			}
 			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 				t.Fatalf("non-table HTML block wrongly tagged doc_type_kwd:\"table\": %q", text)
 			}
@@ -832,9 +816,6 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			tableCount++
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
-			}
-			if _, ok := item["ck_type"]; ok {
-				t.Fatalf("retired ck_type present on raw table item: %#v", item)
 			}
 		}
 	}

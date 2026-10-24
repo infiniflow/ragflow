@@ -146,7 +146,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 
 // resolveDeepDocModelDir picks the model directory: the explicit DEEPDOC_MODEL_DIR
 // env, else the RAGFlow default model dir (internal/rag/res/deepdoc),
-// else the assets fetched by ragflow_deps/download_deps.py. The first
+// else the assets fetched by deps/download_deps.py. The first
 // candidate that actually contains the required weights wins.
 func resolveDeepDocModelDir() string {
 	if v := strings.TrimSpace(common.GetEnv(common.EnvDeepDocModelDir)); v != "" {

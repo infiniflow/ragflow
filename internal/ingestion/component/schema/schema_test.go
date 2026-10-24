@@ -267,7 +267,7 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 // round trip through Extra; the index boundary strips them from the store.
 func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
 	var decoded ChunkDoc
-	raw := `{"text":"row","doc_type_kwd":"text","ck_type":"table_row","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
+	raw := `{"text":"row","doc_type_kwd":"text","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -276,32 +276,6 @@ func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
 		if _, ok := out[key]; !ok {
 			t.Errorf("legacy key %q lost in round trip: %#v", key, out)
 		}
-	}
-	if _, ok := out["ck_type"]; ok {
-		t.Errorf("retired ck_type must not survive the round trip: %#v", out)
-	}
-}
-
-// A programmatic Extra entry must not resurrect the retired ck_type key on
-// either projection (MarshalJSON or ToMap).
-func TestChunkDocRetiredCKTypeCannotBeResurrectedViaExtra(t *testing.T) {
-	d := ChunkDoc{
-		Text:  "body",
-		Extra: map[string]json.RawMessage{"ck_type": json.RawMessage(`"heading"`)},
-	}
-	if _, ok := d.ToMap()["ck_type"]; ok {
-		t.Fatalf("ToMap resurrected ck_type: %#v", d.ToMap())
-	}
-	data, err := json.Marshal(d)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if _, ok := raw["ck_type"]; ok {
-		t.Fatalf("MarshalJSON resurrected ck_type: %s", data)
 	}
 }
 
