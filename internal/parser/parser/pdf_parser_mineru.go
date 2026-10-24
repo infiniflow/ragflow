@@ -72,7 +72,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if strings.TrimSpace(content) != "" {
 		pageCount = 1
 	}
-	return pdfMarkdownToResult(ctx, filename, content, parser.OutputFormat, pageCount)
+	return pdfMarkdownToResult(ctx, filename, content, pageCount)
 }
 
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {

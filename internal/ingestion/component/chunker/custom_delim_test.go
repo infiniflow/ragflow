@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"slices"
 	"testing"
 )
@@ -31,7 +32,7 @@ func invokeTokenChunks(t *testing.T, params, input map[string]any) []map[string]
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("Go returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 
@@ -52,9 +53,6 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 	for i, chunk := range chunks {
 		if _, ok := chunk["doc_type_kwd"]; ok {
 			t.Errorf("chunk[%d] must not synthesize doc_type_kwd: %v", i, chunk)
-		}
-		if _, ok := chunk["ck_type"]; ok {
-			t.Errorf("chunk[%d] must not emit the retired ck_type: %v", i, chunk)
 		}
 	}
 }

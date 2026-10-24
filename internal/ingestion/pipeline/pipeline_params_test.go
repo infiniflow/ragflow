@@ -21,7 +21,7 @@ func generalDSL(t *testing.T) []byte {
 					"params": map[string]any{
 						"outputs": map[string]any{},
 						"pdf":     map[string]any{"parse_method": "DeepDOC", "lang": "en"},
-						"docx":    map[string]any{"output_format": "json"},
+						"docx":    map[string]any{"lang": "en"},
 					},
 				},
 			},

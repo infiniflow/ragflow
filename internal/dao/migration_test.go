@@ -30,19 +30,24 @@ import (
 
 const tenantModelIDWidth = 32
 
-func TestKnowledgeCompileBacklogColumnsUseLongText(t *testing.T) {
-	parsed, err := schema.Parse(&entity.KnowledgeCompileDataset{}, &sync.Map{}, schema.NamingStrategy{})
-	if err != nil {
-		t.Fatalf("parse KnowledgeCompileDataset schema: %v", err)
-	}
-
-	for _, name := range []string{"BacklogDocIDs", "InflightDocIDs"} {
-		field := parsed.FieldsByName[name]
-		if field == nil {
-			t.Fatalf("missing field %s", name)
+func TestKnowledgeCompileQueuesHaveNoPrimaryKey(t *testing.T) {
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		parsed, err := schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
+		if err != nil {
+			t.Fatalf("parse %T schema: %v", model, err)
 		}
-		if field.DataType != "longtext" {
-			t.Errorf("%s database type = %q, want longtext", name, field.DataType)
+		if len(parsed.PrimaryFields) != 0 || parsed.FieldsByName["ID"] != nil {
+			t.Fatalf("%s must have no primary key or ID", parsed.Table)
+		}
+		indexes := parsed.ParseIndexes()
+		if len(indexes) != 1 {
+			t.Fatalf("%s indexes = %v, want one queue index", parsed.Table, indexes)
+		}
+		for _, index := range indexes {
+			if index.Class == "UNIQUE" || len(index.Fields) != 2 ||
+				index.Fields[0].DBName != "dataset_id" || index.Fields[1].DBName != "queue_position" {
+				t.Fatalf("unexpected queue index: %+v", index)
+			}
 		}
 	}
 }

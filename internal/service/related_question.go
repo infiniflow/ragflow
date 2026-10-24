@@ -92,7 +92,7 @@ func relatedQuestionsModelID(ctx context.Context, tenantID string, searchConfig 
 	if modelID != "" || tenantSvc == nil {
 		return modelID
 	}
-	defaultModel, err := tenantSvc.GetDefaultModelName(ctx, tenantID, entity.ModelTypeChat)
+	defaultModel, err := tenantSvc.GetDefaultModelNameForTenant(ctx, tenantID, entity.ModelTypeChat)
 	if err == nil {
 		modelID = defaultModel
 	}

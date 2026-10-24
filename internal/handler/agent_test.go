@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
@@ -317,6 +318,7 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 		"title":"Agent",
 		"dsl":{}
 	}`))
+	seedAgentCreationContext(t, c, db)
 
 	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
 	h.CreateAgent(c)
@@ -331,6 +333,51 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 	if created.UserID != "user-1" {
 		t.Fatalf("created agent owner = %q, want authenticated user user-1", created.UserID)
 	}
+	if created.EffectiveTenantID() == "" {
+		t.Fatal("created agent has no tenant_id")
+	}
+}
+
+func seedAgentCreationContext(t *testing.T, c *gin.Context, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("migrate tenant table: %v", err)
+	}
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.User{ID: "user-1", Email: "user-1@example.test", Nickname: "user-1"}).Error; err != nil {
+		t.Fatalf("create authenticated user: %v", err)
+	}
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Status: &active}).Error; err != nil {
+		t.Fatalf("create active tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "membership-1", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleOwner), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create active tenant membership: %v", err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE permission (
+			id TEXT PRIMARY KEY, member_id TEXT, group_id TEXT, tenant_id TEXT NOT NULL,
+			resource_type TEXT NOT NULL, resource_id TEXT, permission INTEGER NOT NULL DEFAULT 0,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+		`CREATE TABLE permission_change_log (
+			id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, operator_id TEXT NOT NULL,
+			target_type TEXT NOT NULL, target_id TEXT NOT NULL, resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL, old_permission INTEGER NOT NULL DEFAULT 0,
+			new_permission INTEGER NOT NULL DEFAULT 0, action_type TEXT NOT NULL, reason TEXT,
+			event_type TEXT NOT NULL DEFAULT '', actor_user_id TEXT,
+			scope_type TEXT NOT NULL DEFAULT 'tenant', before_data TEXT, after_data TEXT,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create Agent permission test table: %v", err)
+		}
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
 }
 
 // sptr returns a pointer to the given string.

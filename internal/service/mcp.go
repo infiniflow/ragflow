@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -86,14 +87,15 @@ type UpdateMCPServerRequest map[string]json.RawMessage
 
 // MCPServerListItem is an MCP server item in the list response.
 type MCPServerListItem struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	ServerType  string         `json:"server_type"`
-	URL         string         `json:"url"`
-	Description *string        `json:"description"`
-	Variables   entity.JSONMap `json:"variables"`
-	CreateDate  *string        `json:"create_date"`
-	UpdateDate  *string        `json:"update_date"`
+	ID                 string         `json:"id"`
+	Name               string         `json:"name"`
+	ServerType         string         `json:"server_type"`
+	URL                string         `json:"url"`
+	Description        *string        `json:"description"`
+	Variables          entity.JSONMap `json:"variables"`
+	CreateDate         *string        `json:"create_date"`
+	UpdateDate         *string        `json:"update_date"`
+	OperatorPermission int32          `json:"operator_permission,omitempty"`
 }
 
 // ListMCPServersResponse is the response payload for listing MCP servers.
@@ -120,8 +122,12 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "mcp", permission.ActionWrite); err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
@@ -155,7 +161,12 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		Headers:     headers,
 	}
 
-	if err = s.mcpServerDAO.CreateMCPServer(ctx, dao.DB, server); err != nil {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMCPServer, server.ID)
+	}); err != nil {
 		return nil, common.CodeDataError, errors.New("failed to create MCP server")
 	}
 
@@ -533,7 +544,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireOwnedTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx, userID)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
 		}
@@ -560,20 +571,30 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 	servers = paginateMCPServers(servers, page, pageSize)
 
 	items := make([]*MCPServerListItem, 0, len(servers))
+	checker := permission.NewDatabaseChecker(dao.DB)
 	for _, server := range servers {
+		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
+			Kind: permission.ResourceKindMCPServer,
+			ID:   server.ID,
+		})
+		if err != nil {
+			code, normalized := normalizeMCPServerPermissionError(err)
+			return nil, code, normalized
+		}
 		variables := server.Variables
 		if variables == nil {
 			variables = entity.JSONMap{}
 		}
 		items = append(items, &MCPServerListItem{
-			ID:          server.ID,
-			Name:        server.Name,
-			ServerType:  server.ServerType,
-			URL:         server.URL,
-			Description: server.Description,
-			Variables:   MCPVariablesForResponse(variables),
-			CreateDate:  formatMCPServerDate(server.CreateDate),
-			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+			ID:                 server.ID,
+			Name:               server.Name,
+			ServerType:         server.ServerType,
+			URL:                server.URL,
+			Description:        server.Description,
+			Variables:          MCPVariablesForResponse(variables),
+			CreateDate:         formatMCPServerDate(server.CreateDate),
+			UpdateDate:         formatMCPServerDate(server.UpdateDate),
+			OperatorPermission: access.PermissionMask,
 		})
 	}
 
@@ -684,8 +705,12 @@ type ImportResult struct {
 
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
 func (s *MCPService) ImportServers(ctx context.Context, userID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
+		_, normalized := permissionresponse.Normalize(err)
+		return nil, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "mcp", permission.ActionWrite); err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
 	}
@@ -786,7 +811,12 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 			Variables:  entity.JSONMap(variables),
 			Headers:    entity.JSONMap(headerVals),
 		}
-		if err = s.mcpServerDAO.CreateMCPServer(ctx, dao.DB, server); err != nil {
+		if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
+				return err
+			}
+			return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMCPServer, server.ID)
+		}); err != nil {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Failed to create MCP server."})
 			continue
 		}

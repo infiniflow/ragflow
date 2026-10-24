@@ -23,7 +23,7 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 				Upstream:   []string{"begin_0"},
 			},
 			"message_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"llm_0"},
 			},
@@ -110,7 +110,7 @@ func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
 				Upstream:   []string{"a_0"},
 			},
 			"d_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"b_0", "c_0"},
 			},
@@ -144,7 +144,7 @@ func TestBuildWorkflow_DuplicateUpstreamSucceeds(t *testing.T) {
 				Upstream:   []string{"begin_0"},
 			},
 			"message_0": {
-				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Upstream: []string{"categorize_0", "categorize_0"},
 			},
 		},
@@ -177,12 +177,12 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 				Upstream:   []string{"begin_0"},
 			},
 			"b_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer a"}},
 				Downstream: []string{},
 				Upstream:   []string{"a_0"},
 			},
 			"c_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer b"}},
 				Downstream: []string{},
 				Upstream:   []string{"a_0"},
 			},
@@ -278,7 +278,7 @@ func TestBuildWorkflow_ErrorsOnUnknownUpstream(t *testing.T) {
 				Upstream:   []string{},
 			},
 			"message_0": {
-				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}},
 				Downstream: []string{},
 				Upstream:   []string{"unknown_0"}, // <-- bad
 			},

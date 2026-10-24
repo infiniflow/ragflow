@@ -119,13 +119,13 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			continue
 		}
 		if candidate.chunked {
-			if res, ok := parseDoclingChunkedResult(filename, body, parser.OutputFormat, sourcePages); ok {
+			if res, ok := parseDoclingChunkedResult(filename, body, sourcePages); ok {
 				return res
 			}
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
 			continue
 		}
-		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat, sourcePages); ok {
+		if res, ok := parseDoclingStandardResult(ctx, filename, body, sourcePages); ok {
 			return res
 		}
 		lastErr = fmt.Errorf("%s: standard response contained no parsed document", candidate.endpoint)
@@ -190,7 +190,7 @@ func doclingChunkedPayload(filename string, encoded string, alpha bool, convertO
 	return payload
 }
 
-func parseDoclingChunkedResult(filename string, body []byte, outputFormat string, sourcePages int) (ParseResult, bool) {
+func parseDoclingChunkedResult(filename string, body []byte, sourcePages int) (ParseResult, bool) {
 	var chunks []doclingChunk
 	if err := json.Unmarshal(body, &chunks); err != nil {
 		var wrapped struct {
@@ -220,10 +220,10 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	if sourcePages > 0 {
 		pageCount = sourcePages
 	}
-	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
+	return doclingTextsToResult(filename, texts, pageCount), true
 }
 
-func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string, sourcePages int) (ParseResult, bool) {
+func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, sourcePages int) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ParseResult{}, false
@@ -244,13 +244,13 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	pageCount := doclingPageCount(docs, sourcePages)
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, outputFormat, pageCount), doc.JSONContent), true
+			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
-			return doclingAttachPositions(doclingTextsToResult(filename, []string{txt}, outputFormat, pageCount), doc.JSONContent), true
+			return doclingAttachPositions(doclingTextsToResult(filename, []string{txt}, pageCount), doc.JSONContent), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, outputFormat, pageCount), doc.JSONContent), true
+			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
 		}
 	}
 	return ParseResult{}, false
@@ -481,29 +481,16 @@ func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult
 	return res
 }
 
-func doclingTextsToResult(filename string, texts []string, outputFormat string, pageCount int) ParseResult {
-	fileMeta := pdfFileMeta(filename, pageCount)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		items := make([]map[string]any, 0, len(texts))
-		for _, text := range texts {
-			items = append(items, map[string]any{
-				"text":         text,
-				"doc_type_kwd": "text",
-			})
-		}
-		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			JSON:         MapsToItems(items),
-		}
-	case "markdown":
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     strings.Join(texts, "\n\n"),
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+func doclingTextsToResult(filename string, texts []string, pageCount int) ParseResult {
+	items := make([]map[string]any, 0, len(texts))
+	for _, text := range texts {
+		items = append(items, map[string]any{
+			"text":         text,
+			"doc_type_kwd": "text",
+		})
+	}
+	return ParseResult{
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }

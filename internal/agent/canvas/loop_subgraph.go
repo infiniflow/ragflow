@@ -86,6 +86,10 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 	}
 
 	loopComp := c.Components[loopID]
+	// Loop expansion bypasses normal node construction; validate its params here.
+	if _, err := buildNodeBody(ctx, loopID, "Loop", "", loopComp.Obj.Params); err != nil {
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
+	}
 
 	members := collectLoopMembers(c, loopID)
 

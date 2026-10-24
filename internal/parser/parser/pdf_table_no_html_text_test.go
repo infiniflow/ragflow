@@ -1,11 +1,9 @@
 package parser
 
 import (
-	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/tableutil"
 )
 
 // TestPDFTableItemsOmitHTMLText pins the structured TableData contract: a table
@@ -65,49 +63,6 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 				t.Fatalf("structured table missing cell text %q: %#v", "What is RAGFlow?", td)
 			}
 		})
-	}
-}
-
-// TestPDFItemsToMarkdownRendersTableFromTableField verifies the markdown
-// renderer derives table markup from `table` when the legacy HTML `text` is
-// absent. This is the consumer that previously forced producers to keep `text`;
-// once producers drop `text`, markdown must still embed the table. The output
-// must be byte-equivalent to rendering `table` directly (stable across the
-// ParseTableHTML/RenderTableHTML round-trip).
-func TestPDFItemsToMarkdownRendersTableFromTableField(t *testing.T) {
-	td := &entity.TableData{
-		Grid:       [][]entity.TableCell{{{Text: "What is RAGFlow?"}, {Text: "A RAG engine."}}, {{Text: "Is it open source?"}, {Text: "Yes."}}},
-		HeaderRows: 1,
-	}
-	// Producer-after-cleanup shape: `table` present, `text` absent.
-	item := map[string]any{"doc_type_kwd": "table", "layout": "table", "table": td}
-	res := pdfItemsToResult("doc.pdf", []map[string]any{item}, "markdown", 1)
-	if res.Err != nil {
-		t.Fatalf("pdfItemsToResult markdown: %v", res.Err)
-	}
-	want := strings.TrimSpace(tableutil.RenderTableHTML(td))
-	if got := strings.TrimSpace(res.Markdown); got != want {
-		t.Fatalf("markdown table mismatch:\n got: %q\nwant: %q", got, want)
-	}
-	if !strings.Contains(res.Markdown, "What is RAGFlow?") {
-		t.Fatalf("markdown lost table cell text: %q", res.Markdown)
-	}
-}
-
-// TestPDFItemsToMarkdownSkipsTableWithoutStructuredData guards the
-// structured-first contract: a table-typed item that carries no `table`
-// (e.g. a mislabeled table region) must be skipped from markdown rather than
-// falling back to a raw HTML `text`. This pins "tables are structured, not
-// markup" so a future change cannot reintroduce an HTML fallback for tables.
-func TestPDFItemsToMarkdownSkipsTableWithoutStructuredData(t *testing.T) {
-	// doc_type_kwd "table" but no `table` field and no `text`.
-	item := map[string]any{"doc_type_kwd": "table", "layout": "table"}
-	res := pdfItemsToResult("doc.pdf", []map[string]any{item}, "markdown", 1)
-	if res.Err != nil {
-		t.Fatalf("pdfItemsToResult markdown: %v", res.Err)
-	}
-	if strings.TrimSpace(res.Markdown) != "" {
-		t.Fatalf("markdown must skip table-typed item without structured data, got %q", res.Markdown)
 	}
 }
 

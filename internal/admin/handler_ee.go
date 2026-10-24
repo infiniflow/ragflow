@@ -1581,6 +1581,36 @@ func (h *Handler) ShowIngestionTasksSummary(c *gin.Context) {
 	common.SuccessWithData(c, ingestionTasksSummary, "")
 }
 
+// ListIngestionTasks requires the enterprise edition.
+func (h *Handler) ListIngestionTasks(c *gin.Context) {
+	tasks, err := h.service.ListIngestionTasks(c.Request.Context())
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, tasks, "")
+}
+
+// RemoveIngestionTasks requires the enterprise edition.
+func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
+	result, err := h.service.RemoveIngestionTasks(c.Request.Context())
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "")
+}
+
+// StopIngestionTasks requires the enterprise edition.
+func (h *Handler) StopIngestionTasks(c *gin.Context) {
+	result, err := h.service.StopIngestionTasks(c.Request.Context())
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "")
+}
+
 // ShowDataSummary handle show data summary
 func (h *Handler) ShowDataSummary(c *gin.Context) {
 	ctx := c.Request.Context()

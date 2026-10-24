@@ -198,7 +198,7 @@ type ThinkEvent struct {
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
-//	│         TOC enhance → child chunk retrieval →         │
+//	│         child chunk retrieval →                       │
 //	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
@@ -706,7 +706,6 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		// When hasKnowledgeParam is true, runs standard retrieval, then:
-		//   - TOC enhancement (if toc_enhance is enabled).
 		//   - Child chunk retrieval.
 		//   - Web search provider (if internet is enabled).
 		//   - Knowledge graph retrieval (if use_kg is enabled).
@@ -714,7 +713,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			// Regular RAG mirroring Python's async_chat — native docStore
-			// retrieval, then the TOC / child chunk / web search / KG
+			// retrieval, then the child chunk / web search / KG
 			// enhancements below.
 			searchQuestion := strings.Join(questions, " ")
 			if embModel != nil {
@@ -782,23 +781,6 @@ func (s *ChatPipelineService) AsyncChat(
 						Final:  true,
 					}
 					return
-				}
-			}
-
-			// TOC enhancement
-			if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-				enhancer := NewTOCEnhancer(
-					engine.Get(),
-					chatModel,
-					kbTenantIDStrings(kbs),
-					kbIDStrings(kbs),
-					searchQuestion,
-					int(chat.TopN),
-				)
-				if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-					common.Warn("TOC enhance failed", zap.Error(err))
-				} else if added > 0 {
-					common.Debug("TOC enhance added chunks", zap.Int("added", added))
 				}
 			}
 

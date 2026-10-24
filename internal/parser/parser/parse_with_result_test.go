@@ -52,8 +52,8 @@ func TestTextParser_ParseWithResult_PreservesOneTextUnit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "doc.txt"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -148,8 +148,8 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (h1, p, ul)", len(res.JSON))

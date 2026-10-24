@@ -262,7 +262,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err = s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(ctx, doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue
