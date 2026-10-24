@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -46,11 +47,11 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), parser.NewEmbeddedMediaBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 2 || sections[0] != "Heading" || sections[1] != "x^2" {
+	if len(sections) != 2 || sections[0].text != "Heading" || sections[1].text != "x^2" {
 		t.Fatalf("sections=%v", sections)
 	}
 }
@@ -64,11 +65,11 @@ func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), parser.NewEmbeddedMediaBudget())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sections) != 1 || !strings.HasPrefix(sections[0], "![figure](data:image/png;base64,") {
+	if len(sections) != 1 || !strings.HasPrefix(sections[0].text, "![figure](data:image/png;base64,") {
 		t.Fatalf("sections=%v", sections)
 	}
 }
@@ -357,5 +358,195 @@ func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
 	}
 	if len(result.JSON) != 1 {
 		t.Fatalf("items=%v", result.JSON)
+	}
+}
+func TestMonkeyOCRv2ExtractSectionsBudgetOmitsPayloadKeepsAltText(t *testing.T) {
+	oversized := make([]byte, parser.MaxImagePayloadBytes+1)
+	for i := range oversized {
+		oversized[i] = 'b'
+	}
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	jsonFile, _ := writer.Create("sample/sample.json")
+	_, _ = jsonFile.Write([]byte(`{"layouts":[{"label":"Picture","content":"![big figure](images/huge.png)","page_num":2,"bbox":[1,2,3,4]}]}`))
+	imageFile, _ := writer.Create("sample/images/huge.png")
+	_, _ = imageFile.Write(oversized)
+	_ = writer.Close()
+
+	budget := parser.NewEmbeddedMediaBudget()
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || !sections[0].imageOnly || sections[0].text != "big figure" {
+		t.Fatalf("oversized image must stay a position carrier keeping its alt text: sections=%v", sections)
+	}
+	if len(sections[0].position) != 5 || sections[0].position[0] != 2 {
+		t.Fatalf("omitted image must keep its layout position: %#v", sections[0].position)
+	}
+	warnings := budget.Warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
+		t.Fatalf("warnings = %#v, want one per-image-limit warning", warnings)
+	}
+}
+
+func TestMonkeyOCRv2AttachPositionsMatchesMarkdownItems(t *testing.T) {
+	sections := []monkeyOCRv2Section{
+		{text: "# Heading", position: []any{1, 10.0, 200.0, 680.0, 700.0}},
+		{text: "Body text.", position: []any{2, 15.0, 300.0, 100.0, 140.0}},
+		{text: "No geometry here"},
+	}
+	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
+		{"text": "Heading", "doc_type_kwd": "text"},
+		{"text": "Body text.", "doc_type_kwd": "text"},
+		{"text": "No geometry here", "doc_type_kwd": "text"},
+	})}
+	res = monkeyOCRv2AttachPositions(res, sections)
+	first := res.JSON[0].ToMap()
+	rows, ok := first["_pdf_positions"].([][]any)
+	if !ok || len(rows) != 1 {
+		t.Fatalf("heading positions = %#v", first["_pdf_positions"])
+	}
+	if page, _ := rows[0][0].(int); page != 1 {
+		t.Fatalf("heading page = %#v, want 1", rows[0])
+	}
+	second := res.JSON[1].ToMap()
+	if page, _ := second["page_number"].(int); page != 2 {
+		t.Fatalf("body page_number = %#v, want 2", second["page_number"])
+	}
+	third := res.JSON[2].ToMap()
+	if _, ok := third["_pdf_positions"]; ok {
+		t.Fatalf("ungeometried section must stay position-free: %#v", third)
+	}
+}
+
+func TestMonkeyOCRv2AttachPositionsMapsImageItemsOrdinally(t *testing.T) {
+	sections := []monkeyOCRv2Section{
+		{text: "![first](data:image/png;base64,AAAA)", position: []any{1, 1.0, 2.0, 3.0, 4.0}},
+		{text: "![second](data:image/png;base64,BBBB)", position: []any{2, 5.0, 6.0, 7.0, 8.0}},
+		{text: "![third](data:image/png;base64,CCCC)"}, // no geometry: skipped
+	}
+	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
+		{"doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
+		{"doc_type_kwd": "image", "image": "data:image/png;base64,BBBB"},
+		{"doc_type_kwd": "image", "image": "data:image/png;base64,DDDD"},
+	})}
+	res = monkeyOCRv2AttachPositions(res, sections)
+	first := res.JSON[0].ToMap()
+	if page, _ := first["page_number"].(int); page != 1 {
+		t.Fatalf("first image page = %#v, want 1", first)
+	}
+	second := res.JSON[1].ToMap()
+	rows, ok := second["_pdf_positions"].([][]any)
+	if !ok || len(rows) != 1 || rows[0][0] != 2 {
+		t.Fatalf("second image positions = %#v, want page 2", second)
+	}
+	third := res.JSON[2].ToMap()
+	if _, ok := third["_pdf_positions"]; ok {
+		t.Fatalf("image item without a positioned section must stay position-free: %#v", third)
+	}
+}
+
+func TestMonkeyOCRv2AttachPositionsInsertsOmittedImagesAsPositionOnlyItems(t *testing.T) {
+	sections := []monkeyOCRv2Section{
+		{text: "Before.", position: []any{1, 1.0, 2.0, 3.0, 4.0}, label: "text"},
+		{text: "", position: []any{2, 5.0, 6.0, 7.0, 8.0}, label: "picture", imageOnly: true},
+		{text: "After.", position: []any{3, 9.0, 10.0, 11.0, 12.0}, label: "text"},
+	}
+	res := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{
+		{"text": "Before.", "doc_type_kwd": "text"},
+		{"text": "After.", "doc_type_kwd": "text"},
+	})}
+	res = monkeyOCRv2AttachPositions(res, sections)
+	if len(res.JSON) != 3 {
+		t.Fatalf("items = %d, want 3 with the inserted position-only image item", len(res.JSON))
+	}
+	mid := res.JSON[1].ToMap()
+	if mid["doc_type_kwd"] != "image" || mid["media_omitted"] != true {
+		t.Fatalf("inserted item = %#v, want media_omitted image", mid)
+	}
+	if text, _ := mid["text"].(string); text != "" {
+		t.Fatalf("no visible text may be invented, got %q", text)
+	}
+	rows, ok := mid["_pdf_positions"].([][]any)
+	if !ok || len(rows) != 1 || rows[0][0] != 2 {
+		t.Fatalf("inserted positions = %#v, want page 2", mid["_pdf_positions"])
+	}
+	last := res.JSON[2].ToMap()
+	if last["text"] != "After." {
+		t.Fatalf("insertion broke document order: %#v", last)
+	}
+	if page, _ := last["page_number"].(int); page != 3 {
+		t.Fatalf("trailing item positions = %#v, want page 3", last)
+	}
+}
+
+func TestMonkeyOCRv2ExtractSectionsMissingImageKeepsPositionCarrier(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	jsonFile, _ := writer.Create("sample/sample.json")
+	_, _ = jsonFile.Write([]byte(`{"layouts":[
+		{"label":"Picture","content":"![](images/gone.png)","page_num":2,"bbox":[1,2,3,4]},
+		{"label":"Picture","content":"![](images/also-gone.png)"}
+	]}`))
+	_ = writer.Close()
+
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), parser.NewEmbeddedMediaBudget())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 1 || !sections[0].imageOnly {
+		t.Fatalf("missing image with a position must keep a carrier, without one must drop: sections=%v", sections)
+	}
+	if len(sections[0].position) != 5 || sections[0].position[0] != 2 {
+		t.Fatalf("carrier position = %#v, want page 2", sections[0].position)
+	}
+}
+
+func TestMonkeyOCRv2LayoutPositionShape(t *testing.T) {
+	got := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 2, "bbox": []any{110.0, 40.0, 10.0, 20.0}})
+	if len(got) != 5 || got[0] != 2 || got[1] != 10.0 || got[2] != 110.0 || got[3] != 20.0 || got[4] != 40.0 {
+		t.Fatalf("position = %#v, want [2 10 110 20 40] with normalized corners", got)
+	}
+	def := monkeyOCRv2LayoutPosition(map[string]any{"bbox": []any{50.0, 60.0, 5.0, 10.0}})
+	if len(def) != 5 || def[0] != 1 || def[1] != 5.0 || def[2] != 50.0 || def[3] != 10.0 || def[4] != 60.0 {
+		t.Fatalf("default-page position = %#v", def)
+	}
+	if none := monkeyOCRv2LayoutPosition(map[string]any{"page_num": 1}); none != nil {
+		t.Fatalf("missing bbox must yield nil, got %#v", none)
+	}
+}
+
+func TestDispatchMonkeyOCRv2PDFEmitsPositionsAndPageCount(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var output bytes.Buffer
+		archive := zip.NewWriter(&output)
+		file, _ := archive.Create("sample/sample.json")
+		_, _ = file.Write([]byte(`{"layouts":[
+			{"label":"Title","content":"Heading","page_num":2,"bbox":[10,20,110,40]},
+			{"label":"Text","content":"Body.","page_num":3,"bbox":[50,60,300,80]}
+		]}`))
+		_ = archive.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(output.Bytes())
+	})))
+	defer server.Close()
+	res, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := res.File["page_count"]; got != 3 {
+		t.Fatalf("page_count = %v, want max layout page 3", got)
+	}
+	if len(res.JSON) != 2 {
+		t.Fatalf("items = %v", res.JSON)
+	}
+	first := res.JSON[0].ToMap()
+	rows, ok := first["_pdf_positions"].([][]any)
+	if !ok || len(rows) != 1 || rows[0][0] != 2 {
+		t.Fatalf("heading positions = %#v, want page 2", first)
+	}
+	if first["layout"] != "title" {
+		t.Fatalf("heading layout = %v, want title from the layout label", first["layout"])
 	}
 }
