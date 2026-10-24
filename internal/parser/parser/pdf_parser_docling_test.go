@@ -418,3 +418,79 @@ func TestDoclingAttachPositionsKeepsLeadingDigits(t *testing.T) {
 		t.Fatalf("numbered list prefix must strip for the match: %#v", res.JSON[1].ToMap())
 	}
 }
+
+func TestDoclingChunkedResultPrefersSourcePageCount(t *testing.T) {
+	body := []byte(`[{"text":"chunk one"},{"text":"chunk two"}]`)
+	res, ok := parseDoclingChunkedResult("a.pdf", body, "json", 9)
+	if !ok {
+		t.Fatal("chunked parse failed")
+	}
+	if got := res.File["page_count"]; got != 9 {
+		t.Fatalf("chunked page_count = %v, want source PDF count 9", got)
+	}
+	res, ok = parseDoclingChunkedResult("a.pdf", body, "json", 0)
+	if !ok {
+		t.Fatal("chunked parse failed")
+	}
+	if got := res.File["page_count"]; got != 2 {
+		t.Fatalf("without source count, page_count = %v, want chunk count 2", got)
+	}
+}
+
+func TestDoclingPageCountSourceLowerBound(t *testing.T) {
+	shortProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 3.0}}},
+	}}}}
+	if got := doclingPageCount(shortProv, 9); got != 9 {
+		t.Fatalf("provenance ending early must not underreport: got %d, want 9", got)
+	}
+	fullProv := []doclingDocument{{JSONContent: map[string]any{"texts": []any{
+		map[string]any{"text": "a", "prov": []any{map[string]any{"page_no": 12.0}}},
+	}}}}
+	if got := doclingPageCount(fullProv, 9); got != 12 {
+		t.Fatalf("metadata above source count still wins: got %d, want 12", got)
+	}
+}
+
+func TestDoclingProvPositionConvertsBottomLeftOrigin(t *testing.T) {
+	heights := map[int]float64{1: 200}
+	prov := map[string]any{"page_no": 1.0, "bbox": map[string]any{
+		"l": 10.0, "t": 180.0, "r": 50.0, "b": 170.0, "coord_origin": "BOTTOMLEFT",
+	}}
+	pos := doclingProvPosition(prov, heights)
+	if pos == nil {
+		t.Fatal("position dropped")
+	}
+	// BOTTOMLEFT y=180/170 from the bottom become 20/30 from the top.
+	if pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("BOTTOMLEFT not converted: %#v", pos)
+	}
+	// Unknown page height: keep the sorted values rather than guessing.
+	pos = doclingProvPosition(prov, map[int]float64{})
+	if pos == nil || pos[3] != 170.0 || pos[4] != 180.0 {
+		t.Fatalf("missing height must keep sorted values: %#v", pos)
+	}
+	// TOPLEFT boxes are untouched even with a known height.
+	provTL := map[string]any{"page_no": 1.0, "bbox": map[string]any{
+		"l": 10.0, "t": 20.0, "r": 50.0, "b": 30.0, "coord_origin": "TOPLEFT",
+	}}
+	pos = doclingProvPosition(provTL, heights)
+	if pos == nil || pos[3] != 20.0 || pos[4] != 30.0 {
+		t.Fatalf("TOPLEFT must pass through unchanged: %#v", pos)
+	}
+}
+
+func TestDoclingPageHeightsFromPagesMetadata(t *testing.T) {
+	asMap := map[string]any{"pages": map[string]any{
+		"1": map[string]any{"size": map[string]any{"width": 100.0, "height": 200.0}},
+	}}
+	if h := doclingPageHeights(asMap)[1]; h != 200.0 {
+		t.Fatalf("map-form pages height = %v, want 200", h)
+	}
+	asList := map[string]any{"pages": []any{
+		map[string]any{"page_no": 2.0, "size": map[string]any{"height": 300.0}},
+	}}
+	if h := doclingPageHeights(asList)[2]; h != 300.0 {
+		t.Fatalf("list-form pages height = %v, want 300", h)
+	}
+}

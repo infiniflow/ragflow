@@ -119,7 +119,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			continue
 		}
 		if candidate.chunked {
-			if res, ok := parseDoclingChunkedResult(filename, body, parser.OutputFormat); ok {
+			if res, ok := parseDoclingChunkedResult(filename, body, parser.OutputFormat, sourcePages); ok {
 				return res
 			}
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
@@ -190,7 +190,7 @@ func doclingChunkedPayload(filename string, encoded string, alpha bool, convertO
 	return payload
 }
 
-func parseDoclingChunkedResult(filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingChunkedResult(filename string, body []byte, outputFormat string, sourcePages int) (ParseResult, bool) {
 	var chunks []doclingChunk
 	if err := json.Unmarshal(body, &chunks); err != nil {
 		var wrapped struct {
@@ -214,9 +214,11 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	if len(texts) == 0 {
 		return ParseResult{}, false
 	}
-	pageCount := 0
-	if len(texts) > 0 {
-		pageCount = len(texts)
+	// A chunked response carries no page metadata: report the source
+	// PDF's real page count when known, not the number of text chunks.
+	pageCount := len(texts)
+	if sourcePages > 0 {
+		pageCount = sourcePages
 	}
 	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
 }
@@ -277,12 +279,13 @@ func doclingPageCount(docs []doclingDocument, sourcePages int) int {
 		}
 		total += count
 	}
+	// Provenance can end before the final page when the backend extracts a
+	// partial document, so the source PDF page count is a lower bound.
+	if sourcePages > total {
+		return sourcePages
+	}
 	if total == 0 {
-		// No page metadata at all: report the source PDF's pages rather
-		// than the number of returned documents.
-		if sourcePages > 0 {
-			return sourcePages
-		}
+		// No page metadata at all: report the number of returned documents.
 		return len(docs)
 	}
 	return total
@@ -333,8 +336,10 @@ func doclingProvs(entry map[string]any) []map[string]any {
 
 // doclingProvPosition converts a Docling provenance entry (1-based page_no and
 // bbox {l, t, r, b}) into a [page, left, right, top, bottom] row with top
-// above bottom regardless of the bbox coordinate origin.
-func doclingProvPosition(prov map[string]any) []any {
+// above bottom. Docling permits bbox coord_origin BOTTOMLEFT (y measured from
+// the page bottom); those boxes are converted to the top-left crop origin
+// when the page height is known, otherwise the sorted values are kept.
+func doclingProvPosition(prov map[string]any, heights map[int]float64) []any {
 	page, ok := numericAny(prov["page_no"])
 	if !ok || page < 1 {
 		return nil
@@ -349,6 +354,11 @@ func doclingProvPosition(prov map[string]any) []any {
 		v[i] = n
 	}
 	left, top, right, bottom := v[0], v[1], v[2], v[3]
+	if origin, _ := bbox["coord_origin"].(string); strings.EqualFold(origin, "BOTTOMLEFT") {
+		if h := heights[int(page)]; h > 0 {
+			top, bottom = h-top, h-bottom
+		}
+	}
 	if left > right {
 		left, right = right, left
 	}
@@ -356,6 +366,43 @@ func doclingProvPosition(prov map[string]any) []any {
 		top, bottom = bottom, top
 	}
 	return []any{int(page), left, right, top, bottom}
+}
+
+// doclingPageHeights maps 1-based page numbers to page heights from the
+// json_content pages metadata, used to convert BOTTOMLEFT bounding boxes.
+func doclingPageHeights(content map[string]any) map[int]float64 {
+	heights := map[int]float64{}
+	collect := func(page map[string]any, keyNo int) {
+		no, ok := numericAny(page["page_no"])
+		if !ok && keyNo > 0 {
+			no, ok = float64(keyNo), true
+		}
+		if !ok || no < 1 {
+			return
+		}
+		size, _ := page["size"].(map[string]any)
+		if h, ok := numericAny(size["height"]); ok && h > 0 {
+			heights[int(no)] = h
+		}
+	}
+	switch pages := content["pages"].(type) {
+	case map[string]any:
+		for key, raw := range pages {
+			page, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			keyNo, _ := strconv.Atoi(key)
+			collect(page, keyNo)
+		}
+	case []any:
+		for _, raw := range pages {
+			if page, ok := raw.(map[string]any); ok {
+				collect(page, 0)
+			}
+		}
+	}
+	return heights
 }
 
 func doclingNormalizeText(text string) string {
@@ -388,8 +435,9 @@ func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult
 			continue
 		}
 		var positions [][]any
+		heights := doclingPageHeights(content)
 		for _, prov := range doclingProvs(entry) {
-			if pos := doclingProvPosition(prov); pos != nil {
+			if pos := doclingProvPosition(prov, heights); pos != nil {
 				positions = append(positions, pos)
 			}
 		}
