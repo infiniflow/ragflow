@@ -27,7 +27,7 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			return []map[string]any{item}
 		}},
 		{"opendataloader html", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "html": tableHTML})
+			return openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": tableHTML}, nil)
 		}},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
