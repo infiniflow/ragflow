@@ -41,12 +41,66 @@ func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a(1).png)", Label: "image"}}}}}
 	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
-	if result.Err != nil || len(result.JSON) != 1 {
+	if result.Err != nil || len(result.JSON) != 2 {
 		t.Fatalf("result=%+v", result)
 	}
 	item := result.JSON[0].ToMap()
 	if item["text"] != "keep me" || item["positions"] != nil {
 		t.Fatalf("item=%v", item)
+	}
+	// The image-only block has no usable geometry, but it must still survive as
+	// a media item so its caption/placeholder is not silently lost (#21218).
+	image := result.JSON[1].ToMap()
+	if image["text"] != "[Image 1]" || image["doc_type_kwd"] != "image" || image["layout"] != "figure" || image["positions"] != nil {
+		t.Fatalf("image item=%v", image)
+	}
+}
+
+func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)"},
+		{Label: "image", Text: "Figure 1: pipeline"},
+		{Label: "chart", Text: "![chart](https://example.invalid/c.png)"},
+		{Label: "seal", Text: "![seal](https://example.invalid/s.png)"},
+		{Text: "![uncaptioned](https://example.invalid/u.png)"},
+	}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 5 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"[Image 1]", "Figure 1: pipeline", "[Image 3]", "[Image 4]", "[Image 5]"} {
+		item := result.JSON[i].ToMap()
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || item["text"] != wantText {
+			t.Fatalf("item %d = %v", i, item)
+		}
+		if item["page_number"] != 1 {
+			t.Fatalf("item %d page_number = %v", i, item["page_number"])
+		}
+	}
+}
+
+func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)"},
+		{Label: "image", Text: "Figure 1: pipeline"},
+	}}}}
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response))
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"[Image 1]", "Figure 1: pipeline"} {
+		item := result.JSON[i].ToMap()
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || item["text"] != wantText || item["page_number"] != 1 {
+			t.Fatalf("item %d = %v", i, item)
+		}
 	}
 }
 

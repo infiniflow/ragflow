@@ -531,6 +531,26 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 	}
 }
 
+func TestPaddleOCRPageFallbackKeepsMediaBlocks(t *testing.T) {
+	body := `{"result":{"layoutParsingResults":[{"markdown":{"text":"page fallback"},"prunedResult":{"page_index":0,"parsing_res_list":[{"block_label":"figure","block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]},{"block_label":"chart","block_content":"","block_bbox":[50,60,90,100]}]}}]}}`
+	response, err := parsePaddleOCRResultBody([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := response.Pages[0].Blocks
+	if len(blocks) != 3 {
+		t.Fatalf("blocks=%+v", blocks)
+	}
+	for i, want := range []struct{ label, box string }{{"figure", "[10 20 30 40]"}, {"chart", "[50 60 90 100]"}} {
+		if blocks[i].Label != want.label || fmt.Sprint(blocks[i].BBox) != want.box {
+			t.Fatalf("block %d = %+v", i, blocks[i])
+		}
+	}
+	if blocks[2].Text != "page fallback" || blocks[2].BBox != nil {
+		t.Fatalf("markdown block = %+v", blocks[2])
+	}
+}
+
 func TestPaddleOCRPagesExcludeMarkdownIgnoredLabels(t *testing.T) {
 	for _, label := range []string{"header", "header_image", "footer", "footer_image", "number", "aside_text", "footnote", " HEADER "} {
 		t.Run(label, func(t *testing.T) {

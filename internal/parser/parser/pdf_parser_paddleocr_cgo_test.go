@@ -79,6 +79,34 @@ func TestPaddleOCRPDFResultKeepsGeometryAfterOnePageFails(t *testing.T) {
 	}
 }
 
+func TestPaddleOCRPDFResultLocatesMediaRegions(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+	}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, want := range [][]any{
+		{1, float64(5), float64(50), float64(10), float64(60)},
+		{1, float64(5), float64(50), float64(65), float64(115)},
+	} {
+		fields := result.JSON[i].ToMap()
+		positions, ok := fields["_pdf_positions"].([][]any)
+		if !ok || len(positions) != 1 || !reflect.DeepEqual(positions[0], want) {
+			t.Fatalf("item %d positions = %v, want %v", i, fields["_pdf_positions"], want)
+		}
+		if !reflect.DeepEqual(fields["positions"], fields["_pdf_positions"]) {
+			t.Fatalf("item %d positions mismatch: %v vs %v", i, fields["positions"], fields["_pdf_positions"])
+		}
+	}
+}
+
 func TestPaddleOCRPDFResultDropsMismatchedPageGeometry(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {

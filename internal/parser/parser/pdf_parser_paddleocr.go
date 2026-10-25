@@ -46,6 +46,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		return ParseResult{Err: err}
 	}
 	markdown.FetchRemoteImages = false
+	mediaOrdinal := 0
 	for _, page := range response.Pages {
 		if !hasPageCount && page.Index+1 > pageCount {
 			pageCount = page.Index + 1
@@ -59,6 +60,12 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
 			}
+			label := strings.ToLower(strings.TrimSpace(block.Label))
+			if models.IsOCRMediaLabel(label) || paddleOCRImageOnlyBlock(block.Text) {
+				mediaOrdinal++
+				result.JSON = append(result.JSON, paddleOCRMediaItem(page, block, size, mediaOrdinal))
+				continue
+			}
 			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
 			if content == "" {
 				continue
@@ -69,7 +76,6 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
 			position := paddleOCRBlockPosition(page, block.BBox, size)
-			label := strings.ToLower(strings.TrimSpace(block.Label))
 			isTitle := label == "doc_title" || label == "paragraph_title"
 			if label == "figure_title" || label == "table_title" {
 				label = "caption"
@@ -130,6 +136,39 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	}
 	result.File = pdfFileMeta(filename, pageCount)
 	return result
+}
+
+// paddleOCRMediaItem keeps a figure-like block as a media item. The service
+// may return only Markdown image markup or no body text at all; either way the
+// block must still reach the chunker with its region so the on-demand crop and
+// vision enhancement can act on it, instead of disappearing from the document.
+func paddleOCRMediaItem(page models.OCRPage, block models.OCRBlock, size [2]float64, ordinal int) DocItem {
+	text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+	if text == "" {
+		// The ordinal keeps captionless figures distinct: the chunk id hashes
+		// the body, so a shared placeholder would make every one of them
+		// overwrite the same preview object and index entry.
+		text = fmt.Sprintf("[Image %d]", ordinal)
+	}
+	fields := map[string]any{
+		"text":            text,
+		"doc_type_kwd":    "image",
+		"layout":          "figure",
+		"page_number":     page.Index + 1,
+		"_preserve_order": true,
+	}
+	if position := paddleOCRBlockPosition(page, block.BBox, size); len(position) > 0 {
+		matrix := [][]any{position}
+		fields["positions"], fields["_pdf_positions"] = matrix, matrix
+	}
+	return DocItemFromMap(fields)
+}
+
+// paddleOCRImageOnlyBlock reports whether a block carries image markup but no
+// body text. Some providers leave the layout label empty, so the label alone
+// cannot decide whether the block is media.
+func paddleOCRImageOnlyBlock(text string) bool {
+	return strings.TrimSpace(text) != "" && strings.TrimSpace(utility.StripMarkdownImages(text)) == ""
 }
 
 func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {
