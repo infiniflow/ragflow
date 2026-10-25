@@ -790,6 +790,9 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 		return "", fmt.Errorf("create aliyun upload policy request: %w", err)
 	}
 	policyReq.Header.Set("Authorization", "Bearer "+apiKey)
+	// The getPolicy endpoint documents this header even though the request has
+	// no body.
+	policyReq.Header.Set("Content-Type", "application/json")
 	policyResp, err := a.baseModel.httpClient.Do(policyReq)
 	if err != nil {
 		return "", fmt.Errorf("request aliyun upload policy: %w", err)

@@ -993,6 +993,10 @@ func newAliyunASRTestServerWithASRResponse(t *testing.T, apiKey string, asrStatu
 				http.Error(w, "authorization = "+got, http.StatusUnauthorized)
 				return
 			}
+			if got := r.Header.Get("Content-Type"); got != "application/json" {
+				http.Error(w, "content-type = "+got, http.StatusBadRequest)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			if _, err := fmt.Fprintf(w, `{"request_id":"req-policy","data":{"policy":"policy-value","signature":"signature-value","upload_dir":%q,"upload_host":%q,"oss_access_key_id":"access-key","x_oss_object_acl":"private","x_oss_forbid_overwrite":"true"}}`,
 				aliyunUploadTestDir, server.URL+"/oss-upload"); err != nil {
