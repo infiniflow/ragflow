@@ -77,6 +77,11 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
   );
 }
 
+/**
+ * Renders a structure template and forwards supported node selections.
+ * Knowledge graphs receive entity-type colors and labels; other graph views
+ * retain the shared defaults.
+ */
 export function RepresentationRenderer({
   template,
   onNodeClick,

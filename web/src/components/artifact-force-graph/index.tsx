@@ -37,11 +37,17 @@ import { useGraphHighlight } from './use-graph-highlight';
 import { defaultMapNodeToValue } from './utils';
 
 const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+/** Returns the entity description as the default plain-text tooltip. */
 const defaultGetNodeLabel = (node: IArtifactGraphEntity) =>
   node.description ?? '';
 
 const nodeCanvasObjectMode = () => 'after' as const;
 
+/**
+ * Renders an interactive force graph with configurable node styles and labels.
+ * Escapes tooltip text and coordinates zoom-to-fit, hover and pinned-node
+ * highlighting, and mapped node-click callbacks.
+ */
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
   show = true,
@@ -116,7 +122,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [],
   );
 
-  // ForceGraph treats tooltip strings as HTML; all label callbacks return text.
+  /** Escapes plain-text node labels for ForceGraph's HTML tooltip renderer. */
   const getEscapedNodeLabel = useCallback(
     (node: ArtifactGraphNode) => escape(getNodeLabel(node)),
     [getNodeLabel],

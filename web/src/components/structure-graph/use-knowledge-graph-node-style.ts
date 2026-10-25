@@ -4,13 +4,21 @@ import { useMemo } from 'react';
 
 const KnowledgeGraphColorCount = 10;
 
+/**
+ * Returns plain tooltip text with the original entity type and description.
+ * Blank types display as `other`; the graph handles HTML escaping.
+ */
 export const getKnowledgeGraphNodeLabel = (node: IArtifactGraphEntity) => {
-  // Keep the original type text; only blank types need a display fallback.
   const type =
     typeof node.type === 'string' && node.type.trim() ? node.type : 'other';
   return node.description ? `${type} · ${node.description}` : type;
 };
 
+/**
+ * Returns a stable node-color callback backed by the root CSS palette.
+ * Trimmed, lowercase entity types select a color; blank and `other` types use
+ * the neutral token. Different types can share one of the ten palette colors.
+ */
 export function useKnowledgeGraphNodeColor() {
   return useMemo(() => {
     // These root tokens use the same colors in both themes. Resolve them once,
