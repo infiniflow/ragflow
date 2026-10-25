@@ -193,6 +193,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **PPIO** | Edge AI platform |
 | **Qiniu** | Chinese cloud platform |
 | **Replicate** | Open-source model hosting |
+| **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
