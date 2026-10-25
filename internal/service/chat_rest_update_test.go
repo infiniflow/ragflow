@@ -43,15 +43,16 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
-		ASRID:     "asr-a",
-		Img2TxtID: "img2txt-a",
-		RerankID:  "rerank-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: &status,
+		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-a",
@@ -420,21 +421,22 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateRejectsDuplicateName(t *testing.T) {
+func TestChatServiceCreateDedupesDuplicateName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
 	ctx := t.Context()
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "chat-chat-1"})
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	if err != nil {
+		t.Fatalf("expected deduped create to succeed, got %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "duplicated chat name") {
-		t.Fatalf("unexpected error: %v", err)
+	var created entity.Chat
+	if err := db.Where("tenant_id = ? AND name = ?", "user-1", "chat-chat-1(1)").First(&created).Error; err != nil {
+		t.Fatalf("expected a chat named %q: %v", "chat-chat-1(1)", err)
 	}
 }
 

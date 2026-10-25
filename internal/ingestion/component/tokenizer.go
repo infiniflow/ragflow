@@ -105,11 +105,9 @@ const ComponentNameTokenizer = "Tokenizer"
 // `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// htmlTableRE matches HTML table-cell tags so the embedded text fed
-// to the embedding model doesn't carry raw markup. Mirrors the python
-// `re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)` at
-// tokenizer.py:79.
-var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+// Table chunks carry their row rendered as an HTML <table> on Text (produced
+// by the chunker), so the embedding input intentionally includes the table
+// markup — there is no markup to strip. The legacy htmlTableRE stays removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
@@ -188,6 +186,23 @@ func resolveEmbedderMaxTokens(embedder Embedder) int {
 		return resolver.ResolveMaxTokens()
 	}
 	return embedder.MaxTokens()
+}
+
+// tableStructureTagRe mirrors the Python tokenizer's cleaned_txt step
+// (rag/flow/tokenizer/tokenizer.py:86): table-structure tags are replaced
+// with a space before the emptiness check and before the text is embedded,
+// so a chunk that is nothing but an empty table carries no embeddable
+// content. The attribute group is deliberately bounded to 12 non-tag
+// characters, exactly like the Python pattern: a tag with longer attributes
+// survives the strip. Do not "fix" the bound — it is parity, not a bug.
+var tableStructureTagRe = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+
+// cleanEmbedText applies the table-structure strip and trims, mirroring
+// Python's cleaned_txt. The stripped text is both the emptiness check and
+// what gets embedded — Python appends cleaned_txt to the embedding batch
+// (tokenizer.py:89), not the raw chunk.
+func cleanEmbedText(raw string) string {
+	return strings.TrimSpace(tableStructureTagRe.ReplaceAllString(raw, " "))
 }
 
 // EmbedderResolver resolves the embedder and its dataset-bound embedding-model
@@ -383,7 +398,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
 
-	if contains(c.param.SearchMethod, "full_text") {
+	if slices.Contains(c.param.SearchMethod, "full_text") {
 		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
@@ -472,8 +487,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
-		txt := htmlTableRE.ReplaceAllString(raw, " ")
-		txt = strings.TrimSpace(txt)
+		// Python parity (tokenizer.py:86-89): strip table-structure tags
+		// before the emptiness check and embed the stripped text, so an
+		// empty-table chunk contributes nothing to the batch.
+		txt := cleanEmbedText(raw)
 		if txt == "" {
 			continue
 		}
@@ -501,11 +518,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
-	if len(texts) == 0 {
-		// Nothing to embed — but cache hits may still need to be written through.
-		if store == nil {
-			return chunks, 0, nil
-		}
+	if len(texts) == 0 && cacheHits == 0 {
+		// Nothing to embed and nothing to serve from cache: return before the
+		// title encode, exactly like Python's `if not texts: return` — an
+		// all-skipped batch must not burn a title embedding. (When the cache
+		// serves every chunk the flow continues so those vectors attach.)
+		return chunks, 0, nil
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -907,7 +925,8 @@ func declaredTitleTokens(chunks []schema.ChunkDoc) []string {
 // Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
 // tokenize_chunks().
 //
-// language sets the Snowball stemmer language, matching Python's
+// language selects the analyzer language (Snowball stemmer, or diacritics
+// folding without stemming for Slovak/Czech), matching Python's
 // rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
 func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
 	tok := tokenizer.New(language)
@@ -1044,11 +1063,11 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 // This is a deliberate, go_intentional divergence. Do NOT "align" this to a
 // path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
-	return contains(searchMethods, "embedding") && kbID != ""
+	return slices.Contains(searchMethods, "embedding") && kbID != ""
 }
 
 func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string, kbID string) error {
-	needFullText := contains(searchMethods, "full_text")
+	needFullText := slices.Contains(searchMethods, "full_text")
 	needEmbedding := shouldHaveEmbedding(searchMethods, kbID)
 	if !needFullText && !needEmbedding {
 		return nil
@@ -1072,12 +1091,11 @@ func requiresFullTextTokens(ck schema.ChunkDoc) bool {
 	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(schema.ContextualText(ck)) != ""
 }
 
+// requiresEmbeddingVector uses the same cleaning as the embed path
+// (cleanEmbedText): a chunk whose cleaned text is empty was skipped from the
+// embedding batch and therefore legitimately carries no vector.
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
-	return strings.TrimSpace(cleanEmbeddingText(concatFields(ck, fields))) != ""
-}
-
-func cleanEmbeddingText(text string) string {
-	return strings.TrimSpace(htmlTableRE.ReplaceAllString(text, " "))
+	return cleanEmbedText(concatFields(ck, fields)) != ""
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {
@@ -1106,6 +1124,18 @@ func getStringOr(m map[string]any, key, def string) string {
 	return def
 }
 
+// firstNonEmpty returns the first non-empty value, or "" when all are empty.
+// Used to walk a settings precedence chain (global choice → legacy per-family
+// choice).
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // cloneInputs returns a shallow copy of m with room for one extra key.
 // Used to inject the Globals-resolved `name` into the decode input without
 // mutating the caller's input snapshot.
@@ -1118,10 +1148,6 @@ func cloneInputs(m map[string]any) map[string]any {
 		cp[k] = v
 	}
 	return cp
-}
-
-func contains(s []string, v string) bool {
-	return slices.Contains(s, v)
 }
 
 func intPtr(v int) *int { return &v }

@@ -33,7 +33,7 @@ docker/ragflow-logs/
 /logs
 internal/rag/res/deepdoc/
 # DeepDoc model weights and the HuggingFace download cache, fetched by
-# ragflow_deps/download_deps.py. Same artifacts as internal/rag/res/deepdoc/,
+# deps/download_deps.py. Same artifacts as internal/rag/res/deepdoc/,
 # under the legacy Python resource path.
 rag/res/
 
@@ -272,8 +272,8 @@ internal/ingestion/task/tool/generate_dataflow_golden.py
 internal/ingestion/task/tool/README.md
 internal/cpp/cmake-build-release
 
-# downloaded native static-lib artifacts (fetched by ragflow_deps/download_deps.py)
-ragflow_deps/*.zip
+# downloaded native static-lib artifacts (fetched by deps/download_deps.py)
+deps/*.zip
 
 # external DeepDoc testdata, fetched on demand via scripts/fetch_deepdoc_testdata.sh
 # (symlinked into place from ~/.cache/ragflow-testdata; never committed)

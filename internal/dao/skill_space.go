@@ -46,17 +46,21 @@ func (dao *SkillSpaceDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (
 	return &space, nil
 }
 
-// GetByTenantID retrieves all skills spaces by tenant ID (active only)
-func (dao *SkillSpaceDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.SkillSpace, error) {
-	var spaces []*entity.SkillSpace
-	err := db.WithContext(ctx).Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Order("create_time DESC").Find(&spaces).Error
+// GetByIDs retrieves active skill spaces by ID.
+func (dao *SkillSpaceDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.SkillSpace, error) {
+	spaces := make([]*entity.SkillSpace, 0, len(ids))
+	if len(ids) == 0 {
+		return spaces, nil
+	}
+	err := db.WithContext(ctx).Where("id IN ? AND status = ?", ids, entity.SpaceStatusActive).
+		Order("create_time DESC").Find(&spaces).Error
 	return spaces, err
 }
 
 // GetByTenantAndName retrieves a skills space by tenant ID and name (active only)
 func (dao *SkillSpaceDAO) GetByTenantAndName(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +70,7 @@ func (dao *SkillSpaceDAO) GetByTenantAndName(ctx context.Context, db *gorm.DB, t
 // GetByTenantAndNameAnyStatus retrieves a skills space by tenant ID and name regardless of status
 func (dao *SkillSpaceDAO) GetByTenantAndNameAnyStatus(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ?", tenantID, name).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND LOWER(name) = LOWER(?)", tenantID, name).First(&space).Error
 	if err != nil {
 		return nil, err
 	}

@@ -247,15 +247,29 @@ func TestAnnotateBoxLayouts_FooterKeptInMiddle(t *testing.T) {
 	}
 }
 
-func TestAnnotateBoxLayouts_ReferenceAlwaysGarbage(t *testing.T) {
-	// Reference type is always garbage regardless of position (no keep_feat).
-	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70}}
+func TestAnnotateBoxLayouts_ReferenceEntryDropped(t *testing.T) {
+	// Ordinary reference-list text remains garbage regardless of position.
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70, Text: "A. Author, A reference entry."}}
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 150, X1: 300, Y1: 210, Label: "reference", Confidence: 0.9},
 	}
 	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 300)
 	if len(boxes) != 0 {
-		t.Errorf("reference: should always be garbage-filtered, got %q", boxes[0].LayoutType)
+		t.Errorf("reference entry should be garbage-filtered, got %q", boxes[0].LayoutType)
+	}
+}
+
+func TestAnnotateBoxLayouts_ReferenceCaptionPreserved(t *testing.T) {
+	boxes := []pdf.TextBox{{X0: 0, X1: 100, Top: 50, Bottom: 70, Text: "Table 8: Prompt for the Pick Task."}}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 150, X1: 300, Y1: 210, Label: "reference", Confidence: 0.9},
+	}
+	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 300)
+	if len(boxes) != 1 {
+		t.Fatalf("reference caption should be preserved, got %d boxes", len(boxes))
+	}
+	if boxes[0].Text != "Table 8: Prompt for the Pick Task." || boxes[0].LayoutType != "reference" {
+		t.Errorf("reference caption changed: got text=%q layout=%q", boxes[0].Text, boxes[0].LayoutType)
 	}
 }
 
@@ -335,9 +349,9 @@ func TestAnnotateBoxLayouts_EquationMappedToFigure(t *testing.T) {
 	regions := []pdf.DLARegion{
 		{X0: 0, Y0: 0, X1: 300, Y1: 60, Label: "equation", Confidence: 0.9},
 	}
-	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 0)
+	boxes = ConsolidateFigures(AnnotateBoxLayouts(boxes, regions, 3.0, 0))
 	if len(boxes) != 1 {
-		t.Fatalf("expected 1 box, got %d", len(boxes))
+		t.Fatalf("unexpected assembled box count: %d", len(boxes))
 	}
 	if boxes[0].LayoutType != "figure" {
 		t.Errorf("equation → LayoutType: got %q, want 'figure'", boxes[0].LayoutType)
@@ -360,9 +374,9 @@ func TestAnnotateBoxLayouts_MixedTypesLayoutNo(t *testing.T) {
 		{X0: 0, Y0: 600, X1: 150, Y1: 660, Label: "text", Confidence: 0.9},  // text-1
 		{X0: 600, Y0: 0, X1: 900, Y1: 60, Label: "figure", Confidence: 0.9}, // figure-0 (PDF: x0=200, x1=300)
 	}
-	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 0)
+	boxes = ConsolidateFigures(AnnotateBoxLayouts(boxes, regions, 3.0, 0))
 	if len(boxes) != 3 {
-		t.Fatalf("expected 3 boxes, got %d", len(boxes))
+		t.Fatalf("unexpected assembled box count: %d", len(boxes))
 	}
 	// Check that text and figure indices are independent
 	if boxes[0].LayoutNo != "text-0" {
@@ -464,6 +478,26 @@ func TestMatchTableRegions_BelowThreshold(t *testing.T) {
 	matches := MatchTableRegions(boxes, regions, 3.0)
 	if len(matches) != 0 {
 		t.Errorf("below threshold: expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestMatchTableRegions_SkipsFigureBoxes(t *testing.T) {
+	// Nested/double-detected table+figure: the full-extent figure geometry
+	// box must not enter the table's BoxIdx, otherwise its extent leaks
+	// into TableItem.Positions (HTML cross-region, NoMerge mislabel).
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 0, Bottom: 50, LayoutType: pdf.LayoutTypeTable},
+		{X0: 0, X1: 100, Top: 0, Bottom: 50, LayoutType: pdf.LayoutTypeFigure},
+	}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},
+	}
+	matches := MatchTableRegions(boxes, regions, 3.0)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 match, got %d", len(matches))
+	}
+	if len(matches[0].BoxIdx) != 1 || matches[0].BoxIdx[0] != 0 {
+		t.Errorf("figure box leaked into table match, got %v", matches[0].BoxIdx)
 	}
 }
 

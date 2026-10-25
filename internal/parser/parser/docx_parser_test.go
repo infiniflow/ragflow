@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
@@ -57,8 +59,8 @@ func TestBuildDOCXJSONSections_Headings(t *testing.T) {
 	if got, ok := item["doc_type_kwd"].(string); !ok || got != "text" {
 		t.Errorf("doc_type_kwd = %q, want %q", got, "text")
 	}
-	if got, ok := item["ck_type"].(string); !ok || got != "heading" {
-		t.Errorf("ck_type = %q, want %q", got, "heading")
+	if got, ok := item["layout"].(string); !ok || got != "heading" {
+		t.Errorf("layout = %q, want %q", got, "heading")
 	}
 }
 
@@ -95,18 +97,23 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
 	item := sections[0]
-	html, ok := item["text"].(string)
-	if !ok {
-		t.Fatal("text field missing or not string")
+	td, ok := item["table"].(*entity.TableData)
+	if !ok || td == nil {
+		t.Fatal("table field missing or not *entity.TableData")
 	}
-	if !strings.Contains(html, "<table>") || !strings.Contains(html, "</table>") {
-		t.Errorf("html = %q, missing <table> tags", html)
+	var all strings.Builder
+	for _, row := range td.CellTexts() {
+		for _, c := range row {
+			all.WriteString(c)
+		}
 	}
-	if !strings.Contains(html, "<tr>") || !strings.Contains(html, "</tr>") {
-		t.Errorf("html = %q, missing <tr> tags", html)
+	s := all.String()
+	if !strings.Contains(s, "A1") || !strings.Contains(s, "B1") ||
+		!strings.Contains(s, "A2") || !strings.Contains(s, "B2") {
+		t.Errorf("table rows = %#v, missing cell content", td.CellTexts())
 	}
-	if !strings.Contains(html, "<td>A1</td>") || !strings.Contains(html, "<td>B2</td>") {
-		t.Errorf("html = %q, missing cell content", html)
+	if len(td.CellTexts()) != 2 {
+		t.Errorf("table rows = %#v, want 2 rows", td.CellTexts())
 	}
 	if got, ok := item["doc_type_kwd"].(string); !ok || got != "table" {
 		t.Errorf("doc_type_kwd = %q, want %q", got, "table")
@@ -140,8 +147,8 @@ func TestBuildDOCXJSONSections_MixedContent(t *testing.T) {
 	if got, _ := sections[3]["doc_type_kwd"].(string); got != "text" {
 		t.Errorf("item[3].doc_type_kwd = %q, want %q", got, "text")
 	}
-	if got, _ := sections[3]["ck_type"].(string); got != "heading" {
-		t.Errorf("item[3].ck_type = %q, want %q", got, "heading")
+	if got, _ := sections[3]["layout"].(string); got != "heading" {
+		t.Errorf("item[3].layout = %q, want %q", got, "heading")
 	}
 }
 
@@ -221,7 +228,7 @@ func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 
 func TestDocxIRTableToHTML_Empty(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{}}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	if html != "<table></table>" {
 		t.Errorf("empty table html = %q, want %q", html, "<table></table>")
 	}
@@ -239,7 +246,7 @@ func TestDocxIRTableToHTML_Single(t *testing.T) {
 			}},
 		}},
 	}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	want := "<table><tr><td>hello</td></tr></table>"
 	if html != want {
 		t.Errorf("single cell html = %q, want %q", html, want)
@@ -262,7 +269,7 @@ func TestDocxIRTableToHTML_MultiRowCol(t *testing.T) {
 			{Cells: []docxIRCell{cell("A2"), cell("B2")}},
 		},
 	}
-	html := docxIRTableToHTML(el)
+	html := docxIRTableToHTML(el, "")
 	want := "<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>"
 	if html != want {
 		t.Errorf("multi cell html = %q, want %q", html, want)

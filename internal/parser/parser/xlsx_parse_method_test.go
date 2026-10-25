@@ -74,13 +74,13 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
-			if got, want := res.OutputFormat, "json"; got != want {
-				t.Fatalf("OutputFormat = %q, want %q", got, want)
+			if got, want := res.Produced(), true; got != want {
+				t.Fatalf("produced = %t, want %t", got, want)
 			}
 			if len(res.JSON) != 1 {
 				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
 			}
-			text, _ := res.JSON[0]["text"].(string)
+			text := tableItemHTML(t, res.JSON[0].ToMap())
 			if !strings.Contains(text, tc.cellValue) {
 				t.Fatalf("JSON = %#v, want it to contain cell content %q", res.JSON, tc.cellValue)
 			}
@@ -113,7 +113,7 @@ func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
 	if len(res.JSON) != 2 {
 		t.Fatalf("JSON item count = %d, want table and image", len(res.JSON))
 	}
-	image := res.JSON[1]
+	image := res.JSON[1].ToMap()
 	if image["text"] != "sheet image" || image["doc_type_kwd"] != "image" {
 		t.Fatalf("unexpected image item: %#v", image)
 	}
@@ -145,7 +145,7 @@ func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if len(res.JSON) != 1 || res.JSON[0]["text"] != "C3" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "C3" {
 		t.Fatalf("image item = %#v, want anchor-cell text C3", res.JSON)
 	}
 }
@@ -171,13 +171,13 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table" {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("JSON item = %#v, want a table item", res.JSON[0])
 	}
 }

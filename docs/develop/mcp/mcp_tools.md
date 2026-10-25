@@ -28,7 +28,6 @@ Retrieves relevant chunks from datasets available to the authenticated user. Whe
 | `keyword` | boolean | No | `false` | Enables keyword-based search when true. |
 | `top_k` | integer | No | `1024` | From `1` through `1024`; maximum candidate count considered before ranking. |
 | `rerank_id` | string | No | Empty | Optional reranking model ID. |
-| `force_refresh` | boolean | No | `false` | Passes a metadata refresh request to the retrieval service. |
 
 `page × page_size` must not exceed the fixed window of 512 rerank candidates. Requests beyond that window return an error.
 

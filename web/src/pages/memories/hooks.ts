@@ -323,6 +323,7 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
+      let res;
       if (memory?.id) {
         try {
           await updateMemory({
@@ -334,13 +335,15 @@ export const useRenameMemory = () => {
           console.error('error', e);
         }
       } else {
-        await createMemory(data);
+        res = await createMemory(data);
       }
       // if (res && !memory?.id) {
       //   navigateToMemory(res?.id)();
       // }
-      callBack?.();
-      handleHideModal();
+      if (res) {
+        callBack?.();
+        handleHideModal();
+      }
     },
     [memory, createMemory, handleHideModal, updateMemory],
   );

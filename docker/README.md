@@ -21,7 +21,7 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 - **docker-compose-base.yml**
   Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. On Linux and macOS, use `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image through Docker Desktop emulation.
+> **Note:** `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
 
 ### Quick start
 
@@ -30,8 +30,8 @@ Run the Go release deployment from the repository checkout:
 ```bash
 # Enter the Docker deployment directory.
 cd ragflow/docker
-# Check out the Go v1.0.0-rc1 release tag.
-git checkout v1.0.0-rc1
+# Check out the Go v1.0.0-rc2 release tag.
+git checkout v1.0.0-rc2
 # Start the Go services and their dependencies in the background.
 docker compose -f docker-compose.yml up -d
 ```
@@ -42,7 +42,7 @@ If you use the default Elasticsearch document engine on Linux, set `vm.max_map_c
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the setting inside its Linux virtual machine as described in the [Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
+This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
 The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
 
@@ -51,7 +51,7 @@ For local image builds, use the [Go image build guide](../docs/develop/build_doc
 Verify the deployment with:
 
 ```bash
-docker compose -f docker-compose.yml ps
+docker ps
 docker logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
@@ -67,7 +67,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `DB_TYPE`
   The business metadata database type. Defaults to `mysql`. Set it to `oceanbase` when connecting to OceanBase through its MySQL-compatible protocol.
 - `COMPOSE_PROFILES`
-  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},ragflow-go,clickhouse`.
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
 - `METADATA_DB_PROFILE`
   Defaults to `mysql`, preserving the in-cluster MySQL service.
 
@@ -177,7 +177,7 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
 [service_conf.yaml.template](./service_conf.yaml.template) specifies the system-level configuration for the Go API, Admin, Ingestor, and Syncer services. In a dockerized setup, the generated `service_conf.yaml` file is automatically created from this template (replacing all environment variables by their values).
 
-- `ragflow`
+- `api`
   - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
   - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
 

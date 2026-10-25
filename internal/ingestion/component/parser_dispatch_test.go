@@ -30,7 +30,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -82,7 +81,8 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	items, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
@@ -94,89 +94,28 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	t.Fatalf("json payload does not contain %q: %#v", want, items)
 }
 
-func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
-	tests := []struct {
-		name       string
-		dispatched parser.ParseResult
-		wantText   string
-	}{
-		{
-			name: "markdown",
-			dispatched: parser.ParseResult{
-				OutputFormat: "markdown",
-				Markdown:     "# Title\n\nBody",
-			},
-			wantText: "Title",
-		},
-		{
-			name: "html",
-			dispatched: parser.ParseResult{
-				OutputFormat: "html",
-				HTML:         "<h1>Title</h1><p>Body</p>",
-			},
-			wantText: "Title",
-		},
-		{
-			name: "text",
-			dispatched: parser.ParseResult{
-				OutputFormat: "text",
-				Text:         "plain body",
-			},
-			wantText: "plain body",
-		},
+// TestNormalizeParserJSON_EmptyPayloadYieldsEmpty pins that a result with no
+// populated payload family normalizes to an empty JSON slice rather than
+// injecting a bogus item. HTML is not a supported backend output format
+// (PR #19467 unified the component to JSON-only; no Go parser produces an
+// HTML payload), so there is no HTML normalization branch to fall through
+// to — this guards that regression.
+func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
+	r := parser.ParseResult{}
+	items := normalizeParserJSON(t.Context(), "doc.txt", r)
+	if len(items) != 0 {
+		t.Fatalf("normalizeParserJSON(empty) = %d items, want 0 (no payload → empty)", len(items))
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			out := buildParserOutputs(t.Context(), tt.dispatched, "sample."+tt.name, nil, "")
-
-			requireJSONText(t, out, tt.wantText)
-			if tt.name == "markdown" {
-				items, ok := out["json"].([]map[string]any)
-				if !ok {
-					t.Fatalf("json = %T, want []map[string]any", out["json"])
-				}
-				if len(items) != 2 {
-					t.Fatalf("markdown json item count = %d, want 2: %#v", len(items), items)
-				}
-				if got := items[0]["ck_type"]; got != "heading" {
-					t.Errorf("markdown item[0].ck_type = %v, want heading", got)
-				}
-				if got := items[0]["text"]; got != "# Title" {
-					t.Errorf("markdown item[0].text = %v, want # Title", got)
-				}
-				if got := items[1]["text"]; got != "Body" {
-					t.Errorf("markdown item[1].text = %v, want Body", got)
-				}
-			}
-			for _, key := range []string{"markdown", "html", "text"} {
-				if _, ok := out[key]; ok {
-					t.Errorf("output contains obsolete %q payload: %#v", key, out[key])
-				}
-			}
-		})
-	}
-}
-
-func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
-	out := buildParserOutputs(t.Context(), parser.ParseResult{
-		OutputFormat: "json",
-		JSON:         []map[string]any{},
-		Markdown:     "# Recovered title",
-	}, "sample.md", nil, "")
-
-	requireJSONText(t, out, "Recovered title")
 }
 
 func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "page_number": 1}}
 	out := buildParserOutputs(t.Context(), parser.ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":    "report.pdf",
 			"outline": wantOutline,
 		},
-		JSON: []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+		JSON: parser.MapsToItems([]map[string]any{{"text": "body", "doc_type_kwd": "text"}}),
 	}, "report.pdf", nil, "")
 	file, ok := out["file"].(map[string]any)
 	if !ok {
@@ -191,33 +130,6 @@ func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 	}
 }
 
-func TestParseMarkdownToJSONItemsDoesNotResolveRemoteImages(t *testing.T) {
-	originalResolver := net.DefaultResolver
-	dnsLookup := make(chan struct{}, 1)
-	net.DefaultResolver = &net.Resolver{
-		PreferGo:     true,
-		StrictErrors: true,
-		Dial: func(context.Context, string, string) (net.Conn, error) {
-			select {
-			case dnsLookup <- struct{}{}:
-			default:
-			}
-			return nil, fmt.Errorf("unexpected DNS lookup")
-		},
-	}
-	t.Cleanup(func() { net.DefaultResolver = originalResolver })
-
-	items := parseMarkdownToJSONItems(t.Context(), "ocr.md", "![remote](https://images.example.invalid/figure.png)")
-	if len(items) != 1 {
-		t.Fatalf("items = %#v, want one Markdown image block", items)
-	}
-	select {
-	case <-dnsLookup:
-		t.Fatal("Markdown-to-JSON normalization performed a remote image DNS lookup")
-	default:
-	}
-}
-
 func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	core, logs := observer.New(zap.DebugLevel)
 	originalLogger := common.Logger
@@ -225,9 +137,8 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	t.Cleanup(func() { common.Logger = originalLogger })
 
 	logParserOutput(parser.ParseResult{
-		OutputFormat: "markdown",
-		Markdown:     "# Title\n\nBody",
-	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
+		JSON: []parser.DocItem{parser.NewTextJSONItem("Title"), parser.NewTextJSONItem("Body")},
+	}, []parser.DocItem{parser.NewTextJSONItem("Title"), parser.NewTextJSONItem("Body")})
 
 	entries := logs.FilterMessage("parser stage output").All()
 	if len(entries) != 1 {
@@ -237,35 +148,11 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	if _, ok := fields["output_format"]; ok {
 		t.Errorf("output_format must be omitted because it is always json: %v", fields)
 	}
-	if got := fields["normalized_from"]; got != "markdown" {
-		t.Errorf("normalized_from = %v, want markdown", got)
+	if got := fields["normalized_from"]; got != "json" {
+		t.Errorf("normalized_from = %v, want json", got)
 	}
 	if got := fields["json_items"]; got != int64(2) {
 		t.Errorf("json_items = %v, want 2", got)
-	}
-}
-
-func TestWarnParserNormalizationFallbackReportsCause(t *testing.T) {
-	core, logs := observer.New(zap.WarnLevel)
-	originalLogger := common.Logger
-	common.Logger = zap.New(core)
-	t.Cleanup(func() { common.Logger = originalLogger })
-
-	warnParserNormalizationFallback("broken.md", "markdown", fmt.Errorf("parse failed"))
-
-	entries := logs.FilterMessage("parser normalization fell back to text").All()
-	if len(entries) != 1 {
-		t.Fatalf("normalization fallback log count = %d, want 1", len(entries))
-	}
-	fields := entries[0].ContextMap()
-	if got := fields["filename"]; got != "broken.md" {
-		t.Errorf("filename = %v, want broken.md", got)
-	}
-	if got := fields["normalized_from"]; got != "markdown" {
-		t.Errorf("normalized_from = %v, want markdown", got)
-	}
-	if got := fields["error"]; got != "parse failed" {
-		t.Errorf("error = %v, want parse failed", got)
 	}
 }
 
@@ -284,7 +171,8 @@ func TestDispatch_JSONOutput(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json payload missing or wrong type: %T", out["json"])
 	}
@@ -299,7 +187,6 @@ func TestDispatch_JSONOutput(t *testing.T) {
 
 func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	setups := defaultSetups()
-	setups["email"]["output_format"] = "text"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -313,7 +200,9 @@ func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
@@ -338,7 +227,8 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v (raw-text mode)", got, want)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) == 0 {
 		t.Fatalf("json items missing or empty: %T", out["json"])
 	}
@@ -405,35 +295,6 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 	}
 }
 
-func TestDefaultSetups_DOCX_OutputFormatJSON(t *testing.T) {
-	setups := defaultSetups()
-	docx, ok := setups["docx"]
-	if !ok {
-		t.Fatal("defaultSetups: docx key missing")
-	}
-	got, ok := docx["output_format"].(string)
-	if !ok {
-		t.Fatal("defaultSetups: docx.output_format missing or not a string")
-	}
-	if got != "json" {
-		t.Errorf("docx.output_format = %q, want %q", got, "json")
-	}
-}
-func TestDefaultSetups_Audio_OutputFormatJSON(t *testing.T) {
-	setups := defaultSetups()
-	audio, ok := setups["audio"]
-	if !ok {
-		t.Fatal("defaultSetups: audio key missing")
-	}
-	got, ok := audio["output_format"].(string)
-	if !ok {
-		t.Fatal("defaultSetups: audio.output_format missing or not a string")
-	}
-	if got != "json" {
-		t.Errorf("audio.output_format = %q, want %q", got, "json")
-	}
-}
-
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	setups := defaultSetups()
 	got := &captureSetupConfigurer{}
@@ -456,7 +317,6 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -470,7 +330,9 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
@@ -491,7 +353,6 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			setups := defaultSetups()
 			setups["pdf"]["parse_method"] = method
-			setups["pdf"]["output_format"] = "json"
 			c := &ParserComponent{setups: setups}
 
 			out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -502,7 +363,8 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			jsonItems, ok := out["json"].([]map[string]any)
+			jsonDocs, ok := out["json"].([]parser.DocItem)
+			jsonItems := parser.ItemsToMaps(jsonDocs)
 			if !ok || len(jsonItems) == 0 {
 				t.Fatalf("json payload missing or empty: %T", out["json"])
 			}
@@ -550,7 +412,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		}
 		return "Describe page {{ page }}.", nil
 	}
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -585,7 +447,6 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -595,7 +456,8 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		"tenant_id": "tenant-1",
 	})
 	if err == nil {
-		jsonItems, ok := out["json"].([]map[string]any)
+		jsonDocs, ok := out["json"].([]parser.DocItem)
+		jsonItems := parser.ItemsToMaps(jsonDocs)
 		if !ok || len(jsonItems) != 2 {
 			t.Fatalf("json payload = %#v, want 2 items", out["json"])
 		}
@@ -629,7 +491,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	})
 
 	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -650,7 +512,6 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -662,12 +523,101 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) != 2 {
 		t.Fatalf("json payload = %#v, want 2 items", out["json"])
 	}
 	if got := jsonItems[1]["text"]; got != "" {
 		t.Fatalf("json[1].text = %#v, want empty string placeholder", got)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_HonorsPageRanges pins that the VLM path renders
+// and transcribes only the configured page ranges. The same setup key carries
+// the canvas-debug page cap.
+func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
+	origPromptLoader := pdfVisionPromptLoader
+	origRenderer := pdfVisionPageRenderer
+	origResolver := pdfVisionModelResolver
+	origInvoker := pdfVisionChatInvoker
+	t.Cleanup(func() {
+		pdfVisionPromptLoader = origPromptLoader
+		pdfVisionPageRenderer = origRenderer
+		pdfVisionModelResolver = origResolver
+		pdfVisionChatInvoker = origInvoker
+	})
+
+	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		if want := [][]int{{2, 3}}; !reflect.DeepEqual(ranges, want) {
+			return nil, fmt.Errorf("renderer ranges = %v, want %v", ranges, want)
+		}
+		return []pdfVisionPage{
+			{PageNumber: 2, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,bbb"},
+			{PageNumber: 3, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,ccc"},
+		}, nil
+	}
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return nil, "resolved-vlm", nil, nil
+	}
+	pdfVisionChatInvoker = func(ctx context.Context, _ models.ModelDriver, _ string, _ []models.Message, _ *models.APIConfig) (*models.ChatResponse, error) {
+		answer := "page text"
+		return &models.ChatResponse{Answer: &answer}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["pages"] = []any{[]any{float64(2), float64(3)}}
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
+	if !ok {
+		t.Fatalf("json payload = %T, want []map[string]any", out["json"])
+	}
+	var pageNumbers []any
+	for _, item := range jsonItems {
+		pageNumbers = append(pageNumbers, item["page_number"])
+	}
+	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {
+		t.Fatalf("page numbers = %v, want %v", pageNumbers, want)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_RejectsInvalidPages pins that an invalid pages
+// value fails the VLM parse before any page is rendered. A fallback to every
+// page would send the whole PDF to the vision model.
+func TestDispatch_PDFVisionJSON_RejectsInvalidPages(t *testing.T) {
+	origRenderer := pdfVisionPageRenderer
+	t.Cleanup(func() { pdfVisionPageRenderer = origRenderer })
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		t.Errorf("renderer called with ranges %v, want no render for invalid pages", ranges)
+		return nil, fmt.Errorf("renderer must not run")
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["pages"] = "abc"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "pdf vision pages") {
+		t.Fatalf("Invoke error = %v, want pdf vision pages error", err)
 	}
 }
 
@@ -702,7 +652,6 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -750,7 +699,6 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -765,7 +713,8 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Fatalf("output_format = %v, want %v", got, want)
 	}
-	items, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(items) == 0 {
 		t.Fatalf("json payload = %#v, want non-empty structured items", out["json"])
 	}
@@ -807,7 +756,6 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -835,9 +783,13 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 }
 
 func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
 	origResolver := resolveMinerUModelForDispatch
 	defer func() { resolveMinerUModelForDispatch = origResolver }()
-	baseURL := "http://mineru-api:8888"
+	baseURL := server.URL
 	apiKey := `{"mineru_backend":"hybrid-http-client"}`
 	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
@@ -859,6 +811,190 @@ func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *tes
 	if !strings.Contains(err.Error(), "mineru_server_url") {
 		t.Fatalf("error = %q, want mineru_server_url context", err.Error())
 	}
+}
+
+func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
+	withSSRFBypass(t)
+
+	invoke := func(t *testing.T, serverURL string) map[string]any {
+		t.Helper()
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := serverURL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["mineru_backend"] = "standard"
+		return invokeMinerUDispatch(t, nil, setups)
+	}
+
+	t.Run("zip content_list uses mineruExtractJSONItems", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"V1 body"},{"type":"table","table_body":"<table></table>","table_caption":["Table caption"]}]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "V1 body")
+		requireJSONText(t, out, "Table caption")
+	})
+
+	t.Run("markdown fallback when zip has no content_list", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("middle.json")
+		_, _ = f.Write([]byte(`{}`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Zip had no content_list\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Zip had no content_list")
+	})
+
+	t.Run("markdown fallback when zip sections are blank", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":""}]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Blank zip sections\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Blank zip sections")
+	})
+
+	t.Run("markdown fallback when zip download fails", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				http.Error(w, "zip gone", http.StatusInternalServerError)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Markdown fallback\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Markdown fallback")
+	})
+
+	t.Run("empty content_list without markdown is an error", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := server.URL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["mineru_backend"] = "standard"
+		c := &ParserComponent{setups: setups}
+		_, err := c.Invoke(t.Context(), nil, map[string]any{
+			"binary":    []byte("%PDF-1.4"),
+			"file_type": "pdf",
+			"name":      "sample.pdf",
+			"tenant_id": "test-tenant",
+		})
+		if err == nil {
+			t.Fatal("Invoke: want error when V1 zip yields no sections")
+		}
+		if !strings.Contains(err.Error(), "no usable content_list") && !strings.Contains(err.Error(), "no sections") {
+			t.Fatalf("error = %q, want empty content_list extract error", err.Error())
+		}
+	})
 }
 
 func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
@@ -899,7 +1035,7 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	}
 
 	component, err := NewParserComponent(map[string]any{
-		"pdf": map[string]any{"parse_method": "monkeyocrv2", "output_format": "markdown"},
+		"pdf": map[string]any{"parse_method": "monkeyocrv2"},
 	})
 	if err != nil {
 		t.Fatalf("NewParserComponent: %v", err)
@@ -967,6 +1103,9 @@ func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *models.APIC
 func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, fmt.Errorf("not implemented")
 }
+func (u *mineruTestDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
+	return nil, nil
+}
 
 func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 	withSSRFBypass(t)
@@ -999,7 +1138,6 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesTenantModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1061,7 +1199,6 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesAPIKeyPayload(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "PaddleOCR"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1086,7 +1223,6 @@ func TestDispatch_PDFPaddleOCR_NoTenantModel_HardErrors(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "paddleocr"
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1149,7 +1285,6 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_UsesExactModel(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["layout_recognizer"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1213,7 +1348,6 @@ func TestDispatch_PDFPaddleOCR_BareModelUUID_InParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1288,7 +1422,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1352,7 +1485,6 @@ func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
 
 			setups := defaultSetups()
 			setups["pdf"]["parse_method"] = "mineru"
-			setups["pdf"]["output_format"] = "markdown"
 			for k, v := range tc.overrides {
 				setups["pdf"][k] = v
 			}
@@ -1426,7 +1558,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_InLayoutRecognizer(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "deepdoc"
 	setups["pdf"]["layout_recognizer"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -1542,7 +1673,6 @@ func TestDispatch_PDFMinerU_HonorsMinerUParseMethodOption(t *testing.T) {
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
 	setups["pdf"]["mineru_parse_method"] = "ocr"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, nil, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1571,7 +1701,6 @@ func TestDispatch_PDFMinerU_CompositeSelectorInParseMethod(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = selector
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, nil, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1589,7 +1718,6 @@ func TestDispatch_PDFMinerU_NamedSelector_ResolvesMinerUProviderModel(t *testing
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "mineru"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1607,7 +1735,6 @@ func TestDispatch_PDFMinerU_BareModelUUID_ResolvesThroughRealProbeAndResolver(t 
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = modelID
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1626,7 +1753,6 @@ func TestDispatch_PDFMinerU_CompositeSelector_ResolvesThroughRealResolver(t *tes
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "deepdoc"
 	setups["pdf"]["layout_recognizer"] = "MinerU-model@default@MinerU"
-	setups["pdf"]["output_format"] = "markdown"
 
 	out := invokeMinerUDispatch(t, db, setups)
 	requireJSONText(t, out, "Real Resolver Title")
@@ -1709,7 +1835,6 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "Docling"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["docling_server_url"] = server.URL
 	setups["pdf"]["docling_api_key"] = "doc-secret"
 	c := &ParserComponent{setups: setups}
@@ -1745,7 +1870,6 @@ func TestDispatch_PDFOpenDataLoaderLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "OpenDataLoader"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["opendataloader_apiserver"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -1776,7 +1900,6 @@ func TestDispatch_PDFSoMarkLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "SoMark"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["somark_base_url"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -1809,7 +1932,6 @@ func TestDispatch_PDFTCADPLegacyMarkdownEmitsJSON(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "TCADP parser"
-	setups["pdf"]["output_format"] = "markdown"
 	setups["pdf"]["tcadp_apiserver"] = server.URL
 	c := &ParserComponent{setups: setups}
 
@@ -1881,12 +2003,12 @@ func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
 	}
 }
 
-// TestConfigureParserFromSetups_VisualAural pins that image and audio
-// files pick up their setup (parse_method / lang / vlm) via the family
-// mapping. Before the fix, configureParserFromSetups silently skipped
-// configuration because resolveParserFamily returned "picture" / "aural",
-// neither of which existed in defaultSetups.
-func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+// TestConfigureParserFromSetups_Visual pins that image files pick up their
+// setup (parse_method / lang / vlm) via the family mapping. Before the fix,
+// configureParserFromSetups silently skipped configuration because
+// resolveParserFamily returned "picture", which did not exist in
+// defaultSetups.
+func TestConfigureParserFromSetups_Visual(t *testing.T) {
 	setups := defaultSetups()
 
 	t.Run("visual resolves to image setup", func(t *testing.T) {
@@ -1901,15 +2023,4 @@ func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
 		}
 	})
 
-	t.Run("aural resolves to audio setup", func(t *testing.T) {
-		got := &captureSetupConfigurer{}
-		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
-		want := map[string]any(setups["audio"])
-		if got.setup == nil {
-			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
-		}
-		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
-			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
-		}
-	})
 }

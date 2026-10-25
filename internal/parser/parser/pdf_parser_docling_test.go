@@ -3,6 +3,7 @@ package parser
 import (
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"testing"
 )
 
-func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
@@ -66,7 +67,6 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":       "Docling",
-		"output_format":      "markdown",
 		"docling_server_url": server.URL,
 		"docling_api_key":    "doc-secret",
 	})
@@ -76,11 +76,17 @@ func TestPDFParser_ParseWithResult_DoclingChunkedMarkdownIntegration(t *testing.
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
-	if got, want := res.Markdown, "Chunk A\n\nChunk B"; got != want {
-		t.Fatalf("Markdown = %q, want %q", got, want)
+	var got strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		got.WriteString(text)
+		got.WriteString("\n")
+	}
+	if !strings.Contains(got.String(), "Chunk A") || !strings.Contains(got.String(), "Chunk B") {
+		t.Fatalf("JSON text = %q, want both chunks", got.String())
 	}
 }
 
@@ -131,7 +137,6 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":       "Docling",
-		"output_format":      "json",
 		"docling_server_url": server.URL,
 	})
 
@@ -140,8 +145,8 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want markdown-normalized items")
@@ -162,5 +167,91 @@ func TestPDFParser_ParseWithResult_DoclingRequiresServerURL(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "docling_server_url") {
 		t.Fatalf("error = %q, want docling_server_url context", res.Err.Error())
+	}
+}
+
+func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup map[string]any
+		env   map[string]string
+		// A nil value means the option must be left out of the request.
+		wantOptions map[string]any
+	}{
+		{
+			name:        "unset options keep the server defaults",
+			wantOptions: map[string]any{"do_ocr": nil, "pdf_backend": nil},
+		},
+		{
+			name:        "parser setup",
+			setup:       map[string]any{"docling_do_ocr": false, "docling_pdf_backend": "pypdfium2"},
+			wantOptions: map[string]any{"do_ocr": false, "pdf_backend": "pypdfium2"},
+		},
+		{
+			name:        "environment",
+			env:         map[string]string{"DOCLING_DO_OCR": "false", "DOCLING_PDF_BACKEND": "pypdfium2"},
+			wantOptions: map[string]any{"do_ocr": false, "pdf_backend": "pypdfium2"},
+		},
+		{
+			name:        "parser setup wins over the environment",
+			setup:       map[string]any{"docling_do_ocr": true, "docling_pdf_backend": "pypdfium2"},
+			env:         map[string]string{"DOCLING_DO_OCR": "false", "DOCLING_PDF_BACKEND": "dlparse_v4"},
+			wantOptions: map[string]any{"do_ocr": true, "pdf_backend": "pypdfium2"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withSSRFBypass(t)
+			t.Setenv("DOCLING_DO_OCR", tt.env["DOCLING_DO_OCR"])
+			t.Setenv("DOCLING_PDF_BACKEND", tt.env["DOCLING_PDF_BACKEND"])
+			var requestCount atomic.Int32
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				current := requestCount.Add(1)
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("request %d: Decode: %v", current, err)
+					return
+				}
+				options, _ := body["options"].(map[string]any)
+				for key, want := range tt.wantOptions {
+					got, exists := options[key]
+					if want == nil {
+						if exists {
+							t.Errorf("request %d: options[%q] = %#v, want it left out", current, key, got)
+						}
+						continue
+					}
+					if got != want {
+						t.Errorf("request %d: options[%q] = %#v, want %#v", current, key, got, want)
+					}
+				}
+				// Reject both chunked requests so the standard payload is checked too.
+				if current < 3 {
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))
+			}))
+			defer server.Close()
+
+			setup := map[string]any{
+				"parse_method":       "Docling",
+				"docling_server_url": server.URL,
+			}
+			maps.Copy(setup, tt.setup)
+			pdf := NewPDFParser()
+			pdf.ConfigureFromSetup(setup)
+
+			res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			if got, want := requestCount.Load(), int32(3); got != want {
+				t.Fatalf("requestCount = %d, want %d", got, want)
+			}
+		})
 	}
 }

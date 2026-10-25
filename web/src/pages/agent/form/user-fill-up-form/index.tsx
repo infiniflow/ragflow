@@ -1,19 +1,13 @@
 import { Collapse } from '@/components/collapse';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
+import { Form, FormField } from '@/components/ui/form';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { memo, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -28,29 +22,29 @@ import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
+const FormSchema = z.object({
+  enable_tips: z.boolean().optional(),
+  tips: z.string().trim().optional(),
+  layout_recognize: z.string().optional(),
+  inputs: z
+    .array(
+      z.object({
+        key: z.string(),
+        type: z.string(),
+        value: z.string(),
+        optional: z.boolean(),
+        name: z.string(),
+        options: z.array(z.union([z.number(), z.string(), z.boolean()])),
+      }),
+    )
+    .optional(),
+});
+
 function UserFillUpForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
-
-  const FormSchema = z.object({
-    enable_tips: z.boolean().optional(),
-    tips: z.string().trim().optional(),
-    layout_recognize: z.string().optional(),
-    inputs: z
-      .array(
-        z.object({
-          key: z.string(),
-          type: z.string(),
-          value: z.string(),
-          optional: z.boolean(),
-          name: z.string(),
-          options: z.array(z.union([z.number(), z.string(), z.boolean()])),
-        }),
-      )
-      .optional(),
-  });
 
   const form = useForm({
     defaultValues: values,
@@ -69,10 +63,14 @@ function UserFillUpForm({ node }: INextOperatorForm) {
     [inputs],
   );
 
-  const outputList = inputs?.map((item) => ({
-    title: item.name,
-    type: item.type,
-  }));
+  const outputList = useMemo(
+    () =>
+      inputs?.map((item) => ({
+        title: item.name,
+        type: item.type,
+      })),
+    [inputs],
+  );
 
   const {
     ok,
@@ -87,43 +85,26 @@ function UserFillUpForm({ node }: INextOperatorForm) {
     node,
   });
 
+  const handleAddQuery = useCallback(() => {
+    showModal();
+  }, [showModal]);
+
   return (
     <section className="px-5 space-y-5">
       <Form {...form}>
-        <FormField
-          control={form.control}
-          name={'enable_tips'}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('flow.openingSwitchTip')}>
-                {t('flow.guidingQuestion')}
-              </FormLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
+        <SwitchFormField
+          name="enable_tips"
+          label={t('flow.guidingQuestion')}
+          tooltip={t('flow.openingSwitchTip')}
         />
 
-        <FormField
-          control={form.control}
-          name={'tips'}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>
-                {t('flow.msg')}
-              </FormLabel>
-              <FormControl>
-                <PromptEditor value={field.value} onChange={field.onChange} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <RAGFlowFormItem
+          name="tips"
+          label={t('flow.msg')}
+          tooltip={t('chat.setAnOpenerTip')}
+        >
+          <PromptEditor></PromptEditor>
+        </RAGFlowFormItem>
 
         {/* Create a hidden field to make Form instance record this */}
         <FormField
@@ -139,13 +120,7 @@ function UserFillUpForm({ node }: INextOperatorForm) {
             </div>
           }
           rightContent={
-            <Button
-              variant={'ghost'}
-              onClick={(e) => {
-                e.preventDefault();
-                showModal();
-              }}
-            >
+            <Button variant={'ghost'} onClick={handleAddQuery}>
               <Plus />
             </Button>
           }

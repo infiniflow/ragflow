@@ -36,15 +36,16 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
-		ASRID:     "asr-a",
-		Img2TxtID: "img2txt-a",
-		RerankID:  "rerank-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err = db.Create(&entity.UserTenant{
+		ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: &status,
+		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 
 	return db
@@ -189,13 +190,13 @@ func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
-		t.Fatalf("expected auth error code, got %v", resp["code"])
+	if resp["code"] != float64(common.CodeForbidden) {
+		t.Fatalf("expected permission-denied code, got %v", resp["code"])
 	}
-	if resp["data"] != false {
-		t.Fatalf("expected data=false, got %v", resp["data"])
+	if resp["data"] != nil {
+		t.Fatalf("expected data=null, got %v", resp["data"])
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
@@ -218,13 +219,13 @@ func TestGetChatHandlerRejectsNonOwner(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
-		t.Fatalf("expected auth error code 109, got %v", resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected hidden resource code, got %v", resp["code"])
 	}
-	if resp["data"] != false {
-		t.Fatalf("expected data=false, got %v", resp["data"])
+	if resp["data"] != nil {
+		t.Fatalf("expected data=null, got %v", resp["data"])
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
@@ -247,10 +248,10 @@ func TestDeleteChatHandlerRejectsNonOwner(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
-		t.Fatalf("expected auth error code 109, got %v", resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected hidden resource code, got %v", resp["code"])
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }

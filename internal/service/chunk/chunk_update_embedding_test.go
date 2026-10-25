@@ -264,7 +264,7 @@ func TestUpdateChunkEmbeddingPreservesDocumentAuthorization(t *testing.T) {
 	}{
 		{name: "chunk belongs to another document", datasetID: "kb-1", documentID: "doc-a", chunkDocID: "doc-b", wantError: "chunk not found"},
 		{name: "document belongs to another dataset", datasetID: "kb-1", documentID: "doc-b", chunkDocID: "doc-b", wantError: "document does not belong to this dataset"},
-		{name: "dataset is inaccessible", datasetID: "kb-2", documentID: "doc-b", chunkDocID: "doc-b", wantError: "user does not have access to this dataset"},
+		{name: "dataset is inaccessible", datasetID: "kb-2", documentID: "doc-b", chunkDocID: "doc-b", wantError: "permission: access denied"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -303,7 +303,7 @@ func newUpdateChunkEmbeddingTestService(t *testing.T) (*ChunkService, *updateChu
 		{Embedding: []float64{10, 20, 30}}, {Embedding: []float64{30, 40, 50}},
 	}}
 	svc := &ChunkService{
-		docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO(), userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO(),
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			return models.NewEmbeddingModel(driver, nil, &models.APIConfig{}, 0), nil
 		},

@@ -64,11 +64,10 @@ func (d *DeepInfraModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -105,11 +104,10 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -144,11 +142,10 @@ func (d *DeepInfraModel) Embed(ctx context.Context, modelName *string, request E
 		return []EmbeddingData{}, fmt.Errorf("texts is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -231,14 +228,12 @@ func (d *DeepInfraModel) Rerank(ctx context.Context, modelName *string, request 
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
+	rerankURL, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-
-	// Reranker model ids may contain slashes (e.g. Qwen/Qwen3-Reranker-4B).
-	url := fmt.Sprintf("%s/%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Rerank, *modelName)
+	url := rerankURL + "/" + *modelName
 
 	reqBody := map[string]interface{}{
 		"query":     query,
@@ -321,11 +316,10 @@ func (d *DeepInfraModel) TranscribeAudio(ctx context.Context, modelName *string,
 		return nil, fmt.Errorf("model name is missing")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -462,11 +456,11 @@ func (d *DeepInfraModel) AudioSpeech(ctx context.Context, modelName *string, aud
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	ttsURL, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
+	url := ttsURL + "/" + voiceID
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -540,11 +534,11 @@ func (d *DeepInfraModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 	}
 
 	// URL: https://api.deepinfra.com/v1/text-to-speech/{voice_id}/stream
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	ttsURL, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s/%s/stream", resolvedBaseURL, d.baseModel.URLSuffix.TTS, voiceID)
+	url := ttsURL + "/" + voiceID + "/stream"
 
 	if ttsConfig != nil && ttsConfig.Format != "" {
 		reqBody["output_format"] = ttsConfig.Format
@@ -614,11 +608,10 @@ func (d *DeepInfraModel) ParseFile(ctx context.Context, modelName *string, conte
 
 func (d *DeepInfraModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -678,11 +671,10 @@ func (d *DeepInfraModel) Balance(ctx context.Context, apiConfig *APIConfig) (map
 		return nil, err
 	}
 
-	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, d.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -735,4 +727,8 @@ func (d *DeepInfraModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 
 func (d *DeepInfraModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
+}
+
+func (d *DeepInfraModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
 }

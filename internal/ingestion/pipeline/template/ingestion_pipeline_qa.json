@@ -31,6 +31,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -51,7 +55,6 @@
                         },
                         "docx": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -62,7 +65,6 @@
                         },
                         "markdown": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -75,7 +77,6 @@
                         },
                         "pdf": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -87,7 +88,6 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -100,7 +100,6 @@
                             "vlm": {}
                         },
                         "text&code": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -187,7 +186,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -201,6 +200,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -223,7 +226,6 @@
                                 {
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -233,7 +235,6 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -243,7 +244,6 @@
                                 {
                                     "fileFormat": "markdown",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ],
@@ -251,7 +251,6 @@
                                 },
                                 {
                                     "fileFormat": "text&code",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
@@ -259,7 +258,6 @@
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ],
@@ -273,12 +271,12 @@
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
                     "measured": {
-                        "height": 57,
+                        "height": 121,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 164
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -300,12 +298,12 @@
                     },
                     "id": "QAChunker:TidyCloudsThink",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -328,12 +326,12 @@
                     },
                     "id": "Tokenizer:ColdCloudsDream",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
                         "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",

@@ -63,12 +63,10 @@ func (g *GPUStackModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := g.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -98,12 +96,10 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -125,12 +121,10 @@ func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -182,7 +176,7 @@ type gpustackEmbeddingResponse struct {
 	Data []gpustackEmbeddingData `json:"data"`
 }
 
-// Embed requests embedding vectors via GPUStack's v1-openai/embeddings endpoint.
+// Embed requests embedding vectors via GPUStack's v1/embeddings endpoint.
 func (g *GPUStackModel) Embed(
 	ctx context.Context,
 	modelName *string,
@@ -210,7 +204,7 @@ func (g *GPUStackModel) Embed(
 	if g.baseModel.URLSuffix.Embedding == "" {
 		return nil, fmt.Errorf("gpustack: embedding URL suffix is not configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(g.baseModel.URLSuffix.Embedding, "/"))
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -287,7 +281,69 @@ func (g *GPUStackModel) Embed(
 }
 
 func (g *GPUStackModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if len(request.Documents) == 0 {
+		return &RerankResponse{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if strings.TrimSpace(g.baseModel.URLSuffix.Rerank) == "" {
+		return nil, fmt.Errorf("gpustack: rerank URL suffix is not configured")
+	}
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Rerank)
+	if err != nil {
+		return nil, err
+	}
+
+	topN := len(request.Documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
+		topN = rerankConfig.TopN
+	}
+	body, err := g.baseModel.doRequest(ctx, url, apiConfig, map[string]any{
+		"model":     *modelName,
+		"query":     request.Query,
+		"documents": request.Documents,
+		"top_n":     topN,
+	}, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var parsed struct {
+		ID      string `json:"id"`
+		Results []struct {
+			Index          *int     `json:"index"`
+			RelevanceScore *float64 `json:"relevance_score"`
+		} `json:"results"`
+		Usage *TokenUsage `json:"usage"`
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("gpustack: failed to parse rerank response: %w", err)
+	}
+	if parsed.Results == nil {
+		return nil, fmt.Errorf("gpustack: missing rerank results in response")
+	}
+	result := &RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	seen := make(map[int]bool, len(parsed.Results))
+	for _, item := range parsed.Results {
+		if item.Index == nil || item.RelevanceScore == nil {
+			return nil, fmt.Errorf("gpustack: rerank result requires index and relevance_score")
+		}
+		index := *item.Index
+		if index < 0 || index >= len(request.Documents) {
+			return nil, fmt.Errorf("gpustack: rerank index %d out of range for %d inputs", index, len(request.Documents))
+		}
+		if seen[index] {
+			return nil, fmt.Errorf("gpustack: duplicate rerank index %d in response", index)
+		}
+		seen[index] = true
+		result.Data = append(result.Data, RerankResult{Index: index, RelevanceScore: *item.RelevanceScore})
+	}
+	recordResponseUsage(modelUsage, parsed.ID, parsed.Usage, "rerank")
+	return result, nil
 }
 
 func (g *GPUStackModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -295,19 +351,23 @@ func (g *GPUStackModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 }
 
 func (g *GPUStackModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	audioModel := OpenAIModel{baseModel: g.baseModel}
+	return audioModel.TranscribeAudio(ctx, modelName, file, apiConfig, asrConfig, modelUsage)
 }
 
 func (g *GPUStackModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	audioModel := OpenAIModel{baseModel: g.baseModel}
+	return audioModel.TranscribeAudioWithSender(ctx, modelName, file, apiConfig, asrConfig, modelUsage, sender)
 }
 
 func (g *GPUStackModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	audioModel := OpenAIModel{baseModel: g.baseModel, skipTTSVoiceValidation: true}
+	return audioModel.AudioSpeech(ctx, modelName, audioContent, apiConfig, ttsConfig, modelUsage)
 }
 
 func (g *GPUStackModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	audioModel := OpenAIModel{baseModel: g.baseModel, skipTTSVoiceValidation: true}
+	return audioModel.AudioSpeechWithSender(ctx, modelName, audioContent, apiConfig, ttsConfig, modelUsage, sender)
 }
 
 func (g *GPUStackModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
@@ -323,5 +383,9 @@ func (g *GPUStackModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]
 }
 
 func (g *GPUStackModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GPUStackModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }

@@ -3,10 +3,12 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
@@ -33,7 +35,6 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -47,7 +48,7 @@ func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 }
 
-func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_TCADPIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	zipPayload := tcadpZipFixture(t)
 	var server *httptest.Server
@@ -65,7 +66,6 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "markdown",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -73,12 +73,66 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(res.Markdown, "Hello TCADP") {
-		t.Fatalf("Markdown = %q, want fixture text", res.Markdown)
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "Hello TCADP") {
+		t.Fatalf("JSON text = %q, want fixture text", text.String())
+	}
+}
+
+func TestPDFParser_ParseWithResult_TCADPCancellationAbortsDownload(t *testing.T) {
+	withSSRFBypass(t)
+
+	const downloadDelay = 500 * time.Millisecond
+	var slow *httptest.Server
+	submit := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/reconstruct_document" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + slow.URL + `/download"}`))
+	}))
+	defer submit.Close()
+	slow = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(downloadDelay):
+			_, _ = w.Write([]byte("not-a-zip"))
+		case <-r.Context().Done():
+		}
+	}))
+	defer slow.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":    "TCADP parser",
+		"tcadp_apiserver": submit.URL,
+		"tcadp_api_key":   "tcadp-secret",
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	elapsed := time.Since(start)
+	if res.Err == nil {
+		t.Fatalf("expected cancellation error, got nil (elapsed=%v)", elapsed)
+	}
+	if !strings.Contains(res.Err.Error(), "context") {
+		t.Fatalf("error %q does not mention context cancellation", res.Err)
+	}
+	if elapsed > downloadDelay/2 {
+		t.Errorf("TCADP download did not abort on ctx cancellation; elapsed=%v", elapsed)
 	}
 }
 
 func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
+	t.Setenv("TCADP_APISERVER_URL", "")
+	t.Setenv("TCADP_APISERVER", "")
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "TCADP parser"})
 	ctx := t.Context()
@@ -150,6 +204,41 @@ func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTCADPItemsKeepPageIdentityThroughNormalization runs the TCADP adapter
+// output through the shared PDF normalization boundary. The flat page-only
+// tuple must survive as page identity (the indexer derives page_num_int from
+// positions) while staying out of the crop path.
+func TestTCADPItemsKeepPageIdentityThroughNormalization(t *testing.T) {
+	for _, raw := range []map[string]any{
+		{"content": "slide text", "type": "text", "page_number": 3},
+		{"caption": "fig", "type": "image", "page_number": 5},
+		{"type": "table", "table_data": map[string]any{"rows": []any{[]any{"a", "b"}}}, "page_number": 2},
+	} {
+		items := tcadpAnyToItems(raw)
+		if len(items) == 0 {
+			t.Fatalf("tcadpAnyToItems(%v) returned no items", raw)
+		}
+		result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems(items)})
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+		item := result.JSON[0].ToMap()
+		if item["page_number"] == nil {
+			t.Fatalf("page identity lost: %#v", item)
+		}
+		positions, ok := ExtractPDFPositions(item)
+		if !ok || len(positions) != 1 {
+			t.Fatalf("page-only position lost: %#v", item)
+		}
+		if positions[0][0] != item["page_number"] {
+			t.Fatalf("position page %v != page_number %v", positions[0][0], item["page_number"])
+		}
+		if HasPDFCropRegion(item) {
+			t.Fatalf("page-only position exposed as a crop region: %#v", item)
+		}
 	}
 }
 

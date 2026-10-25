@@ -71,7 +71,7 @@ func (e *Enhancer) FilterDocuments(
 	if err != nil {
 		return nil, err
 	}
-	docIDs, noMatches := service.ApplyMetaDataFilter(
+	docIDs := service.ApplyMetaDataFilter(
 		ctx,
 		filter,
 		metadata,
@@ -80,8 +80,14 @@ func (e *Enhancer) FilterDocuments(
 		baseDocIDs,
 		kbIDs,
 	)
-	if noMatches {
-		return []string{service.NoMatchDocIDSentinel}, nil
+	// nil means the metadata could not narrow the search -- an auto/semi_auto
+	// filter that produced no conditions, or one refused because the value space
+	// did not fit the model's context. The scope the caller already asked for
+	// still applies; it is the only thing that does. Turning this into the
+	// no-match sentinel would send "-999" down as the document scope and return
+	// zero chunks, which is not what the filter said.
+	if docIDs == nil {
+		return baseDocIDs, nil
 	}
 	return docIDs, nil
 }
@@ -96,38 +102,6 @@ func (e *Enhancer) LabelQuestion(
 		return nil
 	}
 	return e.metadataSvc.LabelQuestion(ctx, question, kbs)
-}
-
-// EnhanceTOC adds or boosts chunks selected through the document table of
-// contents. The service enhancer mutates the supplied kbinfos map.
-func (e *Enhancer) EnhanceTOC(
-	ctx context.Context,
-	chatModel *modelModule.ChatModel,
-	tenantIDs, kbIDs []string,
-	question string,
-	topN int,
-	chunks []map[string]any,
-) ([]map[string]any, error) {
-	if e == nil {
-		return nil, fmt.Errorf("retrieval enhancer is not configured")
-	}
-	kbinfos := map[string]any{"chunks": chunks}
-	enhancer := service.NewTOCEnhancer(
-		e.docEngine,
-		chatModel,
-		tenantIDs,
-		kbIDs,
-		question,
-		topN,
-	)
-	if _, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-		return nil, err
-	}
-	enhanced, ok := kbinfos["chunks"].([]map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("TOC enhancer returned invalid chunks type %T", kbinfos["chunks"])
-	}
-	return enhanced, nil
 }
 
 // RetrieveByChildren aggregates child chunks under their parent chunks.

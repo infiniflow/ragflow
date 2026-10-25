@@ -33,13 +33,16 @@ func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	row := &entity.Tenant{
 		ID:        id,
 		Name:      &name,
-		LLMID:     "glm-4-flash@ZHIPU-AI",
-		EmbdID:    "BAAI/bge-m3@ZHIPU-AI",
-		TTSID:     ttsID,
 		ParserIDs: "naive",
 	}
 	if err := dao.DB.Create(row).Error; err != nil {
 		t.Fatalf("insert test tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "owner-" + id, UserID: id, TenantID: id, Role: "owner", Status: sptr(string(entity.StatusValid)),
+		LLMID: "glm-4-flash@ZHIPU-AI", EmbdID: "BAAI/bge-m3@ZHIPU-AI", TTSID: ttsID,
+	}).Error; err != nil {
+		t.Fatalf("insert test owner membership: %v", err)
 	}
 }
 
@@ -78,7 +81,7 @@ func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-2", nil)
 
-	_, err := NewModelSolver().ResolveDefaultModelConfig(t.Context(), "tenant-2", entity.ModelTypeTTS)
+	_, err := NewModelFactory().resolveDefaultConfig(t.Context(), ModelAccess{TenantID: "tenant-2"}, entity.ModelTypeTTS)
 	if err == nil {
 		t.Fatal("expected error for nil tts_id, got nil")
 	}

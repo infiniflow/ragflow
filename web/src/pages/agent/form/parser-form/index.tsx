@@ -25,17 +25,13 @@ import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
 import { AudioFormFields } from './audio-form-fields';
-import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
+import { HtmlFormFields } from './html-form-fields';
 import { ImageFormFields } from './image-form-fields';
 import { PdfFormFields } from './pdf-form-fields';
 import { PptFormFields } from './ppt-form-fields';
 import { FormSchema, ParserFormSchemaType } from './schema';
 import { SpreadsheetFormFields } from './spreadsheet-form-fields';
-import {
-  HtmlFormFields,
-  TextMarkdownFormFields,
-} from './text-html-form-fields';
 import { buildInitialParserSetup, normalizeParserFormValues } from './utils';
 import { VisionEnhancementFormFields } from './vision-form-fields';
 import { WordFormFields } from './word-form-fields';
@@ -54,7 +50,6 @@ const FileFormatWidgetMap = {
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
-  [FileType.TextMarkdown]: TextMarkdownFormFields,
   [FileType.Html]: HtmlFormFields,
 };
 
@@ -103,15 +98,9 @@ function ParserItem({ name, index, canRemove, onRemove }: ParserItemProps) {
         }
       >
         <div className="space-y-5">
-          <Widget prefix={prefix} fileType={fileFormat as FileType}></Widget>
+          <Widget prefix={prefix}></Widget>
         </div>
       </Collapse>
-      <div className="hidden">
-        <OutputFormatFormField
-          prefix={prefix}
-          fileType={fileFormat as FileType}
-        />
-      </div>
     </Card>
   );
 }
@@ -201,7 +190,7 @@ const ParserForm = ({
 
   return (
     <Form {...form}>
-      <form className="space-y-5 px-5">
+      <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
         {fields.map((field, index) => {
           return (

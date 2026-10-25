@@ -46,10 +46,8 @@
 //
 // # Concurrency
 //
-// The cache itself is a sync.Map; reads are lock-free, writes use
-// `LoadOrStore` to dedupe concurrent builds (the losing goroutine
-// closes its orphan subprocess). The sweeper goroutine runs in the
-// background; `Close()` drains it and shuts down every entry.
+// The cache is a sync.Map; a runtime mutex serializes acquisitions and
+// eviction so an entry cannot close while a caller is acquiring a lease.
 //
 // # Dependency
 //
@@ -66,6 +64,7 @@ import (
 	"fmt"
 	"math"
 	"ragflow/internal/common"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -212,12 +211,13 @@ func newStagehandRuntimeFromEnv() *stagehandRuntime {
 
 // stagehandClientEntry is one cached stagehand.Client. lastUsedAt
 // is touched on every cache hit; the sweeper uses it to decide
-// eviction. closeOnce makes Close idempotent (called both by the
-// sweeper on TTL eviction and by runtime.Close on shutdown).
+// eviction. A retired entry closes once its last operation releases it.
 type stagehandClientEntry struct {
 	client     stagehand.Client
 	lastUsedAt atomic.Int64 // unix nano
 	closeOnce  sync.Once
+	users      int // guarded by stagehandRuntime.mu
+	retired    bool
 }
 
 // Close shuts down the client (kills the stagehand-server
@@ -234,6 +234,9 @@ func (e *stagehandClientEntry) Close() {
 // multi-tenant model rationale.
 type stagehandRuntime struct {
 	cache     sync.Map // map[string]*stagehandClientEntry
+	mu        sync.Mutex
+	closed    bool
+	stopOnce  sync.Once
 	ttl       time.Duration
 	cap       int // 0 = unlimited
 	sweepStop chan struct{}
@@ -286,37 +289,57 @@ func (r *stagehandRuntime) startSweeper(interval time.Duration) {
 	}()
 }
 
-// evictExpired removes entries whose lastUsedAt is older than ttl.
-// Per-entry Close runs after the LoadAndDelete so concurrent
-// readers either see the entry (and continue) or see nothing
-// (and build a fresh one). The losing side of any LoadAndDelete
-// race sees no entry and skips Close.
+// evictExpired retires entries whose lastUsedAt is older than ttl.
+// Active operations hold a lease until their session cleanup finishes.
 func (r *stagehandRuntime) evictExpired() {
 	cutoff := time.Now().Add(-r.ttl).UnixNano()
+	removed := r.retireExpired(cutoff)
+	for _, e := range removed {
+		e.Close()
+	}
+}
+
+func (r *stagehandRuntime) retireExpired(cutoff int64) []*stagehandClientEntry {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var removed []*stagehandClientEntry
+	var keys []string
 	r.cache.Range(func(k, v any) bool {
-		e := v.(*stagehandClientEntry)
-		if e.lastUsedAt.Load() >= cutoff {
-			return true // still fresh
-		}
-		if cur, loaded := r.cache.LoadAndDelete(k); loaded {
-			cur.(*stagehandClientEntry).Close()
-		}
+		keys = append(keys, k.(string))
 		return true
 	})
+	sort.Strings(keys)
+	for _, k := range keys {
+		v, ok := r.cache.Load(k)
+		if !ok {
+			continue
+		}
+		e := v.(*stagehandClientEntry)
+		if e.lastUsedAt.Load() >= cutoff {
+			continue // still fresh
+		}
+		if cur, loaded := r.cache.LoadAndDelete(k); loaded {
+			e = cur.(*stagehandClientEntry)
+			e.retired = true
+			if e.users == 0 {
+				removed = append(removed, e)
+			}
+		}
+	}
+	return removed
 }
 
 // enforceLRUCap evicts the least-recently-used entry when the cache
-// exceeds `cap`. Called by clientFor after a successful new-entry
-// insert. The Range + LoadAndDelete sequence is not strictly atomic
-// (concurrent inserts may race), but we only need to converge to
-// "size ≤ cap + a small overshoot" — not exact cardinality.
+// exceeds `cap`. Called by leaseClient after a successful insert.
 func (r *stagehandRuntime) enforceLRUCap() {
 	if r.cap <= 0 {
 		return
 	}
+	r.mu.Lock()
 	count := 0
 	r.cache.Range(func(_, _ any) bool { count++; return true })
 	if count <= r.cap {
+		r.mu.Unlock()
 		return
 	}
 	var (
@@ -331,10 +354,20 @@ func (r *stagehandRuntime) enforceLRUCap() {
 		return true
 	})
 	if oldestKey == "" {
+		r.mu.Unlock()
 		return
 	}
+	var closeEntry *stagehandClientEntry
 	if cur, loaded := r.cache.LoadAndDelete(oldestKey); loaded {
-		cur.(*stagehandClientEntry).Close()
+		e := cur.(*stagehandClientEntry)
+		e.retired = true
+		if e.users == 0 {
+			closeEntry = e
+		}
+	}
+	r.mu.Unlock()
+	if closeEntry != nil {
+		closeEntry.Close()
 	}
 }
 
@@ -362,10 +395,11 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 		return "", errors.New("stagehand runtime: APIKey is required (stagehand local mode requires MODEL_API_KEY)")
 	}
 
-	client, err := r.clientFor(req)
+	client, release, err := r.leaseClient(req)
 	if err != nil {
 		return "", fmt.Errorf("stagehand runtime: client: %w", err)
 	}
+	defer release()
 
 	headless := true
 	if req.Headless != nil {
@@ -524,7 +558,7 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 		return "", errors.New("stagehand runtime: RunExtract: APIKey is required (stagehand local mode requires MODEL_API_KEY)")
 	}
 
-	client, err := r.clientFor(RunTaskRequest{
+	client, release, err := r.leaseClient(RunTaskRequest{
 		BaseURL:   req.BaseURL,
 		APIKey:    req.APIKey,
 		ModelName: req.ModelName,
@@ -532,6 +566,7 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 	if err != nil {
 		return "", fmt.Errorf("stagehand runtime: RunExtract: client: %w", err)
 	}
+	defer release()
 
 	headless := true
 	if req.Headless != nil {
@@ -617,60 +652,66 @@ func stagehandExtractModelConfig(req RunExtractRequest) stagehand.SessionExtract
 // Safe to call multiple times.
 func (r *stagehandRuntime) Close() error {
 	if r.sweepStop != nil {
-		select {
-		case <-r.sweepStop:
-			// already closed
-		default:
-			close(r.sweepStop)
-		}
+		r.stopOnce.Do(func() { close(r.sweepStop) })
 		if r.sweepDone != nil {
 			<-r.sweepDone
 		}
 	}
+	r.mu.Lock()
+	r.closed = true
+	var removed []*stagehandClientEntry
 	r.cache.Range(func(k, v any) bool {
-		v.(*stagehandClientEntry).Close()
+		e := v.(*stagehandClientEntry)
 		r.cache.Delete(k)
+		e.retired = true
+		if e.users == 0 {
+			removed = append(removed, e)
+		}
 		return true
 	})
+	r.mu.Unlock()
+	for _, e := range removed {
+		e.Close()
+	}
 	return nil
 }
 
-// clientFor returns the cached stagehand.Client for req, building
-// + caching a new one on miss. Concurrent calls for the same key
-// deduplicate via sync.Map.LoadOrStore (the loser closes its
-// orphan subprocess).
-func (r *stagehandRuntime) clientFor(req RunTaskRequest) (stagehand.Client, error) {
+func (r *stagehandRuntime) leaseClient(req RunTaskRequest) (stagehand.Client, func(), error) {
 	if req.APIKey == "" {
-		return stagehand.Client{}, errors.New("stagehand runtime: APIKey is required")
+		return stagehand.Client{}, nil, errors.New("stagehand runtime: APIKey is required")
 	}
 	key := req.BaseURL + "|" + req.APIKey + "|" + req.ModelName
-
-	// Fast path: read-only.
-	if v, ok := r.cache.Load(key); ok {
-		e := v.(*stagehandClientEntry)
-		e.lastUsedAt.Store(time.Now().UnixNano())
-		return e.client, nil
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return stagehand.Client{}, nil, errors.New("stagehand runtime: closed")
 	}
-
-	// Slow path: build a fresh client, then atomically publish.
-	// LoadOrStore dedupes concurrent builds for the same key.
-	entry := &stagehandClientEntry{
-		client: stagehand.NewClient(
+	var e *stagehandClientEntry
+	inserted := false
+	if v, ok := r.cache.Load(key); ok {
+		e = v.(*stagehandClientEntry)
+	} else {
+		e = &stagehandClientEntry{client: stagehand.NewClient(
 			option.WithServer("local"),
 			option.WithModelAPIKey(req.APIKey),
-		),
+		)}
+		r.cache.Store(key, e)
+		inserted = true
 	}
-	entry.lastUsedAt.Store(time.Now().UnixNano())
+	e.lastUsedAt.Store(time.Now().UnixNano())
+	e.users++
+	r.mu.Unlock()
 
-	actual, loaded := r.cache.LoadOrStore(key, entry)
-	if loaded {
-		// Another goroutine won the race. Close our orphan and
-		// adopt theirs. Their entry already has a fresh lastUsedAt.
-		entry.Close()
-		return actual.(*stagehandClientEntry).client, nil
+	if inserted {
+		r.enforceLRUCap()
 	}
-
-	// We won the publish. Possibly evict the LRU oldest.
-	r.enforceLRUCap()
-	return entry.client, nil
+	return e.client, func() {
+		r.mu.Lock()
+		e.users--
+		closeEntry := e.users == 0 && e.retired
+		r.mu.Unlock()
+		if closeEntry {
+			e.Close()
+		}
+	}, nil
 }

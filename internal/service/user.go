@@ -50,6 +50,13 @@ type UserService struct {
 	userDAO *dao.UserDAO
 }
 
+// AuthIdentity contains the identity resolved from a user token or API key.
+type AuthIdentity struct {
+	User     *entity.User
+	TenantID string
+	APIToken *entity.APIToken
+}
+
 // NewUserService create user service
 func NewUserService() *UserService {
 	return &UserService{
@@ -133,8 +140,8 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -195,17 +202,10 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     llmID,
-		EmbdID:    embdID,
-		ASRID:     asrID,
-		Img2TxtID: img2txtID,
-		RerankID:  rerankID,
-		TTSID:     &ttsID,
-		OCRID:     &ocrID,
 		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	userTenantID := utility.GenerateToken()
+	userTenantID := common.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -213,8 +213,15 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &status,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
+		TTSID:     &ttsID,
+		OCRID:     &ocrID,
 	}
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file__ := ""
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -228,12 +235,16 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	}
 
 	db := dao.GetDB()
+	tenantDAO := dao.NewTenantDAO()
 	if err = db.Transaction(func(tx *gorm.DB) error {
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
+		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
+			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+		}
 
-		if err = tx.Create(tenant).Error; err != nil {
+		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
 
@@ -275,7 +286,7 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
@@ -312,7 +323,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
@@ -486,35 +497,37 @@ func defaultUserLanguage() string {
 	return "English"
 }
 
-// GetUserByToken gets user by authorization header
-// The token parameter is the authorization header value, which needs to be decrypted
-// using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
+// ResolveAccessToken validates a signed user token and returns its identity
+// and tenant context.
+func (s *UserService) ResolveAccessToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
 	// Get secret key from config
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
 
-	// Extract access token from authorization header
-	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
-	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
+	tokenContext, err := common.ExtractAccessTokenContext(authorization, secretKey)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization token: %w", err)
 	}
 
 	// Validate token format (should be at least 32 chars, UUID format)
-	if len(accessToken) < 32 {
+	if len(tokenContext.AccessToken) < 32 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token format")
 	}
 
 	// Get user by access token
-	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, accessToken)
+	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, tokenContext.AccessToken)
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
 
-	return user, common.CodeSuccess, nil
+	tenantID, err := resolveUserAuthTenant(ctx, user, tokenContext.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
+
+	return &AuthIdentity{User: user, TenantID: tenantID}, common.CodeSuccess, nil
 }
 
 // UpdateUserAccessToken updates user's access token
@@ -526,7 +539,7 @@ func (s *UserService) UpdateUserAccessToken(ctx context.Context, user *entity.Us
 func (s *UserService) Logout(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
-	invalidToken := "INVALID_" + utility.GenerateToken()
+	invalidToken := "INVALID_" + common.GenerateToken()
 	err := s.UpdateUserAccessToken(ctx, user, invalidToken)
 	if err != nil {
 		return common.CodeServerError, err
@@ -666,7 +679,7 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
-			invalidToken := "INVALID_" + utility.GenerateToken()
+			invalidToken := "INVALID_" + common.GenerateToken()
 			user.AccessToken = &invalidToken
 		}
 	}
@@ -714,7 +727,7 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -737,31 +750,62 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
-// SetTenantInfo updates tenant model configuration
+// SetTenantInfo updates default models on the caller's owner membership.
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	_ = userID
-	tenantDAO := dao.NewTenantDAO()
-	updates := make(map[string]interface{})
-
-	for key, value := range req.Raw {
-		if key == "tenant_id" {
-			continue
-		}
-		updates[key] = value
+	if req == nil {
+		return common.CodeArgumentError, fmt.Errorf("model settings are required")
 	}
-
-	tenantID := ""
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
+	updates, err := tenantModelSettingUpdates(req.Raw)
+	if err != nil {
+		return common.CodeArgumentError, err
 	}
-
+	membershipDAO := dao.NewUserTenantDAO()
+	membership, err := membershipDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != membership.TenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the user's tenant")
+	}
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
+		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
-
 	return common.CodeSuccess, nil
+}
+
+func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
+	updates := make(map[string]interface{}, len(raw))
+	for key, value := range raw {
+		if key == "tenant_id" {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("tenant_id must be a string")
+			}
+			continue
+		}
+		nullable := false
+		switch key {
+		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
+		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
+			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			nullable = true
+		default:
+			return nil, fmt.Errorf("unsupported model setting %q", key)
+		}
+		if value == nil {
+			if !nullable {
+				return nil, fmt.Errorf("%s cannot be null", key)
+			}
+			updates[key] = nil
+			continue
+		}
+		if _, ok := value.(string); !ok {
+			return nil, fmt.Errorf("%s must be a string", key)
+		}
+		updates[key] = value
+	}
+	return updates, nil
 }
 
 // UserTenantService user tenant service
@@ -822,125 +866,73 @@ func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelat
 	}
 }
 
-// GetUserByAPIToken gets user by access key from Authorization header
-// This is used for API token authentication
-// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	// Split authorization header to get the token
-	// Expected format: "Bearer <token>" or "<token>"
-	parts := strings.Split(authorization, " ")
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	// Query API token from database
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetByAPIToken(ctx, dao.DB, token)
-	if err != nil || userToken == nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
-	}
-
-	// Get user by tenant_id from API token
-	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
+// ResolveAPIToken validates an API key and resolves its authentication identity.
+func (s *UserService) ResolveAPIToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
+	token, err := parseAuthorizationToken(authorization)
 	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
+		return nil, common.CodeUnauthorized, err
 	}
 
-	// Check if user's access_token is empty
+	apiToken, err := dao.NewAPITokenDAO().GetByAPIToken(ctx, dao.DB, token)
+	if err != nil || apiToken == nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid API token")
+	}
+	return s.resolveAPITokenIdentity(ctx, apiToken)
+}
+
+// ResolveBetaAPIToken validates a beta key and resolves its user, tenant, and
+// associated API token metadata.
+func (s *UserService) ResolveBetaAPIToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
+	token, err := parseAuthorizationToken(authorization)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
+
+	apiTokens, err := dao.NewAPITokenDAO().GetByBeta(ctx, dao.DB, token)
+	if err != nil || len(apiTokens) == 0 {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta API token")
+	}
+	return s.resolveAPITokenIdentity(ctx, apiTokens[0])
+}
+
+func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *entity.APIToken) (*AuthIdentity, common.ErrorCode, error) {
+	if apiToken.UserID == nil || *apiToken.UserID == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("API token is missing user identity")
+	}
+
+	user, err := s.userDAO.GetByIDString(ctx, dao.DB, *apiToken.UserID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
+	}
 	if user.AccessToken == nil || *user.AccessToken == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
 	}
+	tenantID, err := resolveUserAuthTenant(ctx, user, apiToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
 
-	return user, common.CodeSuccess, nil
-
+	apiTokenMetadata := *apiToken
+	apiTokenMetadata.TenantID = tenantID
+	return &AuthIdentity{User: user, TenantID: tenantID, APIToken: &apiTokenMetadata}, common.CodeSuccess, nil
 }
 
-// GetAPITokenByBeta returns the APIToken row whose `beta` column
-// matches the given raw token. Used by the beta-auth middleware
-// to expose DialogID (the real agent_id) to downstream handlers
-// without re-parsing the Authorization header. Mirrors
-// `APIToken.query(beta=token)` from python bot_api.py:agent_bot_logs.
-func (s *UserService) GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error) {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return nil, fmt.Errorf("authorization header is empty")
-	}
+func parseAuthorizationToken(authorization string) (string, error) {
 	parts := strings.Fields(authorization)
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
+	switch len(parts) {
+	case 1:
 		if strings.EqualFold(parts[0], "Bearer") {
-			return nil, fmt.Errorf("invalid authorization format")
+			return "", fmt.Errorf("invalid authorization format")
 		}
-		token = parts[0]
-	} else {
-		return nil, fmt.Errorf("invalid authorization format")
-	}
-	if token == "" {
-		return nil, fmt.Errorf("invalid authorization format")
-	}
-	apiTokenDAO := dao.NewAPITokenDAO()
-	tokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
-	if err != nil {
-		return nil, err
-	}
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("invalid API token")
-	}
-	return tokens[0], nil
-}
-
-// GetUserByBetaAPIToken gets user by beta access key from Authorization
-// header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
-func (s *UserService) GetUserByBetaAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	parts := strings.Fields(authorization)
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		if strings.EqualFold(parts[0], "Bearer") {
-			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		return parts[0], nil
+	case 2:
+		if !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+			return "", fmt.Errorf("invalid authorization format")
 		}
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		return parts[1], nil
+	default:
+		return "", fmt.Errorf("invalid authorization format")
 	}
-	if token == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userTokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
-	if err != nil || len(userTokens) == 0 {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
-	}
-	userToken := userTokens[0]
-
-	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
-	}
-
-	if user.AccessToken == nil || *user.AccessToken == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
-	}
-
-	return user, common.CodeSuccess, nil
 }
 
 // ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py
@@ -966,7 +958,7 @@ func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (cap
 	if err != nil {
 		return "", "", common.CodeServerError, err
 	}
-	captchaID = utility.GenerateToken()
+	captchaID = common.GenerateToken()
 	if ok := kvrocks.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
@@ -1187,7 +1179,7 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 
 	// Auto-login: rotate the access token like LoginByEmail does so the
 	// handler can immediately mint an Authorization header.
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now

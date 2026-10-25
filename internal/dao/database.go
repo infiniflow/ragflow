@@ -19,13 +19,10 @@ package dao
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/server"
@@ -40,8 +37,6 @@ import (
 )
 
 var DB *gorm.DB
-var modelProviderManager *models.ProviderManager
-var modelProviderManagerMu sync.Mutex
 
 // migrationAwareDialector hands out a namedIndexMigrator instead of the stock
 // one.
@@ -211,6 +206,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 		&entity.KnowledgeCompileDataset{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
 		&entity.WikiDocumentDirty{},
 		// Knowledge-compile compilation templates and their groups. The Go
 		// KnowledgeCompilerComponent resolves a compilation_template (or group)
@@ -218,6 +215,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
 	}
+	dataModels = append(dataModels, permissionDataModelsEE()...)
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -231,6 +229,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
+		if err = migrateUserTenantDuplicates(ctx, DB); err != nil {
+			return fmt.Errorf("failed to deduplicate user_tenant memberships: %w", err)
+		}
 
 		common.Info("Migrating database schema...")
 		for _, m := range dataModels {
@@ -238,7 +239,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-		common.Info("Database schema migrated successfully")
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -246,7 +246,34 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
+		// Run ingestion conversion after the conversation split. It invokes the
+		// dataset cleanup last because both use the same version marker.
+		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
+		}
+
+		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
+		}
+		if err = migratePermissions(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate permissions: %w", err)
+		}
+		if err = migrateTenantDefaultModels(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant default models: %w", err)
+		}
+		if err = migrateTenantModelProviderUserUniqueIndex(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant model provider unique index: %w", err)
+		}
+		if err = migrateKnowledgeCompileQueues(ctx, DB); err != nil {
+			return fmt.Errorf("failed to split knowledge compilation queues: %w", err)
+		}
+		common.Info("Database schema migrated successfully")
 	} else {
+		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
+			if DB.WithContext(ctx).Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
+				return fmt.Errorf("knowledge compilation queues need migration: stop queue producers and ingestors, then run ragflow_server --migrate")
+			}
+		}
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
@@ -256,6 +283,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = autoMigrateRuntimeModels(ctx, DB); err != nil {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
+	}
+	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
+		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
 	}
 	// Conversation lists filter by dialog and usually order by update time.
 	for _, table := range []string{"conversation", "api_4_conversation"} {
@@ -295,46 +325,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
-}
-
-// GetModelProviderManager get database instance
-func GetModelProviderManager() *models.ProviderManager {
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-
-	modelProviderManagerMu.Lock()
-	defer modelProviderManagerMu.Unlock()
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-	if existing := models.GetProviderManager(); existing != nil {
-		modelProviderManager = existing
-		return modelProviderManager
-	}
-	modelConfigDir, err := findModelConfigDir()
-	if err != nil {
-		common.Fatal("Failed to locate model providers", zap.Error(err))
-	}
-	if err = models.InitProviderManager(modelConfigDir); err != nil {
-		common.Fatal("Failed to load model providers", zap.Error(err))
-	}
-	modelProviderManager = models.GetProviderManager()
-	return modelProviderManager
-}
-
-func findModelConfigDir() (string, error) {
-	candidates := []string{
-		"conf/models",
-		filepath.Join("..", "..", "conf", "models"),
-		filepath.Join("..", "..", "..", "conf", "models"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors
@@ -384,6 +374,8 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
 		&entity.MemoryTask{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.ConversationReference{},
 		&entity.API4ConversationMessage{},

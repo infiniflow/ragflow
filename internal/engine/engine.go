@@ -35,13 +35,20 @@ const (
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
 	EngineSereneDB      EngineType = "serenedb"
+	EngineVastbase      EngineType = "vastbase"
 )
 
 // DocEngine document storage engine interface
 type DocEngine interface {
 	// Chunk operations
-	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error
-	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	// CreateChunkStore creates the chunk store for a dataset. language is the
+	// dataset language, needed by engines whose fulltext analyzer is fixed when
+	// the index is created; the others ignore it.
+	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error
+	// InsertChunks writes chunks, creating the chunk store on first write.
+	// language is the dataset language, needed there for the same reason as in
+	// CreateChunkStore; engines that analyse client-side ignore it.
+	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
 	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
 	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
@@ -106,6 +113,16 @@ func Type(docEngine DocEngine) EngineType {
 // OceanBase/SeekDB SQL implementation.
 func IsOceanBaseFamily(engineName string) bool {
 	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
+}
+
+// IsVastbase reports whether a configured engine is the Vastbase G100
+// implementation. Vastbase is PostgreSQL-wire based and shares several
+// service-layer behaviors with the OceanBase family (local rerank, chunk
+// vectors in select fields, shared-table memory lifecycle) but is a separate
+// SQL implementation, so it keeps its own predicate instead of joining
+// IsOceanBaseFamily.
+func IsVastbase(engineName string) bool {
+	return engineName == string(EngineVastbase)
 }
 
 type MessageQueue interface {
