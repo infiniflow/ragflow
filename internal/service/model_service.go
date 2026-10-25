@@ -2369,6 +2369,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		}
 
 		modelList = append(modelList, map[string]interface{}{
+			"id":         model.ID,
 			"name":       model.ModelName,
 			"model_type": entity.ModelType(model.ModelType).HumanReadable(),
 			"max_tokens": maxTokens,
