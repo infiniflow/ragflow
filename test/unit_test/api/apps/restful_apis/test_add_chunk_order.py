@@ -132,6 +132,7 @@ def _load_chunk_api(monkeypatch, *, search, fields, inserted=None):
         monkeypatch,
         "api.utils.image_utils",
         IMAGE_UPDATE_MODE_REMOVE="remove",
+        IMAGE_UPDATE_MODE_REPLACE="replace",
         IMAGE_UPDATE_MODES=("append", "replace", "remove"),
         remove_chunk_image=lambda *_a, **_k: None,
         store_chunk_image=lambda *_a, **_k: None,
@@ -184,6 +185,13 @@ def _load_chunk_api(monkeypatch, *, search, fields, inserted=None):
         "rag.nlp",
         search=SimpleNamespace(index_name=lambda tenant_id: f"ragflow_{tenant_id}"),
         rag_tokenizer=SimpleNamespace(tokenize=lambda text: text, fine_grained_tokenize=lambda text: text),
+    )
+    _stub(monkeypatch, "rag.utils")
+    _stub(
+        monkeypatch,
+        "rag.utils.redis_conn",
+        REDIS_CONN=SimpleNamespace(exist=lambda _key: False, set=lambda *_a, **_k: True, delete=lambda _key: True),
+        RedisDistributedLock=lambda *_a, **_k: SimpleNamespace(acquire=lambda: True, release=lambda: None),
     )
     _stub(monkeypatch, "rag.prompts.generator", cross_languages=lambda *_a, **_k: None, keyword_extraction=lambda *_a, **_k: None)
     _stub(monkeypatch, "quart", request=SimpleNamespace())
