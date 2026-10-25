@@ -86,7 +86,7 @@ var schemeSafeHttpClient *http.Client
 // headers, which is what a hung provider endpoint spends on every retry. Each
 // client keeps its own default while the override is unset.
 func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
-	return GetEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
+	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
 }
 
 func GetSSRFHTTPClient() *http.Client {

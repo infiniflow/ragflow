@@ -48,11 +48,11 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
-// GetEnvDuration reads a duration setting such as "90s" or "5m", falling back to
+// getEnvDuration reads a duration setting such as "90s" or "5m", falling back to
 // def when the variable is unset, malformed, or non-positive. A zero or
 // negative value would remove the deadline instead of tightening it, so it is
 // treated as a typo rather than as an instruction to disable the guard.
-func GetEnvDuration(key string, def time.Duration) time.Duration {
+func getEnvDuration(key string, def time.Duration) time.Duration {
 	raw := strings.TrimSpace(GetEnv(key))
 	if raw == "" {
 		return def
