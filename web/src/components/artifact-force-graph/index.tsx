@@ -37,6 +37,8 @@ import { useGraphHighlight } from './use-graph-highlight';
 import { defaultMapNodeToValue } from './utils';
 
 const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+const defaultGetNodeLabel = (node: IArtifactGraphEntity) =>
+  node.description ?? '';
 
 const nodeCanvasObjectMode = () => 'after' as const;
 
@@ -49,6 +51,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   ) => TNodeValue,
   getNodeId = defaultGetNodeId,
   getNodeColor = defaultGetNodeColor,
+  getNodeLabel = defaultGetNodeLabel,
   getNodeRadius = defaultGetNodeRadius,
   highlightNodeId,
   totalEntities,
@@ -113,10 +116,10 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [],
   );
 
-  // ForceGraph treats tooltip strings as HTML; descriptions are plain text.
-  const getNodeLabel = useCallback(
-    (node: ArtifactGraphNode) => escape(node.description ?? ''),
-    [],
+  // ForceGraph treats tooltip strings as HTML; all label callbacks return text.
+  const getEscapedNodeLabel = useCallback(
+    (node: ArtifactGraphNode) => escape(getNodeLabel(node)),
+    [getNodeLabel],
   );
 
   // Empty label hides the tooltip, so relations without a type show nothing
@@ -140,7 +143,7 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
           nodeColor={nodeColor}
           nodeVal={nodeVal}
           cooldownTicks={100}
-          nodeLabel={getNodeLabel}
+          nodeLabel={getEscapedNodeLabel}
           autoPauseRedraw={false}
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}

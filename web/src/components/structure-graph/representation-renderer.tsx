@@ -36,6 +36,10 @@ import {
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
+import {
+  getKnowledgeGraphNodeLabel,
+  useKnowledgeGraphNodeColor,
+} from './use-knowledge-graph-node-style';
 
 export interface ClickableNode {
   id: string;
@@ -80,6 +84,7 @@ export function RepresentationRenderer({
   totalEntities,
   returnedEntities,
 }: RepresentationRendererProps) {
+  const getKnowledgeGraphNodeColor = useKnowledgeGraphNodeColor();
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
       if (item?.source_chunk_ids?.length) {
@@ -188,6 +193,8 @@ export function RepresentationRenderer({
             data={forceGraphData}
             show
             getNodeId={getArtifactNodeName}
+            getNodeColor={getKnowledgeGraphNodeColor}
+            getNodeLabel={getKnowledgeGraphNodeLabel}
             onNodeClick={handleArtifactNodeClick}
             highlightNodeId={highlightNodeId}
             totalEntities={totalEntities}
