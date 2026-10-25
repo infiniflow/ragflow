@@ -805,12 +805,16 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 		}
 		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
 	}
+	body, err := readModelResponseBody(policyResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read aliyun upload policy: %w", err)
+	}
 	var policy aliyunUploadPolicyResponse
-	if err := json.NewDecoder(policyResp.Body).Decode(&policy); err != nil {
+	if err := json.Unmarshal(body, &policy); err != nil {
 		return "", fmt.Errorf("decode aliyun upload policy: %w", err)
 	}
 	if policy.Code != "" {
-		return "", fmt.Errorf("aliyun upload policy error: %s: %s", policy.Code, policy.Message)
+		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
 	}
 	data := policy.Data
 	if data.UploadHost == "" || data.UploadDir == "" || data.OSSAccessKeyID == "" || data.Signature == "" || data.Policy == "" {

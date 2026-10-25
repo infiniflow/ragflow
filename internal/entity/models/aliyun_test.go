@@ -1272,6 +1272,32 @@ func TestAliyunTranscribeAudioSurfacesUploadPolicyError(t *testing.T) {
 	}
 }
 
+func TestAliyunTranscribeAudioSurfacesProviderCodedPolicyError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"request_id":"req-policy","code":"InvalidApiKey","message":"invalid key"}`))
+	}))
+	defer server.Close()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "bad-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusOK {
+		t.Fatalf("error = %v, want APIStatusError with the policy status", err)
+	}
+	if !strings.Contains(statusErr.Body, "InvalidApiKey") {
+		t.Fatalf("error body = %q, want to include InvalidApiKey", statusErr.Body)
+	}
+}
+
 func TestAliyunTranscribeAudioSurfacesUploadError(t *testing.T) {
 	withSSRFBypass(t)
 	var server *httptest.Server
