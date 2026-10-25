@@ -40,7 +40,10 @@ export const useCurrentChatSession = () => {
   const isStreaming = useIsChatStreaming(conversationId);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
-  const { scrollRef } = useScrollToBottom(messages, messageContainerRef);
+  const { scrollRef, scrollToBottom, isAtBottom } = useScrollToBottom(
+    messages,
+    messageContainerRef,
+  );
 
   const ensureSession = useChatStreamStore((state) => state.ensureSession);
   const seedPrologue = useChatStreamStore((state) => state.seedPrologue);
@@ -60,6 +63,8 @@ export const useCurrentChatSession = () => {
     isStreaming,
     scrollRef,
     messageContainerRef,
+    scrollToBottom,
+    isAtBottom,
   };
 };
 
@@ -73,8 +78,14 @@ export const useSendMessage = () => {
 
   const { id: chatId } = useParams();
   const { data: currentDialog } = useFetchChat();
-  const { messages, isStreaming, scrollRef, messageContainerRef } =
-    useCurrentChatSession();
+  const {
+    messages,
+    isStreaming,
+    scrollRef,
+    messageContainerRef,
+    scrollToBottom,
+    isAtBottom,
+  } = useCurrentChatSession();
 
   const appendQuestion = useChatStreamStore((state) => state.appendQuestion);
   const failStream = useChatStreamStore((state) => state.failStream);
@@ -280,6 +291,8 @@ export const useSendMessage = () => {
     sendLoading: isStreaming,
     scrollRef,
     messageContainerRef,
+    scrollToBottom,
+    isAtBottom,
     messages,
     removeMessageById,
     handleUploadFile,
