@@ -20,9 +20,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +35,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -218,7 +222,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -253,7 +257,8 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes())
+	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
+	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -270,11 +275,13 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	if page, _ := pos[0][0].(int); page != 1 {
 		t.Fatalf("text page = %#v, want 1-based page 1", pos[0])
 	}
-	if left, _ := pos[0][1].(float64); left != 10 {
-		t.Fatalf("bbox left = %#v, want 10 (x0)", pos[0])
-	}
-	if right, _ := pos[0][2].(float64); right != 110 {
-		t.Fatalf("bbox right = %#v, want 110 (x1)", pos[0])
+	// content_list bboxes are 0-1000 normalized: [10,20,110,40] on a
+	// 612x792pt page scales to left 6.12, right 67.32, top 15.84, bottom 31.68.
+	want := []float64{6.12, 67.32, 15.84, 31.68}
+	for i, w := range want {
+		if got, _ := pos[0][i+1].(float64); math.Abs(got-w) > 1e-6 {
+			t.Fatalf("bbox positions = %#v, want %v", pos[0], want)
+		}
 	}
 
 	imageItem := items[1]
@@ -294,6 +301,161 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 	if page, _ := imgPos[0][0].(int); page != 2 {
 		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+func TestMinerUBBoxPositionScalesAndClamps(t *testing.T) {
+	sizes := map[int][2]float64{0: {600, 800}}
+	for _, tc := range []struct {
+		name    string
+		page    any
+		bbox    any
+		want    []float64
+		wantNil bool
+	}{
+		{
+			name: "normalized to points",
+			page: 0,
+			bbox: []any{100.0, 200.0, 300.0, 400.0},
+			want: []float64{1, 60, 180, 160, 320},
+		},
+		{
+			name: "inverted edges are ordered",
+			page: 0,
+			bbox: []any{300.0, 400.0, 100.0, 200.0},
+			want: []float64{1, 60, 180, 160, 320},
+		},
+		{
+			name: "edges clamped to the page box",
+			page: 0,
+			bbox: []any{-50.0, -20.0, 1100.0, 1200.0},
+			want: []float64{1, 0, 600, 0, 800},
+		},
+		{name: "unknown page size", page: 3, bbox: []any{1.0, 2.0, 3.0, 4.0}, wantNil: true},
+		{name: "negative page index", page: -1, bbox: []any{1.0, 2.0, 3.0, 4.0}, wantNil: true},
+		{name: "short bbox", page: 0, bbox: []any{1.0, 2.0}, wantNil: true},
+		{name: "zero width", page: 0, bbox: []any{10.0, 20.0, 10.0, 40.0}, wantNil: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mineruBBoxPosition(tc.page, tc.bbox, sizes)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("position = %#v, want nil", got)
+				}
+				return
+			}
+			if len(got) != 5 {
+				t.Fatalf("position = %#v, want 5 values", got)
+			}
+			if page, ok := got[0].(int); !ok || page != int(tc.want[0]) {
+				t.Fatalf("page = %#v, want %v", got[0], tc.want[0])
+			}
+			for i, w := range tc.want[1:] {
+				if v, _ := got[i+1].(float64); math.Abs(v-w) > 1e-6 {
+					t.Fatalf("position = %#v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestMinerUExtractJSONItemsWithoutGeometryKeepsText locks that a failed page
+// size lookup only costs positions: the text and its 1-based page identity
+// still reach the parser result, so table placement and page_count stay right.
+func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[{"type":"text","text":"Hello","page_idx":1,"bbox":[10,20,110,40]}]`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1", len(items))
+	}
+	if items[0]["text"] != "Hello" {
+		t.Errorf("text = %#v", items[0]["text"])
+	}
+	if items[0]["page_number"] != 2 {
+		t.Errorf("page_number = %#v, want 2", items[0]["page_number"])
+	}
+	if _, ok := items[0]["_pdf_positions"]; ok {
+		t.Errorf("_pdf_positions = %#v, want none", items[0]["_pdf_positions"])
+	}
+}
+
+// TestMinerURealContentListPositionsStayInPage runs the conversion on a
+// recorded MinerU response (test/fixtures/mineru) and checks every region
+// lands inside the A4 page in points instead of the raw 0-1000 space.
+func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
+	list, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "mineru", "bmw_page_chrome_content_list.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(list); err != nil {
+		t.Fatal(err)
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		pageWidth  = 595.0
+		pageHeight = 842.0
+	)
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("no items converted")
+	}
+	positioned := 0
+	for _, item := range items {
+		raw, ok := item["_pdf_positions"]
+		if !ok {
+			continue
+		}
+		positioned++
+		rows, ok := raw.([][]any)
+		if !ok || len(rows) != 1 {
+			t.Fatalf("_pdf_positions = %#v, want one row", raw)
+		}
+		row := rows[0]
+		left, right := row[1].(float64), row[2].(float64)
+		top, bottom := row[3].(float64), row[4].(float64)
+		if left < 0 || right > pageWidth || top < 0 || bottom > pageHeight || right <= left || bottom <= top {
+			t.Fatalf("position %v outside the %.0fx%.0f page", row, pageWidth, pageHeight)
+		}
+	}
+	if positioned == 0 {
+		t.Fatal("fixture produced no positions")
+	}
+}
+
+func TestAppendMineruGeometryWarningOnlyOnError(t *testing.T) {
+	res := parser.ParseResult{}
+	appendMineruGeometryWarning(&res, nil)
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none on success", res.Warnings)
+	}
+	appendMineruGeometryWarning(&res, errors.New("no pdfium"))
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "MinerU PDF geometry unavailable: no pdfium") {
+		t.Fatalf("warnings = %v", res.Warnings)
 	}
 }
 
