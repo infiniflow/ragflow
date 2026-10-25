@@ -463,8 +463,8 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
 // page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
 // coordinates repeat on every page, so the figure search used to match on
 // page-local distance alone: here the page-2 caption's page-local centre is
-// CLOSER to the page-0 figure (dist²=13225) than to the page-2 figure it
-// belongs to (dist²=21025). The caption was therefore glued to the page-0
+// page-local box is CLOSER to the page-0 figure (50pt gap) than to the page-2
+// figure it belongs to (80pt gap). The caption was therefore glued to the page-0
 // figure — pages away — and its own figure was left with no caption at all.
 func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
 	sections := []pdf.Section{
@@ -641,8 +641,8 @@ func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
 func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
 	sections := []pdf.Section{
 		// page-less figure, much CLOSER to the caption than the same-page one:
-		// dist² 56 against the same-page figure's 6006, so distance alone would
-		// pick it.
+		// it overlaps the caption's Y band (edge gap 0) against the same-page
+		// figure's 20pt, so distance alone would pick it.
 		{Text: "page-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "np",
 			Positions: []pdf.Position{{Left: 100, Right: 400, Top: 500, Bottom: 540}}},
 		{Text: "same-page chart", LayoutType: pdf.LayoutTypeFigure, Image: "sp",

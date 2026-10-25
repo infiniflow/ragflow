@@ -62,7 +62,7 @@ func MergeCaptions(sections []pdf.Section) []pdf.Section {
 		// classified there. Without this skip, CaptionKind's text patterns would
 		// classify a figure whose embedded text starts with a caption marker
 		// (图1 …, Figure 1: …) as its own caption, and findNearestParent would
-		// match it to ITSELF (CollectFigures includes it — center distance 0) —
+		// match it to ITSELF (CollectFigures includes it — distance 0) —
 		// the figure would become its own merge target and be removed with the
 		// caption, deleting the image from the output (go_bug
 		// figure-self-caption-deleted).
@@ -132,9 +132,39 @@ func MergeCaptions(sections []pdf.Section) []pdf.Section {
 	return out
 }
 
-// maxCaptionGap is the squared centre distance (PDF points²) beyond which a
-// caption is not attached to a candidate parent: 40000 — about 200pt (~7cm).
+// maxCaptionGap is the squared edge distance (PDF points²) beyond which a
+// caption is not attached to a candidate parent: 40000 — about 200pt (~7cm)
+// between the caption box and the parent's nearest edge. See
+// captionEdgeDistance for why the metric is edge-based, not centre-based.
 const maxCaptionGap = 40000.0
+
+// captionEdgeDistance returns the squared distance between a caption box and a
+// candidate parent: the vertical gap between the two boxes (0 when their Y
+// bands overlap) plus the horizontal offset between their centres. It also
+// returns that vertical gap, which callers use as the adjacency signal on its
+// own.
+//
+// The metric is edge-based because a parent's CENTRE says nothing about
+// adjacency: a caption just above a 69pt diagram is 12pt from that diagram's
+// edge but further from its centre than from the centre of a short equation on
+// the other side of the caption (go_bug diagram-caption-attached-to-equation,
+// issue #21389), and a caption above a tall cross-page table is hundreds of
+// points from the table's centre while touching its edge (go_bug
+// tall-table-caption-dropped). Distance to the nearest edge ranks the boxes the
+// caption actually sits between; the horizontal centre offset breaks ties
+// between parents on the same side.
+func captionEdgeDistance(caption, target pdf.Position) (dist, gapY float64) {
+	if caption.Bottom <= target.Top {
+		gapY = target.Top - caption.Bottom
+	} else if caption.Top >= target.Bottom {
+		gapY = caption.Top - target.Bottom
+	}
+	dx := (target.Left+target.Right)/2 - (caption.Left+caption.Right)/2
+	if dx < 0 {
+		dx = -dx
+	}
+	return gapY*gapY + dx*dx, gapY
+}
 
 // occupiesPage reports whether a section's recorded positions place it on
 // `page`, and whether the section carries page metadata at all. Page-local
@@ -161,8 +191,8 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 }
 
 // nearestFigureIn returns the index in `sections` of the figure closest to
-// caption by page-local centre distance, or -1 when none is within
-// maxCaptionGap.
+// caption by page-local edge distance (see captionEdgeDistance), or -1 when
+// none is within maxCaptionGap.
 //
 // Candidates are read straight off `sections` and the section index is tracked
 // directly. A position box is NOT a figure's identity: page-local coordinates
@@ -187,8 +217,6 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 		}
 	}
 	cp := caption.Positions[0]
-	ccx := (cp.Left + cp.Right) / 2
-	ccy := (cp.Top + cp.Bottom) / 2
 
 	// Candidates are ranked in two tiers so a figure recorded on the caption's
 	// own page always beats a page-less one: tier 0 is occupied-by-capPage,
@@ -213,10 +241,7 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 				continue
 			}
 		}
-		tp := t.Positions[0]
-		cx := (tp.Left + tp.Right) / 2
-		cy := (tp.Top + tp.Bottom) / 2
-		dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
+		dist, _ := captionEdgeDistance(cp, t.Positions[0])
 		if tier < bestTier || (tier == bestTier && dist < bestDist) {
 			bestTier, bestDist, bestIdx = tier, dist, i
 		}
@@ -262,8 +287,8 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType 
 	}
 	// Two-pass figure search (see nearestFigureIn). Page-local coordinates
 	// repeat on every page, so proximity alone picks a figure on the wrong
-	// page: Figure 1's caption on page 0, page-local centre (415,474), matched
-	// a formula figure on page 13 at (417,480) — dist²=45, ~7pt.
+	// page: Figure 1's caption on page 0 and a formula figure on page 13
+	// carried page-local boxes within a few points of each other.
 	//
 	// A genuine FIGURE caption is restricted to its own page: when no figure
 	// shares that page it stays a standalone section, which MergeCaptions keeps
@@ -305,7 +330,6 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, floa
 		return bestIdx, bestDist, bestGapY
 	}
 	cp := caption.Positions[0]
-	ccx := (cp.Left + cp.Right) / 2
 	// Page-scope guard: a caption attaches to a table only on its OWN page (a
 	// table whose page set includes the caption's page — a genuine cross-page
 	// merged table carries multiple Position entries, one per spanned page, so
@@ -329,15 +353,6 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, floa
 			continue
 		}
 		tp := t.Positions[0]
-		// Vertical gap to the table's nearest edge. A caption fully above the
-		// table measures the gap to the top; fully below, to the bottom;
-		// vertically overlapping the table, the gap is 0.
-		gapY := 0.0
-		if cp.Bottom <= tp.Top {
-			gapY = tp.Top - cp.Bottom
-		} else if cp.Top >= tp.Bottom {
-			gapY = cp.Top - tp.Bottom
-		}
 		if capKnown {
 			// Page-scope guard: a caption attaches to a table only on a page
 			// the table actually occupies. A genuine cross-page MERGED table
@@ -356,12 +371,7 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, floa
 				continue
 			}
 		}
-		// Horizontal center offset: a caption far to the side ranks worse.
-		dx := (tp.Left+tp.Right)/2 - ccx
-		if dx < 0 {
-			dx = -dx
-		}
-		dist := gapY*gapY + dx*dx
+		dist, gapY := captionEdgeDistance(cp, tp)
 		if dist < bestDist {
 			bestDist = dist
 			bestGapY = gapY
