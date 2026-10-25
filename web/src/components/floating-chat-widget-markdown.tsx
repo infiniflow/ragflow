@@ -32,7 +32,11 @@ import {
   replaceThinkToSection,
   showImage,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
+import {
+  CitationKey,
+  citationMarkerReg,
+  resolveCitationChunk,
+} from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -144,13 +148,8 @@ const FloatingChatWidgetMarkdown = ({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      let chunkItem = reference?.chunks?.[chunkIndex];
-      if (!chunkItem) {
-        chunkItem = reference?.chunks?.find(
-          (x: any) => x?.chunk_id === chunkIndex,
-        ) as IReferenceChunk;
-      }
+    (chunkIndex: CitationKey) => {
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkIndex);
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs
@@ -179,7 +178,7 @@ const FloatingChatWidgetMarkdown = ({
   );
 
   const getPopoverContent = useCallback(
-    (chunkIndex: number) => {
+    (chunkIndex: CitationKey) => {
       const info = getReferenceInfo(chunkIndex);
 
       if (!info) {
@@ -281,7 +280,7 @@ const FloatingChatWidgetMarkdown = ({
   const renderReference = useCallback(
     (text: string) => {
       return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match) as number;
+        const chunkIndex = getChunkIndex(match);
         const info = getReferenceInfo(chunkIndex);
 
         if (!info) {
