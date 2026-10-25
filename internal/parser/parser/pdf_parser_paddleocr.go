@@ -61,7 +61,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 				return ParseResult{Err: err}
 			}
 			label := strings.ToLower(strings.TrimSpace(block.Label))
-			if models.IsOCRMediaLabel(label) || paddleOCRImageOnlyBlock(block.Text) {
+			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
 				mediaOrdinal++
 				result.JSON = append(result.JSON, paddleOCRMediaItem(page, block, size, mediaOrdinal))
 				continue
@@ -162,13 +162,6 @@ func paddleOCRMediaItem(page models.OCRPage, block models.OCRBlock, size [2]floa
 		fields["positions"], fields["_pdf_positions"] = matrix, matrix
 	}
 	return DocItemFromMap(fields)
-}
-
-// paddleOCRImageOnlyBlock reports whether a block carries image markup but no
-// body text. Some providers leave the layout label empty, so the label alone
-// cannot decide whether the block is media.
-func paddleOCRImageOnlyBlock(text string) bool {
-	return strings.TrimSpace(text) != "" && strings.TrimSpace(utility.StripMarkdownImages(text)) == ""
 }
 
 func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {
