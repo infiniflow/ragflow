@@ -912,7 +912,7 @@ func TestParseModelName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			model, instance, provider, err := parseModelName(tt.composite)
+			model, instance, provider, err := common.ParseCompositeModelName(tt.composite)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("parseModelName(%q) error = nil, want error", tt.composite)
