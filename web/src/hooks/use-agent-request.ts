@@ -32,10 +32,7 @@ import {
   ITraceData,
   IWebhookTrace,
 } from '@/interfaces/database/agent';
-import {
-  IAgentWebhookTraceRequest,
-  IDebugSingleRequestBody,
-} from '@/interfaces/request/agent';
+import { IAgentWebhookTraceRequest } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
@@ -736,35 +733,6 @@ export const useTestDbConnect = () => {
   });
 
   return { data, loading, testDbConnect: mutateAsync };
-};
-
-export const useDebugSingle = () => {
-  const { id } = useParams();
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [AgentApiAction.DebugSingle],
-    mutationFn: async (params: IDebugSingleRequestBody) => {
-      const ret = await agentService.debugSingle(
-        {
-          agentId: id as string,
-          componentId: params.component_id,
-          data: {
-            params: params.params,
-          },
-        },
-        true,
-      );
-      if (ret?.data?.code !== 0) {
-        message.error(ret?.data?.message);
-      }
-      return ret?.data?.data;
-    },
-  });
-
-  return { data, loading, debugSingle: mutateAsync };
 };
 
 export const useFetchInputForm = (componentId?: string) => {
