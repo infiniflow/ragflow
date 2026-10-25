@@ -1,14 +1,18 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/signintech/gopdf"
 )
 
 func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
@@ -127,7 +131,7 @@ func TestSoMarkItemsEmitPagePositions(t *testing.T) {
 			map[string]any{"type": "text", "content": "no bbox"},
 		}},
 	}}}}
-	items, pageCount, _ := soMarkItems(context.Background(), result, false)
+	items, pageCount, _ := soMarkItems(context.Background(), result, false, nil)
 	if pageCount != 2 || len(items) != 3 {
 		t.Fatalf("pageCount=%d items=%d, want 2/3", pageCount, len(items))
 	}
@@ -155,7 +159,7 @@ func TestSoMarkItemsPreferBlockPageIdx(t *testing.T) {
 			map[string]any{"type": "text", "content": "page fallback", "bbox": []any{10.0, 20.0, 110.0, 40.0}},
 		}},
 	}}}}
-	items, _ := soMarkItems(result, false)
+	items, _ := soMarkItems(result, false, nil)
 	if len(items) != 2 {
 		t.Fatalf("items=%d, want 2", len(items))
 	}
@@ -177,7 +181,7 @@ func TestSoMarkItemsRejectInvalidPageIdx(t *testing.T) {
 			map[string]any{"type": "text", "content": "valid", "page_idx": float64(7), "bbox": []any{10.0, 20.0, 110.0, 40.0}},
 		}},
 	}}}}
-	items, _ := soMarkItems(result, false)
+	items, _ := soMarkItems(result, false, nil)
 	if len(items) != 3 {
 		t.Fatalf("items=%d, want 3", len(items))
 	}
@@ -225,6 +229,113 @@ func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
 	for i, w := range []float64{2, 5, 50, 6, 16} {
 		if got, _ := numericAny(rows[0][i]); got != w {
 			t.Fatalf("positions[0][%d] = %v, want %v (row %#v)", i, rows[0][i], w, rows[0])
+		}
+	}
+}
+
+// makeTestPDF synthesizes a one-page PDF with the given point size so tests
+// can verify pixel-to-point rescaling against a real page box.
+func makeTestPDF(t *testing.T, widthPt, heightPt float64) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	pdf := &gopdf.GoPdf{}
+	pdf.Start(gopdf.Config{PageSize: gopdf.Rect{W: widthPt, H: heightPt}})
+	pdf.AddPage()
+	if _, err := pdf.WriteTo(&buf); err != nil {
+		t.Fatalf("synthesize PDF: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestSoMarkPagePointSizesReadsPageBox(t *testing.T) {
+	data := makeTestPDF(t, 595.28, 841.89)
+	sizes := soMarkPagePointSizes(data)
+	if len(sizes) != 1 {
+		t.Fatalf("sizes = %v, want one page", sizes)
+	}
+	if math.Abs(sizes[0][0]-595.28) > 1 || math.Abs(sizes[0][1]-841.89) > 1 {
+		t.Fatalf("sizes[0] = %v, want ~[595.28 841.89]", sizes[0])
+	}
+	if got := soMarkPagePointSizes([]byte("not a pdf")); got != nil {
+		t.Fatalf("unreadable PDF must yield nil (no rescale), got %v", got)
+	}
+}
+
+func TestSoMarkPositionsRescaledFromPixelsToPoints(t *testing.T) {
+	// SoMark reports bbox in its rendered pixel space (page_size {w,h});
+	// RAGFlow positions are PDF points. An A4 page (~595x842 pt) rendered by
+	// the service at ~200 dpi is 1654x2339 px, so raw pixel boxes are ~2.78x
+	// too large without rescaling.
+	data := makeTestPDF(t, 595.28, 841.89)
+	sizes := soMarkPagePointSizes(data)
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{
+		"pages": []any{
+			map[string]any{
+				"page_num":  float64(0),
+				"page_size": map[string]any{"w": float64(1654), "h": float64(2339)},
+				"blocks": []any{
+					map[string]any{"type": "text", "content": "scaled", "bbox": []any{165.4, 233.9, 827.0, 467.8}},
+				},
+			},
+		},
+	}}}
+	items, _ := soMarkItems(result, false, sizes)
+	pos := items[0]["_pdf_positions"].([][]any)[0]
+	wantX0 := 165.4 / 1654 * 595.28
+	wantX1 := 827.0 / 1654 * 595.28
+	wantTop := 233.9 / 2339 * 841.89
+	wantBott := 467.8 / 2339 * 841.89
+	if pos[0] != float64(1) {
+		t.Fatalf("page = %v, want 1", pos[0])
+	}
+	for i, want := range []float64{wantX0, wantX1, wantTop, wantBott} {
+		if got := pos[i+1].(float64); math.Abs(got-want) > 0.5 {
+			t.Fatalf("pos[%d] = %v, want ~%v (unscaled pixel value would be ~2.8x larger)", i+1, got, want)
+		}
+	}
+}
+
+func TestSoMarkPositionsClampedToPage(t *testing.T) {
+	data := makeTestPDF(t, 595.28, 841.89)
+	sizes := soMarkPagePointSizes(data)
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{
+		"pages": []any{
+			map[string]any{
+				"page_num":  float64(0),
+				"page_size": map[string]any{"w": float64(1654), "h": float64(2339)},
+				"blocks": []any{
+					map[string]any{"type": "text", "content": "overflow", "bbox": []any{-50.0, -10.0, 1700.0, 2400.0}},
+				},
+			},
+		},
+	}}}
+	items, _ := soMarkItems(result, false, sizes)
+	pos := items[0]["_pdf_positions"].([][]any)[0]
+	for i, v := range []float64{0, 595.28, 0, 841.89} {
+		if got := pos[i+1].(float64); math.Abs(got-v) > 1 {
+			t.Fatalf("pos[%d] = %v, want clamped ~%v", i+1, got, v)
+		}
+	}
+}
+
+func TestSoMarkPositionsRawWhenScaleUnknown(t *testing.T) {
+	// No page_size in the payload (or unknown page dims): keep the raw box,
+	// matching the Python converter's fallback when a page cannot be rendered.
+	result := map[string]any{"outputs": map[string]any{"json": map[string]any{
+		"pages": []any{
+			map[string]any{
+				"page_num": float64(0),
+				"blocks": []any{
+					map[string]any{"type": "text", "content": "raw", "bbox": []any{10.0, 20.0, 110.0, 40.0}},
+				},
+			},
+		},
+	}}}
+	items, _ := soMarkItems(result, false, nil)
+	pos := items[0]["_pdf_positions"].([][]any)[0]
+	for i, v := range []float64{10, 110, 20, 40} {
+		if got := pos[i+1].(float64); got != v {
+			t.Fatalf("pos[%d] = %v, want raw %v", i+1, got, v)
 		}
 	}
 }

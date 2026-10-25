@@ -12,6 +12,8 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
+
+	pdfreader "github.com/ledongthuc/pdf"
 )
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
@@ -39,7 +41,7 @@ func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parse
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	items, pageCount, warnings := soMarkItems(ctx, result, parser.SoMarkKeepHeaderFooter)
+	items, pageCount, warnings := soMarkItems(ctx, result, parser.SoMarkKeepHeaderFooter, soMarkPagePointSizes(data))
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -161,7 +163,7 @@ func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string
 	return result, nil
 }
 
-func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bool) ([]map[string]any, int, []string) {
+func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bool, pageSizes [][2]float64) ([]map[string]any, int, []string) {
 	outputs, _ := result["outputs"].(map[string]any)
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
@@ -177,6 +179,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 		if n, ok := soMarkPageIndex(page["page_number"]); ok && n > 0 {
 			pageNumber = n
 		}
+		srcW, srcH := soMarkPagePixelSize(page["page_size"])
 		blocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range blocks {
 			block, ok := blockRaw.(map[string]any)
@@ -193,7 +196,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 				if n, ok := soMarkPageIndex(block["page_idx"]); ok {
 					blockPage = n + 1
 				}
-				if pos := soMarkBlockPosition(block, blockPage); pos != nil {
+				if pos := soMarkBlockPosition(block, blockPage, srcW, srcH, pageSizes); pos != nil {
 					item["positions"] = [][]any{pos}
 					item["_pdf_positions"] = [][]any{pos}
 				}
@@ -218,7 +221,7 @@ func soMarkPageIndex(raw any) (int, bool) {
 	return int(f), true
 }
 
-func soMarkBlockPosition(block map[string]any, pageNumber int) []any {
+func soMarkBlockPosition(block map[string]any, pageNumber int, srcW, srcH float64, pageSizes [][2]float64) []any {
 	bbox, _ := block["bbox"].([]any)
 	if len(bbox) != 4 {
 		return nil
@@ -238,7 +241,70 @@ func soMarkBlockPosition(block map[string]any, pageNumber int) []any {
 	if top > bott {
 		top, bott = bott, top
 	}
+	// SoMark reports bboxes in its own pixel space (page["page_size"]), while
+	// RAGFlow positions are PDF points. Rescale into the page's point size and
+	// clamp to the page, mirroring the Python converter's pdfplumber-at-72dpi
+	// mapping. When either side is unknown the raw box is kept, matching the
+	// Python fallback for pages it could not render.
+	idx := pageNumber - 1
+	if srcW > 0 && srcH > 0 && idx >= 0 && idx < len(pageSizes) {
+		dst := pageSizes[idx]
+		if dst[0] > 0 && dst[1] > 0 {
+			x0 = min(max(x0/srcW*dst[0], 0), dst[0])
+			x1 = min(max(x1/srcW*dst[0], 0), dst[0])
+			top = min(max(top/srcH*dst[1], 0), dst[1])
+			bott = min(max(bott/srcH*dst[1], 0), dst[1])
+		}
+	}
 	return []any{float64(pageNumber), x0, x1, top, bott}
+}
+
+// soMarkPagePixelSize reads a page's SoMark pixel dimensions ({w, h}); a zero
+// value means unknown.
+func soMarkPagePixelSize(raw any) (float64, float64) {
+	m, _ := raw.(map[string]any)
+	w, _ := numericAny(m["w"])
+	h, _ := numericAny(m["h"])
+	return w, h
+}
+
+// soMarkPagePointSizes reads each page's [width, height] in PDF points from
+// the source document (CropBox, falling back to MediaBox), the space RAGFlow
+// positions and crops use. A nil result or a zero entry means the page size
+// is unknown and positions stay in the service's pixel space, matching the
+// Python converter's fallback when a page cannot be rendered.
+func soMarkPagePointSizes(data []byte) [][2]float64 {
+	r, err := pdfreader.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil
+	}
+	numPage := r.NumPage()
+	sizes := make([][2]float64, 0, numPage)
+	for p := 1; p <= numPage; p++ {
+		box := soMarkInheritedPageValue(r.Page(p), "CropBox")
+		if box.IsNull() || box.Len() != 4 {
+			box = soMarkInheritedPageValue(r.Page(p), "MediaBox")
+		}
+		if box.IsNull() || box.Len() != 4 {
+			sizes = append(sizes, [2]float64{})
+			continue
+		}
+		x0, y0 := box.Index(0).Float64(), box.Index(1).Float64()
+		x1, y1 := box.Index(2).Float64(), box.Index(3).Float64()
+		sizes = append(sizes, [2]float64{math.Abs(x1 - x0), math.Abs(y1 - y0)})
+	}
+	return sizes
+}
+
+// soMarkInheritedPageValue resolves a page dictionary key through the Parent
+// chain, the inheritance the PDF spec defines for page boxes.
+func soMarkInheritedPageValue(page pdfreader.Page, key string) pdfreader.Value {
+	for v := page.V; !v.IsNull(); v = v.Key("Parent") {
+		if r := v.Key(key); !r.IsNull() {
+			return r
+		}
+	}
+	return pdfreader.Value{}
 }
 
 func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) ([]map[string]any, []string) {
