@@ -965,6 +965,13 @@ type aliyunASRTestStub struct {
 
 func newAliyunASRTestServer(t *testing.T, transcription string) *aliyunASRTestStub {
 	t.Helper()
+	return newAliyunASRTestServerWithASRResponse(t, "test-key", http.StatusOK, fmt.Sprintf(`{"output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":[{"text":%q}]}}]},"request_id":"req-1"}`, transcription))
+}
+
+// newAliyunASRTestServerWithASRResponse stubs a successful policy and upload
+// and replies to the transcription call with the given status and body.
+func newAliyunASRTestServerWithASRResponse(t *testing.T, apiKey string, asrStatus int, asrBody string) *aliyunASRTestStub {
+	t.Helper()
 	stub := &aliyunASRTestStub{
 		Requests: make(chan map[string]interface{}, 4),
 		Paths:    make(chan string, 4),
@@ -982,7 +989,7 @@ func newAliyunASRTestServer(t *testing.T, transcription string) *aliyunASRTestSt
 				http.Error(w, "model query is missing", http.StatusBadRequest)
 				return
 			}
-			if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			if got := r.Header.Get("Authorization"); got != "Bearer "+apiKey {
 				http.Error(w, "authorization = "+got, http.StatusUnauthorized)
 				return
 			}
@@ -1014,6 +1021,10 @@ func newAliyunASRTestServer(t *testing.T, transcription string) *aliyunASRTestSt
 			stub.Uploads <- capture
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPost && r.URL.Path == "/"+aliyunASRTestSuffix:
+			if got := r.Header.Get("X-DashScope-OssResourceResolve"); got != "enable" {
+				http.Error(w, "X-DashScope-OssResourceResolve = "+got, http.StatusBadRequest)
+				return
+			}
 			var body map[string]interface{}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1022,7 +1033,8 @@ func newAliyunASRTestServer(t *testing.T, transcription string) *aliyunASRTestSt
 			stub.Paths <- r.URL.Path
 			stub.Requests <- body
 			w.Header().Set("Content-Type", "application/json")
-			if _, err := fmt.Fprintf(w, `{"output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":[{"text":%q}]}}]},"request_id":"req-1"}`, transcription); err != nil {
+			w.WriteHeader(asrStatus)
+			if _, err := w.Write([]byte(asrBody)); err != nil {
 				t.Errorf("failed to write ASR response: %v", err)
 			}
 		default:
@@ -1209,15 +1221,10 @@ func TestAliyunTranscribeAudioHonorsContextAndASROptions(t *testing.T) {
 
 func TestAliyunTranscribeAudioSurfacesAPIError(t *testing.T) {
 	withSSRFBypass(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"code":"InvalidApiKey","message":"Invalid API-key provided."}`))
-	}))
-	defer server.Close()
+	stub := newAliyunASRTestServerWithASRResponse(t, "bad-key", http.StatusUnauthorized, `{"code":"InvalidApiKey","message":"Invalid API-key provided."}`)
 
 	model := NewAliyunModel(
-		map[string]string{"default": server.URL},
+		map[string]string{"default": stub.Server.URL},
 		URLSuffix{ASR: aliyunASRTestSuffix},
 	)
 	apiKey := "bad-key"

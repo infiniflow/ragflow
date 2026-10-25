@@ -665,6 +665,9 @@ func (a *AliyunModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 	req.Header.Set("X-DashScope-SSE", "disable")
+	// DashScope only resolves oss:// objects from its temporary upload space
+	// when this header is present; without it the request fails as a URL error.
+	req.Header.Set("X-DashScope-OssResourceResolve", "enable")
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
