@@ -114,8 +114,36 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: t.agent})
 	messages := []Message{schema.UserMessage(args)}
 	if t.opts.FullChatHistoryAsInput {
-		if ec := getChatModelExecCtx(ctx); ec != nil {
-			// TODO: extract full chat history from parent execution context
+		if rc := getRunCtx(ctx); rc != nil {
+			var history []Message
+			switch inp := rc.RootInput.(type) {
+			case *AgentInput:
+				if inp != nil {
+					for _, m := range inp.Messages {
+						if m != nil {
+							history = append(history, m)
+						}
+					}
+				}
+			case []Message:
+				for _, m := range inp {
+					if m != nil {
+						history = append(history, m)
+					}
+				}
+			}
+			if rc.Session != nil {
+				for _, ev := range rc.Session.getEvents() {
+					if ae, ok := ev.(*AgentEvent); ok {
+						if m := msgFromEvent(ae); m != nil {
+							history = append(history, m)
+						}
+					}
+				}
+			}
+			if len(history) > 0 {
+				messages = append(history, schema.UserMessage(args))
+			}
 		}
 	}
 
