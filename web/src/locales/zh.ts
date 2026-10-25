@@ -2580,6 +2580,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      anySearchSearch: 'AnySearch',
+      anySearchSearchDescription:
+        '通过 AnySearch 进行网页与垂直领域搜索：通用网页结果，或金融、学术、代码、法律等垂直领域。无需 API Key 即可使用。',
+      anySearchDiscover: 'AnySearch 领域发现',
+      anySearchDiscoverDescription:
+        '列出 AnySearch 当前支持的领域，以及各领域可用的垂直标签和参数，便于智能体选择有效的标签。',
+      anySearchApiKeyTip:
+        '可选。AnySearch 无需 Key 即可使用。填写后将使用你账户的额度，服务限制仍然适用。',
+      anySearchZone: '区域',
+      anySearchZoneTip:
+        '搜索所用的区域。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择区域。',
+      anySearchZoneUnset: '未设置',
+      anySearchZoneIntl: '国际',
+      anySearchZoneCn: '中国',
+      anySearchLanguage: '语言',
+      anySearchLanguageTip:
+        '结果的首选语言，例如 en 或 zh-CN。留空则使用 AnySearch 的默认值。作为智能体工具时，智能体可以在每次调用时选择语言。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -3072,6 +3089,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         tavilySearch: '正在网上搜索',
         queritSearch: '正在使用 Querit 搜索网络',
         queritContents: '正在使用 Querit 读取网页',
+        anySearchSearch: '正在使用 AnySearch 搜索',
+        anySearchDiscover: '正在查询 AnySearch 垂直领域',
         tavilyExtract: '读取网页内容',
         exeSQL: '查询数据库',
         google: '正在网上搜索',
