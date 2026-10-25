@@ -462,9 +462,9 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
 // page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
 // coordinates repeat on every page, so the figure search used to match on
-// page-local distance alone: here the page-2 caption's page-local centre is
-// page-local box is CLOSER to the page-0 figure (50pt gap) than to the page-2
-// figure it belongs to (80pt gap). The caption was therefore glued to the page-0
+// page-local gap alone: here the page-2 caption's page-local box is CLOSER to
+// the page-0 figure (50pt gap) than to the page-2 figure it belongs to (80pt
+// gap). The caption was therefore glued to the page-0
 // figure — pages away — and its own figure was left with no caption at all.
 func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
 	sections := []pdf.Section{

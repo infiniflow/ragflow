@@ -17,10 +17,10 @@ func figureSection(text string, left, right, top, bottom float64) pdf.Section {
 // TestMergeCaptions_FigureCaptionAttachesToAdjacentDiagram locks issue #21389:
 // a diagram caption sits BETWEEN the diagram above it (12pt above the
 // caption) and an equation below it (31pt below). Both are figure media, and
-// the equation is shorter, so its CENTRE is closer to the caption's centre
-// number than the taller diagram's centre is — centre distance handed the
-// caption to the equation. Edge proximity is the real adjacency signal: the
-// caption belongs to the diagram it is vertically closest to.
+// the equation is shorter, so its CENTRE is nearer to the caption's centre than
+// the taller diagram's centre is — centre distance handed the caption to the
+// equation. Adjacency is the real signal: the caption belongs to the diagram it
+// is vertically closest to.
 func TestMergeCaptions_FigureCaptionAttachesToAdjacentDiagram(t *testing.T) {
 	sections := []pdf.Section{
 		figureSection("Bus diagram", 260, 420, 132, 201),
@@ -51,7 +51,7 @@ func TestMergeCaptions_FigureCaptionAttachesToAdjacentDiagram(t *testing.T) {
 }
 
 // TestMergeCaptions_TallFigureCaptionNearEdgeAttaches pins the metric itself:
-// a caption 120pt above a 400pt-tall figure is 320pt from its CENTRE (beyond
+// a caption 120pt above a 400pt-tall figure is 327.5pt from its CENTRE (beyond
 // maxCaptionGap) but only 120pt from its top EDGE, so it must still attach —
 // the same tall-parent case findTables already handles for cross-page tables.
 func TestMergeCaptions_TallFigureCaptionNearEdgeAttaches(t *testing.T) {
@@ -67,5 +67,26 @@ func TestMergeCaptions_TallFigureCaptionNearEdgeAttaches(t *testing.T) {
 	}
 	if !strings.Contains(result[0].Text, "Figure 6: tall chart") {
 		t.Errorf("caption near a tall figure's edge was dropped: %q", result[0].Text)
+	}
+}
+
+// TestMergeCaptions_DistantFigureCaptionStaysStandalone bounds the tolerance in
+// the other direction: a caption 201pt from every figure's edge is outside
+// maxCaptionGap and must not be glued to a figure it does not belong to. The
+// caption section survives on its own — an unattached figure caption is kept,
+// not dropped.
+func TestMergeCaptions_DistantFigureCaptionStaysStandalone(t *testing.T) {
+	sections := []pdf.Section{
+		figureSection("unrelated chart", 100, 400, 300, 400),
+		{Text: "Figure 7: somewhere else", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{10}, Left: 100, Right: 400, Top: 601, Bottom: 617}}},
+	}
+	result := MergeCaptions(sections)
+
+	if len(result) != 2 {
+		t.Fatalf("caption outside maxCaptionGap must stay standalone, got %d sections: %v", len(result), textsOf(result))
+	}
+	if strings.Contains(result[0].Text, "Figure 7") {
+		t.Errorf("distant caption was glued to the figure: %q", result[0].Text)
 	}
 }

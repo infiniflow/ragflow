@@ -132,28 +132,34 @@ func MergeCaptions(sections []pdf.Section) []pdf.Section {
 	return out
 }
 
-// maxCaptionGap is the squared edge distance (PDF points²) beyond which a
-// caption is not attached to a candidate parent: 40000 — about 200pt (~7cm)
-// between the caption box and the parent's nearest edge. See
-// captionEdgeDistance for why the metric is edge-based, not centre-based.
+// maxCaptionGap is the squared gap (PDF points²) beyond which a figure caption
+// is not attached to a candidate parent: 40000 — about 200pt at zero horizontal
+// offset. See captionGapDistance for how the gap is measured.
 const maxCaptionGap = 40000.0
 
-// captionEdgeDistance returns the squared distance between a caption box and a
+// captionGapDistance returns the squared gap between a caption box and a
 // candidate parent: the vertical gap between the two boxes (0 when their Y
 // bands overlap) plus the horizontal offset between their centres. It also
 // returns that vertical gap, which callers use as the adjacency signal on its
 // own.
 //
-// The metric is edge-based because a parent's CENTRE says nothing about
-// adjacency: a caption just above a 69pt diagram is 12pt from that diagram's
-// edge but further from its centre than from the centre of a short equation on
-// the other side of the caption (go_bug diagram-caption-attached-to-equation,
-// issue #21389), and a caption above a tall cross-page table is hundreds of
-// points from the table's centre while touching its edge (go_bug
-// tall-table-caption-dropped). Distance to the nearest edge ranks the boxes the
-// caption actually sits between; the horizontal centre offset breaks ties
-// between parents on the same side.
-func captionEdgeDistance(caption, target pdf.Position) (dist, gapY float64) {
+// The vertical part is edge-to-edge because a parent's CENTRE says nothing
+// about adjacency: a caption just above a 69pt diagram is 12pt from that
+// diagram's edge but further from its centre than from the centre of a short
+// equation on the other side of the caption (go_bug
+// diagram-caption-attached-to-equation, issue #21389), and a caption above a
+// tall cross-page table is hundreds of points from the table's centre while
+// touching its edge (go_bug tall-table-caption-dropped). The horizontal part
+// compares centres so that a narrow caption above a wide table is ranked by
+// how far it is from the table's middle, not punished twice for the table's
+// width.
+//
+// Equation identity is not available here: DLA maps equations to
+// LayoutTypeFigure and Section drops the "equation-N" LayoutNo, so adjacency
+// is the only signal this layer can rank on. That is enough for the reported
+// case (a caption between its diagram and an equation), but a caption placed
+// nearer the equation than its own diagram will still attach to the equation.
+func captionGapDistance(caption, target pdf.Position) (dist, gapY float64) {
 	if caption.Bottom <= target.Top {
 		gapY = target.Top - caption.Bottom
 	} else if caption.Top >= target.Bottom {
@@ -191,8 +197,8 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 }
 
 // nearestFigureIn returns the index in `sections` of the figure closest to
-// caption by page-local edge distance (see captionEdgeDistance), or -1 when
-// none is within maxCaptionGap.
+// caption by page-local gap (see captionGapDistance), or -1 when none is
+// within maxCaptionGap.
 //
 // Candidates are read straight off `sections` and the section index is tracked
 // directly. A position box is NOT a figure's identity: page-local coordinates
@@ -202,7 +208,7 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 //
 // requirePage restricts candidates to figures that occupy the caption's page.
 // Without it the search is page-blind, and the nearest figure by page-local
-// centre is usually on a DIFFERENT page. A figure with no page metadata stays a
+// gap is usually on a DIFFERENT page. A figure with no page metadata stays a
 // candidate in both modes, so a caller that must not lose text (the
 // table-caption fallback) cannot be defeated by missing metadata — see
 // occupiesPage.
@@ -241,7 +247,7 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 				continue
 			}
 		}
-		dist, _ := captionEdgeDistance(cp, t.Positions[0])
+		dist, _ := captionGapDistance(cp, t.Positions[0])
 		if tier < bestTier || (tier == bestTier && dist < bestDist) {
 			bestTier, bestDist, bestIdx = tier, dist, i
 		}
@@ -262,23 +268,19 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 // figure instead of being dropped. Returns the index in `sections`, or -1
 // when no parent is in range.
 func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType string) int {
-	// maxCaptionVGap is the vertical band within which a caption attaches to a
-	// table regardless of its horizontal offset. A narrow caption (e.g. a short
-	// Chinese label) sitting directly above a much wider table has a large dx to
-	// the table's center; dx² alone can exceed maxCaptionGap and wrongly reject
-	// the match, dropping a legitimate caption. Vertical adjacency (small gapY)
-	// is the primary signal that the caption belongs to that table; dx only
-	// discriminates between candidate tables, which findTables already resolves
-	// via min-distance. Keep this in line with the vertical tolerance implied by
-	// maxCaptionGap when dx≈0 (~200pt).
+	// maxCaptionVGap is the vertical gap within which a table caption attaches
+	// regardless of its horizontal offset: vertical adjacency is the signal
+	// that the caption belongs to that table, and dx only ranks candidates
+	// within the band. A narrow caption (e.g. a short Chinese label) above a
+	// much wider table has a large centre offset; rejecting it on the combined
+	// distance would drop a legitimate caption. The figure search below has no
+	// such offset escape — but it needs none: an unattached figure caption
+	// stays a standalone section, so it is never lost. 200pt matches the
+	// vertical tolerance maxCaptionGap allows at dx≈0.
 	const maxCaptionVGap = 200.0
 	if captionType == pdf.LayoutTypeTable {
-		idx, dist, gapY := findTables(sections, caption)
-		// Attach a vertically-adjacent caption even when it is horizontally
-		// offset from the (often much wider) table's center. See
-		// maxCaptionVGap for the rationale (narrow captions above wide
-		// tables, e.g. icbccs '请求参数').
-		if idx >= 0 && (dist < maxCaptionGap || gapY <= maxCaptionVGap) {
+		idx, gapY := findTables(sections, caption)
+		if idx >= 0 && gapY <= maxCaptionVGap {
 			return idx
 		}
 		// No table in range: fall through to the figure search below —
@@ -308,26 +310,25 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType 
 	return -1
 }
 
-// findTables returns the nearest section whose LayoutType is table, by
-// distance from the caption to the table's NEAREST EDGE (top/bottom) plus
-// horizontal center offset. Restricting to table sections (not all sections)
-// prevents a caption sitting in the left margin — far from the table's
-// horizontal center — from matching a nearer non-table section (e.g. another
-// caption) and being wrongly dropped.
+// findTables returns the nearest section whose LayoutType is table and the
+// caption's vertical gap to it. Restricting to table sections (not all
+// sections) prevents a caption sitting in the left margin — far from the
+// table's horizontal centre — from matching a nearer non-table section (e.g.
+// another caption) and being wrongly dropped.
 //
-// The distance is edge-based, NOT center-based: a cross-page table is one tall
-// merged section, so its CENTER is far from a caption sitting just above/below
-// it — center-distance exceeded maxCaptionGap and the caption was dropped
-// (real content loss, e.g. 13's 'Extended Financial Report' / 14's 'Table 1:
-// Revenue'). A caption just above the table (gap to its top) or just below
-// (gap to its bottom) has a small edge distance and attaches; one that
-// vertically overlaps the table has gap 0.
-func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, float64) {
+// Ranking uses captionGapDistance, whose vertical part is edge-based: a
+// cross-page table is one tall merged section, so its CENTRE is far from a
+// caption sitting just above/below it — centre distance exceeded
+// maxCaptionGap and the caption was dropped (real content loss, e.g. 13's
+// 'Extended Financial Report' / 14's 'Table 1: Revenue'). A caption just above
+// the table (gap to its top) or just below (gap to its bottom) has a small
+// edge gap and attaches; one that vertically overlaps the table has gap 0.
+func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 	bestIdx := -1
 	bestDist := 1e9
 	bestGapY := 0.0
 	if len(caption.Positions) == 0 {
-		return bestIdx, bestDist, bestGapY
+		return bestIdx, bestGapY
 	}
 	cp := caption.Positions[0]
 	// Page-scope guard: a caption attaches to a table only on its OWN page (a
@@ -371,14 +372,14 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64, floa
 				continue
 			}
 		}
-		dist, gapY := captionEdgeDistance(cp, tp)
+		dist, gapY := captionGapDistance(cp, tp)
 		if dist < bestDist {
 			bestDist = dist
 			bestGapY = gapY
 			bestIdx = i
 		}
 	}
-	return bestIdx, bestDist, bestGapY
+	return bestIdx, bestGapY
 }
 
 // appendRawCaptions concatenates caption texts onto a non-table section
