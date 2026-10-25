@@ -16,11 +16,13 @@ jest.mock('@/components/ui/message', () => ({
 }));
 jest.mock('react-router', () => ({ useParams: () => ({ id: 'agent-1' }) }));
 
+/** Gives each mounted hook test its own stable React Query client. */
 function wrapper({ children }: { children?: any }) {
   const [client] = useState(() => new QueryClient());
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
+/** Lets a test resolve requests out of order to check stale-response handling. */
 function pendingResponse() {
   let resolve!: (value: any) => void;
   const promise = new Promise((done) => {

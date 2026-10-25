@@ -15,6 +15,8 @@ import (
 	"ragflow/internal/common"
 )
 
+// TestModelInputCaptureOwnsSnapshotAndSeals checks the field allowlist, snapshot
+// ownership, and rejection of writes after finalization.
 func TestModelInputCaptureOwnsSnapshotAndSeals(t *testing.T) {
 	ctx, capture := WithModelInputCapture(t.Context())
 	function := map[string]any{"name": "lookup", "arguments": `{"q":"original"}`}
@@ -42,6 +44,8 @@ func TestModelInputCaptureOwnsSnapshotAndSeals(t *testing.T) {
 	}
 }
 
+// TestModelInputCaptureReservesLaterOmissionReasons checks that large calls leave
+// room for later omission markers and small captured calls.
 func TestModelInputCaptureReservesLaterOmissionReasons(t *testing.T) {
 	empty, _ := json.Marshal(ModelInputCall{
 		Sequence: 1, Model: "fill", Status: "captured",
@@ -80,6 +84,8 @@ func TestModelInputCaptureReservesLaterOmissionReasons(t *testing.T) {
 	}
 }
 
+// TestModelInputCaptureOmissionsAndLaterSmallCall checks all omission reasons,
+// omitted-content exclusion, and retention of a subsequent small call.
 func TestModelInputCaptureOmissionsAndLaterSmallCall(t *testing.T) {
 	ctx, capture := WithModelInputCapture(t.Context())
 	captureModelInput(ctx, "image", []Message{{Role: "user", Content: []any{
@@ -107,6 +113,8 @@ func TestModelInputCaptureOmissionsAndLaterSmallCall(t *testing.T) {
 	}
 }
 
+// TestModelInputCaptureBoundsWholeResult checks serialized size and call limits,
+// including escaped text, oversized model names, and omitted-call accounting.
 func TestModelInputCaptureBoundsWholeResult(t *testing.T) {
 	ctx, capture := WithModelInputCapture(t.Context())
 	// Escaping expands '<' to six bytes; the serialized budget must catch it.
@@ -131,6 +139,8 @@ func TestModelInputCaptureBoundsWholeResult(t *testing.T) {
 	}
 }
 
+// TestModelInputCaptureCountAndRequestIsolation checks concurrent call counting,
+// sequence ordering, and separation between request-local collectors.
 func TestModelInputCaptureCountAndRequestIsolation(t *testing.T) {
 	ctxA, captureA := WithModelInputCapture(t.Context())
 	ctxB, captureB := WithModelInputCapture(t.Context())
@@ -162,6 +172,8 @@ type modelInputDriver struct {
 	calls  int
 }
 
+// ChatWithMessages counts the stub invocation, runs its optional hook, and
+// returns a fixed answer when the hook succeeds.
 func (d *modelInputDriver) ChatWithMessages(_ context.Context, _ string, messages []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage) (*ChatResponse, error) {
 	d.calls++
 	if d.invoke != nil {
@@ -173,6 +185,8 @@ func (d *modelInputDriver) ChatWithMessages(_ context.Context, _ string, message
 	return &ChatResponse{Answer: &answer}, nil
 }
 
+// ChatStreamlyWithSender counts the stub invocation, runs its optional hook,
+// and sends a fixed answer when the hook succeeds.
 func (d *modelInputDriver) ChatStreamlyWithSender(_ context.Context, _ string, messages []Message, _ *APIConfig, _ *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
 	d.calls++
 	if d.invoke != nil {
@@ -184,6 +198,7 @@ func (d *modelInputDriver) ChatStreamlyWithSender(_ context.Context, _ string, m
 	return sender(&answer, nil)
 }
 
+// consumeModelInputStream drains and closes a stream, returning any non-EOF error.
 func consumeModelInputStream(t *testing.T, stream *schema.StreamReader[*schema.Message]) error {
 	t.Helper()
 	defer stream.Close()
@@ -198,6 +213,8 @@ func consumeModelInputStream(t *testing.T, stream *schema.StreamReader[*schema.M
 	}
 }
 
+// TestModelInputCaptureDriverAttemptsAndFailure checks model names and immutable
+// snapshots for failed and successful attempts in both generation paths.
 func TestModelInputCaptureDriverAttemptsAndFailure(t *testing.T) {
 	for _, streaming := range []bool{false, true} {
 		t.Run(fmt.Sprintf("stream=%v", streaming), func(t *testing.T) {
@@ -240,6 +257,8 @@ func TestModelInputCaptureDriverAttemptsAndFailure(t *testing.T) {
 	}
 }
 
+// TestModelInputCaptureToolStreamDelegatesOnce checks that Stream's delegation
+// to Generate records exactly one provider invocation.
 func TestModelInputCaptureToolStreamDelegatesOnce(t *testing.T) {
 	ctx, capture := WithModelInputCapture(t.Context())
 	name := "tool-model"
@@ -261,6 +280,8 @@ func TestModelInputCaptureToolStreamDelegatesOnce(t *testing.T) {
 	}
 }
 
+// TestModelInputOmissionDoesNotPreventProviderCall checks that unsupported
+// diagnostic content does not prevent the provider from receiving the call.
 func TestModelInputOmissionDoesNotPreventProviderCall(t *testing.T) {
 	ctx, capture := WithModelInputCapture(t.Context())
 	name := "vision"

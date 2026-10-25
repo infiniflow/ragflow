@@ -80,6 +80,7 @@ const Snapshot = {
   omitted_count: 1,
 };
 
+/** Renders an open Agent test sheet with an isolated React Query cache. */
 function renderSheet() {
   const client = new QueryClient();
   return render(

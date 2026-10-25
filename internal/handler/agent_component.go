@@ -115,13 +115,10 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 	return form, nil
 }
 
-// DebugComponent POST /api/v1/agents/:canvas_id/components/:component_id/debug
-//
-// Body shape (python parity): {"params": {"input_name": {"value": ...}, ...}}
-//
-// The python reference calls `component.invoke(**{k: o["value"] for k, o in
-// req["params"].items()})`. We replicate this by flattening each param's
-// "value" field into the Invoke inputs map.
+// DebugComponent handles POST /api/v1/agents/:canvas_id/components/:component_id/debug.
+// It flattens params.*.value into component inputs and returns the debug outputs.
+// An Agent request with include_model_inputs=true requires update permission and
+// wraps outputs with request-local model-input diagnostics, including on failure.
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {

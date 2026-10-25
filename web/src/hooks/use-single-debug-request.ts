@@ -25,6 +25,7 @@ export function useDebugSingle(componentId?: string, visible = true) {
   const [loading, setLoading] = useState(false);
   const { mutateAsync, reset: resetMutation } = useMutation({
     gcTime: 0,
+    /** Sends the debug request without adding capture fields to ordinary runs. */
     mutationFn: async (params: IDebugSingleRequestBody) => {
       const ret = await agentService.debugSingle(
         {
@@ -43,6 +44,7 @@ export function useDebugSingle(componentId?: string, visible = true) {
     },
   });
 
+  /** Invalidates pending responses and clears the visible result and mutation. */
   const reset = useCallback(() => {
     generation.current += 1;
     setResult(undefined);
@@ -57,6 +59,7 @@ export function useDebugSingle(componentId?: string, visible = true) {
     };
   }, [id, componentId, visible, reset]);
 
+  /** Publishes only the latest run, parsing its result by the requested mode. */
   const debugSingle = useCallback(
     async (params: IDebugSingleRequestBody) => {
       const request = ++generation.current;

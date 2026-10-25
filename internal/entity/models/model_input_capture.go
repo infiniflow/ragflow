@@ -70,6 +70,7 @@ func (c *ModelInputCapture) Finalize() ModelInputs {
 	return result
 }
 
+// captureModelInput records an attempt only when the context has a collector.
 func captureModelInput(ctx context.Context, model string, messages []Message) {
 	capture, _ := ctx.Value(modelInputCaptureKey{}).(*ModelInputCapture)
 	if capture == nil {
@@ -78,6 +79,8 @@ func captureModelInput(ctx context.Context, model string, messages []Message) {
 	capture.record(model, messages)
 }
 
+// record serializes one attempt within the count and byte limits, retaining
+// omission reasons when space permits and ignoring calls after finalization.
 func (c *ModelInputCapture) record(model string, messages []Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -118,6 +121,8 @@ func (c *ModelInputCapture) record(model string, messages []Message) {
 	}
 }
 
+// snapshotModelInput copies the allowed text-message fields into owned JSON or
+// returns an omission reason without propagating serialization failures.
 func snapshotModelInput(messages []Message, budget int) (snapshot json.RawMessage, reason string) {
 	// Diagnostic serialization must never prevent a model call.
 	defer func() {
@@ -157,6 +162,7 @@ func snapshotModelInput(messages []Message, budget int) (snapshot json.RawMessag
 	return snapshot, ""
 }
 
+// modelInputTextContent accepts strings, nil, and lists of text-only blocks.
 func modelInputTextContent(content any) bool {
 	switch value := content.(type) {
 	case string, nil:
@@ -177,8 +183,8 @@ func modelInputTextContent(content any) bool {
 	}
 }
 
-// Bound traversal and string sizes before allocating JSON. Only the plain JSON
-// values produced by message normalization are accepted, including tool fields.
+// preflightModelInput bounds traversal and string sizes before allocating JSON.
+// It accepts only plain JSON values produced by message normalization.
 func preflightModelInput(value any, budget *int, depth int) string {
 	if depth > 32 {
 		return "serialization_error"

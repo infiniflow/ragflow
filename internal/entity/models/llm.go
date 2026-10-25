@@ -391,6 +391,7 @@ func (m *EinoChatModel) labelOf(idx int) string {
 }
 
 // generateOnce runs one Generate attempt against a single chain entry.
+// It captures normalized input immediately before the driver call when enabled.
 func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	if cm == nil || cm.ModelDriver == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
@@ -788,6 +789,7 @@ func containsToolResult(messages []Message) bool {
 // With a failover chain, a stream that fails BEFORE any delta was emitted
 // moves to the next model; once deltas have reached the client the call
 // cannot be replayed, so the error is surfaced as-is.
+// Opt-in input capture records each actual driver attempt, including failover.
 func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	if m == nil || len(m.chain) == 0 {
 		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")

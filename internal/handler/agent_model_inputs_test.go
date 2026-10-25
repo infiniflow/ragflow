@@ -25,6 +25,8 @@ type modelInputDebugEnvelope struct {
 	Data    json.RawMessage `json:"data"`
 }
 
+// setupModelInputDebug creates an owned Agent canvas backed by an isolated test
+// database and configures its provider to use the supplied HTTP endpoint.
 func setupModelInputDebug(t *testing.T, endpoint string) (*AgentHandler, *entity.UserCanvas) {
 	t.Helper()
 	db := setupHandlerAgentsTestDB(t)
@@ -57,6 +59,8 @@ func setupModelInputDebug(t *testing.T, endpoint string) (*AgentHandler, *entity
 	return &AgentHandler{loader: &fakeCanvasLoader{canvas: canvas}}, canvas
 }
 
+// runModelInputDebug invokes Agent debug with the supplied raw JSON flag and
+// decodes the response envelope; an empty flag omits the option.
 func runModelInputDebug(t *testing.T, handler *AgentHandler, flag string) modelInputDebugEnvelope {
 	t.Helper()
 	extra := ""
@@ -74,8 +78,8 @@ func runModelInputDebug(t *testing.T, handler *AgentHandler, flag string) modelI
 	return envelope
 }
 
-// Exercise the production Agent -> Eino ReAct -> Stream -> provider path. The
-// messages must include MessageModifier's system turn and resolved variables.
+// TestDebugAgentModelInputsMatchProviderMessages checks the production Agent
+// path's captured system and resolved user messages against the HTTP request.
 func TestDebugAgentModelInputsMatchProviderMessages(t *testing.T) {
 	var mu sync.Mutex
 	var providerMessages json.RawMessage
@@ -129,6 +133,8 @@ func TestDebugAgentModelInputsMatchProviderMessages(t *testing.T) {
 	}
 }
 
+// TestDebugAgentModelInputsDefaultAndErrorContracts checks unchanged default
+// outputs and error codes, with opt-in diagnostics retained on provider failure.
 func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	var fail atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +176,8 @@ func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	}
 }
 
+// TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution checks
+// strict boolean validation and update authorization before provider execution.
 func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -197,6 +205,8 @@ func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *test
 	}
 }
 
+// TestDebugModelInputsRejectsNonAgent checks that other component types cannot
+// opt into model-input capture.
 func TestDebugModelInputsRejectsNonAgent(t *testing.T) {
 	handler := &AgentHandler{loader: &fakeCanvasLoader{canvas: beginCanvas()}}
 	c, w := componentCtx(t, http.MethodPost, "/api/v1/agents/c1/components/begin/debug", `{"params":{"query":{"value":"hello"}},"include_model_inputs":true}`)

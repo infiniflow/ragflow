@@ -87,6 +87,7 @@ interface IProps {
   componentId?: string;
 }
 
+/** Runs one component and offers model-input capture for editable Agent nodes. */
 const SingleDebugSheet = ({
   componentId,
   visible,
@@ -116,11 +117,13 @@ const SingleDebugSheet = ({
     setCaptureModelInputs(false);
   }, [componentId, visible]);
 
+  /** Clears the active run before closing so late responses stay hidden. */
   const handleClose = useCallback(() => {
     reset();
     hideModal?.();
   }, [hideModal, reset]);
 
+  /** Routes sheet dismissal through the same result cleanup as the close icon. */
   const handleOpenChange = useCallback(
     (open: boolean) => {
       if (!open) handleClose();
@@ -128,6 +131,7 @@ const SingleDebugSheet = ({
     [handleClose],
   );
 
+  /** Submits form values with capture enabled only when the node permits it. */
   const onOk = useCallback(
     (nextValues: any[]) => {
       if (componentId) {
