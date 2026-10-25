@@ -230,7 +230,9 @@ def _make_chat_handler(ch):
                 ):
                     if not isinstance(raw, str):
                         continue
-                    for line in raw.splitlines():
+                    # Split on "\n" only: frames are serialized with ensure_ascii=False, so a
+                    # U+2028/U+2029/U+0085 in the content stays raw and str.splitlines() would cut the JSON.
+                    for line in raw.split("\n"):
                         if not line.startswith("data:"):
                             continue
                         payload = line[len("data:") :].strip()
