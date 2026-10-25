@@ -279,8 +279,7 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType 
 	// vertical tolerance maxCaptionGap allows at dx≈0.
 	const maxCaptionVGap = 200.0
 	if captionType == pdf.LayoutTypeTable {
-		idx, gapY := findTables(sections, caption)
-		if idx >= 0 && gapY <= maxCaptionVGap {
+		if idx := findTables(sections, caption, maxCaptionVGap); idx >= 0 {
 			return idx
 		}
 		// No table in range: fall through to the figure search below —
@@ -310,11 +309,15 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType 
 	return -1
 }
 
-// findTables returns the nearest section whose LayoutType is table and the
-// caption's vertical gap to it. Restricting to table sections (not all
-// sections) prevents a caption sitting in the left margin — far from the
-// table's horizontal centre — from matching a nearer non-table section (e.g.
-// another caption) and being wrongly dropped.
+// findTables returns the nearest table section within maxGapY of the caption's
+// vertical edge. Restricting to table sections (not all sections) prevents a
+// caption sitting in the left margin — far from the table's horizontal centre —
+// from matching a nearer non-table section (e.g. another caption) and being
+// wrongly dropped. The vertical limit is applied BEFORE ranking: a table
+// beyond it must not win the ranking and then be rejected, because an eligible
+// table further away in the combined metric would never be considered. Gap
+// alone gates tables (any horizontal offset is allowed), so ranking then only
+// breaks ties between tables that are all in range.
 //
 // Ranking uses captionGapDistance, whose vertical part is edge-based: a
 // cross-page table is one tall merged section, so its CENTRE is far from a
@@ -323,12 +326,11 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType 
 // 'Extended Financial Report' / 14's 'Table 1: Revenue'). A caption just above
 // the table (gap to its top) or just below (gap to its bottom) has a small
 // edge gap and attaches; one that vertically overlaps the table has gap 0.
-func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
+func findTables(sections []pdf.Section, caption pdf.Section, maxGapY float64) int {
 	bestIdx := -1
 	bestDist := 1e9
-	bestGapY := 0.0
 	if len(caption.Positions) == 0 {
-		return bestIdx, bestGapY
+		return bestIdx
 	}
 	cp := caption.Positions[0]
 	// Page-scope guard: a caption attaches to a table only on its OWN page (a
@@ -373,13 +375,15 @@ func findTables(sections []pdf.Section, caption pdf.Section) (int, float64) {
 			}
 		}
 		dist, gapY := captionGapDistance(cp, tp)
+		if gapY > maxGapY {
+			continue
+		}
 		if dist < bestDist {
 			bestDist = dist
-			bestGapY = gapY
 			bestIdx = i
 		}
 	}
-	return bestIdx, bestGapY
+	return bestIdx
 }
 
 // appendRawCaptions concatenates caption texts onto a non-table section
