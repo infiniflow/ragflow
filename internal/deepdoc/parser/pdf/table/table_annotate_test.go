@@ -735,3 +735,22 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	MarkNoMergeTables(nil, nil)
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
 }
+
+// TestGarbageKeepFeat_ReferenceKeepsCrossReference pins the retention side of
+// #20672: a reference-labelled box is dropped unless it looks like a caption.
+// A body sentence that STARTS with "Table N" is no longer a caption, but it is
+// still text and must be kept.
+func TestGarbageKeepFeat_ReferenceKeepsCrossReference(t *testing.T) {
+	for _, text := range []string{
+		"Table 1, we present the F1 scores and success rates.",
+		"Table 9 reports the adaptive expansion ablation.",
+		"Table 2: Comparative Experiment of ReAct",
+	} {
+		if !garbageKeepFeat(pdf.LayoutTypeReference, pdf.TextBox{Text: text}, 1000) {
+			t.Errorf("garbageKeepFeat(reference, %q) = false, want true (text would be dropped)", text)
+		}
+	}
+	if garbageKeepFeat(pdf.LayoutTypeReference, pdf.TextBox{Text: "plain reference text"}, 1000) {
+		t.Error("garbageKeepFeat kept a plain reference box")
+	}
+}

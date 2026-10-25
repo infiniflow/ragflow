@@ -407,12 +407,12 @@ func TestMergeCaptions_FigureCaptionKeptWithMarkerFigure(t *testing.T) {
 // table OR figure (nearest(tables)/nearest(figures), `elif fk`) and drops it
 // only when BOTH searches fail. Go used to search tables only and delete the
 // caption when none was reachable — losing text Python keeps, for English
-// body text AND for correctly-DLA-labeled "table caption" sections alike
+// text captions AND for correctly-DLA-labeled "table caption" sections alike
 // (language-independent; the figure here is deliberately neutral-text so the
 // figure-self-deletion bug cannot mask this path).
 func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
 	for _, caption := range []pdf.Section{
-		{Text: "Table 1 shows revenue by category.", LayoutType: pdf.LayoutTypeText,
+		{Text: "Table 1: revenue by category.", LayoutType: pdf.LayoutTypeText,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
 		{Text: "Quarterly revenue breakdown", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
@@ -436,27 +436,81 @@ func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
 	}
 }
 
-// TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed pins the SHARED
-// (Python-identical) heuristic boundary of the CJK fix: a body paragraph that
-// STARTS with "Table N" is classified a caption by BOTH implementations
-// (Python's re.match is start-anchored too) and consumed into the table's
-// <caption>. The text is retained — misplacement parity with Python, not a
-// Go regression; only the CJK false-positive class was fixed.
-func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
+// TestMergeCaptions_EnglishTableCrossReferenceStaysWithRealCaption models the
+// RAG-paper sample from #20672: a real "Table 9: …" caption and a body sentence
+// "Table 9 reports …" both sit near the table. Only the real caption may join
+// the <caption>; the body sentence stays its own section, and the table's
+// highlight geometry covers the caption only.
+func TestMergeCaptions_EnglishTableCrossReferenceStaysWithRealCaption(t *testing.T) {
+	const (
+		caption = "Table 9: Fine-grained retrieval recall for the adaptive expansion ablation."
+		body    = "Table 9 reports the adaptive expansion ablation, as shown in Figure 5."
+	)
 	sections := []pdf.Section{
 		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
-		{Text: "Table 1 shows revenue by category for the fiscal year.", LayoutType: pdf.LayoutTypeText,
+		{Text: caption, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 190}}},
+		{Text: body, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 2 {
+		t.Fatalf("expected table + body sentence, got %d sections: %v", len(result), textsOf(result))
+	}
+	var table *pdf.Section
+	foundBody := false
+	for i := range result {
+		if result[i].LayoutType == pdf.LayoutTypeTable {
+			table = &result[i]
+		}
+		if result[i].LayoutType == pdf.LayoutTypeText && result[i].Text == body {
+			foundBody = true
+		}
+	}
+	if table == nil || !strings.Contains(table.Text, "<caption>"+caption+"</caption>") {
+		t.Fatalf("real caption not attached to the table: %v", textsOf(result))
+	}
+	if !foundBody {
+		t.Errorf("cross-reference body sentence dropped or rewritten: %v", textsOf(result))
+	}
+	if len(table.Positions) != 2 || !hasBox(table.Positions, 170, 190) {
+		t.Errorf("table geometry must cover the caption box only, got %+v", table.Positions)
+	}
+	if hasBox(table.Positions, 410, 430) {
+		t.Errorf("body sentence box leaked into the table's highlight geometry: %+v", table.Positions)
+	}
+}
+
+// TestMergeCaptions_EnglishTable1OpeningParagraphKept locks the #20672
+// divergence from Python. Start-anchored pattern matching alone classified
+// "Table 1 shows revenue …" as a caption, and MergeCaptions then moved the body
+// sentence into the table's <caption> and deleted it as a standalone section.
+// The sentence now stays body text and the table receives no caption.
+func TestMergeCaptions_EnglishTable1OpeningParagraphKept(t *testing.T) {
+	const body = "Table 1 shows revenue by category for the fiscal year."
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: body, LayoutType: pdf.LayoutTypeText,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
 	}
 	result := MergeCaptions(sections)
+	if len(result) != 2 {
+		t.Fatalf("expected the body sentence and the table as separate sections, got %d: %v", len(result), textsOf(result))
+	}
+	found := false
 	for _, s := range result {
-		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>Table 1 shows revenue") {
-			return
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>") {
+			t.Errorf("body sentence consumed into <caption>: %v", textsOf(result))
+		}
+		if s.LayoutType == pdf.LayoutTypeText && s.Text == body {
+			found = true
 		}
 	}
-	t.Errorf("expected the start-anchored English paragraph consumed into <caption> (Python parity); sections = %v",
-		textsOf(result))
+	if !found {
+		t.Errorf("body sentence dropped or rewritten; sections = %v", textsOf(result))
+	}
 }
 
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side

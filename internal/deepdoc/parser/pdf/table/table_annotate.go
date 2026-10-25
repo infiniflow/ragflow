@@ -481,7 +481,10 @@ func garbageKeepFeat(ty string, box pdf.TextBox, pageImgHeight float64) bool {
 	case pdf.LayoutTypeHeader:
 		return box.Top > pageImgHeight*0.1
 	case pdf.LayoutTypeReference:
-		return IsCaptionBox(box.Text, "")
+		// Keep any box that starts with a caption marker, even when caption
+		// classification rejects it: a cross-reference-looking body sentence
+		// is still text, and this decision drops the box when it returns false.
+		return IsCaptionBox(box.Text, "") || hasCaptionMarkerPrefix(box.Text)
 	}
 	return false
 }
