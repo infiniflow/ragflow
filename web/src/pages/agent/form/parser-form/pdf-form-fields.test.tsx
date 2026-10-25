@@ -162,16 +162,16 @@ describe('PDF cleanup controls', () => {
   it.each([
     { data: [], isFetched: false, isError: false },
     { data: [], isFetched: true, isError: true },
-  ])('does not expose controls before resolving a saved model: %j', (state) => {
+  ])('preserves controls while a saved model is unresolved: %j', (state) => {
     Models.mockReturnValue(state);
     render(<PdfForm method="tenant-ocr-model" />);
-    expectCleanupVisible(false);
+    expectCleanupVisible(true);
   });
 
-  it('keeps controls hidden when the model query finishes', () => {
+  it('hides controls when the model query identifies a saved selection', () => {
     Models.mockReturnValue({ data: [], isFetched: false, isError: false });
     const { rerender } = render(<PdfForm method="tenant-ocr-model" />);
-    expectCleanupVisible(false);
+    expectCleanupVisible(true);
     Models.mockReturnValue({ data: [Model], isFetched: true, isError: false });
     rerender(<PdfForm method="tenant-ocr-model" />);
     expectCleanupVisible(false);
@@ -181,13 +181,73 @@ describe('PDF cleanup controls', () => {
     );
   });
 
-  it('restores a registered analyzer after model selections are resolved', () => {
+  it('preserves a registered analyzer while model selections resolve', () => {
     Models.mockReturnValue({ data: [], isFetched: false, isError: false });
     const { rerender } = render(<PdfForm method="registered_analyzer" />);
-    expectCleanupVisible(false);
+    expectCleanupVisible(true);
     Models.mockReturnValue({ data: [], isFetched: true, isError: false });
     rerender(<PdfForm method="registered_analyzer" />);
     expectCleanupVisible(true);
+  });
+
+  it.each([
+    { method: 'registered_analyzer', isFetched: false, isError: false },
+    { method: 'registered_analyzer', isFetched: true, isError: true },
+    { method: 'deepdoc_ee', isFetched: false, isError: false },
+    { method: 'deepdoc_ee', isFetched: true, isError: true },
+  ])(
+    'preserves analyzer controls while model metadata is unavailable: %j',
+    ({ method, isFetched, isError }) => {
+      Models.mockReturnValue({ data: [], isFetched, isError });
+      render(<PdfForm method={method} />);
+      expectCleanupVisible(true);
+    },
+  );
+
+  it.each([
+    { method: 'Docling', isFetched: false, isError: false },
+    { method: 'Docling', isFetched: true, isError: true },
+    { method: 'Plain Text', isFetched: false, isError: false },
+    { method: 'Plain Text', isFetched: true, isError: true },
+    { method: 'Receipt OCR@PaddleOCR', isFetched: false, isError: false },
+    { method: 'Receipt OCR@PaddleOCR', isFetched: true, isError: true },
+    { method: 'Receipt OCR@local@PaddleOCR', isFetched: false, isError: false },
+    { method: 'Receipt OCR@local@PaddleOCR', isFetched: true, isError: true },
+  ])(
+    'keeps known unsupported controls hidden without model metadata: %j',
+    ({ method, isFetched, isError }) => {
+      Models.mockReturnValue({ data: [], isFetched, isError });
+      render(<PdfForm method={method} />);
+      expectCleanupVisible(false);
+    },
+  );
+
+  it('keeps a cached model selection hidden when its refetch fails', () => {
+    Models.mockReturnValue({ data: [Model], isFetched: true, isError: true });
+    render(<PdfForm method="tenant-ocr-model" />);
+    expectCleanupVisible(false);
+  });
+
+  it('retains edited values when an unresolved selection becomes a model', () => {
+    Models.mockReturnValue({ data: [], isFetched: false, isError: false });
+    const { rerender } = render(<PdfForm method="tenant-ocr-model" />);
+    fireEvent.click(cleanupSwitch('flow.removeToc'));
+    fireEvent.click(cleanupSwitch('flow.removeHeaderFooter'));
+    Models.mockReturnValue({ data: [Model], isFetched: true, isError: false });
+    rerender(<PdfForm method="tenant-ocr-model" />);
+    expectCleanupVisible(false);
+    expect(
+      JSON.parse(screen.getByTestId('saved-setup').textContent!),
+    ).toMatchObject({
+      parse_method: 'tenant-ocr-model',
+      remove_toc: false,
+      remove_header_footer: true,
+    });
+    fireEvent.click(screen.getByText('Receipt OCR').closest('button')!);
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('DeepDOC'));
+    expectCleanupVisible(true);
+    expect(cleanupSwitch('flow.removeToc')).not.toBeChecked();
+    expect(cleanupSwitch('flow.removeHeaderFooter')).toBeChecked();
   });
 
   it('keeps the built-in DeepDoc controls available if the model query fails', () => {

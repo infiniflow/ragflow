@@ -26,11 +26,10 @@ export function PdfFormFields({ prefix }: CommonProps) {
   });
 
   const ownerTenantId = useOwnerTenantId();
-  const {
-    data: addedModels,
-    isFetched: modelsFetched,
-    isError: modelsError,
-  } = useFetchAllAddedModels(undefined, ownerTenantId);
+  const { data: addedModels } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
   const modelIds = useMemo(
     () => buildValidModelIds(addedModels, ['image2text', 'ocr', 'vision']),
     [addedModels],
@@ -49,13 +48,11 @@ export function PdfFormFields({ prefix }: CommonProps) {
     'paddleocr',
     'somark',
   ].some((value) => value.toLowerCase() === method);
-  // Registered external analyzers also use DeepDoc's box filters. Resolve
-  // tenant model selections before treating another name as an analyzer.
+  // Keep registered analyzers usable even if model metadata is unavailable.
+  // Hide tenant selections when the existing query can identify them.
   const cleanupShown =
     isDefaultDeepDoc ||
-    (modelsFetched &&
-      !modelsError &&
-      !ignoresCleanup &&
+    (!ignoresCleanup &&
       !parseModelValue(parseMethod) &&
       !modelIds.has(parseMethod));
 
