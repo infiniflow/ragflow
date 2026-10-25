@@ -259,43 +259,12 @@ func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
 	return extra, nil
 }
 
-// parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
-// Returns modelName, instanceName, providerName separately.
-//
-// The composite key is right-anchored: providerName is always the *last*
-// '@'-separated field, instanceName is the second-to-last (when present),
-// and everything to the left is the bare model name. Some model names
-// legitimately contain '@' characters themselves (e.g. LM Studio embedding
-// model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`), which
-// produces composite keys like
-// `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`. When the
-// split yields more than 3 fields we rejoin the leading fields back into the
-// modelName so any embedded '@' characters are preserved verbatim.
-func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		// Format: model@instance@provider
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		// Format: model@provider -> instance defaults to "default"
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	}
-	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
-	// component must be preserved in that component instead of being dropped
-	// or assigned to the instance/provider fields.
-	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
-}
-
 // splitRightAnchoredModelName is a bare-name-tolerant variant of
-// parseModelName used by the Builtin / TEI short-circuit branches in
+// common.ParseCompositeModelName used by the Builtin / TEI short-circuit branches in
 // model resolution.
 //
 // Those branches must accept a bare model name (no provider suffix) where
-// parseModelName would return an error, while still preserving any '@'
+// common.ParseCompositeModelName would return an error, while still preserving any '@'
 // characters embedded in the modelName portion of a multi-segment key.
 // Returns the modelName, instanceName ("default" for the 2-segment form),
 // and providerName ("" for the 1-segment form).
@@ -816,7 +785,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
-	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}
@@ -1009,7 +978,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 			return entity.ModelTypeEmbedding, nil
 		}
 	}
-	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}
