@@ -253,7 +253,39 @@ func TestAgentTool_FullChatHistoryAsInput(t *testing.T) {
 	sess.addEvent(&AgentEvent{
 		Output: &AgentOutput{
 			MessageOutput: &MessageVariant{
+				Message: &schema.Message{
+					Role: schema.RoleAssistant,
+					ToolCalls: []schema.ToolCall{
+						{ID: "call_1", Function: schema.ToolCallFunction{Name: "lookup", Arguments: "{}"}},
+					},
+				},
+			},
+		},
+	})
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.ToolMessage("lookup result", "call_1"),
+			},
+		},
+	})
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
 				Message: schema.AssistantMessage("Turn 1 assistant reply"),
+			},
+		},
+	})
+	// Parent assistant message with pending tool call currently executing inner agent:
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: &schema.Message{
+					Role: schema.RoleAssistant,
+					ToolCalls: []schema.ToolCall{
+						{ID: "call_pending", Function: schema.ToolCallFunction{Name: "history_inner", Arguments: "Turn 2 sub-agent query"}},
+					},
+				},
 			},
 		},
 	})
@@ -279,17 +311,30 @@ func TestAgentTool_FullChatHistoryAsInput(t *testing.T) {
 	if len(msgs) > 0 && msgs[0].Role == schema.RoleSystem {
 		msgs = msgs[1:]
 	}
-	if len(msgs) != 3 {
-		t.Fatalf("expected 3 dialogue messages, got %d: %v", len(msgs), msgs)
+	// Expected messages:
+	// 0: User: "Turn 1 user query"
+	// 1: Assistant with completed call_1
+	// 2: Tool: "lookup result" (call_1)
+	// 3: Assistant: "Turn 1 assistant reply"
+	// (Pending call_pending is stripped/omitted)
+	// 4: User: "Turn 2 sub-agent query"
+	if len(msgs) != 5 {
+		t.Fatalf("expected 5 dialogue messages, got %d: %v", len(msgs), msgs)
 	}
 	if msgs[0].Content != "Turn 1 user query" {
 		t.Errorf("expected first message to be 'Turn 1 user query', got %q", msgs[0].Content)
 	}
-	if msgs[1].Content != "Turn 1 assistant reply" {
-		t.Errorf("expected second message to be 'Turn 1 assistant reply', got %q", msgs[1].Content)
+	if len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "call_1" {
+		t.Errorf("expected completed tool call 'call_1', got %v", msgs[1].ToolCalls)
 	}
-	if msgs[2].Content != "Turn 2 sub-agent query" {
-		t.Errorf("expected third message to be 'Turn 2 sub-agent query', got %q", msgs[2].Content)
+	if msgs[2].Role != schema.RoleTool || msgs[2].Name != "call_1" {
+		t.Errorf("expected tool result for call_1, got %v", msgs[2])
+	}
+	if msgs[3].Content != "Turn 1 assistant reply" {
+		t.Errorf("expected fourth message to be 'Turn 1 assistant reply', got %q", msgs[3].Content)
+	}
+	if msgs[4].Content != "Turn 2 sub-agent query" {
+		t.Errorf("expected fifth message to be 'Turn 2 sub-agent query', got %q", msgs[4].Content)
 	}
 
 	// 2. When FullChatHistoryAsInput is false (default):

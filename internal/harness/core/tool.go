@@ -141,6 +141,41 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 					}
 				}
 			}
+
+			// Exclude or sanitize assistant messages containing pending (unresolved)
+			// tool calls so inner agent does not receive dangling tool calls without results.
+			if len(history) > 0 {
+				toolResults := make(map[string]bool)
+				for _, m := range history {
+					if m.Role == schema.RoleTool && m.Name != "" {
+						toolResults[m.Name] = true
+					}
+				}
+
+				var sanitized []Message
+				for _, m := range history {
+					if m.Role == schema.RoleAssistant && len(m.ToolCalls) > 0 {
+						var completedCalls []schema.ToolCall
+						for _, tc := range m.ToolCalls {
+							if toolResults[tc.ID] {
+								completedCalls = append(completedCalls, tc)
+							}
+						}
+						if len(completedCalls) > 0 {
+							cp := *m
+							cp.ToolCalls = completedCalls
+							sanitized = append(sanitized, &cp)
+						} else if m.Content != "" {
+							cp := *m
+							cp.ToolCalls = nil
+							sanitized = append(sanitized, &cp)
+						}
+					} else {
+						sanitized = append(sanitized, m)
+					}
+				}
+				history = sanitized
+			}
 			if len(history) > 0 {
 				messages = append(history, schema.UserMessage(args))
 			}
