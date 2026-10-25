@@ -41,6 +41,19 @@ function isSearch1APIOperator(value: unknown) {
   );
 }
 
+function isAnySearchOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return [
+    'anysearch',
+    'anysearchsearch',
+    'anysearchdiscover',
+    'anysearchextract',
+  ].includes(value.replace(/_/g, '').toLowerCase());
+}
+
 function isNodeLabelApiKeyOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
@@ -49,6 +62,7 @@ function isNodeLabelApiKeyOperator(value: unknown) {
   return (
     isQueritOperator(value) ||
     isSearch1APIOperator(value) ||
+    isAnySearchOperator(value) ||
     nodeLabelApiKeyOperators.includes(value)
   );
 }
@@ -62,7 +76,8 @@ export function clearSensitiveFields<T>(obj: T): T {
     if (
       (apiKeyOperators.includes(value.component_name) ||
         isQueritOperator(value.component_name) ||
-        isSearch1APIOperator(value.component_name)) &&
+        isSearch1APIOperator(value.component_name) ||
+        isAnySearchOperator(value.component_name)) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };
