@@ -135,9 +135,9 @@ func splitLineByXGap(chars []pdf.TextChar, threshold float64) [][]pdf.TextChar {
 // `2图 3. IC 时序图` — and leaves splitLineByXGap and LineToTextBox, which both
 // measure the gap between consecutive characters, with non-monotonic X positions
 // and therefore negative gaps. Each line is re-sorted by X0 once grouping is done;
-// the sort is stable, so characters sharing an X0 keep their extraction
-// (content-stream) order. X0 is assumed finite: a NaN X0 defeats the gap
-// measurement whichever key orders it.
+// the sort is stable, so characters sharing an X0 keep the order the vertical pass
+// left them in (their own relative X is undefined, so the pass decides). X0 is
+// assumed finite: a NaN X0 defeats the gap measurement whichever key orders it.
 func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(chars) == 0 {
 		return nil

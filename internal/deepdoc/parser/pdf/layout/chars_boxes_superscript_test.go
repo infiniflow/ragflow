@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -155,21 +156,40 @@ func TestGroupCharsToLines_KeepsSeparateLinesApart(t *testing.T) {
 	}
 }
 
-// TestGroupCharsToLines_EqualX0KeepsContentOrder pins the stability the doc
-// comment promises: overlaid characters (identical box) keep the order the
-// extractor emitted them, instead of being reshuffled by the X0 re-sort.
-func TestGroupCharsToLines_EqualX0KeepsContentOrder(t *testing.T) {
-	chars := []pdf.TextChar{
-		baseChar(50, 58, "a"),
-		baseChar(50, 58, "b"),
-	}
+// TestGroupCharsToLines_EqualX0KeepsVerticalOrder pins the boundary of the X0
+// re-sort: it is stable, so it never reorders a tie — but a tie between two
+// glyphs at the SAME X and different heights has no horizontal reading order to
+// recover, so the vertical pass is what decides their position. Overlaid
+// same-box glyphs (identical key and X0) keep the extractor's order, because the
+// vertical pass leaves those in place too.
+func TestGroupCharsToLines_EqualX0KeepsVerticalOrder(t *testing.T) {
 	for _, sortByTop := range sortByTopModes {
-		lines := GroupCharsToLines(chars, sortByTop)
-		if len(lines) != 1 {
-			t.Fatalf("sortByTop=%v: expected 1 line, got %d", sortByTop, len(lines))
-		}
-		if got := lineText(lines[0]); got != "ab" {
-			t.Errorf("sortByTop=%v: line = %q, want %q (stable order for equal X0)", sortByTop, got, "ab")
-		}
+		t.Run(fmt.Sprintf("sortByTop=%v", sortByTop), func(t *testing.T) {
+			overlaid := []pdf.TextChar{
+				baseChar(50, 58, "a"),
+				baseChar(50, 58, "b"),
+			}
+			lines := GroupCharsToLines(overlaid, sortByTop)
+			if len(lines) != 1 {
+				t.Fatalf("expected 1 line, got %d", len(lines))
+			}
+			if got := lineText(lines[0]); got != "ab" {
+				t.Errorf("overlaid glyphs = %q, want %q", got, "ab")
+			}
+
+			// Same X, different height: the raised glyph sorts first under either
+			// vertical key, and the X0 re-sort leaves that tie alone.
+			tied := []pdf.TextChar{
+				baseChar(50, 58, "I"),
+				raisedChar(50, 55, "2"),
+			}
+			lines = GroupCharsToLines(tied, sortByTop)
+			if len(lines) != 1 {
+				t.Fatalf("expected 1 line, got %d", len(lines))
+			}
+			if got := lineText(lines[0]); got != "2I" {
+				t.Errorf("equal-X0 glyphs of different height = %q, want %q (vertical pass decides ties)", got, "2I")
+			}
+		})
 	}
 }
