@@ -119,6 +119,7 @@ export enum Operator {
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
   SofyaSearch = 'SofyaSearch',
+  ContextFetchSearch = 'ContextFetchSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',

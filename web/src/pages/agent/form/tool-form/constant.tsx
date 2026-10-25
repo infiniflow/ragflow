@@ -10,6 +10,7 @@ import GoogleForm from './google-form';
 import GoogleScholarForm from './google-scholar-form';
 import KeenableForm from './keenable-form';
 import SofyaForm from './sofya-form';
+import ContextFetchForm from './contextfetch-form';
 import Search1APIForm from './search1api-form';
 import YouComForm from './youcom-form';
 import PubMedForm from './pubmed-form';
@@ -47,6 +48,7 @@ export const ToolFormConfigMap = {
   [Operator.KeenableSearch]: KeenableForm,
   [Operator.YouComSearch]: YouComForm,
   [Operator.SofyaSearch]: SofyaForm,
+  [Operator.ContextFetchSearch]: ContextFetchForm,
   [Operator.Search1APISearch]: Search1APIForm,
   [Operator.Search1APICrawl]: ApiKeyToolForm,
 };

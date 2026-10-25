@@ -6,6 +6,7 @@ jest.mock('@/constants/agent', () => ({
     KeenableSearch: 'KeenableSearch',
     YouComSearch: 'YouComSearch',
     SofyaSearch: 'SofyaSearch',
+    ContextFetchSearch: 'ContextFetchSearch',
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
@@ -183,6 +184,37 @@ describe('clearSensitiveFields', () => {
     expect(sanitized.tools[0].params.top_n).toBe(10);
     expect(dsl.graph.nodes[0].data.form.api_key).toBe('sofya-graph-secret');
     expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
+  });
+
+  it('clears a ContextFetch key from a canvas node and from a tool record', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.ContextFetchSearch,
+              form: { api_key: 'contextfetch-graph-secret', top_n: 10 },
+            },
+          },
+        ],
+      },
+      tools: [
+        {
+          component_name: Operator.ContextFetchSearch,
+          params: { api_key: 'contextfetch-tool-secret', top_n: 5 },
+        },
+      ],
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.top_n).toBe(10);
+    expect(sanitized.tools[0].params.api_key).toBe('');
+    expect(sanitized.tools[0].params.top_n).toBe(5);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+      'contextfetch-graph-secret',
+    );
   });
 
   it.each([

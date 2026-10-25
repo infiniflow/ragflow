@@ -241,6 +241,22 @@ export const initialSofyaValues = {
   },
 };
 
+export const initialContextFetchValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export enum Search1APIChannel {
   General = 'general',
   News = 'news',
@@ -853,6 +869,7 @@ export const RestrictedUpstreamMap = {
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.ContextFetchSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
@@ -913,6 +930,7 @@ export const NodeMap = {
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
   [Operator.SofyaSearch]: 'ragNode',
+  [Operator.ContextFetchSearch]: 'ragNode',
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',

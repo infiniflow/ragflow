@@ -8,6 +8,7 @@ const apiKeyOperators = [
   Operator.KeenableSearch,
   Operator.YouComSearch,
   Operator.SofyaSearch,
+  Operator.ContextFetchSearch,
   Operator.BGPT,
   Operator.QueritContents,
   Operator.QueritSearch,
@@ -19,6 +20,7 @@ const apiKeyOperators = [
 const nodeLabelApiKeyOperators: string[] = [
   Operator.YouComSearch,
   Operator.SofyaSearch,
+  Operator.ContextFetchSearch,
 ];
 
 function isQueritOperator(value: unknown) {

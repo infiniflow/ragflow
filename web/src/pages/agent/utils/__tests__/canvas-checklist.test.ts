@@ -821,6 +821,7 @@ describe('collectCanvasIssues: required tool API key', () => {
   it.each([
     ['SofyaSearch', 'SofyaSearch:s1'],
     ['Search1APISearch', 'Search1API:s2'],
+    ['ContextFetchSearch', 'ContextFetchSearch:s3'],
   ])('flags a standalone %s node without an API key', (label, id) => {
     const issues = collect({
       nodes: [makeNode(id, label, { api_key: '' })],
@@ -835,7 +836,7 @@ describe('collectCanvasIssues: required tool API key', () => {
     );
   });
 
-  it.each([['SofyaSearch'], ['Search1APISearch']])(
+  it.each([['SofyaSearch'], ['Search1APISearch'], ['ContextFetchSearch']])(
     'passes a standalone %s node with an API key',
     (label) => {
       const issues = collect({
