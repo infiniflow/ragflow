@@ -1758,6 +1758,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: '목차 보기',
       hideToc: '목차 숨기기',

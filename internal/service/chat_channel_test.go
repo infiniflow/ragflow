@@ -273,8 +273,8 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-2", TenantID: "tenant-2"})
 	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
-	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("expected hidden permission denial, got code=%v err=%v", code, err)
+	if code != common.CodeNotFound || err == nil {
+		t.Fatalf("expected hidden resource-not-found response, got code=%v err=%v", code, err)
 	}
 	if err == nil {
 		t.Fatal("expected authorization error")

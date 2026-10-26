@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service/nlp"
 
 	"github.com/glebarez/sqlite"
@@ -438,6 +439,9 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	if err := db.Create(&memberships).Error; err != nil {
 		t.Fatalf("create memberships: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	adapter := &NLPRetrievalAdapter{
 		svc:   &nlp.RetrievalService{},
@@ -445,7 +449,8 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	}
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["user_id"] = "member"
-	ctx := runtime.WithState(t.Context(), state)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
 	_, err = adapter.Search(ctx, db, RetrievalRequest{
 		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
 	})

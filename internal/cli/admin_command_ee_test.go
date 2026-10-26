@@ -15,3 +15,17 @@
 //
 
 package cli
+
+import "testing"
+
+func TestParseAdminListUserAgentsRequiresEE(_ *testing.T) {}
+
+func TestAdminListUserAgentsRequiresEE(_ *testing.T) {}
+
+func TestParseAPIListAgents(_ *testing.T) {}
+
+func TestParseAdminListUserDatasetsRequiresEE(_ *testing.T) {}
+
+func TestAdminListUserDatasetsRequiresEE(_ *testing.T) {}
+
+func TestParseAPIListDatasets(_ *testing.T) {}

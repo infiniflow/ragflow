@@ -2324,6 +2324,7 @@ export default {
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Kontentni ko‘rsatish',
       hideToc: 'Kontentni yashirish',

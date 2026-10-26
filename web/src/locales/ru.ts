@@ -1473,6 +1473,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Показать содержание',
       hideToc: 'Скрыть содержание',
