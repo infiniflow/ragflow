@@ -297,15 +297,30 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	if versionChanged && !selectionChanged && !hasConfig {
+	// C3 / A3 整体重置: a pipeline (canvas) switch OR a version switch forces a
+	// full parser_config reset to the new DSL defaults, discarding any
+	// echoed/submitted parser_config. This mirrors the dataset-layer behavior so
+	// the two layers stay consistent (design A3 整体重置): a change to
+	// pipelineID or versionID must reset parser config to the DSL defaults. The
+	// reset overrides the first block's merge, so a stale form value (e.g. a
+	// manually edited chunk size) or a config submitted alongside the switch is
+	// dropped, exactly as the reset-on-switch contract requires.
+	//
+	// pipelineChanged tracks a genuine canvas change (incl. builtin→canvas);
+	// versionChanged tracks a pinned-version change. Builtin→builtin switches are
+	// not pipelineID changes and stay outside this reset (they are handled by the
+	// first block as a normal selection rebuild).
+	pipelineChanged := isPipeline && req.PipelineID != nil &&
+		(doc.PipelineID == nil || strings.TrimSpace(*req.PipelineID) != strings.TrimSpace(*doc.PipelineID))
+	if pipelineChanged || versionChanged {
 		cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, effParserID, effPipelineID, effectiveVersionID)
 		if cpErr != nil {
-			common.Warn("document version switch: failed to resolve component params defaults, keeping prior parser_config",
+			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
 			if llmErr != nil {
-				common.Warn("document version switch: failed to resolve default chat model, falling back to no llm binding",
+				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
 					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
 				llmID = ""
 			}

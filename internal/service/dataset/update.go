@@ -399,7 +399,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			txCode = common.CodeBadRequest
 			return service.ErrPipelineVersionEmpty
 		}
-		if _, ok := updates["parser_config"]; (pipelineChanged || versionChanged) && !ok {
+		// C3 / A3 整体重置: BOTH a pipeline (canvas) switch and a version switch
+		// force a full parser_config reset to the new DSL defaults, discarding any
+		// echoed/submitted parser_config. When the version or pipeline is switched
+		// the settings form may still hold the previous value (e.g. a manually
+		// edited chunk size), so the reset must take precedence over the submitted
+		// config rather than merging it in.
+		if pipelineChanged || versionChanged {
 			cfgParserID := lockedKB.ParserID
 			if parserIDProvided {
 				cfgParserID = parserID
@@ -407,17 +413,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			effVersionID, _ := resolvePipelineVersionID(ctx, tx, canvasCtx, requestedVersion)
 			cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, canvasCtx, effVersionID)
 			if cpErr != nil {
-				common.Warn("failed to resolve component params defaults on pipeline change",
+				common.Warn("failed to resolve component params defaults on pipeline/version change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
 			}
-			if versionChanged {
-				// C3 (T26/V5): an explicit version switch resets the component
-				// params to the new version defaults (design section 5 + A3
-				// 整体重置). This is a full reset, not a merge, so the previous
-				// version's params are dropped even when the new default is empty.
+			// Full reset: replace parser_config with the new DSL defaults. The
+			// previous (echoed) value is intentionally dropped (design A3 整体重置).
+			if cpErr == nil {
 				updates["parser_config"] = cpDefaults
-			} else if cpDefaults != nil {
-				updates["parser_config"] = preserveDatasetParserConfigState(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 
