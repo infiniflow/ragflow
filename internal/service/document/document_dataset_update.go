@@ -203,8 +203,8 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			return nil, common.CodeDataError, err
 		}
 		rawConfig := req.ParserConfig
-		if !selectionChanged && !hasConfig {
-			rawConfig = doc.ParserConfig
+		if !selectionChanged {
+			rawConfig = common.DeepMergeMaps(doc.ParserConfig, req.ParserConfig)
 		}
 		cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, rawConfig)
 		if err != nil {

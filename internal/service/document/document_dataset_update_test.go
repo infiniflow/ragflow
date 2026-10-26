@@ -12,6 +12,63 @@ import (
 	"ragflow/internal/service"
 )
 
+func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) {
+	for _, selection := range []string{"omitted", "same builtin", "same canvas"} {
+		t.Run(selection, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+			config := entity.JSONMap{
+				"Parser:HipSignsRhyme": map[string]any{
+					"enable_vision_enhancement": true,
+					"vlm":                       map[string]any{"llm_id": "old-model", "system_prompt": "keep this prompt"},
+				},
+				"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 123},
+				"Parser:Removed":               map[string]any{"pdf": map[string]any{}},
+			}
+			updates := map[string]any{"parser_id": "general", "parser_config": config}
+			req := &UpdateDatasetDocumentRequest{ParserConfig: map[string]any{
+				"Parser:HipSignsRhyme": map[string]any{"vlm": map[string]any{"llm_id": "new-model"}},
+			}}
+			present := map[string]bool{"parser_config": true}
+			switch selection {
+			case "same builtin":
+				req.ParseType, req.ParserID = new(1), new("general")
+				present["parse_type"], present["parser_id"] = true, true
+			case "same canvas":
+				const pipelineID = "1234567890abcdef1234567890abcdef"
+				insertTestCanvas(t, pipelineID, "user-1")
+				updates["pipeline_id"] = pipelineID
+				req.ParseType, req.PipelineID = new(2), new(pipelineID)
+				present["parse_type"], present["pipeline_id"] = true, true
+			}
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(updates).Error; err != nil {
+				t.Fatal(err)
+			}
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			if err != nil || code != common.CodeSuccess {
+				t.Fatalf("update: code=%d err=%v", code, err)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, saved := range []map[string]any{resp.ParserConfig, doc.ParserConfig} {
+				parser, _ := saved["Parser:HipSignsRhyme"].(map[string]any)
+				vlm, _ := parser["vlm"].(map[string]any)
+				chunker, _ := saved["GeneralChunker:SixApplesFall"].(map[string]any)
+				if parser["enable_vision_enhancement"] != true || vlm["llm_id"] != "new-model" || vlm["system_prompt"] != "keep this prompt" || chunker["chunk_token_size"] != float64(123) {
+					t.Fatalf("partial update lost settings: %#v", saved)
+				}
+				if _, exists := saved["Parser:Removed"]; exists {
+					t.Fatalf("stale component survived cleaning: %#v", saved)
+				}
+			}
+		})
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testing.T) {
 	for _, filename := range []string{"image.png", "deck.pptx"} {
 		for _, selection := range []string{"chunk_method", "parser_id"} {

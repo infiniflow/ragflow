@@ -40,7 +40,7 @@ var extractorValidParamKeys = func() map[string]struct{} {
 }()
 
 // componentParamSchemaKeys maps a DSL component_name (lower-cased) to the
-// param keys its param schema declares. CleanComponentParams unions these with
+// param keys its param schema declares. cleanComponentParams unions these with
 // the keys a template already bakes, so a param the component can read is
 // never dropped just because a template — or a canvas snapshot saved before
 // the param existed — does not carry it.
@@ -186,23 +186,13 @@ func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	return nil, false
 }
 
-// CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
+// cleanComponentParams filters rawConfig against the extracted DSL schemas.
 // Keys containing ':' are treated as component IDs; they are kept only when both
 // the cpnID AND the param name exist in one of the accepted-key sources: the DSL
 // schema (the params the template bakes), the schema-derived per-component table
 // (componentParamSchemaKeys), or the component's dynamic parameter schema (e.g.
 // Extractor modular features). Keys without ':' (legacy flat fields) are dropped
 // with a warning.
-func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
-	schemas, err := ExtractAllComponentParams(dslJSON)
-	if err != nil {
-		common.Warn("CleanComponentParams: failed to extract DSL schema, returning input as-is",
-			zap.Error(err))
-		return rawConfig
-	}
-	return cleanComponentParams(schemas, rawConfig)
-}
-
 func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]interface{}) map[string]interface{} {
 	validCPNs := make(map[string]map[string]struct{}, len(schemas))
 	componentNames := make(map[string]string, len(schemas))
@@ -236,13 +226,13 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 	result := make(map[string]interface{}, len(rawConfig))
 	for key, val := range rawConfig {
 		if !strings.Contains(key, ":") {
-			common.Warn("CleanComponentParams: dropping legacy flat field",
+			common.Warn("cleanComponentParams: dropping legacy flat field",
 				zap.String("key", key))
 			continue
 		}
 		validKeys, ok := validCPNs[key]
 		if !ok {
-			common.Warn("CleanComponentParams: dropping unknown cpnID",
+			common.Warn("cleanComponentParams: dropping unknown cpnID",
 				zap.String("cpnID", key))
 			continue
 		}
@@ -277,7 +267,7 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 					continue
 				}
 			}
-			common.Warn("CleanComponentParams: dropping unknown param",
+			common.Warn("cleanComponentParams: dropping unknown param",
 				zap.String("cpnID", key), zap.String("param", pk))
 		}
 		if len(cleaned) > 0 {

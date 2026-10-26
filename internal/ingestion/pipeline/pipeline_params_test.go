@@ -53,7 +53,7 @@ func generalDSL(t *testing.T) []byte {
 	return raw
 }
 
-func TestCleanComponentParamsNormalizesGeneralLegacyDelimiter(t *testing.T) {
+func TestBuildParserConfigNormalizesGeneralLegacyDelimiter(t *testing.T) {
 	dsl := map[string]any{
 		"components": map[string]any{
 			"GeneralChunker:Legacy": map[string]any{
@@ -70,7 +70,7 @@ func TestCleanComponentParamsNormalizesGeneralLegacyDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal dsl: %v", err)
 	}
-	result := CleanComponentParams(dslJSON, map[string]any{
+	result := buildTestParserConfig(t, dslJSON, map[string]any{
 		"GeneralChunker:Legacy": map[string]any{
 			"delimiter": "\n!?;。；！？",
 		},
@@ -105,7 +105,11 @@ func TestCleanComponentParamsNormalizesDelimiterWhenDSLDeclaresOnlyLegacyKey(t *
 	if err != nil {
 		t.Fatalf("marshal DSL: %v", err)
 	}
-	result := CleanComponentParams(dslJSON, map[string]any{
+	schemas, err := ExtractAllComponentParams(dslJSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := cleanComponentParams(schemas, map[string]any{
 		"GeneralChunker:Custom": map[string]any{
 			"delimiter": "\n!?",
 		},
@@ -123,30 +127,21 @@ func TestCleanComponentParamsNormalizesDelimiterWhenDSLDeclaresOnlyLegacyKey(t *
 	}
 }
 
-func TestCleanComponentParams_DropsLegacyFlatFields(t *testing.T) {
+func TestBuildParserConfig_DropsLegacyFlatFields(t *testing.T) {
 	dslJSON := generalDSL(t)
 	raw := map[string]any{
 		"chunk_token_num":    256,
 		"image_context_size": 10,
 	}
-	result := CleanComponentParams(dslJSON, raw)
-	if len(result) != 0 {
-		t.Errorf("expected empty result, got %v", result)
+	result := buildTestParserConfig(t, dslJSON, raw)
+	for key := range raw {
+		if _, exists := result[key]; exists {
+			t.Errorf("flat field %q survived config building: %v", key, result)
+		}
 	}
 }
 
-func TestCleanComponentParams_DropsUnknownCPNID(t *testing.T) {
-	dslJSON := generalDSL(t)
-	raw := map[string]any{
-		"Parser:NoSuch": map[string]any{"chunk_size": float64(256)},
-	}
-	result := CleanComponentParams(dslJSON, raw)
-	if _, ok := result["Parser:NoSuch"]; ok {
-		t.Error("expected unknown cpnID to be dropped")
-	}
-}
-
-func TestCleanComponentParams_DropsUnknownParamKey(t *testing.T) {
+func TestBuildParserConfig_DropsUnknownParamKey(t *testing.T) {
 	dslJSON := generalDSL(t)
 	raw := map[string]any{
 		"Parser:HipSignsRhyme": map[string]any{
@@ -154,39 +149,13 @@ func TestCleanComponentParams_DropsUnknownParamKey(t *testing.T) {
 			"pdf":           map[string]any{"parse_method": "deepdoc"},
 		},
 	}
-	result := CleanComponentParams(dslJSON, raw)
+	result := buildTestParserConfig(t, dslJSON, raw)
 	params := result["Parser:HipSignsRhyme"].(map[string]any)
 	if _, ok := params["no_such_param"]; ok {
 		t.Error("expected unknown param key to be dropped")
 	}
 	if _, ok := params["pdf"]; !ok {
 		t.Error("expected known param key 'pdf' to be kept")
-	}
-}
-
-func TestCleanComponentParams_ReturnsInputOnDSLError(t *testing.T) {
-	result := CleanComponentParams([]byte("not json"), map[string]any{"key": "val"})
-	if result["key"] != "val" {
-		t.Error("expected input returned as-is on DSL error")
-	}
-}
-
-func TestCleanComponentParams_ValidCPNIDPassesThrough(t *testing.T) {
-	dslJSON := generalDSL(t)
-	raw := map[string]any{
-		"Parser:HipSignsRhyme": map[string]any{
-			"pdf": map[string]any{"parse_method": "deepdoc"},
-		},
-		"Chunker:LegalReadersDecide": map[string]any{
-			"chunk_size": float64(256),
-		},
-	}
-	result := CleanComponentParams(dslJSON, raw)
-	if _, ok := result["Parser:HipSignsRhyme"]; !ok {
-		t.Error("expected Parser:HipSignsRhyme to pass through")
-	}
-	if _, ok := result["Chunker:LegalReadersDecide"]; !ok {
-		t.Error("expected Chunker:LegalReadersDecide to pass through")
 	}
 }
 
@@ -306,54 +275,6 @@ func TestBuildParserConfig_FlattensNestedParserSetups(t *testing.T) {
 	}
 }
 
-// CleanComponentParams must flatten a legacy nested "setups" group before
-// filtering, otherwise the lifted families are dropped as unknown params
-// against the (flat) DSL schema keys.
-func TestCleanComponentParams_FlattensNestedParserSetups(t *testing.T) {
-	dsl := map[string]any{
-		"components": map[string]any{
-			"Parser:HipSignsRhyme": map[string]any{
-				"obj": map[string]any{
-					"component_name": "Parser",
-					"params": map[string]any{
-						"setups": map[string]any{
-							"pdf": map[string]any{"parse_method": "deepdoc"},
-						},
-					},
-				},
-			},
-		},
-	}
-	dslJSON, err := json.Marshal(dsl)
-	if err != nil {
-		t.Fatalf("marshal dsl: %v", err)
-	}
-
-	rawConfig := map[string]any{
-		"Parser:HipSignsRhyme": map[string]any{
-			"setups": map[string]any{
-				"pdf": map[string]any{"parse_method": "vision"},
-			},
-		},
-	}
-
-	result := CleanComponentParams(dslJSON, rawConfig)
-	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
-	if !ok {
-		t.Fatal("expected Parser:HipSignsRhyme in result")
-	}
-	if _, ok := parser["setups"]; ok {
-		t.Error("nested \"setups\" key must be flattened away")
-	}
-	pdf, ok := parser["pdf"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected flattened pdf family, got %T", parser["pdf"])
-	}
-	if pdf["parse_method"] != "vision" {
-		t.Errorf("pdf parse_method = %v, want vision", pdf["parse_method"])
-	}
-}
-
 // The runtime passes Doc.ParserConfig as override_params, where top-level
 // keys from the override replace the DSL-baked ones. A legacy nested Parser
 // entry must be lifted BEFORE that merge — otherwise the DSL's flat families
@@ -451,7 +372,7 @@ func TestBuildParserConfig_UnknownCPNIDNotPresentInResult(t *testing.T) {
 		"Parser:Unknown": map[string]any{"chunk_size": float64(256)},
 	}
 	result := buildTestParserConfig(t, dslJSON, overrides)
-	// Unknown cpnID should be dropped by CleanComponentParams; the result should
+	// Unknown cpnID should be dropped by BuildParserConfig; the result should
 	// still contain the DSL-defined components with their defaults.
 	if _, ok := result["Parser:Unknown"]; ok {
 		t.Error("expected unknown cpnID to be absent from result")
@@ -623,7 +544,7 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
 			}
 			if _, ok := params["metadata"]; !ok {
-				t.Errorf("template %q: metadata dropped by CleanComponentParams", ref)
+				t.Errorf("template %q: metadata dropped by BuildParserConfig", ref)
 			}
 		}
 	}
@@ -653,7 +574,7 @@ func TestApplyParentChildChunkerConfig(t *testing.T) {
 	}
 }
 
-func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
+func TestBuildParserConfig_KeepsModularExtractorParams(t *testing.T) {
 	// Builtin template with empty Extractor params: {}
 	dsl := map[string]any{
 		"components": map[string]any{
@@ -691,7 +612,7 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 		},
 	}
 
-	result := CleanComponentParams(dslJSON, overrides)
+	result := buildTestParserConfig(t, dslJSON, overrides)
 	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
@@ -714,7 +635,7 @@ func TestCleanComponentParams_KeepsModularExtractorParams(t *testing.T) {
 	}
 }
 
-func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
+func TestBuildParserConfig_ExtractorBuiltInMetadataRetained(t *testing.T) {
 	dslJSON := []byte(`{
 		"components": {
 			"Extractor:AutoExtractDefault": {
@@ -743,7 +664,7 @@ func TestCleanComponentParams_ExtractorBuiltInMetadataRetained(t *testing.T) {
 		},
 	}
 
-	result := CleanComponentParams(dslJSON, rawConfig)
+	result := buildTestParserConfig(t, dslJSON, rawConfig)
 	ext, ok := result["Extractor:AutoExtractDefault"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Extractor:AutoExtractDefault in result, got: %v", result)
@@ -904,7 +825,7 @@ func compilerDSL(t *testing.T) []byte {
 	return raw
 }
 
-func TestCleanComponentParams_CompilerKeepsLLMRuntimeParams(t *testing.T) {
+func TestBuildParserConfig_CompilerKeepsLLMRuntimeParams(t *testing.T) {
 	dslJSON := compilerDSL(t)
 	raw := map[string]any{
 		"Compiler:NewBoxesLove": map[string]any{
@@ -925,7 +846,7 @@ func TestCleanComponentParams_CompilerKeepsLLMRuntimeParams(t *testing.T) {
 			"mode":                          "structure",
 		},
 	}
-	result := CleanComponentParams(dslJSON, raw)
+	result := buildTestParserConfig(t, dslJSON, raw)
 	params, ok := result["Compiler:NewBoxesLove"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected Compiler params to survive, got %#v", result)
@@ -1012,7 +933,7 @@ func titleFamilyDSL(t *testing.T) []byte {
 	return raw
 }
 
-func TestCleanComponentParams_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *testing.T) {
+func TestBuildParserConfig_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *testing.T) {
 	dslJSON := titleFamilyDSL(t)
 	raw := map[string]any{
 		"TitleChunker:StaleSnapshot": map[string]any{
@@ -1020,7 +941,7 @@ func TestCleanComponentParams_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *te
 			"root_chunk_as_heading": true,
 		},
 	}
-	result := CleanComponentParams(dslJSON, raw)
+	result := buildTestParserConfig(t, dslJSON, raw)
 	params, ok := result["TitleChunker:StaleSnapshot"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected TitleChunker params to survive, got %#v", result)
@@ -1036,7 +957,7 @@ func TestCleanComponentParams_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *te
 // TestBuildParserConfig_KeepsTitleChunkerPerMethodKeys locks the persistence
 // contract for the title-chunker family: the frontend stores each method's
 // rules, hierarchy value and token cap under its own key so the dataset
-// config keeps Hierarchy and Group independent; CleanComponentParams must not
+// config keeps Hierarchy and Group independent; BuildParserConfig must not
 // drop them.
 func TestBuildParserConfig_KeepsTitleChunkerPerMethodKeys(t *testing.T) {
 	dslJSON := titleFamilyDSL(t)
@@ -1122,7 +1043,7 @@ func TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates(t *testing.T
 // operatorFormParamKeys mirrors the params the dataset/document pipeline
 // operator forms submit (transformFormConfigToApi in
 // web/src/utils/pipeline-operator.ts). Every key listed for a component must be
-// accepted by CleanComponentParams for that component in every builtin
+// accepted by BuildParserConfig for that component in every builtin
 // template; otherwise a user edit is silently dropped.
 var operatorFormParamKeys = map[string][]string{
 	"TitleChunker": {
@@ -1151,7 +1072,7 @@ var operatorFormParamKeys = map[string][]string{
 	"Extractor": {"llm_id", "keywords", "questions", "tags", "summary", "metadata"},
 }
 
-func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
+func TestBuildParserConfig_AcceptsOperatorFormParams(t *testing.T) {
 	registry, err := DefaultRegistry()
 	if err != nil {
 		t.Fatalf("DefaultRegistry: %v", err)
@@ -1180,7 +1101,7 @@ func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
 			for _, key := range expected {
 				params[key] = "probe"
 			}
-			cleaned := CleanComponentParams(dslJSON, map[string]interface{}{s.CpnID: params})
+			cleaned := buildTestParserConfig(t, dslJSON, map[string]interface{}{s.CpnID: params})
 			got, ok := cleaned[s.CpnID].(map[string]any)
 			if !ok {
 				t.Fatalf("template %q: component %q missing from cleaned result", ref, s.CpnID)
@@ -1256,9 +1177,9 @@ func TestBuiltinTemplateComponentsHaveWhitelistCoverage(t *testing.T) {
 	}
 }
 
-// TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys keeps the union
+// TestBuildParserConfig_TitleFamilyStillDropsUnknownKeys keeps the union
 // honest: a key the component schema does not declare is still dropped.
-func TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
+func TestBuildParserConfig_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
 	dslJSON := titleFamilyDSL(t)
 	raw := map[string]any{
 		"TitleChunker:StaleSnapshot": map[string]any{
@@ -1266,7 +1187,7 @@ func TestCleanComponentParams_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
 			"method":               "hierarchy",
 		},
 	}
-	result := CleanComponentParams(dslJSON, raw)
+	result := buildTestParserConfig(t, dslJSON, raw)
 	params, ok := result["TitleChunker:StaleSnapshot"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected TitleChunker params to survive, got %#v", result)
