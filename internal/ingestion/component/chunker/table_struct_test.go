@@ -114,11 +114,10 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 }
 
 // A cell that spans BOTH rows and columns (RowSpan>1 && ColSpan>1) must keep
-// every column it covers on the continuation rows, not just the first. The
-// active-rowspan state machine in tableChunkRows used to register the span
-// only at the origin's start column, so a 2x2 block left its second covered
-// column blank on the row below — dropping that field's value and misaligning
-// the row under the header.
+// every column it covers on the continuation rows, not just the first. A
+// projection that registers the active rowspan only at the origin's start
+// column would leave the second covered column blank on the row below,
+// dropping that field's value and misaligning the row under the header.
 func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 	td := &entity.TableData{
 		HeaderRows: 1,
