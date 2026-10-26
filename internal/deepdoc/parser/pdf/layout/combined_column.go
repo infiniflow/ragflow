@@ -168,7 +168,10 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 	}
 	g := gapColumnCount(lines, gapMinFrac, 0.15, binPt)
 	if g >= 2 {
-		_, width := pageExtent(lines)
+		// Use the same robust text extent as the gap/width projections: a
+		// malformed box must not inflate the denominator and make real columns
+		// look like narrow table cells.
+		_, width := robustPageExtent(textProjectionLines(lines))
 		if width > 0 {
 			widths := gapColumnWidths(lines)
 			maxw := 0.0
@@ -277,7 +280,15 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 	if n == 0 {
 		return nil
 	}
-	minX0, width := pageExtent(lines)
+	// Mirror gapColumnCount's projection: drop figure/equation placeholders and
+	// derive the extent from the robust text body. Using the raw extent here let
+	// one malformed box set the bin geometry, so ordinary lines collapsed into
+	// the first bin and the width gate disagreed with the gap count.
+	lines = textProjectionLines(lines)
+	if len(lines) == 0 {
+		return nil
+	}
+	minX0, width := robustPageExtent(lines)
 	if width <= 0 {
 		return nil
 	}
@@ -302,7 +313,9 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 		for j < nb && float64(cov[j]) >= thr {
 			j++
 		}
-		widths = append(widths, float64(j-i)*binPt)
+		// Bins were widened by columnHistogramBins; convert bin counts with the
+		// effective width, not the base resolution.
+		widths = append(widths, float64(j-i)*effBin)
 		i = j
 	}
 	return widths

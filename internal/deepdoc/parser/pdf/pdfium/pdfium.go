@@ -140,11 +140,12 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		pxW := int(math.Round(pw * scale))
 		pxH := int(math.Round(ph * scale))
 
-		// Reject absurd pages before pdfium allocates the bitmap: the fill loop
-		// below touches every pixel, so an unbounded bitmap is an OOM vector.
-		const maxBitmapBytes = 1 << 30
-		if int64(pxW)*int64(pxH)*4 > maxBitmapBytes {
-			err = fmt.Errorf("pdfium: page %d bitmap %dx%d exceeds %d bytes", pageIdx, pxW, pxH, maxBitmapBytes)
+		// Reject absurd pages before pdfium allocates the bitmap. RenderPage
+		// holds two buffers at peak: pdfium's pxH*stride bitmap and the
+		// image.NewRGBA copy (4 bytes/pixel each), so budget 8 bytes/pixel.
+		const maxRenderBytes = 1 << 30
+		if int64(pxW)*int64(pxH)*8 > maxRenderBytes {
+			err = fmt.Errorf("pdfium: page %d render buffers %dx%d exceed %d bytes", pageIdx, pxW, pxH, maxRenderBytes)
 			return
 		}
 

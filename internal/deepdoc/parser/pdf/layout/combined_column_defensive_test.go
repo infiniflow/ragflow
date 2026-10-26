@@ -1,6 +1,7 @@
 package layout
 
 import (
+	"math"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -56,13 +57,57 @@ func TestGapColumnWidthsCapsHistogram(t *testing.T) {
 	lines = append(lines, pdf.TextBox{X0: 100, X1: 1e9}) // malformed extent
 
 	widths := gapColumnWidths(lines)
-	if len(widths) == 0 {
-		t.Fatal("gapColumnWidths returned no widths for a two-column page")
+	if len(widths) != 2 {
+		t.Fatalf("gapColumnWidths returned %d widths for a two-column page, want 2 (%v)", len(widths), widths)
 	}
 	for _, w := range widths {
-		if w <= 0 || w > 1e9 {
-			t.Fatalf("implausible column width %v", w)
+		if math.Abs(w-200) > 10 {
+			t.Fatalf("column width %v, want ~200 (outlier must not distort the projection)", w)
 		}
+	}
+
+	// A huge but internally consistent extent exercises the widened-bin path:
+	// two 1000pt columns 1,000,000pt apart. Widths must be reported in page
+	// units (effBin), not in base 2pt bins.
+	lines = nil
+	for i := 0; i < 20; i++ {
+		lines = append(lines, pdf.TextBox{X0: 0, X1: 1000})
+	}
+	for i := 0; i < 20; i++ {
+		lines = append(lines, pdf.TextBox{X0: 999000, X1: 1000000})
+	}
+	widths = gapColumnWidths(lines)
+	if len(widths) != 2 {
+		t.Fatalf("widened-bin page returned %d widths, want 2 (%v)", len(widths), widths)
+	}
+	for _, w := range widths {
+		if math.Abs(w-1000) > 50 {
+			t.Fatalf("widened-bin column width %v, want ~1000", w)
+		}
+	}
+}
+
+// TestDetectColumnCount_OutlierKeepsWidthGate proves the width gate uses the
+// robust text extent: an outlier that gapColumnCount ignores must not inflate
+// the denominator and collapse a real two-column page to one column.
+func TestDetectColumnCount_OutlierKeepsWidthGate(t *testing.T) {
+	var boxes []pdf.TextBox
+	for i := 0; i < 20; i++ {
+		addBox(&boxes, 100, 300)
+	}
+	for i := 0; i < 20; i++ {
+		addBox(&boxes, 400, 600)
+	}
+	boxes = append(boxes, pdf.TextBox{
+		PageNumber: 0, X0: 100, X1: 1e9, Top: 9999, Bottom: 10009,
+		LayoutType: pdf.LayoutTypeText, Text: "bad",
+	})
+	indices := make([]int, len(boxes))
+	for i := range indices {
+		indices[i] = i
+	}
+	if k, _ := detectColumnCount(boxes, indices); k != 2 {
+		t.Fatalf("detectColumnCount = %d, want 2 (outlier must not inflate the width gate)", k)
 	}
 }
 
