@@ -47,12 +47,8 @@ const (
 	weComWebhookBodyLimit       = 1024 * 1024
 	weComWebhookShutdownTimeout = 5 * time.Second
 	weComPKCS7BlockSize         = 32
-	// weComReplayWindow is the maximum accepted difference between the callback
-	// timestamp and the server clock.
-	weComReplayWindow = 5 * time.Minute
-	// weComNonceTTL is how long a handled callback nonce is remembered, so a
-	// replay of a processed delivery is refused.
-	weComNonceTTL = 10 * time.Minute
+	weComReplayWindow           = 5 * time.Minute
+	weComNonceTTL               = 10 * time.Minute
 )
 
 type wecomCrypto struct {
@@ -133,9 +129,6 @@ func (c *wecomCrypto) decrypt(signature, timestamp, nonce, encrypted string) ([]
 	if diff := now.Sub(sentAt); diff > weComReplayWindow || diff < -weComReplayWindow {
 		return nil, fmt.Errorf("stale WeCom timestamp: %s", timestamp)
 	}
-	if c.nonceSeen(nonce, now) {
-		return nil, fmt.Errorf("replayed WeCom nonce: %s", nonce)
-	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return nil, fmt.Errorf("decode WeCom ciphertext: %w", err)
@@ -183,23 +176,26 @@ func parseWeComTimestamp(value string) (time.Time, error) {
 	return time.Unix(seconds, 0), nil
 }
 
-// nonceSeen reports whether nonce belongs to a delivery that was already
-// handled. It only reads: the nonce is remembered after the message handling
-// succeeded, so a retry of a failed attempt is still accepted.
-func (c *wecomCrypto) nonceSeen(nonce string, now time.Time) bool {
+// claimNonce records the callback nonce before the message is handled, so a
+// retry that arrives while the first delivery is still being processed is
+// dropped instead of running the handler twice.
+func (c *wecomCrypto) claimNonce(nonce string, now time.Time) bool {
 	c.nonceMu.Lock()
 	defer c.nonceMu.Unlock()
 	c.pruneNoncesLocked(now)
-	_, ok := c.nonces[nonce]
-	return ok
+	if _, ok := c.nonces[nonce]; ok {
+		return false
+	}
+	c.nonces[nonce] = now
+	return true
 }
 
-// rememberNonce records a handled callback nonce so a later replay is refused.
-func (c *wecomCrypto) rememberNonce(nonce string, now time.Time) {
+// forgetNonce drops the claim after a failed attempt, so the platform's retry
+// of the same delivery is handled instead of being refused as a replay.
+func (c *wecomCrypto) forgetNonce(nonce string) {
 	c.nonceMu.Lock()
 	defer c.nonceMu.Unlock()
-	c.pruneNoncesLocked(now)
-	c.nonces[nonce] = now
+	delete(c.nonces, nonce)
 }
 
 func (c *wecomCrypto) pruneNoncesLocked(now time.Time) {
@@ -353,6 +349,13 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
+		// Claim the nonce before handling: a retry that arrives while this
+		// delivery is still being processed must not run the handler again.
+		if !channel.crypto.claimNonce(nonce, time.Now()) {
+			common.Warn("wecom: dropping duplicate callback", zap.String("account_id", accountID), zap.String("msg_id", message.MsgID), zap.String("nonce", nonce))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
 		if err := channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
 			"to_user_name":   message.ToUserName,
 			"from_user_name": message.FromUserName,
@@ -362,12 +365,12 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 			"msg_id":         message.MsgID,
 			"xml":            string(plaintext),
 		}); err != nil {
-			// Keep the nonce unrecorded so the platform's retry of this delivery
-			// is handled instead of being refused as a replay.
+			// Give the claim back so the platform's retry of this delivery is
+			// handled instead of being refused as a replay.
+			channel.crypto.forgetNonce(nonce)
 			http.Error(w, "message handling failed", http.StatusInternalServerError)
 			return
 		}
-		channel.crypto.rememberNonce(nonce, time.Now())
 	}
 	w.WriteHeader(http.StatusOK)
 }

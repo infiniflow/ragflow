@@ -35,6 +35,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -244,11 +245,68 @@ func TestWeComWebhookDropsReplayedNonce(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("handler calls = %d, want 1", calls)
 	}
-	if response := request(); response.Code != http.StatusForbidden {
-		t.Fatalf("replayed delivery status = %d, want %d", response.Code, http.StatusForbidden)
+	// A duplicate of a handled delivery is acknowledged so the platform stops
+	// retrying, and is not handled again.
+	if response := request(); response.Code != http.StatusOK {
+		t.Fatalf("replayed delivery status = %d, want %d", response.Code, http.StatusOK)
 	}
 	if calls != 1 {
 		t.Fatalf("handler calls after replay = %d, want 1", calls)
+	}
+}
+
+func TestWeComWebhookDropsRetryWhileHandling(t *testing.T) {
+	encodingAESKey, aesKey := testWeComAESKey()
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	var calls atomic.Int32
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
+		// Block only the first delivery, so a duplicate that reaches the
+		// handler is counted instead of hanging the test.
+		if calls.Add(1) == 1 {
+			entered <- struct{}{}
+			<-release
+		}
+		return nil
+	})
+	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
+	timestamp := currentWeComTimestamp()
+	firstRequest := weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext)
+	secondRequest := weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext)
+
+	first := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		server.handleRequest(first, firstRequest)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first delivery did not reach the handler")
+	}
+
+	// The platform retries because the first delivery is still being handled.
+	second := httptest.NewRecorder()
+	server.handleRequest(second, secondRequest)
+	if second.Code != http.StatusOK {
+		t.Fatalf("concurrent retry status = %d, want %d", second.Code, http.StatusOK)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("handler calls while first delivery is in flight = %d, want 1", got)
+	}
+
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("first delivery did not finish")
+	}
+	if first.Code != http.StatusOK {
+		t.Fatalf("first delivery status = %d, want %d", first.Code, http.StatusOK)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("handler calls after both deliveries = %d, want 1", got)
 	}
 }
 
