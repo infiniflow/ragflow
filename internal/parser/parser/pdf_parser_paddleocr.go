@@ -145,9 +145,12 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 func paddleOCRMediaItem(page models.OCRPage, block models.OCRBlock, size [2]float64, ordinal int) DocItem {
 	text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
 	if text == "" {
-		// The ordinal keeps captionless figures distinct: the chunk id hashes
-		// the body, so a shared placeholder would make every one of them
-		// overwrite the same preview object and index entry.
+		// A placeholder is required, not cosmetic: the tokenizer drops a chunk
+		// whose text and media context are all empty, so a captionless figure
+		// with no body text would never be indexed. The ordinal then keeps
+		// captionless figures distinct, since the chunk id hashes the body and a
+		// shared placeholder would make every one of them overwrite the same
+		// preview object and index entry.
 		text = fmt.Sprintf("[Image %d]", ordinal)
 	}
 	fields := map[string]any{
