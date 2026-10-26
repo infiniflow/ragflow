@@ -166,7 +166,9 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		tableBoxes = dedupTableBoxes(tableBoxes)
 		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
 		for _, b := range tableBoxes {
-			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
+			cropBox := tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY)
+			cropBox.IsOCR = b.IsOCR
+			boxInCrop = append(boxInCrop, cropBox)
 		}
 	}
 	var positions []pdf.Position
@@ -186,6 +188,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			// Derive R/C/H/SP with Python's _table_transformer_job semantics
 			// (whole-row/whole-column line matching), in crop space.
 			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			boxInCrop = dedupSameCellOCRBoxes(boxInCrop)
 			// Rebuild the grid from the derived per-char R/C, exactly like
 			// Python's construct_table groups boxes by their R/C labels —
 			// rows are produced only for R values that carry boxes. Fall back
@@ -208,9 +211,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	return item
 }
 
-// dedupTableBoxes drops contained text fragments without merging distinct rows.
-// An OCR fragment that overshoots vertically must be a strict text substring
-// with smaller height and most of its area inside the containing box.
+// dedupTableBoxes drops fully contained text fragments. Partial overlaps are
+// preserved because the boxes may belong to different cells.
 func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	keep := make([]bool, len(boxes))
 	for i := range boxes {
@@ -235,15 +237,6 @@ func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 			}
 			if inner.Top >= outer.Top && inner.Bottom <= outer.Bottom {
 				keep[j] = false
-				continue
-			}
-			if !inner.IsOCR || !outer.IsOCR || at == bt {
-				continue
-			}
-			height := inner.Bottom - inner.Top
-			overlap := math.Min(inner.Bottom, outer.Bottom) - math.Max(inner.Top, outer.Top)
-			if height > 0 && height < outer.Bottom-outer.Top && overlap >= height*0.6 {
-				keep[j] = false
 			}
 		}
 	}
@@ -251,6 +244,35 @@ func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	for i := range boxes {
 		if keep[i] {
 			out = append(out, boxes[i])
+		}
+	}
+	return out
+}
+
+// dedupSameCellOCRBoxes removes overlapping copies of the same OCR text after
+// cell assignment, comparing original boxes rather than accumulated cell text.
+func dedupSameCellOCRBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+	out := boxes[:0]
+	for _, b := range boxes {
+		duplicate := false
+		if b.IsOCR && b.RBott > b.RTop {
+			for _, kept := range out {
+				if !kept.IsOCR || kept.RBott <= kept.RTop || b.R != kept.R || b.C != kept.C ||
+					strings.TrimSpace(b.Text) != strings.TrimSpace(kept.Text) {
+					continue
+				}
+				width := math.Min(b.X1-b.X0, kept.X1-kept.X0)
+				height := math.Min(b.Bottom-b.Top, kept.Bottom-kept.Top)
+				overlapX := math.Min(b.X1, kept.X1) - math.Max(b.X0, kept.X0)
+				overlapY := math.Min(b.Bottom, kept.Bottom) - math.Max(b.Top, kept.Top)
+				if width > 0 && height > 0 && overlapX >= width*0.6 && overlapY >= height*0.6 {
+					duplicate = true
+					break
+				}
+			}
+		}
+		if !duplicate {
+			out = append(out, b)
 		}
 	}
 	return out

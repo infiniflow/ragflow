@@ -249,41 +249,30 @@ func (b *twoRowTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return rows
 }
 
-// An overlapping duplicate fragment must not add text to a neighboring row.
-func TestProcessOneTable_DeduplicatesOverlappingFragments(t *testing.T) {
-	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg)
-
-	pageImg := image.NewRGBA(image.Rect(0, 0, 600, 600))
-	// PDF-point space. Box2 ("Beta") is a partial duplicate OCR detection
-	// overlapping the tail of box1 ("Alpha Beta"): by itself it best-matches
-	// the second TSR row, while box1 alone best-matches the first.
-	boxes := []pdf.TextBox{
-		{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
-		{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
-	}
-	match := tbl.TableMatch{
-		Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 600, Y1: 600, Label: pdf.LayoutTypeTable},
-		BoxIdx: []int{0, 1},
-	}
-	// TSR cells in crop-pixel space (scale = DlaScale = 3): row0 y=[0,60],
-	// row1 y=[60,120], single column x=[0,150].
-	builder := &twoRowTableBuilder{
-		cells: []pdf.TSRCell{
-			{X0: 0, Y0: 0, X1: 150, Y1: 60, Label: "table row"},
-			{X0: 0, Y0: 60, X1: 150, Y1: 120, Label: "table row"},
-		},
-	}
-
-	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
-	// Only the complete box survives, leaving one occupied row.
-	if len(item.Grid) != 1 || len(item.Grid[0]) != 1 {
-		t.Fatalf("grid shape = %v, want 1x1 (R/C grouping emits a row only for the R that carries the box)", item.Grid)
-	}
-
-	row0 := item.Grid[0][0].Text
-	if row0 != "Alpha Beta" {
-		t.Fatalf("row0 = %q, want Alpha Beta exactly once", row0)
+func TestProcessOneTable_HandlesTextFragments(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		bottom float64
+		want   [][]string
+	}{
+		{"contained fragment", 24, [][]string{{"Alpha Beta"}}},
+		{"partial fragment across rows", 28.33, [][]string{{"Alpha Beta"}, {"Beta"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			boxes := []pdf.TextBox{
+				{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
+				{X0: 20, X1: 50, Top: 18.33, Bottom: tc.bottom, Text: "Beta", IsOCR: true},
+			}
+			builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+				{X0: 0, Y0: 0, X1: 150, Y1: 60}, {X0: 0, Y0: 60, X1: 150, Y1: 120},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 150, Y1: 120}, BoxIdx: []int{0, 1}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 180, 150)), boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
 	}
 }
 
@@ -319,7 +308,7 @@ func TestDedupTableBoxes_TableFragments(t *testing.T) {
 		{"overlapping fragment", []pdf.TextBox{
 			{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
 			{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
-		}, "Alpha Beta"},
+		}, "Alpha Beta|Beta"},
 		{"adjacent identical rows", []pdf.TextBox{
 			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
 			{X0: 0, X1: 50, Top: 14, Bottom: 24, Text: "R/W", IsOCR: true},
@@ -382,6 +371,10 @@ func TestProcessOneTable_PreservesOverlappingRows(t *testing.T) {
 			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "100", IsOCR: true},
 			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "10", IsOCR: true},
 		}, [][]string{{"100"}, {"10"}}},
+		{"shorter substring text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "100", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 18, Text: "10", IsOCR: true},
+		}, [][]string{{"100"}, {"10"}}},
 		{"identical text with different heights", []pdf.TextBox{
 			{X0: 0, X1: 50, Top: 3, Bottom: 15, Text: "R/W", IsOCR: true},
 			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true},
@@ -394,6 +387,36 @@ func TestProcessOneTable_PreservesOverlappingRows(t *testing.T) {
 			}}
 			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 150, Y1: 60}, BoxIdx: []int{0, 1}}
 			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 180, 90)), tc.boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessOneTable_DeduplicatesSameCellOCR(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		first, second pdf.TextBox
+		want          [][]string
+	}{
+		{"duplicate OCR", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: " R/W ", IsOCR: true}, [][]string{{"R/W", ""}, {"", "bottom"}}},
+		{"separate words", pdf.TextBox{X0: 0, X1: 15, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 20, X1: 35, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"separate lines", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 10, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 12, Bottom: 17, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"different columns", pdf.TextBox{X0: 0, X1: 80, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 20, X1: 100, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, [][]string{{"R/W", "R/W"}, {"", "bottom"}}},
+		{"native text", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W"}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W"}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"native then OCR", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W"}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+		{"OCR then native", pdf.TextBox{X0: 0, X1: 40, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true}, pdf.TextBox{X0: 0, X1: 40, Top: 9, Bottom: 19, Text: "R/W"}, [][]string{{"R/W R/W", ""}, {"", "bottom"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			boxes := []pdf.TextBox{tc.first, tc.second, {X0: 60, X1: 90, Top: 25, Bottom: 35, Text: "bottom", IsOCR: true}}
+			doc := &MockDocAnalyzer{Healthy: true, TSRCells: []pdf.TSRCell{
+				{X0: 0, X1: 300, Y0: 0, Y1: 60, Label: "table row"}, {X0: 0, X1: 300, Y0: 60, Y1: 120, Label: "table row"},
+				{X0: 0, X1: 150, Y0: 0, Y1: 120, Label: "table column"}, {X0: 150, X1: 300, Y0: 0, Y1: 120, Label: "table column"},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 300, Y1: 120}, BoxIdx: []int{0, 1, 2}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 330, 150)), boxes, 0, doc, tbl.NewDeepDocTableBuilder(doc), match, pdf.DlaScale)
 			tbl.ConstructTable(item.Cells, nil, "", &item)
 			if !reflect.DeepEqual(item.Rows, tc.want) {
 				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
