@@ -726,6 +726,100 @@ func TestXLSXParserHeaderBelowMergedTitle(t *testing.T) {
 	}
 }
 
+// TestXLSXParserFullyCoveredRowRetained asserts a row with no cells of its own
+// is still kept when a non-blank merge master covers it. Dropping the row would
+// let the origin's rowspan continue into the next retained row and misalign it.
+func TestXLSXParserFullyCoveredRowRetained(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+		mustSetCell(t, f, "Sheet1", "A4", "G2")
+		mustSetCell(t, f, "Sheet1", "B4", "y")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	if len(td.Grid) != 4 {
+		t.Fatalf("grid rows = %d, want header + three data rows: %+v", len(td.Grid), td.Grid)
+	}
+	if !td.Grid[2][0].Covered {
+		t.Fatalf("covered row lost its marker: %+v", td.Grid[2])
+	}
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	if len(rows) != 4 || rows[2][0] != "G1" || rows[3][0] != "G2" {
+		t.Fatalf("table view rows = %v, want G1 on the covered row and G2 after it", rows)
+	}
+}
+
+// TestXLSXParserHeaderSpanClampedPerSegment asserts a header-origin merge does
+// not reserve its column in a later image segment whose body starts after the
+// merge. Only the segment that actually carries the covered rows owns the span.
+func TestXLSXParserHeaderSpanClampedPerSegment(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Q")
+		mustSetCell(t, f, "Sheet1", "B1", "shared")
+		mustMergeCell(t, f, "Sheet1", "B1", "B2")
+		mustSetCell(t, f, "Sheet1", "A2", "q2")
+		mustSetCell(t, f, "Sheet1", "A3", "q3")
+		mustSetCell(t, f, "Sheet1", "B3", "a3")
+		if err := f.AddPictureFromBytes("Sheet1", "A2", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "fig"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "header-span.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want table, image, table", len(items))
+	}
+	first := items[0]["table"].(*entity.TableData)
+	if first.Grid[0][1].RowSpan != 2 || !first.Grid[1][1].Covered {
+		t.Fatalf("first segment header span = %+v, want rowspan 2 with a covered row", first.Grid)
+	}
+	second := items[2]["table"].(*entity.TableData)
+	if second.Grid[0][1].RowSpan > 1 {
+		t.Fatalf("second segment header span = %d, want it clamped", second.Grid[0][1].RowSpan)
+	}
+	if second.Grid[1][1].Covered || second.Grid[1][1].Text != "a3" {
+		t.Fatalf("second segment body = %+v, want a3 not covered", second.Grid[1])
+	}
+}
+
+// TestMaterializeDetachedMergesCapsWidth asserts a crafted far merge that
+// crosses the header cannot allocate one cell per worksheet column.
+func TestMaterializeDetachedMergesCapsWidth(t *testing.T) {
+	rows := map[int][]string{
+		1: {"Title"},
+		2: {},
+		3: {"", "Name"},
+	}
+	ranges := []mergeRange{{sr: 1, sc: 1, er: 3, ec: 16384}}
+	kept := materializeDetachedMerges(rows, 3, ranges)
+	if len(kept) != 0 {
+		t.Fatalf("detached merge left geometry: %v", kept)
+	}
+	if len(rows[3]) != maxMergeExtentCols {
+		t.Fatalf("header width = %d, want capped at %d", len(rows[3]), maxMergeExtentCols)
+	}
+	if rows[3][0] != "Title" || rows[3][1] != "Name" {
+		t.Fatalf("header cells = %q, want Title/Name", rows[3][:2])
+	}
+}
+
 // TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
 // characters around cell text are removed, so labels wrapped in U+200C match
 // their clean form in search text.

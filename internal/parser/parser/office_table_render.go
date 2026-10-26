@@ -133,13 +133,12 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		rowNum := rowNums[i]
 		cells := append([]string(nil), rowByNum[rowNum]...)
 		colStart, colEnd := nonEmptyColumnRange(cells)
-		if colStart == 0 {
-			continue
-		}
 		// A merge slave can be the row's only value in a column before the
 		// surviving real cells. The position tuple still has to cover the
 		// merged group's columns, exactly as the pre-geometry parser did when
-		// it copied the master value into the slave cell.
+		// it copied the master value into the slave cell. Do this before the
+		// empty-row skip: a row with no cells of its own is still a real grid
+		// row when a non-blank merge master covers it.
 		for _, m := range ranges {
 			if m.sr > rowNum || m.er < rowNum {
 				continue
@@ -148,12 +147,15 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			if m.sc < 1 || m.sc > len(masterRow) || strings.TrimSpace(masterRow[m.sc-1]) == "" {
 				continue
 			}
-			if m.sc < colStart {
+			if colStart == 0 || m.sc < colStart {
 				colStart = m.sc
 			}
 			if m.ec > colEnd {
 				colEnd = m.ec
 			}
+		}
+		if colStart == 0 {
+			continue
 		}
 		rows = append(rows, spreadsheetSegmentRow{
 			cells:    cells,
@@ -324,22 +326,32 @@ func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges 
 		if strings.TrimSpace(master) == "" {
 			continue
 		}
+		// readSpreadsheetRecords caps merge padding at maxMergeExtentCols so a
+		// pathological far merge cannot allocate one cell per worksheet column.
+		// A detached merge bypasses that padding, so apply the same cap here.
+		endCol := m.ec
+		if endCol > maxMergeExtentCols {
+			endCol = maxMergeExtentCols
+		}
+		if m.sc > endCol {
+			continue
+		}
 		for row := m.sr; row <= m.er; row++ {
 			cells, ok := rowByNum[row]
 			if !ok {
 				continue
 			}
-			if m.ec > len(cells) {
-				grown := make([]string, m.ec)
-				copy(grown, cells)
-				cells = grown
-				rowByNum[row] = cells
-			}
 			if row == headerRow {
 				// The header row carried a merged title across the columns
 				// the range covers; the legacy header-inheritance path filled
 				// every one of them.
-				for c := m.sc; c <= m.ec; c++ {
+				if endCol > len(cells) {
+					grown := make([]string, endCol)
+					copy(grown, cells)
+					cells = grown
+					rowByNum[row] = cells
+				}
+				for c := m.sc; c <= endCol; c++ {
 					if strings.TrimSpace(cells[c-1]) == "" {
 						cells[c-1] = master
 					}
@@ -350,6 +362,12 @@ func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges 
 			// data merge keeps its value on the origin column, matching the
 			// legacy data-inheritance rule.
 			if m.sc == m.ec || row == m.sr {
+				if m.sc > len(cells) {
+					grown := make([]string, m.sc)
+					copy(grown, cells)
+					cells = grown
+					rowByNum[row] = cells
+				}
 				if strings.TrimSpace(cells[m.sc-1]) == "" {
 					cells[m.sc-1] = master
 				}
@@ -376,6 +394,12 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 		sources = append(sources, sourceRow{num: r.rowNum, cells: r.cells})
 	}
 
+	present := make(map[int]bool, len(sources))
+	for _, src := range sources {
+		present[src.num] = true
+	}
+	localRanges := clampMergeRanges(ranges, present)
+
 	logical := make([][]tableutil.CellInput, 0, len(sources))
 	headerFlags := make([]bool, 0, len(sources))
 	for i, src := range sources {
@@ -384,14 +408,14 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 		// emitted so the grid can place the span; GetRows truncates at the
 		// last valued cell.
 		width := len(cells)
-		for _, m := range ranges {
+		for _, m := range localRanges {
 			if m.sr == src.num && m.sc > width {
 				width = m.sc
 			}
 		}
 		row := make([]tableutil.CellInput, 0, width)
 		for c := 0; c < width; c++ {
-			m, origin := mergeAt(ranges, src.num, c+1)
+			m, origin := mergeAt(localRanges, src.num, c+1)
 			if m != nil && !origin {
 				continue
 			}
@@ -424,6 +448,35 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 		}
 	}
 	return td
+}
+
+// clampMergeRanges keeps only the consecutive rows of each merge that are
+// present in this segment. A header is repeated in every segment, so a header-
+// origin merge whose covered rows live in an earlier segment must not reserve
+// a column in a later one; clamping its RowSpan to 1 (or its ColSpan-only form)
+// prevents the later segment from marking an unrelated body row Covered.
+func clampMergeRanges(ranges []mergeRange, present map[int]bool) []mergeRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+	local := make([]mergeRange, 0, len(ranges))
+	for _, m := range ranges {
+		if !present[m.sr] {
+			continue
+		}
+		end := m.sr
+		for row := m.sr; row <= m.er; row++ {
+			if !present[row] {
+				break
+			}
+			end = row
+		}
+		if end == m.sr && m.sc == m.ec {
+			continue // one-row vertical span is not a merge
+		}
+		local = append(local, mergeRange{sr: m.sr, sc: m.sc, er: end, ec: m.ec})
+	}
+	return local
 }
 
 // mergeTouchesRow reports whether any merge rectangle covers row.
