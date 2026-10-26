@@ -24,7 +24,7 @@ export const useObjectFields = () => {
     },
     [],
   );
-  
+
   const validateKeys = (
     obj: any,
     path: (string | number)[] = [],
