@@ -122,11 +122,6 @@ const (
 	// insufficient, and one extra re-search turn costs a full prompt — far more
 	// than the extra characters.
 	navClaimEvidenceChars = 1200
-	// navClaimSufficientHits is the count at which the model may cite the claims
-	// without deep-reading chunks. It is a count of RELEVANT hits: both legs
-	// apply a relevance floor (below), because a leg with no floor returns a full
-	// page for any document and a count over it states nothing.
-	navClaimSufficientHits = 3
 	// navClaimMinCoverage is the relevance floor applied to every recalled claim:
 	// the share of the question's content tokens the claim text must contain.
 	// The store's own defaults make a floor mandatory — full-text recall runs at
@@ -134,15 +129,8 @@ const (
 	// nearest neighbours at any distance — so without it every document yielded a
 	// full page for every question. Measured failure: a Mike Tyson question
 	// answered from a TV-series document.
-	navClaimMinCoverage = 0.3
-	// navClaimDenseSimilarity is the dense leg's cosine floor: the paraphrase leg
-	// must not hand the fusion rows that are merely nearest, not near.
+	navClaimMinCoverage     = 0.3
 	navClaimDenseSimilarity = 0.4
-	// navClaimMinDocs is the document diversity a sufficient recall needs. One
-	// document's claims answer one hop; a multi-document question needs evidence
-	// from more than one place, and a single-document recall is exactly what a
-	// degenerate router returns for every question.
-	navClaimMinDocs = 2
 	// navClaimRRFK is the reciprocal-rank-fusion constant. RRF consumes ranks
 	// only, so the two legs' scores never have to be comparable — their FLOORS
 	// are what decides membership.
@@ -154,12 +142,6 @@ const (
 	// barrier: a query-only call removes it, at the cost of claiming over a few
 	// routed documents instead of one chosen by the model.
 	navQueryRouteDocs = 3
-	// navClaimPrefetchTopN bounds the claims the PIPELINE recalls before the
-	// loop. It is both a cost bound and an accuracy bound: the block is the whole
-	// prompt of the sufficient-claims answer and also what decides that verdict,
-	// so a cap below navClaimSufficientHits x navClaimMinDocs could never
-	// terminate early.
-	navClaimPrefetchTopN = 3 * navClaimTopN
 )
 
 // navStructureRoute resolves candidate doc_ids for a query when the caller
@@ -225,12 +207,21 @@ type chunkWithText struct {
 // to list_chunks when it needs the surrounding passage. docID names the document
 // the claim was compiled from, which is what makes document diversity checkable.
 type claimHit struct {
-	docID       string
-	chunkID     string
-	name        string
-	description string
-	quote       string
-	score       float64
+	docID string
+	// chunkID is the chunk this claim is ATTRIBUTED to: the source chunk the
+	// caller matched it by, which is not necessarily sourceChunkIDs[0] — a claim
+	// compiled from a multi-chunk passage names several. Rendering and citation
+	// handles use this one.
+	chunkID string
+	// sourceChunkIDs is every chunk the claim was compiled from, as stored. A
+	// chunk-anchored lookup must match against ALL of them: matching only the
+	// first would drop a claim whose first source chunk is not in the retrieved
+	// page while its second is.
+	sourceChunkIDs []string
+	name           string
+	description    string
+	quote          string
+	score          float64
 }
 
 // claimReader is the OPTIONAL claim-recall capability of a structureReader. A
@@ -468,12 +459,13 @@ func parseClaimHit(row map[string]interface{}) (claimHit, bool) {
 		docID = ""
 	}
 	return claimHit{
-		docID:       docID,
-		chunkID:     ids[0],
-		name:        name,
-		description: strings.TrimSpace(stringFromAny(payload["description"])),
-		quote:       firstEvidenceQuote(payload["evidence"]),
-		score:       floatFromMap(row, "_score"),
+		docID:          docID,
+		chunkID:        ids[0],
+		sourceChunkIDs: ids,
+		name:           name,
+		description:    strings.TrimSpace(stringFromAny(payload["description"])),
+		quote:          firstEvidenceQuote(payload["evidence"]),
+		score:          floatFromMap(row, "_score"),
 	}, true
 }
 
@@ -1498,209 +1490,6 @@ func (g *NavigateStructureTool) Info(_ context.Context) (*schema.ToolInfo, error
 // <structure_navigation> document.
 func (g *NavigateStructureTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...einotool.Option) (string, error) {
 	return guardedToolRun(ctx, navigateStructureToolName, g.invokableRun, argumentsInJSON)
-}
-
-// claimPrefetch is the ONE claim recall a turn performs before its loop, with
-// the verdict the run flow acts on.
-//
-// The recall exists because the compiled tools are injected rather than
-// declared, and a model that prefers one-step keyword search never calls them:
-// in the FRAMES runs every turn was offered navigate_structure and the tool was
-// called zero times. Evidence a model cannot be relied upon to request has to be
-// retrieved by the pipeline, and the claim leg is exactly that - a flat read that
-// needs no document choice.
-//
-// The result is a CONTROL SIGNAL, not prompt text. Claims that answer the
-// question terminate the turn without reading a single raw chunk; a recall that
-// does not cover the question is dropped and the ordinary tool-driven
-// exploration runs. Nothing is appended to the system instruction: a block there
-// is re-billed on every model call of the turn, which is the cost this replaces.
-type claimPrefetch struct {
-	docs   []string
-	claims []claimHit
-	// evidence is the rendered claim block, carrying the [ID:n] handles its
-	// source chunks were stamped with. It is rendered ONLY for a sufficient
-	// recall, because rendering is what publishes handles: a discarded recall
-	// must not leave handles behind for passages the model never saw.
-	evidence string
-	// sufficient is true when claimsAnswerQuestion accepted the recall.
-	sufficient bool
-}
-
-// recallCompiledClaims recalls the bound datasets' claims for this turn's
-// question and decides whether they answer it themselves.
-func recallCompiledClaims(ctx context.Context, tenantID string, datasetIDs []string, messages []*schema.Message) claimPrefetch {
-	question := strings.TrimSpace(lastUserQuestion(messages))
-	if question == "" || len(datasetIDs) == 0 {
-		return claimPrefetch{}
-	}
-	// A compiled dataset does not imply claims: trees, timelines and mindmaps all
-	// carry compile_kwd but no evidence rows. Probing first keeps both retrieval
-	// legs from running over a corpus that can only come back empty.
-	if !claimRowsPresent(ctx, tenantID, datasetIDs) {
-		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
-			zap.Strings("datasets", datasetIDs),
-			zap.String("reason", "no claim rows in the bound datasets"))
-		return claimPrefetch{}
-	}
-	reader := getStructureReader()
-	// NO document routing: the claim leg is a flat, corpus-wide read, which is
-	// the whole reason it can run before the loop. Routing first (the nav-tree
-	// KNN) reintroduced the document choice this path exists to avoid, and it
-	// fails silently where it matters: a dataset whose nav tree holds a handful
-	// of rows routes every question to the same one or two documents, and the
-	// recall then dutifully returns their claims for every question.
-	//
-	// The turn's document scope, when set, is still honoured — as a filter on the
-	// claim rows themselves.
-	docScope, _ := resolveDocumentScope(ctx, nil)
-	// A non-nil EMPTY scope means the turn allows no documents. The reader drops
-	// its doc_id filter when the scope is empty, so passing one through would read
-	// as "unrestricted" and recall the whole dataset — the opposite of the turn's
-	// scope. Stop before the read instead.
-	if docScope != nil && len(docScope) == 0 {
-		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
-			zap.Strings("datasets", datasetIDs),
-			zap.String("reason", "no documents in the turn's scope"))
-		return claimPrefetch{}
-	}
-	claims := recallClaimsAcrossDatasets(ctx, tenantID, datasetIDs, docScope, question, navClaimPrefetchTopN, reader)
-
-	pf := claimPrefetch{claims: claims, docs: claimDocsInOrder(claims)}
-	pf.sufficient = claimsAnswerQuestion(claims, len(pf.docs))
-	if !pf.sufficient {
-		common.InfoCtx(ctx, "agentic_rag: claim recall insufficient",
-			zap.String("query", question),
-			zap.Int("claims", len(claims)),
-			zap.Int("docs", len(pf.docs)),
-			zap.Int("required_claims", navClaimSufficientHits),
-			zap.Int("required_docs", navClaimMinDocs))
-		return pf
-	}
-	pf.evidence = claimEvidenceBlock(ctx, claims)
-	common.InfoCtx(ctx, "agentic_rag: claim recall sufficient",
-		zap.String("query", question),
-		zap.Int("claims", len(claims)),
-		zap.Strings("docs", pf.docs),
-		zap.Int("evidence_bytes", len(pf.evidence)))
-	return pf
-}
-
-// recallClaimsAcrossDatasets runs the flat claim recall over every bound
-// dataset and merges the results by claim name, keeping the first (best-ranked)
-// occurrence. Each dataset is one pair of legs; the corpus-wide read is what
-// makes the pre-loop recall independent of any document ranking.
-func recallClaimsAcrossDatasets(ctx context.Context, tenantID string, datasetIDs, docScope []string, query string, limit int, reader structureReader) []claimHit {
-	cr, ok := reader.(claimReader)
-	if !ok {
-		return nil
-	}
-	kindList := claimKindList(structureKindsFor(""))
-	qvec := claimQueryVector(ctx, tenantID, query)
-
-	// Group the hits by source document, in ranked order, then take them
-	// round-robin. A ranking's top-N is routinely dominated by ONE document, and
-	// evidence from a single document cannot answer a multi-document question;
-	// taking one claim per document per round is what makes the sufficiency
-	// diversity check meaningful instead of accidental.
-	var docOrder []string
-	byDoc := map[string][]claimHit{}
-	seen := map[string]struct{}{}
-	for _, kbID := range datasetIDs {
-		hits, err := cr.ReadClaims(ctx, tenantID, kbID, docScope, kindList, query, qvec, limit)
-		if err != nil {
-			common.DebugCtx(ctx, "claim recall: dataset read failed",
-				zap.String("kb_id", kbID), zap.Error(err))
-			continue
-		}
-		for _, h := range hits {
-			key := strings.ToLower(strings.TrimSpace(h.name))
-			if key == "" {
-				continue
-			}
-			if _, dup := seen[key]; dup {
-				continue
-			}
-			seen[key] = struct{}{}
-			if _, ok := byDoc[h.docID]; !ok {
-				docOrder = append(docOrder, h.docID)
-			}
-			byDoc[h.docID] = append(byDoc[h.docID], h)
-		}
-	}
-	if len(docOrder) == 0 {
-		return nil
-	}
-	groups := make([][]claimHit, 0, len(docOrder))
-	for _, d := range docOrder {
-		groups = append(groups, byDoc[d])
-	}
-	if limit > 0 {
-		groups = trimClaimsRoundRobin(groups, limit)
-	}
-	out := make([]claimHit, 0, limit)
-	for _, g := range groups {
-		out = append(out, g...)
-	}
-	return out
-}
-
-// claimDocsInOrder returns the distinct source documents of a claim set, in
-// first-appearance order, for logging and evidence grouping.
-func claimDocsInOrder(claims []claimHit) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(claims))
-	for _, c := range claims {
-		if c.docID == "" {
-			continue
-		}
-		if _, dup := seen[c.docID]; dup {
-			continue
-		}
-		seen[c.docID] = struct{}{}
-		out = append(out, c.docID)
-	}
-	return out
-}
-
-// claimsAnswerQuestion reports whether a recall covers the question well enough
-// to answer without reading any raw chunk.
-//
-// Two conditions, both necessary:
-//   - COUNT: at least navClaimSufficientHits claims. Only meaningful because
-//     recall already applied the relevance floor (navClaimMinCoverage), so a hit
-//     states something about the question rather than sharing a stopword with it.
-//   - DIVERSITY: claims from at least navClaimMinDocs documents. A page of
-//     statements from ONE document answers at most one hop, and a single-document
-//     recall is also exactly what a broken document ranking produces for every
-//     question — the shape of the zero-score run this guard was added for.
-func claimsAnswerQuestion(claims []claimHit, docs int) bool {
-	return len(claims) >= navClaimSufficientHits && docs >= navClaimMinDocs
-}
-
-// claimEvidenceBlock renders the recalled claims as answer material, one <doc>
-// element per source document so a multi-document question keeps its provenance
-// and the answer can name which document each fact came from.
-func claimEvidenceBlock(ctx context.Context, claims []claimHit) string {
-	var b strings.Builder
-	current := ""
-	for _, c := range claims {
-		if c.docID != current {
-			if current != "" {
-				b.WriteString("</doc>\n")
-			}
-			if c.docID != "" {
-				fmt.Fprintf(&b, "<doc doc_id=\"%s\">\n", xmlEscape(c.docID))
-			}
-			current = c.docID
-		}
-		b.WriteString(claimOutlineLine(ctx, c))
-		b.WriteString("\n")
-	}
-	if current != "" {
-		b.WriteString("</doc>\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
 }
 
 func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSON string) (string, error) {

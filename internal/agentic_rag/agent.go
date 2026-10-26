@@ -343,6 +343,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
 	}
 	ctx = WithConversationKey(ctx, convKey)
+	// The turn's compiled-evidence state: the scope claims are looked up in,
+	// the corpus-level existence probe, and the claims already shown. Installed
+	// here so the pre-loop probe and every locate tool share one scope.
+	ctx = withCompiledRun(ctx, in.TenantID, in.DatasetIDs)
 
 	// Identity the judge is chosen for: the decision model is configured per chat
 	// and per tenant in the UI, so the filter has to know which run it is
@@ -385,36 +389,39 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	maxIter := agenticMaxIterations(in.MaxIterations)
 
-	// ONE claim recall per turn, BEFORE the loop, consumed as a control signal
-	// rather than as prompt text.
+	// ONE compiled-evidence probe per turn, BEFORE the loop: search once, then
+	// ask the model whether the claims COMPILED FROM what that search returned
+	// already answer the question.
 	//
-	// A recall that covers the question needs no document and no chunk: the
-	// claims carry their own verbatim evidence, so the turn terminates on a
-	// single model call over them. Descending the structure again, or reading
-	// the raw chunks they were compiled from, could only re-derive what the
-	// claims already state - and every additional step is another chance to
-	// prune away the branch that holds the answer.
+	// The ordering is the point. The search is the same hybrid chunk retrieval
+	// the locate tools run, so it works identically on a corpus with compiled
+	// artifacts and one without; what differs is only what is offered next. With
+	// claims, the turn can terminate on a single model call over them - the
+	// claims carry their own verbatim evidence, so no raw chunk has to be read.
+	// Without them (or when the model judges them insufficient) the loop runs
+	// exactly as it would have, and the model reads chunks itself.
 	//
-	// A recall that does not cover the question is discarded here. The loop then
-	// runs exactly as it would have without the recall, and navigate_structure
-	// stays available for the model to call on demand.
+	// The probe is a control signal, not prompt text: an insufficient block is
+	// dropped here rather than pinned into the system instruction, where it
+	// would be re-billed on every call of the turn.
 	if len(in.Tools) == 0 && !tmpl.strictTools {
-		pf := recallCompiledClaims(ctx, in.TenantID, in.DatasetIDs, in.Messages)
-		if pf.sufficient {
+		pf := prefetchCompiledEvidence(ctx, in.TenantID, in.DatasetIDs, in.Messages)
+		if len(pf.claims) > 0 {
 			answer, aerr := answerFromClaims(ctx, synthModelFor(in), tmpl.Content, in.Messages, pf)
 			switch {
 			case aerr != nil:
 				// Falling through keeps the turn answerable: the claims are
 				// dropped from the registry's numbering (nothing was shown) and
 				// the loop retrieves what it needs itself.
-				common.WarnCtx(ctx, "agentic_rag: claim answer failed; falling back to the loop", zap.Error(aerr))
+				common.WarnCtx(ctx, "agentic_rag: compiled claim answer failed; falling back to the loop", zap.Error(aerr))
 			case strings.TrimSpace(answer) != "":
 				// The loop is skipped entirely, so this line is the only record
 				// that the turn never read a chunk: a review of tool usage must
 				// be able to tell it from a turn the model gave up on.
 				common.InfoCtx(ctx, "agentic_rag: answered from compiled claims",
 					zap.Int("claims", len(pf.claims)),
-					zap.Int("docs", len(pf.docs)),
+					zap.Int("chunks", len(pf.chunks)),
+					zap.Strings("docs", claimDocsInOrder(pf.claims)),
 					zap.Int("answer_bytes", len(answer)))
 				emit(ctx, in.OnDelta, answer, "")
 				return answer, nil
@@ -946,17 +953,17 @@ func parseClaimAnswer(reply string) claimAnswer {
 	return out
 }
 
-// answerFromClaims is the termination of a turn whose pre-loop claim recall
-// already covers the question: ONE model call over the claims, with no tools and
-// therefore no raw-chunk read. It returns ("", nil) when the model judged the
-// claims insufficient, which the caller treats as a reason to run the ordinary
-// loop instead.
+// answerFromClaims is the termination of a turn whose pre-loop compiled
+// prefetch already found claims for the question: ONE model call over them, with
+// no tools and therefore no raw-chunk read. It returns ("", nil) when the model
+// judged the claims insufficient, which the caller treats as a reason to run the
+// ordinary loop instead.
 func answerFromClaims(
 	ctx context.Context,
 	m *models.EinoChatModel,
 	instruction string,
 	messages []*schema.Message,
-	pf claimPrefetch,
+	pf compiledPrefetch,
 ) (string, error) {
 	if m == nil || strings.TrimSpace(pf.evidence) == "" {
 		return "", nil
@@ -985,7 +992,8 @@ func answerFromClaims(
 	if !verdict.answerable {
 		common.InfoCtx(ctx, "agentic_rag: claims judged insufficient by the model",
 			zap.Int("claims", len(pf.claims)),
-			zap.Strings("docs", pf.docs),
+			zap.Int("chunks", len(pf.chunks)),
+			zap.Strings("docs", claimDocsInOrder(pf.claims)),
 			zap.String("missing", truncateForLog(verdict.missing, 200)))
 		return "", nil
 	}

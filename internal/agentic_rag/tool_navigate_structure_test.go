@@ -21,8 +21,6 @@ import (
 	"sort"
 	"strings"
 	"testing"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 // fakeStructureReader returns canned compiled-structure rows per document.
@@ -691,142 +689,6 @@ func TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint(t *testing.T) {
 	}
 }
 
-// TestRecallCompiledClaimsSufficient: enough distinct claims, from more than one
-// document, make the turn answerable without reading a single raw chunk - and
-// the evidence they carry is rendered WITH the handles the answer must cite.
-func TestRecallCompiledClaimsSufficient(t *testing.T) {
-	stubClaimProbe(t, true)
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{
-			"d1": {
-				{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
-				{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
-			},
-			"d2": {
-				{chunkID: "c2", name: "Acme employs 900 people", quote: "a workforce of 900"},
-			},
-		},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
-	ctx := WithEvidenceRegistry(context.Background(), NewEvidenceRegistry())
-	pf := recallCompiledClaims(ctx, "tenant-1", []string{"kb1"}, msgs)
-
-	if !pf.sufficient {
-		t.Fatalf("3 claims over 2 documents must be sufficient, got %d claims over %v", len(pf.claims), pf.docs)
-	}
-	if len(pf.claims) != 3 || len(pf.docs) != 2 {
-		t.Fatalf("recall = %d claims over %v, want 3 over 2 documents", len(pf.claims), pf.docs)
-	}
-	if !strings.Contains(pf.evidence, `doc_id="d1"`) || !strings.Contains(pf.evidence, `doc_id="d2"`) ||
-		!strings.Contains(pf.evidence, "- [claim] Acme was founded in 1994") {
-		t.Errorf("evidence must carry both docs and their claims, got:\n%s", pf.evidence)
-	}
-	for _, want := range []string{"ref=0", "ref=1"} {
-		if !strings.Contains(pf.evidence, want) {
-			t.Errorf("evidence must publish %q so the answer can cite it, got:\n%s", want, pf.evidence)
-		}
-	}
-}
-
-// TestRecallCompiledClaimsSingleDocumentIsNotSufficient: one document's claims
-// answer one hop at most. This is also the exact shape a broken document ranking
-// produces for every question, so the gate must refuse it.
-func TestRecallCompiledClaimsSingleDocumentIsNotSufficient(t *testing.T) {
-	stubClaimProbe(t, true)
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{"d1": {
-			{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
-			{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
-			{chunkID: "c2", name: "Acme employs 900 people", quote: "a workforce of 900"},
-		}},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
-	pf := recallCompiledClaims(context.Background(), "tenant-1", []string{"kb1"}, msgs)
-	if pf.sufficient {
-		t.Fatalf("claims from one document must not terminate the turn, got %d claims over %v", len(pf.claims), pf.docs)
-	}
-	if pf.evidence != "" {
-		t.Errorf("an insufficient recall must not render evidence, got:\n%s", pf.evidence)
-	}
-}
-
-// TestRecallCompiledClaimsEmptyDocumentScopeSkipsRecall: a non-nil EMPTY scope
-// means the turn allows no documents. The reader treats an empty docIDs slice as
-// "the whole dataset", so the recall must stop before the read instead of
-// widening the turn's scope to everything.
-func TestRecallCompiledClaimsEmptyDocumentScopeSkipsRecall(t *testing.T) {
-	stubClaimProbe(t, true)
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{
-			"d1": {{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"}},
-			"d2": {{chunkID: "c2", name: "Acme employs 900 people", quote: "a workforce of 900"}},
-		},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
-	ctx := withDocumentScope(context.Background(), []string{})
-	pf := recallCompiledClaims(ctx, "tenant-1", []string{"kb1"}, msgs)
-	if len(pf.claims) != 0 || pf.sufficient || pf.evidence != "" {
-		t.Fatalf("an empty document scope must skip the recall, got %d claims (sufficient=%v, evidence=%q)",
-			len(pf.claims), pf.sufficient, pf.evidence)
-	}
-}
-
-// TestRecallCompiledClaimsInsufficientIsDropped: a recall below the sufficiency
-// count must not reach the model - neither as evidence nor as published handles
-// for passages it never saw.
-func TestRecallCompiledClaimsInsufficientIsDropped(t *testing.T) {
-	stubClaimProbe(t, true)
-	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{"d1": {{
-			chunkID: "c1",
-			name:    "Acme was founded in 1994",
-			quote:   "Acme, founded in 1994",
-		}}},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
-	registry := NewEvidenceRegistry()
-	pf := recallCompiledClaims(WithEvidenceRegistry(context.Background(), registry), "tenant-1", []string{"kb1"}, msgs)
-	if pf.sufficient {
-		t.Fatalf("1 claim must not be sufficient (%d required)", navClaimSufficientHits)
-	}
-	if pf.evidence != "" {
-		t.Errorf("an insufficient recall must not render evidence, got:\n%s", pf.evidence)
-	}
-	if got := len(registry.IDs()); got != 0 {
-		t.Errorf("a dropped recall must not publish handles, got %d", got)
-	}
-}
-
-// TestRecallCompiledClaimsSkipsEmptyHits: nothing matched, so nothing is
-// offered - the loop runs exactly as it would without the recall.
-func TestRecallCompiledClaimsSkipsEmptyHits(t *testing.T) {
-	stubClaimProbe(t, true)
-	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims:              map[string][]claimHit{},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "nothing here"}}
-	pf := recallCompiledClaims(context.Background(), "tenant-1", []string{"kb1"}, msgs)
-	if pf.sufficient || pf.evidence != "" || len(pf.claims) != 0 {
-		t.Errorf("an empty recall must yield an empty verdict, got %+v", pf)
-	}
-}
-
-// stubClaimProbe drives the claim-prefetch gate without an engine.
-func stubClaimProbe(t *testing.T, present bool) {
-	t.Helper()
-	prev := claimRowsPresent
-	claimRowsPresent = func(context.Context, string, []string) bool { return present }
-	t.Cleanup(func() { claimRowsPresent = prev })
-}
-
-// claimsPerDoc builds n distinct claims for one document.
 func claimsPerDoc(docID string, n int) []claimHit {
 	out := make([]claimHit, 0, n)
 	for i := 0; i < n; i++ {
@@ -842,29 +704,6 @@ func claimsPerDoc(docID string, n int) []claimHit {
 // TestRecallCapsClaims: the recall block is the whole prompt of the answer call,
 // so it honours its cap - and the cap is spread across documents, not spent on
 // the first one.
-func TestRecallCapsClaims(t *testing.T) {
-	stubClaimProbe(t, true)
-	docs := []string{"d1", "d2", "d3", "d4"}
-	claims := map[string][]claimHit{}
-	for _, d := range docs {
-		claims[d] = claimsPerDoc(d, 8)
-	}
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims:              claims,
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "acme"}}
-	pf := recallCompiledClaims(context.Background(), "tenant-1", []string{"kb1"}, msgs)
-	if got := strings.Count(pf.evidence, "- [claim] "); got != navClaimPrefetchTopN {
-		t.Errorf("recall rendered %d claims, want the cap %d:\n%s", got, navClaimPrefetchTopN, pf.evidence)
-	}
-	for _, docID := range docs {
-		if !strings.Contains(pf.evidence, `doc_id="`+docID+`"`) {
-			t.Errorf("the cap must be spread across documents, %s missing:\n%s", docID, pf.evidence)
-		}
-	}
-}
-
 // TestClaimAnswerPromptCarriesEvidenceAndCitationRule pins what the
 // sufficient-claims answer depends on: the evidence itself, the rule that turns
 // each fact line into a resolvable reference, and the refusal path - a model that
@@ -922,27 +761,5 @@ func TestQueryOnlyToolCallIsUncapped(t *testing.T) {
 	}
 	if got := strings.Count(out, "- [claim] "); got != 10 {
 		t.Errorf("a model-invoked call must not be capped, got %d claims:\n%s", got, out)
-	}
-}
-
-// TestRecallSkippedWithoutClaimRows: a compiled but claim-less dataset (a tree
-// or timeline) must not pay for a routing call and two retrieval legs.
-func TestRecallSkippedWithoutClaimRows(t *testing.T) {
-	stubClaimProbe(t, false)
-	installFakeStructureRoute(t, [][2]string{{"d1", "A"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		// Claims exist in the fake store on purpose: the gate must win, otherwise
-		// this test would pass for the wrong reason.
-		claims: map[string][]claimHit{"d1": {{
-			chunkID: "c1",
-			name:    "Acme was founded in 1994",
-			quote:   "Acme, founded in 1994",
-		}}},
-	})
-	msgs := []*schema.Message{{Role: schema.User, Content: "when was Acme founded"}}
-	pf := recallCompiledClaims(context.Background(), "tenant-1", []string{"kb1"}, msgs)
-	if pf.sufficient || pf.evidence != "" || len(pf.claims) != 0 {
-		t.Errorf("no claim rows must disable the recall, got %+v", pf)
 	}
 }

@@ -563,6 +563,14 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	// exists, and only the corpus-passage tools can pay for that (see
 	// snippetFilterTools).
 	hits = filterSnippetHits(ctx, tool, hits)
+	// Compiled evidence comes FIRST, ahead of the hits it was compiled from: a
+	// corpus that has claims offers the propositions (plus their verbatim
+	// quotes) before the raw passage, so the model can answer without paying for
+	// a deep read. The block is empty for a corpus without claims, for web hits,
+	// and for claims this turn already showed.
+	if notice := compiledEvidenceNotice(ctx, tool, hits); notice != "" {
+		notices = append(notices, notice)
+	}
 	// Single serve point for every locate tool: one debug line per served chunk
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
