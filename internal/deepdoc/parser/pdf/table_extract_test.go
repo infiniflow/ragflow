@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -248,25 +249,18 @@ func (b *twoRowTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return rows
 }
 
-// TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill verifies that
-// two overlapping OCR boxes over the same table region (one text box and a
-// nested duplicate detection covering part of the same text, e.g. "Alpha
-// Beta" and "Beta") are collapsed before cell assignment, matching Python's
-// pipeline order (_naive_vertical_merge runs before construct_table).
-// Without the collapse, the two boxes independently pick their own
-// best-matching row, spreading the duplicated word across two different
-// cells instead of landing once in a single row.
-func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
+// An overlapping duplicate fragment must not add text to a neighboring row.
+func TestProcessOneTable_DeduplicatesOverlappingFragments(t *testing.T) {
 	cfg := pdf.DefaultParserConfig()
 	p := NewParser(cfg)
 
 	pageImg := image.NewRGBA(image.Rect(0, 0, 600, 600))
-	// PDF-point space. Box2 ("Beta") is a nested duplicate OCR detection
+	// PDF-point space. Box2 ("Beta") is a partial duplicate OCR detection
 	// overlapping the tail of box1 ("Alpha Beta"): by itself it best-matches
 	// the second TSR row, while box1 alone best-matches the first.
 	boxes := []pdf.TextBox{
-		{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta"},
-		{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta"},
+		{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
+		{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
 	}
 	match := tbl.TableMatch{
 		Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 600, Y1: 600, Label: pdf.LayoutTypeTable},
@@ -282,32 +276,30 @@ func TestProcessOneTable_CollapsesOverlappingBoxesBeforeCellFill(t *testing.T) {
 	}
 
 	item := p.processOneTable(t.Context(), pageImg, boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
-	// Python's construct_table groups boxes by their R/C labels, producing a
-	// row only for an R that carries a box. Both boxes land in the SAME row
-	// (they overlap vertically), so the grid is 1x1 — not 2x1.
+	// Only the complete box survives, leaving one occupied row.
 	if len(item.Grid) != 1 || len(item.Grid[0]) != 1 {
 		t.Fatalf("grid shape = %v, want 1x1 (R/C grouping emits a row only for the R that carries the box)", item.Grid)
 	}
 
 	row0 := item.Grid[0][0].Text
-	if row0 == "" {
-		t.Fatalf("row0 = %q, want non-empty: overlapping boxes must merge into a single cell assignment instead of spreading duplicated text across rows", row0)
+	if row0 != "Alpha Beta" {
+		t.Fatalf("row0 = %q, want Alpha Beta exactly once", row0)
 	}
 }
 
-// TestDedupNestedBoxes_IdenticalBBoxKeepsContent locks that two boxes with
+// TestDedupTableBoxes_IdenticalBBoxKeepsContent locks that two boxes with
 // IDENTICAL bbox AND identical text are not BOTH dropped. The containment
 // check drops the inner box when its bbox lies fully inside the outer's and
 // the outer text contains the inner's — but for identical bboxes each box is
 // "inside" the other, so both get marked for removal and the cell content
 // vanishes. Only STRICT containment may drop; identical-bbox boxes must keep
 // at least one copy.
-func TestDedupNestedBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
+func TestDedupTableBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
 	boxes := []pdf.TextBox{
 		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
 		{X0: 100, X1: 300, Top: 100, Bottom: 120, Text: "Revenue", IsOCR: true},
 	}
-	got := dedupNestedBoxes(boxes)
+	got := dedupTableBoxes(boxes)
 	if len(got) == 0 {
 		t.Fatal("identical bbox+text boxes were BOTH dropped — content loss; at least one copy must survive")
 	}
@@ -315,5 +307,63 @@ func TestDedupNestedBoxes_IdenticalBBoxKeepsContent(t *testing.T) {
 		if strings.TrimSpace(b.Text) != "Revenue" {
 			t.Errorf("surviving box text = %q, want %q", b.Text, "Revenue")
 		}
+	}
+}
+
+func TestDedupTableBoxes_TableFragments(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		boxes []pdf.TextBox
+		want  string
+	}{
+		{"overlapping fragment", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha Beta", IsOCR: true},
+			{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
+		}, "Alpha Beta"},
+		{"adjacent identical rows", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 14, Bottom: 24, Text: "R/W", IsOCR: true},
+		}, "R/W|R/W"},
+		{"adjacent columns", []pdf.TextBox{
+			{X0: 0, X1: 20, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 21, X1: 41, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+		}, "R/W|R/W"},
+		{"taller fragment", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "Alpha Beta", IsOCR: true},
+			{X0: 20, X1: 50, Top: 5, Bottom: 25, Text: "Beta", IsOCR: true},
+		}, "Alpha Beta|Beta"},
+		{"overlap with distinct text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 25, Text: "Alpha", IsOCR: true},
+			{X0: 20, X1: 50, Top: 18.33, Bottom: 28.33, Text: "Beta", IsOCR: true},
+		}, "Alpha|Beta"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var texts []string
+			for _, b := range dedupTableBoxes(tc.boxes) {
+				texts = append(texts, b.Text)
+			}
+			if got := strings.Join(texts, "|"); got != tc.want {
+				t.Fatalf("text = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestProcessOneTable_PreservesAdjacentRows(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 90, Top: 5, Bottom: 15, Text: "功能"},
+		{X0: 10, X1: 90, Top: 17, Bottom: 27, Text: "输入"},
+		{X0: 10, X1: 90, Top: 29, Bottom: 39, Text: "输出"},
+	}
+	match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 300, Y1: 150}, BoxIdx: []int{0, 1, 2}}
+	builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+		{X0: 0, X1: 300, Y0: 0, Y1: 48},
+		{X0: 0, X1: 300, Y0: 48, Y1: 84},
+		{X0: 0, X1: 300, Y0: 84, Y1: 126},
+	}}
+	item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 300, 150)), boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+	tbl.ConstructTable(item.Cells, nil, "", &item)
+	if want := [][]string{{"功能"}, {"输入"}, {"输出"}}; !reflect.DeepEqual(item.Rows, want) {
+		t.Fatalf("rows = %v, want %v", item.Rows, want)
 	}
 }

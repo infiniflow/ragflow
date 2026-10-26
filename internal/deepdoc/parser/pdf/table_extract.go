@@ -6,7 +6,6 @@ import (
 	"math"
 	"strings"
 
-	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	tbl "ragflow/internal/deepdoc/parser/pdf/table"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	util "ragflow/internal/deepdoc/parser/pdf/util"
@@ -153,14 +152,9 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		if firstCellTop == 1e9 {
 			firstCellTop = cells[0].Y0
 		}
-		// Collapse overlapping/adjacent OCR boxes before cell-fill, mirroring
-		// Python's pipeline order — _naive_vertical_merge runs before
-		// construct_table, so overlapping boxes are merged before they reach
-		// cell assignment. Go runs table cell-fill per-page (here), before the
-		// document-wide vertical merge in buildLayout, so it must run its own
-		// collapse on this table's box subset first or overlapping OCR boxes
-		// duplicate text across cells (e.g. 13_crosspage_table page 2:
-		// '2024-43 2024-44' y=(1014,1045) + nested '2024-44' y=(1032,1045)).
+		// Preserve each text box until its cell has been assigned. Paragraph
+		// merging here would join adjacent table rows before their R/C labels
+		// exist. GroupBoxesByRC joins text within the assigned cell below.
 		tableBoxes := make([]pdf.TextBox, 0, len(tm.BoxIdx))
 		for _, idx := range tm.BoxIdx {
 			b := boxes[idx]
@@ -169,14 +163,7 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 			tableBoxes = append(tableBoxes, b)
 		}
-		// Drop OCR boxes that are strictly nested inside another box whose
-		// text contains theirs (e.g. a re-detected "Hardware" box fully
-		// inside "Software Hardware"). Without this, NaiveVerticalMerge
-		// concatenates the two into "Software Hardware Hardware" while
-		// Python's construct_table keeps the longer box only. Mirrors
-		// Python's effective behavior: the nested duplicate is not merged.
-		tableBoxes = dedupNestedBoxes(tableBoxes)
-		tableBoxes = lyt.NaiveVerticalMerge(tableBoxes, nil, nil, nil)
+		tableBoxes = dedupTableBoxes(tableBoxes)
 		boxInCrop = make([]pdf.TextBox, 0, len(tableBoxes))
 		for _, b := range tableBoxes {
 			boxInCrop = append(boxInCrop, tbl.BoxToCropSpace(b, scale, cropOffX, cropOffY))
@@ -221,18 +208,11 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	return item
 }
 
-// dedupNestedBoxes drops OCR boxes that are strictly nested inside another
-// box whose trimmed text contains the nested box's trimmed text. This removes
-// re-detected duplicate boxes (e.g. a "Hardware" detection fully inside a
-// "Software Hardware" box) so the subsequent NaiveVerticalMerge does not
-// concatenate them into "Software Hardware Hardware". Python's
-// construct_table keeps the longer box only, so this matches Python's output.
-//
-// Containment requires the nested box's bbox to lie entirely within the other
-// box's bbox (same or narrower X, same or shorter Y). Side-by-side or
-// half-overlapping boxes are never nested, so they are preserved and merged
-// normally.
-func dedupNestedBoxes(boxes []pdf.TextBox) []pdf.TextBox {
+// dedupTableBoxes drops contained text fragments without merging distinct rows.
+// OCR fragments may overshoot their container vertically; require most of the
+// fragment's height to overlap, strict horizontal containment, and no greater
+// height. Adjacent repeated rows and repeated values in different columns survive.
+func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	keep := make([]bool, len(boxes))
 	for i := range boxes {
 		keep[i] = strings.TrimSpace(boxes[i].Text) != ""
@@ -250,10 +230,20 @@ func dedupNestedBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 			if bt == "" || !strings.Contains(at, bt) {
 				continue
 			}
-			// Drop the nested (shorter) box when it sits fully inside the
-			// outer box's bbox.
-			if boxes[j].X0 >= boxes[i].X0 && boxes[j].X1 <= boxes[i].X1 &&
-				boxes[j].Top >= boxes[i].Top && boxes[j].Bottom <= boxes[i].Bottom {
+			outer, inner := boxes[i], boxes[j]
+			if inner.X0 < outer.X0 || inner.X1 > outer.X1 {
+				continue
+			}
+			if inner.Top >= outer.Top && inner.Bottom <= outer.Bottom {
+				keep[j] = false
+				continue
+			}
+			if !inner.IsOCR || !outer.IsOCR {
+				continue
+			}
+			height := inner.Bottom - inner.Top
+			overlap := math.Min(inner.Bottom, outer.Bottom) - math.Max(inner.Top, outer.Top)
+			if height > 0 && height <= outer.Bottom-outer.Top && overlap >= height*0.6 {
 				keep[j] = false
 			}
 		}
