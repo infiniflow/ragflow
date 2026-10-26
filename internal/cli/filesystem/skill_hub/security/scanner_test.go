@@ -34,12 +34,16 @@ func TestAllThreatPatternsCompile(t *testing.T) {
 	}
 }
 
+// scanOne scans a single in-memory file as a community-sourced skill and
+// returns the result, for tests that need its verdict or findings.
 func scanOne(t *testing.T, content string) *ScanResult {
 	t.Helper()
 	s := NewScanner()
 	return s.ScanSkill("test-skill", "community", "community", map[string][]byte{"skill.md": []byte(content)})
 }
 
+// findingIDs returns the PatternID of each finding in order, for assertions
+// that a specific rule fired without inspecting the other finding fields.
 func findingIDs(res *ScanResult) []string {
 	ids := make([]string, 0, len(res.Findings))
 	for _, f := range res.Findings {
@@ -48,6 +52,7 @@ func findingIDs(res *ScanResult) []string {
 	return ids
 }
 
+// containsID reports whether a finding's PatternID list contains want.
 func containsID(ids []string, want string) bool {
 	for _, id := range ids {
 		if id == want {

@@ -55,6 +55,11 @@ type compiledThreatPattern struct {
 // not ship as a dead rule.
 var compiledThreatPatterns = mustCompileThreatPatterns(ThreatPatterns)
 
+// mustCompileThreatPatterns compiles every threat pattern once, using the same
+// case-insensitive (?i:...) wrapping the scanner applies at match time, so a
+// pattern that does not compile panics here at package init rather than being
+// silently dropped at scan time — the failure mode that left the original
+// rm_recursive_dangerous rule dead.
 func mustCompileThreatPatterns(patterns []ThreatPattern) []compiledThreatPattern {
 	compiled := make([]compiledThreatPattern, 0, len(patterns))
 	for _, p := range patterns {
