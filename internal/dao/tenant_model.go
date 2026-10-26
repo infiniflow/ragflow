@@ -101,7 +101,7 @@ func (dao *TenantModelDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []stri
 
 func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) (*entity.TenantModel, error) {
 	var model entity.TenantModel
-	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).Find(&model).Error
+	err := db.WithContext(ctx).Where("provider_id = ? AND instance_id = ? AND model_name = ?", providerID, instanceID, modelName).First(&model).Error
 	if err != nil {
 		return nil, err
 	}
