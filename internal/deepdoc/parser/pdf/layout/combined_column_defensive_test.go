@@ -111,6 +111,44 @@ func TestDetectColumnCount_OutlierKeepsWidthGate(t *testing.T) {
 	}
 }
 
+// TestColumnProjectionsIgnoreFigureCountInThreshold proves the coverage
+// threshold is computed from projected text lines: figure placeholders must not
+// raise thr above the per-column coverage and starve the width projection.
+func TestColumnProjectionsIgnoreFigureCountInThreshold(t *testing.T) {
+	var boxes []pdf.TextBox
+	for i := 0; i < 20; i++ {
+		addBox(&boxes, 100, 300)
+	}
+	for i := 0; i < 20; i++ {
+		addBox(&boxes, 400, 600)
+	}
+	for i := 0; i < 100; i++ {
+		top := float64(len(boxes)) * 12
+		boxes = append(boxes, pdf.TextBox{
+			PageNumber: 0, X0: 100, X1: 600, Top: top, Bottom: top + 10,
+			LayoutType: pdf.LayoutTypeFigure, Text: "fig",
+		})
+	}
+
+	widths := gapColumnWidths(boxes)
+	if len(widths) != 2 {
+		t.Fatalf("gapColumnWidths returned %d widths, want 2 (%v)", len(widths), widths)
+	}
+	for _, w := range widths {
+		if math.Abs(w-200) > 10 {
+			t.Fatalf("column width %v, want ~200", w)
+		}
+	}
+
+	indices := make([]int, len(boxes))
+	for i := range indices {
+		indices[i] = i
+	}
+	if k, _ := detectColumnCount(boxes, indices); k != 2 {
+		t.Fatalf("detectColumnCount = %d, want 2 (figures must not raise the threshold)", k)
+	}
+}
+
 // TestTextProjectionLinesStripsFigures proves A1: image and equation
 // placeholders must not feed the column projection (a figure spanning the
 // gutter would otherwise mask a real column boundary). Text and table boxes

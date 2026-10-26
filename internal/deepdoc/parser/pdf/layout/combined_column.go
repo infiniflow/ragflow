@@ -288,6 +288,10 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 	if len(lines) == 0 {
 		return nil
 	}
+	// Threshold must be relative to the projected text lines, not the pre-filter
+	// count: figure/equation placeholders can otherwise push thr above the
+	// maximum per-column coverage and yield no widths.
+	n = len(lines)
 	minX0, width := robustPageExtent(lines)
 	if width <= 0 {
 		return nil
@@ -347,6 +351,10 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 	if len(lines) == 0 {
 		return 1
 	}
+	// Threshold must be relative to the projected text lines, not the pre-filter
+	// count: figure/equation placeholders can otherwise push thr above the
+	// maximum per-column coverage and make the two detectors disagree.
+	n = len(lines)
 	// A2: robust page extent discards malformed/outlier lines so a single bad
 	// box cannot balloon the width and collapse detection to one column.
 	minX0, width := robustPageExtent(lines)
