@@ -568,7 +568,7 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	// quotes) before the raw passage, so the model can answer without paying for
 	// a deep read. The block is empty for a corpus without claims, for web hits,
 	// and for claims this turn already showed.
-	if notice := compiledEvidenceNotice(ctx, tool, hits); notice != "" {
+	if notice := compiledEvidenceNotice(ctx, tool, query, hits); notice != "" {
 		notices = append(notices, notice)
 	}
 	// Single serve point for every locate tool: one debug line per served chunk

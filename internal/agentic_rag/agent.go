@@ -389,9 +389,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	maxIter := agenticMaxIterations(in.MaxIterations)
 
-	// ONE compiled-evidence probe per turn, BEFORE the loop: search once, then
-	// ask the model whether the claims COMPILED FROM what that search returned
-	// already answer the question.
+	// The compiled-evidence probe runs BEFORE the loop: search once, then ask the
+	// model whether the claims COMPILED FROM what that search returned already
+	// answer the question. A refusal falls back to the loop, which is the only
+	// place that decides what to search next.
 	//
 	// The ordering is the point. The search is the same hybrid chunk retrieval
 	// the locate tools run, so it works identically on a corpus with compiled
@@ -911,6 +912,10 @@ func claimAnswerPrompt(evidence string) string {
 	b.WriteString("- If it does: combine claims where the question needs it, and end every line that states a fact with ")
 	b.WriteString("the handle of the claim it came from: `[ID:n]`, where n is that claim's `ref=n` value. Never ")
 	b.WriteString("introduce an entity, date or number that no claim states. Write the answer in the user's language.\n")
+	b.WriteString("- Combining claims IS answering: when the question asks for a difference, a count, an age, or a ")
+	b.WriteString("who/which that no single claim states outright, derive it from the claims (a date minus a date, a ")
+	b.WriteString("total across two claims, the entity a relation points at) and say which claims you combined. Only a ")
+	b.WriteString("MISSING INPUT justifies refusing: an entity, date or number the derivation needs and no claim states.\n")
 	b.WriteString("- If it does not (wrong topic, or the specific fact the question asks for is absent): do NOT ")
 	b.WriteString("guess and do NOT answer from world knowledge. Report it as not answerable instead.\n")
 	b.WriteString("- Do not call tools and do not narrate what you are about to do: this call is the whole ")
@@ -957,7 +962,7 @@ func parseClaimAnswer(reply string) claimAnswer {
 // prefetch already found claims for the question: ONE model call over them, with
 // no tools and therefore no raw-chunk read. It returns ("", nil) when the model
 // judged the claims insufficient, which the caller treats as a reason to run the
-// ordinary loop instead.
+// ordinary loop instead - the loop, not this path, decides what to search next.
 func answerFromClaims(
 	ctx context.Context,
 	m *models.EinoChatModel,
@@ -990,14 +995,43 @@ func answerFromClaims(
 	}
 	verdict := parseClaimAnswer(resp.Content)
 	if !verdict.answerable {
+		// gap_overlap splits the two ways a refusal can happen, and it is the only
+		// signal that tells them apart in the logs: a gap whose words ARE on the
+		// page means the model would not use what it had (selection or prompt),
+		// a gap whose words are not means the page never held the fact
+		// (retrieval). Both need different work, and only this number says which.
 		common.InfoCtx(ctx, "agentic_rag: claims judged insufficient by the model",
 			zap.Int("claims", len(pf.claims)),
 			zap.Int("chunks", len(pf.chunks)),
 			zap.Strings("docs", claimDocsInOrder(pf.claims)),
-			zap.String("missing", truncateForLog(verdict.missing, 200)))
+			zap.String("missing", truncateForLog(verdict.missing, 200)),
+			zap.Float64("gap_overlap", claimGapOverlap(pf.claims, verdict.missing)))
 		return "", nil
 	}
 	return verdict.answer, nil
+}
+
+// claimGapOverlap is the share of the refused gap's content words that the page's
+// claims already state. It is a diagnostic, not a control signal: the refusal
+// still falls back to the loop. See the log line it feeds.
+func claimGapOverlap(claims []claimHit, gap string) float64 {
+	gapTokens := claimTokens(gap)
+	if len(gapTokens) == 0 {
+		return 0
+	}
+	page := make(map[string]struct{}, len(claims)*8)
+	for _, c := range claims {
+		for t := range claimTokens(c.name + " " + c.description + " " + c.quote) {
+			page[t] = struct{}{}
+		}
+	}
+	hit := 0
+	for t := range gapTokens {
+		if _, ok := page[t]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(gapTokens))
 }
 
 // finalizeAnswer issues a single deterministic synthesis call so a turn that
