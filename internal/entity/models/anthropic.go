@@ -159,11 +159,18 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 		if name == "" {
 			return fmt.Errorf("anthropic: tool name is required")
 		}
-		inputSchema, ok := function["parameters"].(map[string]any)
-		if !ok {
-			return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+		inputSchema := map[string]any{"type": "object", "properties": map[string]any{}}
+		if parameters, present := function["parameters"]; present {
+			inputSchema, ok = parameters.(map[string]any)
+			if !ok || inputSchema == nil {
+				return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+			}
 		}
-		tools = append(tools, map[string]any{"name": name, "description": function["description"], "input_schema": inputSchema})
+		nativeTool := map[string]any{"name": name, "input_schema": inputSchema}
+		if description, ok := function["description"].(string); ok {
+			nativeTool["description"] = description
+		}
+		tools = append(tools, nativeTool)
 	}
 	if len(tools) > 0 {
 		reqBody["tools"] = tools

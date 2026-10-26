@@ -60,6 +60,47 @@ func TestAnthropicName(t *testing.T) {
 	}
 }
 
+func TestAnthropicToolOptionalFields(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		function map[string]any
+		want     string
+		wantErr  bool
+	}{
+		{"omitted parameters and description", map[string]any{"name": "clock"}, `{"input_schema":{"properties":{},"type":"object"},"name":"clock"}`, false},
+		{"string description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": "Read clock"}, `{"description":"Read clock","input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"non-string description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": 42}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"null description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": nil}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"null parameters", map[string]any{"name": "clock", "parameters": nil}, "", true},
+		{"non-object parameters", map[string]any{"name": "clock", "parameters": "invalid"}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := make(map[string]any)
+			err := applyAnthropicChatConfig(body, &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid parameters to be rejected")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			tools, ok := body["tools"].([]map[string]any)
+			if !ok || len(tools) != 1 {
+				t.Fatalf("tools = %#v, want one tool", body["tools"])
+			}
+			got, err := json.Marshal(tools[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("tool = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAnthropicChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
