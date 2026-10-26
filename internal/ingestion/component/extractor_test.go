@@ -150,7 +150,7 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks key missing or wrong shape: %T", out["chunks"])
 	}
@@ -186,7 +186,7 @@ func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing
 	if calls := stub.Calls(); calls != 1 {
 		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
 	}
@@ -265,7 +265,7 @@ func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if s, _ := chunks[0]["summary"].(string); s != "recovered" {
 		t.Errorf("summary = %q, want recovered", s)
 	}
@@ -306,7 +306,7 @@ func TestExtractorComponent_Invoke_EmptyChunksReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks missing or wrong shape")
 	}
@@ -331,7 +331,7 @@ func TestExtractorComponent_Invoke_JSONListInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks malformed: %v", out["chunks"])
 	}
@@ -450,6 +450,95 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	ext := c.(*ExtractorComponent)
 	if !ext.Param.Summary.Enabled || ext.Param.LLMID != "openai/gpt-4o-mini" {
 		t.Errorf("unexpected params: %+v", ext.Param)
+	}
+}
+
+// TestExtractorComponent_ToggleDerivation covers the enabled-switch contract
+// for keywords/questions/tags: an explicit "enabled" key is authoritative,
+// a group without the key (legacy DSL) derives enabled from top_n > 0.
+func TestExtractorComponent_ToggleDerivation(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		// legacy group: no enabled key, top_n > 0 → on
+		"keywords": map[string]any{"top_n": 3},
+		// legacy group: no enabled key, top_n = 0 → off
+		"questions": map[string]any{"top_n": 0},
+		// new contract: explicit switch wins over a positive top_n
+		"tags": map[string]any{"enabled": false, "top_n": 5},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ext := c.(*ExtractorComponent)
+	if !ext.Param.Keywords.Enabled {
+		t.Errorf("legacy keywords top_n=3 should derive Enabled=true: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.Questions.Enabled {
+		t.Errorf("legacy questions top_n=0 should derive Enabled=false: %+v", ext.Param.Questions)
+	}
+	if ext.Param.Tags.Enabled || ext.Param.Tags.TopN != 5 {
+		t.Errorf("explicit enabled=false must win over top_n=5 (kept for re-enable): %+v", ext.Param.Tags)
+	}
+
+	// Numeric enabled values are accepted like summary/metadata do.
+	c, err = NewExtractorComponent(map[string]any{
+		"keywords": map[string]any{"enabled": 1, "top_n": 2},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent numeric enabled: %v", err)
+	}
+	if !c.(*ExtractorComponent).Param.Keywords.Enabled {
+		t.Error("enabled: 1 should parse as true")
+	}
+}
+
+// TestExtractorComponent_ToggleOnWithoutTopNFails covers the contradictory
+// new-contract config: enabled=true with top_n < 1 must fail at canvas build
+// time for keywords/questions/tags alike.
+func TestExtractorComponent_ToggleOnWithoutTopNFails(t *testing.T) {
+	for _, group := range []string{"keywords", "questions", "tags"} {
+		for _, topN := range []any{0, -2} {
+			_, err := NewExtractorComponent(map[string]any{
+				group: map[string]any{"enabled": true, "top_n": topN},
+			})
+			if err == nil {
+				t.Errorf("%s enabled=true top_n=%v: expected error, got nil", group, topN)
+			} else if !strings.Contains(err.Error(), group+".enabled requires top_n >= 1") {
+				t.Errorf("%s enabled=true top_n=%v: unexpected error: %v", group, topN, err)
+			}
+		}
+		// enabled=true with top_n absent entirely is the same contradiction.
+		if _, err := NewExtractorComponent(map[string]any{
+			group: map[string]any{"enabled": true},
+		}); err == nil {
+			t.Errorf("%s enabled=true without top_n: expected error, got nil", group)
+		}
+	}
+}
+
+// TestExtractorComponent_Invoke_ToggleOffSkipsExtraction verifies a group
+// switched off (enabled=false) performs no LLM call even when top_n is set.
+func TestExtractorComponent_Invoke_ToggleOffSkipsExtraction(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "kw1, kw2"})
+
+	c, err := NewExtractorComponent(map[string]any{
+		"llm_id":   "gpt-4o-mini",
+		"keywords": map[string]any{"enabled": false, "top_n": 3},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	out, err := c.(*ExtractorComponent).Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "first doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 0 {
+		t.Errorf("LLM calls = %d, want 0 for a switched-off keywords group", calls)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if _, exists := chunks[0]["important_kwd"]; exists {
+		t.Errorf("switched-off keywords should not enrich the chunk: %#v", chunks[0])
 	}
 }
 
@@ -896,7 +985,7 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:    "gpt-4o-mini",
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -1089,8 +1178,8 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:     "gpt-4o-mini",
-		Keywords:  schema.KeywordExtractConfig{TopN: 2},
-		Questions: schema.QuestionExtractConfig{TopN: 2},
+		Keywords:  schema.KeywordExtractConfig{Enabled: true, TopN: 2},
+		Questions: schema.QuestionExtractConfig{Enabled: true, TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -1102,7 +1191,7 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %v", out["chunks"])
 	}
@@ -1279,7 +1368,7 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -1288,16 +1377,16 @@ func openExtractorContextTestDB(t *testing.T) *gorm.DB {
 func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	t.Helper()
 	status := "1"
-	tenant := entity.Tenant{
-		ID:     "tenant-1",
-		LLMID:  "gpt-4o@openai",
-		Status: &status,
-	}
-	if tenantLLMID != "" {
-		tenant.TenantLLMID = &tenantLLMID
-	}
+	tenant := entity.Tenant{ID: "tenant-1", Status: &status}
 	if err := db.Create(&tenant).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	membership := entity.UserTenant{ID: "ut-tenant1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", Status: &status, LLMID: "gpt-4o@openai"}
+	if tenantLLMID != "" {
+		membership.TenantLLMID = &tenantLLMID
+	}
+	if err := db.Create(&membership).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
@@ -1512,7 +1601,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1625,7 +1714,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1669,7 +1758,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1724,7 +1813,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1782,7 +1871,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -1927,7 +2016,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 		t.Errorf("expected 0 LLM calls when summary is disabled, got %d", stub.Calls())
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk output, got %v", out)
 	}
@@ -2077,7 +2166,7 @@ func TestExtractorBuiltInDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("built_in-only must not call LLM, got %d calls, requests=%v", stub.calls.Load(), stub.requests)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
@@ -2112,7 +2201,7 @@ func TestExtractorEnabledFalseDoesNotCallLLM(t *testing.T) {
 	if stub.calls.Load() != 0 {
 		t.Fatalf("enabled=false must not call LLM, got %d", stub.calls.Load())
 	}
-	if chunks, _ := out["chunks"].([]map[string]any); len(chunks) != 1 {
+	if chunks, _ := schema.ChunkCarrierToMaps(out["chunks"]); len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
 }
@@ -2145,7 +2234,7 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %v", out)
 	}
@@ -2229,7 +2318,8 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 	if calls := stub.Calls(); calls != 3 {
 		t.Fatalf("Expected 3 LLM calls, got %d", calls)
 	}
-	ck := out["chunks"].([]map[string]any)[0]
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	ck := chunks[0]
 	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
 	}

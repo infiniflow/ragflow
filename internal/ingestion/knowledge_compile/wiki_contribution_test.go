@@ -78,7 +78,7 @@ func TestProcessBatchRetractionWithoutWikiContributionSkipsMerge(t *testing.T) {
 		WithReader(&fakeReader{}),
 		WithWriter(fw),
 		withWikiContributionStore(store),
-		WithDeduperFactory(func(string) (Deduper, error) {
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) {
 			factoryCalled = true
 			return nil, nil
 		}),
@@ -109,7 +109,7 @@ func TestProcessBatchSkipsUnchangedWikiOnlyEvent(t *testing.T) {
 	consumer := NewConsumer(NewFakeScheduler(),
 		WithReader(&fakeReader{products: []kccommon.Product{product}}),
 		withWikiContributionStore(store),
-		WithDeduperFactory(func(string) (Deduper, error) {
+		WithDeduperFactory(func(context.Context, string) (Deduper, error) {
 			factoryCalled = true
 			return nil, nil
 		}),

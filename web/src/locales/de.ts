@@ -194,6 +194,8 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       parserRequired: 'Chunk-Methode ist erforderlich',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Setzen Sie den Upload fort. Das System stellt diese Dateien anschließend automatisch auf eine unterstützte integrierte Parsing-Konfiguration um.',
       metadata: {
         fieldNameInvalid:
           'Feldname darf nur Buchstaben oder Unterstriche enthalten.',
@@ -309,7 +311,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       webCrawl: 'Web-Crawling',
       chunkNumber: 'Chunk-Anzahl',
       uploadDate: 'Hochladedatum',
-      chunkMethod: 'Chunk-Methode',
+      parsingMode: 'Parsing-Modus',
       enabled: 'Aktiviert',
       disabled: 'Deaktiviert',
       action: 'Aktion',
@@ -431,6 +433,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       reRankModelWaring: 'Das Rerank-Modell ist sehr zeitaufwendig.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'Wird verwendet, um Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
       globalIndexModel: 'Indizierungsmodell',
@@ -500,7 +503,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       dataFlowPlaceholder: 'Bitte wählen Sie eine Pipeline.',
       buildItFromScratch: 'Von Grund auf neu erstellen',
       dataFlow: 'Pipeline',
-      parseType: 'Art der Dateneingabe',
+      parsingMode: 'Parsing-Modus',
       manualSetup: 'Pipeline wählen',
       builtIn: 'eingebaute Dateneingabe',
       imageTableContextWindow: 'Kontextfenster für Bild und Tabelle',
@@ -525,8 +528,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
         'Wenn auf "Team" gesetzt, können alle Teammitglieder die Wissensdatenbank verwalten.',
       chunkTokenNumberTip:
         'Legt den Token-Schwellenwert für einen Chunk fest. Ein Absatz mit weniger Tokens als dieser Schwellenwert wird mit dem folgenden Absatz kombiniert, bis die Token-Anzahl den Schwellenwert überschreitet, dann wird ein Chunk erstellt. Ein neuer Block wird nicht erstellt, es sei denn, ein Trennzeichen wird gefunden, auch wenn dieser Schwellenwert überschritten wird.',
-      chunkMethod: 'Chunk-Methode',
-      chunkMethodTip: 'Siehe Tipps auf der rechten Seite.',
       upload: 'Hochladen',
       english: 'Englisch',
       chinese: 'Chinesisch',
@@ -919,9 +920,6 @@ Diese Auto-Tag-Funktion verbessert den Abruf, indem sie eine weitere Schicht dom
       },
       cancel: 'Abbrechen',
       chatSetting: 'Chat-Einstellung',
-      tocEnhance: 'Inhaltsverzeichnis verbessern',
-      tocEnhanceTip:
-        'Während der Analyse des Dokuments wurden Inhaltsverzeichnisinformationen generiert (siehe Option "Inhaltsverzeichnis-Extraktion aktivieren" in der allgemeinen Methode). Dies ermöglicht es dem großen Modell, Inhaltsverzeichniselemente zurückzugeben, die für die Abfrage des Benutzers relevant sind, und diese Elemente zu verwenden, um verwandte Chunks abzurufen und diese Chunks während des Sortiervorgangs zu gewichten. Dieser Ansatz leitet sich von der Nachahmung der Verhaltenslogik ab, wie Menschen in Büchern nach Wissen suchen.',
       batchDeleteSessions: 'Stapel löschen',
       deleteSelectedConfirm: 'Die ausgewählten {count} Sitzung(en) löschen?',
       showChunkMetadata: 'Chunk-Metadaten anzeigen',
@@ -1217,19 +1215,19 @@ Beispiel: Virtual Hosted Style`,
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',
       embeddingModel: 'Embedding-Modell',
       embeddingModelTip:
-        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       img2txtModel: 'Img2txt-Modell',
       img2txtModelTip:
-        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       sequence2txtModel: 'Sequence2txt-Modell',
       sequence2txtModelTip:
-        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-ASR-Modell, das alle neu erstellten Wissensdatenbanken verwenden werden. Verwenden Sie dieses Modell, um Stimmen in entsprechenden Text zu übersetzen. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       rerankModel: 'Rerank-Modell',
       rerankModelTip:
-        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Rerank-Modell zum Reranking von Textabschnitten. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       ttsModel: 'TTS-Modell',
       ttsModelTip:
-        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie https://ragflow.io/docs/dev/supported_models, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Text-to-Speech-Modell. Wenn Sie kein Modell im Dropdown-Menü finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       workspace: 'Arbeitsbereich',
       upgrade: 'Upgrade',
       addLlmTitle: 'LLM hinzufügen',
@@ -1560,7 +1558,7 @@ Beispiel: Virtual Hosted Style`,
       dataManipulation: 'Datenmanipulation',
       flow: 'Ablauf',
       dialog: 'Dialog',
-      cite: 'Zitieren',
+      cite: 'Zitate anzeigen',
       citeTip: 'Zitiertipp',
       name: 'Name',
       nameMessage: 'Bitte Namen eingeben',

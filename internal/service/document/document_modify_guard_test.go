@@ -55,7 +55,7 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 				insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", *tc.taskStatus)
 			}
 			svc := testDocumentService(t)
-			ctx := t.Context()
+			ctx := documentTestContext(t.Context())
 			doc := &entity.Document{ID: "doc-1"}
 			code, err := svc.validateDocumentModifiable(ctx, doc)
 			if tc.wantErr {
@@ -91,8 +91,8 @@ func updateDatasetDocumentRejected(t *testing.T, status string, req *UpdateDatas
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", req, present)
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", req, present)
 	if err == nil {
 		t.Fatalf("expected task-state rejection, got nil error (code=%v)", code)
 	}
@@ -117,8 +117,8 @@ func updateDatasetDocumentAllowed(t *testing.T, status string, req *UpdateDatase
 	}
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", req, present)
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", req, present)
 	if err != nil && strings.Contains(err.Error(), "cannot be modified") {
 		t.Fatalf("editable doc was wrongly rejected: %v", err)
 	}
@@ -200,8 +200,8 @@ func TestUpdateDatasetDocumentRunningEmptyPresentNotRejected(t *testing.T) {
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1",
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err != nil {
 		t.Fatalf("empty PATCH on RUNNING doc should not be rejected: code=%v err=%v", code, err)
@@ -230,8 +230,8 @@ func TestUpdateDatasetDocumentAllowsDoneRename(t *testing.T) {
 
 	name := "renamed.txt"
 	svc := testDocumentService(t)
-	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1",
+	ctx := documentTestContext(t.Context())
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{Name: &name},
 		map[string]bool{"name": true})
 	if err != nil && strings.Contains(err.Error(), "cannot be modified") {

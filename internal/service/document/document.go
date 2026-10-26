@@ -41,7 +41,6 @@ type DocumentService struct {
 	taskDAO             *dao.TaskDAO
 	file2DocumentDAO    *dao.File2DocumentDAO
 	fileDAO             *dao.FileDAO
-	canvasDAO           *dao.UserCanvasDAO
 	api4ConvDAO         *dao.API4ConversationDAO
 	purgeTaskState      func(context.Context, string) error
 }
@@ -66,7 +65,6 @@ func NewDocumentService() *DocumentService {
 		taskDAO:             dao.NewTaskDAO(),
 		file2DocumentDAO:    dao.NewFile2DocumentDAO(),
 		fileDAO:             dao.NewFileDAO(),
-		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConvDAO:         dao.NewAPI4ConversationDAO(),
 	}
 }
@@ -170,6 +168,7 @@ type UpdateDatasetDocumentResponse struct {
 }
 
 var (
+	ErrDocumentNotFound        = errors.New("document not found")
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")
@@ -227,8 +226,15 @@ type IngestDocumentRequest struct {
 
 // StartParseOptions controls StartParseDocuments behavior.
 type StartParseOptions struct {
-	// ApplyKB merges the knowledge base's parser_config (llm_id, metadata)
-	// into the document before parsing.
+	// ApplyKB scopes the dataset's parser_config (llm_id and the modular
+	// metadata object: enabled, metadata, built_in_metadata) onto the document's
+	// existing Extractor nodes before parsing. The dataset llm_id only fills
+	// Extractor/Compiler nodes whose llm_id is empty; explicit per-node values
+	// are preserved and no top-level llm_id is written. When the dataset sets
+	// modular metadata it replaces each Extractor node's metadata; when it
+	// sets none, each node's metadata is reset to the disabled default
+	// ({enabled:false, metadata:[], built_in_metadata:[]}) with no top-level
+	// metadata key left behind.
 	ApplyKB bool
 	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool

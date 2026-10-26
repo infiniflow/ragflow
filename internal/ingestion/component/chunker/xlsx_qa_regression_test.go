@@ -8,6 +8,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -45,13 +46,8 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 		t.Fatal(res.Err)
 	}
 
-	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": res.OutputFormat}
-	switch res.OutputFormat {
-	case "json":
-		inputs["json"] = res.JSON
-	case "html":
-		inputs["html"] = res.HTML
-	}
+	inputs := map[string]any{"name": "qa.xlsx", "file_type": "xlsx", "output_format": "json"}
+	inputs["json"] = res.JSON
 
 	comp, err := NewQAChunker(nil)
 	if err != nil {
@@ -61,7 +57,7 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 

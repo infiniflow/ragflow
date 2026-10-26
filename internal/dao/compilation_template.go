@@ -134,7 +134,7 @@ func (dao *CompilationTemplateDAO) ListByGroup(ctx context.Context, db *gorm.DB,
 // Python duplicate-child guard.
 func (dao *CompilationTemplateDAO) NameExistsInGroup(ctx context.Context, db *gorm.DB, tenantID, groupID, name, excludeID string) (bool, error) {
 	q := db.WithContext(ctx).Model(&entity.CompilationTemplate{}).
-		Where("tenant_id = ? AND group_id = ? AND name = ? AND is_builtin = ? AND status = ?",
+		Where("tenant_id = ? AND group_id = ? AND LOWER(name) = LOWER(?) AND is_builtin = ? AND status = ?",
 			tenantID, groupID, name, false, string(entity.StatusValid))
 	if excludeID != "" {
 		q = q.Where("id <> ?", excludeID)

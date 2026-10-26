@@ -73,11 +73,14 @@ func newGPUStackSSEServer(t *testing.T, expectedPath, ssePayload string) *httpte
 func newGPUStackForTest(baseURL string) *GPUStackModel {
 	return NewGPUStackModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "v1/chat/completions", Models: "v1/models", Embedding: "v1-openai/embeddings"},
+		URLSuffix{
+			Chat: "v1/chat/completions", Models: "v1/models", Embedding: "v1/embeddings",
+			Rerank: "v1/rerank", ASR: "v1/audio/transcriptions", TTS: "v1/audio/speech",
+		},
 	)
 }
 
-const gpustackEmbeddingsPath = "/v1-openai/embeddings"
+const gpustackEmbeddingsPath = "/v1/embeddings"
 
 func TestGPUStackName(t *testing.T) {
 	if got := newGPUStackForTest("http://unused").Name(); got != "gpustack" {
@@ -504,41 +507,45 @@ func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 	}
 }
 
-// TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1-openai/embeddings.
+// TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1/embeddings.
 func TestGPUStackEmbedHappyPath(t *testing.T) {
 	withSSRFBypass(t)
-	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["model"] != "bge-m3" {
-			t.Errorf("model=%v", body["model"])
-		}
-		if body["dimensions"] != float64(512) {
-			t.Errorf("dimensions=%v, want 512", body["dimensions"])
-		}
-		inputs, ok := body["input"].([]interface{})
-		if !ok || len(inputs) != 2 {
-			t.Errorf("input=%v, want 2-element array", body["input"])
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []map[string]interface{}{
-				{"embedding": []float64{0.2, 0.2}, "index": 1},
-				{"embedding": []float64{0.1, 0.2}, "index": 0},
-			},
-		})
-	})
-	defer srv.Close()
+	for _, basePath := range []string{"", "/v1/"} {
+		t.Run("base="+basePath, func(t *testing.T) {
+			srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+				if body["model"] != "bge-m3" {
+					t.Errorf("model=%v", body["model"])
+				}
+				if body["dimensions"] != float64(512) {
+					t.Errorf("dimensions=%v, want 512", body["dimensions"])
+				}
+				inputs, ok := body["input"].([]interface{})
+				if !ok || len(inputs) != 2 {
+					t.Errorf("input=%v, want 2-element array", body["input"])
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"data": []map[string]interface{}{
+						{"embedding": []float64{0.2, 0.2}, "index": 1},
+						{"embedding": []float64{0.1, 0.2}, "index": 0},
+					},
+				})
+			})
+			defer srv.Close()
 
-	apiKey := "test-key"
-	model := "bge-m3"
-	ctx := t.Context()
-	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
-	if err != nil {
-		t.Fatalf("Embed: %v", err)
-	}
-	if len(vecs) != 2 {
-		t.Fatalf("len(vecs)=%d, want 2", len(vecs))
-	}
-	if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
-		t.Errorf("vecs=%+v", vecs)
+			apiKey := "test-key"
+			model := "bge-m3"
+			ctx := t.Context()
+			vecs, err := configuredGPUStackForTest(t, srv.URL+basePath).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
+			if err != nil {
+				t.Fatalf("Embed: %v", err)
+			}
+			if len(vecs) != 2 {
+				t.Fatalf("len(vecs)=%d, want 2", len(vecs))
+			}
+			if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
+				t.Errorf("vecs=%+v", vecs)
+			}
+		})
 	}
 }
 
@@ -714,18 +721,11 @@ func TestGPUStackUnsupportedMethods(t *testing.T) {
 	ctx := t.Context()
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank: %v", err)
-	}
+
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: %v", err)
 	}
-	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("TranscribeAudio: %v", err)
-	}
-	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("AudioSpeech: %v", err)
-	}
+
 	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}

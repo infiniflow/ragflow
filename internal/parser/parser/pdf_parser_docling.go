@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -58,6 +60,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		auth = "Bearer " + apiKey
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
+	convertOptions := doclingConvertOptions(parser)
 	payloads := []struct {
 		endpoint string
 		body     func() map[string]any
@@ -66,22 +69,22 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		{
 			endpoint: "/v1/convert/source",
 			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false) },
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false, convertOptions) },
 		},
 		{
 			endpoint: "/v1alpha/convert/source",
 			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true) },
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true, convertOptions) },
 		},
 		{
 			endpoint: "/v1/convert/source",
 			chunked:  false,
-			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, false) },
+			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, false, convertOptions) },
 		},
 		{
 			endpoint: "/v1alpha/convert/source",
 			chunked:  false,
-			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, true) },
+			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, true, convertOptions) },
 		},
 	}
 
@@ -110,13 +113,13 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			continue
 		}
 		if candidate.chunked {
-			if res, ok := parseDoclingChunkedResult(filename, body, parser.OutputFormat); ok {
+			if res, ok := parseDoclingChunkedResult(filename, body); ok {
 				return res
 			}
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
 			continue
 		}
-		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat); ok {
+		if res, ok := parseDoclingStandardResult(ctx, filename, body); ok {
 			return res
 		}
 		lastErr = fmt.Errorf("%s: standard response contained no parsed document", candidate.endpoint)
@@ -127,9 +130,30 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	return ParseResult{Err: fmt.Errorf("parser: Docling convert: %w", lastErr)}
 }
 
-func doclingStandardPayload(filename string, encoded string, alpha bool) map[string]any {
+// doclingConvertOptions collects the Docling Serve conversion options set in the
+// parser setup, falling back to the environment. Unset options are left out so
+// Docling Serve keeps its own defaults.
+func doclingConvertOptions(parser *PDFParser) map[string]any {
+	options := map[string]any{}
+	if parser.DoclingDoOCR != nil {
+		options["do_ocr"] = *parser.DoclingDoOCR
+	} else if v, err := strconv.ParseBool(strings.TrimSpace(common.GetEnv(common.EnvDoclingDoOCR))); err == nil {
+		options["do_ocr"] = v
+	}
+	backend := strings.TrimSpace(parser.DoclingPDFBackend)
+	if backend == "" {
+		backend = strings.TrimSpace(common.GetEnv(common.EnvDoclingPDFBackend))
+	}
+	if backend != "" {
+		options["pdf_backend"] = backend
+	}
+	return options
+}
+
+func doclingStandardPayload(filename string, encoded string, alpha bool, convertOptions map[string]any) map[string]any {
 	source := map[string]any{"filename": filename, "base64_string": encoded}
 	options := map[string]any{"from_formats": []string{"pdf"}, "to_formats": []string{"json", "md", "text"}}
+	maps.Copy(options, convertOptions)
 	if alpha {
 		return map[string]any{
 			"options":      options,
@@ -143,9 +167,9 @@ func doclingStandardPayload(filename string, encoded string, alpha bool) map[str
 	}
 }
 
-func doclingChunkedPayload(filename string, encoded string, alpha bool) map[string]any {
-	payload := doclingStandardPayload(filename, encoded, alpha)
-	payload["options"] = map[string]any{
+func doclingChunkedPayload(filename string, encoded string, alpha bool, convertOptions map[string]any) map[string]any {
+	payload := doclingStandardPayload(filename, encoded, alpha, convertOptions)
+	options := map[string]any{
 		"from_formats": []string{"pdf"},
 		"to_formats":   []string{"json", "md", "text"},
 		"do_chunking":  true,
@@ -155,10 +179,12 @@ func doclingChunkedPayload(filename string, encoded string, alpha bool) map[stri
 			"tokenizer":  "sentencepiece",
 		},
 	}
+	maps.Copy(options, convertOptions)
+	payload["options"] = options
 	return payload
 }
 
-func parseDoclingChunkedResult(filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingChunkedResult(filename string, body []byte) (ParseResult, bool) {
 	var chunks []doclingChunk
 	if err := json.Unmarshal(body, &chunks); err != nil {
 		var wrapped struct {
@@ -186,10 +212,10 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	if len(texts) > 0 {
 		pageCount = len(texts)
 	}
-	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
+	return doclingTextsToResult(filename, texts, pageCount), true
 }
 
-func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingStandardResult(ctx context.Context, filename string, body []byte) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ParseResult{}, false
@@ -209,41 +235,28 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	}
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, len(docs)), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
-			return doclingTextsToResult(filename, []string{txt}, outputFormat, len(docs)), true
+			return doclingTextsToResult(filename, []string{txt}, len(docs)), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, len(docs)), true
 		}
 	}
 	return ParseResult{}, false
 }
 
-func doclingTextsToResult(filename string, texts []string, outputFormat string, pageCount int) ParseResult {
-	fileMeta := pdfFileMeta(filename, pageCount)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		items := make([]map[string]any, 0, len(texts))
-		for _, text := range texts {
-			items = append(items, map[string]any{
-				"text":         text,
-				"doc_type_kwd": "text",
-			})
-		}
-		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			JSON:         items,
-		}
-	case "markdown":
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     strings.Join(texts, "\n\n"),
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+func doclingTextsToResult(filename string, texts []string, pageCount int) ParseResult {
+	items := make([]map[string]any, 0, len(texts))
+	for _, text := range texts {
+		items = append(items, map[string]any{
+			"text":         text,
+			"doc_type_kwd": "text",
+		})
+	}
+	return ParseResult{
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }

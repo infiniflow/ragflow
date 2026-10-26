@@ -119,7 +119,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
-		"", nil, "", userID, nil,
+		"", nil, "", userID, nil, "",
 	)
 	return data, total, err
 }
@@ -127,7 +127,7 @@ func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID str
 // mcpListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
 func mcpListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := chatService.ListChats(ctx, userID, "1", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
+	resp, err := chatService.ListChats(ctx, userID, "1", "", "", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
 	if err != nil {
 		return nil, 0, err
 	}

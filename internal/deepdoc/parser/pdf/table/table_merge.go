@@ -172,7 +172,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		// shorter rows by index. Column i of a continuation page maps to
 		// column i of the anchor because they are the same logical column of
 		// one cross-page table, so padding keeps the grid uniform
-		// (CalSpans / CleanupOrphanColumns / RowsToHTML never see a jagged
+		// (CalSpans / CleanupOrphanColumns / ToTableData never see a jagged
 		// grid) while preserving every row.
 		if len(anchor.Grid) > 0 && len(contGrids) > 0 {
 			allGrids := append([][][]pdf.TSRCell{anchor.Grid}, contGrids...)

@@ -417,8 +417,10 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 	for _, model := range pm.AllModels {
 
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"model_types":    model.ModelTypes,
+			"context_length": model.ContextLength,
+			"max_output":     model.MaxOutput,
 		}
 		if model.Alias != nil {
 			modelData["alias"] = model.Alias
@@ -518,7 +520,7 @@ func GetModelTokenizer(modelName string) string {
 }
 
 // GetEmbeddingMaxTokens returns the input window declared for the named model:
-// its own max_tokens first, then the provider catalog's context_length. It
+// its context_length first, then the legacy max_tokens field. It
 // returns 0 when the catalog knows nothing, leaving the caller to apply its
 // default — deliberately, because a wrong non-zero value here is a rejected
 // request (an oversized input) rather than a shorter one.
@@ -531,11 +533,11 @@ func GetEmbeddingMaxTokens(modelName string) int {
 	if modelName != "" {
 		if pm := GetProviderManager(); pm != nil {
 			if m := pm.GetModelByNameOrAlias(modelName); m != nil {
-				if m.MaxTokens != nil && *m.MaxTokens > 0 {
-					return *m.MaxTokens
-				}
 				if m.ContextLength != nil && *m.ContextLength > 0 {
 					return *m.ContextLength
+				}
+				if m.MaxTokens != nil && *m.MaxTokens > 0 {
+					return *m.MaxTokens
 				}
 			}
 		}
@@ -584,13 +586,17 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// the object.
 		modelData := map[string]interface{}{
 			"name":           model.Name,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
 		}
-		if model.MaxTokens != nil {
+		if model.ContextLength != nil {
+			modelData["max_tokens"] = *model.ContextLength
+		} else if model.MaxTokens != nil {
+			// Persisted max_tokens predates the context_length/max_output split.
 			modelData["max_tokens"] = *model.MaxTokens
 		}
 		if model.BatchSize != nil {
@@ -867,6 +873,27 @@ func findRepoRoot() string {
 		dir = filepath.Dir(dir)
 	}
 	return "."
+}
+
+// storedCatalogProviders maps provider names found in
+// tenant_model_provider.provider_name and in model references onto the
+// catalog provider that serves those models. Rows created by Python's
+// "Mistral OCR" factory carry that name; their models are the Mistral
+// provider's ocr models.
+var storedCatalogProviders = map[string]string{
+	"mistral ocr": "Mistral",
+}
+
+// CatalogProviderName returns the catalog provider name for a stored provider
+// name, for looking up a stored model in the catalog (FindProvider,
+// GetModelByName). Tenant rows are still looked up by the stored name, and
+// FindProvider itself does not apply this mapping, so provider management
+// keeps treating the stored name as an unknown provider.
+func CatalogProviderName(storedName string) string {
+	if name, ok := storedCatalogProviders[strings.ToLower(strings.TrimSpace(storedName))]; ok {
+		return name
+	}
+	return storedName
 }
 
 func (pm *ProviderManager) FindProvider(name string) *Provider {

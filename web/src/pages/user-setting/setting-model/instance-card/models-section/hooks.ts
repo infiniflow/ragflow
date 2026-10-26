@@ -241,6 +241,14 @@ export function useModelsCatalog({
         provider_name: providerName,
         api_key: apiKey as any,
         base_url: baseUrl,
+        // The saved instance never hands its key back to the browser, but it
+        // does hand back its base URL — so without this the request would go
+        // out unauthenticated and the upstream would answer 401 "no API key".
+        // With the name, the server lists using the stored credential. A draft
+        // has no stored credential, so it is not named here.
+        ...(instanceName && instanceName !== DRAFT_INSTANCE_SENTINEL
+          ? { instance_name: instanceName }
+          : {}),
       });
       if (ret?.code === 0) {
         const merged = applyCatalogOverrides(

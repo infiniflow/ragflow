@@ -9,10 +9,7 @@ import (
 	"ragflow/internal/engine/types"
 )
 
-// compileKWDWikiPage is the canonical compile_kwd for compiled wiki pages. It
-// must match Python's WIKI_PAGE_COMPILE_KWD ("wiki_page", wiki.py:1661) AND the
-// Go compiler's variantCompileKWD[VariantWiki] (component.go), so both Python-
-// and Go-produced wiki pages are surfaced by this service.
+// compileKWDWikiPage identifies the wiki page role.
 const compileKWDWikiPage = "wiki_page"
 
 // tenantIndexName returns the tenant-scoped chunk index name
@@ -59,7 +56,7 @@ func (s *engineWikiService) AvailableFor(ctx context.Context, tenantID string, d
 		KbIDs:      datasetIDs,
 		Limit:      1,
 		Filter: map[string]interface{}{
-			"compile_kwd":   compileKWDWikiPage,
+			"type_kwd":      compileKWDWikiPage,
 			"available_int": 1,
 		},
 	})
@@ -91,12 +88,9 @@ func (s *engineWikiService) QueryPages(ctx context.Context, tenantID string, dat
 			"id", "kb_id", "doc_id", "docnm_kwd", "content_with_weight",
 			"slug_kwd", "source_chunk_ids",
 		},
-		// Discriminate wiki pages by compile_kwd="wiki_page". There is NO
-		// "kc_kind" column in the chunk schema (infinity_mapping.json:47-56), so
-		// it must not be used as a filter. Sections (page.go kind:"section") are
-		// stamped compile_kwd="wiki_section", so this filter returns pages only.
+		// Page roles exclude sections and internal wiki state.
 		Filter: map[string]interface{}{
-			"compile_kwd":   compileKWDWikiPage,
+			"type_kwd":      compileKWDWikiPage,
 			"available_int": 1,
 		},
 		MatchExprs: []interface{}{

@@ -24,7 +24,9 @@ export const useEditQueryRecord = ({
       const inputs: BeginQuery[] = form?.getValues('inputs') || [];
 
       const nextQuery: BeginQuery[] =
-        index > -1 ? inputs.toSpliced(index, 1, record) : [...inputs, record];
+        index > -1
+          ? inputs.map((item, idx) => (idx === index ? record : item))
+          : [...inputs, record];
 
       form.setValue('inputs', nextQuery);
 

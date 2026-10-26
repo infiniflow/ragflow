@@ -46,11 +46,14 @@ export default {
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      readOnly: 'Read-only',
       viewMore: 'View more',
       viewLess: 'View less',
       comingSoon: 'Coming soon',
@@ -409,8 +412,22 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration; it will automatically switch to the built-in {{parser}} configuration',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration; switch its parsing method manually after upload',
+      fileTypeVideoUnsupported:
+        '{{name}} ({{fileType}}): video files cannot be parsed yet',
+      videoUnsupportedAfterUploadHint:
+        'You can continue uploading, but video files cannot be parsed yet and will not be processed.',
+      videoUnsupportedParseHint:
+        'Video files cannot be parsed yet. Delete this file or convert it to a supported format.',
       reselectParserAfterUploadHint:
-        'Continue uploading, then reselect a parse method for these files in the file list.',
+        'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
+      manualSwitchAfterUploadHint:
+        'Continue uploading, then switch the parsing method for these files manually.',
+      mixedSwitchAfterUploadHint:
+        'Continue uploading. Some files will switch to a supported built-in parsing configuration automatically; switch the rest manually after upload.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
       addModelAfterUploadHint:
@@ -474,6 +491,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
       clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
+      parserConfigReparseTip:
+        'Existing chunks were generated using the previous parser settings. Would you like to clear them and re-parse this document using the saved settings?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
@@ -509,6 +528,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       source: 'Source',
       fileName: 'File name',
       datasetLogs: 'Dataset',
+      datasourceLogs: 'Data source',
       fileLogs: 'File',
       overview: 'Logs',
       success: 'Success',
@@ -544,7 +564,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
-      chunkMethod: 'Chunking method',
+      parsingMode: 'Parsing mode',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
@@ -665,6 +685,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: 'Built in',
+      builtInBadge: 'Built in',
+      builtInPipelines: 'Built-in pipelines',
+      parserSelectPlaceholder: 'Select a parser',
+      parserOptionUnavailable: 'unavailable',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -690,9 +715,10 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
       mineruFormulaEnable: 'Formula recognition',
       mineruFormulaEnableTip:
-        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+        'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
       mineruTableEnable: 'Table recognition',
-      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruTableEnableTip:
+        'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
@@ -743,9 +769,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse mode',
+      parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      parserSettingsChangeWarning:
+        'Updated parser settings apply only to newly uploaded files. To apply these settings to existing files, update their parser settings and re-parse them.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
@@ -767,8 +795,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunking method',
-      chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -1120,6 +1146,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
+      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      turnElapsed: '{{seconds}}s',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -1157,24 +1188,15 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Fast responses',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: 'Balanced speed & depth',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: 'Deep reasoning',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
-      failoverModels: 'Failover models',
-      failoverModelsTip:
-        'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
-      failoverModelsPrimaryLabel: 'Primary model',
-      failoverModelsNoPrimary: 'Tenant default',
-      failoverModelsEmpty:
-        'No fallback model. Add at least one so a provider failure can be survived.',
-      failoverModelsAdd: 'Add a fallback model',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
+      agenticTemplate: 'Agentic template',
+      agenticTemplateTip:
+        'The system template the agentic RAG agent runs with. Editing it overrides the shipped default for this chat; reset to restore it.',
+      agenticTemplateTooLong: 'Template must be at most 32768 characters',
+      resetToDefault: 'Reset to default',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -1280,6 +1302,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      search1apiApiKeyTip:
+        'When Search1API is selected, its web search results supplement dataset retrieval.',
+      search1apiApiKeyMessage: 'Please enter your Search1API API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -1310,16 +1335,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
-      showChunkMetadata: 'Show chunk metadata',
-      showChunkMetadataTip:
-        'Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks',
-      metadataFields: 'Metadata fields',
-      metadataFieldsTip:
-        'Select which metadata fields to display with each chunk',
     },
     setting: {
       Verify: 'Verify',
@@ -1687,7 +1704,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional. Comma-separated emails whose entire "My Drive" is indexed, in addition to the shared folders below. Leave empty to sync only those folders.',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
@@ -2178,20 +2195,23 @@ Example: Virtual Hosted Style`,
       models: 'Models',
       chatModel: 'LLM',
       chatModelTip: 'The default LLM for each newly created dataset.',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank',
-      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       workspace: 'workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
@@ -2774,6 +2794,21 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableVisionEnhancement: 'Enable vision enhancement',
       enableVisionEnhancementTip:
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        'Extract text from uploaded images with local OCR or the selected PaddleOCR model. Vision enhancement adds descriptions independently of this switch.',
+      imageOcrModel: 'OCR model',
+      imageOcrLocal: 'DeepDoc',
+      imageOcrModelTip:
+        'Choose DeepDoc for local OCR, or an added PaddleOCR or PaddleOCR.local model. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrModelsError:
+        'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
+      imageOcrNoModels:
+        'No PaddleOCR models added. Use DeepDoc for local OCR, or add a PaddleOCR model in model settings.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
+      visionEnhancementPromptTip:
+        'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -2841,7 +2876,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
@@ -2855,6 +2890,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Message cannot be empty',
+      aggregationIncomplete: 'Complete every aggregation group and variable',
+      inputOptionsIncomplete: 'Dropdown options cannot contain empty entries',
+      dataOperationsEntriesIncomplete:
+        'Complete all data operation entries before running',
+      invokeVariablesIncomplete:
+        'Complete all variable mappings before running',
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
@@ -2880,7 +2921,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
       categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
@@ -2895,8 +2935,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generate: 'Generate',
       answer: 'Interact',
       categorize: 'Categorize',
-      rewriteQuestion: 'Rewrite',
-      rewrite: 'Rewrite',
       begin: 'Begin',
       message: 'Message',
       blank: 'Blank',
@@ -2942,6 +2980,23 @@ Best for: Documents with flowing, contextually connected content — such as boo
       sofyaSearchDepthBasic: 'Page content',
       sofyaSearchDepthSnippets: 'Snippets only',
       sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        'A web and news search component powered by Search1API. It covers search services such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News and Reuters. As an agent tool, the agent can pick the channel and search service for each call. An API Key is required.',
+      search1APIChannelTip:
+        'Web searches the general web; News searches news sources. As an agent tool, the agent can switch the channel for each call.',
+      search1APIChannelGeneral: 'Web',
+      search1APIChannelNews: 'News',
+      search1APIService: 'Search service',
+      search1APIServiceTip:
+        'The default search service for the selected channel. As an agent tool, the agent can pick another service the channel supports for each call.',
+      search1APIApiKeyTip: 'Required. Create an API Key at app.s1.dev.',
+      search1APICrawl: 'Search1API crawl',
+      search1APICrawlDescription:
+        'Read a web page with Search1API and return its title and full content. An API Key is required.',
+      search1APICrawlUrl: 'URL',
+      search1APICrawlUrlTip:
+        'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -2966,7 +3021,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       watermarkText: 'Watermark Text',
       headerText: 'Header Text',
       footerText: 'Footer Text',
-      includeDownloadInfoInContent: 'Append download info to content',
       contentPlaceholder: 'Enter markdown content...',
       filenamePlaceholder: 'document.ext (auto-generated if empty)',
       contentRequired: 'Content is required',
@@ -2992,7 +3046,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
-        'E-mail is a required field. You must input an E-mail address here.',
+        'E-mail is optional. If left empty, a default E-mail address is used for PubMed requests.',
       arXiv: 'ArXiv',
       arXivDescription:
         'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
@@ -3355,6 +3409,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       tagFile: 'Tag file',
+      tagFileTip:
+        'Automatically extracts up to N relevant tags per chunk to improve retrieval accuracy. Supports XLSX, XLS, CSV, and TXT files, with two columns for text and tags. Separate multiple tags with commas. No header required. Tag extraction may consume additional tokens. The original chunk is preserved if extraction fails. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3540,16 +3596,28 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
+      apiKeyRequired: 'Please enter the API Key',
+      apiKeyMissing: 'No API key configured, please enter one first',
+      agentToolsMissing: 'Agent tools contain an empty entry',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
+      extractorKeywordsTopNMissing:
+        'Auto keywords is enabled, please set the number of keywords to extract (at least 1)',
+      extractorQuestionsTopNMissing:
+        'Auto-question is enabled, please set the number of questions to generate (at least 1)',
+      extractorTagsTopNMissing:
+        'Auto tags is enabled, please set the number of tags (at least 1)',
+      extractorTagFileMissing:
+        'Auto tags is enabled, please select a tag file first',
       retrievalDatasetMissing: 'No dataset selected, please choose one first',
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
-      checklistTitle:
-        'Resolve the following issues before running or publishing',
-      checklistResolveBefore:
-        'Please resolve the issues in the checklist first',
+      checklistTitle: 'The following issues may affect running or publishing',
+      loopRowsIncomplete:
+        'Complete the loop variables and termination conditions',
+      iterationOutputsIncomplete:
+        'Complete the iteration output names and references',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:
@@ -3738,8 +3806,25 @@ Important structured information may include: names, dates, locations, events, k
         removeFirst: 'Remove first',
         removeLast: 'Remove last',
       },
+      variableAssignerVariableMissing: 'Variable is required',
+      variableAssignerOperatorMissing: 'Operator is required',
+      variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
+        endpoint: 'Endpoint',
+        testEndpoint: 'Test endpoint',
+        personalUrl: 'Personal webhook URL',
+        credentialDescription:
+          'Anyone with this URL can run the agent as you. Keep it secret; creating a new URL invalidates the old one.',
+        createCredential: 'Create or rotate URL',
+        revokeCredential: 'Revoke my URL',
+        credentialCreated:
+          'Webhook URL created. Copy and store it now; it will not be shown again after you leave this page.',
+        credentialRevoked: 'Webhook URL revoked.',
+        credentialRequestFailed: 'Unable to update the webhook URL.',
+        revokeCredentialTitle: 'Revoke your webhook URL?',
+        revokeCredentialDescription:
+          'Requests using this URL will stop working. You can create a new URL at any time.',
         methods: 'Methods',
         contentTypes: 'Content types',
         security: 'Security',
@@ -3871,6 +3956,8 @@ Important structured information may include: names, dates, locations, events, k
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
     },
     pagination: {
       total: 'Total {{total}}',

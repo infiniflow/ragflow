@@ -33,7 +33,7 @@ func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var req DropProviderInstanceRequest
+			var req service.DropProviderInstanceRequest
 			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +74,7 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-1", InstanceID: "instance-1", ModelName: "gpt-test", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	}
@@ -185,6 +185,24 @@ func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsDoesNotUseMaxOutputAsContextWindow(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "chat-model", "model_types": []string{"chat"}, "context_length": 128000, "max_output": 4096},
+	}
+	remote := []map[string]interface{}{
+		{"name": "CHAT-MODEL", "model_types": []string{"chat"}, "context_length": 256000, "max_output": 8192},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	model := got["chat-model"]
+	if model["max_tokens"] != 128000 {
+		t.Fatalf("legacy max_tokens = %v, want catalog context length 128000", model["max_tokens"])
+	}
+	if model["max_output"] != 8192 {
+		t.Fatalf("max_output = %v, want remote output ceiling 8192", model["max_output"])
+	}
+}
+
 func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	static := []map[string]interface{}{
 		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
@@ -223,8 +241,8 @@ func TestValidateInstanceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
-				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			if err := service.ValidateProviderInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("ValidateProviderInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
 			}
 		})
 	}

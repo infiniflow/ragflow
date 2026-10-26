@@ -63,11 +63,10 @@ func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -106,11 +105,10 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		chatModelConfig.UsageResult = nil
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -171,7 +169,7 @@ func (g *GiteeModel) Embed(ctx context.Context, modelName *string, request Embed
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -280,7 +278,7 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, request Rera
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -390,7 +388,7 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.OCR)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.OCR)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -487,7 +485,7 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.DocumentParse)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.DocumentParse)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -616,11 +614,10 @@ func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, 
 
 func (g *GiteeModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -668,12 +665,10 @@ func (g *GiteeModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[str
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -730,11 +725,10 @@ func (g *GiteeModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 		return err
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Status)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Status)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -808,11 +802,10 @@ func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, err
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Tasks)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Tasks)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -869,11 +862,11 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 		return nil, err
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	taskURL, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Task)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s/get", resolvedBaseURL, g.baseModel.URLSuffix.Task, taskID)
+	url := taskURL + "/" + taskID + "/get"
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -924,4 +917,8 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 	}
 
 	return taskResp, nil
+}
+
+func (g *GiteeModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
 }

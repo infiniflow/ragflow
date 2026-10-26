@@ -50,7 +50,7 @@ func TestMetadataSelectionRoutesPersistDatasetScope(t *testing.T) {
 		{name: "empty_intersection", selector: `{"document_ids":["doc-2"],"metadata_condition":{"conditions":[{"name":"author","comparison_operator":"is","value":"alice"}]}}`},
 		{name: "ids_with_empty_condition_object", selector: `{"document_ids":["doc-2"],"metadata_condition":{}}`, wantIDs: []string{"doc-2"}},
 		{name: "foreign_document_id", selector: `{"document_ids":["doc-other"]}`, wantCode: common.CodeDataError},
-		{name: "inaccessible_dataset", dataset: "dataset-foreign", wantCode: common.CodeDataError},
+		{name: "inaccessible_dataset", dataset: "dataset-foreign", wantCode: common.CodeForbidden},
 		{name: "empty_dataset", dataset: "dataset-empty"},
 	}
 	routes := []struct{ method, suffix string }{
@@ -160,6 +160,14 @@ func setupMetadataSelectionRoute(t *testing.T) *metadataSelectionStore {
 		t.Fatal(err)
 	}
 	status := string(entity.StatusValid)
+	for _, tenantID := range []string{"user-1", "user-2"} {
+		if err := db.Create(&entity.UserTenant{
+			ID: "ut-" + tenantID, UserID: tenantID, TenantID: tenantID,
+			Role: "owner", Status: &status,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, kb := range []entity.Knowledgebase{
 		{ID: "dataset-1", TenantID: "user-1"}, {ID: "dataset-other", TenantID: "user-1"},
 		{ID: "dataset-foreign", TenantID: "user-2"}, {ID: "dataset-empty", TenantID: "user-1"},

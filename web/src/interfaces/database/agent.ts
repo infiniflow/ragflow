@@ -75,6 +75,7 @@ export declare interface IFlow {
   update_date: string;
   update_time: number;
   user_id: string;
+  tenant_id?: string;
   permission: string;
   nickname: string;
   operator_permission: number;
@@ -91,6 +92,19 @@ export declare interface IFlow {
 export enum AgentListItemType {
   Agent = 'agent',
   CompilationTemplateGroup = 'compilation_template_group',
+  BuiltinPipeline = 'builtin_pipeline',
+}
+
+// A built-in ingestion pipeline rendered as a read-only list item. Built-in
+// pipelines are static, non-DB resources served by GET /api/v1/pipelines; they
+// are composed into the agents list on the front end (mirroring PR #20603's
+// unified parser dropdown) rather than stored as user canvases, and are always
+// marked read-only (builtin: true). They are kept out of the AgentListItem
+// union because they never come from the server's agent list.
+export interface IBuiltinPipelineListItem extends IBuiltinPipeline {
+  canvas_category: string;
+  type: AgentListItemType.BuiltinPipeline;
+  builtin: true;
 }
 
 export type AgentListItem =
@@ -228,7 +242,6 @@ export type IRelevantNode = BaseNode;
 export type ILogicNode = BaseNode;
 export type INoteNode = BaseNode;
 export type IMessageNode = BaseNode;
-export type IRewriteNode = BaseNode;
 export type IInvokeNode = BaseNode;
 export type ITemplateNode = BaseNode;
 export type IEmailNode = BaseNode;
@@ -250,7 +263,6 @@ export type RAGFlowNodeType =
   | ILogicNode
   | INoteNode
   | IMessageNode
-  | IRewriteNode
   | IInvokeNode
   | ITemplateNode
   | IEmailNode
@@ -284,6 +296,7 @@ export interface IAgentLogResponse {
   reference: IReference[];
   name: string;
   version_title: string;
+  is_new?: boolean;
 }
 export interface IAgentLogsResponse {
   total: number;
@@ -340,4 +353,9 @@ export interface IWebhookTrace {
   events: any[];
   next_since_ts: number;
   finished: boolean;
+}
+
+export interface IAgentWebhookCredential {
+  credential: string;
+  webhook_url: string;
 }

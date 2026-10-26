@@ -73,6 +73,8 @@ type ModelDriver interface {
 	ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error)
 
 	ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error)
+
+	Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error)
 }
 
 type ChatResponse struct {
@@ -122,8 +124,30 @@ type TTSResponse struct {
 	MediaType string `json:"media_type,omitempty"`
 }
 
+// OCRPage retains the source image dimensions and reading-order blocks.
+// Index is the zero-based source PDF page index, including blank pages.
+type OCRPage struct {
+	Index  int        `json:"index"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+	Blocks []OCRBlock `json:"blocks"`
+}
+
+// OCRBlock carries a layout region in source-image pixels. BBox is
+// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
+// provider coordinates to this rectangle before returning blocks.
+type OCRBlock struct {
+	Text  string    `json:"text"`
+	Label string    `json:"label,omitempty"`
+	BBox  []float64 `json:"bbox,omitempty"`
+}
+
 type OCRFileResponse struct {
 	Text *string `json:"text"`
+	// Pages is optional structured output for internal parsing; nil means unavailable.
+	Pages []OCRPage `json:"-"`
+	// Warnings reports partial failures internally; the public response stays text-only.
+	Warnings []string `json:"-"`
 }
 
 type ListModelResponse struct {
@@ -155,6 +179,50 @@ type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
 }
 
+type Question interface {
+	isQuestion()
+}
+
+type Noul struct {
+	Instructions any
+	Criteria     *NoulCriteria
+}
+
+func (Noul) isQuestion() {}
+
+type NoulCriteria struct {
+	True  any `json:"true,omitzero"`
+	False any `json:"false,omitzero"`
+}
+
+type Choice struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Choice) isQuestion() {}
+
+type Score struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Score) isQuestion() {}
+
+type Box struct {
+	Instructions any
+}
+
+func (Box) isQuestion() {}
+
+type DecideRequest struct {
+	State     any                 `json:"state"`
+	Questions map[string]Question `json:"question"`
+}
+
+type DecideResponse struct {
+}
+
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
@@ -169,14 +237,17 @@ type ModelList struct {
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat          string `json:"chat"`
-	AsyncChat     string `json:"async_chat"`
-	AsyncResult   string `json:"async_result"`
-	Embedding     string `json:"embedding"`
-	Rerank        string `json:"rerank"`
-	TTS           string `json:"tts"`
-	ASR           string `json:"asr"`
-	OCR           string `json:"ocr"`
+	Chat        string `json:"chat"`
+	AsyncChat   string `json:"async_chat"`
+	AsyncResult string `json:"async_result"`
+	Embedding   string `json:"embedding"`
+	Rerank      string `json:"rerank"`
+	TTS         string `json:"tts"`
+	ASR         string `json:"asr"`
+	OCR         string `json:"ocr"`
+	// Decision is the TypeSafe System One path: a separate endpoint from chat
+	// because it takes one request carrying many questions, not a message list.
+	Decision      string `json:"decision"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
 	Balance       string `json:"balance"`
@@ -258,6 +329,10 @@ type TTSConfig struct {
 
 type OCRConfig struct {
 	Algorithm string
+	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
+	// parser setup's "pages" shape. Empty means the whole document. Drivers
+	// whose backend cannot select pages ignore it.
+	Pages [][]int
 }
 
 type ParseFileConfig struct {
@@ -273,6 +348,7 @@ type EmbeddingModel struct {
 	APIConfig    *APIConfig
 	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
 	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
+	info         *ModelInfo
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
@@ -285,20 +361,39 @@ func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConf
 	}
 }
 
-// ResolveBatchSize returns the max texts per Embed request for this embedding
-// model. It prefers an explicit MaxBatchSize set at construction time and falls
-// back to the provider capability (all_models.json batch_size, added by
-// #17877/#17878) via GetEmbeddingBatchSize, which itself defaults to
-// DefaultEmbeddingBatchSize.
-func (m *EmbeddingModel) ResolveBatchSize() int {
-	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 {
-		return *m.MaxBatchSize
+// NewEmbeddingModelWithInfo creates an embedding model with resolved metadata.
+func NewEmbeddingModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int, info *ModelInfo) *EmbeddingModel {
+	model := NewEmbeddingModel(driver, modelName, apiConfig, maxTokens)
+	model.info = cloneModelInfo(info)
+	if info != nil && info.Catalog != nil {
+		model.MaxBatchSize = info.Catalog.MaxBatchSize
 	}
+	return model
+}
+
+// Info returns metadata for this selected embedding model.
+func (m *EmbeddingModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
+}
+
+// ResolveBatchSize returns the safe maximum texts per Embed request. The
+// effective limit cannot exceed either the model's declared maximum or the
+// provider/runtime batch capability; these values can differ (for example, a
+// provider model config can declare max_batch_size=32 while its driver only
+// accepts the default batch size of 16).
+func (m *EmbeddingModel) ResolveBatchSize() int {
 	var name string
 	if m != nil && m.ModelName != nil {
 		name = *m.ModelName
 	}
-	return GetEmbeddingBatchSize(name)
+	batchSize := GetEmbeddingBatchSize(name)
+	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 && *m.MaxBatchSize < batchSize {
+		return *m.MaxBatchSize
+	}
+	return batchSize
 }
 
 // ResolveMaxTokens is ResolveBatchSize's counterpart for the input window: the
@@ -334,34 +429,58 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 	return GetModelTokenizer(name)
 }
 
-// QuotaKey names the deployment this embedding model counts against: endpoint,
-// region, model name and an API-key prefix. The tokenizer belongs to the model, but
-// what a provider accepts is per deployment - the same model behind two endpoints
-// can have different windows - so everything that learns a real/own token ratio
-// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
-// has to key that ratio the same way; otherwise each path re-learns the same
-// rejection and none of them tightens for the others.
+// QuotaKey names the deployment this embedding model counts against: provider,
+// endpoint, region, model name and an API-key prefix. The tokenizer belongs to the
+// model, but what a provider accepts is per deployment - the same model behind two
+// endpoints can have different windows - so everything that learns a real/own token
+// ratio (the ingest embedder, the dataset-nav embedder, the knowledge-compiler
+// embedder) has to key that ratio the same way; otherwise each path re-learns the
+// same rejection and none of them tightens for the others.
 func (m *EmbeddingModel) QuotaKey() string {
 	if m == nil {
 		return ""
 	}
-	var baseURL, region, apiKey, modelName string
-	if cfg := m.APIConfig; cfg != nil {
-		if cfg.BaseURL != nil {
-			baseURL = *cfg.BaseURL
+	return quotaKeyFor(providerNameOf(m.info), m.APIConfig, m.ModelName)
+}
+
+// providerNameOf is the provider a model was resolved from, or "" when it was built
+// without catalog metadata (tests, direct construction).
+func providerNameOf(info *ModelInfo) string {
+	if info == nil {
+		return ""
+	}
+	return info.ProviderName
+}
+
+// quotaKeyFor is the shared key used by every model that calibrates a real/own
+// token ratio against a provider deployment: provider, resolved endpoint, region,
+// model name and a short API-key digest. The tokenizer belongs to the model, but the
+// accepted window belongs to the deployment, and the digest keeps two tenants of the
+// same endpoint from sharing one learned ratio.
+//
+// providerName matters when BaseURL is empty: the driver then falls back to the
+// endpoint its provider config supplies for that region, so provider + region is what
+// identifies the deployment. Without it two providers that resolve to different
+// default endpoints but agree on region, model and key would share one learned ratio,
+// and the tighter window would over-truncate the other's requests.
+func quotaKeyFor(providerName string, apiConfig *APIConfig, modelName *string) string {
+	var baseURL, region, apiKey, name string
+	if apiConfig != nil {
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
 		}
-		if cfg.Region != nil {
-			region = *cfg.Region
+		if apiConfig.Region != nil {
+			region = *apiConfig.Region
 		}
-		if cfg.ApiKey != nil {
-			apiKey = *cfg.ApiKey
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
 		}
 	}
-	if m.ModelName != nil {
-		modelName = *m.ModelName
+	if modelName != nil {
+		name = *modelName
 	}
 	sum := sha256.Sum256([]byte(apiKey))
-	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
+	return fmt.Sprintf("%s|%s|%s|%s|%x", providerName, baseURL, region, name, sum[:8])
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration
@@ -373,6 +492,7 @@ type RerankModel struct {
 
 	limiter    tokenizer.Limiter
 	limiterErr error
+	info       *ModelInfo
 }
 
 // NewRerankModel creates a new RerankModel
@@ -380,32 +500,72 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
-	tokenizerID := ""
-	if modelName != nil {
-		tokenizerID = GetModelTokenizer(*modelName)
-	}
-	return &RerankModel{
+	model := &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
-		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
-		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
+	model.initLimiter()
+	return model
 }
 
-// ResolveTokenizerID returns the tokenizer family declared for this reranker, or
-// an empty string when the model catalog does not provide one.
-func (r *RerankModel) ResolveTokenizerID() string {
-	if r == nil || r.ModelName == nil {
+// NewRerankModelWithInfo creates a rerank model with resolved metadata.
+func NewRerankModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int, info *ModelInfo) *RerankModel {
+	model := NewRerankModel(driver, modelName, apiConfig, maxTokens)
+	model.info = cloneModelInfo(info)
+	// Rebuild the limiter now that the provider is known: it is part of the
+	// calibration key (see quotaKeyFor), and it was built without it above.
+	model.initLimiter()
+	return model
+}
+
+// initLimiter binds the model's declared tokenizer and its deployment calibration
+// key. Safe to call more than once; the constructors call it after the model's
+// metadata is set so the key can include the provider.
+func (r *RerankModel) initLimiter() {
+	tokenizerID := ""
+	if r.ModelName != nil {
+		tokenizerID = GetModelTokenizer(*r.ModelName)
+	}
+	// The calibration key is the deployment, not the model: rerank and embedding
+	// that share an endpoint still learn separate ratios, but every rerank caller
+	// of one deployment keys the same ratio and tightens it together (see
+	// RerankModel.Rerank, which records over-limit rejections against it).
+	quotaKey := r.QuotaKey()
+	r.limiter = tokenizer.LimiterFor(tokenizerID, quotaKey, tokenizer.DefaultCalibration())
+	r.limiterErr = tokenizer.RefuseUnavailableCounter(tokenizerID, quotaKey)
+}
+
+// Info returns metadata for this selected rerank model.
+func (r *RerankModel) Info() *ModelInfo {
+	if r == nil {
+		return nil
+	}
+	return cloneModelInfo(r.info)
+}
+
+// QuotaKey names the deployment this rerank model counts against, so its
+// calibration is keyed the same way as an embedding model on the same endpoint.
+func (r *RerankModel) QuotaKey() string {
+	if r == nil {
 		return ""
 	}
-	return GetModelTokenizer(*r.ModelName)
+	return quotaKeyFor(providerNameOf(r.info), r.APIConfig, r.ModelName)
 }
 
 // Rerank calculates similarity between query and texts. Rerank input is measured
 // and truncated with the model's declared tokenizer, just like embedding input.
-func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+// An over-limit rejection is recovered like the embedding path: the documents are
+// re-cut with a smaller budget and the calibration is told, as an attempt - if every
+// budget is rejected the provider's error is still returned.
+//
+// The window bounds the query PLUS each document, not a single text, so only the
+// documents can shrink - the query is fixed. RERANK_TOKEN_LIMIT_MODE decides
+// whether that is wanted at all: "passthrough" sends the input untouched, and
+// "raise_error" reports an oversized document instead of trimming it, so neither
+// retries; only "truncate" (the default) shrinks-and-retries.
+func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if r == nil || r.ModelDriver == nil {
 		return nil, errors.New("rerank model: driver is nil")
 	}
@@ -413,12 +573,6 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
-	if r.limiterErr != nil {
-		return nil, r.limiterErr
-	}
-	limiter := r.limiter
-	counter := limiter.Counter()
-	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
 	if mode == "" {
 		mode = "truncate"
@@ -426,26 +580,98 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, apiConf
 	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
 		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
 	}
-	if mode != "passthrough" && len(request.Documents) > 0 {
-		queryTokens := counter.Count(request.Query)
-		if mode == "truncate" {
-			documentBudget := max(effectiveMaxTokens-queryTokens, 0)
-			documentTokens := tokenizer.OverLimitLadder(documentBudget)[0]
-			documents := make([]string, len(request.Documents))
-			for i, document := range request.Documents {
-				documents[i] = counter.TrimToLimit(document, documentTokens)
-			}
-			request.Documents = documents
-		} else {
-			for i, document := range request.Documents {
-				inputTokens := queryTokens + counter.Count(document)
-				if inputTokens > effectiveMaxTokens {
-					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
-				}
+	// passthrough opted out of measuring the input; an empty document list has
+	// nothing to cut. Neither needs the tokenizer counter, so the "declared
+	// tokenizer asset is missing" refusal does not apply to them.
+	if mode == "passthrough" || len(request.Documents) == 0 {
+		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+	}
+	// Both remaining modes count tokens, so an unavailable declared tokenizer is a
+	// refusal rather than a silent fallback to the calibrated estimate.
+	if r.limiterErr != nil {
+		return nil, r.limiterErr
+	}
+	limiter := r.limiter
+	counter := limiter.Counter()
+	effectiveMaxTokens := limiter.Limit(maxTokens)
+
+	queryTokens := counter.Count(request.Query)
+	documentBudget := max(effectiveMaxTokens-queryTokens, 0)
+
+	if mode == "raise_error" {
+		for i, document := range request.Documents {
+			inputTokens := queryTokens + counter.Count(document)
+			if inputTokens > effectiveMaxTokens {
+				return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 			}
 		}
+		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
 	}
-	return r.ModelDriver.Rerank(ctx, r.ModelName, request, apiConfig, rerankConfig, modelUsage)
+
+	// mode == "truncate": pre-cut each document to the window, then shrink and
+	// retry if the provider still rejects an input as over its window. A provider
+	// that rejects a window computed from its own declared limit is telling us the
+	// declared limit was too optimistic (an estimate, or a smaller real window);
+	// re-cutting keeps the call alive, and the observation tightens the next one.
+	original := request.Documents
+	cal, calKey := limiter.Calibration()
+	var lastErr error
+	for _, budget := range tokenizer.OverLimitLadder(documentBudget) {
+		attempt := request
+		attempt.Documents = make([]string, len(original))
+		for i, document := range original {
+			attempt.Documents[i] = counter.TrimToLimit(document, budget)
+		}
+		resp, err := r.ModelDriver.Rerank(ctx, r.ModelName, attempt, r.APIConfig, rerankConfig, modelUsage)
+		if err == nil {
+			return resp, nil
+		}
+		if !tokenizer.IsOverLimitError(err) {
+			return nil, err
+		}
+		// The provider rejected the documents we actually sent, so the true ratio is
+		// at least maxTokens / our count of that attempt's largest pair - not the
+		// original's, which is longer and would understate the ratio.
+		cal.ObserveOverLimit(calKey, queryTokens+tokenizer.OwnTokenMax(attempt.Documents, counter), maxTokens)
+		lastErr = err
+	}
+	return nil, lastErr
+}
+
+// OCRModel wraps a ModelDriver with optical-character-recognition configuration.
+type OCRModel struct {
+	ModelDriver ModelDriver
+	ModelName   *string
+	APIConfig   *APIConfig
+	info        *ModelInfo
+}
+
+// NewOCRModel creates an OCR model wrapper.
+func NewOCRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *OCRModel {
+	return &OCRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewOCRModelWithInfo creates an OCR model with resolved metadata.
+func NewOCRModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *OCRModel {
+	model := NewOCRModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected OCR model.
+func (m *OCRModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
+}
+
+// OCRFile extracts text from an image or document.
+func (m *OCRModel) OCRFile(ctx context.Context, content []byte, url *string, config *OCRConfig, usage *common.ModelUsage) (*OCRFileResponse, error) {
+	if m == nil || m.ModelDriver == nil {
+		return nil, errors.New("OCR model: driver is nil")
+	}
+	return m.ModelDriver.OCRFile(ctx, m.ModelName, content, url, m.APIConfig, config, usage)
 }
 
 // ASRModel wraps a ModelDriver with speech-to-text configuration.
@@ -453,11 +679,27 @@ type ASRModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	info        *ModelInfo
 }
 
 // NewASRModel creates a new ASRModel.
 func NewASRModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *ASRModel {
 	return &ASRModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewASRModelWithInfo creates an ASR model with resolved metadata.
+func NewASRModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *ASRModel {
+	model := NewASRModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected ASR model.
+func (m *ASRModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
 }
 
 // Transcribe converts audio to text.
@@ -475,11 +717,27 @@ type TTSModel struct {
 	ModelDriver ModelDriver
 	ModelName   *string
 	APIConfig   *APIConfig
+	info        *ModelInfo
 }
 
 // NewTTSModel creates a new TTSModel.
 func NewTTSModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *TTSModel {
 	return &TTSModel{ModelDriver: driver, ModelName: modelName, APIConfig: apiConfig}
+}
+
+// NewTTSModelWithInfo creates a TTS model with resolved metadata.
+func NewTTSModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *TTSModel {
+	model := NewTTSModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected TTS model.
+func (m *TTSModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
 }
 
 // Speech converts text to audio.
@@ -512,6 +770,7 @@ type ChatModel struct {
 	ModelName   *string
 	APIConfig   *APIConfig
 	ToolConfig  *ToolConfig
+	info        *ModelInfo
 }
 
 // NewChatModel creates a new ChatModel
@@ -523,10 +782,29 @@ func NewChatModel(driver ModelDriver, modelName *string, apiConfig *APIConfig) *
 	}
 }
 
+// NewChatModelWithInfo creates a chat model with resolved metadata.
+func NewChatModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, info *ModelInfo) *ChatModel {
+	model := NewChatModel(driver, modelName, apiConfig)
+	model.info = cloneModelInfo(info)
+	return model
+}
+
+// Info returns metadata for this selected chat model.
+func (m *ChatModel) Info() *ModelInfo {
+	if m == nil {
+		return nil
+	}
+	return cloneModelInfo(m.info)
+}
+
 // ChatWithMessages sends a non-streaming chat request through the model wrapper.
 func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
 	if m == nil || m.ModelDriver == nil {
 		return nil, errors.New("chat model: driver is nil")
+	}
+	config = m.withDefaults(config)
+	if err := m.validateMaxOutput(config); err != nil {
+		return nil, err
 	}
 	modelName := ""
 	if m.ModelName != nil {
@@ -540,11 +818,43 @@ func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Messa
 	if m == nil || m.ModelDriver == nil {
 		return errors.New("chat model: driver is nil")
 	}
+	config = m.withDefaults(config)
+	if err := m.validateMaxOutput(config); err != nil {
+		return err
+	}
 	modelName := ""
 	if m.ModelName != nil {
 		modelName = *m.ModelName
 	}
 	return m.ModelDriver.ChatStreamlyWithSender(ctx, modelName, messages, m.APIConfig, config, usage, sender)
+}
+
+func (m *ChatModel) withDefaults(config *ChatConfig) *ChatConfig {
+	if config == nil {
+		config = &ChatConfig{}
+	}
+	if m.info == nil {
+		return config
+	}
+	if config.ModelClass == nil && m.info.ModelClass != "" {
+		modelClass := m.info.ModelClass
+		config.ModelClass = &modelClass
+	}
+	if config.Thinking == nil && m.info.Thinking != nil {
+		thinking := m.info.Thinking.DefaultValue
+		config.Thinking = &thinking
+	}
+	return config
+}
+
+func (m *ChatModel) validateMaxOutput(config *ChatConfig) error {
+	if m == nil || m.info == nil || m.info.MaxOutput <= 0 || config == nil || config.MaxTokens == nil {
+		return nil
+	}
+	if *config.MaxTokens > m.info.MaxOutput {
+		return fmt.Errorf("chat max_tokens %d exceeds model max_output %d", *config.MaxTokens, m.info.MaxOutput)
+	}
+	return nil
 }
 
 // BindTools registers tools for the ChatModel to call.
@@ -583,4 +893,42 @@ func (cm *ChatModel) SetTerminalTools(names ...string) {
 		term[n] = struct{}{}
 	}
 	cm.ToolConfig.TerminalTools = term
+}
+
+// ModelInfo describes the selected model without exposing its driver
+// credentials. ContextLength is the input/context window; MaxOutput is the
+// provider's maximum generated-token budget.
+type ModelInfo struct {
+	ID            string
+	Name          string
+	ProviderName  string
+	InstanceID    string
+	InstanceName  string
+	ModelTypes    []string
+	ContextLength int
+	MaxOutput     int
+	SupportsTools bool
+	ModelClass    string
+	Thinking      *ModelThinking
+	Catalog       *Model
+}
+
+func cloneModelInfo(info *ModelInfo) *ModelInfo {
+	if info == nil {
+		return nil
+	}
+	copy := *info
+	copy.ModelTypes = append([]string(nil), info.ModelTypes...)
+	if info.Thinking != nil {
+		thinking := *info.Thinking
+		copy.Thinking = &thinking
+	}
+	if info.Catalog != nil {
+		catalog := *info.Catalog
+		catalog.ModelTypes = append([]string(nil), info.Catalog.ModelTypes...)
+		catalog.Dimensions = append([]int(nil), info.Catalog.Dimensions...)
+		catalog.Alias = append([]string(nil), info.Catalog.Alias...)
+		copy.Catalog = &catalog
+	}
+	return &copy
 }

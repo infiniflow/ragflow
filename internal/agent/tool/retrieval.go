@@ -61,7 +61,6 @@ type retrievalArgs struct {
 	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
-	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
 	EmptyResponse            string         `json:"empty_response,omitempty"`
@@ -194,6 +193,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
+	//
+	// Agentic: no dense-only rescue — a row the query's own words never
+	// matched is not evidence the model asked for.
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -204,9 +206,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
-		TOCEnhance:               args.TOCEnhance,
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
@@ -311,7 +313,6 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.RetrievalFrom == "" && len(args.MemoryIDs) > 0 {
 		args.RetrievalFrom = "memory"
 	}
-	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args
 }

@@ -67,11 +67,10 @@ func (t *TokenHubModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := t.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -97,11 +96,10 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
@@ -122,11 +120,10 @@ func (t *TokenHubModel) Embed(ctx context.Context, modelName *string, request Em
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -223,11 +220,10 @@ func (t *TokenHubModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -300,4 +296,8 @@ func (t *TokenHubModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]
 
 func (t *TokenHubModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", t.Name())
+}
+
+func (t *TokenHubModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
 }

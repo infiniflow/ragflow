@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -106,29 +107,16 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 
-	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+	if !resultMD.Produced() || len(resultMD.JSON) == 0 {
 		t.Fatalf("resultMD=%+v", resultMD)
-	}
-}
-
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
-	if result.OutputFormat != "markdown" {
-		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
-	}
-	if result.Markdown != "# Heading" {
-		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
-	}
-	if result.JSON != nil {
-		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
 	}
 }
 
@@ -163,7 +151,7 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Markdown != "selected" {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -172,93 +160,202 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 // the OCRFile method needed by dispatchPaddleOCRPdf.
 type paddleOCRFakeDriver struct {
 	modelModule.ModelDriver
-	text string
+	pages []modelModule.OCRPage
 }
 
 func (d *paddleOCRFakeDriver) Name() string { return "PaddleOCR" }
 
 func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ *string, _ *modelModule.APIConfig, _ *modelModule.OCRConfig, _ *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
-	return &modelModule.OCRFileResponse{Text: &d.text}, nil
+	return &modelModule.OCRFileResponse{Pages: d.pages}, nil
 }
 
-// TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization verifies
-// that PaddleOCR dispatch returns backend Markdown for the shared Parser
-// output normalizer, regardless of the normalized component setup format.
-func TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization(t *testing.T) {
-	orig := resolvePaddleOCRModelForDispatch
-	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
-
-	md := "## 《道德经》全文及翻译\n\n道可道，非常道。"
+func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
+	original := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = original })
 	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
-		baseURL := "http://localhost:9380"
-		return &paddleOCRFakeDriver{text: md}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
+		return &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "# Heading\n\nBody"}}}}}, "ocr-model", &modelModule.APIConfig{}, nil
 	}
-
-	// 1. output_format="json": preserve Markdown for central normalization.
-	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "json"}, "some-uuid")
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{}, "model")
 	if err != nil {
-		t.Fatalf("dispatchPaddleOCRPdf: %v", err)
+		t.Fatal(err)
 	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
-	}
-	if res.JSON != nil {
-		t.Fatalf("res.JSON = %#v, want nil before central normalization", res.JSON)
-	}
-	if res.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
-	}
-
-	// 2. output_format="markdown": the backend payload is unchanged.
-	resMD, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "markdown"}, "some-uuid")
-	if err != nil {
-		t.Fatalf("dispatchPaddleOCRPdf (markdown): %v", err)
-	}
-	if resMD.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", resMD.OutputFormat)
-	}
-	if resMD.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", resMD.Markdown, md)
-	}
-	if resMD.JSON != nil {
-		t.Errorf("resMD.JSON = %#v, want nil before central normalization", resMD.JSON)
-	}
-
-	// 3. Default setup (no output_format key) follows the same central path.
-	resDef, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
-	if err != nil {
-		t.Fatalf("dispatchPaddleOCRPdf (default setup): %v", err)
-	}
-	if resDef.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", resDef.OutputFormat)
-	}
-	if resDef.JSON != nil {
-		t.Fatalf("resDef.JSON = %#v, want nil before central normalization", resDef.JSON)
-	}
-	if resDef.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", resDef.Markdown, md)
+	if !result.Produced() || len(result.JSON) == 0 {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
-// TestDispatchPaddleOCRPdfEmptyTextFails guards against the silent-empty
-// result: OCRFileResponse.Text is a *string that stays non-nil even when the
-// backend produced zero text, so the old nil-only guard let an empty payload
-// through and the pipeline emitted a "completed with 0 chunks" document.
-// Empty text must surface as an explicit error instead.
-func TestDispatchPaddleOCRPdfEmptyTextFails(t *testing.T) {
+func TestDispatchPaddleOCRPDFRejectsMissingBlocks(t *testing.T) {
 	orig := resolvePaddleOCRModelForDispatch
 	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
 
 	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		baseURL := "http://localhost:9380"
-		return &paddleOCRFakeDriver{text: ""}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
+		return &paddleOCRFakeDriver{}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
 	}
 
 	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
 	if err == nil {
-		t.Fatalf("dispatchPaddleOCRPdf with empty text: expected error, got result %+v", res)
+		t.Fatalf("dispatchPaddleOCRPdf without page blocks: expected error, got result %+v", res)
 	}
-	if res.OutputFormat != "" || res.Markdown != "" {
+	if res.Produced() {
 		t.Errorf("expected zero-value result on error, got %+v", res)
+	}
+}
+
+func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		item        map[string]any
+		wantLayout  string
+		wantDocType string
+	}{
+		{"list", map[string]any{"type": "list", "list_items": []any{"a", "b"}}, "list", "text"},
+		{"code", map[string]any{"type": "code", "code_body": "x"}, "code", "text"},
+		{"title", map[string]any{"type": "title", "text": "T"}, "title", "text"},
+		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
+		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
+		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
+		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mineruContentItemToJSON(tc.item, nil)
+			if got == nil {
+				t.Fatal("item was dropped")
+			}
+			if got["layout"] != tc.wantLayout {
+				t.Errorf("layout = %v, want %q", got["layout"], tc.wantLayout)
+			}
+			if got["doc_type_kwd"] != tc.wantDocType {
+				t.Errorf("doc_type_kwd = %v, want %q", got["doc_type_kwd"], tc.wantDocType)
+			}
+		})
+	}
+}
+
+func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Hello","page_idx":0,"bbox":[10,20,110,40]},
+		{"type":"image","img_path":"images/figure.png","image_caption":["A figure"],"page_idx":1,"bbox":[1,2,3,4]},
+		{"type":"header","text":"skip me","page_idx":0,"bbox":[0,0,1,1]}
+	]`))
+	img, err := zw.Create("images/figure.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte("png-data"))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes())
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (header dropped)", len(items))
+	}
+	if items[0]["text"] != "Hello" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("text item = %#v", items[0])
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("text positions = %#v", items[0]["_pdf_positions"])
+	}
+	if page, _ := pos[0][0].(int); page != 1 {
+		t.Fatalf("text page = %#v, want 1-based page 1", pos[0])
+	}
+	if left, _ := pos[0][1].(float64); left != 10 {
+		t.Fatalf("bbox left = %#v, want 10 (x0)", pos[0])
+	}
+	if right, _ := pos[0][2].(float64); right != 110 {
+		t.Fatalf("bbox right = %#v, want 110 (x1)", pos[0])
+	}
+
+	imageItem := items[1]
+	if imageItem["doc_type_kwd"] != "image" {
+		t.Fatalf("image doc_type = %#v", imageItem["doc_type_kwd"])
+	}
+	if imageItem["text"] != "A figure" {
+		t.Fatalf("image text = %#v", imageItem["text"])
+	}
+	uri, _ := imageItem["image"].(string)
+	if !strings.HasPrefix(uri, "data:image/png;base64,") {
+		t.Fatalf("image data URI = %q", uri)
+	}
+	imgPos, _ := imageItem["_pdf_positions"].([][]any)
+	if len(imgPos) != 1 {
+		t.Fatalf("image positions = %#v", imageItem["_pdf_positions"])
+	}
+	if page, _ := imgPos[0][0].(int); page != 2 {
+		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+func TestDispatchMinerUPDFRequiresBaseURL(t *testing.T) {
+	t.Setenv("MINERU_APISERVER", "")
+	orig := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = orig })
+
+	empty := ""
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{BaseURL: &empty}, nil
+	}
+
+	_, err := dispatchMinerUPDF(t.Context(), dao.DB, "sample.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Fatalf("dispatchMinerUPDF empty URL error = %v", err)
+	}
+}
+
+func TestDispatchPaddleOCRPDFPreservesLayout(t *testing.T) {
+	withSSRFBypass(t)
+	body, err := os.ReadFile("../../entity/models/testdata/paddleocr_layout.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile("../../parser/parser/testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(body)
+	}))
+	defer server.Close()
+	original := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = original })
+	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return modelModule.NewPaddleOCRLocalModel(nil, modelModule.URLSuffix{OCR: "layout-parsing"}), "PaddleOCR-VL-1.6", &modelModule.APIConfig{BaseURL: &server.URL}, nil
+	}
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", data, "tenant", nil, "model-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Produced() || len(result.JSON) != 7 {
+		t.Fatalf("result=%+v", result)
+	}
+	if result.JSON[0].ToMap()["positions"] == nil || result.JSON[2].ToMap()["table"] == nil {
+		t.Fatalf("items=%v", result.JSON)
+	}
+}
+
+func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
+	original := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = original })
+	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "body", Label: "text"}}}}}, "ocr-model", &modelModule.APIConfig{}, nil
+	}
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", nil, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.JSON) != 1 {
+		t.Fatalf("items=%v", result.JSON)
 	}
 }

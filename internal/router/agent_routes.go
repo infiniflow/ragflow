@@ -67,6 +67,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.GET("/:canvas_id/versions", h.ListVersions)
 	g.GET("/:canvas_id/versions/:version_id", h.GetVersion)
 	g.DELETE("/:canvas_id/versions/:version_id", h.DeleteVersion)
+	g.POST("/:canvas_id/versions/:version_id/apply", h.ApplyVersion)
 
 	// Sessions.
 	g.GET("/:canvas_id/sessions", h.ListAgentSessions)
@@ -78,14 +79,11 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Logs and webhook.
 	g.GET("/:canvas_id/logs/:message_id", h.GetAgentLogs)
 	g.GET("/:canvas_id/webhook/logs", h.GetAgentWebhookLogs)
-	// Webhook trigger endpoints. The Python agent API
-	// (api/apps/restful_apis/agent_api.py:1563-1564) registers six
-	// HTTP methods on a single path. Gin has no Match() helper, so we
-	// register each verb explicitly via registerAnyMethod. The handler
-	// is identical for all six; semantics differ only by
-	// c.Request.Method.
-	registerAnyMethod(g, "/:canvas_id/webhook", h.Webhook)
+	// The test trigger remains authenticated. Production triggers live on the
+	// public API group and use per-user webhook credentials.
 	registerAnyMethod(g, "/:canvas_id/webhook/test", h.Webhook)
+	g.POST("/:canvas_id/webhook/credentials", h.CreateWebhookCredential)
+	g.DELETE("/:canvas_id/webhook/credentials", h.RevokeWebhookCredential)
 
 	// Top-level actions (no canvas id in path).
 	// NOTE: `/chat/completion` (singular) is intentionally NOT registered.
@@ -95,6 +93,16 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
 	g.POST("/chat/completions", h.AgentChatCompletions)
 	g.POST("/test_db_connection", h.TestDBConnection)
+}
+
+// RegisterPublicAgentWebhookRoutes registers external webhook triggers on
+// the public API group. Each request is authenticated by its per-user
+// credential and rechecked against current membership and run permission.
+func RegisterPublicAgentWebhookRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
+	if g == nil || h == nil {
+		return
+	}
+	registerAnyMethod(g, "/:canvas_id/webhook", h.Webhook)
 }
 
 // RegisterAgentCancelRoutes registers ordinary Agent session cancellation on

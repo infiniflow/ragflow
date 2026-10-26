@@ -22,6 +22,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 
 	"go.uber.org/zap"
 )
@@ -204,7 +205,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 
 	// Phase 2: Build system prompt.
 	knowledge := KbPrompt(chunks, s.tokenBudget)
-	prompt, err := LoadPrompt("ask_summary")
+	prompt, err := (prompts.EmbeddedPromptLoader{}).Load("ask_summary")
 	if err != nil {
 		common.Warn("AskService failed to load prompt", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "prompt configuration error"}, ctx)
