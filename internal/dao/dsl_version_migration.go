@@ -13,7 +13,7 @@ import (
 // dslVersionTargetVersion marks the backfill of pipeline_version_id bindings as
 // done. It sorts after every existing migration target version, so the step runs
 // exactly once and is skipped on later starts.
-const dslVersionTargetVersion = "v1.0.0-rc4"
+const dslVersionTargetVersion = "v1.0.0-rc3.dev6"
 
 // migrateDSLVersionColumns adds the pipeline_version_id column to the tables that
 // bind a dataset (knowledgebase) or document to a dataflow canvas version, and
