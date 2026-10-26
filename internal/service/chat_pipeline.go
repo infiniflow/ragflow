@@ -2489,6 +2489,15 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += c
 		result = append(result, cnt)
 		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
+			// nonEmpty so far is only the processed prefix; count the remaining
+			// non-empty chunks so `total` reflects what was omitted, not just
+			// what was kept (otherwise kept==total and the truncation looks like
+			// a no-op in the log).
+			for _, rest := range chunksRaw[i+1:] {
+				if getMapString(rest, "content_with_weight", "content") != "" {
+					nonEmpty++
+				}
+			}
 			common.Warn("Not all the retrieval into prompt",
 				zap.Int("kept", len(result)),
 				zap.Int("total", nonEmpty))
