@@ -218,7 +218,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -294,6 +294,119 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 	if page, _ := imgPos[0][0].(int); page != 2 {
 		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+// MinerU normalizes content_list bbox to 0..1000 against the page's point
+// size (pipeline _build_bbox / vlm mkcontent), so raw pass-through makes
+// highlights drift ~1.7x on A4. With middle.json in the zip the boxes must
+// come back as PDF points: bbox/1000 * page_size.
+func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("output/doc/content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Scaled","page_idx":0,"bbox":[100,200,600,400]}
+	]`))
+	mid, err := zw.Create("output/doc/middle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = mid.Write([]byte(`{"pdf_info":[
+		{"page_idx":0,"page_size":[500,1000],"preproc_blocks":[]},
+		{"page_idx":1,"page_size":[400,800],"preproc_blocks":[]}
+	]}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes())
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1", len(items))
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
+	}
+	row := pos[0]
+	if page, _ := row[0].(int); page != 1 {
+		t.Fatalf("page = %#v, want 1", row[0])
+	}
+	// page 0 is 500x1000pt: x*0.5, y*1.0 — exact in float64.
+	want := []float64{50, 300, 200, 400} // left, right, top, bottom
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := row[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, row[key], want[i], row)
+		}
+	}
+}
+
+// MinerU V1 accepts partial jobs and preserves the source page indices in
+// its artifacts, so middle.json pdf_info can be sparse (page_idx 5 and 6
+// only). Sizes must be keyed by page_idx, not entry order: with two entries
+// the old slice lookup rejected index 5 and either passed the box through
+// unscaled or applied the wrong page's dimensions.
+func TestMinerUPageSizesKeysSparsePageIdx(t *testing.T) {
+	sizes := mineruPageSizes([]byte(`{"pdf_info":[
+		{"page_idx":5,"page_size":[400,800]},
+		{"page_idx":6,"page_size":[600,900]}
+	]}`))
+	if len(sizes) != 2 {
+		t.Fatalf("len(sizes)=%d, want 2", len(sizes))
+	}
+	pos := mineruBBoxPosition(6, []any{500, 500, 1000, 1000}, sizes)
+	if pos == nil {
+		t.Fatal("expected a position, got nil")
+	}
+	// page 6 is 600x900pt: x*0.6, y*0.9.
+	want := []float64{300, 600, 450, 900} // left, right, top, bottom
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := pos[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, pos[key], want[i], pos)
+		}
+	}
+	// A page missing from a partial job stays passthrough, not another
+	// page's scale.
+	missing := mineruBBoxPosition(4, []any{100, 100, 200, 200}, sizes)
+	if missing == nil {
+		t.Fatal("expected a position for missing page, got nil")
+	}
+	if left, _ := missing[1].(float64); left != 100 {
+		t.Fatalf("left = %#v, want 100 (passthrough)", missing[1])
+	}
+}
+
+// Entries with no page_idx at all fall back to their position in pdf_info.
+func TestMinerUPageSizesFallsBackToEntryOrder(t *testing.T) {
+	sizes := mineruPageSizes([]byte(`{"pdf_info":[
+		{"page_size":[500,1000]},
+		{"page_size":[400,800]}
+	]}`))
+	if got, ok := sizes[1]; !ok || got != [2]float64{400, 800} {
+		t.Fatalf("sizes[1] = %#v, want [400 800]", sizes)
+	}
+}
+
+// Without middle.json there is no trustworthy page size, so boxes keep the
+// pre-existing passthrough behavior (a known degraded mode, not a failure).
+func TestMinerUBBoxPositionWithoutPageSizesIsPassthrough(t *testing.T) {
+	pos := mineruBBoxPosition(2, []any{188, 142, 875, 393}, nil)
+	if pos == nil {
+		t.Fatal("expected a position, got nil")
+	}
+	if page, _ := pos[0].(int); page != 3 {
+		t.Fatalf("page = %#v, want 3", pos[0])
+	}
+	if left, _ := pos[1].(float64); left != 188 {
+		t.Fatalf("left = %#v, want 188 (unchanged)", pos[1])
 	}
 }
 
