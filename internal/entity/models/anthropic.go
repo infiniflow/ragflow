@@ -556,6 +556,9 @@ func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+	}
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -618,9 +621,29 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	sawTerminal := false
 	var streamUsage TokenUsage
 	sawUsage := false
+	type toolBlock struct {
+		id, name string
+		input    map[string]any
+		partial  strings.Builder
+	}
+	pendingTools := make(map[float64]*toolBlock)
+	toolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		eventType, _ := event["type"].(string)
 		switch eventType {
+		case "content_block_start":
+			block, _ := event["content_block"].(map[string]any)
+			if block["type"] != "tool_use" {
+				return nil
+			}
+			index, ok := event["index"].(float64)
+			id, _ := block["id"].(string)
+			name, _ := block["name"].(string)
+			input, _ := block["input"].(map[string]any)
+			if !ok || index < 0 || index != float64(int(index)) || id == "" || name == "" || input == nil {
+				return fmt.Errorf("anthropic: invalid streamed tool_use block")
+			}
+			pendingTools[index] = &toolBlock{id: id, name: name, input: input}
 		case "content_block_delta":
 			delta, ok := event["delta"].(map[string]interface{})
 			if !ok {
@@ -628,6 +651,14 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			}
 			deltaType, _ := delta["type"].(string)
 			switch deltaType {
+			case "input_json_delta":
+				index, ok := event["index"].(float64)
+				tool := pendingTools[index]
+				partial, valid := delta["partial_json"].(string)
+				if !ok || tool == nil || !valid {
+					return fmt.Errorf("anthropic: invalid streamed tool input delta")
+				}
+				tool.partial.WriteString(partial)
 			case "text_delta":
 				if text, ok := delta["text"].(string); ok && text != "" {
 					if err := sender(&text, nil); err != nil {
@@ -640,6 +671,27 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 						return err
 					}
 				}
+			}
+		case "content_block_stop":
+			index, ok := event["index"].(float64)
+			if tool := pendingTools[index]; ok && tool != nil {
+				if tool.partial.Len() > 0 {
+					if err := json.Unmarshal([]byte(tool.partial.String()), &tool.input); err != nil {
+						return fmt.Errorf("anthropic: invalid streamed tool input: %w", err)
+					}
+				}
+				if tool.input == nil {
+					return fmt.Errorf("anthropic: streamed tool input must be an object")
+				}
+				arguments, err := json.Marshal(tool.input)
+				if err != nil {
+					return fmt.Errorf("anthropic: marshal streamed tool input: %w", err)
+				}
+				toolCalls[int(index)] = map[string]any{
+					"id": tool.id, "type": "function",
+					"function": map[string]any{"name": tool.name, "arguments": string(arguments)},
+				}
+				delete(pendingTools, index)
 			}
 		case "message_start":
 			message, ok := event["message"].(map[string]interface{})
@@ -677,6 +729,10 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if !done && !sawTerminal {
 		return fmt.Errorf("anthropic: stream ended before message_stop")
 	}
+	if len(pendingTools) > 0 {
+		return fmt.Errorf("anthropic: stream ended before tool content_block_stop")
+	}
+	setSortedToolCallsResult(modelConfig, toolCalls)
 
 	if sawUsage {
 		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
