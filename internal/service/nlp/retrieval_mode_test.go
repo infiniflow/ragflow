@@ -3,6 +3,7 @@ package nlp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"reflect"
 	"slices"
@@ -213,10 +214,59 @@ func TestSearchExplicitKeywordRejectsQueryWithoutTokens(t *testing.T) {
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
-	docEngine := &modeDocEngine{engineType: "elasticsearch"}
-	_, err := NewRetrievalService(docEngine, nil).Search(t.Context(), &RetrievalSearchRequest{Mode: RetrievalModeKeyword, Question: "!!!"})
-	if err == nil || len(docEngine.requests) != 0 {
-		t.Fatalf("无关键词查询调用了引擎：请求次数 = %d，错误 = %v", len(docEngine.requests), err)
+	for _, method := range []string{"Search", "Retrieval"} {
+		for _, query := range []string{"!!!", "-", "--", "_", "___", "- + _", "--- ___ +++", "\t-\n_", "，？！", "－＿＋", "   "} {
+			t.Run(method+"/"+query, func(t *testing.T) {
+				docEngine := &modeDocEngine{engineType: "elasticsearch"}
+				driver := &modeEmbeddingDriver{}
+				model := &models.EmbeddingModel{ModelDriver: driver}
+				service := NewRetrievalService(docEngine, nil)
+				var err error
+				if method == "Search" {
+					_, err = service.Search(t.Context(), &RetrievalSearchRequest{Mode: RetrievalModeKeyword, Question: query, EmbeddingModel: model})
+				} else {
+					_, err = service.Retrieval(t.Context(), &RetrievalRequest{Mode: RetrievalModeKeyword, Question: query, EmbeddingModel: model})
+				}
+				var coded *common.CodedError
+				if !errors.As(err, &coded) || coded.Code != common.CodeArgumentError {
+					t.Fatalf("query %q: expected argument error, got %v; engine calls = %d", query, err, len(docEngine.requests))
+				}
+				if len(docEngine.requests) != 0 || driver.calls != 0 || docEngine.knnCalls != 0 {
+					t.Fatalf("invalid query caused side effects: search = %d, embedding = %d, KNN = %d", len(docEngine.requests), driver.calls, docEngine.knnCalls)
+				}
+			})
+		}
+	}
+}
+
+func TestSearchPunctuationKeepsDenseRecall(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	for _, mode := range []RetrievalMode{"", RetrievalModeHybrid, RetrievalModeVector} {
+		for _, query := range []string{"!!!", "-", "_"} {
+			t.Run(string(mode)+"/"+query, func(t *testing.T) {
+				driver := &modeEmbeddingDriver{}
+				docEngine := &modeDocEngine{engineType: "elasticsearch", retrievalCountEngine: retrievalCountEngine{rows: []map[string]interface{}{{"id": "one"}}}}
+				_, err := NewRetrievalService(docEngine, nil).Search(t.Context(), &RetrievalSearchRequest{
+					Mode: mode, Question: query, EmbeddingModel: &models.EmbeddingModel{ModelDriver: driver},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(docEngine.requests) != 1 || driver.calls != 1 {
+					t.Fatalf("engine calls=%d embedding calls=%d", len(docEngine.requests), driver.calls)
+				}
+				expressions := docEngine.requests[0].MatchExprs
+				if len(expressions) != 1 {
+					t.Fatalf("expected dense-only recall, got %#v", expressions)
+				}
+				if _, ok := expressions[0].(*types.MatchDenseExpr); !ok {
+					t.Fatalf("expected dense expression, got %T", expressions[0])
+				}
+			})
+		}
 	}
 }
 

@@ -313,6 +313,38 @@ func TestQueryBuilder_Question(t *testing.T) {
 	}
 }
 
+func TestQueryBuilder_QuestionPunctuation(t *testing.T) {
+	qb := NewQueryBuilder()
+	for _, query := range []string{"!!!", "-", "--", "_", "___", "- + _", "--- ___ +++", "\t-\n_", "，？！", "－＿＋", "   "} {
+		t.Run(query, func(t *testing.T) {
+			if expr, _ := qb.Question(query, "", 0.3, ""); expr != nil {
+				t.Fatalf("punctuation-only query %q produced expression %q", query, expr.MatchingText)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		query string
+		term  string
+	}{
+		{"ERR_CONNECTION_RESET", "err_connection_reset"},
+		{"C++", `c\+\+`},
+		{"go-mcp", `go\-mcp`},
+		{"12345", "12345"},
+		{"中文检索", "中文检索"},
+		{"- query _", "query"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			expr, _ := qb.Question(tc.query, "", 0.3, "")
+			if expr == nil || !strings.Contains(expr.MatchingText, tc.term) {
+				t.Fatalf("valid query %q lost term %q: %#v", tc.query, tc.term, expr)
+			}
+			if expr.ExtraOptions["original_query"] != tc.query {
+				t.Fatalf("original query changed: %#v", expr.ExtraOptions)
+			}
+		})
+	}
+}
+
 func TestQueryBuilder_Paragraph(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
