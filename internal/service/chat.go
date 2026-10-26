@@ -894,7 +894,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if value, ok := req["decision_id"]; ok {
-		decisionID := fmt.Sprint(value)
+		decisionID := stringFromValue(value)
 		if decisionID == "" {
 			// Clearing the override is meaningful: it falls back to the tenant
 			// default rather than disabling the gate for this chat.
