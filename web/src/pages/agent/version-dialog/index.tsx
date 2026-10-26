@@ -220,19 +220,19 @@ export function VersionDialog({
   version metadata without creating a new version or touching the DSL.
   Clicking the input must not also select the row. Controlled via AliasInput
   so re-renders never wipe in-progress keystrokes. */}
-<AliasInput
-  placeholder={t('flow.version.alias')}
-  versionId={x.id}
-  canvasId={canvasId ?? ''}
-  initialAlias={x.alias ?? ''}
-  onCommit={(alias) =>
-    updateVersion({
-      canvasId: canvasId ?? '',
-      versionId: x.id,
-      alias,
-    })
-  }
-/>
+                        <AliasInput
+                          placeholder={t('flow.version.alias')}
+                          versionId={x.id}
+                          canvasId={canvasId ?? ''}
+                          initialAlias={x.alias ?? ''}
+                          onCommit={(alias) =>
+                            updateVersion({
+                              canvasId: canvasId ?? '',
+                              versionId: x.id,
+                              alias,
+                            })
+                          }
+                        />
                       </div>
                     </li>
                   );

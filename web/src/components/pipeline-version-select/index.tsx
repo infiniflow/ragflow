@@ -69,10 +69,7 @@ export function PipelineVersionSelect({
         value={aliasFilter}
         onChange={(e) => setAliasFilter(e.target.value)}
       />
-      <Select
-        value={value}
-        onValueChange={(v) => onChange(v)}
-      >
+      <Select value={value} onValueChange={(v) => onChange(v)}>
         <SelectTrigger>
           <SelectValue placeholder={t('flow.version.latest')} />
         </SelectTrigger>

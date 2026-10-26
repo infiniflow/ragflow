@@ -128,7 +128,9 @@ export function useDocumentPipelineForm({
     data: versions = [],
     loading: versionListLoading,
     isError: versionListError,
-  } = useFetchCanvasVersionList(isPipelineMode ? selectedDataFlowId : undefined);
+  } = useFetchCanvasVersionList(
+    isPipelineMode ? selectedDataFlowId : undefined,
+  );
   const latestVersionId = versions[0]?.id;
   // The saved parser_config only belongs to the pipeline (and parse type) it
   // was saved with — expose its id only while that exact pipeline is selected,
@@ -176,7 +178,11 @@ export function useDocumentPipelineForm({
   // the field is still empty, so a user's manual selection of an older version
   // is preserved and a stable latest id will not re-fire this effect.
   useEffect(() => {
-    if (!pipelineVersionId && latestVersionId && !form.getValues('pipeline_version_id')) {
+    if (
+      !pipelineVersionId &&
+      latestVersionId &&
+      !form.getValues('pipeline_version_id')
+    ) {
       form.setValue('pipeline_version_id', latestVersionId);
     }
   }, [pipelineVersionId, latestVersionId, form]);

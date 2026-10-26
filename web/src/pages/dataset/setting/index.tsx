@@ -146,7 +146,11 @@ export default function DatasetSetting() {
   // so the latest concrete id wins once the version list resolves.
   useEffect(() => {
     const savedPin = knowledgeDetails?.pipeline_version_id;
-    if (!savedPin && canvasVersions?.length && !form.getValues('pipeline_version_id')) {
+    if (
+      !savedPin &&
+      canvasVersions?.length &&
+      !form.getValues('pipeline_version_id')
+    ) {
       form.setValue('pipeline_version_id', canvasVersions[0].id);
     }
   }, [knowledgeDetails, canvasVersions, form]);

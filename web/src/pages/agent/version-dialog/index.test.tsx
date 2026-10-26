@@ -94,7 +94,9 @@ describe('VersionDialog editable alias input (G2/section 4.4, T35)', () => {
   it('renders an editable alias input for every version', () => {
     render(<VersionDialog hideModal={jest.fn()} />);
     // Two mock versions => two alias inputs (design G2/section 4.4).
-    expect(screen.getAllByPlaceholderText('flow.version.alias')).toHaveLength(2);
+    expect(screen.getAllByPlaceholderText('flow.version.alias')).toHaveLength(
+      2,
+    );
   });
 });
 

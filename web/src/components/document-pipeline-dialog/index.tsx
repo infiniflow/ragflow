@@ -111,7 +111,9 @@ export function DocumentPipelineDialog({
     !versionListError &&
     !versions.some((v) => v.id === selectedVersionId);
   const versionOutdated =
-    !!selectedVersionId && !versionMissing && selectedVersionId !== latestVersionId;
+    !!selectedVersionId &&
+    !versionMissing &&
+    selectedVersionId !== latestVersionId;
 
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {

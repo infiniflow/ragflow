@@ -23,14 +23,19 @@ jest.mock('@/hooks/use-agent-request', () => ({
 
 // Cut the chain parser-config-validation -> compilation-form -> locales/config
 // (which calls i18n.use(initReactI18next) and would crash under the mock).
-jest.mock('@/components/pipeline-operator-tabs/parser-config-validation', () => ({
-  addParserConfigIssues: jest.fn(),
-}));
+jest.mock(
+  '@/components/pipeline-operator-tabs/parser-config-validation',
+  () => ({
+    addParserConfigIssues: jest.fn(),
+  }),
+);
 
 import { useDocumentPipelineForm } from './use-document-pipeline-form';
 
 function renderForm(props: any) {
-  return renderHook((p: any) => useDocumentPipelineForm(p), { initialProps: props });
+  return renderHook((p: any) => useDocumentPipelineForm(p), {
+    initialProps: props,
+  });
 }
 
 describe('useDocumentPipelineForm pipeline_version_id default (design S8: never show Latest version)', () => {
