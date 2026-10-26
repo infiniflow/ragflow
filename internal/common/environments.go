@@ -456,9 +456,10 @@ const (
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may
 // wait for response headers. An endpoint that accepts the connection and then
 // never answers otherwise blocks each retry attempt for the full client default
-// (60s scheme-safe, 20m SSRF), so retries consume wall time instead of
+// (20m on both shared clients), so retries consume wall time instead of
 // retrying. One override covers both shared clients because a hung endpoint is
-// indistinguishable to the caller; the defaults stay per client while unset.
+// indistinguishable to the caller; each client keeps its own default while the
+// override is unset.
 // The value is a Go duration ("45s", "5m"), read once when a client is first
 // built. Unset, malformed, or non-positive keeps the client default.
 const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
