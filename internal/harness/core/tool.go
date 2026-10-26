@@ -114,8 +114,23 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: t.agent})
 	messages := []Message{schema.UserMessage(args)}
 	if t.opts.FullChatHistoryAsInput {
-		if ec := getChatModelExecCtx(ctx); ec != nil {
-			// TODO: extract full chat history from parent execution context
+		rc := getRunCtx(ctx)
+		if rc != nil && rc.Session != nil {
+			var history []Message
+			for _, ev := range rc.Session.getEvents() {
+				if ae, ok := ev.(*AgentEvent); ok {
+					if m := msgFromEvent(ae); m != nil {
+						// Only include user and assistant messages;
+						// skip tool/function and internal events.
+						if m.Role == schema.RoleUser || m.Role == schema.RoleAssistant {
+							history = append(history, m)
+						}
+					}
+				}
+			}
+			if len(history) > 0 {
+				messages = append(history, messages...)
+			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sync"
 	"testing"
 
 	"ragflow/internal/harness/core/schema"
@@ -200,3 +201,153 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 func init() {
 	schema.RegisterType("_test_agent_tool", func() any { return &AgentToolOptions{} })
 }
+
+// TestAgentTool_FullChatHistoryAsInput verifies that when FullChatHistoryAsInput
+// is enabled, the inner agent receives the parent conversation history.
+func TestAgentTool_FullChatHistoryAsInput(t *testing.T) {
+	// Inner agent: records the messages it receives.
+	var receivedMsgs []Message
+	innerM := &historyRecordingModel{record: &receivedMsgs}
+	innerM.addResp("inner response")
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: innerM,
+	}).WithName("history_inner").WithDescription("inner agent for history test")
+
+	ctx := t.Context()
+	agentTool := NewAgentTool(ctx, innerAgent, WithFullChatHistoryAsInput())
+
+	// Parent agent: uses the agent tool after an initial turn.
+	parentM := &forcedToolModel{
+		inner:     &mockModel{},
+		toolCalls: []schema.ToolCall{{ID: "ht", Function: schema.ToolCallFunction{Name: "history_inner", Arguments: "{}"}}},
+		finalResp: "parent done",
+		firstCall: true,
+	}
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		MaxIterations: 3,
+	}).WithName("history_parent")
+
+	store := newCancelTestStore()
+	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: parent, CheckPointStore: store})
+	// First user message establishes conversation history.
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("first turn")})
+
+	// Drain events.
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Logf("history test event err: %v", ev.Err)
+			break
+		}
+	}
+
+	// The inner agent should have received the parent history + tool args.
+	if len(receivedMsgs) == 0 {
+		t.Fatal("inner agent received no messages")
+	}
+
+	// First message should be the parent's user message.
+	if receivedMsgs[0].Role != schema.RoleUser || receivedMsgs[0].Content != "first turn" {
+		t.Errorf("expected first message to be user 'first turn', got %s: %q", receivedMsgs[0].Role, receivedMsgs[0].Content)
+	}
+
+	// Last message should be the tool call arguments.
+	last := receivedMsgs[len(receivedMsgs)-1]
+	if last.Role != schema.RoleUser {
+		t.Errorf("expected last message to be user (tool args), got %s", last.Role)
+	}
+
+	t.Logf("full chat history test: inner received %d messages", len(receivedMsgs))
+}
+
+// TestAgentTool_NoChatHistoryAsInput verifies that when FullChatHistoryAsInput
+// is disabled (default), the inner agent receives only the tool arguments.
+func TestAgentTool_NoChatHistoryAsInput(t *testing.T) {
+	var receivedMsgs []Message
+	innerM := &historyRecordingModel{record: &receivedMsgs}
+	innerM.addResp("inner response")
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: innerM,
+	}).WithName("no_history_inner").WithDescription("inner agent for no-history test")
+
+	ctx := t.Context()
+	// Default: FullChatHistoryAsInput is false.
+	agentTool := NewAgentTool(ctx, innerAgent)
+
+	parentM := &forcedToolModel{
+		inner:     &mockModel{},
+		toolCalls: []schema.ToolCall{{ID: "nh", Function: schema.ToolCallFunction{Name: "no_history_inner", Arguments: "{}"}}},
+		finalResp: "parent done",
+		firstCall: true,
+	}
+	parent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model:         parentM,
+		Tools:         []Tool{agentTool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{agentTool}},
+		MaxIterations: 3,
+	}).WithName("no_history_parent")
+
+	store := newCancelTestStore()
+	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: parent, CheckPointStore: store})
+	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("first turn")})
+
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Logf("no-history test event err: %v", ev.Err)
+			break
+		}
+	}
+
+	if len(receivedMsgs) != 1 {
+		t.Errorf("expected inner agent to receive exactly 1 message (tool args), got %d", len(receivedMsgs))
+	}
+	if receivedMsgs[0].Role != schema.RoleUser {
+		t.Errorf("expected single message to be user role, got %s", receivedMsgs[0].Role)
+	}
+}
+
+// historyRecordingModel is a mock model that records all messages it receives.
+type historyRecordingModel struct {
+	record    *[]Message
+	responses []string
+	mu        sync.Mutex
+	callCount int
+}
+
+func (m *historyRecordingModel) addResp(r string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.responses = append(m.responses, r)
+}
+
+func (m *historyRecordingModel) Generate(ctx context.Context, msgs []Message, opts ...modelOption) (Message, error) {
+	*m.record = append(*m.record, msgs...)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.callCount >= len(m.responses) {
+		m.callCount = 0
+	}
+	resp := m.responses[m.callCount]
+	m.callCount++
+	return &schema.Message{Role: schema.RoleAssistant, Content: resp}, nil
+}
+
+func (m *historyRecordingModel) Stream(ctx context.Context, msgs []Message, opts ...modelOption) (*schema.StreamReader[Message], error) {
+	msg, err := m.Generate(ctx, msgs, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return schema.StreamReaderFromArray([]Message{msg}), nil
+}
+
+func (m *historyRecordingModel) BindTools(tools []*schema.ToolInfo) error { return nil }
