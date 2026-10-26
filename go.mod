@@ -50,7 +50,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jloor/go-excel-reader v0.3.0
 	github.com/kaptinlin/jsonrepair v0.4.8
-	github.com/larksuite/oapi-sdk-go/v3 v3.9.9
+	github.com/larksuite/oapi-sdk-go/v3 v3.12.2
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.0.99
@@ -58,7 +58,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.52.0
 	github.com/nikolalohinski/gonja v1.5.3
-	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.0.5
+	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
 	github.com/peterh/liner v1.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/pkoukk/tiktoken-go v0.1.8
