@@ -301,7 +301,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
-				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				parserConfig, buildErr := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				if buildErr != nil {
+					txCode = common.CodeDataError
+					return buildErr
+				}
 				updates["parser_config"] = preserveDatasetParserConfigState(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}

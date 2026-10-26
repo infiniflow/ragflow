@@ -235,6 +235,12 @@ export const fetchWebhookTrace = (
   return request.get(api.fetchWebhookTrace(id), { params: params });
 };
 
+export const issueAgentWebhookCredential = (id: string) =>
+  request.post(api.issueAgentWebhookCredential(id), { data: {} });
+
+export const revokeAgentWebhookCredential = (id: string) =>
+  request.delete(api.revokeAgentWebhookCredential(id));
+
 export function createAgentSession({ id, name }: { id: string; name: string }) {
   return request.post(api.createAgentSession(id), { data: { name } });
 }

@@ -70,6 +70,8 @@ type Input struct {
 	// the session created in the UI). It is injected into the retrieval tools so
 	// they search the right index without a canvas runtime.
 	TenantID string
+	// UserID identifies whose per-Tenant default models apply to this run.
+	UserID string
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
@@ -347,7 +349,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// serving. The generated key above is a per-turn placeholder and must not be
 	// used here — a run with no real chat id falls back to the tenant default,
 	// exactly as a chat that never overrode it does.
-	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey)
+	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey, in.UserID)
 	if generatedKey {
 		// The generated key belongs to this turn alone: no later run reuses it,
 		// so release its availability marks on the way out instead of leaking

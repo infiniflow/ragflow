@@ -18,6 +18,7 @@ package common
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -64,4 +65,23 @@ type OperationLog struct {
 	ErrorCode     uint16    `json:"error_code"`
 	Message       string    `json:"message"`
 	DurationMS    int64     `json:"duration_ms"`
+}
+
+func ParseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
+	parts := strings.Split(compositeName, "@")
+	switch len(parts) {
+	case 3:
+		// Format: model@instance@provider
+		return parts[0], parts[1], parts[2], nil
+	case 2:
+		// Format: model@provider -> instance defaults to "default"
+		return parts[0], "default", parts[1], nil
+	case 1:
+		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
+	}
+	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
+	// component must be preserved in that component instead of being dropped
+	// or assigned to the instance/provider fields.
+	n := len(parts)
+	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }

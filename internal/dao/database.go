@@ -177,6 +177,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.InvitationCode{},
 		&entity.Document{},
 		&entity.UserCanvas{},
+		&entity.AgentWebhookCredential{},
 		&entity.CanvasTemplate{},
 		&entity.UserCanvasVersion{},
 		&entity.LLMFactories{},

@@ -750,7 +750,7 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
-// SetTenantInfo updates default models on the caller's owner membership.
+// SetTenantInfo updates default models on the caller's current Tenant membership.
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeArgumentError, fmt.Errorf("model settings are required")
@@ -759,13 +759,17 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	if err != nil {
 		return common.CodeArgumentError, err
 	}
-	membershipDAO := dao.NewUserTenantDAO()
-	membership, err := membershipDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return common.CodeForbidden, err
 	}
-	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != membership.TenantID {
-		return common.CodeForbidden, fmt.Errorf("tenant_id must match the user's tenant")
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != tenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
+	}
+	userTenantDAO := dao.NewUserTenantDAO()
+	membership, err := userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil {
+		return common.CodeForbidden, err
 	}
 	if len(updates) > 0 {
 		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {

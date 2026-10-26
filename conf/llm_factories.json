@@ -3525,6 +3525,14 @@
             "url": "https://api.empiriolabs.ai/v1"
         },
         {
+            "name": "Runcrate",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.runcrate.ai/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
