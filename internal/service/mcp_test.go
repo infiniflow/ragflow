@@ -509,36 +509,30 @@ func withMCPDiscoveryOverrides(t *testing.T, server *httptest.Server) {
 	})
 }
 
-func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {
-	servers := makeMCPServers(13)
-
-	got := paginateMCPServers(servers, -1, -2)
-
-	if len(got) != 0 {
-		t.Fatalf("expected empty page for negative pagination, got %d servers", len(got))
+func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestPaginateMCPServersKeepsUnpagedList(t *testing.T) {
-	servers := makeMCPServers(3)
-
-	got := paginateMCPServers(servers, 0, 0)
-
-	if len(got) != len(servers) {
-		t.Fatalf("expected unpaged list length %d, got %d", len(servers), len(got))
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "owner", "tenant-1")
+	for _, server := range []*entity.MCPServer{
+		{ID: "mcp-c", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-a", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-b", TenantID: "tenant-1", Name: "bravo", URL: "https://example.test/b", ServerType: mcpServerTypeSSE},
+	} {
+		if err := db.Create(server).Error; err != nil {
+			t.Fatalf("create MCP server %q: %v", server.ID, err)
+		}
 	}
-}
 
-func TestPaginateMCPServersPositiveValues(t *testing.T) {
-	servers := makeMCPServers(5)
-
-	got := paginateMCPServers(servers, 2, 2)
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(got))
+	ctx := serviceTestContext(t, "owner", "tenant-1")
+	listed, code, err := NewMCPService().ListMCPServers(ctx, "owner", "tenant-1", nil, "", 2, 1, "name", false)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
 	}
-	if got[0].ID != "server-3" || got[1].ID != "server-4" {
-		t.Fatalf("expected second page servers, got %q and %q", got[0].ID, got[1].ID)
+	if listed.Total != 3 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-b" {
+		t.Fatalf("ListMCPServers() = %#v, want total 3 and page [mcp-b]", listed)
 	}
 }
 
