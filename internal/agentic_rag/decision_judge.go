@@ -17,12 +17,8 @@
 package agentic_rag
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +28,8 @@ import (
 
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/rag/decisionhead"
 )
 
 // The decision-model backend answers the filter's per-passage question over
@@ -121,7 +119,7 @@ type decisionBackend struct {
 	model    string
 	minProb  float64
 	maxChars int
-	client   *http.Client
+	driver   *models.SystemOneModel
 	// breaker switches the gate off when the endpoint stops answering: past a
 	// few consecutive failures the verdicts are all "keep" anyway, so the only
 	// thing still being paid for is the timeout, per passage.
@@ -181,10 +179,9 @@ func newDecisionBackend(url, key, model string) *decisionBackend {
 		model:    model,
 		minProb:  envFloatDefault(common.EnvDecisionMinProb, defaultDecisionMinProb),
 		maxChars: envIntDefault(common.EnvDecisionMaxChars, defaultDecisionMaxChars),
-		client: &http.Client{
-			Transport: common.NewProviderLoggingTransport(nil),
-			Timeout:   time.Duration(envIntDefault(common.EnvDecisionTimeoutMS, defaultDecisionTimeoutMS)) * time.Millisecond,
-		},
+		// This configuration supplies the complete endpoint, including any
+		// custom path, rather than the provider's base URL.
+		driver:  models.NewSystemOneModel(map[string]string{"default": url}, models.URLSuffix{Decision: "/"}),
 		breaker: newDecisionBreaker(),
 	}
 }
@@ -331,28 +328,6 @@ func (b *decisionBackend) batchSize(intent string) int {
 	return n
 }
 
-// decisionQuestion is one entry of the request's questions map.
-type decisionQuestion struct {
-	Type         string `json:"type"`
-	Instructions string `json:"instructions"`
-}
-
-// decisionAnswer is one entry of the response's answers map. The value of a
-// noul question arrives under a key named after its type, hence the pointer:
-// an absent field and a zero probability are different things, and 0.0 is a
-// legitimate "certainly not relevant".
-type decisionAnswer struct {
-	Type string   `json:"type"`
-	Noul *float64 `json:"noul"`
-}
-
-type decisionResponse struct {
-	Answers map[string]decisionAnswer `json:"answers"`
-	Usage   struct {
-		InputTokens int `json:"input_tokens"`
-	} `json:"usage"`
-}
-
 // ask sends one passage and returns the mean of the templates' probabilities.
 //
 // All four phrasings go in ONE request: the endpoint takes one state and a map
@@ -368,7 +343,7 @@ type decisionResponse struct {
 // 17 → 400 `ValidationError: questions: 17 exceeds the limit of 16`. The cap is
 // on questions, not passages, which is why asking several phrasings per passage
 // divides the batch (4 phrasings → 4 passages).
-const decisionMaxQuestions = 16
+const decisionMaxQuestions = models.MaxDecisionQuestions
 
 // batchResult is one request's outcome, indexed like the passages it carried.
 // A passage may come back without a noul value while others in the same request
@@ -418,50 +393,25 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 	}
 	templates := phrasingsFor(intent)
 	step := strings.TrimSpace(intent) != ""
-	questions := make(map[string]decisionQuestion, len(passages)*len(templates))
+	questions := make(map[string]models.Question, len(passages)*len(templates))
 	for i, passage := range passages {
 		for j, tpl := range templates {
 			instr := fmt.Sprintf(tpl, question)
 			if step {
 				instr = fmt.Sprintf(tpl, intent, question)
 			}
-			questions[fmt.Sprintf("p%d_t%d", i, j)] = decisionQuestion{
-				Type:         "noul",
+			questions[fmt.Sprintf("p%d_t%d", i, j)] = models.Noul{
 				Instructions: instr + "\n\nEvidence:\n" + passage,
 			}
 		}
 	}
-	payload := map[string]any{
-		"model":     b.model,
-		"state":     map[string]string{"passage": ""},
-		"questions": questions,
-	}
-	body, err := json.Marshal(payload)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(envIntDefault(common.EnvDecisionTimeoutMS, defaultDecisionTimeoutMS))*time.Millisecond)
+	defer cancel()
+	parsed, err := b.driver.Decide(ctx, &b.model, &models.DecideRequest{
+		State: map[string]string{"passage": ""}, Questions: questions,
+	}, &models.APIConfig{ApiKey: &b.key}, nil)
 	if err != nil {
-		return res, fmt.Errorf("encode request: %w", err)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.url, bytes.NewReader(body))
-	if err != nil {
-		return res, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+b.key)
-
-	resp, err := b.client.Do(req)
-	if err != nil {
-		return res, fmt.Errorf("post: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return res, fmt.Errorf("read body: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return res, fmt.Errorf("http %d: %s", resp.StatusCode, firstRunes(string(raw), 200))
-	}
-	var parsed decisionResponse
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return res, fmt.Errorf("decode response: %w", err)
+		return res, err
 	}
 	sums := make([]float64, len(passages))
 	counts := make([]int, len(passages))
@@ -491,7 +441,7 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 	if answered == 0 {
 		// Every passage came back without a noul value: a body we cannot read is
 		// a failure, not a verdict of zero.
-		return res, fmt.Errorf("no noul answers in response: %s", firstRunes(string(raw), 200))
+		return res, fmt.Errorf("no noul answers in response")
 	}
 	res.tokens = parsed.Usage.InputTokens
 	return res, nil

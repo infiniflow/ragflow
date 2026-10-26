@@ -62,6 +62,7 @@ export type CanvasChecklistInputs = {
   editedNodeFormIds: string[];
   memoryIds?: Set<string>;
   modelValidIds?: Set<string>;
+  categorizeModelValidIds?: Set<string>;
   staleDatasetIds?: Set<string>;
   compilationTemplateGroupIds?: Set<string>;
   variables?: Record<string, any>;
@@ -431,6 +432,7 @@ export function collectCanvasIssues({
   editedNodeFormIds,
   memoryIds,
   modelValidIds,
+  categorizeModelValidIds,
   staleDatasetIds,
   compilationTemplateGroupIds,
   variables,
@@ -905,11 +907,15 @@ export function collectCanvasIssues({
       });
     }
 
+    const validModelIds =
+      label === Operator.Categorize
+        ? (categorizeModelValidIds ?? modelValidIds)
+        : modelValidIds;
     if (
-      modelValidIds &&
+      validModelIds &&
       typeof (form?.model_id ?? form?.llm_id) === 'string' &&
       (form?.model_id ?? form?.llm_id) &&
-      !modelValidIds.has(form?.model_id ?? form?.llm_id)
+      !validModelIds.has(form?.model_id ?? form?.llm_id)
     ) {
       issues.push({
         ...target,
