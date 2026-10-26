@@ -39,19 +39,20 @@ type APIKeyResponse struct {
 
 // maskAPIToken renders an API token safe for list responses: a visible
 // prefix/suffix pair so an operator can still tell keys apart, never the
-// middle. The shape follows maskAPIKey in model_service.go (PR #20549): ""
-// stays "" (a no-record field must remain distinguishable from a masked
-// one), anything too short to survive truncation collapses to a constant so
-// a short secret is never partially echoed, and longer tokens keep 3 + 4
-// visible characters — enough to recognize `rag`-prefixed ragflow tokens.
+// middle, per #20555: "" stays "" (a no-record field must remain
+// distinguishable from a masked one), tokens that would not survive a 4+4
+// split collapse to a constant so a short secret is never partially echoed —
+// an eight-character token under 4+4 would reveal its entire body — and
+// longer tokens keep 4 + 4 visible characters, enough to recognize
+// `ragf`-prefixed ragflow tokens.
 func maskAPIToken(token string) string {
 	if token == "" {
 		return ""
 	}
-	if len(token) <= 7 {
+	if len(token) <= 8 {
 		return "***"
 	}
-	return token[:3] + "***" + token[len(token)-4:]
+	return token[:4] + "***" + token[len(token)-4:]
 }
 
 // ListAPIKeys list all API keys for a tenant

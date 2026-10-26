@@ -13,9 +13,10 @@ import (
 
 // TestMaskAPIToken pins the masking contract for the api_keys list leak fix
 // (#20555): the masked form must never echo the body of the token, must keep
-// a recognizable prefix/suffix pair for realistic ragflow tokens, and must
-// collapse empty / too-short secrets to constants so a no-record field stays
-// distinguishable from a masked one. Same shape as maskAPIKey (#20549).
+// the four-character prefix/suffix pair for realistic ragflow tokens, and
+// must collapse empty secrets and anything a 4+4 split would fully reveal
+// (eight characters or fewer) to constants, so a no-record field stays
+// distinguishable from a masked one.
 func TestMaskAPIToken(t *testing.T) {
 	cases := []struct {
 		name string
@@ -25,9 +26,10 @@ func TestMaskAPIToken(t *testing.T) {
 		{name: "empty stays empty", in: "", want: ""},
 		{name: "one char is too short, never echoed", in: "x", want: "***"},
 		{name: "seven chars is too short, never echoed", in: "abcdefg", want: "***"},
-		{name: "eight chars exposes only prefix+suffix", in: "abcdefgh", want: "abc***efgh"},
-		{name: "ragflow token keeps the rag prefix and tail", in: "ragflow-AbCdEfGhIjKlMnOpQrStUvWxYz012345", want: "rag***2345"},
-		{name: "raw 32-char secret exposes only ends", in: "0123456789abcdef0123456789abcdef", want: "012***cdef"},
+		{name: "eight chars would be fully revealed by a 4+4 split, collapse", in: "abcdefgh", want: "***"},
+		{name: "nine chars exposes exactly 4+4", in: "abcdefghi", want: "abcd***fghi"},
+		{name: "ragflow token keeps the ragf prefix and tail", in: "ragflow-AbCdEfGhIjKlMnOpQrStUvWxYz012345", want: "ragf***2345"},
+		{name: "raw 32-char secret exposes only ends", in: "0123456789abcdef0123456789abcdef", want: "0123***cdef"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -107,7 +109,7 @@ func TestListAPIKeysMasksToken(t *testing.T) {
 			t.Errorf("token %q is not masked", key.Token)
 		}
 	}
-	if want := "rag***3210"; keys[0].Token != want {
+	if want := "ragf***3210"; keys[0].Token != want {
 		t.Errorf("masked token = %q, want %q", keys[0].Token, want)
 	}
 
