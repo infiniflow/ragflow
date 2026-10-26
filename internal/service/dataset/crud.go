@@ -144,7 +144,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		common.Warn("failed to load pipeline DSL for building parser_config",
 			zap.String("parserID", parserID), zap.Error(dslErr))
 	} else {
-		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		var buildErr error
+		parserConfig, buildErr = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		if buildErr != nil {
+			return nil, common.CodeArgumentError, buildErr
+		}
 	}
 
 	// Preserve the public default shape without overriding pipeline delimiters
