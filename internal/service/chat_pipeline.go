@@ -2454,48 +2454,29 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		return nil
 	}
 
-	// Pass 1: count content tokens to determine how many chunks fit.
-	type chunkContent struct {
-		content string
-	}
-	contents := make([]chunkContent, 0, len(chunksRaw))
-	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content_with_weight", "content")
-		if c == "" {
-			continue
-		}
-		contents = append(contents, chunkContent{content: c})
-	}
-
-	usedTokenCount := 0
-	chunksNum := 0
-	for _, cc := range contents {
-		usedTokenCount += graph.NumTokensFromString(cc.content)
-		chunksNum++
-		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
-			common.Warn("Not all the retrieval into prompt",
-				zap.Int("kept", chunksNum),
-				zap.Int("total", len(contents)))
-			break
-		}
-	}
-
-	// Pass 2: format chunks with tree structure, capped at chunksNum.
-	if chunksNum > len(chunksRaw) {
-		chunksNum = len(chunksRaw)
-	}
+	// Single pass: filter empty-content chunks, accumulate token budget, and
+	// format in one loop over the ORIGINAL chunksRaw. The 0-based ID assigned
+	// to each formatted block is the chunk's position in chunksRaw, which is
+	// also its index in the reference the client receives (chunksFormat keeps
+	// every chunk, empty or not), so a citation marker [ID:n] opens exactly
+	// that passage. Keeping the original index — NOT a filtered/compacted one —
+	// is what makes citations line up.
+	//
+	// The previous two-pass implementation counted the token budget over a
+	// pre-filtered slice (empty chunks dropped) but then used that count as a
+	// cap over the un-filtered chunksRaw. When an empty chunk sat before real
+	// content, the cap cut the loop short and dropped trailing chunks that the
+	// budget had already admitted. Collapsing to one pass removes the mismatch.
+	nonEmpty := 0
 	var result []string
-	for i := 0; i < chunksNum; i++ {
-		ck := chunksRaw[i]
+	usedTokenCount := 0
+	for i, ck := range chunksRaw {
 		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
 		}
-
-		// The id is the chunk's pool position, which is also its index in the
-		// reference the client receives (chunksFormat(chunksRaw)), so a marker copied
-		// from a block opens exactly that passage. 0-based: the first block is "ID: 0".
-		// (The compose renders a ranked subset instead, hence its own CiteChunkIDs order.)
+		nonEmpty++
+		usedTokenCount += graph.NumTokensFromString(c)
 		cnt := fmt.Sprintf("\nID: %d", i)
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
@@ -2507,6 +2488,12 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += "\n└── Content:\n"
 		cnt += c
 		result = append(result, cnt)
+		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
+			common.Warn("Not all the retrieval into prompt",
+				zap.Int("kept", len(result)),
+				zap.Int("total", nonEmpty))
+			break
+		}
 	}
 
 	return result

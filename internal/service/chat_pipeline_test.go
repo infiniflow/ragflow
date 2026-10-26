@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/graph"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -2194,5 +2195,170 @@ func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
 				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
 			}
 		})
+	}
+}
+
+// kbPromptChunks builds a kbinfos map for kbPrompt tests. Empty content is
+// represented by omitting content_with_weight; pass "" to keep the key with an
+// empty value (both read as empty by getMapString).
+func kbPromptChunks(chunks ...map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"chunks":   chunks,
+		"doc_aggs": []interface{}{},
+	}
+}
+
+// kbIDOf extracts the "\nID: n" marker from a formatted prompt block so a test
+// can assert the ORIGINAL chunksRaw index is used as the citation id, not a
+// compacted one.
+func kbIDOf(block string) string {
+	for _, line := range strings.Split(block, "\n") {
+		if strings.HasPrefix(line, "ID: ") {
+			return line
+		}
+	}
+	return ""
+}
+
+// TestKbPrompt_EmptyChunkInFrontDoesNotDropTrailing is the regression test for
+// the two-pass index-mismatch bug. With an empty-content chunk before three
+// real chunks and a budget that admits all three, the old implementation
+// counted 3 over the filtered slice but capped the formatting loop at index 3
+// of the UNFILTERED slice (which only reached the empty chunk + two real
+// ones), so the third real chunk was dropped. The single-pass fix keeps it.
+func TestKbPrompt_EmptyChunkInFrontDoesNotDropTrailing(t *testing.T) {
+	s := &ChatPipelineService{}
+	b := "Knowledge chunk B holds the second passage."
+	c := "Knowledge chunk C holds the third passage."
+	d := "Knowledge chunk D holds the fourth passage."
+	// Budget admits all three real chunks: 97% of maxTokens must stay >= their
+	// combined token count.
+	maxTokens := int(float64(graph.NumTokensFromString(b+c+d))/0.97) + 1
+	kbinfos := kbPromptChunks(
+		map[string]interface{}{"chunk_id": "a", "doc_id": "d0"}, // empty content
+		map[string]interface{}{"chunk_id": "b", "content_with_weight": b, "doc_id": "d1", "docnm_kwd": "Doc B"},
+		map[string]interface{}{"chunk_id": "c", "content_with_weight": c, "doc_id": "d2", "docnm_kwd": "Doc C"},
+		map[string]interface{}{"chunk_id": "d", "content_with_weight": d, "doc_id": "d3", "docnm_kwd": "Doc D"},
+	)
+	got := s.kbPrompt(kbinfos, maxTokens)
+	if len(got) != 3 {
+		t.Fatalf("kbPrompt kept %d blocks, want 3 (empty front chunk must not drop D): %q", len(got), got)
+	}
+	// Citation ids use the ORIGINAL chunksRaw positions (1/2/3), not compacted 0/1/2.
+	wantIDs := []string{"ID: 1", "ID: 2", "ID: 3"}
+	for i, w := range wantIDs {
+		if id := kbIDOf(got[i]); id != w {
+			t.Errorf("block %d id = %q, want %q (original index, not compacted)", i, id, w)
+		}
+	}
+	if !strings.Contains(got[2], d) {
+		t.Errorf("third block must contain chunk D's content, got %q", got[2])
+	}
+}
+
+// TestKbPrompt_EmptyChunkBetweenRealsKeepsBothSides checks a second shape of
+// the same bug: empty chunks interleaved with real ones must not shift the cap
+// so that a trailing real chunk is lost.
+func TestKbPrompt_EmptyChunkBetweenRealsKeepsBothSides(t *testing.T) {
+	s := &ChatPipelineService{}
+	first := "The first real chunk carries the opening context."
+	third := "The third real chunk carries the closing context."
+	maxTokens := int(float64(graph.NumTokensFromString(first+third))/0.97) + 1
+	kbinfos := kbPromptChunks(
+		map[string]interface{}{"chunk_id": "1", "content_with_weight": first},
+		map[string]interface{}{"chunk_id": "2"}, // empty in the middle
+		map[string]interface{}{"chunk_id": "3", "content_with_weight": third},
+	)
+	got := s.kbPrompt(kbinfos, maxTokens)
+	if len(got) != 2 {
+		t.Fatalf("kbPrompt kept %d blocks, want 2 (interleaved empty must not drop the third): %q", len(got), got)
+	}
+	if kbIDOf(got[0]) != "ID: 0" || kbIDOf(got[1]) != "ID: 2" {
+		t.Errorf("ids = %q, %q; want ID: 0 and ID: 2 (original indices)", kbIDOf(got[0]), kbIDOf(got[1]))
+	}
+}
+
+// TestKbPrompt_TruncatesOverBudget verifies the token budget still caps the
+// output when real chunks exceed it. The cap is checked AFTER a chunk is
+// admitted (the admitted chunk is kept, matching the original "count-then-
+// break" semantics), so a budget that the first chunk already exceeds keeps
+// exactly that one chunk and drops the rest.
+func TestKbPrompt_TruncatesOverBudget(t *testing.T) {
+	s := &ChatPipelineService{}
+	// Four chunks whose tokens each far exceed a tiny budget.
+	body := "A sufficiently long passage to consume several tokens when counted by the tokenizer."
+	chunks := []map[string]interface{}{
+		{"chunk_id": "0", "content_with_weight": body},
+		{"chunk_id": "1", "content_with_weight": body},
+		{"chunk_id": "2", "content_with_weight": body},
+		{"chunk_id": "3", "content_with_weight": body},
+	}
+	// maxTokens so small that the first chunk already blows the 97% budget:
+	// the first chunk is admitted, the cap then fires and the rest are dropped.
+	maxTokens := 1
+	got := s.kbPrompt(kbPromptChunks(chunks...), maxTokens)
+	if len(got) != 1 {
+		t.Fatalf("kbPrompt kept %d blocks, want 1 (first chunk admitted then cap fires): %q", len(got), got)
+	}
+	if kbIDOf(got[0]) != "ID: 0" {
+		t.Errorf("first block id = %q, want ID: 0", kbIDOf(got[0]))
+	}
+}
+
+// TestKbPrompt_AllEmptyReturnsNil mirrors the original guard: no real content
+// yields no prompt blocks.
+func TestKbPrompt_AllEmptyReturnsNil(t *testing.T) {
+	s := &ChatPipelineService{}
+	kbinfos := kbPromptChunks(
+		map[string]interface{}{"chunk_id": "a"}, // no content
+		map[string]interface{}{"chunk_id": "b", "content_with_weight": ""},
+	)
+	if got := s.kbPrompt(kbinfos, 1000); got != nil {
+		t.Errorf("kbPrompt with all-empty content = %v, want nil", got)
+	}
+}
+
+// TestKbPrompt_EmptyInput covers the missing/empty chunks guard.
+func TestKbPrompt_EmptyInput(t *testing.T) {
+	s := &ChatPipelineService{}
+	if got := s.kbPrompt(map[string]interface{}{}, 1000); got != nil {
+		t.Errorf("kbPrompt with no chunks key = %v, want nil", got)
+	}
+	if got := s.kbPrompt(map[string]interface{}{"chunks": []map[string]interface{}{}}, 1000); got != nil {
+		t.Errorf("kbPrompt with empty chunks slice = %v, want nil", got)
+	}
+	// Wrong-typed chunks must not panic; returns nil.
+	if got := s.kbPrompt(map[string]interface{}{"chunks": "not a slice"}, 1000); got != nil {
+		t.Errorf("kbPrompt with wrong-typed chunks = %v, want nil", got)
+	}
+}
+
+// TestKbPrompt_NoEmptyChunksAllKept checks the normal path (no empty chunks,
+// budget ample) keeps every chunk with sequential original ids.
+func TestKbPrompt_NoEmptyChunksAllKept(t *testing.T) {
+	s := &ChatPipelineService{}
+	bodies := []string{
+		"First chunk content for the knowledge base.",
+		"Second chunk content for the knowledge base.",
+		"Third chunk content for the knowledge base.",
+	}
+	chunks := make([]map[string]interface{}, 0, len(bodies))
+	combined := ""
+	for i, b := range bodies {
+		combined += b
+		chunks = append(chunks, map[string]interface{}{
+			"chunk_id":            fmt.Sprintf("c%d", i),
+			"content_with_weight": b,
+		})
+	}
+	maxTokens := int(float64(graph.NumTokensFromString(combined))/0.97) + 1
+	got := s.kbPrompt(kbPromptChunks(chunks...), maxTokens)
+	if len(got) != len(bodies) {
+		t.Fatalf("kbPrompt kept %d, want %d", len(got), len(bodies))
+	}
+	for i, w := range []string{"ID: 0", "ID: 1", "ID: 2"} {
+		if id := kbIDOf(got[i]); id != w {
+			t.Errorf("block %d id = %q, want %q", i, id, w)
+		}
 	}
 }
