@@ -215,6 +215,32 @@ func TestRSSConnectorReadsAtomTextByType(t *testing.T) {
 	}
 }
 
+// TestRSSConnectorAtomSourceIDFallsBackToTitle verifies that an Atom entry
+// with no id or link takes its source ID from the decoded title.
+func TestRSSConnectorAtomSourceIDFallsBackToTitle(t *testing.T) {
+	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/atom.xml"})
+	if err != nil {
+		t.Fatalf("NewRSSConnector failed: %v", err)
+	}
+	connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
+		return []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><title type="html"><![CDATA[Fish &amp; chips]]></title></entry></feed>`), nil
+	}
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents = %d, want 1", len(batch.Documents))
+	}
+	if got, want := batch.Documents[0].SourceID, expectedRSSSourceID("Fish & chips"); got != want {
+		t.Fatalf("source ID = %q, want %q", got, want)
+	}
+}
+
 // staticRSSFeed returns a fixed RSS feed for tests.
 func staticRSSFeed(ctx context.Context, feedURL string) ([]byte, error) {
 	return []byte(`<?xml version="1.0" encoding="UTF-8"?>
