@@ -641,7 +641,7 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 		if td == nil {
 			return "", false
 		}
-		rows, headerCount := td.CellTexts(), td.HeaderRows
+		rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsData), td.HeaderRows
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))

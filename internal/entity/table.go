@@ -65,11 +65,12 @@ type TableCell struct {
 	OriginCol int `json:"-"`
 }
 
-// CellTexts returns the row-major cell texts, skipping Covered positions
+// CellTexts returns the raw row-major cell texts, skipping Covered positions
 // (their content lives at the origin). For a grid with no merges this is
-// exactly the legacy Rows: same strings, same row lengths. Consumers that only
-// care about the textual content use this view; consumers that need merge
-// geometry read Grid directly.
+// exactly the legacy Rows: same strings, same row lengths. Consumers that need
+// merged values projected into the covered slots (the table chunker's
+// column-aligned view, or QA's all-rows-are-data view) should call
+// tableutil.ResolveRows with the appropriate mode instead.
 func (td *TableData) CellTexts() [][]string {
 	if td == nil {
 		return nil
