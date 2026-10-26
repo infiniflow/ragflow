@@ -189,6 +189,26 @@ func TestCaptionKind_FigureBoundaryUnchanged(t *testing.T) {
 	}
 }
 
+// TestCaptionKind_ProperNounContinuationIsCaption pins the KNOWN LIMITATION of
+// the boundary rule: it keys on the first character after "Table N", so a
+// cross-reference that continues with a proper noun classifies as a caption
+// ("Table 3 Smith et al. report …"), exactly as a real caption title would
+// ("Table 3 Smith-Kappa-Rosenberg parameters"). Nothing in the string separates
+// them without part-of-speech tagging, so the rule keeps the caption reading.
+// The consequence is placement, not deletion: MergeCaptions moves the sentence
+// into the nearest table's <caption>, so it stays indexed
+// (TestMergeCaptions_ProperNounCrossReferenceLandsInCaption).
+func TestCaptionKind_ProperNounContinuationIsCaption(t *testing.T) {
+	for _, text := range []string{
+		"Table 3 Smith et al. report the F1 scores.",
+		"Table 3 Gaussian noise dominates above 40 dB.",
+	} {
+		if got := CaptionKind(pdf.Section{Text: text, LayoutType: pdf.LayoutTypeText}); got != pdf.LayoutTypeTable {
+			t.Errorf("CaptionKind(%q) = %q, want %q (documented limitation)", text, got, pdf.LayoutTypeTable)
+		}
+	}
+}
+
 // hasBox reports whether positions contains a box with the given top and
 // bottom edges. Tests use it to assert that a merged caption's box reached the
 // section it was merged into.

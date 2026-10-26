@@ -513,6 +513,30 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphKept(t *testing.T) {
 	}
 }
 
+// TestMergeCaptions_ProperNounCrossReferenceLandsInCaption measures the cost of
+// the boundary rule's known limitation (see
+// TestCaptionKind_ProperNounContinuationIsCaption): the sentence is misread as a
+// caption and merged into the table's <caption> rather than dropped, so its
+// text stays in the output and indexed with the table. Pinning this keeps the
+// limitation honest: if a later change makes the no-target branch delete
+// captions again, this test turns RED and the trade-off has to be re-argued.
+func TestMergeCaptions_ProperNounCrossReferenceLandsInCaption(t *testing.T) {
+	const sentence = "Table 3 Smith et al. report the F1 scores."
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: sentence, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, sentence) {
+			return
+		}
+	}
+	t.Errorf("misclassified sentence vanished from the output; sections = %v", textsOf(result))
+}
+
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
 // page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
 // coordinates repeat on every page, so the figure search used to match on
