@@ -84,12 +84,8 @@ sys.modules["memory.utils"].infinity_conn = sys.modules["memory.utils.infinity_c
 sys.modules["memory.utils"].ob_conn = sys.modules["memory.utils.ob_conn"]
 sys.modules["memory.utils"].gaussdb_conn = sys.modules["memory.utils.gaussdb_conn"]
 
-import contextlib
-import json
 
 import pytest
-
-from common.constants import LLMType, ModelTypeBinary
 
 
 @pytest.mark.p1

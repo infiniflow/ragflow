@@ -13,15 +13,18 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import logging
-import os
 import enum
 import json
+import logging
+import os
+
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_service import TenantModelService
+from api.db.services.user_service import TenantService
+from api.utils.model_utils import calculate_model_type, get_model_type_human
 from common import settings
 from common.constants import (
-    ActiveStatusEnum,
-    LLMType,
-    ModelTypeBinary,
     MINERU_DEFAULT_CONFIG,
     MINERU_ENV_KEYS,
     MISTRAL_OCR_DEFAULT_CONFIG,
@@ -32,12 +35,10 @@ from common.constants import (
     PADDLEOCR_ENV_KEYS,
     SOMARK_DEFAULT_CONFIG,
     SOMARK_ENV_KEYS,
+    ActiveStatusEnum,
+    LLMType,
+    ModelTypeBinary,
 )
-from api.db.services.user_service import TenantService
-from api.db.services.tenant_model_provider_service import TenantModelProviderService
-from api.db.services.tenant_model_instance_service import TenantModelInstanceService
-from api.db.services.tenant_model_service import TenantModelService
-from api.utils.model_utils import calculate_model_type, get_model_type_human
 
 logger = logging.getLogger(__name__)
 

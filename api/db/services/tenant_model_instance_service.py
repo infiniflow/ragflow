@@ -13,10 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from common.misc_utils import get_uuid
 from api.db.db_models import DB, TenantModelInstance
-from api.db.services.common_service import CommonService
 from api.db.services import duplicate_name
+from api.db.services.common_service import CommonService
+from common.misc_utils import get_uuid
 
 
 class TenantModelInstanceService(CommonService):
