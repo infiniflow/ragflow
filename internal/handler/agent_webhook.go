@@ -66,7 +66,9 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"ragflow/internal/agent/canvas"
+	dslpkg "ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
@@ -80,6 +82,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // canvasLoader is the subset of service.AgentService the webhook handler
@@ -96,27 +99,57 @@ type canvasLoader interface {
 	RunAgentWithWebhook(ctx context.Context, userID, canvasID string, payload map[string]any) (<-chan canvas.RunEvent, error)
 }
 
-// Webhook is the handler method mounted at:
+type agentWebhookCredentialManager interface {
+	Issue(ctx context.Context, subject permission.Subject, canvas *entity.UserCanvas) (string, error)
+	Resolve(ctx context.Context, canvasID, token string) (*entity.AgentWebhookCredential, error)
+	Revoke(ctx context.Context, canvasID, userID string) error
+}
+
+// Webhook handles the public credential-authenticated trigger and the
+// authenticated test trigger mounted at:
 //
-//	/api/v1/agents/:canvas_id/webhook       (production trigger)
+//	/api/v1/agents/:canvas_id/webhook       (production trigger, webhook credential required)
 //	/api/v1/agents/:canvas_id/webhook/test  (test trigger, with trace)
 //
 // The Python decorator stack at agent_api.py:1563 binds six methods to
 // a single path. Gin has no Match() — the router registers each verb
 // individually via registerAnyMethod (see internal/router/agent_routes.go).
 func (h *AgentHandler) Webhook(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
-
 	canvasID := c.Param("canvas_id")
 	if h.loader == nil {
 		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
 		return
 	}
 	isTest := strings.HasSuffix(c.Request.URL.Path, "/webhook/test")
+	ctx := c.Request.Context()
+	userID := ""
+	if isTest {
+		user, code, msg := GetUser(c)
+		if code != common.CodeSuccess {
+			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, msg)
+			return
+		}
+		userID = user.ID
+	} else {
+		// Production webhooks are mounted outside AuthMiddleware. External
+		// callers authenticate with a per-user capability in the URL; RAGFlow
+		// API keys and user JWTs are not accepted on this route.
+		credential, err := h.webhookCredentialManager().Resolve(ctx, canvasID, c.Query("credential"))
+		if err != nil {
+			if errors.Is(err, service.ErrInvalidAgentWebhookCredential) {
+				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Invalid or revoked webhook credential.")
+			} else {
+				jsonInternalError(c, err)
+			}
+			return
+		}
+		userID = credential.UserID
+		ctx = permission.WithSubject(ctx, permission.Subject{UserID: credential.UserID, TenantID: credential.TenantID})
+		// The URL credential is transport authentication, not Agent input.
+		query := c.Request.URL.Query()
+		query.Del("credential")
+		c.Request.URL.RawQuery = query.Encode()
+	}
 	startTs := time.Now()
 
 	// 1. Load canvas. Webhook collapses missing-vs-foreign into a
@@ -124,7 +157,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// api/apps/restful_apis/agent_api.py:1572 and the existing
 	// GetAgentWebhookLogs envelope), so we DO NOT route through
 	// handler.mapAgentError here.
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(ctx, userID, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
@@ -150,6 +183,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	for k, v := range cv.DSL {
 		dsl[k] = v
 	}
+	dsl = dslpkg.NormalizeForCanvas(dsl)
 
 	// 4. Find Begin component with mode=="Webhook".
 	webhookCfg := findWebhookBegin(dsl)
@@ -230,13 +264,72 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
 		// so a client disconnect does not cancel the canvas run.
-		go h.runWebhookDetached(c.Request.Context(), cv, clean, isTest, startTs)
+		go h.runWebhookDetached(ctx, userID, cv, clean, isTest, startTs)
 		c.Data(status, contentType, payload)
 		return
 	}
 	// Streaming / blocking mode.
-	out := h.runWebhookSync(c.Request.Context(), cv, clean, isTest, startTs)
+	out := h.runWebhookSync(ctx, userID, cv, clean, isTest, startTs)
 	c.JSON(out.status, out.body)
+}
+
+// CreateWebhookCredential issues or rotates the authenticated user's
+// capability for this Agent and returns the URL once.
+func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	if h.loader == nil {
+		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	ctx := c.Request.Context()
+	canvas, err := h.loader.LoadCanvasByID(ctx, user.ID, canvasID)
+	if err != nil {
+		responseCode, responseMessage := mapAgentError(err)
+		common.ResponseWithCodeData(c, responseCode, nil, responseMessage)
+		return
+	}
+	credential, err := h.webhookCredentialManager().Issue(ctx, permission.Subject{UserID: user.ID}, canvas)
+	if err != nil {
+		if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrInvalidSubject) {
+			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "You do not have permission to create a webhook credential for this agent.")
+			return
+		}
+		jsonInternalError(c, err)
+		return
+	}
+	query := url.Values{"credential": []string{credential}}
+	webhookPath := fmt.Sprintf("/api/v1/agents/%s/webhook?%s", url.PathEscape(canvasID), query.Encode())
+	common.ResponseWithCodeData(c, common.CodeSuccess, gin.H{
+		"credential":  credential,
+		"webhook_url": webhookPath,
+	}, "success")
+}
+
+// RevokeWebhookCredential revokes only the authenticated user's capability
+// for this Agent.
+func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	if err := h.webhookCredentialManager().Revoke(c.Request.Context(), c.Param("canvas_id"), user.ID); err != nil {
+		jsonInternalError(c, err)
+		return
+	}
+	common.ResponseWithCodeData(c, common.CodeSuccess, true, "success")
+}
+
+func (h *AgentHandler) webhookCredentialManager() agentWebhookCredentialManager {
+	if h.webhookCredentials != nil {
+		return h.webhookCredentials
+	}
+	return service.NewAgentWebhookCredentialService(dao.DB)
 }
 
 // findWebhookBegin scans the DSL components map for a Begin component
@@ -255,15 +348,11 @@ func findWebhookBegin(dsl map[string]any) map[string]any {
 		if entry == nil {
 			continue
 		}
-		obj, _ := entry["obj"].(map[string]any)
-		if obj == nil {
-			continue
-		}
-		name, _ := obj["component_name"].(string)
+		name, _ := entry["name"].(string)
 		if !strings.EqualFold(name, "begin") {
 			continue
 		}
-		params, _ := obj["params"].(map[string]any)
+		params, _ := entry["params"].(map[string]any)
 		if params == nil {
 			continue
 		}
@@ -483,20 +572,20 @@ func renderImmediatelyResponse(cfg map[string]any) (int, string, []byte, error) 
 // Mirrors python: agent_api.py:2123-2175 (the asyncio.create_task body
 // inside the Immediately branch).
 func (h *AgentHandler) runWebhookDetached(
-	parent context.Context, cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
+	parent context.Context, userID string, cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
 ) {
 	sessionID := common.GenerateToken()
 	parent = service.WithAgentSessionID(parent, sessionID)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Minute)
 	defer cancel()
-	h.runWebhookDetachedWithContext(ctx, cv, payload, isTest, startTs, sessionID)
+	h.runWebhookDetachedWithContext(ctx, userID, cv, payload, isTest, startTs, sessionID)
 }
 
 func (h *AgentHandler) runWebhookDetachedWithContext(
-	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
+	ctx context.Context, userID string, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time, sessionID string,
 ) {
-	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
+	events, err := h.loader.RunAgentWithWebhook(ctx, userID, cv.ID, payload)
 	if err != nil {
 		common.Warn("webhook detached run start failed",
 			zap.String("canvas", cv.ID),
@@ -557,13 +646,13 @@ type webhookSyncResult struct {
 }
 
 func (h *AgentHandler) runWebhookSync(
-	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
+	ctx context.Context, userID string, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time,
 ) webhookSyncResult {
 	status := 200
 	sessionID := common.GenerateToken()
 	ctx = service.WithAgentSessionID(ctx, sessionID)
-	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
+	events, err := h.loader.RunAgentWithWebhook(ctx, userID, cv.ID, payload)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			event := webhookContextTerminalEvent(ctxErr, sessionID)

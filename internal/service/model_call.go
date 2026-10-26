@@ -398,7 +398,7 @@ func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userI
 		return nil, err
 	}
 
-	modelName, instanceName, providerName, err := parseModelName(modelRef)
+	modelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return nil, err
 	}

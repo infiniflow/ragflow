@@ -36,7 +36,7 @@ import (
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
-// fills the tenant's default chat model id (read-side only; the DB row is left
+// fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
 func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID *string) entity.JSONMap {
 	if len(config) == 0 || tenantID == nil || *tenantID == "" {

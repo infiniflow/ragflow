@@ -139,7 +139,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	// One wire shape for csv as for xlsx: a single segmented HTML table with
 	// row-aligned positions (csv has no in-cell image anchors).
-	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil, nil)
 	return ParseResult{
 		File: map[string]any{
 			"name":     filename,

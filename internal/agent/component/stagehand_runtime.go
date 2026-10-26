@@ -64,6 +64,7 @@ import (
 	"fmt"
 	"math"
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,6 +83,7 @@ import (
 // lifecycle; the caller is responsible for resolving these from
 // the tenant model config and the canvas state.
 type RunTaskRequest struct {
+	ChatModel *models.ChatModel
 	// TenantID is the RAGFlow tenant identifier (used for logging /
 	// error context; not currently passed to stagehand).
 	TenantID string
@@ -95,6 +97,8 @@ type RunTaskRequest struct {
 	// passed via the per-call Model.BaseURL field; when empty, the
 	// stagehand server's default (api.openai.com) is used.
 	BaseURL string
+	// OpenAIChatCompletions selects Chat Completions for compatible providers.
+	OpenAIChatCompletions bool
 	// APIKey is the LLM provider key. Required by the stagehand
 	// server in local mode (MODEL_API_KEY env).
 	APIKey string
@@ -106,7 +110,8 @@ type RunTaskRequest struct {
 	MaxSteps int
 	// Headless controls `Sessions.Start.Browser.LaunchOptions.Headless`.
 	// Nil = server default (true).
-	Headless *bool
+	Headless        *bool
+	ChromiumSandbox bool
 
 	// DownloadsPath is forwarded to
 	// `Sessions.Start.Browser.LaunchOptions.DownloadsPath`. When
@@ -388,6 +393,18 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 	if req.Instruction == "" {
 		return "", errors.New("stagehand runtime: Instruction is required")
 	}
+	cacheReq := req
+	if req.ChatModel != nil {
+		baseURL, token, closeServer, err := startStagehandModelServer(ctx, req.ChatModel)
+		if err != nil {
+			return "", err
+		}
+		defer closeServer()
+		// Cache subprocesses by tenant/model, not by ephemeral bridge credentials.
+		cacheReq.ModelName, cacheReq.APIKey, cacheReq.BaseURL = "openai/ragflow", "ragflow", ""
+		req.ModelName, req.APIKey, req.BaseURL = "openai/ragflow", token, baseURL
+		req.OpenAIChatCompletions = true
+	}
 	if req.ModelName == "" {
 		return "", errors.New("stagehand runtime: ModelName is required")
 	}
@@ -395,7 +412,7 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 		return "", errors.New("stagehand runtime: APIKey is required (stagehand local mode requires MODEL_API_KEY)")
 	}
 
-	client, release, err := r.leaseClient(req)
+	client, release, err := r.leaseClient(cacheReq)
 	if err != nil {
 		return "", fmt.Errorf("stagehand runtime: client: %w", err)
 	}
@@ -417,6 +434,9 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 	// UserDataDir produces byte-identical wire output to v1.
 	launchOpts := stagehand.SessionStartParamsBrowserLaunchOptions{
 		Headless: stagehand.Bool(headless),
+	}
+	if !req.ChromiumSandbox {
+		launchOpts.Args = []string{"--no-sandbox"}
 	}
 	if req.DownloadsPath != "" {
 		launchOpts.DownloadsPath = stagehand.String(req.DownloadsPath)
@@ -454,19 +474,23 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 		maxSteps = 30
 	}
 
-	execResp, err := client.Sessions.Execute(ctx, sessionID, stagehand.SessionExecuteParams{
-		AgentConfig: stagehand.SessionExecuteParamsAgentConfig{
-			// GenericModelConfigObject carries ModelName + APIKey +
-			// BaseURL on a per-call basis; the "openai/" prefix in
-			// ModelName tells the stagehand server to dispatch via
-			// its OpenAI-compatible provider (CHANGELOG #1025 added
-			// custom BaseURL support). The union's
-			// OfSessionExecutesAgentConfigModelGenericModelConfigObject
-			// variant is the only path that exposes BaseURL.
-			Model: stagehand.SessionExecuteParamsAgentConfigModelUnion{
-				OfSessionExecutesAgentConfigModelGenericModelConfigObject: stagehandExecuteModelConfig(req),
-			},
+	agentConfig := stagehand.SessionExecuteParamsAgentConfig{
+		// GenericModelConfigObject carries ModelName + APIKey +
+		// BaseURL on a per-call basis; the "openai/" prefix in
+		// ModelName tells the stagehand server to dispatch via
+		// its OpenAI-compatible provider (CHANGELOG #1025 added
+		// custom BaseURL support). The union's
+		// OfSessionExecutesAgentConfigModelGenericModelConfigObject
+		// variant is the only path that exposes BaseURL.
+		Model: stagehand.SessionExecuteParamsAgentConfigModelUnion{
+			OfSessionExecutesAgentConfigModelGenericModelConfigObject: stagehandExecuteModelConfig(req),
 		},
+	}
+	if req.ChatModel != nil {
+		agentConfig.Mode = "dom"
+	}
+	execResp, err := client.Sessions.Execute(ctx, sessionID, stagehand.SessionExecuteParams{
+		AgentConfig: agentConfig,
 		ExecuteOptions: stagehand.SessionExecuteParamsExecuteOptions{
 			Instruction: req.Instruction,
 			MaxSteps:    stagehand.Float(float64(maxSteps)),
@@ -488,10 +512,15 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 }
 
 func stagehandExecuteModelConfig(req RunTaskRequest) *stagehand.SessionExecuteParamsAgentConfigModelGenericModelConfigObject {
+	provider, _, _ := strings.Cut(req.ModelName, "/")
 	model := &stagehand.SessionExecuteParamsAgentConfigModelGenericModelConfigObject{
 		ModelName: req.ModelName,
 		APIKey:    stagehand.String(req.APIKey),
-		Provider:  "openai",
+		Provider:  provider,
+	}
+	if provider == "openai" && req.OpenAIChatCompletions {
+		// Compatible providers implement Chat Completions, not necessarily Responses.
+		model.SetExtraFields(map[string]any{"openaiEndpointFormat": "chat"})
 	}
 	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
 		model.BaseURL = stagehand.String(baseURL)
@@ -517,15 +546,19 @@ func stagehandExecuteModelConfig(req RunTaskRequest) *stagehand.SessionExecutePa
 // Use RunTask (Sessions.Execute) instead when the agent must
 // discover the URL, navigate multiple pages, or chain actions.
 type RunExtractRequest struct {
-	TenantID    string
-	LLMID       string
-	ModelName   string // "openai/<model>"
-	BaseURL     string
-	APIKey      string
-	Headless    *bool
-	URL         string         // optional: when set, Sessions.Navigate to this URL first
-	Instruction string         // natural-language extraction prompt
-	Schema      map[string]any // JSON schema; Data.Result is the structured data
+	TenantID              string
+	LLMID                 string
+	ModelName             string // "openai/<model>"
+	BaseURL               string
+	OpenAIChatCompletions bool
+	APIKey                string
+	Headless              *bool
+	// ChromiumSandbox controls whether Chromium's sandbox is enabled.
+	// False (the zero value) adds --no-sandbox to support root containers.
+	ChromiumSandbox bool
+	URL             string         // optional: when set, Sessions.Navigate to this URL first
+	Instruction     string         // natural-language extraction prompt
+	Schema          map[string]any // JSON schema; Data.Result is the structured data
 }
 
 // RunExtract implements the "structured single-shot" path against
@@ -575,6 +608,9 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 
 	launchOpts := stagehand.SessionStartParamsBrowserLaunchOptions{
 		Headless: stagehand.Bool(headless),
+	}
+	if !req.ChromiumSandbox {
+		launchOpts.Args = []string{"--no-sandbox"}
 	}
 	if req.URL != "" {
 		// Note: BrowserLaunchOptions doesn't carry DownloadsPath /
@@ -634,10 +670,15 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 }
 
 func stagehandExtractModelConfig(req RunExtractRequest) stagehand.SessionExtractParamsOptionsModelUnion {
+	provider, _, _ := strings.Cut(req.ModelName, "/")
 	model := &stagehand.SessionExtractParamsOptionsModelGenericModelConfigObject{
 		ModelName: req.ModelName,
 		APIKey:    stagehand.String(req.APIKey),
-		Provider:  "openai",
+		Provider:  provider,
+	}
+	if provider == "openai" && req.OpenAIChatCompletions {
+		// The server supports this field; the pinned Go SDK has no typed field yet.
+		model.SetExtraFields(map[string]any{"openaiEndpointFormat": "chat"})
 	}
 	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
 		model.BaseURL = stagehand.String(baseURL)
@@ -681,6 +722,9 @@ func (r *stagehandRuntime) leaseClient(req RunTaskRequest) (stagehand.Client, fu
 		return stagehand.Client{}, nil, errors.New("stagehand runtime: APIKey is required")
 	}
 	key := req.BaseURL + "|" + req.APIKey + "|" + req.ModelName
+	if req.ChatModel != nil {
+		key = fmt.Sprintf("resolved:%q:%q", req.TenantID, req.LLMID)
+	}
 	r.mu.Lock()
 	if r.closed {
 		r.mu.Unlock()

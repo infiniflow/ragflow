@@ -145,3 +145,41 @@ func TestLineToTextBox(t *testing.T) {
 		}
 	})
 }
+
+// TestCharsToBoxesKeepsSuperscriptInPlace pins the X-first ordering inside a
+// fuzzy Y band. GroupCharsToLines sorts by Bottom, so a raised superscript
+// arrives before the base line; without the re-order it is emitted at the
+// start of the line ("2I C" instead of "I2C").
+func TestCharsToBoxesKeepsSuperscriptInPlace(t *testing.T) {
+	chars := []pdf.TextChar{
+		{X0: 8, X1: 13, Top: 0, Bottom: 10, Text: "C", PageNumber: 0},
+		{X0: 5, X1: 8, Top: -3, Bottom: 2, Text: "2", PageNumber: 0}, // superscript
+		{X0: 0, X1: 5, Top: 0, Bottom: 10, Text: "I", PageNumber: 0},
+	}
+	boxes := CharsToBoxes(chars, 0, false)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d, want 1", len(boxes))
+	}
+	if boxes[0].Text != "I2C" {
+		t.Fatalf("Text = %q, want 'I2C' (superscript stays between I and C)", boxes[0].Text)
+	}
+}
+
+// TestCharsToBoxesOrdersChainedBaselinesTransitively pins a strict weak
+// ordering. A pairwise |Top difference| comparator cycles for Top 0/4/8 with
+// band 5 (0<4, 4<8, but 8 is not within 5 of 0), which sort.SliceStable does
+// not permit; bands are assigned before sorting instead.
+func TestCharsToBoxesOrdersChainedBaselinesTransitively(t *testing.T) {
+	chars := []pdf.TextChar{
+		{X0: 10, X1: 15, Top: 0, Bottom: 10, Text: "A", PageNumber: 0},
+		{X0: 5, X1: 10, Top: 4, Bottom: 14, Text: "B", PageNumber: 0},
+		{X0: 0, X1: 5, Top: 8, Bottom: 18, Text: "C", PageNumber: 0},
+	}
+	boxes := CharsToBoxes(chars, 0, false)
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d, want 1", len(boxes))
+	}
+	if boxes[0].Text != "CBA" {
+		t.Fatalf("Text = %q, want 'CBA' (one chained band in X order)", boxes[0].Text)
+	}
+}

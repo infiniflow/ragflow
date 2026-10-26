@@ -325,9 +325,18 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 	}
 
 	// Collect outputs from the state's Outputs bucket for this cpn.
+	// Read from runtime.GetStateFromContext(ctx) first so resolved outputs from Message
+	// take precedence over raw deferred streams.
 	var outputs map[string]any
-	if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
-		outputs = bucket
+	if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+		if bucket := ctxState.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
+		}
+	}
+	if len(outputs) == 0 {
+		if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
+		}
 	}
 
 	inputs := map[string]any{}
@@ -554,11 +563,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if name == "" {
 			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
-		deferToMessage := directMessageDownstream(c, cpnID)
-		nodeOpts := runtime.ComponentExecutionOptions{
-			DeferAgentToMessage:        deferToMessage,
-			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
-		}
+		nodeOpts := resolveComponentExecutionOptions(c, cpnID, name)
 		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
@@ -580,8 +585,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				// Python keeps the Agent node pending while Message consumes its
 				// partial generator. Message completes this callback after the
 				// deferred stream closes.
-				runtime.RegisterDeferredNode(ctx, cpnID, func() {
-					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+				runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+					targetState := state
+					if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+						targetState = ctxState
+					}
+					nodeFinishedNow(ctx, targetState, cpnID, componentName, componentName, nodeErr)
 				})
 			} else {
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
@@ -793,6 +802,85 @@ func directMessageDownstream(c *Canvas, cpnID string) bool {
 		}
 	}
 	return true
+}
+
+func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	msgComp, ok := c.Components[msgID]
+	if !ok || len(msgComp.Obj.Params) == 0 {
+		return false
+	}
+	needle := strings.ToLower(cpnID) + "@"
+	for _, v := range msgComp.Obj.Params {
+		switch x := v.(type) {
+		case string:
+			if strings.Contains(strings.ToLower(x), needle) {
+				return true
+			}
+		case []string:
+			for _, s := range x {
+				if strings.Contains(strings.ToLower(s), needle) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.Contains(strings.ToLower(s), needle) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func hasStructuredOutput(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	if v, ok := params["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+		if s, ok := v.(string); ok && strings.EqualFold(s, "true") {
+			return true
+		}
+	}
+	if v, ok := params["output_structure"]; ok && v != nil {
+		switch m := v.(type) {
+		case map[string]any:
+			if len(m) > 0 {
+				return true
+			}
+		case map[string]string:
+			if len(m) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
+	deferToMessage := directMessageDownstream(c, cpnID)
+	isAgent := strings.EqualFold(name, "Agent")
+	isLLM := strings.EqualFold(name, "LLM") || strings.EqualFold(name, "Generate")
+	deferLLM := false
+	if isLLM && deferToMessage && c != nil {
+		comp, ok := c.Components[cpnID]
+		if ok && len(comp.Downstream) == 1 && messageConsumesComponent(c, comp.Downstream[0], cpnID) {
+			if !hasStructuredOutput(comp.Obj.Params) {
+				deferLLM = true
+			}
+		}
+	}
+	return runtime.ComponentExecutionOptions{
+		DeferAgentToMessage:        deferToMessage && isAgent,
+		DeferLLMToMessage:          deferLLM,
+		SuppressAgentMessageEvents: isAgent && !deferToMessage,
+	}
 }
 
 func wireWorkflowTerminals(

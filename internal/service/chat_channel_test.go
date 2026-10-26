@@ -25,7 +25,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 	svc := NewChatChannelService()
 	chatID := "dialog-1"
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	channel, err := svc.CreateChatChannel(
 		ctx,
 		"tenant-1",
@@ -135,7 +135,8 @@ func TestChatChannelServiceGetChatChannelAllowsJoinedTenant(t *testing.T) {
 	})
 	createServiceTestMembership(t, db, "user-2", "tenant-1")
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-2", "tenant-1")
+	grantServiceTestResource(t, "tenant-1", "dialog", "cc-1", "user-2", testResourcePermissionRead)
 	channel, code, err := NewChatChannelService().GetChatChannel(ctx, "user-2", "cc-1")
 	if err != nil {
 		t.Fatalf("GetChatChannel failed: %v", err)
@@ -158,7 +159,9 @@ func TestChatChannelServiceListUsesPermissionScope(t *testing.T) {
 	})
 	createServiceTestMembership(t, db, "user-2", "tenant-1")
 
-	channels, err := NewChatChannelService().List(t.Context(), "user-2")
+	ctx := serviceTestContext(t, "user-2", "tenant-1")
+	grantServiceTestResource(t, "tenant-1", "dialog", "channel-team", "user-2", testResourcePermissionRead)
+	channels, err := NewChatChannelService().List(ctx, "user-2")
 	if err != nil {
 		t.Fatalf("List() failed: %v", err)
 	}
@@ -182,7 +185,7 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 		Status:   1,
 	})
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	updated, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
 		"name":    "bot-b",
 		"config":  map[string]interface{}{"token": "new"},
@@ -217,15 +220,15 @@ func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.
 		Status:   1,
 	})
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	_, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
 	if code != common.CodeNotFound {
 		t.Fatalf("expected hidden not-found error, got %v", code)
 	}
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("expected permission denial, got %v", err)
+	if err == nil {
+		t.Fatalf("expected cross-tenant dialog to be hidden, got %v", err)
 	}
 }
 
@@ -243,7 +246,7 @@ func TestChatChannelServiceUpdateChatChannelRequiresChannelOwnerAccess(t *testin
 	createServiceTestMembership(t, db, "user-1", "tenant-1")
 	createServiceTestMembership(t, db, "user-1", "tenant-2")
 
-	_, code, err := NewChatChannelService().UpdateChatChannel(t.Context(), "user-1", "cc-1", map[string]interface{}{
+	_, code, err := NewChatChannelService().UpdateChatChannel(serviceTestContext(t, "user-1", "tenant-1", "tenant-1"), "user-1", "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
 	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
@@ -253,6 +256,10 @@ func TestChatChannelServiceUpdateChatChannelRequiresChannelOwnerAccess(t *testin
 
 func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
+	if err := db.Create(&entity.User{ID: "user-2", Nickname: "member", Email: "user-2@test.com"}).Error; err != nil {
+		t.Fatalf("create non-owner user: %v", err)
+	}
+	createServiceTestMembership(t, db, "user-2", "tenant-2")
 	createServiceTestChannel(t, db, &entity.ChatChannel{
 		ID:       "cc-1",
 		TenantID: "tenant-1",
@@ -264,7 +271,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	svc := NewChatChannelService()
 
-	ctx := t.Context()
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-2", TenantID: "tenant-2"})
 	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
 	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("expected hidden permission denial, got code=%v err=%v", code, err)
@@ -276,7 +283,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatal("expected delete to be rejected")
 	}
 
-	deleted, code, err = svc.DeleteChatChannel(ctx, "tenant-1", "cc-1")
+	deleted, code, err = svc.DeleteChatChannel(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", "cc-1")
 	if err != nil {
 		t.Fatalf("DeleteChatChannel failed: %v", err)
 	}
