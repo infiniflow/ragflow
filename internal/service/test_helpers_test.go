@@ -27,6 +27,14 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+)
+
+const (
+	testResourcePermissionRead  int32 = 1
+	testResourcePermissionWrite int32 = 2
+	testRoleActionEnable        int32 = 1
+	testRoleActionRead          int32 = 2
 )
 
 // sptr returns a pointer to the given string.
@@ -77,6 +85,42 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberIDs ...string) context.Context {
+	t.Helper()
+	if dao.DB != nil {
+		sqlDB, err := dao.DB.DB()
+		if err == nil && sqlDB.Ping() == nil {
+			memberIDs := append([]string{userID}, additionalMemberIDs...)
+			if dao.DB.Migrator().HasTable(&entity.UserTenant{}) {
+				for _, memberID := range memberIDs {
+					if memberID == "" {
+						continue
+					}
+					var count int64
+					if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", memberID, tenantID).Count(&count).Error; err != nil {
+						t.Fatalf("check test tenant membership: %v", err)
+					}
+					if count != 0 {
+						continue
+					}
+					role := string(permission.RoleNormal)
+					if memberID == tenantID {
+						role = string(permission.RoleOwner)
+					}
+					status := entity.TenantMembershipStatusJoined
+					if err := dao.DB.Create(&entity.UserTenant{
+						ID: common.GenerateToken(), UserID: memberID, TenantID: tenantID, Role: role, Status: &status,
+					}).Error; err != nil {
+						t.Fatalf("create test tenant membership: %v", err)
+					}
+				}
+			}
+			prepareServiceTestContextEE(t, tenantID, memberIDs...)
+		}
+	}
+	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
 }
 
 func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {

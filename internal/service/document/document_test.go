@@ -536,7 +536,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 	}
 
 	// Migrate tables used by deleteDocumentFull + DeleteDocuments
-	if err = db.AutoMigrate(
+	models := []interface{}{
 		&entity.Document{},
 		&entity.Knowledgebase{},
 		&entity.PipelineOperationLog{},
@@ -550,7 +550,9 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
-	); err != nil {
+	}
+	models = append(models, documentTestExtraModels()...)
+	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -565,6 +567,22 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func seedDocumentPreviewMemberAccess(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Create(&entity.User{
+		ID: "user-2", Nickname: "member", Email: "user-2@test.com",
+	}).Error; err != nil {
+		t.Fatalf("insert member user: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-prev", UserID: "user-2", TenantID: "tenant-1",
+		Role: "normal", InvitedBy: "user-1", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert Tenant member: %v", err)
+	}
+	seedDocumentPreviewMemberAccessEE(t, db)
 }
 
 func testDocumentService(t *testing.T) *DocumentService {
@@ -1225,6 +1243,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
+	assertUploadedDocumentOwnerGrant(t, ctx, doc["id"].(string))
 	cfg := doc["parser_config"].(map[string]interface{})
 	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
 		t.Fatalf("parser_config=%v", cfg)
@@ -1319,6 +1338,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			UserID:   userID,
 			TenantID: tenantID,
 			Role:     "owner",
+			LLMID:    "llm-default",
+			EmbdID:   "embd-default",
+			ASRID:    "asr-default",
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -2179,12 +2201,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	}
 
 	// A member of the dataset's tenant reads it too.
-	if err := db.Create(&entity.UserTenant{
-		ID: "ut-prev", UserID: "user-2", TenantID: "tenant-1",
-		Role: "normal", InvitedBy: "user-1", Status: sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert Tenant member: %v", err)
-	}
+	seedDocumentPreviewMemberAccess(t, db)
 	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev"); err != nil {
 		t.Fatalf("team member preview: %v", err)
 	}

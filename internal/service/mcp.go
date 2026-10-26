@@ -568,9 +568,8 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 	if servers == nil {
 		servers = []*entity.MCPServer{}
 	}
-	servers = paginateMCPServers(servers, page, pageSize)
-
-	items := make([]*MCPServerListItem, 0, len(servers))
+	visibleServers := make([]*entity.MCPServer, 0, len(servers))
+	permissionMasks := make(map[string]int32, len(servers))
 	checker := permission.NewDatabaseChecker(dao.DB)
 	for _, server := range servers {
 		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
@@ -578,9 +577,20 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 			ID:   server.ID,
 		})
 		if err != nil {
+			if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) {
+				continue
+			}
 			code, normalized := normalizeMCPServerPermissionError(err)
 			return nil, code, normalized
 		}
+		permissionMasks[server.ID] = access.PermissionMask
+		visibleServers = append(visibleServers, server)
+	}
+	total = int64(len(visibleServers))
+	visibleServers = paginateMCPServers(visibleServers, page, pageSize)
+
+	items := make([]*MCPServerListItem, 0, len(visibleServers))
+	for _, server := range visibleServers {
 		variables := server.Variables
 		if variables == nil {
 			variables = entity.JSONMap{}
@@ -594,7 +604,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 			Variables:          MCPVariablesForResponse(variables),
 			CreateDate:         formatMCPServerDate(server.CreateDate),
 			UpdateDate:         formatMCPServerDate(server.UpdateDate),
-			OperatorPermission: access.PermissionMask,
+			OperatorPermission: permissionMasks[server.ID],
 		})
 	}
 
