@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -59,11 +60,15 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 			t.Fatalf("create membership: %v", err)
 		}
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "canvas-owner", "canvas-owner", "caller", "other-owner"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
-	ctx := runtime.WithState(t.Context(), state)
+	state.Sys["tenant_id"] = "canvas-owner"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "caller", TenantID: "canvas-owner"})
 
 	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"dataset_ids": []string{dataset.ID}}); err != nil {
 		t.Fatalf("check accessible dataset dependency: %v", err)

@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
@@ -102,6 +103,7 @@ func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
 		t.Run(tt.method, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, `{"selector":{"document_ids":[123]}}`)
 			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+			setGinContextSubject(c, "user-1", "tenant-owner")
 			tt.handler(c)
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
@@ -370,9 +372,22 @@ func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(w)
 	c.Request = req
+	setGinContextSubject(c, "user-1", "user-1")
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	return c, w
+}
+
+func setupGinContextWithUserInTenant(method, path, body, userID, tenantID string) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupGinContextWithUser(method, path, body)
+	setGinContextSubject(c, userID, tenantID)
+	return c, w
+}
+
+func setGinContextSubject(c *gin.Context, userID, tenantID string) {
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: userID, TenantID: tenantID,
+	}))
 }
 
 func setupDocumentPermissionDB(t *testing.T, accessible bool) {
@@ -385,6 +400,7 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.Knowledgebase{},
 		&entity.UserTenant{},
 		&entity.Document{},
@@ -427,6 +443,15 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		}).Error; err != nil {
 			t.Fatalf("insert user_tenant: %v", err)
 		}
+	}
+	members := []string{"owner-user"}
+	if accessible {
+		members = append(members, "user-1")
+	} else if err := db.Create(&entity.User{ID: "user-1", Nickname: "user-1", Email: "user-1@test.local"}).Error; err != nil {
+		t.Fatalf("insert non-member user: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-owner", members...); err != nil {
+		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 
 	orig := dao.DB
@@ -504,6 +529,7 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.DeleteDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -537,6 +563,7 @@ func TestDeleteDocumentHandler_Accessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.DeleteDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -570,6 +597,7 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"blocked"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -603,6 +631,7 @@ func TestUpdateDocumentHandler_Accessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"allowed"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -638,6 +667,7 @@ func TestUpdateDocumentHandler_ValidationError(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"progress":0.5}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -670,6 +700,7 @@ func TestUpdateDocumentHandler_ServerError(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"new.pdf"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusInternalServerError {
@@ -760,6 +791,7 @@ func setupUploadContext(t *testing.T, path string, fields map[string]string, fil
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	c, _ := gin.CreateTestContext(w)
 	c.Request = req
+	setGinContextSubject(c, "user-1", "tenant-1")
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "dataset_id", Value: uploadTestDatasetID}}

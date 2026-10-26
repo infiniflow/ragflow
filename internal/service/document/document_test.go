@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
@@ -666,6 +667,9 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	var owner entity.UserTenant
 	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", string(entity.StatusValid)).First(&owner).Error
 	if err == nil {
+		if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+			t.Fatalf("prepare document owner permission fixture: %v", err)
+		}
 		return
 	}
 	if !dao.IsNotFoundErr(err) {
@@ -682,6 +686,9 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Create(&owner).Error; err != nil {
 		t.Fatalf("insert test tenant owner: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare document owner permission fixture: %v", err)
 	}
 }
 

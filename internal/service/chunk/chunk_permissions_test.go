@@ -19,8 +19,9 @@ func TestRetrievalTestChecksDatasetUsePermission(t *testing.T) {
 		Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
 		t.Fatalf("set dataset private: %v", err)
 	}
+	ctx := chunkTestContext(t, "outsider", "owner", "owner")
 
-	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(t.Context(), &service.RetrievalTestRequest{
+	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(ctx, &service.RetrievalTestRequest{
 		Question: "query",
 		Datasets: []string{"kb-1"},
 	}, "outsider")
@@ -52,7 +53,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 				t.Fatalf("set KB permission: %v", err)
 			}
 
-			ctx := t.Context()
+			ctx := chunkTestContext(t, tt.userID, "owner", "owner", "member", "other")
 			for _, op := range []struct {
 				name string
 				run  func(*ChunkService) error

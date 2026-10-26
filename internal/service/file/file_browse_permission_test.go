@@ -7,6 +7,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 func seedFileBrowsing(t *testing.T) {
@@ -19,6 +20,9 @@ func seedFileBrowsing(t *testing.T) {
 		if err := db.Create(&membership).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "reader"); err != nil {
+		t.Fatalf("prepare tenant permission fixture: %v", err)
 	}
 	for _, entry := range []entity.File{
 		{ID: "root", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "/", Type: FileTypeFolder},

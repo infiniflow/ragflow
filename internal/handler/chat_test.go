@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -46,6 +47,9 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
 	}).Error; err != nil {
 		t.Fatalf("failed to create owner membership: %v", err)
+	}
+	if err = testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare chat permission fixture: %v", err)
 	}
 
 	return db

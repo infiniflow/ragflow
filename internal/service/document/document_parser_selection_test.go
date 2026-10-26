@@ -8,6 +8,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -158,6 +159,9 @@ func seedDocumentParserTenant(t *testing.T, tenantID, ownerID string) {
 		LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
 	}).Error; err != nil {
 		t.Fatalf("insert tenant owner membership: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, ownerID); err != nil {
+		t.Fatalf("prepare parser tenant permission fixture: %v", err)
 	}
 }
 
