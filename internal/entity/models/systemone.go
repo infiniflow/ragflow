@@ -18,7 +18,9 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"ragflow/internal/common"
@@ -111,58 +113,51 @@ func (m *SystemOneModel) ChatWithMessages(ctx context.Context, modelName string,
 	return nil, fmt.Errorf("systemone: %q is a decision model and cannot answer chat completions; select it as the decision model instead", modelName)
 }
 
-// systemOneProbeQuestionID names the single question Decide sends, whose answer
-// is discarded: one question is the smallest request the endpoint answers, and
-// Decide asks nothing else.
-const (
-	systemOneProbeQuestionID   = "reachability"
-	systemOneProbeQuestionType = "noul"
-	systemOneProbeInstructions = "Return 1.0."
-)
-
-// Decide sends one question through the decision endpoint and reports whether
-// it answered.
-//
-// It is a probe, not a judge. Verification (verifyDecisionModel) is its caller:
-// adding the model has to prove that base URL, credential and endpoint together
-// answer a decision request, because that is what the first real decision call
-// does. Verification cannot lean on the models list instead — picking the model
-// already proved that one, and it says nothing about this endpoint, which is the
-// request the product actually issues.
-//
-// The judge that asks the real questions — their calibrated phrasing, their
-// tolerances, their retry and cost policy — lives in the agentic-RAG arm, which
-// reads the model straight from the database; a second implementation here would
-// be a second place for those phrasings to drift. The instructions below are
-// deliberately synthetic: no calibration depends on them.
-//
-// The response reports reachability only. DecideResponse carries no fields, so
-// the endpoint's answer is read and dropped.
-func (m *SystemOneModel) Decide(ctx context.Context, modelName *string, _ *DecideRequest, apiConfig *APIConfig, _ *common.ModelUsage) (*DecideResponse, error) {
+// Decide asks probability questions about one state in a single request.
+func (m *SystemOneModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
-		return nil, fmt.Errorf("systemone: decision model name is required")
+		return nil, fmt.Errorf("systemone: model name is required")
 	}
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
+	if request == nil || len(request.Questions) == 0 || len(request.Questions) > MaxDecisionQuestions {
+		return nil, fmt.Errorf("systemone: between 1 and %d questions are required", MaxDecisionQuestions)
 	}
-	// The endpoint, not the base URL: a wrong-root deployment answers 404 here
-	// while the models list it also serves is still perfectly reachable.
-	endpoint, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Decision)
+	for id, question := range request.Questions {
+		if _, ok := question.(Noul); !ok {
+			return nil, fmt.Errorf("systemone: question %q must be a noul question", id)
+		}
+	}
+	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+		return nil, fmt.Errorf("systemone: api key is required")
+	}
+	url, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	probeRequest := map[string]any{
-		"model": *modelName,
-		"state": map[string]any{},
-		"questions": map[string]any{
-			systemOneProbeQuestionID: map[string]any{
-				"type":         systemOneProbeQuestionType,
-				"instructions": systemOneProbeInstructions,
-			},
-		},
+	suffix := strings.Trim(m.baseModel.URLSuffix.Decision, "/")
+	if suffix != "" && !strings.HasSuffix(strings.ToLower(url), "/"+strings.ToLower(suffix)) {
+		url = joinURL(url, suffix)
 	}
-	if _, err = m.baseModel.doRequest(ctx, endpoint, apiConfig, probeRequest, nonStreamCallTimeout); err != nil {
-		return nil, err
+	body, err := m.baseModel.doRequest(ctx, url, apiConfig, map[string]any{
+		"model": *modelName, "state": request.State, "questions": request.Questions,
+	}, nonStreamCallTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("systemone: %w", err)
 	}
-	return &DecideResponse{}, nil
+	var response DecideResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("systemone: decode response: %w", err)
+	}
+	if len(response.Answers) == 0 {
+		return nil, fmt.Errorf("systemone: no answers in response")
+	}
+	for id, answer := range response.Answers {
+		if answer.Noul != nil && (math.IsNaN(*answer.Noul) || math.IsInf(*answer.Noul, 0) || *answer.Noul < 0 || *answer.Noul > 1) {
+			return nil, fmt.Errorf("systemone: invalid probability for question %q", id)
+		}
+	}
+	recordResponseUsage(modelUsage, response.ID, &TokenUsage{
+		PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens,
+		TotalTokens: response.Usage.InputTokens + response.Usage.OutputTokens,
+	}, "decision")
+	return &response, nil
 }

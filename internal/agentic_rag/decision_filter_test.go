@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
-	"ragflow/internal/rag/decisionhead"
 )
 
 // stubDecision replaces the filter's three dependencies for one test, so the drop

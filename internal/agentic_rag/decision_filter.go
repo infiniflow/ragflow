@@ -25,8 +25,8 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
-	"ragflow/internal/rag/decisionhead"
 )
 
 // The filter's dependencies, held as variables so the default test tier can

@@ -3,9 +3,11 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func newSystemOneForTest(baseURL string) *SystemOneModel {
@@ -199,5 +201,66 @@ func TestSystemOneListModelsFailsWhenProbeFails(t *testing.T) {
 	}
 	if models != nil {
 		t.Errorf("models=%v, want nil on failure", models)
+	}
+}
+
+func TestSystemOneDecide(t *testing.T) {
+	for _, path := range []string{"/v1", "/v1/systemone/"} {
+		t.Run(path, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/systemone" || r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("unexpected decision endpoint or credentials")
+				}
+				var request struct {
+					Model     string                                         `json:"model"`
+					State     map[string]string                              `json:"state"`
+					Questions map[string]struct{ Type, Instructions string } `json:"questions"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if request.Model != "decision-model-preview" || request.State["query"] != "hello" || request.Questions["greeting"].Type != "noul" || request.Questions["greeting"].Instructions != "Is this a greeting?" {
+					t.Errorf("incorrect decision payload: %+v", request)
+				}
+				_, _ = w.Write([]byte(`{"answers":{"greeting":{"type":"noul","noul":0}},"usage":{"input_tokens":12}}`))
+			}))
+			defer srv.Close()
+			key, name := "test-key", "decision-model-preview"
+			result, err := newSystemOneForTest(srv.URL+path).Decide(t.Context(), &name, &DecideRequest{
+				State: map[string]string{"query": "hello"}, Questions: map[string]Question{"greeting": Noul{Instructions: "Is this a greeting?"}},
+			}, &APIConfig{ApiKey: &key}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Answers["greeting"].Noul == nil || *result.Answers["greeting"].Noul != 0 || result.Usage.InputTokens != 12 {
+				t.Fatalf("unexpected response: %+v", result)
+			}
+		})
+	}
+}
+
+func TestSystemOneDecideValidation(t *testing.T) {
+	model := newSystemOneForTest("http://unused")
+	key, name := "test-key", "decision-model-preview"
+	for _, count := range []int{0, MaxDecisionQuestions + 1} {
+		questions := make(map[string]Question, count)
+		for i := 0; i < count; i++ {
+			questions[string(rune('a'+i))] = Noul{Instructions: "Question"}
+		}
+		if _, err := model.Decide(t.Context(), &name, &DecideRequest{Questions: questions}, &APIConfig{ApiKey: &key}, nil); err == nil {
+			t.Fatalf("accepted %d questions", count)
+		}
+	}
+}
+
+func TestSystemOneDecideDeadline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer srv.Close()
+	key, name := "test-key", "decision-model-preview"
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := newSystemOneForTest(srv.URL).Decide(ctx, &name, &DecideRequest{Questions: map[string]Question{"a": Noul{Instructions: "Question"}}}, &APIConfig{ApiKey: &key}, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Decide = %v; want deadline exceeded", err)
 	}
 }
