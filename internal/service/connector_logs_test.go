@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -79,7 +78,7 @@ func TestListLogsPaginationModes(t *testing.T) {
 	}
 
 	svc := NewConnectorService()
-	ctx := context.Background()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 
 	all, total, code, err := svc.ListLogs(ctx, "user-1", "", 1, 0)
 	if err != nil || code != common.CodeSuccess {
@@ -182,7 +181,7 @@ func TestListLogsStatusPriority(t *testing.T) {
 	}
 
 	svc := NewConnectorService()
-	ctx := context.Background()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 
 	byConnector, total, code, err := svc.ListLog(ctx, "conn-1", "user-1", 1, 100)
 	if err != nil || code != common.CodeSuccess {

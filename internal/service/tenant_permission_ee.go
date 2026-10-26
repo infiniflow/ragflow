@@ -15,8 +15,16 @@
 
 package service
 
-import "context"
+import (
+	"context"
+
+	"ragflow/internal/entity"
+)
 
 func resolveDefaultTenantIDEE(context.Context, string) (string, bool, error) {
 	return "", false, nil
+}
+
+func resolveCurrentUserTenantEE(context.Context, string) (*entity.UserTenant, bool, error) {
+	return nil, false, nil
 }

@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"image"
+	"strings"
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -62,6 +63,73 @@ func TestAnnotateBoxLayouts_PriorityOverMaxArea(t *testing.T) {
 	boxes = AnnotateBoxLayouts(boxes, regions, 3.0, 0)
 	if boxes[0].LayoutType != "table" {
 		t.Errorf("priority: 'table' should win over 'text' when both meet threshold, got %q", boxes[0].LayoutType)
+	}
+}
+
+func TestAnnotateBoxLayoutsCaptionConfidence(t *testing.T) {
+	for _, tc := range []struct {
+		name                    string
+		figureScore, tableScore float64
+		shift                   float64
+		want                    string
+	}{
+		{"table_wins", 0.217, 0.5509, 0, pdf.DLALabelTableCaption},
+		{"figure_wins", 0.9, 0.55, 0, pdf.DLALabelFigureCaption},
+		{"table_wins_with_shift", 0.217, 0.5509, 0.5, pdf.DLALabelTableCaption},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, reverse := range []bool{false, true} {
+				regions := []pdf.DLARegion{
+					{X0: 0, Y0: 0, X1: 100, Y1: 10, Label: pdf.DLALabelFigureCaption, Confidence: tc.figureScore},
+					{X0: tc.shift, Y0: tc.shift, X1: 100 + tc.shift, Y1: 10 + tc.shift, Label: pdf.DLALabelTableCaption, Confidence: tc.tableScore},
+				}
+				if reverse {
+					regions[0], regions[1] = regions[1], regions[0]
+				}
+				boxes := AnnotateBoxLayouts([]pdf.TextBox{{Text: "Caption", X0: 0, X1: 100, Top: 0, Bottom: 10}}, regions, 1, 0)
+				if len(boxes) != 1 || boxes[0].LayoutType != tc.want {
+					t.Fatalf("reverse=%v: caption boxes = %+v, want layout %q", reverse, boxes, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestAnnotateBoxLayoutsDistinctCaptions(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{Text: "Figure caption", X0: 0, X1: 100, Top: 0, Bottom: 10},
+		{Text: "Table caption", X0: 120, X1: 220, Top: 0, Bottom: 10},
+	}
+	regions := []pdf.DLARegion{
+		{X0: 0, Y0: 0, X1: 100, Y1: 10, Label: pdf.DLALabelFigureCaption, Confidence: 0.217},
+		{X0: 120, Y0: 0, X1: 220, Y1: 10, Label: pdf.DLALabelTableCaption, Confidence: 0.5509},
+	}
+	got := AnnotateBoxLayouts(boxes, regions, 1, 0)
+	if len(got) != 2 || got[0].LayoutType != pdf.DLALabelFigureCaption || got[1].LayoutType != pdf.DLALabelTableCaption {
+		t.Fatalf("distinct captions lost their labels: %+v", got)
+	}
+}
+
+func TestAnnotateBoxLayoutsTableCaptionMerges(t *testing.T) {
+	// an0590scv140.pdf, page 6: both caption labels refer to the same region.
+	caption := pdf.TextBox{Text: "表1. HT24LC02A主要规格", X0: 277.33, X1: 389, Top: 657, Bottom: 668.33}
+	regions := []pdf.DLARegion{
+		{X0: 832.37, Y0: 1969.45, X1: 1165.44, Y1: 2004.01, Label: pdf.DLALabelFigureCaption, Confidence: 0.217},
+		{X0: 832.37, Y0: 1969.45, X1: 1165.44, Y1: 2004.01, Label: pdf.DLALabelTableCaption, Confidence: 0.5509},
+	}
+	boxes := AnnotateBoxLayouts([]pdf.TextBox{caption}, regions, 3, 2526)
+	if len(boxes) != 1 {
+		t.Fatalf("caption boxes = %+v, want one caption", boxes)
+	}
+	sections := MergeCaptions([]pdf.Section{
+		{Text: "<table><tr><td>HT24LC02A</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 180.99, Right: 466.79, Top: 570.77, Bottom: 650.92}}},
+		{Text: boxes[0].Text, LayoutType: boxes[0].LayoutType,
+			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: caption.X0, Right: caption.X1, Top: caption.Top, Bottom: caption.Bottom}}},
+	})
+	if len(sections) != 1 || sections[0].LayoutType != pdf.LayoutTypeTable ||
+		!strings.Contains(sections[0].Text, "<caption>表1. HT24LC02A主要规格</caption>") {
+		t.Fatalf("table caption remained separate from its table: %+v", sections)
 	}
 }
 
