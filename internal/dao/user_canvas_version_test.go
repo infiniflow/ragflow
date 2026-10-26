@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -84,4 +85,61 @@ func TestUserCanvasVersionDAO_InterfaceSatisfied(t *testing.T) {
 	// least one explicit test bound to a method, not just a sentinel.
 	d := NewUserCanvasVersionDAO()
 	_ = daoInterface(d)
+}
+
+func TestUserCanvasVersionDAOKeepsAllVersions(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	if err := db.AutoMigrate(&entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("failed to migrate versions: %v", err)
+	}
+	ctx := t.Context()
+	if err := db.WithContext(ctx).Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1"}).Error; err != nil {
+		t.Fatalf("failed to create canvas: %v", err)
+	}
+	dao := NewUserCanvasVersionDAO()
+	opts := SaveOrReplaceLatestVersionOptions{UserCanvasID: "canvas-1"}
+	const versionCount = 35
+	for i := 0; i < versionCount; i++ {
+		opts.NewID = fmt.Sprintf("version-%02d", i)
+		opts.DSL = entity.JSONMap{"revision": fmt.Sprint(i)}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			_, err := dao.SaveOrReplaceLatestTx(ctx, tx, opts)
+			return err
+		}); err != nil {
+			t.Fatalf("failed to save version %d: %v", i, err)
+		}
+	}
+	for _, stage := range []string{"insert", "refresh", "publish"} {
+		t.Run(stage, func(t *testing.T) {
+			if stage != "insert" {
+				opts.NewID = "unused-version-id"
+				opts.Release = stage == "publish"
+				if err := db.Transaction(func(tx *gorm.DB) error {
+					row, err := dao.SaveOrReplaceLatestTx(ctx, tx, opts)
+					if err == nil && (row.ID != "version-34" || row.Release != opts.Release) {
+						t.Errorf("unexpected refreshed version: id=%q release=%v", row.ID, row.Release)
+					}
+					return err
+				}); err != nil {
+					t.Fatalf("failed to save latest version: %v", err)
+				}
+			}
+			versions, err := dao.ListByCanvasID(ctx, db, opts.UserCanvasID)
+			if err != nil {
+				t.Fatalf("failed to list versions: %v", err)
+			}
+			if len(versions) != versionCount {
+				t.Fatalf("version count = %d, want %d", len(versions), versionCount)
+			}
+			ids := make(map[string]bool, len(versions))
+			for _, version := range versions {
+				ids[version.ID] = true
+			}
+			for i := 0; i < versionCount; i++ {
+				if id := fmt.Sprintf("version-%02d", i); !ids[id] {
+					t.Errorf("saved version %q was deleted", id)
+				}
+			}
+		})
+	}
 }

@@ -16,25 +16,43 @@
 
 package entity
 
+import "strings"
+
 // UserCanvas user canvas model
 type UserCanvas struct {
-	ID             string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	Avatar         *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
-	UserID         string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
-	Tags           string  `gorm:"column:tags;size:512;not null;default:'';index" json:"tags"`
-	Title          *string `gorm:"column:title;size:255" json:"title,omitempty"`
-	Permission     string  `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
-	Release        bool    `gorm:"column:release;not null;default:false;index" json:"release"`
-	Description    *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
-	CanvasType     *string `gorm:"column:canvas_type;size:32;index" json:"canvas_type,omitempty"`
-	CanvasCategory string  `gorm:"column:canvas_category;size:32;not null;default:agent_canvas;index" json:"canvas_category"`
-	DSL            JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
+	ID                 string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	Avatar             *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
+	UserID             string  `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
+	TenantID           *string `gorm:"column:tenant_id;size:32" json:"tenant_id,omitempty"`
+	Tags               string  `gorm:"column:tags;size:512;not null;default:'';index" json:"tags"`
+	Title              *string `gorm:"column:title;size:255" json:"title,omitempty"`
+	Permission         string  `gorm:"column:permission;size:16;not null;default:me;index" json:"permission"`
+	Release            bool    `gorm:"column:release;not null;default:false;index" json:"release"`
+	Description        *string `gorm:"column:description;type:longtext" json:"description,omitempty"`
+	CanvasType         *string `gorm:"column:canvas_type;size:32;index" json:"canvas_type,omitempty"`
+	CanvasCategory     string  `gorm:"column:canvas_category;size:32;not null;default:agent_canvas;index" json:"canvas_category"`
+	DSL                JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
+	OperatorPermission int32   `gorm:"-" json:"operator_permission,omitempty"`
 	BaseModel
 }
 
 // TableName specify table name
 func (UserCanvas) TableName() string {
 	return "user_canvas"
+}
+
+// EffectiveTenantID returns the canvas tenant, falling back to its creator for
+// rows written before tenant_id was populated.
+func (canvas *UserCanvas) EffectiveTenantID() string {
+	if canvas == nil {
+		return ""
+	}
+	if canvas.TenantID != nil {
+		if tenantID := strings.TrimSpace(*canvas.TenantID); tenantID != "" {
+			return tenantID
+		}
+	}
+	return strings.TrimSpace(canvas.UserID)
 }
 
 // CanvasTemplate canvas template model

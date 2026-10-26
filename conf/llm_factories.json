@@ -3484,12 +3484,53 @@
             "url": "https://openrouter.ai/api/v1"
         },
         {
+            "name": "TrustedRouter",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.trustedrouter.com/v1"
+        },
+        {
+            "name": "AI Stupid Level",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://aistupidlevel.info/v1"
+        },
+        {
+            "name": "Demon Route",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "880",
+            "url": "https://api.demonroute.com/v1"
+        },
+        {
             "name": "Opper",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
             "status": "1",
             "llm": [],
             "url": "https://api.opper.ai/v3/compat"
+        },
+        {
+            "name": "EmpirioLabs AI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.empiriolabs.ai/v1"
+        },
+        {
+            "name": "Runcrate",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.runcrate.ai/v1"
         },
         {
             "name": "StepFun",

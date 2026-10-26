@@ -49,6 +49,8 @@ function mockPreviewer(sheetCount = 2) {
         data: datas[0],
         reload: jest.fn(),
         table: { render: jest.fn() },
+        verticalScrollbar: { move: jest.fn() },
+        horizontalScrollbar: { move: jest.fn() },
       },
       bottombar: {
         items,
@@ -59,25 +61,11 @@ function mockPreviewer(sheetCount = 2) {
 }
 
 describe('applyExcelSourceLocate', () => {
-  beforeEach(() => {
-    jest.spyOn(window, 'getComputedStyle').mockReturnValue({
-      getPropertyValue: (name: string) => {
-        if (name === '--background-highlight') {
-          return 'rgba(76, 164, 231, 0.1)';
-        }
-        if (name === '--text-title') {
-          return 'rgba(22, 22, 24, 1)';
-        }
-        return '';
-      },
-    } as CSSStyleDeclaration);
-  });
-
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it('selects the 1-based sheet and paints the cell range with theme tokens', () => {
+  it('selects the 1-based sheet, paints the range, and scrolls via the scrollbar', () => {
     const previewer = mockPreviewer();
     applyExcelSourceLocate(previewer as never, [2, 3, 4, 1, 2]);
 
@@ -85,8 +73,15 @@ describe('applyExcelSourceLocate', () => {
       previewer.xs.bottombar.items[1],
     );
     expect(previewer.xs.datas[1].addStyle).toHaveBeenCalledWith({
-      bgcolor: 'rgba(76, 164, 231, 0.1)',
-      color: 'rgba(22, 22, 24, 1)',
+      bgcolor: '#ffe58f',
+      color: '#1a1a1a',
+    });
+    expect(previewer.xs.sheet.horizontalScrollbar.move).toHaveBeenCalledWith({
+      left: 0,
+    });
+    // r1 = 2 rows above at 20px each -> y = 40, and scrolly() needs y - 1.
+    expect(previewer.xs.sheet.verticalScrollbar.move).toHaveBeenCalledWith({
+      top: 39,
     });
     expect(previewer.xs.datas[1].rows.setCell).toHaveBeenCalledTimes(4);
     expect(previewer.xs.datas[1].rows.setCell).toHaveBeenCalledWith(
@@ -111,22 +106,23 @@ describe('applyExcelSourceLocate', () => {
 
   it('falls back to resetData when clickSwap2 is missing', () => {
     const previewer = mockPreviewer();
-    delete previewer.xs.bottombar.clickSwap2;
+    (previewer.xs.bottombar as { clickSwap2?: unknown }).clickSwap2 = undefined;
     applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
     expect(previewer.xs.sheet.resetData).toHaveBeenCalledWith(
       previewer.xs.datas[0],
     );
   });
 
-  it('uses hex fallbacks when theme tokens are empty', () => {
-    jest.spyOn(window, 'getComputedStyle').mockReturnValue({
-      getPropertyValue: () => '  ',
-    } as CSSStyleDeclaration);
+  it('sets data.scroll directly when the scrollbar API is unavailable', () => {
     const previewer = mockPreviewer();
-    applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
-    expect(previewer.xs.datas[0].addStyle).toHaveBeenCalledWith({
-      bgcolor: '#ffe58f',
-      color: '#1a1a1a',
-    });
+    const sheet = previewer.xs.sheet as Record<string, unknown>;
+    sheet.verticalScrollbar = undefined;
+    sheet.horizontalScrollbar = undefined;
+    applyExcelSourceLocate(previewer as never, [1, 3, 3, 1, 1]);
+
+    // r1 = 2 rows above, each 20px high
+    expect(previewer.xs.datas[0].scroll).toEqual({ x: 0, y: 40 });
+    expect(previewer.xs.reRender).toHaveBeenCalled();
+    expect(previewer.xs.sheet.table.render).toHaveBeenCalled();
   });
 });

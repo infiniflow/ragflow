@@ -70,6 +70,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -129,14 +130,6 @@ type retrievalEnhancer interface {
 		question string,
 		kbs []*entity.Knowledgebase,
 	) map[string]float64
-	EnhanceTOC(
-		ctx context.Context,
-		chatModel *modelModule.ChatModel,
-		tenantIDs, kbIDs []string,
-		question string,
-		topN int,
-		chunks []map[string]any,
-	) ([]map[string]any, error)
 	RetrieveByChildren(
 		ctx context.Context,
 		chunks []map[string]any,
@@ -211,6 +204,10 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)
+	if err := CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasets.kbIDs); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
+	}
 	for _, datasetID := range datasets.kbIDs {
 		if err := checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset, ID: datasetID,
@@ -281,6 +278,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	preparedReq.DocScope = docIDs
 	preparedReq.DatasetIDs = append([]string(nil), datasets.kbIDs...)
 	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
+	nlpReq.Language = entity.KnowledgebasesLanguage(datasets.kbs)
 	nlpReq.RerankModel = rerankModel
 	if rankFeature != nil {
 		nlpReq.RankFeature = &rankFeature
@@ -294,24 +292,6 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		return []RetrievalChunk{}, nil
 	}
 	rawChunks := res.Chunks
-	if req.TOCEnhance {
-		if a.enhancer == nil {
-			return nil, fmt.Errorf("retrieval: TOC enhancement service is not configured")
-		}
-		rawChunks, err = a.enhancer.EnhanceTOC(
-			ctx,
-			chatModel,
-			datasets.tenantIDs,
-			datasets.kbIDs,
-			query,
-			topN,
-			rawChunks,
-		)
-		if err != nil {
-			common.Warn("agent retrieval: TOC enhancement failed; using retrieval results", zap.Error(err))
-			rawChunks = res.Chunks
-		}
-	}
 	if a.enhancer != nil {
 		rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
 	}
@@ -479,10 +459,10 @@ func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Kno
 			return fmt.Errorf("retrieval: dataset record is nil")
 		}
 	}
-	embdNameCache := make(map[string]string)
-	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNameCache)
+	embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNames)
 	for _, kb := range kbs[1:] {
-		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNameCache) != firstKey {
+		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNames) != firstKey {
 			return fmt.Errorf("retrieval: datasets use different embedding models")
 		}
 	}
@@ -494,11 +474,11 @@ func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Kno
 // validation, so datasets pointing at the same model through different
 // provider instances or storage forms (tenant_model id vs legacy composite
 // name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, names *transaction.EmbeddingBaseNameResolver) string {
 	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return "default:" + strings.TrimSpace(kb.TenantID)
 	}
-	return "embedding:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
+	return "embedding:" + names.Resolve(ctx, db, kb)
 }
 
 func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
@@ -525,7 +505,7 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	tenantID string,
 ) (*modelModule.ChatModel, error) {
 	method, _ := req.MetaDataFilter["method"].(string)
-	needsChatModel := req.TOCEnhance || method == "auto" || method == "semi_auto"
+	needsChatModel := method == "auto" || method == "semi_auto"
 	if !needsChatModel {
 		return nil, nil
 	}

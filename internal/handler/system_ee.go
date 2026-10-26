@@ -60,3 +60,8 @@ func (h *SystemHandler) GetConcurrency(c *gin.Context) {
 func (h *SystemHandler) SetConcurrency(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "Set concurrency not implemented")
 }
+
+// GetQuota /api/v1/system/quota [GET]
+func (h *SystemHandler) GetQuota(c *gin.Context) {
+	common.ErrorWithCode(c, common.CodeNotImplemented, "Get quota not implemented")
+}

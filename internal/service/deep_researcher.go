@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -760,8 +761,13 @@ func kbPrompt(kbinfos map[string]interface{}, maxTokens int, hashID bool) []stri
 		cnt += drawNode("URL", getMapString(m, "url"))
 
 		if meta, ok := m["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 

@@ -16,7 +16,10 @@
 
 package entity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // DatasetNameLimit is the maximum length for dataset name
 const DatasetNameLimit = 128
@@ -138,6 +141,7 @@ type Knowledgebase struct {
 	SessionGraphTaskFinishAt     *time.Time `gorm:"column:session_graph_task_finish_at" json:"session_graph_task_finish_at,omitempty"`
 	SessionEssenceTaskID         *string    `gorm:"column:session_essence_task_id;size:32;index" json:"session_essence_task_id,omitempty"`
 	SessionEssenceTaskFinishAt   *time.Time `gorm:"column:session_essence_task_finish_at" json:"session_essence_task_finish_at,omitempty"`
+	OperatorPermission           int32      `gorm:"-" json:"operator_permission,omitempty"`
 	Status                       *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
@@ -145,6 +149,29 @@ type Knowledgebase struct {
 // TableName returns the table name for Knowledgebase model
 func (kb *Knowledgebase) TableName() string {
 	return "knowledgebase"
+}
+
+// KnowledgebasesLanguage returns the language to retrieve with over kbs, which
+// is only well defined when they all agree: one query is tokenized once, but
+// each dataset was indexed under its own language. A mixed set therefore falls
+// back to "" (English, no folding) rather than letting the first dataset in the
+// slice decide how the others are searched.
+func KnowledgebasesLanguage(kbs []*Knowledgebase) string {
+	language := ""
+	for i, kb := range kbs {
+		current := ""
+		if kb != nil && kb.Language != nil {
+			current = *kb.Language
+		}
+		if i == 0 {
+			language = current
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(current), strings.TrimSpace(language)) {
+			return ""
+		}
+	}
+	return language
 }
 
 // ToMap converts Knowledgebase to a map for JSON response

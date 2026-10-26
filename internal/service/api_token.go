@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -26,6 +27,7 @@ import (
 
 // APIKeyResponse key response
 type APIKeyResponse struct {
+	UserID     string     `json:"user_id"`
 	TenantID   string     `json:"tenant_id"`
 	Token      string     `json:"token"`
 	DialogID   *string    `json:"dialog_id,omitempty"`
@@ -80,6 +82,7 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 		}
 
 		responses[i] = &APIKeyResponse{
+			UserID:   apiTokenUserID(key.UserID),
 			TenantID: key.TenantID,
 			// The full token is returned exactly once, by CreateAPIKey, so
 			// the user can copy it. A GET response travels through proxies,
@@ -106,7 +109,10 @@ type CreateAPIKeyRequest struct {
 }
 
 // CreateAPIKey creates a new API key for a tenant
-func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+func (s *SystemService) CreateAPIKey(ctx context.Context, userID, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+	if userID == "" || tenantID == "" {
+		return nil, fmt.Errorf("user and tenant context are required")
+	}
 	APITokenDAO := dao.NewAPITokenDAO()
 
 	// Generate key and beta values
@@ -117,6 +123,7 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 
 	APIKeyData := &entity.APIToken{
 		TenantID: tenantID,
+		UserID:   &userID,
 		Token:    APIToken,
 		Beta:     &betaAPIKey,
 	}
@@ -126,6 +133,7 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 	}
 
 	return &APIKeyResponse{
+		UserID:     userID,
 		TenantID:   APIKeyData.TenantID,
 		Token:      APIKeyData.Token,
 		DialogID:   APIKeyData.DialogID,
@@ -136,6 +144,13 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 		UpdateTime: APIKeyData.UpdateTime,
 		UpdateDate: APIKeyData.UpdateDate,
 	}, nil
+}
+
+func apiTokenUserID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {

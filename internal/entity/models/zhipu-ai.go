@@ -28,7 +28,6 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
@@ -65,12 +64,10 @@ func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -105,12 +102,10 @@ func (z *ZhipuAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
@@ -168,12 +163,10 @@ func (z *ZhipuAIModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{}
 	reqBody["model"] = modelName
@@ -236,12 +229,10 @@ func (z *ZhipuAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -287,12 +278,10 @@ func (z *ZhipuAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 		return err
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Files)
 	if err != nil {
 		return err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -373,12 +362,10 @@ func (z *ZhipuAIModel) Rerank(ctx context.Context, modelName *string, request Re
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -457,12 +444,10 @@ func (z *ZhipuAIModel) TranscribeAudio(ctx context.Context, modelName *string, f
 		return nil, fmt.Errorf("zhipu-ai: ASR URL suffix is not configured")
 	}
 
-	baseURL, err := z.baseModel.GetBaseURL(apiConfig)
+	url, err := z.baseModel.EndpointURL(apiConfig, z.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(z.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -709,8 +694,7 @@ func (z *ZhipuAIModel) buildTTSRequest(modelName *string, audioContent *string, 
 		}
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(z.baseModel.URLSuffix.TTS, "/"))
-	return reqBody, url, nil
+	return reqBody, joinURL(baseURL, z.baseModel.URLSuffix.TTS), nil
 }
 
 // OCRFile OCR file
@@ -757,7 +741,7 @@ func (z *ZhipuAIModel) OCRFile(ctx context.Context, modelName *string, content [
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(z.baseModel.URLSuffix.OCR, "/"))
+	url := joinURL(baseURL, z.baseModel.URLSuffix.OCR)
 	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
@@ -806,5 +790,9 @@ func (z *ZhipuAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (z *ZhipuAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", z.Name())
+}
+
+func (z *ZhipuAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", z.Name())
 }

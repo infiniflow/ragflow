@@ -51,7 +51,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil,
+				"", nil, "", userID, nil, "",
 			)
 			return data, total, err
 		}, maxPageSize)
@@ -65,10 +65,9 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
-		DatasetIDs:   datasetIDs,
-		Question:     req.Question,
-		DocumentIDs:  req.DocumentIDs,
-		ForceRefresh: req.ForceRefresh,
+		DatasetIDs:  datasetIDs,
+		Question:    req.Question,
+		DocumentIDs: req.DocumentIDs,
 	}
 
 	if req.Page > 0 {
@@ -110,8 +109,6 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	// Metadata reads use the same authorized service paths as the REST API.
-	// No shared cache: force_refresh always sees current metadata, without
-	// cross-tenant cache state or a second metadata implementation.
 	documents := document.NewDocumentService()
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)
@@ -133,7 +130,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if _, ok := documentMetadata[docID]; ok {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}}, 1, 1)
+			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
 			if err != nil || len(docs) == 0 {
 				continue
 			}

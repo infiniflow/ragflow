@@ -31,7 +31,6 @@ package chunker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -76,17 +75,14 @@ func (c *TableChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	return c.invoke(ctx, inputs)
 }
 
+// invoke expands the decoded upstream tables into one chunk per data row.
 func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {
@@ -118,7 +114,7 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 // tableItems returns the per-row records, preferring JSONResult and
 // falling back to Chunks. Each table row becomes exactly one chunk; every
 // other payload record passes through as one chunk — including pre-upgrade
-// row-IR records (ck_type: table_row/table_header with cells), which hold no
+// pre-upgrade row-IR records, which hold no
 // markup and therefore keep no per-row positions; documents from before this
 // wire must be re-parsed rather than re-chunked.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
@@ -137,22 +133,23 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 }
 
 // expandHTMLTableRows turns one table payload into one chunk per data row.
-// Non-table payloads pass through unchanged. It reads the structured
-// TableData contract that the parser emits on ChunkDoc.TableData; items that
-// do not carry TableData (e.g. pre-upgrade HTML markup or non-table records)
-// pass through as a single chunk. A table whose only row is the header keeps
-// the whole item as its single chunk: the header line is then the only
-// searchable representation. The structured TableData is cleared on every
-// emitted chunk so the whole table is not duplicated into the index.
+// It reads the table's canonical merge geometry through tableutil.RowsTable:
+// data-origin spans are repeated across their covered slots so each projected
+// row keeps the same column count as the header, while a header-origin span
+// stays inside the header block and is not stamped into a data row.
+//
+// Items without TableData pass through unchanged as a single chunk. A
+// header-only or fallback chunk keeps the whole table's canonical HTML; each
+// per-row chunk carries a flat header+row sub-table (see cellGrid).
 func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	td := item.TableData
 	if td == nil {
 		return []schema.ChunkDoc{item}
 	}
-	rows, headerCount := td.Rows, td.HeaderRows
+	rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsTable), td.HeaderRows
 	if len(rows) <= headerCount {
 		out := item
-		out.Text = tableutil.RenderTableText(td)
+		out.Text = tableutil.RenderTableHTML(td)
 		out.TableData = nil
 		return []schema.ChunkDoc{out}
 	}
@@ -178,12 +175,19 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	}
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
-		text := tableRowRecordText(names, row)
-		if text == "" {
+		// Skip empty rows (no cell content); the HTML render of an empty row
+		// would be a header-only table that duplicates the header-only chunk.
+		if tableRowRecordText(names, row) == "" {
 			continue
 		}
 		doc := item
-		doc.Text = text
+		// Render this row as its own HTML table: every projected header row
+		// plus this data row, so the displayed table keeps the full header.
+		doc.Text = tableutil.RenderTableHTML(&entity.TableData{
+			Grid:       cellGrid(append(append([][]string{}, rows[:headerCount]...), row)),
+			HeaderRows: headerCount,
+			Caption:    td.Caption,
+		})
 		doc.TKNums = nil
 		doc.Positions = nil
 		doc.TableData = nil
@@ -196,11 +200,26 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	}
 	if len(out) == 0 {
 		single := item
-		single.Text = tableutil.RenderTableText(td)
+		single.Text = tableutil.RenderTableHTML(td)
 		single.TableData = nil
 		return []schema.ChunkDoc{single}
 	}
 	return out
+}
+
+// cellGrid builds a merge-free dense Grid from row-major cell strings. It is
+// used to render a per-row sub-table (the projected header rows plus one data
+// row) as HTML; merged-cell geometry is intentionally not reconstructed here,
+// so the sub-table shows each cell plainly rather than with colspan/rowspan.
+func cellGrid(rows [][]string) [][]entity.TableCell {
+	grid := make([][]entity.TableCell, len(rows))
+	for i, r := range rows {
+		grid[i] = make([]entity.TableCell, len(r))
+		for j, c := range r {
+			grid[i][j] = entity.TableCell{Text: c}
+		}
+	}
+	return grid
 }
 
 // tableDataOf returns the structured TableData for an item. The parser emits

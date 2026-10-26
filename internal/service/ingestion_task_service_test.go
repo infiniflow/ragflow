@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,63 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.UserID != "user-1" {
 		t.Fatalf("unexpected task: %+v", task)
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsRejectsDatasetMismatch(t *testing.T) {
+	tests := []struct {
+		name, docKB, taskStatus, wantError string
+	}{
+		{"foreign new task", "kb-2", "", gorm.ErrRecordNotFound.Error()},
+		{"foreign created task", "kb-2", common.CREATED, gorm.ErrRecordNotFound.Error()},
+		{"foreign failed task", "kb-2", common.FAILED, gorm.ErrRecordNotFound.Error()},
+		{"foreign stopped task", "kb-2", common.STOPPED, gorm.ErrRecordNotFound.Error()},
+		{"mismatched existing task", "kb-1", common.FAILED, "different dataset"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+			insertTestKB(t, "kb-2", "tenant-2", 1, 0, 0)
+			insertTestDoc(t, "doc-1", tt.docKB, 0, 0)
+			if tt.taskStatus != "" {
+				insertTestIngestionTaskWithStatus(t, "task-1", "user-2", "doc-1", "kb-2", tt.taskStatus)
+			}
+			ctx := t.Context()
+			taskDAO := dao.NewIngestionTaskDAO()
+			before, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("load existing task: %v", err)
+			}
+			publisher := &recordingTaskPublisher{}
+			svc := NewIngestionTaskService()
+			svc.taskPublisher = publisher
+
+			responses, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+			if err != nil {
+				t.Fatalf("expected per-document failure: %v", err)
+			}
+			if len(responses) != 1 {
+				t.Fatalf("responses = %d, want 1", len(responses))
+			}
+			if responses[0].DocumentID != "doc-1" || !strings.Contains(responses[0].Result, tt.wantError) {
+				t.Fatalf("expected dataset rejection, got %+v", responses[0])
+			}
+			if len(publisher.messages) != 0 {
+				t.Fatalf("published rejected document: %+v", publisher.messages)
+			}
+			after, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("reload existing task: %v", err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("task changed: before=%+v, after=%+v", before, after)
+			}
+			if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+				t.Fatalf("pipeline logs = %d, want 0", got)
+			}
+		})
 	}
 }
 
@@ -365,66 +423,6 @@ func TestIngestionTaskServiceRemoveManyRemovesOwnedTasks(t *testing.T) {
 	}
 	if _, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1"); err == nil {
 		t.Fatal("task should be removed")
-	}
-}
-
-func TestIngestionTaskServiceListAllForAdminIncludesRunAndUserEmail(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	status := "1"
-	if err := dao.DB.Create(&entity.User{
-		ID:              "user-1",
-		Email:           "user-1@test.com",
-		Nickname:        "user-1",
-		IsAuthenticated: "1",
-		IsActive:        "1",
-		IsAnonymous:     "0",
-		Status:          &status,
-	}).Error; err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	runCount := 3
-	if err := dao.DB.Create(&entity.PipelineOperationLog{
-		ID:              "run-1",
-		DocumentID:      "doc-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		TaskType:        string(entity.PipelineTaskTypeParse),
-		OperationStatus: string(entity.TaskStatusRunning),
-		RunCount:        &runCount,
-	}).Error; err != nil {
-		t.Fatalf("insert pipeline operation log: %v", err)
-	}
-	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
-		t.Fatalf("bind pipeline operation log: %v", err)
-	}
-	if err := dao.DB.Exec(`INSERT INTO ingestion_task_log
-		(task_id, pipeline_log_id, checkpoint, event_type, component, phase, message)
-		VALUES (?, ?, '{}', ?, ?, ?, ?)`, "task-1", "run-1", dao.EventTypeLifecycle, "Parser", 1, "Parser Done").Error; err != nil {
-		t.Fatalf("insert task log: %v", err)
-	}
-
-	ctx := t.Context()
-	svc := NewIngestionTaskService()
-	tasks, err := svc.ListAllForAdmin(ctx)
-	if err != nil {
-		t.Fatalf("ListAllForAdmin failed: %v", err)
-	}
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
-	}
-	if tasks[0]["user"] != "user-1@test.com" {
-		t.Fatalf("user = %v, want user-1@test.com", tasks[0]["user"])
-	}
-	if tasks[0]["run_count"] != 3 {
-		t.Fatalf("run_count = %v, want 3", tasks[0]["run_count"])
-	}
-	if tasks[0]["component_total"] != 0 {
-		t.Fatalf("component_total = %v, want 0", tasks[0]["component_total"])
-	}
-	if tasks[0]["component_done"] != 0 {
-		t.Fatalf("component_done = %v, want 0", tasks[0]["component_done"])
 	}
 }
 

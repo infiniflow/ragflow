@@ -45,6 +45,8 @@ extern int            FPDFDest_GetDestPageIndex(FPDF_DOCUMENT document, FPDF_DES
 */
 import "C"
 import (
+	"context"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -68,20 +70,56 @@ var initOnce sync.Once
 // Init initializes the PDFium library. Safe to call multiple times.
 func Init() { initOnce.Do(func() { C.FPDF_InitLibrary() }) }
 
-// PageSize returns the page dimensions in PDF points (1/72 inch) as seen
-// after rotation.  For a page with /Rotate 90 on A4, this returns ~842×595
-// (swapped from the MediaBox 595×842).  The call is cheap — it opens the
-// document and page, reads dimensions, then closes.
-func PageSize(pdfData []byte, pageIdx int) (width, height float64, err error) {
+// PageSize returns the post-rotation page dimensions in PDF points.
+func PageSize(pdfData []byte, pageIdx int) (float64, float64, error) {
+	sizes, _, err := PageSizes(context.Background(), pdfData, []int{pageIdx})
+	size := sizes[pageIdx]
+	return size[0], size[1], err
+}
+
+// PageSizes reads requested zero-based pages from one open document. Failed
+// pages are omitted; valid sizes and the document page count remain available.
+func PageSizes(ctx context.Context, pdfData []byte, pageIndexes []int) (sizes map[int][2]float64, count int, err error) {
 	pdfsync.With(func() {
-		Init()
-		_, _, pw, ph, closeAll, e := openPage(pdfData, pageIdx)
-		if e != nil {
-			err = e
+		if err = ctx.Err(); err != nil {
 			return
 		}
-		closeAll()
-		width, height = pw, ph
+		Init()
+		data := C.CBytes(pdfData)
+		defer C.free(data)
+		doc := C.FPDF_LoadMemDocument(data, C.int(len(pdfData)), nil)
+		if doc == nil {
+			err = fmt.Errorf("pdfium: FPDF_LoadMemDocument returned nil")
+			return
+		}
+		defer C.FPDF_CloseDocument(doc)
+		count = int(C.FPDF_GetPageCount(doc))
+		sizes = make(map[int][2]float64, len(pageIndexes))
+		for _, index := range pageIndexes {
+			if cancelErr := ctx.Err(); cancelErr != nil {
+				err = errors.Join(err, cancelErr)
+				return
+			}
+			if index < 0 || index >= count {
+				err = errors.Join(err, fmt.Errorf("pdfium: page index %d out of range [0,%d)", index, count))
+				continue
+			}
+			if _, ok := sizes[index]; ok {
+				continue
+			}
+			page := C.FPDF_LoadPage(doc, C.int(index))
+			if page == nil {
+				err = errors.Join(err, fmt.Errorf("pdfium: FPDF_LoadPage(%d) returned nil", index))
+				continue
+			}
+			width, height := float64(C.FPDF_GetPageWidth(page)), float64(C.FPDF_GetPageHeight(page))
+			C.FPDF_ClosePage(page)
+			if width <= 0 || height <= 0 {
+				err = errors.Join(err, fmt.Errorf("pdfium: page %d has invalid dimensions %.1fx%.1f", index, width, height))
+				continue
+			}
+			sizes[index] = [2]float64{width, height}
+		}
 	})
 	return
 }
@@ -102,6 +140,15 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		pxW := int(math.Round(pw * scale))
 		pxH := int(math.Round(ph * scale))
 
+		// Reject absurd pages before pdfium allocates the bitmap. RenderPage
+		// holds two buffers at peak: pdfium's pxH*stride bitmap and the
+		// image.NewRGBA copy (4 bytes/pixel each), so budget 8 bytes/pixel.
+		const maxRenderBytes = 1 << 30
+		if int64(pxW)*int64(pxH)*8 > maxRenderBytes {
+			err = fmt.Errorf("pdfium: page %d render buffers %dx%d exceed %d bytes", pageIdx, pxW, pxH, maxRenderBytes)
+			return
+		}
+
 		bitmap := C.FPDFBitmap_Create(C.int(pxW), C.int(pxH), 1) // 1 = RGBA
 		if bitmap == nil {
 			err = fmt.Errorf("pdfium: FPDFBitmap_Create(%d,%d) returned nil", pxW, pxH)
@@ -113,7 +160,13 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		// (e.g. outside crop box) are white rather than undefined.
 		stride := int(C.FPDFBitmap_GetStride(bitmap))
 		buf := C.FPDFBitmap_GetBuffer(bitmap)
-		pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[: pxH*stride : pxH*stride]
+		if stride <= 0 || buf == nil {
+			err = fmt.Errorf("pdfium: bitmap %dx%d has invalid buffer (stride %d)", pxW, pxH, stride)
+			return
+		}
+		// pdfium owns a pxH*stride byte buffer. Describe it directly instead of
+		// slicing a fixed [1<<30]byte array, which panicked on large pages.
+		pixels := unsafe.Slice((*byte)(buf), pxH*stride)
 		for i := range pixels {
 			pixels[i] = 255
 		}

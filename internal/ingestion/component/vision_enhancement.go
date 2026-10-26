@@ -24,12 +24,10 @@ package component
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"image"
 	"io"
-	"os"
-	"path/filepath"
+	"maps"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +39,9 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -54,7 +54,6 @@ var (
 )
 
 const (
-	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
@@ -63,40 +62,58 @@ const (
 	visionMediaItemBudget = 10 * time.Second
 )
 
-var (
-	figureVisionPrompts     promptDirState
-	figureVisionPromptCache = make(map[string]string)
-	figureVisionPromptMu    sync.RWMutex
-)
+// backendDescribedKey marks items whose text already carries a backend-provided
+// vision description (MinerU folds vlm_description into text). The vision
+// enhancement collector skips such items to avoid appending a second model
+// description and spending an extra VLM call. The key is stripped before the
+// result leaves the Parser component so it never reaches the chunker or index.
+const backendDescribedKey = "_backend_described"
 
-// promptDirState caches the project root that contains rag/prompts. The once
-// guard makes initialization sticky; unlike a function-local initErr, an
-// initialization failure is preserved for every subsequent call.
-type promptDirState struct {
-	once    sync.Once
-	root    string
-	initErr error
+func isBackendDescribed(m map[string]any) bool {
+	v, _ := m[backendDescribedKey].(bool)
+	return v
 }
 
-func (s *promptDirState) resolve(requestedRoot string) (string, error) {
-	s.once.Do(func() {
-		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
-			s.root = requestedRoot
-			return
+// stripBackendDescribedResult removes the transient backend-description marker
+// from every item. Enhancement skips marked items, but the marker must not leak
+// to the chunker when enhancement is disabled or bails out early.
+func stripBackendDescribedResult(result parser.ParseResult) parser.ParseResult {
+	if len(result.JSON) == 0 {
+		return result
+	}
+	needsStrip := false
+	for _, item := range result.JSON {
+		if item == nil {
+			continue
 		}
-		s.initErr = fmt.Errorf("rag/prompts not found under project root %q", requestedRoot)
-	})
-	if s.initErr != nil {
-		return "", s.initErr
+		if _, ok := item.ToMap()[backendDescribedKey]; ok {
+			needsStrip = true
+			break
+		}
 	}
-	if s.root == "" {
-		return "", errors.New("prompts base dir not initialized")
+	if !needsStrip {
+		return result
 	}
-	return s.root, nil
+	stripped := make([]parser.DocItem, 0, len(result.JSON))
+	for _, item := range result.JSON {
+		if item == nil {
+			continue
+		}
+		m := item.ToMap()
+		if _, ok := m[backendDescribedKey]; !ok {
+			stripped = append(stripped, item)
+			continue
+		}
+		cloned := maps.Clone(m)
+		delete(cloned, backendDescribedKey)
+		stripped = append(stripped, parser.DocItemFromMap(cloned))
+	}
+	result.JSON = stripped
+	return result
 }
 
-// isUsableVisionImage reports whether raw carries a valid image data URI or a
-// base64 payload that can be sent to a vision model.
+// isUsableVisionImage checks the encoded size and rejects raster dimensions
+// beyond the limits shared by Parser and VLM materialization.
 func isUsableVisionImage(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -142,10 +159,11 @@ func isValidBase64(s string, stripWhitespace bool) bool {
 	return false
 }
 
-// visionImageCropper materializes the VLM payload for a parsed item. Under
-// cgo it crops PDF sections on demand; inline images stay encoded. Close
-// releases any re-acquired native engine.
+// visionImageCropper prepares any source document before image admission,
+// materializes one item's VLM payload under image admission, and releases
+// source resources when the batch finishes.
 type visionImageCropper interface {
+	Prepare(ctx context.Context, item map[string]any) error
 	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
@@ -167,13 +185,14 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	vision visionSettings,
-	window fractionWindow,
+	window progress.Window,
 ) (parser.ParseResult, bool, error) {
 	w := window
 
-	// Only enhance successful JSON output format containing items.
-	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
-		return dispatched, false, nil
+	// Only enhance successful results that carry JSON items. Produced()
+	// replaces the historical OutputFormat != "json" check.
+	if dispatched.Err != nil || len(dispatched.JSON) == 0 {
+		return stripBackendDescribedResult(dispatched), false, nil
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
@@ -184,22 +203,30 @@ func maybeDispatchVisionEnhancement(
 	language := resolveVisionLanguage(inputs)
 
 	// Collect visual resources, including Markdown images whose type is text
-	// because flatten_media_to_text is enabled.
+	// because flatten_media_to_text is enabled. Items whose text already
+	// carries a backend-provided description (MinerU vlm_description) are
+	// skipped to avoid a duplicate second description and an extra VLM call.
 	var items []int
-	for i, item := range dispatched.JSON {
-		if img, _ := item["image"].(string); img != "" {
+	for i, rawItem := range dispatched.JSON {
+		m := rawItem.ToMap()
+		if isBackendDescribed(m) {
+			continue
+		}
+		if img, _ := m["image"].(string); img != "" {
 			items = append(items, i)
 			continue
 		}
-		kd, _ := item["doc_type_kwd"].(string)
+		kd, _ := m["doc_type_kwd"].(string)
 		if kd == "image" || kd == "table" {
-			if _, ok := parser.ExtractPDFPositions(item); ok {
+			// A page-only position carries no crop region, so it must not
+			// reach the cropper.
+			if parser.HasPDFCropRegion(m) {
 				items = append(items, i)
 			}
 		}
 	}
 	if len(items) == 0 {
-		return dispatched, false, nil
+		return stripBackendDescribedResult(dispatched), false, nil
 	}
 	// Resolve VLM before materializing image payloads, so disabled or
 	// unavailable enhancement does not spend time loading media.
@@ -236,17 +263,21 @@ func maybeDispatchVisionEnhancement(
 			}
 		}
 		dispatched.Warnings = append(dispatched.Warnings, warning)
-		return dispatched, false, nil
+		return stripBackendDescribedResult(dispatched), false, nil
 	}
 
-	// Materialize one resource at a time. The VLM semaphore is acquired before
-	// materialization, so at most visionEnhancementConcurrency encoded payloads
-	// remain live while model requests run.
+	// Prepare PDF sources outside image admission so slow storage reads do not
+	// block unrelated image materialization. The separate VLM semaphore bounds
+	// how many encoded payloads remain live while model requests run.
 	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
 		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
-		return dispatched, false, nil
+		return stripBackendDescribedResult(dispatched), false, nil
 	}
+	// Close is invoked explicitly after materialization so the engine and the
+	// source bytes are released while model requests are still in flight. Keep
+	// a deferred Close as a panic/early-return safety net: Close is idempotent
+	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
 	modified := false
 	descriptions := make([]string, len(items))
@@ -275,13 +306,26 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
+			item := dispatched.JSON[itemIdx].ToMap()
+			if err := cropper.Prepare(ctx, item); err != nil {
+				if ctx.Err() == nil {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("image source preparation failed: %v", err)
+				}
+				return
+			}
+
 			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
 			defer cancelItem()
 			release, err := parser.AcquireImageMedia(itemCtx)
 			if err != nil {
 				if ctx.Err() == nil && vlmReady {
-					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
-						resource = &visionImage{VLMData: payload}
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
 					}
 				}
 				if resource == nil && ctx.Err() == nil {
@@ -290,7 +334,6 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
-			item := dispatched.JSON[itemIdx]
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				cropErr := err
@@ -325,7 +368,7 @@ func maybeDispatchVisionEnhancement(
 		if resource == nil {
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
@@ -334,7 +377,7 @@ func maybeDispatchVisionEnhancement(
 			}
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		wg.Add(1)
@@ -344,7 +387,7 @@ func maybeDispatchVisionEnhancement(
 			defer func() {
 				if ctx.Err() == nil {
 					n := settled.Add(1)
-					w.report(ctx, float64(n)/float64(total))
+					w.Report(ctx, float64(n)/float64(total))
 				}
 			}()
 
@@ -364,11 +407,15 @@ func maybeDispatchVisionEnhancement(
 			}
 		}(slot, resource.VLMData)
 	}
+	if err := cropper.Close(); err != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement cleanup failed: %v", err))
+		common.Warn("vision enhancement: failed to close image cropper", zap.Error(err))
+	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return dispatched, modified, err
+		return stripBackendDescribedResult(dispatched), modified, err
 	}
-	w.report(ctx, 1.0)
+	w.Report(ctx, 1.0)
 	failedItems := 0
 	firstFailure := ""
 	for _, failure := range failures {
@@ -387,15 +434,42 @@ func maybeDispatchVisionEnhancement(
 			zap.Int("failed_items", failedItems), zap.String("first_failure", firstFailure))
 	}
 
-	// Append descriptions after parser-provided text and captions.
-	for slot, itemIdx := range items {
-		desc := strings.TrimSpace(descriptions[slot])
-		if desc == "" {
+	// Candidate indices are in document order. Build output once so a table's
+	// description can follow it without changing later candidates' indices.
+	// The transient backend-description marker is stripped from every emitted
+	// item so it never reaches the chunker.
+	enhanced := make([]parser.DocItem, 0, len(dispatched.JSON)+len(items))
+	slot := 0
+	for itemIdx, item := range dispatched.JSON {
+		clean := item
+		if m := item.ToMap(); isBackendDescribed(m) {
+			cloned := maps.Clone(m)
+			delete(cloned, backendDescribedKey)
+			clean = parser.DocItemFromMap(cloned)
+		}
+		if slot >= len(items) || items[slot] != itemIdx {
+			enhanced = append(enhanced, clean)
 			continue
 		}
-		appendItemText(dispatched.JSON[itemIdx], desc)
+		desc := strings.TrimSpace(descriptions[slot])
+		slot++
+		if desc == "" {
+			enhanced = append(enhanced, clean)
+			continue
+		}
+		m := clean.ToMap()
+		// clean.ToMap may share the underlying map for RawItem; clone before
+		// mutating so the source item is never modified in place.
+		m = maps.Clone(m)
+		if table, ok := m["table"].(*entity.TableData); ok && table != nil && m["doc_type_kwd"] == "table" {
+			enhanced = append(enhanced, clean, parser.NewTableNoteItem(m, desc))
+		} else {
+			appendItemText(m, desc)
+			enhanced = append(enhanced, parser.DocItemFromMap(m))
+		}
 		modified = true
 	}
+	dispatched.JSON = enhanced
 
 	return dispatched, modified, nil
 }
@@ -410,39 +484,11 @@ func appendItemText(item map[string]any, text string) {
 }
 
 func buildFigureVisionPrompt(language string) (string, error) {
-	template, err := loadFigureVisionPromptFile(figureVisionPromptFile)
+	template, err := (prompts.EmbeddedPromptLoader{}).Load("vision_llm_figure_describe_prompt")
 	if err != nil {
 		return "", err
 	}
 	return renderFigureVisionLanguage(template, language), nil
-}
-
-func loadFigureVisionPromptFile(filename string) (string, error) {
-	figureVisionPromptMu.RLock()
-	if cached, ok := figureVisionPromptCache[filename]; ok {
-		figureVisionPromptMu.RUnlock()
-		return cached, nil
-	}
-	figureVisionPromptMu.RUnlock()
-
-	baseDir, err := figureVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", filename)
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("figure vision prompt %q: %w", filename, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	figureVisionPromptMu.Lock()
-	figureVisionPromptCache[filename] = cached
-	figureVisionPromptMu.Unlock()
-	return cached, nil
-}
-
-func figureVisionPromptsBaseDir() (string, error) {
-	return figureVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {

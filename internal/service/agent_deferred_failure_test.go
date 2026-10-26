@@ -106,7 +106,7 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 		},
 		"path": []any{"begin_0", "Agent:fail_0", "Message:fail_0"},
 	}
-	dao.DB.Create(&entity.TenantModelProvider{ID: "prov-deferred-fail", ProviderName: "OpenAI-API-Compatible", TenantID: "tenant-1"})
+	dao.DB.Create(&entity.TenantModelProvider{ID: "prov-deferred-fail", UserID: "user-1", ProviderName: "OpenAI-API-Compatible", TenantID: "tenant-1"})
 	dao.DB.Create(&entity.TenantModelInstance{ID: "inst-deferred-fail", InstanceName: "unreachable", ProviderID: "prov-deferred-fail", APIKey: "test-key", Extra: `{"base_url": "http://127.0.0.1:59999/v1"}`})
 	dao.DB.Create(&entity.TenantModel{ID: "unavailable-model", ModelName: "unavailable-model", ProviderID: "prov-deferred-fail", InstanceID: "inst-deferred-fail", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"})
 	makeCanvasWithDSL(t, "canvas-deferred-fail", "user-1", "tenant-1", "v-deferred-fail", dsl)
@@ -114,7 +114,7 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 	tracker, _ := newAgentCancelTracker(t)
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)
 	events, err := svc.RunAgent(
-		WithAgentSessionID(t.Context(), "session-deferred-fail"),
+		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-deferred-fail"),
 		"user-1",
 		"canvas-deferred-fail",
 		"session-deferred-fail",

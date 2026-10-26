@@ -1,24 +1,5 @@
-// Tests pinning the Python-equivalent behavior of AnnotateBoxLayouts.
-//
-// These assert the layout-annotation semantics that Python's
-// LayoutRecognizer.__call__ (deepdoc/vision/layout_recognizer.py:68) produces,
-// and that the Go implementation now replicates (GREEN):
-//
-//   - #1 layouts_cleanup: Python de-dupes overlapping same-type regions
-//     (recognizer.py:124-160, called at layout_recognizer.py:100) BEFORE
-//     annotation. Go matches via cleanupLayouts, so no extra synthetic
-//     figure/equation boxes are emitted.
-//   - #2 sort_Y_firstly: Python sorts regions top-to-bottom (recognizer.py:54,
-//     layout_recognizer.py:99) before numbering them, so layoutno indices
-//     follow reading order. Go matches via sortYFirstly.
-//   - #3 synthetic namespace: Python numbers unmatched figure/equation regions
-//     in SEPARATE counters -> "figure-N" / "equation-N"
-//     (layout_recognizer.py:145-155). Go matches via a per-type typeIndex
-//     keyed by the original type label.
-//
-// These are pure-Go unit tests (no model server, no external service): they
-// feed crafted pdf.DLARegion slices and assert the annotated pdf.TextBox
-// output. Coordinates use scale=1 so region pixels == PDF space.
+// Tests for layout filtering, reading-order numbering, and figure identity.
+// Text annotations and complete image regions must share the same identifiers.
 
 package table
 
@@ -40,8 +21,7 @@ func countFigureBoxes(boxes []pdf.TextBox) int {
 }
 
 // countSyntheticFigures returns the number of figure boxes with no text
-// (the synthetic placeholders AnnotateBoxLayouts appends for unvisited
-// figure/equation regions).
+// (the geometry boxes emitted for figure/equation regions).
 func countSyntheticFigures(boxes []pdf.TextBox) int {
 	n := 0
 	for _, b := range boxes {
@@ -52,12 +32,7 @@ func countSyntheticFigures(boxes []pdf.TextBox) int {
 	return n
 }
 
-// TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged pins #1: two heavily
-// overlapping same-type (figure) regions must be treated as ONE, so only one
-// figure box (the annotated text box) results and NO synthetic figure box is
-// produced. Python merges via layouts_cleanup; Go now mirrors that by fusing
-// the overlapping pair into one region, so the duplicate synthetic figure is
-// avoided.
+// Duplicate DLA detections must assemble into one complete figure.
 func TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged(t *testing.T) {
 	box := pdf.TextBox{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "Some caption text", PageNumber: 0}
 	regions := []pdf.DLARegion{
@@ -65,7 +40,7 @@ func TestAnnotateBoxLayouts_DuplicateFigureRegions_Merged(t *testing.T) {
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.8, Label: pdf.LayoutTypeFigure}, // identical -> IoU 1.0
 	}
 
-	out := AnnotateBoxLayouts([]pdf.TextBox{box}, regions, 1.0, 100.0)
+	out := ConsolidateFigures(AnnotateBoxLayouts([]pdf.TextBox{box}, regions, 1.0, 100.0))
 
 	if got := countFigureBoxes(out); got != 1 {
 		t.Errorf("#1 layouts_cleanup: expected 1 figure box after de-duplicating overlapping figure regions, got %d", got)
@@ -242,7 +217,7 @@ func TestAnnotateBoxLayouts_CleanupEqualScoreKeepsLater(t *testing.T) {
 		{X0: 0, Y0: 0, X1: 400, Y1: 400, Confidence: 0.9, Label: pdf.LayoutTypeFigure},     // B: large, on top (Y0=0)
 		{X0: 100, Y0: 200, X1: 200, Y1: 300, Confidence: 0.9, Label: pdf.LayoutTypeFigure}, // A: small, inside B, lower (Y0=200)
 	}
-	// No text box overlaps -> both unvisited -> cleanup collapses to one synthetic.
+	// Cleanup must retain only one geometry box for these overlapping regions.
 	out := AnnotateBoxLayouts([]pdf.TextBox{}, regions, 1.0, 100.0)
 	if got := countFigureBoxes(out); got != 1 {
 		t.Fatalf("expected 1 figure box after cleanup merge, got %d", got)
@@ -264,7 +239,7 @@ func TestAnnotateBoxLayouts_SyntheticVisitedInterleaved(t *testing.T) {
 		{X0: 0, X1: 100, Top: 0, Bottom: 50, Text: "caption for A"},
 	}
 	regions := []pdf.DLARegion{
-		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},   // A: matched to text box -> visited
+		{X0: 0, Y0: 0, X1: 100, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure},   // A: matched to text box -> annotated
 		{X0: 200, Y0: 0, X1: 300, Y1: 50, Confidence: 0.9, Label: pdf.LayoutTypeFigure}, // B: unmatched -> synthetic
 	}
 	out := AnnotateBoxLayouts(boxes, regions, 1.0, 100.0)
@@ -279,15 +254,15 @@ func TestAnnotateBoxLayouts_SyntheticVisitedInterleaved(t *testing.T) {
 		}
 	}
 	if annotated == nil {
-		t.Fatal("visited figure A: text box was not annotated as figure")
+		t.Fatal("annotated figure A: text box was not annotated as figure")
 	}
 	if annotated.LayoutNo != "figure-0" {
-		t.Errorf("visited figure A: expected LayoutNo figure-0, got %q", annotated.LayoutNo)
+		t.Errorf("annotated figure A: expected LayoutNo figure-0, got %q", annotated.LayoutNo)
 	}
 	if synthetic == nil {
 		t.Fatal("expected a synthetic figure box for unmatched B")
 	}
-	// B is the 2nd figure in Y order (after visited A), so Python numbers it figure-1.
+	// B is the 2nd figure in Y order (after annotated A), so Python numbers it figure-1.
 	if synthetic.LayoutNo != "figure-1" {
 		t.Errorf("unmatched figure B: expected figure-1 (index in full per-type list), got %q", synthetic.LayoutNo)
 	}

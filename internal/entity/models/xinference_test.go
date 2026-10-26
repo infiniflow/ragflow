@@ -28,23 +28,6 @@ func TestXinferenceName(t *testing.T) {
 	}
 }
 
-func TestNormalizeXinferenceBaseURL(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"http://127.0.0.1:9997", "http://127.0.0.1:9997"},
-		{"http://127.0.0.1:9997/", "http://127.0.0.1:9997"},
-		{"http://127.0.0.1:9997/v1", "http://127.0.0.1:9997"},
-		{" http://127.0.0.1:9997/v1/ ", "http://127.0.0.1:9997"},
-	}
-	for _, tc := range cases {
-		if got := normalizeXinferenceBaseURL(tc.in); got != tc.want {
-			t.Errorf("normalizeXinferenceBaseURL(%q)=%q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestXinferenceFactoryRoute(t *testing.T) {
 	driver, err := NewModelFactory().CreateModelDriver("Xinference", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {

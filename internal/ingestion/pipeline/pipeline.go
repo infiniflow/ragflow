@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/agent/canvas"
@@ -28,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -40,6 +42,7 @@ type Pipeline struct {
 	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	tracker *canvas.RunTracker       // optional injected; nil -> resolve at Run
+	kv      *kvrocks.Client          // optional; nil -> no tracker fallback (unit/test runs)
 	factory runtime.ComponentFactory // optional instance-scoped component factory
 	sink    ProgressSink             // optional progress sink; nil -> drop events (DB-independent)
 }
@@ -49,10 +52,18 @@ type Pipeline struct {
 type PipelineOption func(*Pipeline)
 
 // WithRunTracker injects a RunTracker for progress mirroring (terminal
-// run-status marks). When unset, Run resolves one from the global Kvrocks
-// client.
+// run-status marks). When unset and no Kvrocks client is configured, Run does
+// not mirror progress.
 func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 	return func(p *Pipeline) { p.tracker = t }
+}
+
+// WithKV injects the Kvrocks client used to resolve a RunTracker when none is
+// injected. It replaces the previous global kvrocks.Get() lookup, so the
+// pipeline no longer reads a process-wide singleton (arch_test.go guards that
+// rule). A nil client disables the RunTracker fallback.
+func WithKV(kv *kvrocks.Client) PipelineOption {
+	return func(p *Pipeline) { p.kv = kv }
 }
 
 // WithDocumentID binds the pipeline's owning document so numeric progress can
@@ -266,8 +277,8 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 	if p.tracker != nil {
 		return p.tracker
 	}
-	if kvrocks.Get() != nil {
-		return canvas.NewRunTracker(defaultTrackerTTL)
+	if p.kv != nil {
+		return canvas.NewRunTrackerWithClient(p.kv.GetClient(), defaultTrackerTTL)
 	}
 	return nil
 }
@@ -343,11 +354,7 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		case runtime.PhaseExit:
 			msg = componentName + " Done"
 		case runtime.PhaseError:
-			if ev.Err != nil {
-				msg = componentName + ": " + ev.Err.Error()
-			} else {
-				msg = componentName + " Error"
-			}
+			msg = formatComponentFailure(componentName, ev.Err)
 		}
 		// Surface every component lifecycle event as a structured log line so
 		// a component failure (e.g. an LLM/client error) is captured in
@@ -395,6 +402,30 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Phase:      int(ev.Phase),
 		})
 	}
+}
+
+func formatComponentFailure(componentName string, err error) string {
+	if err == nil {
+		return componentName + " Error"
+	}
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error()) {
+		switch componentName {
+		case schema.ComponentNameExtractor:
+			return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
+		case schema.ComponentNameCompiler:
+			return "Compiler: Document compilation timed out. Check that the configured model service is reachable and responsive, then retry."
+		}
+	}
+
+	message := err.Error()
+	prefix := componentName + ":"
+	for componentName != "" && strings.HasPrefix(strings.ToLower(message), strings.ToLower(prefix)) {
+		message = strings.TrimSpace(message[len(prefix):])
+	}
+	if componentName == "" {
+		return message
+	}
+	return componentName + ": " + message
 }
 
 type detailedProgressSink interface {

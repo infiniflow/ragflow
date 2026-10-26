@@ -51,6 +51,29 @@ import (
 // (pipeline / downstream tokenizer) handles any persistence, exactly as it does
 // for ordinary chunks.
 
+// kcWiringDeps binds the relational handle and document engine the
+// knowledge-compiler composition-root wiring reads. The task package is the
+// composition root for ingestion runs, so these are bound once at the server
+// assembly point via InitKnowledgeCompilerDeps rather than read from the package
+// globals (arch_test.go guards that rule). A nil Engine makes the Wiki dirty
+// compiler and the Deps resolver fail loud; a nil DB makes the resolver panic on
+// a missing Infinity chunk table, which the runner surfaces as a failed compile.
+var kcWiringDeps struct {
+	DB     *gorm.DB
+	Engine engine.DocEngine
+}
+
+// InitKnowledgeCompilerDeps binds the relational handle and document engine used
+// by the knowledge-compiler composition-root wiring (Wiki dirty compiler, Wiki
+// map version store, knowledge-compiler Deps resolver). The server assembly
+// point passes the process-wide db and engine here instead of the wiring reading
+// kcWiringDeps.DB / kcWiringDeps.Engine directly. Call it once during server startup, before any
+// ingestion run.
+func InitKnowledgeCompilerDeps(db *gorm.DB, eng engine.DocEngine) {
+	kcWiringDeps.DB = db
+	kcWiringDeps.Engine = eng
+}
+
 func init() {
 	kc.SetDepsResolver(newKnowledgeCompilerDepsResolver())
 	kc.SetGroupResolver(newKnowledgeCompilerGroupResolver())
@@ -59,7 +82,7 @@ func init() {
 }
 
 func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.WikiDirtyRequest) error {
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, request.DocumentID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, kcWiringDeps.DB, request.DocumentID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil
@@ -100,7 +123,7 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 		if err != nil {
 			return err
 		}
-		output, err := component.Invoke(ctx, dao.DB, map[string]any{
+		output, err := component.Invoke(ctx, kcWiringDeps.DB, map[string]any{
 			"chunks":           sourceChunks,
 			"tenant_id":        request.TenantID,
 			"dataset_id":       request.DatasetID,
@@ -133,7 +156,7 @@ func loadWikiCompilerParams(ctx context.Context, doc *entity.Document) (map[stri
 	if doc.PipelineID == nil || strings.TrimSpace(*doc.PipelineID) == "" {
 		return map[string]any{}, nil
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, *doc.PipelineID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, kcWiringDeps.DB, *doc.PipelineID)
 	if err != nil {
 		if err == dao.ErrUserCanvasNotFound {
 			return map[string]any{}, nil
@@ -183,7 +206,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 	groupIDs := stringValues(params["compilation_template_group_id"])
 	groupIDs = append(groupIDs, stringValues(params["compilation_template_group_ids"])...)
 	if len(groupIDs) > 0 {
-		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, dao.DB, tenantID, uniqueStrings(groupIDs))
+		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, uniqueStrings(groupIDs))
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +217,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 		return nil, nil
 	}
 	var templates []entity.CompilationTemplate
-	if err := dao.DB.WithContext(ctx).
+	if err := kcWiringDeps.DB.WithContext(ctx).
 		Where("id IN ? AND status = ?", ids, string(entity.StatusValid)).Find(&templates).Error; err != nil {
 		return nil, err
 	}
@@ -212,7 +235,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 }
 
 func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiDirtyRequest) ([]map[string]any, error) {
-	docEngine := engine.Get()
+	docEngine := kcWiringDeps.Engine
 	if docEngine == nil {
 		return nil, fmt.Errorf("Wiki dirty compile: document engine is unavailable")
 	}
@@ -270,7 +293,7 @@ func wikiCompiledRows(output map[string]any) []map[string]any {
 
 func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.WikiDirtyRequest, rows []map[string]any, affectedSlugs, removedSlugs []string, activeStates []kc.WikiMapActiveState, fullReplace bool) error {
 	var dirty entity.WikiDocumentDirty
-	if err := dao.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil
 		}
@@ -279,7 +302,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if dirty.Revision != request.Revision {
 		return nil
 	}
-	docEngine := engine.Get()
+	docEngine := kcWiringDeps.Engine
 	if docEngine == nil {
 		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
 	}
@@ -305,7 +328,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		}
 	}
 	if len(rows) > 0 {
-		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID); err != nil {
+		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID, ""); err != nil {
 			return err
 		}
 	}
@@ -384,7 +407,7 @@ func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile
 		return nil
 	}
 	var dirty entity.WikiDocumentDirty
-	if err := dao.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
+	if err := kcWiringDeps.DB.WithContext(ctx).Where("document_id = ?", request.DocumentID).First(&dirty).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil
 		}
@@ -393,7 +416,7 @@ func persistDirtyWikiActiveStates(ctx context.Context, request knowledge_compile
 	if dirty.Revision != request.Revision {
 		return nil
 	}
-	docEngine := engine.Get()
+	docEngine := kcWiringDeps.Engine
 	if docEngine == nil {
 		return fmt.Errorf("Wiki dirty compile: document engine is unavailable")
 	}
@@ -407,6 +430,7 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 	// Every state comes from one document's compile, so they share a tenant and
 	// dataset: the resolver only runs when the Infinity chunk table is missing.
 	store, ok := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(
+		kcWiringDeps.DB,
 		docEngine,
 		wikiMapVectorSizeResolver(states[0].TenantID, states[0].DatasetID),
 	).(kc.WikiMapActiveStateStore)
@@ -427,7 +451,7 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 func wikiMapVectorSizeResolver(tenantID, datasetID string) func(context.Context) (int, error) {
 	modelFactory := service.NewModelFactory()
 	return func(ctx context.Context) (int, error) {
-		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, kcWiringDeps.DB, datasetID)
 		if err != nil {
 			return 0, fmt.Errorf("Wiki MAP chunk store: load dataset %s: %w", datasetID, err)
 		}
@@ -588,14 +612,14 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		}
 
 		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel}
-		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(engine.Get(), func(ctx context.Context) (int, error) {
+		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(kcWiringDeps.DB, kcWiringDeps.Engine, func(ctx context.Context) (int, error) {
 			return embedderVectorSize(ctx, embedder)
 		})
 
 		return kc.Deps{
 			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
 			Embed:           embedder,
-			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
+			WikiPages:       &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
 			WikiMapVersions: mapStore,
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the

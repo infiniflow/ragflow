@@ -289,7 +289,6 @@ export default {
   webCrawl: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
   documentInfoUpload: `${restAPIv1}/documents/upload`,
-  setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
 
@@ -297,6 +296,8 @@ export default {
   createChat: `${restAPIv1}/chats`,
   listChats: `${restAPIv1}/chats`,
   getChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
+  getAgenticRagConfig: (chatId: string) =>
+    `${restAPIv1}/chats/${chatId}/agentic-rag`,
   updateChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   patchChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
   deleteChat: (chatId: string) => `${restAPIv1}/chats/${chatId}`,
@@ -334,9 +335,9 @@ export default {
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
-  getSystemTokenList: `${restAPIv1}/system/tokens`,
-  createSystemToken: `${restAPIv1}/system/tokens`,
-  removeSystemToken: `${restAPIv1}/system/tokens`,
+  getSystemTokenList: `${restAPIv1}/system/keys`,
+  createSystemToken: `${restAPIv1}/system/keys`,
+  removeSystemToken: `${restAPIv1}/system/keys`,
   getSystemConfig: `${restAPIv1}/system/config`,
   setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 
@@ -400,6 +401,10 @@ export default {
   },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
+  issueAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
+  revokeAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
