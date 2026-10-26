@@ -221,7 +221,10 @@ func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 				if err := dao.MigrateIngestionParserConfigsForTest(t.Context(), db); err != nil {
 					t.Fatal(err)
 				}
-				config := pipeline.BuildParserConfig(dsl, migratedConfig(t, db, "kb-mineru"))
+				config, err := pipeline.BuildParserConfig(dsl, migratedConfig(t, db, "kb-mineru"))
+				if err != nil {
+					t.Fatal(err)
+				}
 				effective := effectiveComponentParams(t, "general", config)
 				parser, err := component.NewParserComponent(effective["Parser:HipSignsRhyme"])
 				if err != nil {
@@ -400,9 +403,17 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 					}
 					// Snapshot before cleaning so mutations cannot hide a lost parameter.
 					expected := jsonNormalize(t, config)
-					cleaned := pipeline.CleanComponentParams(rawDSL, config)
-					if !reflect.DeepEqual(jsonNormalize(t, cleaned), expected) {
-						t.Fatalf("API cleaning changed migrated params: got %v; want %v", cleaned, expected)
+					cleaned, err := pipeline.BuildParserConfig(rawDSL, config)
+					if err != nil {
+						t.Fatal(err)
+					}
+					for cpnID, raw := range expected.(map[string]any) {
+						params, _ := cleaned[cpnID].(map[string]any)
+						for key, value := range raw.(map[string]any) {
+							if !reflect.DeepEqual(jsonNormalize(t, params[key]), value) {
+								t.Fatalf("API config changed migrated %s.%s: got %v; want %v", cpnID, key, params[key], value)
+							}
+						}
 					}
 
 					// Parser: exactly the template's families the config targets,
@@ -873,7 +884,11 @@ func extractorFromMigratedConfig(t *testing.T, config map[string]any) *component
 	if err != nil {
 		t.Fatal(err)
 	}
-	cleaned := service.ApplyComponentScopedParserConfig(pipeline.BuildParserConfig(dsl, config), "tenant-llm")
+	cleaned, err := pipeline.BuildParserConfig(dsl, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleaned = service.ApplyComponentScopedParserConfig(cleaned, "tenant-llm")
 	c, err := component.NewExtractorComponent(cleaned["Extractor:AutoExtractDefault"].(map[string]any))
 	if err != nil {
 		t.Fatal(err)

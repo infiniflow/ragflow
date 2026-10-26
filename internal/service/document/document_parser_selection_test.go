@@ -350,7 +350,7 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyIn: "text&code",
 		},
 		{
-			name:         "an unmappable extension still reaches its owner pipeline",
+			name:         "pages reaches its owner pipeline",
 			kbParser:     "general",
 			kbConfig:     generalParserConfig(),
 			filename:     "deck.pages",

@@ -18,12 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"html"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -277,10 +275,9 @@ func buildDuckDuckGoReferences(envelope map[string]any) ([]map[string]any, []map
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(duckduckgoHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(duckduckgoHashInt(documentID, 500), 10)
 		title := duckduckgoText(item["title"])
 		resultURL := duckduckgoText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -325,12 +322,6 @@ func duckduckgoText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func duckduckgoHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateDuckDuckGoRunes(value string, limit int) string {

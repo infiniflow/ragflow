@@ -178,10 +178,7 @@ func ocrProviderAliases(providerName string) []string {
 func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
 	membershipDAO := dao.NewUserTenantDAO()
 	if subject, ok := permission.SubjectFromContext(ctx); ok && subject.UserID != "" && (subject.TenantID == "" || subject.TenantID == tenantID) {
-		membership, err := membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
-		if err == nil {
-			return membership, nil
-		}
+		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
 	}
 	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
 }
