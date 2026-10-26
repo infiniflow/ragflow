@@ -49,10 +49,12 @@ type skillSearchEngine struct {
 	searchCalls []*types.SearchRequest
 }
 
+// ChunkStoreExists reports whether the skill index exists.
 func (e *skillSearchEngine) ChunkStoreExists(_ context.Context, _ string, _ string) (bool, error) {
 	return e.indexExists, nil
 }
 
+// Search records the request and returns the configured search results.
 func (e *skillSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	snapshot := *req
 	e.searchCalls = append(e.searchCalls, &snapshot)
@@ -111,6 +113,7 @@ func lastSkillConfigID(t *testing.T) string {
 	return config.ID
 }
 
+// esStyleChunk builds an ES-style search chunk with the given name and score.
 func esStyleChunk(name string, score float64) map[string]interface{} {
 	return map[string]interface{}{
 		"skill_id":    "skill-" + name,
@@ -128,6 +131,8 @@ func esStyleChunk(name string, score float64) map[string]interface{} {
 // convertChunksToResults
 // ---------------------------------------------------------------------------
 
+// TestConvertChunksToResultsDedupesByNameKeepingHighestScore verifies that
+// chunks with the same name are deduplicated, keeping the highest score.
 func TestConvertChunksToResultsDedupesByNameKeepingHighestScore(t *testing.T) {
 	service := &SkillSearchService{}
 	chunks := []map[string]interface{}{
@@ -153,6 +158,8 @@ func TestConvertChunksToResultsDedupesByNameKeepingHighestScore(t *testing.T) {
 	}
 }
 
+// TestConvertChunksToResultsFiltersBelowThreshold verifies that chunks whose
+// score falls below the threshold are dropped.
 func TestConvertChunksToResultsFiltersBelowThreshold(t *testing.T) {
 	service := &SkillSearchService{}
 	chunks := []map[string]interface{}{
@@ -167,6 +174,9 @@ func TestConvertChunksToResultsFiltersBelowThreshold(t *testing.T) {
 	}
 }
 
+// TestConvertChunksToResultsParsesInfinityScoreColumns verifies that the
+// SCORE and SIMILARITY columns returned by Infinity are parsed, including
+// float32 values that must widen to float64.
 func TestConvertChunksToResultsParsesInfinityScoreColumns(t *testing.T) {
 	service := &SkillSearchService{}
 	// Infinity returns SCORE/SIMILARITY columns and may use float32 values.
@@ -202,6 +212,8 @@ func TestConvertChunksToResultsParsesInfinityScoreColumns(t *testing.T) {
 	}
 }
 
+// TestConvertChunksToResultsTreatsScoreAsBM25WhenColumnsAbsent verifies that
+// _score is used as the BM25 score when SCORE and SIMILARITY are absent.
 func TestConvertChunksToResultsTreatsScoreAsBM25WhenColumnsAbsent(t *testing.T) {
 	service := &SkillSearchService{}
 	chunks := []map[string]interface{}{esStyleChunk("es-skill", 1.7)}
@@ -219,6 +231,8 @@ func TestConvertChunksToResultsTreatsScoreAsBM25WhenColumnsAbsent(t *testing.T) 
 	}
 }
 
+// TestConvertChunksToResultsFallsBackToSkillIDWhenNameEmpty verifies that
+// deduplication falls back to skill_id when the name is empty.
 func TestConvertChunksToResultsFallsBackToSkillIDWhenNameEmpty(t *testing.T) {
 	service := &SkillSearchService{}
 	chunks := []map[string]interface{}{
@@ -240,6 +254,8 @@ func TestConvertChunksToResultsFallsBackToSkillIDWhenNameEmpty(t *testing.T) {
 // Search: strategy dispatch and fallbacks
 // ---------------------------------------------------------------------------
 
+// TestSearchReturnsEmptyWhenIndexMissing verifies that Search returns an empty
+// result set without invoking the engine when the index does not exist.
 func TestSearchReturnsEmptyWhenIndexMissing(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -257,13 +273,15 @@ func TestSearchReturnsEmptyWhenIndexMissing(t *testing.T) {
 	}
 }
 
+// TestSearchKeywordWhenNoEmbeddingConfigured verifies that Search takes the
+// pure keyword branch when no embedding model is configured.
 func TestSearchKeywordWhenNoEmbeddingConfigured(t *testing.T) {
 	setupSkillSearchTenant(t)
 	// No config row: defaults have EmbdID == "" so Search must take the pure
 	// keyword branch without ever resolving an embedding model.
 	service := NewSkillSearchService()
 	eng := &skillSearchEngine{
-		indexExists:  true,
+		indexExists:   true,
 		searchResults: []map[string]interface{}{esStyleChunk("kw-skill", 1.0)},
 	}
 
@@ -290,6 +308,8 @@ func TestSearchKeywordWhenNoEmbeddingConfigured(t *testing.T) {
 	}
 }
 
+// TestSearchKeywordOnZeroVectorWeight verifies that a zero vector weight
+// selects the keyword branch even when an embedding model is configured.
 func TestSearchKeywordOnZeroVectorWeight(t *testing.T) {
 	setupSkillSearchTenant(t)
 	// A struct Create would let GORM's default:0.3 swallow the zero weight,
@@ -316,6 +336,8 @@ func TestSearchKeywordOnZeroVectorWeight(t *testing.T) {
 	}
 }
 
+// TestSearchEmptyQueryListsAllWithoutThreshold verifies that an empty query
+// lists all skills with the threshold disabled and update_time desc ordering.
 func TestSearchEmptyQueryListsAllWithoutThreshold(t *testing.T) {
 	setupSkillSearchTenant(t)
 	// Threshold 0.9 would drop everything if applied; empty query must
@@ -353,6 +375,9 @@ func TestSearchEmptyQueryListsAllWithoutThreshold(t *testing.T) {
 	}
 }
 
+// TestSearchHybridFallsBackToKeywordWhenEmbeddingUnavailable verifies that
+// hybrid search falls back to keyword, reporting "keyword" and preserving the
+// requested sort order.
 func TestSearchHybridFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 	setupSkillSearchTenant(t)
 	// Weight strictly between 0 and 1 with a configured embd_id selects the
@@ -394,6 +419,8 @@ func TestSearchHybridFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 	}
 }
 
+// TestSearchHybridFallsBackToKeywordOnEngineError verifies that an engine
+// error during hybrid fallback is propagated to the caller.
 func TestSearchHybridFallsBackToKeywordOnEngineError(t *testing.T) {
 	setupSkillSearchTenant(t)
 	saveSkillSearchConfig(t, &entity.SkillSearchConfig{
@@ -413,6 +440,8 @@ func TestSearchHybridFallsBackToKeywordOnEngineError(t *testing.T) {
 	}
 }
 
+// TestSearchVectorFallsBackToKeywordWhenEmbeddingUnavailable verifies that
+// pure vector search falls back to keyword when the embedding is unavailable.
 func TestSearchVectorFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 	setupSkillSearchTenant(t)
 	saveSkillSearchConfig(t, &entity.SkillSearchConfig{
@@ -439,6 +468,8 @@ func TestSearchVectorFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 	}
 }
 
+// TestSearchPropagatesKeywordSearchError verifies that a keyword search error
+// is propagated as CodeOperatingError with a nil response.
 func TestSearchPropagatesKeywordSearchError(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -453,6 +484,8 @@ func TestSearchPropagatesKeywordSearchError(t *testing.T) {
 	}
 }
 
+// TestSearchPaginationWindow verifies that pagination slices the sorted results
+// correctly and that an out-of-range page returns an empty slice.
 func TestSearchPaginationWindow(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -488,6 +521,8 @@ func TestSearchPaginationWindow(t *testing.T) {
 	}
 }
 
+// TestSearchDefaultsPageAndPageSize verifies that non-positive page and page
+// size default to 1 and 10 respectively.
 func TestSearchDefaultsPageAndPageSize(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -510,6 +545,8 @@ func TestSearchDefaultsPageAndPageSize(t *testing.T) {
 // UpdateConfig validation
 // ---------------------------------------------------------------------------
 
+// TestUpdateConfigRejectsInvalidParameters verifies that UpdateConfig rejects
+// out-of-range weights, thresholds, and non-positive top_k.
 func TestUpdateConfigRejectsInvalidParameters(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -546,6 +583,8 @@ func TestUpdateConfigRejectsInvalidParameters(t *testing.T) {
 	}
 }
 
+// TestUpdateConfigCreatesThenUpdatesSingleActiveConfig verifies that updating
+// an existing config keeps a single active row while switching embd_id.
 func TestUpdateConfigCreatesThenUpdatesSingleActiveConfig(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -585,6 +624,8 @@ func TestUpdateConfigCreatesThenUpdatesSingleActiveConfig(t *testing.T) {
 	}
 }
 
+// TestGetConfigReturnsDefaultsWhenNoConfigExists verifies that GetConfig
+// returns the default configuration when no config row exists.
 func TestGetConfigReturnsDefaultsWhenNoConfigExists(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -604,6 +645,8 @@ func TestGetConfigReturnsDefaultsWhenNoConfigExists(t *testing.T) {
 	}
 }
 
+// TestGetConfigWithEmbdIDCreatesMissingConfig verifies that GetConfig creates
+// a config when an embd_id is supplied and none exists.
 func TestGetConfigWithEmbdIDCreatesMissingConfig(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
@@ -629,6 +672,8 @@ func TestGetConfigWithEmbdIDCreatesMissingConfig(t *testing.T) {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
+// TestSkillIndexNameSanitizesAndStaysDeterministic verifies that SkillIndexName
+// sanitizes special characters, is deterministic, and truncates long inputs.
 func TestSkillIndexNameSanitizesAndStaysDeterministic(t *testing.T) {
 	first := SkillIndexName("tenant-1", "My Space/With:Special.Chars")
 	second := SkillIndexName("tenant-1", "My Space/With:Special.Chars")
@@ -711,13 +756,13 @@ func TestCalculateContentHash(t *testing.T) {
 
 func TestBuildOrderByExpr(t *testing.T) {
 	cases := []struct {
-		name        string
-		sortBy      string
-		sortOrder   string
-		isEmpty     bool
-		wantNil     bool
-		wantField   string
-		wantDir     types.OrderByType
+		name      string
+		sortBy    string
+		sortOrder string
+		isEmpty   bool
+		wantNil   bool
+		wantField string
+		wantDir   types.OrderByType
 	}{
 		{"empty query defaults to update_time desc", "", "", true, false, "update_time", types.SortDesc},
 		{"search query defaults to relevance", "", "", false, true, "", 0},
