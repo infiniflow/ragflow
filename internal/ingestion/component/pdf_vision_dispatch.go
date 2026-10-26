@@ -90,7 +90,7 @@ func maybeDispatchPDFVision(
 	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
 		pdf := parser.PDFParser{FlattenMediaToText: flatten}
-		return pdf.NormalizeResult(ctx, filename, result)
+		return parser.AttachPDFOutlines(pdf.NormalizeResult(ctx, filename, result), binary)
 	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
 		if err != nil {
