@@ -679,7 +679,12 @@ func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rank
 		return sim
 	}
 	// Only the overlapping prefix carries chunk-level rank features; scores
-	// beyond the chunk list keep their input value.
+	// beyond the chunk list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(chunks) {
+		common.Warn("rank feature: sim/chunks length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("chunkLen", len(chunks)))
+	}
 	if len(sim) > len(chunks) {
 		applyRankFeatureScores(chunks, sim[:len(chunks)], rankFeature)
 		return sim
@@ -788,7 +793,12 @@ func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]inte
 		return sim
 	}
 	// Only the overlapping prefix carries chunk-level rank features; scores
-	// beyond the id list keep their input value.
+	// beyond the id list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(ids) {
+		common.Warn("rank feature: sim/ids length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("idLen", len(ids)))
+	}
 	if len(sim) > len(ids) {
 		applyRankFeatureScoresForIDs(ids, field, sim[:len(ids)], rankFeature)
 		return sim
