@@ -51,6 +51,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
@@ -343,12 +344,6 @@ func tagSourceFileCacheKey(f *entity.File, lang string) string {
 	return fmt.Sprintf("tag-file:%s:%s:%s:%d:%d:%s", f.ID, f.ParentID, location, f.Size, updateTime, lang)
 }
 
-// tagCompoundSignature is the OLE compound-document magic (D0 CF 11 E0 ...),
-// the on-disk container for legacy BIFF .xls. Mirrors the detector in
-// internal/parser/parser/xls_parser.go; tag_source cannot import the parser
-// package without a cycle, so the 8 bytes are repeated here.
-var tagCompoundSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
-
 // parseTagSourceByFilename mirrors rag/app/tag.py chunk(): the format is chosen
 // by the file extension, and only .xlsx/.xls, .txt and .csv are supported. Any
 // other extension (including no extension) is rejected, matching Python's
@@ -507,7 +502,7 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 // go-excel-reader — mirroring internal/parser/parser/xls_parser.go. An .xls
 // that is actually OOXML (renamed .xlsx) falls through to the excelize path.
 func parseXLSXTagSource(data []byte) []schema.TagLabel {
-	if bytes.HasPrefix(data, tagCompoundSignature) {
+	if bytes.HasPrefix(data, parser.CompoundDocumentSignature) {
 		return parseBIFF8TagSource(data)
 	}
 	f, err := excelize.OpenReader(bytes.NewReader(data))
@@ -559,7 +554,7 @@ func parseBIFF8TagSource(data []byte) []schema.TagLabel {
 		for reader.Read() {
 			var cells []string
 			for col := 0; col < reader.FieldCount(); col++ {
-				if c := strings.TrimSpace(tagCellString(reader.GetValue(col))); c != "" {
+				if c := strings.TrimSpace(parser.SpreadsheetCellString(reader.GetValue(col))); c != "" {
 					cells = append(cells, c)
 				}
 			}
@@ -595,19 +590,6 @@ func accumulateTagCells(cells []string, content *string, result *[]schema.TagLab
 	tags := splitAndTrim(cells[1], ",")
 	*result = append(*result, schema.TagLabel{Content: *content, Tags: tags})
 	*content = ""
-}
-
-// tagCellString renders one BIFF cell for tag parsing: times use RFC3339, nil
-// is empty, everything else is Sprint'd and trimmed by the caller.
-func tagCellString(v any) string {
-	switch v := v.(type) {
-	case nil:
-		return ""
-	case time.Time:
-		return v.Format(time.RFC3339)
-	default:
-		return fmt.Sprint(v)
-	}
 }
 
 func stripEmptyFields(fields []string) []string {
