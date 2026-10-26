@@ -182,7 +182,8 @@ func newDecisionBackend(url, key, model string) *decisionBackend {
 		minProb:  envFloatDefault(common.EnvDecisionMinProb, defaultDecisionMinProb),
 		maxChars: envIntDefault(common.EnvDecisionMaxChars, defaultDecisionMaxChars),
 		client: &http.Client{
-			Timeout: time.Duration(envIntDefault(common.EnvDecisionTimeoutMS, defaultDecisionTimeoutMS)) * time.Millisecond,
+			Transport: common.NewProviderLoggingTransport(nil),
+			Timeout:   time.Duration(envIntDefault(common.EnvDecisionTimeoutMS, defaultDecisionTimeoutMS)) * time.Millisecond,
 		},
 		breaker: newDecisionBreaker(),
 	}
