@@ -1057,7 +1057,7 @@ var operatorFormParamKeys = map[string][]string{
 		"hierarchyChunkTokenCap", "groupChunkTokenCap",
 	},
 	"ManualChunker": {
-		"method", "levels", "hierarchy", "root_chunk_as_heading",
+		"method", "levels", "hierarchy", "root_chunk_as_heading", "chunk_token_cap",
 		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
 	},
 	"TokenChunker": {
@@ -1197,5 +1197,130 @@ func TestBuildParserConfig_TitleFamilyStillDropsUnknownKeys(t *testing.T) {
 	}
 	if _, ok := params["method"]; !ok {
 		t.Errorf("declared key must survive, got %#v", params)
+	}
+}
+
+func TestManualChunkerParamKeys_ExcludesIncludeHeadingContent(t *testing.T) {
+	if _, ok := manualChunkerParamKeys["include_heading_content"]; ok {
+		t.Error("manualChunkerParamKeys must not accept include_heading_content")
+	}
+	for _, key := range []string{"method", "levels", "hierarchy", "root_chunk_as_heading", "chunk_token_cap"} {
+		if _, ok := manualChunkerParamKeys[key]; !ok {
+			t.Errorf("manualChunkerParamKeys must still accept %q", key)
+		}
+	}
+	if _, ok := componentParamSchemaKeys["titlechunker"]["include_heading_content"]; !ok {
+		t.Error("titlechunker whitelist must still accept include_heading_content")
+	}
+}
+
+func TestBuildParserConfig_ManualChunkerDropsIncludeHeadingContent(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checkedManual, checkedTitle := 0, 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			continue
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			overrides := map[string]any{s.CpnID: map[string]any{"include_heading_content": true}}
+			switch s.ComponentName {
+			case "ManualChunker":
+				checkedManual++
+				cleaned := buildTestParserConfig(t, dslJSON, overrides)
+				got, _ := cleaned[s.CpnID].(map[string]any)
+				if _, ok := got["include_heading_content"]; ok {
+					t.Errorf("template %q component %s: include_heading_content should be dropped, got %#v", ref, s.CpnID, got)
+				}
+			case "TitleChunker":
+				checkedTitle++
+				cleaned := buildTestParserConfig(t, dslJSON, overrides)
+				got, _ := cleaned[s.CpnID].(map[string]any)
+				if _, ok := got["include_heading_content"]; !ok {
+					t.Errorf("template %q component %s: include_heading_content should survive, got %#v", ref, s.CpnID, got)
+				}
+			}
+		}
+	}
+	if checkedManual == 0 {
+		t.Fatal("expected at least one builtin template with a ManualChunker component")
+	}
+	if checkedTitle == 0 {
+		t.Fatal("expected at least one builtin template with a TitleChunker component")
+	}
+}
+
+func manualChunkerLegacyDSL(t *testing.T) []byte {
+	t.Helper()
+	dsl := map[string]any{
+		"components": map[string]any{
+			"ManualChunker:Legacy": map[string]any{
+				"obj": map[string]any{
+					"component_name": "ManualChunker",
+					"params": map[string]any{
+						"outputs":                 map[string]any{},
+						"method":                  "hierarchy",
+						"include_heading_content": true,
+						"hierarchy":               float64(0),
+						"levels":                  []any{[]any{"^# "}},
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(dsl)
+	if err != nil {
+		t.Fatalf("marshal dsl fixture: %v", err)
+	}
+	return raw
+}
+
+func TestComponentParamsDefaults_ManualChunkerLegacyDSL(t *testing.T) {
+	dslJSON := manualChunkerLegacyDSL(t)
+	defaults, err := ComponentParamsDefaults(dslJSON)
+	if err != nil {
+		t.Fatalf("ComponentParamsDefaults: %v", err)
+	}
+	params := defaults["ManualChunker:Legacy"]
+	if params == nil {
+		t.Fatal("expected ManualChunker defaults")
+	}
+	if _, ok := params["include_heading_content"]; ok {
+		t.Errorf("legacy include_heading_content must be stripped, got %#v", params)
+	}
+	if params["method"] != "group" {
+		t.Errorf("method must normalize to group, got %#v", params["method"])
+	}
+}
+
+func TestBuildParserConfig_ManualChunkerNormalizesMethod(t *testing.T) {
+	dslJSON := manualChunkerLegacyDSL(t)
+	raw := map[string]any{
+		"ManualChunker:Legacy": map[string]any{
+			"method":                  "hierarchy",
+			"include_heading_content": true,
+		},
+	}
+	result := buildTestParserConfig(t, dslJSON, raw)
+	params, ok := result["ManualChunker:Legacy"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected ManualChunker params, got %#v", result)
+	}
+	if _, ok := params["include_heading_content"]; ok {
+		t.Errorf("include_heading_content should be dropped, got %#v", params)
+	}
+	if params["method"] != "group" {
+		t.Errorf("method must normalize to group, got %#v", params["method"])
 	}
 }

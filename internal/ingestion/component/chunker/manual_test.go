@@ -431,88 +431,34 @@ func TestManualChunker_MixedPositionedAndPlain(t *testing.T) {
 	}
 }
 
-// TestNewManualChunker_StripsUnsupportedTitleParams pins the issue #20139
-// contract: the three title-family params that the operator form accepts but
-// ManualChunker cannot honour (`method`, `chunk_token_cap`,
-// `include_heading_content`) must not be propagated to `c.param`, regardless
-// of what the caller passed. The fix strips them inside NewManualChunker
-// with a `common.Warn` so the silent-ignore failure mode becomes a visible
-// log line. Runtime semantics are unchanged because the group path would
-// have ignored them anyway.
-func TestNewManualChunker_StripsUnsupportedTitleParams(t *testing.T) {
-	cases := []struct {
-		name   string
-		params map[string]any
-	}{
-		{
-			name: "method downgrade attempt is dropped",
-			params: map[string]any{
-				"method":                  "naive",
-				"levels":                  [][]string{{`^# `}},
-				"chunk_token_cap":         128,
-				"include_heading_content": true,
-			},
-		},
-		{
-			name: "method upgrade attempt is dropped",
-			params: map[string]any{
-				"method":                  "hierarchy",
-				"levels":                  [][]string{{`^# `}},
-				"chunk_token_cap":         256,
-				"include_heading_content": false,
-			},
-		},
-		{
-			name: "only cap and heading flag set",
-			params: map[string]any{
-				"levels":                  [][]string{{`^# `}},
-				"chunk_token_cap":         1024,
-				"include_heading_content": true,
-			},
-		},
-		{
-			name:   "no unsupported params is the baseline",
-			params: map[string]any{"levels": [][]string{{`^# `}}},
-		},
+// TestNewManualChunker_PinsMethodAndHonoursChunkTokenCap pins #20139: method is
+// forced to group while chunk_token_cap flows through to c.param.
+func TestNewManualChunker_PinsMethodAndHonoursChunkTokenCap(t *testing.T) {
+	c := mustManual(t, map[string]any{
+		"method":          "hierarchy",
+		"levels":          [][]string{{`^# `}},
+		"chunk_token_cap": 128,
+	})
+	if c.param.TitleChunkerParam.Method != "group" {
+		t.Errorf("Method = %q, want group", c.param.TitleChunkerParam.Method)
 	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			c := mustManual(t, tc.params)
-			if got, want := c.param.TitleChunkerParam.Method, "group"; got != want {
-				t.Errorf("Method = %q, want %q (ManualChunker pins method=group)", got, want)
-			}
-			if got := c.param.TitleChunkerParam.ChunkTokenCap; got != 0 {
-				t.Errorf("ChunkTokenCap = %d, want 0 (stripped before Update)", got)
-			}
-			if got := c.param.TitleChunkerParam.IncludeHeadingContent; got != false {
-				t.Errorf("IncludeHeadingContent = %v, want false (stripped before Update)", got)
-			}
-		})
+	if c.param.TitleChunkerParam.ChunkTokenCap != 128 {
+		t.Errorf("ChunkTokenCap = %d, want 128", c.param.TitleChunkerParam.ChunkTokenCap)
 	}
 }
 
-// TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes pins that the
-// three pinned keys do not bleed into the rest of the conf: levels, hierarchy
-// and root_chunk_as_heading still flow through to `c.param` exactly as before.
+// TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes pins that levels,
+// hierarchy and root_chunk_as_heading still flow through to c.param.
 func TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes(t *testing.T) {
 	c := mustManual(t, map[string]any{
-		"method":                  "naive", // dropped
-		"chunk_token_cap":         999,     // dropped
-		"include_heading_content": true,    // dropped
-		"levels":                  [][]string{{`^# `}, {`^## `}},
-		"hierarchy":               2,
-		"root_chunk_as_heading":   true,
+		"method":                "naive",
+		"chunk_token_cap":       256,
+		"levels":                [][]string{{`^# `}, {`^## `}},
+		"hierarchy":             2,
+		"root_chunk_as_heading": true,
 	})
 	if len(c.param.TitleChunkerParam.Levels) != 2 {
 		t.Errorf("Levels len = %d, want 2", len(c.param.TitleChunkerParam.Levels))
-	} else {
-		if got := c.param.TitleChunkerParam.Levels[0]; len(got) == 0 || got[0] != "^# " {
-			t.Errorf("Levels[0] = %#v, want [\"^# \"]", got)
-		}
-		if got := c.param.TitleChunkerParam.Levels[1]; len(got) == 0 || got[0] != "^## " {
-			t.Errorf("Levels[1] = %#v, want [\"^## \"]", got)
-		}
 	}
 	if c.param.TitleChunkerParam.Hierarchy == nil || *c.param.TitleChunkerParam.Hierarchy != 2 {
 		t.Errorf("Hierarchy = %v, want pointer to 2", c.param.TitleChunkerParam.Hierarchy)
@@ -521,6 +467,74 @@ func TestNewManualChunker_KeepsSupportedParamsAroundPinnedOnes(t *testing.T) {
 		t.Errorf("RootChunkAsHeading = false, want true")
 	}
 	if c.param.TitleChunkerParam.Method != "group" {
-		t.Errorf("Method = %q, want group (still pinned even with other params set)", c.param.TitleChunkerParam.Method)
+		t.Errorf("Method = %q, want group", c.param.TitleChunkerParam.Method)
+	}
+	if c.param.TitleChunkerParam.ChunkTokenCap != 256 {
+		t.Errorf("ChunkTokenCap = %d, want 256", c.param.TitleChunkerParam.ChunkTokenCap)
+	}
+}
+
+func TestManualChunker_RespectsChunkTokenCap(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 200)
+	mc := mustManual(t, map[string]any{"levels": [][]string{{`^# `}}, "chunk_token_cap": 128})
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	out, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) <= 1 {
+		t.Fatalf("expected split under cap=128, got %d chunk(s)", len(chunks))
+	}
+	assertCapInvariants(t, chunks, 128, body)
+}
+
+func TestManualChunker_ChunkTokenCapZeroNoop(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 300)
+	mc := mustManual(t, map[string]any{"levels": [][]string{{`^# `}}, "chunk_token_cap": 0})
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	out, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("cap=0 must keep 1 chunk, got %d", len(chunks))
+	}
+}
+
+func TestManualChunker_DefaultChunkTokenCapAppliesLikeGroupChunker(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Repeat("ab", 400)
+	levels := [][]string{{`^# `}}
+
+	gc, err := NewGroupTitleChunker(map[string]any{"levels": levels})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	mc := mustManual(t, map[string]any{"levels": levels})
+
+	inputs := map[string]any{"output_format": "text", "text": body, "name": "doc"}
+	gOut, err := gc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("group Invoke: %v", err)
+	}
+	mOut, err := mc.Invoke(t.Context(), nil, inputs)
+	if err != nil {
+		t.Fatalf("manual Invoke: %v", err)
+	}
+
+	gChunks, _ := gOut["chunks"].([]map[string]any)
+	mChunks, _ := mOut["chunks"].([]map[string]any)
+	if len(gChunks) <= 1 {
+		t.Fatalf("expected split under default cap, got %d", len(gChunks))
+	}
+	if !reflect.DeepEqual(gChunks, mChunks) {
+		t.Fatalf("ManualChunker diverges from GroupTitleChunker under default cap")
 	}
 }

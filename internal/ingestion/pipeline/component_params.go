@@ -113,7 +113,11 @@ func ComponentParamsDefaults(dslJSON []byte) (map[string]map[string]any, error) 
 	}
 	out := make(map[string]map[string]any, len(schemas))
 	for _, s := range schemas {
-		out[s.CpnID] = deepCopyMapStr(s.ParamsDefaults)
+		params := deepCopyMapStr(s.ParamsDefaults)
+		if s.ComponentName == "ManualChunker" {
+			params = sanitizeManualChunkerParams(params)
+		}
+		out[s.CpnID] = params
 	}
 	return out, nil
 }

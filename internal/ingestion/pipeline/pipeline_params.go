@@ -82,13 +82,36 @@ var titleFamilyParamKeys = unionParamKeys(
 	titleChunkerPersistenceKeys,
 )
 
+// manualChunkerParamKeys is titleFamilyParamKeys minus include_heading_content
+// (#20139); ManualChunker is pinned to method="group" and never runs the
+// hierarchy path where that flag would matter.
+var manualChunkerParamKeys = func() map[string]struct{} {
+	keys := make(map[string]struct{}, len(titleFamilyParamKeys))
+	for k := range titleFamilyParamKeys {
+		keys[k] = struct{}{}
+	}
+	delete(keys, "include_heading_content")
+	return keys
+}()
+
+// sanitizeManualChunkerParams strips keys ManualChunker cannot honor and
+// normalizes method to the pinned runtime value.
+func sanitizeManualChunkerParams(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		out[k] = v
+	}
+	delete(out, "include_heading_content")
+	out["method"] = "group"
+	return out
+}
+
 var componentParamSchemaKeys = map[string]map[string]struct{}{
-	"titlechunker": titleFamilyParamKeys,
-	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
-	// from the token cap, so method, chunk_token_cap and include_heading_content
-	// (hierarchy-only) are accepted here but ignored by the component — the
-	// operator form omits them for the same reason.
-	"manualchunker": titleFamilyParamKeys,
+	"titlechunker":  titleFamilyParamKeys,
+	"manualchunker": manualChunkerParamKeys,
 	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
 	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
 }
@@ -219,6 +242,9 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		for k := range componentParamSchemaKeys[strings.ToLower(s.ComponentName)] {
 			keys[k] = struct{}{}
 		}
+		if s.ComponentName == "ManualChunker" {
+			delete(keys, "include_heading_content")
+		}
 		validCPNs[s.CpnID] = keys
 		componentNames[s.CpnID] = s.ComponentName
 	}
@@ -269,6 +295,9 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 			}
 			common.Warn("cleanComponentParams: dropping unknown param",
 				zap.String("cpnID", key), zap.String("param", pk))
+		}
+		if componentNames[key] == "ManualChunker" {
+			cleaned = sanitizeManualChunkerParams(cleaned)
 		}
 		if len(cleaned) > 0 {
 			result[key] = cleaned
@@ -387,6 +416,9 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) (entity
 					base[k] = v
 				}
 			}
+		}
+		if component.ComponentName == "ManualChunker" {
+			base = sanitizeManualChunkerParams(base)
 		}
 		result[cpnID] = base
 	}

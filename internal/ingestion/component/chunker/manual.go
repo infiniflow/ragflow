@@ -25,11 +25,9 @@ import (
 	"sort"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/parser/parser"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -46,29 +44,19 @@ type ManualChunkerComponent struct {
 // NewManualChunker constructs the component. It accepts the same heading-level
 // params as TitleChunker (method is pinned to "group"); the position resort is
 // automatic based on whether the upstream payload carries coordinates.
+//
+// include_heading_content is a documented no-op here (see #20139): it only has
+// a toggle point in the hierarchy path, which ManualChunker never takes.
+// pipeline_params.go excludes it from ManualChunker's accepted param keys.
 func NewManualChunker(params map[string]any) (runtime.Component, error) {
-	// method, chunk_token_cap, and include_heading_content are pinned for
-	// ManualChunker. The chunker's entire value-add is the physical-position
-	// resort inside the group method, so method must stay "group". The cap
-	// and the heading-content flag are title-chunker-family params that the
-	// group path does not honour (see chunkFromRecords: it passes tokenCap=0
-	// and only the hierarchy path reads include_heading_content). The
-	// operator form is not promised to apply them; we strip them here
-	// instead of accepting and silently ignoring them downstream. See issue
-	// #20139.
-	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
-	dropped := make([]string, 0, 3)
+	// method is pinned to "group": ManualChunker's value-add is the
+	// physical-position resort, which only runs in the group path.
+	conf := map[string]any{"method": "group"}
 	for k, v := range params {
-		switch k {
-		case "method", "chunk_token_cap", "include_heading_content":
-			dropped = append(dropped, k)
+		if k == "method" {
 			continue
 		}
 		conf[k] = v
-	}
-	if len(dropped) > 0 {
-		common.Warn("ManualChunker: ignoring operator-form params that do not apply to this chunker",
-			zap.Strings("dropped", dropped))
 	}
 	p := defaultsTitle()
 	p.Update(conf)
@@ -118,9 +106,8 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	if hasPdfPositions(records) {
 		sortRecordsByPosition(records)
 	}
-	// ManualChunker is exempt from the title-family token cap (#18455): it
-	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
-	return chunkFromRecords(ctx, db, upstream, &c.param, records, 0)
+	// ManualChunker shares GroupTitleChunker's token-cap enforcement (#20139).
+	return chunkFromRecords(ctx, db, upstream, &c.param, records, c.param.ChunkTokenCap)
 }
 
 // hasPdfPositions reports whether any record carries a PDF coordinate matrix
