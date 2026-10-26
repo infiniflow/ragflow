@@ -22,9 +22,7 @@ import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
 import { Routes } from '@/routes';
 import api from '@/utils/api';
-import authorizationUtil, {
-  getAuthorization,
-} from '@/utils/authorization-util';
+import { adminStorage } from '@/utils/authorization-util';
 import { convertTheKeysOfTheObjectToSnake } from '@/utils/common-util';
 import { ResultCode, RetcodeMessage } from '@/utils/request';
 import {
@@ -45,7 +43,7 @@ request.interceptors.request.use((config) => {
 
   // @ts-ignore
   if (!newConfig.skipToken) {
-    newConfig.headers.set(Authorization, getAuthorization());
+    newConfig.headers.set(Authorization, adminStorage.getAuthorization());
   }
 
   return newConfig;
@@ -60,18 +58,20 @@ request.interceptors.response.use(
     const { data } = response ?? {};
 
     if (data?.code === 100) {
-      message.error(data?.message);
+      message.error(data?.message, { position: 'top-right' });
     } else if (data?.code === 401) {
       message.error(data?.message, {
         description: data?.message,
+        position: 'top-right',
       });
 
-      authorizationUtil.removeAll();
+      adminStorage.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
       message.error(`${i18n.t('message.hint')}: ${data?.code}`, {
         description: data?.message,
+        position: 'top-right',
       });
     }
 
@@ -96,7 +96,7 @@ request.interceptors.response.use(
         duration: 3,
       });
 
-      authorizationUtil.removeAll();
+      adminStorage.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
@@ -208,15 +208,13 @@ export const deleteUser = (email: string) =>
 
 export const listServices = async () => {
   const { data } =
-    await request.get<
-      ResponseData<AdminService.ListServicesItem[] | GoServiceStatus[]>
-    >(adminListServices);
+    await request.get<ResponseData<GoServiceStatus[]>>(adminListServices);
   return data.code === 0 ? adaptServiceList(data.data) : [];
 };
 export const showServiceDetails = async (serviceId: number | string) => {
-  const { data } = await request.get<
-    ResponseData<AdminService.ServiceDetail | GoServiceStatus>
-  >(adminShowServiceDetails(encodeURIComponent(String(serviceId))));
+  const { data } = await request.get<ResponseData<GoServiceStatus>>(
+    adminShowServiceDetails(encodeURIComponent(String(serviceId))),
+  );
   return data.code === 0 ? adaptServiceDetail(data.data) : undefined;
 };
 

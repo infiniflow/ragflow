@@ -65,10 +65,9 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
-		DatasetIDs:   datasetIDs,
-		Question:     req.Question,
-		DocumentIDs:  req.DocumentIDs,
-		ForceRefresh: req.ForceRefresh,
+		DatasetIDs:  datasetIDs,
+		Question:    req.Question,
+		DocumentIDs: req.DocumentIDs,
 	}
 
 	if req.Page > 0 {
@@ -110,8 +109,6 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	// Metadata reads use the same authorized service paths as the REST API.
-	// No shared cache: force_refresh always sees current metadata, without
-	// cross-tenant cache state or a second metadata implementation.
 	documents := document.NewDocumentService()
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)

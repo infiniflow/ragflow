@@ -23,7 +23,6 @@ func TestVisionEnhancement_ReportsPerFigureFractions(t *testing.T) {
 
 	png := visionTestPNGBase64(t)
 	dispatched := parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": png, "doc_type_kwd": "image"},
 			{"text": "2", "image": png, "doc_type_kwd": "image"},
@@ -78,7 +77,6 @@ func TestVisionEnhancement_SettledFractionsCountFailedFigures(t *testing.T) {
 	ctx := rec.context(t, "Parser:vision")
 
 	dispatched := parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "valid", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"},
 			{"text": "invalid", "image": "not-valid-base64", "doc_type_kwd": "image"},
@@ -125,7 +123,6 @@ func TestVisionEnhancement_ZeroWindowReportsNothing(t *testing.T) {
 	ctx := rec.context(t, "Parser:vision")
 
 	dispatched := parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"},
 		}),
@@ -160,7 +157,6 @@ func TestVisionEnhancement_CancelledContextReportsNothing(t *testing.T) {
 
 	png := visionTestPNGBase64(t)
 	dispatched := parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": png, "doc_type_kwd": "image"},
 			{"text": "2", "image": png, "doc_type_kwd": "image"},

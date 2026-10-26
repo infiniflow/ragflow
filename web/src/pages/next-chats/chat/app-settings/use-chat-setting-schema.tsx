@@ -93,8 +93,11 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       ...LlmSettingEnabledSchema,
       llm_id: z.string().optional(),
       // Empty means "inherit the tenant default": most chats never override
-      // the decision model, and clearing the field must be expressible.
-      decision_id: z.string().optional(),
+      // the decision model, so the backend returns null for them and clearing
+      // must be expressible. optional() alone only permits undefined, so a
+      // loaded null would fail validation and block every save — nullable()
+      // is required to represent the inherited state.
+      decision_id: z.string().nullable().optional(),
       ...keywordsSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,

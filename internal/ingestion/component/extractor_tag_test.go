@@ -58,7 +58,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -81,7 +81,7 @@ func TestExtractorTags_NoLLMID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if _, ok := chunks[0][common.TAG_FLD]; ok {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}
@@ -111,7 +111,7 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if chunks[0][common.TAG_FLD] != nil {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}

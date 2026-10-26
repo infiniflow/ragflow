@@ -53,7 +53,6 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
 		Name:      &tenantName,
-		TTSID:     &ttsModelID,
 		ParserIDs: "naive",
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
@@ -66,6 +65,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 		Role:      "owner",
 		InvitedBy: "user-1",
 		Status:    &activeStatus,
+		TTSID:     &ttsModelID,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant owner membership: %v", err)
 	}

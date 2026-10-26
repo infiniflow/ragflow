@@ -75,6 +75,36 @@ func TestFileService_CreateFolderDedupesDuplicateName(t *testing.T) {
 	}
 }
 
+func TestFileService_CreateFolderRecordsRequesterAsOwner(t *testing.T) {
+	db := setupFolderTestDB(t)
+	valid := string(entity.StatusValid)
+	for _, membership := range []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "owner", Role: string(permission.RoleOwner), Status: &valid},
+		{ID: "member-membership", UserID: "member", TenantID: "owner", Role: string(permission.RoleNormal), Status: &valid},
+	} {
+		if err := db.Create(&membership).Error; err != nil {
+			t.Fatalf("create membership: %v", err)
+		}
+	}
+	if err := db.Create(&entity.File{ID: "root", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}).Error; err != nil {
+		t.Fatalf("create root folder: %v", err)
+	}
+
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "member", TenantID: "owner"})
+	created, err := testFileService().CreateFolder(ctx, "member", "notes", "root", FileTypeFolder)
+	if err != nil {
+		t.Fatalf("create folder: %v", err)
+	}
+
+	var folder entity.File
+	if err := db.Where("id = ?", created["id"]).First(&folder).Error; err != nil {
+		t.Fatalf("load created folder: %v", err)
+	}
+	if folder.TenantID != "owner" || folder.CreatedBy != "member" {
+		t.Fatalf("created folder owner = user %q tenant %q, want requester member in tenant owner", folder.CreatedBy, folder.TenantID)
+	}
+}
+
 // firstCreatedFolderName creates one entry and returns its resulting name.
 func firstCreatedFolderName(t *testing.T, svc *FileService, name, fileType string) string {
 	t.Helper()
@@ -204,7 +234,7 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 		ID:        id,
 		ParentID:  parentID,
 		TenantID:  "tenant-1",
-		CreatedBy: "user-1",
+		CreatedBy: "tenant-1",
 		Name:      name,
 		Location:  sptr(name),
 		Type:      "pdf",
@@ -305,8 +335,8 @@ func TestFileService_ListFilesRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().ListFiles(t.Context(), "user-1", foreignFolder.ID, 1, 15, nil, "")
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ListFiles error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("ListFiles error = %v, want resource not found", err)
 	}
 }
 
@@ -318,8 +348,8 @@ func TestFileService_CreateFolderRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().CreateFolder(t.Context(), "user-1", "child", foreignFolder.ID, FileTypeFolder)
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("CreateFolder error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("CreateFolder error = %v, want resource not found", err)
 	}
 	children, err := dao.NewFileDAO().ListByParentID(t.Context(), dao.DB, foreignFolder.ID)
 	if err != nil {
@@ -379,8 +409,8 @@ func TestFileService_UploadRejectsInaccessibleParent(t *testing.T) {
 	}
 
 	_, err := testFileService().UploadFile(t.Context(), "user-1", foreignFolder.ID, nil, 1024)
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("UploadFile error = %v, want permission denied", err)
+	if !errors.Is(err, permission.ErrResourceNotFound) {
+		t.Fatalf("UploadFile error = %v, want resource not found", err)
 	}
 }
 

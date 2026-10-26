@@ -57,11 +57,6 @@ func TestTenantDAOGetByIDSkipsInactiveTenant(t *testing.T) {
 		t.Helper()
 		tenant := &entity.Tenant{
 			ID:        id,
-			LLMID:     "llm",
-			EmbdID:    "embd",
-			ASRID:     "asr",
-			Img2TxtID: "img2txt",
-			RerankID:  "rerank",
 			ParserIDs: "naive",
 			Status:    &status,
 		}
@@ -93,11 +88,6 @@ func TestTenantDAOUpdateStatus(t *testing.T) {
 	active := "1"
 	tenant := &entity.Tenant{
 		ID:        "tenant-update",
-		LLMID:     "llm",
-		EmbdID:    "embd",
-		ASRID:     "asr",
-		Img2TxtID: "img2txt",
-		RerankID:  "rerank",
 		ParserIDs: "naive",
 		Status:    &active,
 	}

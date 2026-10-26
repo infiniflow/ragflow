@@ -132,6 +132,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       agentic_rag: agenticRag,
     };
 
+    // The decision TreeSelect clears to '', but the backend reads only a
+    // missing key / null as "inherit the tenant default" and would treat ''
+    // as a literal empty model id. Normalise at the point where form values
+    // become the wire payload, so clearing the override really persists.
+    if (nextValues.decision_id === '') {
+      nextValues.decision_id = null;
+    }
+
     updateChat({
       chatId: id!,
       params: {

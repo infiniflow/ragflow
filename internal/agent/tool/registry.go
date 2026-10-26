@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
+
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
@@ -114,6 +116,9 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	}
 	if factory == nil {
 		return nil, fmt.Errorf("agent tool: nil factory for %q", name)
+	}
+	if err := ValidateSearchFilters(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("agent tool %s: %s", name, err))
 	}
 	return factory(params)
 }
@@ -404,7 +409,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
+			"meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
@@ -452,9 +457,6 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
-	}
-	if v, ok := boolParam(params, "toc_enhance"); ok {
-		defaults.TOCEnhance = v
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v
