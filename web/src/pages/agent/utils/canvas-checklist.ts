@@ -777,6 +777,20 @@ export function collectCanvasIssues({
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
           issues.push(...collectSearchFilterIssues(tool?.params, toolTarget));
+          // Embedded ExeSQL tools omit `sql` (the agent writes it), which the
+          // schema allows; the connection fields are validated the same way as
+          // the standalone node.
+          if (
+            tool?.component_name === Operator.ExeSQL &&
+            !ExeSQLFormSchema.safeParse(tool.params).success
+          ) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.nodeFormInvalid',
+              blocksRun: true,
+            });
+          }
           if (isRetrieval) {
             issues.push(
               ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
