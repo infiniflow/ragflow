@@ -554,11 +554,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if name == "" {
 			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
-		deferToMessage := directMessageDownstream(c, cpnID)
-		nodeOpts := runtime.ComponentExecutionOptions{
-			DeferAgentToMessage:        deferToMessage,
-			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
-		}
+		nodeOpts := resolveComponentExecutionOptions(c, cpnID, name)
 		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
@@ -793,6 +789,56 @@ func directMessageDownstream(c *Canvas, cpnID string) bool {
 		}
 	}
 	return true
+}
+
+func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	msgComp, ok := c.Components[msgID]
+	if !ok || len(msgComp.Obj.Params) == 0 {
+		return false
+	}
+	needle := strings.ToLower(cpnID) + "@"
+	for _, v := range msgComp.Obj.Params {
+		switch x := v.(type) {
+		case string:
+			if strings.Contains(strings.ToLower(x), needle) {
+				return true
+			}
+		case []string:
+			for _, s := range x {
+				if strings.Contains(strings.ToLower(s), needle) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.Contains(strings.ToLower(s), needle) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
+	deferToMessage := directMessageDownstream(c, cpnID)
+	isAgent := strings.EqualFold(name, "Agent")
+	isLLM := strings.EqualFold(name, "LLM") || strings.EqualFold(name, "Generate")
+	deferLLM := false
+	if isLLM && deferToMessage && c != nil {
+		comp, ok := c.Components[cpnID]
+		if ok && len(comp.Downstream) == 1 && messageConsumesComponent(c, comp.Downstream[0], cpnID) {
+			deferLLM = true
+		}
+	}
+	return runtime.ComponentExecutionOptions{
+		DeferAgentToMessage:        deferToMessage && isAgent,
+		DeferLLMToMessage:          deferLLM,
+		SuppressAgentMessageEvents: isAgent && !deferToMessage,
+	}
 }
 
 func wireWorkflowTerminals(

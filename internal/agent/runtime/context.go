@@ -92,6 +92,7 @@ type deferredNodeRegistry struct {
 // component invocation without leaking internal flags into DSL parameters.
 type ComponentExecutionOptions struct {
 	DeferAgentToMessage        bool
+	DeferLLMToMessage          bool
 	SuppressAgentMessageEvents bool
 }
 
