@@ -73,10 +73,12 @@ STAGEHAND_SERVER_VERSION = "v3.7.2"
 
 
 # Noto Sans CJK SC variable TTF, rendered into PDFs by the Go backend
-# (internal/agent/component/io/pdf_writer.go). Empty => bootstrap mode: the
-# download step records the computed SHA-256 to a sidecar and prints it for a
-# maintainer to pin here, after which any drift is rejected instead of silently
-# shipping a PDF backend that loses CJK rendering.
+# (internal/agent/component/io/pdf_writer.go). When non-empty, it is the pinned
+# SHA-256 every downloaded/kept font must match. When empty, the hash recorded in
+# deps/NotoSansCJKsc-VF.ttf.sha256 is the baseline: a present non-empty sidecar is
+# verified (drift rejected), while a missing/empty sidecar is bootstrapped by
+# recording the downloaded hash so the next run detects changes. Both first and
+# later runs therefore run the download directly without manual setup.
 NOTO_CJK_FONT_SHA256 = ""
 
 
@@ -184,15 +186,16 @@ def _valid_stagehand_binary(path):
 
 
 def _valid_font(path):
-    """True when PATH is a non-empty TrueType/OpenType/WOFF font.
+    """True when PATH is a TrueType font with the sfnt signature b"\\x00\\x01\\x00\\x00".
 
-    A raw GitHub response that is not a font (e.g. a 404 HTML page) fails this
+    gopdf's AddTTFFont accepts ONLY this signature; OpenType (OTTO), TrueType
+    collections (ttcf), and WOFF/WOFF2 are rejected, so we must not let them
+    through. A raw GitHub non-font response (e.g. a 404 HTML page) also fails this
     check, so we never copy a non-font into the dependency image."""
     if not os.path.isfile(path) or os.path.getsize(path) == 0:
         return False
     with open(path, "rb") as file:
-        head = file.read(4)
-    return head in (b"\x00\x01\x00\x00", b"true", b"OTTO", b"ttcf", b"wOFF", b"wOFF2")
+        return file.read(4) == b"\x00\x01\x00\x00"
 
 
 def _sha256_of(path):
@@ -202,6 +205,37 @@ def _sha256_of(path):
         for chunk in iter(lambda: file.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _verify_font_checksum(font):
+    """Validate FONT's SHA-256, removing it and failing on any mismatch.
+
+    Precedence: a non-empty NOTO_CJK_FONT_SHA256 pin wins and is verified strictly.
+    Otherwise the hash recorded in deps/NotoSansCJKsc-VF.ttf.sha256 is the baseline:
+    a present non-empty sidecar is verified (drift is rejected), while a missing or
+    empty sidecar is bootstrapped by recording the downloaded hash so subsequent runs
+    detect changes. The caller runs the magic-number (_valid_font) check beforehand."""
+    actual = _sha256_of(font)
+    sidecar = os.path.join(SCRIPT_DIR, "NotoSansCJKsc-VF.ttf.sha256")
+    if NOTO_CJK_FONT_SHA256:
+        if actual != NOTO_CJK_FONT_SHA256:
+            os.unlink(font)
+            raise RuntimeError(f"NotoSansCJKsc-VF.ttf checksum mismatch (got {actual}, pinned {NOTO_CJK_FONT_SHA256})")
+        return
+    # No pinned constant: verify against the sidecar baseline, or bootstrap it.
+    if os.path.isfile(sidecar):
+        with open(sidecar) as file:
+            content = file.read().strip()
+        expected = content.split()[0] if content else ""
+        if expected:
+            if actual != expected:
+                os.unlink(font)
+                raise RuntimeError(f"NotoSansCJKsc-VF.ttf checksum changed vs recorded {expected} (got {actual})")
+            return
+        # Empty sidecar: fall through to (re)record the baseline below.
+    with open(sidecar, "w") as file:
+        file.write(actual + "\n")
+    print(f"  >>> PIN THIS HASH in download_deps.py NOTO_CJK_FONT_SHA256: {actual}")
 
 
 def load_tokenizer_assets(assets=None):
@@ -399,56 +433,26 @@ def main():
     _install_stagehand()
 
     # ── Noto Sans CJK SC font (rendered into PDFs by the Go backend) ─────────
-    # Verified by a font magic-number check plus a SHA-256 pin (NOTO_CJK_FONT_SHA256).
-    # A present file is NEVER reused unverified; a bad download is removed and the
-    # build fails loudly instead of shipping a PDF backend that silently loses
-    # CJK rendering. An empty pin enters bootstrap mode: the hash is recorded to a
-    # sidecar and printed for a maintainer to pin, after which any drift is rejected.
+    # Verified by a font magic-number check (only the sfnt signature
+    # b"\x00\x01\x00\x00" that gopdf's AddTTFFont accepts) plus a SHA-256 check
+    # (_verify_font_checksum). A present file is NEVER reused unverified; a bad
+    # download is removed and the build fails loudly instead of shipping a PDF
+    # backend that silently loses CJK rendering.
     print("== NotoSansCJKsc-VF.ttf ==")
     font = os.path.join(SCRIPT_DIR, "NotoSansCJKsc-VF.ttf")
-    sidecar = os.path.join(SCRIPT_DIR, "NotoSansCJKsc-VF.ttf.sha256")
-    have_font = os.path.isfile(font) and os.path.getsize(font) > 0
-    if have_font and not _valid_font(font):
-        print("  WARNING: existing NotoSansCJKsc-VF.ttf is not a valid font; re-downloading", file=sys.stderr)
-        os.unlink(font)
-        have_font = False
-    if have_font:
-        actual = _sha256_of(font)
-        if NOTO_CJK_FONT_SHA256:
-            if actual != NOTO_CJK_FONT_SHA256:
-                print(f"  ERROR: NotoSansCJKsc-VF.ttf checksum mismatch (local {actual} != pinned {NOTO_CJK_FONT_SHA256}); re-downloading", file=sys.stderr)
-                os.unlink(font)
-                have_font = False
-        elif os.path.isfile(sidecar):
-            expected = open(sidecar).read().strip().split()[0]
-            if actual != expected:
-                print(f"  ERROR: NotoSansCJKsc-VF.ttf checksum changed vs recorded {expected} (got {actual}); refuse to accept", file=sys.stderr)
-                sys.exit(1)
+    if os.path.isfile(font) and os.path.getsize(font) > 0:
+        if not _valid_font(font):
+            print("  WARNING: existing NotoSansCJKsc-VF.ttf is not a valid font; re-downloading", file=sys.stderr)
+            os.unlink(font)
         else:
-            # Baseline an unknown-but-valid file so future drift is caught.
-            with open(sidecar, "w") as file:
-                file.write(actual + "\n")
-            print(f"  Recorded NotoSansCJKsc-VF.ttf baseline sha256 sidecar: {actual}")
-    if not have_font:
+            _verify_font_checksum(font)
+    if not (os.path.isfile(font) and os.path.getsize(font) > 0):
         print(f"Downloading NotoSansCJKsc-VF.ttf from {noto_cjk_font_url()}...")
         download_with_progress(noto_cjk_font_url(), font)
         if not _valid_font(font):
             os.unlink(font)
             raise RuntimeError("Downloaded NotoSansCJKsc-VF.ttf is not a valid font; refusing to keep it")
-        actual = _sha256_of(font)
-        if NOTO_CJK_FONT_SHA256:
-            if actual != NOTO_CJK_FONT_SHA256:
-                os.unlink(font)
-                raise RuntimeError(f"NotoSansCJKsc-VF.ttf checksum mismatch (got {actual}, pinned {NOTO_CJK_FONT_SHA256})")
-        elif os.path.isfile(sidecar):
-            expected = open(sidecar).read().strip().split()[0]
-            if actual != expected:
-                os.unlink(font)
-                raise RuntimeError(f"NotoSansCJKsc-VF.ttf checksum changed vs recorded {expected} (got {actual})")
-        else:
-            with open(sidecar, "w") as file:
-                file.write(actual + "\n")
-            print(f"  >>> PIN THIS HASH in download_deps.py NOTO_CJK_FONT_SHA256: {actual}")
+        _verify_font_checksum(font)
     print("  ✓ NotoSansCJKsc-VF.ttf ready")
 
     # Download the Go DeepDoc `.ort` weights so this script is a one-stop for a
