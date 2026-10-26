@@ -463,10 +463,24 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		common.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
-			common.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
-		} else {
-			common.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
+			// Abort the upsert instead of inserting on top of rows the delete
+			// failed to remove. Infinity has no id uniqueness (see the comment
+			// above), so a failed delete followed by a successful insert leaves
+			// BOTH the stale and the new rows for the same id — the search then
+			// returns duplicate chunks. Returning the error lets the caller
+			// (ingestion pipeline) retry the batch; the insert is idempotent by
+			// chunk id, so a retry deletes+inserts cleanly. The previous
+			// Warn-and-continue silently produced duplicate rows with no signal.
+			common.Warn("Infinity delete-before-insert failed; aborting insert to avoid duplicate rows",
+				zap.String("tableName", tableName),
+				zap.Int("rows", len(insertChunks)),
+				zap.Error(delErr))
+			if isConnectionLevelError(delErr) {
+				e.client.dropConnectionFor(db, "InsertChunks")
+			}
+			return nil, fmt.Errorf("failed to delete existing rows before insert: %w", delErr)
 		}
+		common.Info(fmt.Sprintf("Deleted %d existing rows", delResp.DeletedRows))
 	}
 
 	// Insert chunks to dataset
