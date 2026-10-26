@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
@@ -54,11 +55,11 @@ type recordingTaskPublisher struct {
 }
 
 func documentTestContext(ctx context.Context) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{TenantID: "tenant-1"})
+	return permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 }
 
 func documentTestContextFor(ctx context.Context, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{TenantID: tenantID})
+	return permission.WithSubject(ctx, permission.Subject{UserID: tenantID, TenantID: tenantID})
 }
 
 func documentTestActorContext(ctx context.Context, userID, tenantID string) context.Context {
@@ -666,6 +667,9 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	var owner entity.UserTenant
 	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", string(entity.StatusValid)).First(&owner).Error
 	if err == nil {
+		if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+			t.Fatalf("prepare document owner permission fixture: %v", err)
+		}
 		return
 	}
 	if !dao.IsNotFoundErr(err) {
@@ -682,6 +686,9 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Create(&owner).Error; err != nil {
 		t.Fatalf("insert test tenant owner: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare document owner permission fixture: %v", err)
 	}
 }
 
@@ -1066,12 +1073,13 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 }
 
 func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
-	ctx := t.Context()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	ctx := documentTestContext(t.Context())
 
 	kb := entity.Knowledgebase{
-		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive", CreatedBy: "user-1",
 	}
 	if err := db.Create(&kb).Error; err != nil {
 		t.Fatalf("create dataset: %v", err)
@@ -1347,6 +1355,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			UserID:   userID,
 			TenantID: tenantID,
 			Role:     "owner",
+			Status:   sptr(entity.TenantMembershipStatusJoined),
 			LLMID:    "llm-default",
 			EmbdID:   "embd-default",
 			ASRID:    "asr-default",
@@ -1359,6 +1368,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
 		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
 		t.Fatalf("set test owner model defaults: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 }
 
@@ -1678,7 +1690,7 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
@@ -1873,7 +1885,7 @@ func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
@@ -2741,12 +2753,14 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 
 	// A member of the dataset's tenant reads it too.
 	seedDocumentPreviewMemberAccess(t, db)
-	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev"); err != nil {
+	memberCtx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
+	if _, err = svc.GetDocumentPreview(memberCtx, "user-2", "doc-prev"); err != nil {
 		t.Fatalf("team member preview: %v", err)
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
-	_, err = svc.GetDocumentPreview(ctx, "user-3", "doc-prev")
+	strangerCtx := documentTestActorContext(t.Context(), "user-3", "tenant-1")
+	_, err = svc.GetDocumentPreview(strangerCtx, "user-3", "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2863,11 +2877,15 @@ func TestDownloadDocument_DatabaseErrorIsNotNotFound(t *testing.T) {
 func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	ensureTestTenantOwner(t, "user-1", "tenant-1")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-2"); err != nil {
+		t.Fatalf("prepare non-owner permission fixture: %v", err)
+	}
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 
 	svc := testDocumentService(t)
-	ctx := documentTestContext(t.Context())
+	ctx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
 	_, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
@@ -4710,14 +4728,14 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 }
 
 func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
-	ctx := documentTestContextFor(t.Context(), "owner-1")
+	ctx := documentTestActorContext(t.Context(), "user-1", "owner-1")
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
 	thumbnail := "thumbnail.png"
 	if err := db.Create(&entity.Document{
 		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
-		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "user-1",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

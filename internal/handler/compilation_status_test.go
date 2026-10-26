@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -48,6 +50,7 @@ func setupCompilationStatusHandlerDB(t *testing.T) *gorm.DB {
 		&entity.KnowledgeCompileBacklog{},
 		&entity.KnowledgeCompileInflight{},
 		&entity.UserTenant{},
+		&entity.User{},
 	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
@@ -83,6 +86,9 @@ func insertCompilationStatusHandlerKB(t *testing.T, kbID, ownerID string) {
 	}).Error; err != nil {
 		t.Fatalf("insert tenant owner: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, ownerID, ownerID); err != nil {
+		t.Fatalf("prepare compilation permission fixture: %v", err)
+	}
 }
 
 func newCompilationStatusHandlerRouter() *gin.Engine {
@@ -91,6 +97,7 @@ func newCompilationStatusHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/compilation/status", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 		h.GetCompilationStatus(c)
 	})
 	return r
@@ -207,11 +214,12 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 // dataset is rejected with the standardized forbidden response.
 func TestCompilationStatusHandler_Unauthorized(t *testing.T) {
 	db := setupCompilationStatusHandlerDB(t)
-	// KB is owned by user-1; the router sets user to user-1, so this test must
-	// exercise the case where the KB belongs to a different owner. We insert the
-	// KB under a different owner tenant than the request user by re-pointing the
-	// KB owner to "other-owner".
+	// Keep the dataset in another tenant so this test exercises a real
+	// cross-tenant denial.
 	insertCompilationStatusHandlerKB(t, "kb-status-forbidden", "other-owner")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "other-owner", "other-owner"); err != nil {
+		t.Fatalf("prepare dataset tenant permission fixture: %v", err)
+	}
 	if err := db.Create(&entity.KnowledgeCompileDataset{
 		DatasetID: "kb-status-forbidden",
 		TenantID:  "other-owner",

@@ -16,6 +16,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -100,6 +102,9 @@ func newProviderHandlerRequest(t *testing.T, body map[string]interface{}, params
 	ctx.Request = req
 	ctx.Params = params
 	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
 	return ctx, recorder
 }
 
@@ -306,6 +311,9 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 	db := setupProviderHandlerTestDB(t)
 	useProviderHandlerTestDB(t, db)
 	seedProviderHandlerModel(t, db)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
 
 	ctx, recorder := newProviderHandlerRequest(
 		t,

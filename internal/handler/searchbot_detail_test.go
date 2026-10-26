@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -116,6 +117,9 @@ func TestSearchbotDetailSuccess(t *testing.T) {
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create search: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "tenant-1", "tenant-1"); err != nil {
+		t.Fatalf("prepare search permission fixture: %v", err)
 	}
 
 	r := newSearchbotDetailRouter()
@@ -252,6 +256,11 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create search: %v", err)
+	}
+	for tenantID, memberID := range map[string]string{"tenant-1": "tenant-1", "user-2": "user-2"} {
+		if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberID); err != nil {
+			t.Fatalf("prepare search permission fixture for tenant %s: %v", tenantID, err)
+		}
 	}
 
 	r := newSearchbotDetailRouter()

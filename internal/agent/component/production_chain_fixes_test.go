@@ -41,6 +41,8 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 type codeExecSandboxRecorder struct {
@@ -247,6 +249,9 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
@@ -270,7 +275,9 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
 		t.Fatalf("query = %q, want diamond necklace", got)
@@ -309,6 +316,9 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
@@ -336,7 +346,9 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(t.Context(), state), db, merged)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
 		t.Fatalf("query = %q, want 合同", got)
@@ -377,8 +389,12 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 	}
 
 	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "tenant-1"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := runtime.WithState(t.Context(), state)
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "tenant-1", TenantID: "tenant-1"})
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "tenant-1"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
@@ -425,10 +441,13 @@ func TestRetrieval_ResolveDatasetIDByUserPermission(t *testing.T) {
 			if err := db.Create(&memberships).Error; err != nil {
 				t.Fatalf("failed to seed memberships: %v", err)
 			}
+			if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+				t.Fatalf("prepare permission fixture: %v", err)
+			}
 
 			state := runtime.NewCanvasState("run-1", "task-1")
 			state.Sys["user_id"] = "member"
-			ctx := runtime.WithState(t.Context(), state)
+			ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
 			if got := resolveRetrievalDatasetID(ctx, db, "named-dataset"); got != tc.wantID {
 				t.Fatalf("resolveRetrievalDatasetID = %q, want %q", got, tc.wantID)
 			}
