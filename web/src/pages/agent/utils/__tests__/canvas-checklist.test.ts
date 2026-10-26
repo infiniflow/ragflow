@@ -796,6 +796,23 @@ describe('collectCanvasIssues: stale resources', () => {
     );
   });
 
+  it('accepts a decision model for Categorize while keeping Agent chat-only', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Categorize:c1', 'Categorize', { llm_id: 'decision-model' }),
+        makeNode('Agent:a1', 'Agent', { llm_id: 'decision-model' }),
+      ],
+      modelValidIds: new Set(['chat-model']),
+      categorizeModelValidIds: new Set(['chat-model', 'decision-model']),
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'common.modelUnavailable'),
+    ).toEqual([
+      expect.objectContaining({ nodeId: 'Agent:a1', blocksRun: true }),
+    ]);
+  });
+
   it('flags a stale dataset on a Retrieval node', () => {
     const issues = collect({
       nodes: [

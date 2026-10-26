@@ -76,19 +76,21 @@ Connect **Begin → Loop → Message**. Inside Loop, connect its start node to *
 4. Set the outer Message to `Loop completed`. Save and click **Run** to start the workflow. The run results should show three executions of Variable assigner, followed by Loop completed.
 
 ## Categorize Component
-Categorize uses LLM to judge user intent or input category and branch the workflow based on classification results.
+Categorize uses a chat model or a SystemOne decision model to judge user intent or input category and branch the workflow based on classification results.
 
 ### Configuration Method
-1. Select the input in **Query variables**, usually `sys.query`.
-2. Select **Model**.
-3. Set **Message window size**. The panel defaults to `1`.
-4. Click **Add category** and enter a name, **Description**, and **Examples**.
+1. Select content to classify in **Query variables**, usually `sys.query`.
+2. Select **Model**, a chat model or an added SystemOne decision model.
+3. Set **Message window size**. Keep default 1 for single-turn classification.
+4. Click **Add category** and enter a **Name**, **Description**, and **Examples**.
 5. Connect each category to its downstream component on the canvas.
 
 The output `category_name` contains the selected category name.
 
 ### Classification Recommendations
 For workflows that route inputs to different paths, configure two or more categories. Use easy-to-understand category names, such as Product Consultation, Installation Reservation, After-sales Fault, and Other Questions. Examples improve classification stability; provide two or three typical samples for each category.
+
+With a SystemOne decision model, Categorize scores each category with a probability question and selects the highest-scoring category. Requests contain up to 16 categories each, with a 30-second timeout for the whole classification. Ties use category order; if every score is zero, the configured default category is selected (or the first category when no default is set). Model errors stop the node. Output scores remain 1 for the selected category and 0 for the others.
 
 ![Question Classification Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/question_classification_component.jpg)
 
