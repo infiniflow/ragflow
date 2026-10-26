@@ -430,9 +430,9 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 	var result struct {
 		ID      string `json:"id"`
 		Content []struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
+			Type     string         `json:"type"`
+			Text     string         `json:"text"`
+			Thinking string         `json:"thinking"`
 			ID       string         `json:"id"`
 			Name     string         `json:"name"`
 			Input    map[string]any `json:"input"`
