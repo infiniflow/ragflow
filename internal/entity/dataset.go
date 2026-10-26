@@ -141,6 +141,7 @@ type Knowledgebase struct {
 	SessionGraphTaskFinishAt     *time.Time `gorm:"column:session_graph_task_finish_at" json:"session_graph_task_finish_at,omitempty"`
 	SessionEssenceTaskID         *string    `gorm:"column:session_essence_task_id;size:32;index" json:"session_essence_task_id,omitempty"`
 	SessionEssenceTaskFinishAt   *time.Time `gorm:"column:session_essence_task_finish_at" json:"session_essence_task_finish_at,omitempty"`
+	OperatorPermission           int32      `gorm:"-" json:"operator_permission,omitempty"`
 	Status                       *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }

@@ -25,6 +25,7 @@ import {
   RetrievalFrom,
   VariableRegex,
 } from '../constant';
+import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-form';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
 import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
@@ -52,6 +53,7 @@ export type CanvasIssue = {
   type: CanvasIssueType;
   messageKey: string;
   messageParams?: Record<string, string>;
+  blocksRun?: boolean;
 };
 
 export type CanvasChecklistInputs = {
@@ -393,6 +395,36 @@ function findToolCanvasNode(
   return toolNodeId ? nodeMap.get(toolNodeId) : undefined;
 }
 
+function collectSearchFilterIssues(
+  params: Record<string, any> | undefined,
+  target: IssueTarget,
+): CanvasIssue[] {
+  const incomplete = [
+    'include_domains',
+    'exclude_domains',
+    'site_include',
+    'site_exclude',
+    'country_include',
+    'language_include',
+  ].some(
+    (field) =>
+      Array.isArray(params?.[field]) &&
+      params[field].some(
+        (value: unknown) => typeof value !== 'string' || !value.trim(),
+      ),
+  );
+  return incomplete
+    ? [
+        {
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.nodeFormInvalid',
+          blocksRun: true,
+        },
+      ]
+    : [];
+}
+
 export function collectCanvasIssues({
   nodes,
   edges,
@@ -503,11 +535,186 @@ export function collectCanvasIssues({
       });
     }
 
-    if (label === Operator.Message && isEmptyMessageContent(form?.content)) {
+    if (
+      label === Operator.Message &&
+      isEmptyMessageContent(form && 'text' in form ? form.text : form?.content)
+    ) {
       issues.push({
         ...target,
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.messageMsg',
+        blocksRun: true,
+      });
+    }
+
+    issues.push(...collectSearchFilterIssues(form, target));
+
+    if (
+      label === Operator.UserFillUp &&
+      Object.values(form?.inputs ?? {}).some(
+        (input: any) =>
+          Array.isArray(input?.options) &&
+          input.options.some(
+            (option: unknown) => typeof option === 'string' && !option.trim(),
+          ),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.inputOptionsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (label === Operator.DataOperations) {
+      const blank = (value: unknown) =>
+        value == null || (typeof value === 'string' && !value.trim());
+      const incompleteKeys = ['select_keys', 'remove_keys'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            blank(typeof row === 'string' ? row : row?.name),
+          ),
+      );
+      const requiredFields: Record<string, string[]> = {
+        updates: ['key', 'value'],
+        rename_keys: ['old_key', 'new_key'],
+        filter_values: ['key', 'operator', 'value'],
+      };
+      const incompleteRows = Object.entries(requiredFields).some(
+        ([field, required]) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            required.some((key) => blank(row?.[key])),
+          ),
+      );
+      if (incompleteKeys || incompleteRows) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.dataOperationsEntriesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
+    if (label === Operator.Invoke && Array.isArray(form?.variables)) {
+      const nonblank = (value: unknown) =>
+        typeof value === 'string' && value.trim().length > 0;
+      if (
+        form.variables.some(
+          (row: any) =>
+            !nonblank(row?.key) ||
+            (!nonblank(row?.ref) &&
+              (row?.value == null ||
+                (typeof row.value === 'string' && !nonblank(row.value)))),
+        )
+      ) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.invokeVariablesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
+    if (
+      label === Operator.Loop &&
+      (form?.loop_variables?.some(
+        (row: Record<string, any>) => !row?.variable?.trim(),
+      ) ||
+        form?.loop_termination_condition?.some(
+          (row: Record<string, any>) =>
+            !row?.variable?.trim() ||
+            !row?.operator?.trim() ||
+            row.value == null ||
+            (typeof row.value === 'string' && !row.value.trim()),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.loopRowsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.Iteration &&
+      Object.entries(form?.outputs ?? {}).some(
+        ([name, output]) =>
+          !name.trim() ||
+          typeof (output as Record<string, unknown>)?.ref !== 'string' ||
+          !(output as Record<string, string>).ref.trim(),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.iterationOutputsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.ExeSQL &&
+      !ExeSQLFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      ['delimiters', 'children_delimiters'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((entry: unknown) => {
+            const value =
+              entry && typeof entry === 'object' && 'value' in entry
+                ? entry.value
+                : entry;
+            return typeof value !== 'string' || value === '';
+          }),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.VariableAggregator &&
+      (!Array.isArray(form?.groups) ||
+        form.groups.length === 0 ||
+        form.groups.some(
+          (group: any) =>
+            typeof group?.group_name !== 'string' ||
+            !group.group_name.trim() ||
+            !Array.isArray(group.variables) ||
+            group.variables.length === 0 ||
+            group.variables.some((variable: any) => {
+              const value =
+                typeof variable === 'string' ? variable : variable?.value;
+              return (
+                typeof value !== 'string' || !value.replace(/[{}]/g, '').trim()
+              );
+            }),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.aggregationIncomplete',
+        blocksRun: true,
       });
     }
 
@@ -529,13 +736,23 @@ export function collectCanvasIssues({
     }
 
     if (label === Operator.Agent) {
+      if (hasIncompleteAgentTools(form?.tools)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.agentToolsMissing',
+          blocksRun: true,
+        });
+      }
       // Not gated on editedNodeFormIds: a canvas loaded from storage with an
       // empty model must flag on the very next render, not only after edits.
-      if (!form?.llm_id) {
+      const modelRef = form?.model_id ?? form?.llm_id;
+      if (typeof modelRef !== 'string' || !modelRef.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'flow.agentModelMissing',
+          blocksRun: true,
         });
       }
       if (Array.isArray(form?.tools)) {
@@ -545,9 +762,6 @@ export function collectCanvasIssues({
           const needsApiKey = ApiKeyRequiredOperators.includes(
             tool?.component_name,
           );
-          if (!isRetrieval && !needsApiKey) {
-            continue;
-          }
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool
@@ -560,6 +774,7 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
+          issues.push(...collectSearchFilterIssues(tool?.params, toolTarget));
           if (isRetrieval) {
             issues.push(
               ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
@@ -629,13 +844,16 @@ export function collectCanvasIssues({
       // Same always-on policy as the Agent model check: an empty operator
       // must flag on load, not only after edits.
       const groupId = form?.compilation_template_group_id;
-      if (!groupId) {
+      if (!form?.compilation_template_id?.trim() && !groupId?.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+          blocksRun: true,
         });
       } else if (
+        !form?.compilation_template_id?.trim() &&
+        groupId &&
         compilationTemplateGroupIds &&
         !compilationTemplateGroupIds.has(groupId)
       ) {
@@ -689,14 +907,15 @@ export function collectCanvasIssues({
 
     if (
       modelValidIds &&
-      typeof form?.llm_id === 'string' &&
-      form.llm_id &&
-      !modelValidIds.has(form.llm_id)
+      typeof (form?.model_id ?? form?.llm_id) === 'string' &&
+      (form?.model_id ?? form?.llm_id) &&
+      !modelValidIds.has(form?.model_id ?? form?.llm_id)
     ) {
       issues.push({
         ...target,
         type: CanvasIssueType.InvalidVariable,
         messageKey: 'common.modelUnavailable',
+        blocksRun: label === Operator.Agent,
       });
     }
 
@@ -704,4 +923,20 @@ export function collectCanvasIssues({
   }
 
   return issues;
+}
+
+function hasIncompleteAgentTools(tools: unknown): boolean {
+  if (!Array.isArray(tools)) return tools != null;
+  return tools.some((tool) => {
+    if (typeof tool === 'string') return !tool.trim();
+    if (!tool || typeof tool !== 'object') return true;
+    const name = [tool.component_name, tool.tool_name, tool.name].find(
+      (value) => typeof value === 'string' && value.trim(),
+    );
+    return (
+      !name ||
+      (name.toLowerCase() === 'agent' &&
+        hasIncompleteAgentTools(tool.params?.tools))
+    );
+  });
 }

@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -41,6 +42,14 @@ const componentNameExeSQL = "ExeSQL"
 
 func newToolComponentFactory(componentName, toolName string) Factory {
 	return func(params map[string]any) (Component, error) {
+		if componentName == componentNameExeSQL {
+			if err := validateExeSQLParams(params, false); err != nil {
+				if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
+					return nil, fmt.Errorf("%s: %w", componentName, err)
+				}
+				return nil, runtime.NewUserFacingError(fmt.Sprintf("%s: %s", componentName, err))
+			}
+		}
 		base, err := agenttool.BuildByName(toolName, params)
 		if err != nil {
 			return nil, err

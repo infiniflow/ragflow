@@ -372,6 +372,12 @@ export default {
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
       fileTypeUnsupportedManualSwitch:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
+      fileTypeVideoUnsupported:
+        '{{name}}（{{fileType}}）：视频文件暂不支持解析',
+      videoUnsupportedAfterUploadHint:
+        '可继续上传，但视频文件暂不支持解析，上传后不会被处理。',
+      videoUnsupportedParseHint:
+        '视频文件暂不支持解析，请删除该文件或转换为受支持的格式。',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       manualSwitchAfterUploadHint:
@@ -432,6 +438,8 @@ export default {
       applyAutoMetadataSettings: '应用全局自动元数据设置',
       parseFileTip: '您确定要解析吗？',
       clearChunksReparseTip: '您确定要清空分块重新解析吗？',
+      parserConfigReparseTip:
+        '现有分块由之前的解析设置生成。是否清空现有分块，并使用已保存的设置重新解析此文档？',
       parseFile: '解析文件',
       emptyMetadata: '无元数据',
       localUpload: '本地上传',
@@ -497,7 +505,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
       action: '操作',
@@ -697,9 +705,11 @@ export default {
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方式',
+      parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      parserSettingsChangeWarning:
+        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -720,8 +730,6 @@ export default {
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
         '建议的生成文本块的 Token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
       chinese: '中文',
@@ -1030,6 +1038,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       model: '模型',
       modelTip: '大语言聊天模型',
+      tokensSpent:
+        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+      turnElapsed: '耗时 {{seconds}}s',
+      decisionModel: '决策模型',
+      decisionModelTip:
+        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
@@ -1070,6 +1084,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
+      agenticTemplate: 'Agentic 模板',
+      agenticTemplateTip:
+        'Agentic RAG 运行时使用的系统模板。编辑后为当前助手覆盖默认模板，可一键重置恢复。',
+      agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
+      resetToDefault: '重置为默认',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1197,8 +1218,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '语言',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
@@ -1798,6 +1817,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       models: '模型',
       chatModel: 'LLM',
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
+      decisionModel: '决策模型',
+      decisionModelTip:
+        '用于判断检索到的片段是否值得展示给聊天模型。留空则不启用该判定。',
       ttsModel: 'TTS',
       ttsModelTip:
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
@@ -2979,7 +3001,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       userPrompt: '用户提示词',
       tagFile: '标签文件',
       tagFileTip:
-        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签文件支持 XLSX、XLS、CSV、TXT 格式，每行包含文本和标签两列，多个标签用英文逗号分隔，无需表头。标签提取可能产生额外的 Token 消耗。提取失败时，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3106,6 +3128,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       checklist: '检查清单',
       checklistEmpty: '未发现问题',
       checklistTitle: '以下问题可能影响运行或发布',
+      loopRowsIncomplete: '请完善循环变量和终止条件',
+      iterationOutputsIncomplete: '请完善迭代输出名称和引用',
       issueNotConnected: '该步骤未与任何算子连接',
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
@@ -3278,6 +3302,20 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
+        endpoint: '接口地址',
+        testEndpoint: '测试接口地址',
+        personalUrl: '个人 Webhook URL',
+        credentialDescription:
+          '持有此链接即可按你的权限运行 Agent，请妥善保管；重新生成会使旧链接失效。',
+        createCredential: '生成或轮换 URL',
+        revokeCredential: '撤销我的 URL',
+        credentialCreated:
+          'Webhook URL 已生成，请立即复制保存；离开页面后将无法再次查看。',
+        credentialRevoked: 'Webhook URL 已撤销。',
+        credentialRequestFailed: '更新 Webhook URL 失败。',
+        revokeCredentialTitle: '撤销 Webhook URL？',
+        revokeCredentialDescription:
+          '使用此 URL 的请求将立即失效。你可以随时重新生成 URL。',
         methods: '方法',
         contentTypes: '内容类型',
         security: '安全配置',

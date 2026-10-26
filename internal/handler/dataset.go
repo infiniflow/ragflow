@@ -268,9 +268,13 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	if tenantID == "" {
+		tenantID = user.ID
+	}
 	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
 		UserID:   user.ID,
-		TenantID: user.ID,
+		TenantID: tenantID,
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -723,9 +727,13 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	if tenantID == "" {
+		tenantID = user.ID
+	}
 	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
 		UserID:   user.ID,
-		TenantID: user.ID,
+		TenantID: tenantID,
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())

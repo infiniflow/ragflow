@@ -16,8 +16,15 @@
 
 package admin
 
-import "context"
+import (
+	"context"
+	"ragflow/internal/common"
+)
 
 func InitLicense(ctx context.Context) error {
 	return nil
+}
+
+func AppendServiceList(serviceInfos []*common.BaseMessage) []*common.BaseMessage {
+	return serviceInfos
 }

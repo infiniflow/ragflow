@@ -556,6 +556,13 @@ type snippetHit struct {
 // attributes incl. rank/score, one <match_snippet> per chunk). Roots differ
 // from list_chunks' <chunks> by design: these are triage views, not deep reads.
 func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snippetHit, notices ...string) string {
+	// The second (opt-in) sufficiency exit. Like formatChunksXML this runs
+	// BEFORE the passages are stamped, so a hit the filter drops never consumes
+	// an [ID:n] handle. Off by default, and scoped by TOOL rather than applied
+	// to every renderer: a locate hit is also how the model learns a document
+	// exists, and only the corpus-passage tools can pay for that (see
+	// snippetFilterTools).
+	hits = filterSnippetHits(ctx, tool, hits)
 	// Single serve point for every locate tool: one debug line per served chunk
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
@@ -572,17 +579,29 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	}
 	truncatedHits := 0
 	previewHits := 0
+	repeatHits := 0
 	for i, h := range hits {
 		c := h.chunk
 		refAttr := ""
 		sourceAttr := ""
+		repeat := false
 		if h.web {
 			if ref := reg.StampWebResult(WebResult{Title: c.DocumentName, URL: c.URL, Content: c.Content}); ref >= 0 {
 				refAttr = fmt.Sprintf(` ref="%d"`, ref)
 			}
 			sourceAttr = fmt.Sprintf(` source="web" url="%s"`, xmlEscape(c.URL))
 		} else {
-			refAttr = refAttrOf(reg, c.ID)
+			// Keyed on the snippet TEXT, not the chunk id: a locate tool renders
+			// a window around the query terms, so a later query legitimately
+			// yields a different window on the same chunk, and that is new text.
+			n, first := reg.ServeText(c.ID, h.snippet)
+			if n >= 0 {
+				refAttr = fmt.Sprintf(` ref="%d"`, n)
+			}
+			repeat = serveOnceEnabled() && n >= 0 && !first && h.snippet != ""
+			if repeat {
+				repeatHits++
+			}
 		}
 		truncatedAttr := ""
 		if h.truncated {
@@ -594,17 +613,28 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			matchAttr = ` match="none"`
 			previewHits++
 		}
+		repeatAttr := ""
+		if repeat {
+			repeatAttr = ` repeat="true"`
+		}
 		b.WriteString(fmt.Sprintf(
-			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s%s>\n",
+			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s%s%s>\n",
 			i+1,
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
 			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), c.Score,
-			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr, sourceAttr,
+			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr, sourceAttr, repeatAttr,
 		))
-		if h.snippet != "" {
+		if h.snippet != "" && !repeat {
 			b.WriteString(fmt.Sprintf("<match_snippet>%s</match_snippet>\n", xmlEscape(h.snippet)))
 		}
 		b.WriteString("</chunk>\n")
+	}
+	if repeatHits > 0 {
+		common.InfoCtx(ctx, "agentic_rag: serve-once stubbed repeated snippets",
+			zap.Int("repeats", repeatHits), zap.Int("hits", len(hits)))
+		b.WriteString(fmt.Sprintf("<repeat_note>%d chunk(s) carry repeat=\"true\": that exact snippet was "+
+			"already returned earlier in this session under the same ref handle, so it is not repeated here. "+
+			"The passage is still citable by its ref.</repeat_note>\n", repeatHits))
 	}
 	if truncatedHits > 0 || previewHits > 0 {
 		// The model must not quote a fragment as if it were the document.
@@ -684,7 +714,17 @@ func dedupStrings(s []string) []string {
 // findings that must NOT abort the caller's turn (e.g. anchors that did not
 // resolve), so the model can see and judge them instead of losing the whole
 // ReAct turn to an error.
+//
+// It is also the one place the decision filter can run: this is the
+// single exit through which deep-read text becomes model-visible, so filtering
+// here covers every caller without a second hook.
 func formatChunksXML(ctx context.Context, docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
+	// Sufficiency filtering runs BEFORE the passages are stamped. The order is
+	// the whole point: a passage the filter drops must not consume an [ID:n]
+	// handle, or the model would hold a number for text it never saw. Filtering
+	// first also makes `fetched` keep its one invariant — it counts the <chunk>
+	// elements below it.
+	chunks = filterChunks(ctx, chunks)
 	// Deep-read passages are citable too: stamp the same [ID:n] handle the locate
 	// tools use, so a fact read from the full text can be cited.
 	reg := evidenceRegistryFrom(ctx)
@@ -694,18 +734,49 @@ func formatChunksXML(ctx context.Context, docID string, chunks []runtime.Retriev
 	if notice != "" {
 		b.WriteString(fmt.Sprintf("<notice>%s</notice>\n", xmlEscape(notice)))
 	}
+	repeats := 0
 	for _, c := range chunks {
+		n, first := reg.ServeText(c.ID, c.Content)
+		refAttr := ""
+		if n >= 0 {
+			refAttr = fmt.Sprintf(` ref="%d"`, n)
+		}
+		// A body the model already holds must not be re-sent. The handle is
+		// unchanged, so the earlier occurrence is what the stub names.
+		repeat := serveOnceEnabled() && n >= 0 && !first && c.Content != ""
+		repeatAttr := ""
+		if repeat {
+			repeatAttr = ` repeat="true"`
+			repeats++
+		}
+		// The deep-read twin of the locate serve log: records the text that
+		// actually reached the model (post-filter) and the handle it took.
+		logServedDeepRead(ctx, docID, c, refAttr)
 		b.WriteString(fmt.Sprintf(
-			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\"%s>\n",
+			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\"%s%s>\n",
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
-			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), refAttrOf(reg, c.ID)))
-		if c.Content != "" {
+			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), refAttr, repeatAttr))
+		if c.Content != "" && !repeat {
 			b.WriteString(fmt.Sprintf("<content>%s</content>\n", xmlEscape(c.Content)))
 		}
 		b.WriteString("</chunk>\n")
 	}
+	if repeats > 0 {
+		common.InfoCtx(ctx, "agentic_rag: serve-once stubbed repeated bodies",
+			zap.Int("repeats", repeats), zap.Int("chunks", len(chunks)))
+		b.WriteString(fmt.Sprintf("<repeat_note>%d chunk(s) carry repeat=\"true\": their text was already "+
+			"given earlier in this session under the same ref handle, so it is not repeated here. "+
+			"Read the earlier occurrence instead of fetching it again.</repeat_note>\n", repeats))
+	}
 	b.WriteString("</chunks>")
 	return b.String()
+}
+
+// serveOnceEnabled reports whether a passage body is emitted once per run
+// (RAGFLOW_AGENTIC_SERVE_ONCE). Off by default: a stub only saves tokens if the
+// model can tell it apart from a passage that was genuinely empty.
+func serveOnceEnabled() bool {
+	return envBoolDefault(common.EnvAgenticServeOnce, false)
 }
 
 // refAttrOf stamps a passage with its [ID:n] handle: ` ref="n"` when the run

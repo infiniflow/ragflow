@@ -1,11 +1,8 @@
 package parser
 
 import (
-	"fmt"
+	"context"
 	"strings"
-
-	"ragflow/internal/entity"
-	"ragflow/internal/parser/tableutil"
 )
 
 func pdfFileMeta(filename string, pageCount int) map[string]any {
@@ -19,56 +16,14 @@ func pdfFileMeta(filename string, pageCount int) map[string]any {
 	}
 }
 
-// markdownItemText renders a single parse item to markdown. A table uses the
-// structured TableData contract directly (rendered via RenderTableHTML); every
-// other item uses its text. Producers emit `table` for tables and never the
-// legacy HTML `text`, so a table-typed item without structured data is skipped
-// rather than falling back to a raw HTML string — the contract is "tables are
-// structured, not markup".
-func markdownItemText(item map[string]any) string {
-	if dt, _ := item["doc_type_kwd"].(string); dt == "table" {
-		if td, ok := item["table"].(*entity.TableData); ok && td != nil {
-			return tableutil.RenderTableHTML(td)
-		}
-		return ""
-	}
-	text, _ := item["text"].(string)
-	return text
-}
-
-func pdfItemsToResult(filename string, items []map[string]any, outputFormat string, pageCount int) ParseResult {
+func pdfItemsToResult(filename string, items []map[string]any, pageCount int) ParseResult {
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	pageCount = normalizePDFPageCount(pageCount, items)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		return ParseResult{
-			OutputFormat: "json",
-			File:         pdfFileMeta(filename, pageCount),
-			JSON:         MapsToItems(items),
-		}
-	case "markdown":
-		var b strings.Builder
-		for _, item := range items {
-			text := markdownItemText(item)
-			layout, _ := item["layout"].(string)
-			if strings.TrimSpace(text) == "" {
-				continue
-			}
-			if layout == "title" && !strings.HasPrefix(strings.TrimSpace(text), "#") {
-				b.WriteString("## ")
-			}
-			b.WriteString(text)
-			b.WriteString("\n\n")
-		}
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         pdfFileMeta(filename, pageCount),
-			Markdown:     strings.TrimRight(b.String(), "\n"),
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+	return ParseResult{
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -149,4 +104,8 @@ func rowsHaveText(rows [][]string) bool {
 		}
 	}
 	return false
+}
+
+func pdfMarkdownToResult(ctx context.Context, filename, markdown string, pageCount int) ParseResult {
+	return (&PDFParser{}).normalizePDFMarkdown(ctx, filename, markdown, pdfFileMeta(filename, pageCount))
 }

@@ -49,7 +49,6 @@ var ssrfAllowLoopback bool
 type MarkdownParser struct {
 	libType            string
 	ParseMethod        string
-	OutputFormat       string
 	VLM                map[string]any
 	FlattenMediaToText bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
@@ -77,9 +76,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 	if v, ok := setup["vlm"].(map[string]any); ok {
 		p.VLM = v
 	}
@@ -89,8 +85,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
-// returns a structured Markdown payload that mirrors the Python
-// parser's `output_format == "json"` shape. Each top-level block
+// returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
 // data is resolved and the item carries `doc_type_kwd: "image"` with
@@ -128,7 +123,6 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 		},
@@ -386,27 +380,26 @@ func markdownTableCells(line string) []string {
 //
 // Tables: a GFM/HTML table is rendered inline as a single <table> HTML
 // block by renderMarkdownTablesInlineText and kept as one HTML block.
-// It is emitted as ONE structured item (doc_type_kwd:"table",
-// ck_type:"table") in its original document position — there is no
+// It is emitted as ONE structured item (doc_type_kwd:"table")
+// in its original document position — there is no
 // duplicate doc_type_kwd:"text" copy. The downstream chunker consumes
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
-// (<div>, <style>, …) are emitted as ordinary text with no ck_type.
+// (<div>, <style>, …) are emitted as ordinary text with no layout.
 func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
 	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
-		var ckType string
+		var layout string
 		var docTypeKwd string
 		var txt string
 
 		switch n := child.(type) {
 		case *ast.Heading:
 			txt = headingText(n)
-			ckType = "heading"
+			layout = "heading"
 			docTypeKwd = "text"
 		case *ast.Paragraph:
 			txt = leafText(n)
-			ckType = "text"
 			docTypeKwd = "text"
 		case *ast.List:
 			// Python's _markdown keeps one item per list entry, marker included
@@ -420,21 +413,21 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				*out = append(*out, map[string]any{
 					"text":         entry,
 					"doc_type_kwd": "text",
-					"ck_type":      "list",
+					"layout":       "list",
 				})
 			}
 			continue
 		case *ast.CodeBlock:
 			txt = leafText(n)
-			ckType = "code"
+			layout = "code"
 			docTypeKwd = "text"
 		case *ast.HTMLBlock:
 			// An HTML block is either an inlined table (kept as a single
 			// HTML block thanks to the blank lines renderMarkdownTablesInline
 			// wraps around it) or a plain HTML block such as <div>/<style>.
 			// Only a table is emitted as a structured table item; everything
-			// else is treated as ordinary text (no ck_type). We emit exactly
-			// ONE item (doc_type_kwd:"table"/ck_type:"table") in document
+			// else is treated as ordinary text (no layout). We emit exactly
+			// ONE item (doc_type_kwd:"table") in document
 			// order — no duplicate doc_type_kwd:"text" copy — so the table is
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
@@ -447,13 +440,12 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				td, _ := tableutil.ParseTableHTML(txt)
 				table := map[string]any{
 					"doc_type_kwd": "table",
-					"ck_type":      "table",
 					"table":        td,
 				}
 				*out = append(*out, table)
 				continue
 			}
-			// Non-table HTML block: ordinary text, no ck_type.
+			// Non-table HTML block: ordinary text, no layout.
 			docTypeKwd = "text"
 		default:
 			txt = leafText(n)
@@ -467,8 +459,8 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			"text":         txt,
 			"doc_type_kwd": docTypeKwd,
 		}
-		if ckType != "" {
-			item["ck_type"] = ckType
+		if layout != "" {
+			item["layout"] = layout
 		}
 
 		// Resolve Markdown images from the AST node of THIS block only, so
@@ -487,20 +479,10 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				case !budget.reserveItem():
 					item["media_omitted"] = true
 				default:
-					encoded, raw, resolved := resolveImageURL(ctx, imgURL)
+					encoded, raw, size, resolved := resolveImageURL(ctx, imgURL)
 					if !resolved {
 						unresolvedImages++
 						break
-					}
-					size := len(raw)
-					if raw == nil {
-						encodedBytes := len(encoded) - strings.Count(encoded, "\r") - strings.Count(encoded, "\n")
-						decodedSize, ok := base64DecodedSize(encoded, encodedBytes)
-						if !ok {
-							unresolvedImages++
-							break
-						}
-						size = int(decodedSize)
 					}
 					if !budget.includeReservedSize(size) {
 						item["media_omitted"] = true
@@ -556,14 +538,14 @@ func findBlockImage(n ast.Node) (string, bool) {
 }
 
 // resolveImageURL resolves a Markdown image URL to an encoded payload or raw
-// bytes.
+// bytes plus the image size in bytes.
 // Supports:
-//   - data:image/... URIs → validated encoded payload
+//   - data:image/... URIs → validated, normalized encoded payload
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
 // Local / relative paths are not fetched (security). Returns
 // exactly one of encoded and raw populated on success.
-func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, ok bool) {
+func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, size int, ok bool) {
 	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
 		// data:image/png;base64,xxxx
 		idx := strings.Index(imageURL, "base64,")
@@ -571,23 +553,24 @@ func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw 
 			idx = strings.Index(strings.ToLower(imageURL), "base64,")
 		}
 		if idx < 0 {
-			return "", nil, false
+			return "", nil, 0, false
 		}
-		encoded = imageURL[idx+len("base64,"):]
-		if !validBase64ImagePayload(encoded, MaxImagePayloadBytes) {
-			return "", nil, false
+		var decodedSize int64
+		encoded, decodedSize, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		if !ok {
+			return "", nil, 0, false
 		}
-		return encoded, nil, true
+		return encoded, nil, int(decodedSize), true
 	}
 	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
 		raw, err := fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", nil, false
+			return "", nil, 0, false
 		}
-		return "", raw, true
+		return "", raw, len(raw), true
 	}
 	// Local / relative paths — not fetched for security.
-	return "", nil, false
+	return "", nil, 0, false
 }
 
 // fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses
@@ -719,7 +702,7 @@ func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
 
 // headingText returns a canonical ATX heading (marker plus inline text).
 // Keeping the marker in the parser payload preserves the Markdown structure
-// for GeneralChunker and downstream LLM prompts; ck_type alone does not carry
+// for GeneralChunker and downstream LLM prompts; layout alone does not carry
 // the heading level.
 func headingText(h *ast.Heading) string {
 	var buf bytes.Buffer

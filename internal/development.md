@@ -72,17 +72,17 @@ uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `ragflow_deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
+`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
-Build the Go resource image from `ragflow_deps/` after preparing these files:
+Build the Go resource image from `deps/` after preparing these files:
 
 ```shell
-cd ragflow_deps
+cd deps
 docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
 ```
 
-The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
+The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
@@ -193,7 +193,7 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 
 > **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
 > **link cache**, because a silently-stale `.a` is easy to miss:
-> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
+> - `check_onnxruntime_deps` compares the local release ZIP under `deps/`
 >   (`onnxruntime-v<ver>-<target>.zip`, e.g. `-linux-x86_64` / `-osx-arm64`)
 >   against the SHA-256 digest pinned in
 >   `build.sh`, without a network request. The downloader separately checks the
@@ -273,7 +273,7 @@ missing from the model directory.
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
+  weights first, then re-run `uv run deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 

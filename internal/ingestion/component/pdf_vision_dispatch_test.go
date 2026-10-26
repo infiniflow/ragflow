@@ -107,29 +107,16 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 
-	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+	if !resultMD.Produced() || len(resultMD.JSON) == 0 {
 		t.Fatalf("resultMD=%+v", resultMD)
-	}
-}
-
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
-	if result.OutputFormat != "markdown" {
-		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
-	}
-	if result.Markdown != "# Heading" {
-		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
-	}
-	if result.JSON != nil {
-		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
 	}
 }
 
@@ -164,7 +151,7 @@ func TestDispatchMonkeyOCRv2PDFUsesSelectedCompositeModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Markdown != "selected" {
+	if !result.Produced() || len(result.JSON) == 0 {
 		t.Fatalf("result=%+v", result)
 	}
 }
@@ -188,14 +175,12 @@ func TestDispatchPaddleOCRPDFUsesStructuredOutput(t *testing.T) {
 	resolvePaddleOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		return &paddleOCRFakeDriver{pages: []modelModule.OCRPage{{Index: 0, Blocks: []modelModule.OCRBlock{{Text: "# Heading\n\nBody"}}}}}, "ocr-model", &modelModule.APIConfig{}, nil
 	}
-	for _, format := range []string{"json", "markdown", ""} {
-		result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{"output_format": format}, "model")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result.OutputFormat != "json" || len(result.JSON) == 0 {
-			t.Fatalf("result=%+v", result)
-		}
+	result, err := dispatchPaddleOCRPdf(t.Context(), nil, "sample.pdf", nil, "tenant", schema.ParserSetup{}, "model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Produced() || len(result.JSON) == 0 {
+		t.Fatalf("result=%+v", result)
 	}
 }
 
@@ -212,8 +197,38 @@ func TestDispatchPaddleOCRPDFRejectsMissingBlocks(t *testing.T) {
 	if err == nil {
 		t.Fatalf("dispatchPaddleOCRPdf without page blocks: expected error, got result %+v", res)
 	}
-	if res.OutputFormat != "" || res.Markdown != "" {
+	if res.Produced() {
 		t.Errorf("expected zero-value result on error, got %+v", res)
+	}
+}
+
+func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		item        map[string]any
+		wantLayout  string
+		wantDocType string
+	}{
+		{"list", map[string]any{"type": "list", "list_items": []any{"a", "b"}}, "list", "text"},
+		{"code", map[string]any{"type": "code", "code_body": "x"}, "code", "text"},
+		{"title", map[string]any{"type": "title", "text": "T"}, "title", "text"},
+		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
+		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
+		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
+		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mineruContentItemToJSON(tc.item, nil)
+			if got == nil {
+				t.Fatal("item was dropped")
+			}
+			if got["layout"] != tc.wantLayout {
+				t.Errorf("layout = %v, want %q", got["layout"], tc.wantLayout)
+			}
+			if got["doc_type_kwd"] != tc.wantDocType {
+				t.Errorf("doc_type_kwd = %v, want %q", got["doc_type_kwd"], tc.wantDocType)
+			}
+		})
 	}
 }
 
@@ -322,7 +337,7 @@ func TestDispatchPaddleOCRPDFPreservesLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "json" || len(result.JSON) != 7 {
+	if !result.Produced() || len(result.JSON) != 7 {
 		t.Fatalf("result=%+v", result)
 	}
 	if result.JSON[0].ToMap()["positions"] == nil || result.JSON[2].ToMap()["table"] == nil {

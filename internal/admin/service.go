@@ -120,19 +120,6 @@ func (s *Service) Logout(ctx context.Context, user interface{}) error {
 	return nil
 }
 
-// ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
-}
-
-func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
-}
-
-func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
-}
-
 // GetUserByToken get user by access token
 func (s *Service) GetUserByToken(ctx context.Context, token string) (*entity.User, error) {
 	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, token)
@@ -278,13 +265,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     chatModel,
-		EmbdID:    embeddingModel,
-		ASRID:     asrModel,
-		Img2TxtID: vlmModel,
-		RerankID:  rerankModel,
-		TTSID:     ttsModel,
-		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
@@ -307,6 +287,13 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &userTenantStatus,
+		LLMID:     chatModel,
+		EmbdID:    embeddingModel,
+		ASRID:     asrModel,
+		Img2TxtID: vlmModel,
+		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 	}
 	if err = tx.Create(userTenant).Error; err != nil {
 		rollbackTx()
@@ -789,11 +776,12 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	results = append(results, s.GetEEServicesStatus(ctx)...)
 
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	for _, serverStatus := range serverList {
 		now := time.Now()
 		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
 		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
-		if now.Sub(serverStatus.Timestamp) < 45*time.Second {
+		if now.Sub(serverStatus.Timestamp) < 5*globalConfig.GetHeartbeatInterval() {
 			serverItem.Status = "alive"
 		} else {
 			serverItem.Status = "timeout"

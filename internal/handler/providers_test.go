@@ -33,7 +33,7 @@ func TestDropProviderInstanceRequestRequiresNonEmptyInstances(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var req DropProviderInstanceRequest
+			var req service.DropProviderInstanceRequest
 			if err := json.Unmarshal([]byte(tt.payload), &req); err != nil {
 				t.Fatal(err)
 			}
@@ -241,8 +241,8 @@ func TestValidateInstanceName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := validateInstanceName(tt.name); (err == nil) != tt.valid {
-				t.Fatalf("validateInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
+			if err := service.ValidateProviderInstanceName(tt.name); (err == nil) != tt.valid {
+				t.Fatalf("ValidateProviderInstanceName(%q) error = %v, valid = %v", tt.name, err, tt.valid)
 			}
 		})
 	}

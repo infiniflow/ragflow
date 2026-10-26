@@ -1565,9 +1565,12 @@ func (c *CLI) getMemoryIDByName(memoryName string) (string, error) {
 		return "", err
 	}
 	listMemoriesResponse, ok := response.(*ListMemoriesResponse)
-	memories := listMemoriesResponse.Data["memory_list"].([]interface{})
 	if !ok {
 		return "", fmt.Errorf("invalid response")
+	}
+	memories, ok := listMemoriesResponse.Data["memory_list"].([]interface{})
+	if !ok {
+		return "", fmt.Errorf("invalid memory_list in response")
 	}
 	for _, memory := range memories {
 		var memoryMap map[string]interface{}
