@@ -258,7 +258,7 @@ func pythonFamilyName(raw string) string {
 		return "doc"
 	case "docx":
 		return "docx"
-	case "ppt", "pptx", "slides":
+	case "ppt", "pptx", "pages", "dps", "dpt", "slides":
 		return "slides"
 	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"

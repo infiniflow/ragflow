@@ -1961,6 +1961,14 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 	return buf.Bytes()
 }
 
+func TestParserFileFamilyPresentationExtensions(t *testing.T) {
+	for _, ext := range []string{"ppt", "pptx", "pages", "dps", "dpt"} {
+		if got := ParserFileFamily(ext); got != "slides" {
+			t.Errorf("ParserFileFamily(%q) = %q, want slides", ext, got)
+		}
+	}
+}
+
 // TestPythonFamilyName_FileTypeConstants pins the contract that every
 // utility.FileType semantic constant resolves to the setups key used by
 // defaultSetups. Before the fix, FileTypeVISUAL mapped

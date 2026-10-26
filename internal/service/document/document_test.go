@@ -688,11 +688,20 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
 	t.Helper()
 	tenantID := "tenant-1"
+	dslJSON, err := service.LoadPipelineDSL(t.Context(), false, "general", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dsl entity.JSONMap
+	if err := json.Unmarshal(dslJSON, &dsl); err != nil {
+		t.Fatal(err)
+	}
 	if err := dao.DB.Create(&entity.UserCanvas{
 		ID:         canvasID,
 		UserID:     ownerID,
 		TenantID:   &tenantID,
 		Permission: string(entity.TenantPermissionMe),
+		DSL:        dsl,
 	}).Error; err != nil {
 		t.Fatalf("insert test canvas: %v", err)
 	}
@@ -3025,31 +3034,71 @@ func float64Ptr(value float64) *float64 { return &value }
 
 func int64Ptr(value int64) *int64 { return &value }
 
-func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "image.png", 0, 0)
-	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("type", "visual").Error; err != nil {
-		t.Fatalf("update doc type: %v", err)
-	}
+func TestUpdateDatasetDocumentSavesVisionModelAcrossFileTypes(t *testing.T) {
+	for _, file := range []struct {
+		name     string
+		docType  string
+		parserID string
+	}{
+		{"image.png", "visual", "general"},
+		{"deck.pptx", "ppt", "presentation"},
+		{"deck.pages", "doc", "presentation"},
+		{"DECK.DPS", "ppt", "presentation"},
+		{"deck.dpt", "ppt", "presentation"},
+		{"report.docx", "doc", "manual"},
+	} {
+		for _, selection := range []string{"parser_id", "chunk_method"} {
+			t.Run(file.name+"/"+selection, func(t *testing.T) {
+				db := setupServiceTestDB(t)
+				pushServiceDB(t, db)
+				insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+				insertNamedTestDoc(t, "doc-1", "kb-1", file.name, 0, 0)
+				if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("type", file.docType).Error; err != nil {
+					t.Fatalf("update doc type: %v", err)
+				}
 
-	parserID := "naive"
-	parseType := 1
-	svc := testDocumentService(t)
-	ctx := documentTestContext(t.Context())
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParserID:  &parserID,
-		ParseType: &parseType,
-	}, map[string]bool{"parser_id": true, "parse_type": true})
-	if err == nil {
-		t.Fatal("expected parser_id visual error")
-	}
-	if code != common.CodeDataError {
-		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
-	}
-	if err.Error() != "not supported yet" {
-		t.Fatalf("err = %q", err.Error())
+				req := &UpdateDatasetDocumentRequest{
+					ParserConfig: map[string]any{
+						"Parser:HipSignsRhyme": map[string]any{
+							"enable_vision_enhancement": true,
+							"vlm":                       map[string]any{"llm_id": "b17886e8ff3f4000bcf46f5b58c76803"},
+						},
+					},
+				}
+				present := map[string]bool{"parser_config": true, selection: true}
+				wantParser := file.parserID
+				if selection == "parser_id" {
+					req.ParseType = new(1)
+					req.ParserID = &file.parserID
+					req.PipelineID = new("")
+					present["parse_type"] = true
+					present["pipeline_id"] = true
+				} else {
+					req.ChunkMethod = &file.parserID
+				}
+				resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("save vision model: code=%v err=%v", code, err)
+				}
+				doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.ParserID != wantParser || doc.ParserID != wantParser {
+					t.Fatalf("parser selection: response=%q stored=%q, want %q", resp.ParserID, doc.ParserID, wantParser)
+				}
+				for _, config := range []map[string]any{resp.ParserConfig, doc.ParserConfig} {
+					parser, ok := config["Parser:HipSignsRhyme"].(map[string]any)
+					if !ok || parser["enable_vision_enhancement"] != true {
+						t.Fatalf("vision enhancement not saved: %#v", config)
+					}
+					vlm, ok := parser["vlm"].(map[string]any)
+					if !ok || vlm["llm_id"] != "b17886e8ff3f4000bcf46f5b58c76803" {
+						t.Fatalf("vision model not saved: %#v", parser)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -3143,7 +3192,7 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 			insertTestCanvas(t, pipelineID, "user-1")
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_duration", 42).Error; err != nil {
@@ -4091,7 +4140,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 
 	// Seed a prior canvas-backed document so the builtin transition must
 	// actively clear the persisted pipeline_id. Without this, a regression in
@@ -4189,19 +4238,11 @@ func TestUpdateDatasetDocumentParseTypePipelineRejectsParserID(t *testing.T) {
 	}
 }
 
-func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
-	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
-		"GeneralChunker:SixApplesFall": map[string]any{
-			"children_delimiters": []any{},
-		},
-	}).Error; err != nil {
-		t.Fatalf("seed document parser config: %v", err)
-	}
-
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	insertTestCanvas(t, pipelineID, "user-1")
