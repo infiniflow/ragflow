@@ -337,6 +337,44 @@ func TestXLSXParserImageAnchorDoesNotSplitMergedGroup(t *testing.T) {
 	}
 }
 
+// TestXLSXParserImageAnchorAtLastMergedRow covers the boundary where the merge
+// group ends on the last retained data row. The image cut must advance to
+// len(rows) and stop without indexing past the slice.
+func TestXLSXParserImageAnchorAtLastMergedRow(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Value")
+		mustSetCell(t, f, "Sheet1", "A2", "q2")
+		mustSetCell(t, f, "Sheet1", "B2", "a2")
+		mustMergeCell(t, f, "Sheet1", "B2", "B3")
+		mustSetCell(t, f, "Sheet1", "A3", "q3")
+		if err := f.AddPictureFromBytes("Sheet1", "A2", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "fig"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merge-anchor-last.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want table then image", len(items))
+	}
+	first := items[0]["table"].(*entity.TableData)
+	if len(first.Grid) != 3 {
+		t.Fatalf("first segment rows = %d, want header + two merged rows", len(first.Grid))
+	}
+	if first.Grid[1][1].RowSpan != 2 || !first.Grid[2][1].Covered {
+		t.Fatalf("last-row merge = %+v / %+v, want span ending on the last row", first.Grid[1][1], first.Grid[2][1])
+	}
+}
+
 // markupRows extracts the cell texts of every <tr> in rendered spreadsheet
 // markup, unescaped. It is a deliberately minimal test-local reader: these
 // tests assert the parser's rendered output, so the markup itself is the

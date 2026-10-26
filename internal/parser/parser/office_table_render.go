@@ -507,7 +507,7 @@ func cutAfterMergeGroup(cut int, rows []spreadsheetSegmentRow, ranges []mergeRan
 	if cut <= 0 || cut >= len(rows) {
 		return cut
 	}
-	for {
+	for cut < len(rows) {
 		moved := false
 		for _, m := range ranges {
 			if m.sr <= rows[cut-1].rowNum && m.er >= rows[cut].rowNum {
@@ -522,6 +522,7 @@ func cutAfterMergeGroup(cut int, rows []spreadsheetSegmentRow, ranges []mergeRan
 			return cut
 		}
 	}
+	return cut
 }
 
 // cutAfterRow returns the first row index whose absolute sheet row is greater
