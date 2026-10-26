@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
@@ -1133,14 +1135,23 @@ func TestAliyunTranscribeAudioUploadsFileAndSendsOSSURL(t *testing.T) {
 	if messages[1]["role"] != "user" {
 		t.Errorf("messages[1].role = %v, want user", messages[1]["role"])
 	}
-	wantURL := "oss://" + aliyunUploadTestDir + "/clip.wav"
-	if got := aliyunASRContentString(t, messages[1], "audio"); got != wantURL {
-		t.Errorf("audio = %q, want %q", got, wantURL)
+	audioURL := aliyunASRContentString(t, messages[1], "audio")
+	wantPrefix := "oss://" + aliyunUploadTestDir + "/"
+	if !strings.HasPrefix(audioURL, wantPrefix) || !strings.HasSuffix(audioURL, ".wav") {
+		t.Errorf("audio = %q, want %q<uuid>.wav", audioURL, wantPrefix)
 	}
 
 	upload := <-stub.Uploads
-	if upload.Name != "clip.wav" {
-		t.Errorf("uploaded file name = %q, want clip.wav", upload.Name)
+	key := upload.Fields["key"]
+	objectName := strings.TrimPrefix(key, aliyunUploadTestDir+"/")
+	if _, err := uuid.Parse(strings.TrimSuffix(objectName, filepath.Ext(objectName))); err != nil {
+		t.Errorf("uploaded object name = %q, want <uuid>.wav: %v", objectName, err)
+	}
+	if upload.Name != objectName {
+		t.Errorf("uploaded file name = %q, want %q", upload.Name, objectName)
+	}
+	if "oss://"+key != audioURL {
+		t.Errorf("audio url %q does not reference uploaded key %q", audioURL, key)
 	}
 	if !bytes.Equal(upload.Data, audio) {
 		t.Errorf("uploaded data = %q, want %q", upload.Data, audio)
@@ -1149,7 +1160,6 @@ func TestAliyunTranscribeAudioUploadsFileAndSendsOSSURL(t *testing.T) {
 		"OSSAccessKeyId":         "access-key",
 		"policy":                 "policy-value",
 		"Signature":              "signature-value",
-		"key":                    aliyunUploadTestDir + "/clip.wav",
 		"x-oss-object-acl":       "private",
 		"x-oss-forbid-overwrite": "true",
 		"success_action_status":  "200",
@@ -1186,7 +1196,7 @@ func TestAliyunTranscribeAudioHonorsContextAndASROptions(t *testing.T) {
 	)
 	apiKey := "test-key"
 	modelName := "qwen-asr-flash"
-	file := writeAliyunASRTestFile(t, "clip.mp3", []byte("ID3...."))
+	file := writeAliyunASRTestFile(t, "clip.MP3", []byte("ID3...."))
 
 	_, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, &ASRConfig{Params: map[string]interface{}{
 		"context":    "NAVI vs Faze",
@@ -1201,8 +1211,8 @@ func TestAliyunTranscribeAudioHonorsContextAndASROptions(t *testing.T) {
 	if got := aliyunASRContentString(t, messages[0], "text"); got != "NAVI vs Faze" {
 		t.Errorf("system text = %q, want NAVI vs Faze", got)
 	}
-	if got, want := aliyunASRContentString(t, messages[1], "audio"), "oss://"+aliyunUploadTestDir+"/clip.mp3"; got != want {
-		t.Errorf("audio = %q, want %q", got, want)
+	if got := aliyunASRContentString(t, messages[1], "audio"); !strings.HasPrefix(got, "oss://"+aliyunUploadTestDir+"/") || !strings.HasSuffix(got, ".mp3") {
+		t.Errorf("audio = %q, want oss://%s/<uuid>.mp3", got, aliyunUploadTestDir)
 	}
 	params, ok := body["parameters"].(map[string]interface{})
 	if !ok {
@@ -1388,5 +1398,37 @@ func TestAliyunTranscribeAudioWithSenderSendsSingleChunk(t *testing.T) {
 	}
 	if len(chunks) != 1 || chunks[0] != "transcribed" {
 		t.Fatalf("chunks = %v, want [transcribed]", chunks)
+	}
+}
+
+// TestAliyunUploadAudioNormalisesSchemelessUploadHost pins the upload-host
+// repair: a policy response whose upload_host lacks a scheme must be retried
+// against an explicit https:// target instead of failing with an opaque
+// "unsupported protocol scheme" from the HTTP client.
+func TestAliyunUploadAudioNormalisesSchemelessUploadHost(t *testing.T) {
+	withSSRFBypass(t)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == aliyunUploadsPath {
+			w.Header().Set("Content-Type", "application/json")
+			schemeless := strings.TrimPrefix(server.URL, "http://")
+			if _, err := fmt.Fprintf(w, `{"request_id":"req-policy","data":{"policy":"policy-value","signature":"signature-value","upload_dir":"dashscope-tmp","upload_host":%q,"oss_access_key_id":"access-key"}}`, schemeless+"/oss-upload"); err != nil {
+				t.Errorf("failed to write policy: %v", err)
+			}
+			return
+		}
+		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer server.Close()
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	_, err := model.uploadAudio(t.Context(), server.URL+"/"+aliyunASRTestSuffix, "test-key", "qwen-asr-flash", "clip.wav", []byte("data"))
+	if err == nil {
+		t.Fatal("upload must fail: the test server speaks plain http, not https")
+	}
+	if !strings.Contains(err.Error(), "https://"+strings.TrimPrefix(server.URL, "http://")) {
+		t.Errorf("error = %q, want it to name the normalised https:// upload target", err)
 	}
 }

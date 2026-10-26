@@ -30,6 +30,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"ragflow/internal/common"
 )
 
@@ -821,8 +823,12 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 		return "", fmt.Errorf("aliyun upload policy response is incomplete")
 	}
 
-	fileName := filepath.Base(filename)
-	objectKey := strings.TrimSuffix(data.UploadDir, "/") + "/" + fileName
+	// The object name lands inside an oss:// URL the provider later resolves,
+	// and a caller-supplied filename may contain characters (spaces, '#',
+	// non-ASCII) that URL cannot carry. A generated name keeps the extension,
+	// which is what the provider reads, and drops everything else.
+	objectName := uuid.NewString() + strings.ToLower(filepath.Ext(filename))
+	objectKey := strings.Trim(data.UploadDir, "/") + "/" + objectName
 	fields := [][2]string{
 		{"OSSAccessKeyId", data.OSSAccessKeyID},
 		{"policy", data.Policy},
@@ -846,7 +852,7 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 			return "", fmt.Errorf("write aliyun upload form field %s: %w", field[0], err)
 		}
 	}
-	part, err := writer.CreateFormFile("file", fileName)
+	part, err := writer.CreateFormFile("file", objectName)
 	if err != nil {
 		return "", fmt.Errorf("create aliyun upload file part: %w", err)
 	}
@@ -857,14 +863,18 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 		return "", fmt.Errorf("finish aliyun upload form: %w", err)
 	}
 
-	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, data.UploadHost, &form)
+	uploadHost := data.UploadHost
+	if !strings.Contains(uploadHost, "://") {
+		uploadHost = "https://" + uploadHost
+	}
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadHost, &form)
 	if err != nil {
-		return "", fmt.Errorf("create aliyun upload request: %w", err)
+		return "", fmt.Errorf("create aliyun upload request to %s: %w", uploadHost, err)
 	}
 	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
 	uploadResp, err := a.baseModel.httpClient.Do(uploadReq)
 	if err != nil {
-		return "", fmt.Errorf("upload audio to aliyun: %w", err)
+		return "", fmt.Errorf("upload audio to aliyun at %s: %w", uploadHost, err)
 	}
 	defer uploadResp.Body.Close()
 	if uploadResp.StatusCode < 200 || uploadResp.StatusCode >= 300 {
