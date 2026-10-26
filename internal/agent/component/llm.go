@@ -684,11 +684,26 @@ func (c *LLMComponent) Name() string { return "LLM" }
 
 const defaultLLMDeferredTimeout = 10 * time.Minute
 
+func (c *LLMComponent) hasStructuredOutput(inputs map[string]any) bool {
+	if c.param.JSONOutput || len(c.param.OutputStructure) > 0 {
+		return true
+	}
+	if v, ok := inputs["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+	}
+	if v, ok := inputs["output_structure"]; ok && v != nil {
+		return true
+	}
+	return false
+}
+
 // Invoke runs the LLM component. When the component directly precedes a
 // terminal Message node in the canvas, it returns a lazy DeferredStream closure
 // so that Message can stream deltas in real-time. Otherwise, it executes eagerly.
 func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferLLMToMessage {
+	if runtime.ComponentExecutionOptionsFromContext(ctx).DeferLLMToMessage && !c.hasStructuredOutput(inputs) {
 		timeout := defaultLLMDeferredTimeout
 		if deadline, ok := ctx.Deadline(); ok {
 			if remaining := time.Until(deadline); remaining > 0 {

@@ -286,6 +286,14 @@ func TestResolveComponentExecutionOptions(t *testing.T) {
 		wantOpts runtime.ComponentExecutionOptions
 	}{
 		{"LLM consuming via text", makeCanvas("LLM", []string{"m0"}, map[string]any{"text": "Ans: {root@content}"}), "LLM", runtime.ComponentExecutionOptions{DeferLLMToMessage: true}},
+		{"LLM with json_output disables deferral", &Canvas{Components: map[string]CanvasComponent{
+			"root": {Obj: CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{"json_output": true}}, Downstream: []string{"m0"}},
+			"m0":   {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "{root@content}"}}},
+		}}, "LLM", runtime.ComponentExecutionOptions{}},
+		{"LLM with output_structure disables deferral", &Canvas{Components: map[string]CanvasComponent{
+			"root": {Obj: CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{"output_structure": map[string]any{"key": "val"}}}, Downstream: []string{"m0"}},
+			"m0":   {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "{root@content}"}}},
+		}}, "LLM", runtime.ComponentExecutionOptions{}},
 		{"Generate consuming via content", makeCanvas("Generate", []string{"m0"}, map[string]any{"content": []any{"{{root@content}}"}}), "Generate", runtime.ComponentExecutionOptions{DeferLLMToMessage: true}},
 		{"LLM constant template", makeCanvas("LLM", []string{"m0"}, map[string]any{"text": "All done!"}), "LLM", runtime.ComponentExecutionOptions{}},
 		{"LLM referencing other node", makeCanvas("LLM", []string{"m0"}, map[string]any{"text": "{sql_0@result}"}), "LLM", runtime.ComponentExecutionOptions{}},

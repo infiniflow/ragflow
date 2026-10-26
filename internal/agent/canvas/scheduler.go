@@ -325,9 +325,18 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 	}
 
 	// Collect outputs from the state's Outputs bucket for this cpn.
+	// Read from runtime.GetStateFromContext(ctx) first so resolved outputs from Message
+	// take precedence over raw deferred streams.
 	var outputs map[string]any
-	if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
-		outputs = bucket
+	if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+		if bucket := ctxState.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
+		}
+	}
+	if len(outputs) == 0 {
+		if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
+		}
 	}
 
 	inputs := map[string]any{}
@@ -576,8 +585,12 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				// Python keeps the Agent node pending while Message consumes its
 				// partial generator. Message completes this callback after the
 				// deferred stream closes.
-				runtime.RegisterDeferredNode(ctx, cpnID, func() {
-					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+				runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+					targetState := state
+					if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+						targetState = ctxState
+					}
+					nodeFinishedNow(ctx, targetState, cpnID, componentName, componentName, nodeErr)
 				})
 			} else {
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
@@ -823,6 +836,33 @@ func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
 	return false
 }
 
+func hasStructuredOutput(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	if v, ok := params["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+		if s, ok := v.(string); ok && strings.EqualFold(s, "true") {
+			return true
+		}
+	}
+	if v, ok := params["output_structure"]; ok && v != nil {
+		switch m := v.(type) {
+		case map[string]any:
+			if len(m) > 0 {
+				return true
+			}
+		case map[string]string:
+			if len(m) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
 	deferToMessage := directMessageDownstream(c, cpnID)
 	isAgent := strings.EqualFold(name, "Agent")
@@ -831,7 +871,9 @@ func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runt
 	if isLLM && deferToMessage && c != nil {
 		comp, ok := c.Components[cpnID]
 		if ok && len(comp.Downstream) == 1 && messageConsumesComponent(c, comp.Downstream[0], cpnID) {
-			deferLLM = true
+			if !hasStructuredOutput(comp.Obj.Params) {
+				deferLLM = true
+			}
 		}
 	}
 	return runtime.ComponentExecutionOptions{
