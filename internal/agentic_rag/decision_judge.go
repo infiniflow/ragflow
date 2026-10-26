@@ -30,8 +30,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
-	"ragflow/internal/rag/decisionhead"
 )
 
 // The decision-model backend answers the filter's per-passage question over
@@ -56,7 +56,7 @@ import (
 
 // decisionRelevanceTemplates are the four phrasings asked per passage, mean
 // averaged. They are the decision contract's own relevance wording
-// (internal/rag/decisionhead/contract.go relevanceTemplates["en"]) and are verbatim on
+// (internal/agentic_rag/decisionhead/contract.go relevanceTemplates["en"]) and are verbatim on
 // purpose: the calibration that produced the 0.80/0.71 operating point used
 // these exact sentences, and the head can be asked the same ones.
 //
