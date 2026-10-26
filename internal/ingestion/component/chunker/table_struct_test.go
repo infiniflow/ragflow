@@ -84,8 +84,8 @@ func TestExpandHTMLTableRowsNonTablePassesThrough(t *testing.T) {
 // continuation row must not lose the spanned column (CellTexts drops Covered
 // slots, which would shift its value under the wrong header). The projection
 // must recover the spanned value from the grid alone, without relying on
-// OriginRow/OriginCol — those fields are json:"-" and absent after a JSON
-// round-trip, which is the path expandHTMLTableRows actually consumes.
+// OriginRow/OriginCol back-pointers — the projection resolves spans from the
+// grid's RowSpan/Covered geometry alone.
 func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 	td := &entity.TableData{
 		HeaderRows: 1,
@@ -95,7 +95,7 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 			{{Covered: true, OriginRow: 0, OriginCol: 0}, {Text: "25"}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol.
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
 			td.Grid[r][c].OriginRow = 0
@@ -128,7 +128,7 @@ func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 			{{Covered: true, OriginRow: 1, OriginCol: 0}, {Covered: true, OriginRow: 1, OriginCol: 0}, {Text: "y"}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol;
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them;
 	// the projection must recover the spanned value from the grid alone.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
@@ -158,7 +158,7 @@ func TestExpandHTMLTableRowsKeepsColspanColumns(t *testing.T) {
 			{{Text: "Info", ColSpan: 2}, {Covered: true, OriginRow: 1, OriginCol: 0}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol.
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
 			td.Grid[r][c].OriginRow = 0

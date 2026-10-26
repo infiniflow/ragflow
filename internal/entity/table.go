@@ -60,9 +60,11 @@ type TableCell struct {
 	// empty; readers must skip it (the real content is at the origin slot).
 	Covered bool `json:"covered,omitempty"`
 	// OriginRow / OriginCol name the slot whose span produced this Covered
-	// marker. They are diagnostic only and are not serialized.
-	OriginRow int `json:"-"`
-	OriginCol int `json:"-"`
+	// marker. They are serialized because the table splitter clamps a header
+	// span after the parser payload has round-tripped through JSON; zero is a
+	// valid origin, so omitempty is safe (it decodes back to zero).
+	OriginRow int `json:"origin_row,omitempty"`
+	OriginCol int `json:"origin_col,omitempty"`
 }
 
 // CellTexts returns the raw row-major cell texts, skipping Covered positions

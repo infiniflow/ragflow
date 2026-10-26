@@ -47,9 +47,9 @@ const (
 )
 
 // ResolveRows projects a TableData grid into row-major cell text according to
-// mode. It deliberately derives spans from RowSpan/ColSpan/Covered alone:
-// OriginRow/OriginCol are diagnostic fields and are absent after the parser
-// payload is serialized to JSON and decoded by a chunker.
+// mode. It deliberately derives spans from RowSpan/ColSpan/Covered alone so a
+// caller does not depend on OriginRow/OriginCol bookkeeping; those fields are
+// consumed by the table splitter when it clamps a span to a part.
 func ResolveRows(td *entity.TableData, mode RowMode) [][]string {
 	if td == nil {
 		return nil
