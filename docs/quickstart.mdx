@@ -14,12 +14,12 @@ This quick start guide describes a general process from:
 - Establishing an AI chat based on your datasets.
 
 :::danger IMPORTANT
-This guide deploys the Go backend with the repository's Go Docker image and Compose configuration. The supported native Docker build target is Linux x86-64. Linux ARM64 is not currently a supported native target because the Go image depends on native libraries published for x86-64.
+This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0-rc2. Docker automatically selects the image matching your host architecture when you use the release tag.
 :::
 
 ## Prerequisites
 
-- A recommended starting configuration of 4 CPU cores (x86-64), 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the document engine, data volume, parsing workload, and concurrency. Local models and OceanBase require additional resources.
+- A recommended starting configuration of 4 CPU cores (x86-64 or ARM64), 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the document engine, data volume, parsing workload, and concurrency. Local models and OceanBase require additional resources.
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit;
 - Access to the dependency image `infiniflow/ragflow_deps:latest` during the image build, and to an LLM and embedding model at runtime.
 
@@ -42,23 +42,25 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
+3. Check out the release tag and start the prebuilt RAGFlow Docker image with Docker Compose:
 
    ```bash
    # Enter the Docker deployment directory.
    cd ragflow/docker
-   # Check out the Go v1.0.0-rc2 release tag.
-   git checkout v1.0.0-rc2
-   # Start the Go services and their dependencies in the background.
+   # Check out the release tag you want to deploy.
+   git checkout <release-tag>
+   # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
+
+   Replace `<release-tag>` with the version you want to deploy from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
    In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference.
 
    :::caution Development checkouts
-   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
+   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the RAGFlow server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
    :::
 
 4. Check that the service is running:
@@ -68,7 +70,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker logs -f ragflow-cpu
    ```
 
-   After initialization, check the Go API and its dependencies through the web port from another terminal:
+   After initialization, check the RAGFlow API and its dependencies through the web port from another terminal:
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -78,7 +80,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
 
 5. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL.
 
-The Go container runs the API server, ingestion workers, and data synchronization. Its startup script runs the Go database migrations before starting the services.
+The RAGFlow container runs the API server, ingestion workers, and data synchronization. Its startup script runs the database migrations before starting the services.
 
 ## Configure LLMs
 
