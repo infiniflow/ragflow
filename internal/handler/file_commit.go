@@ -102,7 +102,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 				operation = permission.OperationRead
 			}
 			if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, id, operation); err != nil {
-				respondHTTPPermissionError(c, err, true)
+				respondPermissionError(c, err, true)
 				c.Abort()
 				return
 			}

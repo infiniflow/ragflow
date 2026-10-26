@@ -60,7 +60,7 @@ func GetSSRFHTTPClient() *http.Client {
 
 		var rt http.RoundTripper = t
 		rt = &strictSSRFTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		ssrfHttpClient = &http.Client{Transport: rt}
 	}
 	return ssrfHttpClient
@@ -78,12 +78,12 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 60 * time.Second
+		t.ResponseHeaderTimeout = 20 * time.Minute
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &schemeSafeTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		schemeSafeHttpClient = &http.Client{Transport: rt}
 	}
 	return schemeSafeHttpClient
@@ -97,7 +97,9 @@ const (
 	providerCallLogThreshold   = 30 * time.Second
 )
 
-func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
+// NewProviderLoggingTransport wraps base with provider timing and LLM_DEBUG payload logging.
+// A nil base uses http.DefaultTransport.
+func NewProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}

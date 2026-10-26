@@ -59,7 +59,6 @@ func (p *EPUBParser) String() string {
 func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if len(data) == 0 {
 		return ParseResult{
-			OutputFormat: "json",
 			File: map[string]any{
 				"name":     filename,
 				"size":     0,
@@ -92,7 +91,6 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
@@ -197,6 +195,8 @@ var (
 	epubTagRe    = regexp.MustCompile(`<[^>]+>`)
 	epubEntityRe = regexp.MustCompile(`&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);`)
 	epubWSRe     = regexp.MustCompile(`\s+`)
+	// Closing tags of block elements, or a void <hr>, that end a run of text.
+	epubBlockEndRe = regexp.MustCompile(`^(?:</(?:title|main|section|article|header|footer|aside|nav|figure|figcaption|caption|table|pre|address|dl|dt|dd|ul|ol)[\s>]|<hr[\s/>])`)
 )
 
 // extractEPUBTextItems reads every spine item and returns one text item per
@@ -292,7 +292,11 @@ func stripHTMLTags(s string) string {
 			strings.HasPrefix(lower, "</h6"),
 			strings.HasPrefix(lower, "</tr"),
 			strings.HasPrefix(lower, "</li"),
-			strings.HasPrefix(lower, "</blockquote"):
+			strings.HasPrefix(lower, "</blockquote"),
+			// Other elements a reader shows as blocks. Without a break, the
+			// head's <title> ran into the first word of the body, and a term
+			// into its definition ("TermDefinition").
+			epubBlockEndRe.MatchString(lower):
 			return "\n"
 		case strings.HasPrefix(lower, "</td"),
 			strings.HasPrefix(lower, "</th"):

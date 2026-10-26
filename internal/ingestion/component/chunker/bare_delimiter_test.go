@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -50,7 +51,7 @@ func invokeText(t *testing.T, c *TokenChunkerComponent, text string) []map[strin
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("Go returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 
@@ -122,7 +123,7 @@ func TestBareDelimiterSplitsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if got := joinedText(chunks); got != text {
 		t.Errorf("joined text: want %q got %q (chunks=%v)", text, got, chunkTexts(chunks))
 	}

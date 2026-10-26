@@ -219,14 +219,13 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
-	// 1. Check dataset is accessible by the user
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
-		_, permissionErr := permissionresponse.Normalize(err)
-		return 0, permissionErr
-	}
-
-	// 2. Resolve document IDs
+	// Deleting the entire dataset requires dataset-level access; deleting
+	// explicit documents also accepts direct document grants.
 	if deleteAll {
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return 0, permissionErr
+		}
 		if err := dao.DB.Model(&entity.Document{}).
 			Where("kb_id = ?", datasetID).
 			Pluck("id", &ids).Error; err != nil {
@@ -236,14 +235,26 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	if len(ids) == 0 {
 		return 0, nil
 	}
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil &&
+		!errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrMembershipNotFound) {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return 0, permissionErr
+	}
 
 	// 3. Deduplicate (before validation so dup count doesn't matter)
 	ids = common.Deduplicate(ids)
 
-	// 4. Validate IDs belong to this dataset (only for explicit ids; deleteAll is already scoped)
+	// Validate IDs and permissions before mutating any document.
 	if !deleteAll {
-		if _, err := s.validateDocsInDataset(ctx, ids, datasetID); err != nil {
+		documents, err := s.validateDocsInDataset(ctx, ids, datasetID)
+		if err != nil {
 			return 0, err
+		}
+		for _, doc := range documents {
+			if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationDeleteContent); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return 0, permissionErr
+			}
 		}
 	}
 
@@ -352,8 +363,8 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 // counter in a single transaction. Mirrors Python DocumentService.insert, which
 // updates dataset/document counters on insert. The document's ID and timestamps
 // are populated by the caller / model hooks before insertion.
-func (s *DocumentService) InsertDocument(doc *entity.Document) error {
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+func (s *DocumentService) InsertDocument(ctx context.Context, doc *entity.Document) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("failed to create document: %w", err)
 		}
@@ -370,6 +381,9 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 		}
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("knowledgebase %s not found", doc.KbID)
+		}
+		if err := grantDocumentOwnerEE(ctx, tx, doc); err != nil {
+			return fmt.Errorf("grant document owner: %w", err)
 		}
 		return nil
 	})

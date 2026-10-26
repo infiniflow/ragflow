@@ -1,5 +1,5 @@
 ---
-sidebar_position: 1
+sidebar_position: 0
 title: Code Execution Sandbox
 sidebar_label: Overview
 slug: /code_execution_sandbox

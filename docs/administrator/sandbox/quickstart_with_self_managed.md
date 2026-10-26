@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 1
 title: Quickstart with Self-Managed
 sidebar_label: Quickstart with Self-Managed
 slug: /sandbox_quickstart_self_managed

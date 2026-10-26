@@ -262,6 +262,9 @@ func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
 				t.Errorf("%s = %q, want searchable entity payload text", field, text)
 			}
 		}
+		if _, exists := row["extra"]; exists {
+			t.Fatalf("compiler must not write extra: %#v", row["extra"])
+		}
 		return
 	}
 	t.Fatal("inserted rows contain no entity")

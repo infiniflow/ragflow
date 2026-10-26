@@ -423,13 +423,12 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// block that merely opens with "<table" text (no row) stays on the
 		// prose path instead of silently pairing nothing. (Python's qa.py
 		// drops plain-text table payloads such as PDF tables entirely; the
-		// walker keeps their pairs.) Pre-upgrade row-IR payloads
-		// (ck_type: table_row/table_header with cells) hold no markup and
-		// fall through to the text extractor, so documents from before this
-		// wire must be re-parsed rather than re-chunked.
+		// walker keeps their pairs.) Pre-upgrade row-IR payloads hold no
+		// markup and fall through to the text extractor, so documents from
+		// before this wire must be re-parsed rather than re-chunked.
 		var rows [][]string
 		if td != nil {
-			rows = td.CellTexts()
+			rows = tableutil.ResolveRows(td, tableutil.RowsQA)
 		}
 		if len(rows) > 0 {
 			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
@@ -465,7 +464,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if err != nil || td == nil {
 		return nil
 	}
-	return qaPairsFromRows(td.CellTexts(), strictPairs, nil, false)
+	return qaPairsFromRows(tableutil.ResolveRows(td, tableutil.RowsQA), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

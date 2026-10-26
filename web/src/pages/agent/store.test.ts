@@ -18,7 +18,7 @@ function baseNode(id: string, label: Operator) {
 const createNode = (
   id: string,
   label: Operator,
-  options: Partial<ReturnType<typeof baseNode>> = {},
+  options: Partial<ReturnType<typeof baseNode>> & { parentId?: string } = {},
 ) => ({
   ...baseNode(id, label),
   ...options,
@@ -58,7 +58,7 @@ describe('useGraphStore.deleteIterationNodeById', () => {
       }),
       createNode('message:0', Operator.Message, { parentId: 'iteration:0' }),
       createNode('message:1', Operator.Message, { parentId: 'message:0' }),
-      createNode('generate:0', Operator.Generate),
+      createNode('generate:0', Operator.Retrieval),
     ];
 
     const edges = [
@@ -97,7 +97,7 @@ describe('useGraphStore.deleteIterationNodeById', () => {
       }),
       createNode('message:0', Operator.Message, { parentId: 'iteration:0' }),
       createNode('begin', Operator.Begin),
-      createNode('generate:0', Operator.Generate),
+      createNode('generate:0', Operator.Retrieval),
       createNode('message:2', Operator.Message),
     ];
 
@@ -135,7 +135,7 @@ describe('useGraphStore.deleteIterationNodeById', () => {
       createNode('tool:0', Operator.Tool),
       createNode('message:0', Operator.Message),
       createNode('begin', Operator.Begin),
-      createNode('generate:0', Operator.Generate),
+      createNode('generate:0', Operator.Retrieval),
     ];
 
     const edges = [
@@ -251,9 +251,7 @@ describe('useGraphStore.toggleBottomCollapse', () => {
 
     useGraphStore.setState({ nodes, edges });
 
-    useGraphStore
-      .getState()
-      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+    useGraphStore.getState().toggleBottomCollapse('agent:0', NodeHandleId.Tool);
 
     let state = useGraphStore.getState();
     // Only the tool node is hidden; the sub-agent subtree stays visible
@@ -274,9 +272,7 @@ describe('useGraphStore.toggleBottomCollapse', () => {
     ]);
 
     // Expanding one handle keeps the other handle's subtree hidden
-    useGraphStore
-      .getState()
-      .toggleBottomCollapse('agent:0', NodeHandleId.Tool);
+    useGraphStore.getState().toggleBottomCollapse('agent:0', NodeHandleId.Tool);
 
     state = useGraphStore.getState();
     expect(hiddenIds(state.nodes)).toEqual(['agent:1', 'tool:1']);

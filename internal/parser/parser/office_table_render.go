@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -79,14 +80,20 @@ func trimCells(row []string) []string {
 // document order. Every segment repeats the header row (so segment 2+ never
 // loses column names) and carries a row-aligned position matrix — one tuple
 // per row in strict order, header included — so row-level consumers index
-// positions by row number with no side channel. The chunker reads the rows
-// directly and renders each emitted chunk's Text as an HTML <table> (see
-// tableutil.RenderTableHTML); no HTML markup is emitted here at the parser.
+// positions by row number with no side channel. Each segment's TableData keeps
+// the sheet's merge geometry: an origin cell carries ColSpan/RowSpan and the
+// positions it engulfs are Covered markers. Consumers project those slots with
+// tableutil.ResolveRows; the parser no longer pre-expands merges. The chunker
+// reads the rows directly and renders each emitted chunk's Text as an HTML
+// <table> (see tableutil.RenderTableHTML); no HTML markup is emitted here at
+// the parser.
 //
 // An image lands after the last row whose (row, colStart) sorts at or before
 // its anchor; rows before the header's anchor keep the header in front of
 // the image (a header-only lead segment); fully empty rows are skipped from
-// both rows and matrix.
+// both rows and matrix. A segment cut never splits a merge group: an anchor
+// inside a merged block moves after the block, so every segment owns the
+// origins of its Covered slots.
 //
 // Segmentation is semantic only — sheet boundaries and image anchors, never a
 // size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
@@ -96,8 +103,8 @@ func trimCells(row []string) []string {
 // Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
 // colEnd]. The same `positions` field carries PDF layout boxes
 // ([page, left, right, top, bottom]) on PDF items, so a consumer must key the
-// vocabulary off sheet_index / ck_type and never reinterpret one as the other.
-func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any) []map[string]any {
+// vocabulary off sheet_index / doc_type_kwd and never reinterpret one as the other.
+func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int, dataRows []int, images []map[string]any, ranges []mergeRange) []map[string]any {
 	sortImagesByAnchor(images)
 	if len(records) == 0 {
 		return images
@@ -105,7 +112,9 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	if headerRow <= 0 {
 		headerRow = 1
 	}
-	header := append([]string(nil), records[0]...)
+	rowByNum, rowNums := sheetRowIndex(records, headerRow, dataRows)
+	ranges = materializeDetachedMerges(rowByNum, headerRow, ranges)
+	header := append([]string(nil), rowByNum[headerRow]...)
 	headerColEnd := len(header)
 	if headerColEnd == 0 {
 		for _, row := range records {
@@ -120,15 +129,33 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)} // [sheet, rowStart, rowEnd, colStart, colEnd]
 
 	rows := make([]spreadsheetSegmentRow, 0, len(records)-1)
-	for i, source := range records[1:] {
-		cells := append([]string(nil), source...)
+	for i := range records[1:] {
+		rowNum := rowNums[i]
+		cells := append([]string(nil), rowByNum[rowNum]...)
 		colStart, colEnd := nonEmptyColumnRange(cells)
+		// A merge slave can be the row's only value in a column before the
+		// surviving real cells. The position tuple still has to cover the
+		// merged group's columns, exactly as the pre-geometry parser did when
+		// it copied the master value into the slave cell. Do this before the
+		// empty-row skip: a row with no cells of its own is still a real grid
+		// row when a non-blank merge master covers it.
+		for _, m := range ranges {
+			if m.sr > rowNum || m.er < rowNum {
+				continue
+			}
+			masterRow := rowByNum[m.sr]
+			if m.sc < 1 || m.sc > len(masterRow) || strings.TrimSpace(masterRow[m.sc-1]) == "" {
+				continue
+			}
+			if colStart == 0 || m.sc < colStart {
+				colStart = m.sc
+			}
+			if m.ec > colEnd {
+				colEnd = m.ec
+			}
+		}
 		if colStart == 0 {
 			continue
-		}
-		rowNum := headerRow + i + 1
-		if len(dataRows) == len(records)-1 {
-			rowNum = dataRows[i]
 		}
 		rows = append(rows, spreadsheetSegmentRow{
 			cells:    cells,
@@ -158,6 +185,15 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			img map[string]any
 		}{cut, img})
 	}
+	// A segment must not cut through a merge group: the segment's canonical
+	// grid needs the group's origin to resolve its covered slots. Move an
+	// image anchor forward to the first row after the group instead.
+	for i := range anchored {
+		if anchored[i].cut == 0 {
+			continue
+		}
+		anchored[i].cut = cutAfterMergeGroup(anchored[i].cut, rows, ranges)
+	}
 	sort.SliceStable(anchored, func(i, j int) bool {
 		if anchored[i].cut != anchored[j].cut {
 			return anchored[i].cut < anchored[j].cut
@@ -176,33 +212,10 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
 		matrix := make([][]float64, 0, len(body)+1)
 		matrix = append(matrix, headerTuple)
-		rowsOut := make([][]string, 0, len(body)+1)
-		headerCells := trimCells(header)
-		rowsOut = append(rowsOut, headerCells)
 		for _, r := range body {
-			cells := trimCells(r.cells)
-			// Pad short rows to the header width so every row renders the
-			// full column set with dataless cells left empty. excelize
-			// truncates each row at its last valued cell, so without this a
-			// trailing dataless column (kept as schema by
-			// trimTrailingEmptyColumns) would vanish from data rows while
-			// its <th> stays. Padding is empty-only, so the row-aligned
-			// position tuple computed above is unaffected.
-			for len(cells) < len(headerCells) {
-				cells = append(cells, "")
-			}
-			rowsOut = append(rowsOut, cells)
 			matrix = append(matrix, r.tuple)
 		}
-		grid := make([][]entity.TableCell, 0, len(rowsOut))
-		for _, r := range rowsOut {
-			cells := make([]entity.TableCell, 0, len(r))
-			for _, c := range r {
-				cells = append(cells, entity.TableCell{Text: c})
-			}
-			grid = append(grid, cells)
-		}
-		td := &entity.TableData{Grid: grid, HeaderRows: 1, Caption: sheet}
+		td := buildCanonicalTable(headerRow, header, body, ranges, sheet)
 		ti := NewTableDataJSONItem(td, sheet, SpreadsheetPositions(matrix)).(TableItem)
 		ti.Extra = map[string]any{"sheet_index": sheetIndex}
 		return ti.ToMap()
@@ -211,7 +224,16 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	prev := 0
 	headerLeadUsed := false
 	for i := 0; i < len(anchored); {
-		cut := anchored[i].cut
+		origCut := anchored[i].cut
+		cut := origCut
+		if cut == 0 && !headerLeadUsed {
+			// A header-origin vertical merge spanning into the data rows must
+			// stay in the lead segment too; otherwise the next segment would
+			// contain a covered slot whose origin is in the previous one.
+			if end := headerMergeEnd(ranges, headerRow); end > headerRow {
+				cut = cutAfterRow(rows, end)
+			}
+		}
 		if cut == 0 && !headerLeadUsed {
 			// A cut at 0 keeps the header in front of the image, matching the
 			// old IR's always-first header record: emit a header-only lead
@@ -222,7 +244,7 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			items = append(items, newSegment(rows[prev:cut]))
 			prev = cut
 		}
-		for i < len(anchored) && anchored[i].cut == cut {
+		for i < len(anchored) && anchored[i].cut == origCut {
 			items = append(items, anchored[i].img)
 			i++
 		}
@@ -261,6 +283,268 @@ func nonEmptyColumnRange(row []string) (int, int) {
 		end = col
 	}
 	return start, end
+}
+
+// sheetRowIndex maps absolute sheet row numbers to the reordered records and
+// returns the data rows' numbers in record order. The header row is records[0].
+func sheetRowIndex(records [][]string, headerRow int, dataRows []int) (map[int][]string, []int) {
+	byNum := make(map[int][]string, len(records))
+	nums := make([]int, len(records)-1)
+	byNum[headerRow] = records[0]
+	for i, row := range records[1:] {
+		rowNum := headerRow + i + 1
+		if len(dataRows) == len(records)-1 {
+			rowNum = dataRows[i]
+		}
+		nums[i] = rowNum
+		byNum[rowNum] = row
+	}
+	return byNum, nums
+}
+
+// materializeDetachedMerges handles a merge that starts above the detected
+// header and crosses it. Reordering the header to records[0] puts such a
+// merge's origin after the row it covers, which a grid cannot represent as a
+// span. The legacy parser filled the text into the header (and data rows) with
+// no span, so mirror that shape: write the master text into the rows the range
+// covers and drop the range from the geometry. All other merges stay canonical.
+func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges []mergeRange) []mergeRange {
+	if len(ranges) == 0 {
+		return ranges
+	}
+	kept := make([]mergeRange, 0, len(ranges))
+	for _, m := range ranges {
+		if m.sr >= headerRow || m.er < headerRow {
+			kept = append(kept, m)
+			continue
+		}
+		masterRow := rowByNum[m.sr]
+		if m.sc < 1 || m.sc > len(masterRow) {
+			continue
+		}
+		master := masterRow[m.sc-1]
+		if strings.TrimSpace(master) == "" {
+			continue
+		}
+		// readSpreadsheetRecords caps merge padding at maxMergeExtentCols so a
+		// pathological far merge cannot allocate one cell per worksheet column.
+		// A detached merge bypasses that padding, so apply the same cap here.
+		endCol := m.ec
+		if endCol > maxMergeExtentCols {
+			endCol = maxMergeExtentCols
+		}
+		if m.sc > endCol {
+			continue
+		}
+		for row := m.sr; row <= m.er; row++ {
+			cells, ok := rowByNum[row]
+			if !ok {
+				continue
+			}
+			if row == headerRow {
+				// The header row carried a merged title across the columns
+				// the range covers; the legacy header-inheritance path filled
+				// every one of them.
+				if endCol > len(cells) {
+					grown := make([]string, endCol)
+					copy(grown, cells)
+					cells = grown
+					rowByNum[row] = cells
+				}
+				for c := m.sc; c <= endCol; c++ {
+					if strings.TrimSpace(cells[c-1]) == "" {
+						cells[c-1] = master
+					}
+				}
+				continue
+			}
+			// Data rows only inherit a vertical merge's master. A horizontal
+			// data merge keeps its value on the origin column, matching the
+			// legacy data-inheritance rule.
+			if m.sc == m.ec || row == m.sr {
+				if m.sc > len(cells) {
+					grown := make([]string, m.sc)
+					copy(grown, cells)
+					cells = grown
+					rowByNum[row] = cells
+				}
+				if strings.TrimSpace(cells[m.sc-1]) == "" {
+					cells[m.sc-1] = master
+				}
+			}
+		}
+	}
+	return kept
+}
+
+// buildCanonicalTable assembles one segment's TableData from the segment's
+// source rows and the sheet's merge rectangles. The grid keeps merge geometry
+// instead of pre-expanding it: an origin cell carries ColSpan/RowSpan and the
+// positions it engulfs are Covered markers. Consumers choose how to project
+// those covered slots (see tableutil.ResolveRows), so the parser no longer has
+// to decide whether a merged value is a header label or a data value.
+func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegmentRow, ranges []mergeRange, sheet string) *entity.TableData {
+	type sourceRow struct {
+		num   int
+		cells []string
+	}
+	sources := make([]sourceRow, 0, len(body)+1)
+	sources = append(sources, sourceRow{num: headerRow, cells: header})
+	for _, r := range body {
+		sources = append(sources, sourceRow{num: r.rowNum, cells: r.cells})
+	}
+
+	present := make(map[int]bool, len(sources))
+	for _, src := range sources {
+		present[src.num] = true
+	}
+	localRanges := clampMergeRanges(ranges, present)
+
+	logical := make([][]tableutil.CellInput, 0, len(sources))
+	headerFlags := make([]bool, 0, len(sources))
+	for i, src := range sources {
+		cells := trimCells(src.cells)
+		// A merge origin past the row's truncation point still has to be
+		// emitted so the grid can place the span; GetRows truncates at the
+		// last valued cell.
+		width := len(cells)
+		for _, m := range localRanges {
+			if m.sr == src.num && m.sc > width {
+				width = m.sc
+			}
+		}
+		row := make([]tableutil.CellInput, 0, width)
+		for c := 0; c < width; c++ {
+			m, origin := mergeAt(localRanges, src.num, c+1)
+			if m != nil && !origin {
+				continue
+			}
+			text := ""
+			if c < len(cells) {
+				text = cells[c]
+			}
+			in := tableutil.CellInput{Text: text}
+			if m != nil && origin {
+				in.ColSpan = m.ec - m.sc + 1
+				in.RowSpan = m.er - m.sr + 1
+			}
+			row = append(row, in)
+		}
+		logical = append(logical, row)
+		headerFlags = append(headerFlags, i == 0)
+	}
+
+	td := tableutil.BuildTableData(logical, headerFlags, sheet)
+	if td == nil || len(td.Grid) == 0 {
+		return td
+	}
+	// Preserve the legacy spreadsheet row width: data rows were padded to the
+	// header width so a short trailing column still renders under its <th>.
+	// Only appending is done here, so every existing cell keeps its index.
+	width := len(td.Grid[0])
+	for r := 1; r < len(td.Grid); r++ {
+		for len(td.Grid[r]) < width {
+			td.Grid[r] = append(td.Grid[r], entity.TableCell{})
+		}
+	}
+	return td
+}
+
+// clampMergeRanges keeps only the consecutive rows of each merge that are
+// present in this segment. A header is repeated in every segment, so a header-
+// origin merge whose covered rows live in an earlier segment must not reserve
+// a column in a later one; clamping its RowSpan to 1 (or its ColSpan-only form)
+// prevents the later segment from marking an unrelated body row Covered.
+func clampMergeRanges(ranges []mergeRange, present map[int]bool) []mergeRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+	local := make([]mergeRange, 0, len(ranges))
+	for _, m := range ranges {
+		if !present[m.sr] {
+			continue
+		}
+		end := m.sr
+		for row := m.sr; row <= m.er; row++ {
+			if !present[row] {
+				break
+			}
+			end = row
+		}
+		if end == m.sr && m.sc == m.ec {
+			continue // one-row vertical span is not a merge
+		}
+		local = append(local, mergeRange{sr: m.sr, sc: m.sc, er: end, ec: m.ec})
+	}
+	return local
+}
+
+// mergeTouchesRow reports whether any merge rectangle covers row.
+func mergeTouchesRow(ranges []mergeRange, row int) bool {
+	for _, m := range ranges {
+		if row >= m.sr && row <= m.er {
+			return true
+		}
+	}
+	return false
+}
+
+// mergeAt returns the merge rectangle covering (row, col), both 1-based, and
+// whether that position is the rectangle's origin.
+func mergeAt(ranges []mergeRange, row, col int) (*mergeRange, bool) {
+	for i := range ranges {
+		m := &ranges[i]
+		if row >= m.sr && row <= m.er && col >= m.sc && col <= m.ec {
+			return m, row == m.sr && col == m.sc
+		}
+	}
+	return nil, false
+}
+
+// cutAfterMergeGroup moves a segment cut at index cut to the first row after
+// any merge group it would split. The returned cut is always >= cut.
+func cutAfterMergeGroup(cut int, rows []spreadsheetSegmentRow, ranges []mergeRange) int {
+	if cut <= 0 || cut >= len(rows) {
+		return cut
+	}
+	for cut < len(rows) {
+		moved := false
+		for _, m := range ranges {
+			if m.sr <= rows[cut-1].rowNum && m.er >= rows[cut].rowNum {
+				for cut < len(rows) && rows[cut].rowNum <= m.er {
+					cut++
+				}
+				moved = true
+				break
+			}
+		}
+		if !moved {
+			return cut
+		}
+	}
+	return cut
+}
+
+// cutAfterRow returns the first row index whose absolute sheet row is greater
+// than rowNum.
+func cutAfterRow(rows []spreadsheetSegmentRow, rowNum int) int {
+	cut := 0
+	for cut < len(rows) && rows[cut].rowNum <= rowNum {
+		cut++
+	}
+	return cut
+}
+
+// headerMergeEnd returns the furthest row covered by a merge mastered on the
+// header row, or headerRow when the header has no vertical merge.
+func headerMergeEnd(ranges []mergeRange, headerRow int) int {
+	end := headerRow
+	for _, m := range ranges {
+		if m.sr == headerRow && m.er > end {
+			end = m.er
+		}
+	}
+	return end
 }
 
 func numericItemInt(value any) (int, bool) {
@@ -356,7 +640,6 @@ cellLoop:
 			item := map[string]any{
 				"text":         alt,
 				"doc_type_kwd": "image",
-				"ck_type":      "image",
 				"sheet":        sheet,
 				"cell":         cell,
 				"row_start":    row,
@@ -547,101 +830,6 @@ func mergeMaxCol(ranges []mergeRange) int {
 		}
 	}
 	return m
-}
-
-// mergeMasterForRow materialises the slave→master map for a single row only.
-// A large merged block (e.g. A1:Z100) would otherwise expand to every one of
-// its cells; we only ever need the header row's slaves, so expanding per row
-// keeps the map O(cols) instead of O(rows×cols).
-func mergeMasterForRow(ranges []mergeRange, row int) map[[2]int][2]int {
-	mm := map[[2]int][2]int{}
-	for _, r := range ranges {
-		if row < r.sr || row > r.er {
-			continue
-		}
-		for c := r.sc; c <= r.ec; c++ {
-			mm[[2]int{row, c}] = [2]int{r.sr, r.sc}
-		}
-	}
-	return mm
-}
-
-// inheritMergedHeader fills empty cells in the header row with the value of
-// their merge master (typically a wide horizontally-merged title cell). This
-// keeps a wide merged title from rendering as a row of blank <th> cells.
-func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]int) {
-	if headerRowIdx < 1 || headerRowIdx > len(records) {
-		return
-	}
-	row := records[headerRowIdx-1]
-	for c := 0; c < len(row); c++ {
-		if strings.TrimSpace(row[c]) != "" {
-			continue
-		}
-		master, ok := mm[[2]int{headerRowIdx, c + 1}]
-		if !ok || (master[0] == headerRowIdx && master[1] == c+1) {
-			continue
-		}
-		if master[0] < 1 || master[0] > len(records) || master[1] < 1 || master[1] > len(records[master[0]-1]) {
-			continue
-		}
-		val := records[master[0]-1][master[1]-1]
-		if strings.TrimSpace(val) != "" {
-			row[c] = val
-		}
-	}
-}
-
-// inheritMergedDataCells fills empty cells of non-header rows with the value
-// of their merge master, so a vertically merged group label (e.g. A2:A4) is
-// visible on every data row instead of only the first. excelize truncates
-// each row at its last valued cell, so a slave cell past that point is absent
-// from the slice: the row is then extended exactly up to the slave column to
-// host the real inherited value. The extension is bounded by the master row's
-// own width (the master cell must exist and be non-empty), so unlike header
-// padding it cannot chase a far merge across the sheet (see padRowToWidth).
-// Call with absolute sheet row numbers, before records are reordered around
-// the header row.
-func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange) {
-	for _, r := range ranges {
-		// Vertical merges only: a horizontally merged data cell is already
-		// visible via its master column, while copying its text into every
-		// slave column would render the same value twice.
-		if r.sc != r.ec {
-			continue
-		}
-		if r.sr == headerRow {
-			continue
-		}
-		// A merge mastered on the header row carries a column label, not
-		// data: copying it down would stamp the header text into every
-		// data row it spans.
-		if r.sr < 1 || r.sr > len(rows) || r.sc < 1 {
-			continue
-		}
-		masterRow := rows[r.sr-1]
-		if r.sc > len(masterRow) {
-			continue
-		}
-		master := masterRow[r.sc-1]
-		if strings.TrimSpace(master) == "" {
-			continue
-		}
-		// Start past the master row: its own cell already holds the value.
-		for row := r.sr + 1; row <= r.er && row <= len(rows); row++ {
-			if row == headerRow {
-				continue
-			}
-			// Grow a truncated row exactly up to the slave column; the
-			// appended cells stay empty except the inherited value below.
-			for len(rows[row-1]) < r.sc {
-				rows[row-1] = append(rows[row-1], "")
-			}
-			if strings.TrimSpace(rows[row-1][r.sc-1]) == "" {
-				rows[row-1][r.sc-1] = master
-			}
-		}
-	}
 }
 
 // mergeExtentCol returns the furthest merged column across all ranges, capped
@@ -858,13 +1046,13 @@ func isSubtotalRow(row []string) bool {
 	return false
 }
 
-func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []string, error) {
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []mergeRange, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, nil, 0, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+		return nil, nil, 0, nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
 	}
 	if len(rows) == 0 {
-		return nil, nil, 0, nil, nil
+		return nil, nil, 0, nil, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
 
@@ -879,21 +1067,15 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	}
 	headerRow := detectHeaderRow(f, sheet, rows, tables)
 
-	// Inherit merged-master text into the header row. excelize's GetRows
-	// truncates each row at its last valued cell, so a merged slave beyond that
-	// point is absent and cannot inherit its master's text. We therefore pad
-	// ONLY the header row (the only row we inherit into) to the furthest merged
-	// column — capped by mergeExtentCol so a pathological far merge cannot
-	// exhaust memory. Padding runs after detection so a wide merge (e.g. A1:Z1
-	// title) does not dilute the styled-majority signal of a narrow header.
-	mm := mergeMasterForRow(ranges, headerRow)
-	if len(mm) > 0 {
+	// Pad the header row to the furthest merged column when a merge touches
+	// the header. excelize's GetRows truncates each row at its last valued
+	// cell, so a merged slave beyond that point is absent from the slice; the
+	// canonical grid builder needs the header width to include the merge
+	// extent. Padding runs after detection so a wide merge (e.g. A1:Z1 title)
+	// does not dilute the styled-majority signal of a narrow header.
+	if mergeTouchesRow(ranges, headerRow) {
 		padRowToWidth(&rows[headerRow-1], mergeExtentCol(ranges))
 	}
-	inheritMergedHeader(rows, headerRow, mm)
-	// Data rows inherit their own vertical merge masters in place (no
-	// widening); see inheritMergedDataCells.
-	inheritMergedDataCells(rows, headerRow, ranges)
 
 	// Reorder so the detected header row becomes records[0]; every other row is
 	// data. For the common case (header on row 1) this is a no-op.
@@ -909,5 +1091,5 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	}
 	records = trimTrailingEmptyColumns(records)
 
-	return records, absDataRows, headerRow, warnings, nil
+	return records, absDataRows, headerRow, ranges, warnings, nil
 }

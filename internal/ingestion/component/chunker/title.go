@@ -337,7 +337,9 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = lvl
 			continue
 		}
-		if rec.ckType == "heading" {
+		// Only the asserted "heading" marker bypasses the notTitle guard;
+		// model heuristics use "title" and go through matchLayoutLevel below.
+		if isHeadingLayout(rec.layout) {
 			out[i] = fallbackLevel
 			continue
 		}
@@ -640,7 +642,6 @@ type lineRecord struct {
 	imgID         *string
 	image         string
 	layout        string
-	ckType        string
 	pdfPositions  json.RawMessage
 	positions     json.RawMessage
 	preserveOrder bool

@@ -21,6 +21,8 @@ import (
 	"errors"
 )
 
+type subjectContextKey struct{}
+
 var (
 	ErrUnauthenticated    = errors.New("permission: user is required")
 	ErrInvalidSubject     = errors.New("permission: tenant is required")
@@ -39,11 +41,46 @@ type Subject struct {
 	TenantID string
 }
 
+// WithSubject attaches the authenticated user and active Tenant to a request
+// context so shared service helpers can use the same authorization subject.
+func WithSubject(ctx context.Context, subject Subject) context.Context {
+	return context.WithValue(ctx, subjectContextKey{}, subject)
+}
+
+// SubjectFromContext returns the authenticated permission subject attached to
+// the request context, if one is present.
+func SubjectFromContext(ctx context.Context) (Subject, bool) {
+	if ctx == nil {
+		return Subject{}, false
+	}
+	subject, ok := ctx.Value(subjectContextKey{}).(Subject)
+	return subject, ok
+}
+
+func resolveSubject(ctx context.Context, subject Subject) (Subject, error) {
+	requestSubject, ok := SubjectFromContext(ctx)
+	if !ok {
+		return subject, nil
+	}
+	if subject.UserID == "" {
+		subject.UserID = requestSubject.UserID
+	} else if requestSubject.UserID != "" && subject.UserID != requestSubject.UserID {
+		return Subject{}, ErrInvalidSubject
+	}
+	if subject.TenantID == "" {
+		subject.TenantID = requestSubject.TenantID
+	} else if requestSubject.TenantID != "" && subject.TenantID != requestSubject.TenantID {
+		return Subject{}, ErrInvalidSubject
+	}
+	return subject, nil
+}
+
 // ResourceKind identifies a resource family without coupling this package to business entities.
 type ResourceKind string
 
 const (
 	ResourceKindDataset       ResourceKind = "dataset"
+	ResourceKindDocument      ResourceKind = "document"
 	ResourceKindCanvas        ResourceKind = "canvas"
 	ResourceKindAgentSession  ResourceKind = "agent_session"
 	ResourceKindMemory        ResourceKind = "memory"
@@ -84,6 +121,16 @@ const (
 // Operation identifies an operation on a concrete resource.
 type Operation string
 
+// Resource permission masks describe direct resource grants independently of
+// feature-role limits. The permission UI uses the same bit layout as the
+// resource grant table.
+const (
+	ResourcePermissionRead int32 = 1 << iota
+	ResourcePermissionWrite
+	ResourcePermissionManage
+	ResourcePermissionOwner
+)
+
 const (
 	OperationRead          Operation = "read"
 	OperationCreate        Operation = "create"
@@ -112,7 +159,6 @@ const (
 	RoleOwner  TenantRole = "owner"
 	RoleAdmin  TenantRole = "admin"
 	RoleNormal TenantRole = "normal"
-	RoleInvite TenantRole = "invite"
 )
 
 // Membership is the normalized active membership fact returned by Source.
@@ -166,10 +212,11 @@ const (
 
 // Access describes the operations a subject can perform on a resource.
 type Access struct {
-	Resource   ResourceRef
-	TenantID   string
-	Source     AccessSource
-	Operations []Operation
+	Resource       ResourceRef
+	TenantID       string
+	Source         AccessSource
+	PermissionMask int32
+	Operations     []Operation
 }
 
 func (a Access) Allows(operation Operation) bool {
@@ -233,6 +280,14 @@ type queryScopePolicy interface {
 	QueryScope(context.Context, Subject, ScopeQuery) (QueryScope, bool, error)
 }
 
+type accessResolverPolicy interface {
+	ResolveAccesses(context.Context, Subject, []ResourceRef) (map[ResourceRef]Access, error)
+}
+
+type resourceOwnerGranter interface {
+	GrantResourceOwner(context.Context, Subject, ResourceRef) error
+}
+
 // Checker exposes edition-independent permission methods.
 type Checker struct {
 	policy policy
@@ -246,10 +301,32 @@ func NewChecker(source Source) *Checker {
 	return &Checker{policy: newPolicy(source)}
 }
 
+// GrantResourceOwner assigns the creator's owner grant for policies that use
+// explicit resource permissions. Policies without grant rows keep their own
+// ownership model.
+func (c *Checker) GrantResourceOwner(ctx context.Context, subject Subject, resource ResourceRef) error {
+	if c == nil || c.policy == nil {
+		return ErrSourceUnavailable
+	}
+	granter, ok := c.policy.(resourceOwnerGranter)
+	if !ok {
+		return nil
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return err
+	}
+	return granter.GrantResourceOwner(ctx, subject, resource)
+}
+
 // CheckFeature checks feature access under the active edition's policy.
 func (c *Checker) CheckFeature(ctx context.Context, subject Subject, feature Feature, action Action) error {
 	if c == nil || c.policy == nil {
 		return ErrSourceUnavailable
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return err
 	}
 	return c.policy.CheckFeature(ctx, subject, feature, action)
 }
@@ -259,6 +336,10 @@ func (c *Checker) CheckTenant(ctx context.Context, subject Subject, tenantID str
 	if c == nil || c.policy == nil {
 		return ErrSourceUnavailable
 	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return err
+	}
 	return c.policy.CheckTenant(ctx, subject, tenantID, requirement)
 }
 
@@ -266,6 +347,10 @@ func (c *Checker) CheckTenant(ctx context.Context, subject Subject, tenantID str
 func (c *Checker) CheckResource(ctx context.Context, subject Subject, resource ResourceRef, operation Operation) error {
 	if c == nil || c.policy == nil {
 		return ErrSourceUnavailable
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return err
 	}
 	return c.policy.CheckResource(ctx, subject, resource, operation)
 }
@@ -275,6 +360,10 @@ func (c *Checker) CheckDependency(ctx context.Context, subject Subject, entry, d
 	if c == nil || c.policy == nil {
 		return ErrSourceUnavailable
 	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return err
+	}
 	return c.policy.CheckDependency(ctx, subject, entry, dependency, entryOperation, dependencyOperation)
 }
 
@@ -283,6 +372,10 @@ func (c *Checker) ResolveAccess(ctx context.Context, subject Subject, resource R
 	if c == nil || c.policy == nil {
 		return Access{}, ErrSourceUnavailable
 	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return Access{}, err
+	}
 	return c.policy.ResolveAccess(ctx, subject, resource)
 }
 
@@ -290,6 +383,10 @@ func (c *Checker) ResolveAccess(ctx context.Context, subject Subject, resource R
 func (c *Checker) Scope(ctx context.Context, subject Subject, query ScopeQuery) (Scope, error) {
 	if c == nil || c.policy == nil {
 		return Scope{}, ErrSourceUnavailable
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return Scope{}, err
 	}
 	return c.policy.Scope(ctx, subject, query)
 }
@@ -301,6 +398,10 @@ func (c *Checker) Scope(ctx context.Context, subject Subject, query ScopeQuery) 
 func (c *Checker) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, error) {
 	if c == nil || c.policy == nil {
 		return QueryScope{}, ErrSourceUnavailable
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return QueryScope{}, err
 	}
 	if queryPolicy, ok := c.policy.(queryScopePolicy); ok {
 		queryScope, supported, err := queryPolicy.QueryScope(ctx, subject, query)
@@ -324,5 +425,58 @@ func (c *Checker) FilterResources(ctx context.Context, subject Subject, resource
 	if c == nil || c.policy == nil {
 		return nil, ErrSourceUnavailable
 	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return nil, err
+	}
 	return c.policy.FilterResources(ctx, subject, resources, operation)
+}
+
+// ResolveAccesses resolves effective access for a batch of resources.
+// Database-backed policies can load resource facts once for the whole batch.
+func (c *Checker) ResolveAccesses(ctx context.Context, subject Subject, resources []ResourceRef) (map[ResourceRef]Access, error) {
+	if c == nil || c.policy == nil {
+		return nil, ErrSourceUnavailable
+	}
+	var err error
+	if subject, err = resolveSubject(ctx, subject); err != nil {
+		return nil, err
+	}
+	if batchPolicy, ok := c.policy.(accessResolverPolicy); ok {
+		return batchPolicy.ResolveAccesses(ctx, subject, resources)
+	}
+
+	accesses := make(map[ResourceRef]Access, len(resources))
+	for _, resource := range uniqueRefs(resources) {
+		access, err := c.policy.ResolveAccess(ctx, subject, resource)
+		if err != nil {
+			if errorsIsPermissionDenial(err) || errors.Is(err, ErrResourceNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		accesses[resource] = access
+	}
+	return accesses, nil
+}
+
+// FilterAccesses resolves permissions for a batch of resources and returns the
+// effective access for each resource that allows operation.
+func (c *Checker) FilterAccesses(ctx context.Context, subject Subject, resources []ResourceRef, operation Operation) (map[ResourceRef]Access, error) {
+	if c == nil || c.policy == nil {
+		return nil, ErrSourceUnavailable
+	}
+	if !validOperation(operation) {
+		return nil, ErrInvalidPermission
+	}
+	accesses, err := c.ResolveAccesses(ctx, subject, resources)
+	if err != nil {
+		return nil, err
+	}
+	for ref, access := range accesses {
+		if !access.Allows(operation) {
+			delete(accesses, ref)
+		}
+	}
+	return accesses, nil
 }

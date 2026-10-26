@@ -15,19 +15,22 @@
 //
 
 // ParseResult is the structured output contract for the Go parser
-// library. Port-rag-flow-pipeline-to-go.md §6.5 mandates that
-// parsers surface enough data to reconstruct a Python-compatible
-// stage-boundary payload:
+// library. Parsers surface a Python-compatible stage-boundary payload:
 //
-//	output_format
 //	file (enriched metadata)
-//	backend payload to be normalized by the owning component
+//	JSON (structured backend output, typed as DocItems)
 //	err
+//	warnings
 //
-// Go parser callers now consume only the structured ParseResult
-// contract. The legacy `Parse(filename, []byte) error` interface has
-// been removed so parser dispatch, ingestion, and service paths all
-// share the same typed payload contract.
+// The owning Parser component hardcodes the wire `output_format` to "json"
+// for every family; that value is a property of the component boundary, not
+// of the parser result, so it is no longer carried on ParseResult. Backend
+// markdown responses are normalized to JSON inside the parser package before
+// they reach the component, so no raw markdown travels on this struct either.
+//
+// Parser callers consume the structured ParseResult payload. Use Produced to
+// check whether a result carries a usable payload: Err is nil and JSON or File
+// is non-nil.
 
 package parser
 
@@ -38,14 +41,9 @@ import (
 )
 
 // ParseResult is the structured return value of a parse operation. JSON holds
-// structured backend output when available; the rendered fields carry
-// non-JSON backend responses to the Parser component's normalization boundary.
-// On failure, Err is non-nil and OutputFormat is empty.
+// structured backend output when available; File carries parser-enriched
+// metadata. On failure, Err is non-nil and the payload fields are zero values.
 type ParseResult struct {
-	// OutputFormat identifies the backend payload representation. The Parser
-	// component normalizes successful results to JSON. Empty when Err is non-nil.
-	OutputFormat string
-
 	// File is metadata produced by the parser backend (for example
 	// `outline` on the PDF path or `page_count` for paginated formats).
 	// Nil when the backend does not produce metadata. It is not an augmented
@@ -71,18 +69,21 @@ type ParseResult struct {
 	// and, after ingestion enhancement, its VLM description.
 	JSON []DocItem
 
-	// Markdown is a backend response awaiting normalization.
-	Markdown string
-
-	// Text is a backend response awaiting normalization.
-	Text string
-
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
 	Err error
 
 	// Warnings contains non-fatal issues encountered while parsing.
 	Warnings []string
+}
+
+// Produced reports whether the parse succeeded and yielded a payload the
+// Parser component can forward: structured JSON items and/or enriched File
+// metadata. It replaces the historical `OutputFormat != ""` success check. An
+// error result is never produced, and a result with neither JSON nor File is
+// treated as empty (the component falls back to raw-text indexing).
+func (r ParseResult) Produced() bool {
+	return r.Err == nil && (r.JSON != nil || r.File != nil)
 }
 
 // ParseResultProducer is the parser package's single structured-output
@@ -98,8 +99,6 @@ const (
 	DocTypeText  = "text"
 	DocTypeTable = "table"
 	DocTypeImage = "image"
-
-	spreadsheetOutputFormat = "json"
 )
 
 // NewTextJSONItem constructs a canonical text DocItem for parser output.
@@ -117,6 +116,5 @@ func NewTableDataJSONItem(td *entity.TableData, sheet string, positions Position
 		Table:     td,
 		Sheet:     sheet,
 		Positions: positions,
-		CKType:    DocTypeTable,
 	}
 }

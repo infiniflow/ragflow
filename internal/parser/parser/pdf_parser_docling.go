@@ -113,13 +113,13 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			continue
 		}
 		if candidate.chunked {
-			if res, ok := parseDoclingChunkedResult(filename, body, parser.OutputFormat); ok {
+			if res, ok := parseDoclingChunkedResult(filename, body); ok {
 				return res
 			}
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
 			continue
 		}
-		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat); ok {
+		if res, ok := parseDoclingStandardResult(ctx, filename, body); ok {
 			return res
 		}
 		lastErr = fmt.Errorf("%s: standard response contained no parsed document", candidate.endpoint)
@@ -184,7 +184,7 @@ func doclingChunkedPayload(filename string, encoded string, alpha bool, convertO
 	return payload
 }
 
-func parseDoclingChunkedResult(filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingChunkedResult(filename string, body []byte) (ParseResult, bool) {
 	var chunks []doclingChunk
 	if err := json.Unmarshal(body, &chunks); err != nil {
 		var wrapped struct {
@@ -212,10 +212,10 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	if len(texts) > 0 {
 		pageCount = len(texts)
 	}
-	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
+	return doclingTextsToResult(filename, texts, pageCount), true
 }
 
-func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingStandardResult(ctx context.Context, filename string, body []byte) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ParseResult{}, false
@@ -235,41 +235,28 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	}
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, len(docs)), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
-			return doclingTextsToResult(filename, []string{txt}, outputFormat, len(docs)), true
+			return doclingTextsToResult(filename, []string{txt}, len(docs)), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
+			return pdfMarkdownToResult(ctx, filename, md, len(docs)), true
 		}
 	}
 	return ParseResult{}, false
 }
 
-func doclingTextsToResult(filename string, texts []string, outputFormat string, pageCount int) ParseResult {
-	fileMeta := pdfFileMeta(filename, pageCount)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		items := make([]map[string]any, 0, len(texts))
-		for _, text := range texts {
-			items = append(items, map[string]any{
-				"text":         text,
-				"doc_type_kwd": "text",
-			})
-		}
-		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			JSON:         MapsToItems(items),
-		}
-	case "markdown":
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     strings.Join(texts, "\n\n"),
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+func doclingTextsToResult(filename string, texts []string, pageCount int) ParseResult {
+	items := make([]map[string]any, 0, len(texts))
+	for _, text := range texts {
+		items = append(items, map[string]any{
+			"text":         text,
+			"doc_type_kwd": "text",
+		})
+	}
+	return ParseResult{
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }

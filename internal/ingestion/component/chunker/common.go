@@ -216,15 +216,10 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
-// isMediaChunk reports whether a chunk is an image or table region. It checks
-// CKType first (general/token paths set it) and falls back to DocType
-// (group/hierarchy forward parser output that carries only doc_type_kwd), so
-// it classifies media regardless of which chunker produced the chunk.
+// isMediaChunk reports whether a chunk is an image or table region. The
+// content type lives on doc_type_kwd; layout never describes media.
 func isMediaChunk(ck schema.ChunkDoc) bool {
-	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
-	if typ == "" {
-		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
-	}
+	typ := itemDocType(ck)
 	return typ == "image" || typ == "table"
 }
 
@@ -310,6 +305,11 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	materialized := make([]schema.ChunkDoc, len(chunks))
 	for i := range chunks {
 		materialized[i] = materializeMediaContext(chunks[i])
+		// Structural layout is chunker-internal: it is consumed by merge,
+		// split, and crop, and must not cross the output boundary. PDF model
+		// layouts (title/figure/equation/...) are not structural and pass
+		// through unchanged.
+		clearStructuralLayout(&materialized[i])
 	}
 	return map[string]any{
 		"output_format": "chunks",
@@ -330,9 +330,8 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 	return removeTag(materializeMediaContext(ck).Text)
 }
 
-// mediaChunkIDPrefix marks the identity source of a media chunk whose
-// canonical text is empty. The NUL byte keeps the source from colliding with
-// any real chunk text.
+// mediaChunkIDPrefix marks a media-specific identity source. The NUL byte
+// keeps the source from colliding with ordinary chunk text.
 const mediaChunkIDPrefix = "\x00media:"
 
 // canonicalChunkID returns the deterministic chunk id: the single identity
@@ -342,9 +341,16 @@ const mediaChunkIDPrefix = "\x00media:"
 // ck["id"] from the same already-finalized text as a fallback for chunks that
 // bypassed the streamed crop-upload path; the two routes cannot disagree
 // because a chunk is either stamped by crop-upload (and the decorator reuses
-// that id) or computed by the decorator fallback — never both — and both hash
-// the same identity.
+// that id) or computed by the decorator fallback — never both. Position-only
+// title media instead reuses the coordinate-and-text id finalized after headings
+// are applied.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	// Title-family position-only media is stamped with both coordinates and
+	// finalized heading text. Keep that identity through crop uploads,
+	// including failed-upload retries.
+	if isMediaChunk(ck) && ck.ID != "" {
+		return ck.ID
+	}
 	return common.ChunkID(docID, chunkIDSource(ck))
 }
 

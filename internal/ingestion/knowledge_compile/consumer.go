@@ -593,9 +593,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// land in the same batch, and completions/deletions can also arrive out of
 	// order across batches. The LAST event for a doc (by backlog append order)
 	// decides its fate, so we must not delete a doc that was re-ingested after
-	// its deletion, nor merge a completion shadowed by a later deletion. No
-	// sequence number is needed: the backlog is an ordered log and the last
-	// write wins, which is exactly the re-parse (completed last) vs delete
+	// its deletion, nor merge a completion shadowed by a later deletion. Queue
+	// positions preserve the backlog's append order and the last write wins,
+	// which is exactly the re-parse (completed last) vs delete
 	// (deleted last) semantics we want.
 	type docState struct {
 		winEvent EventType
@@ -1672,7 +1672,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type"), RelationType: relType}
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
@@ -1690,7 +1690,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)

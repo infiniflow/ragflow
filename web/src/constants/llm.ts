@@ -116,6 +116,8 @@ export enum LLMFactory {
   TrustedRouter = 'TrustedRouter',
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
+  Runcrate = 'Runcrate',
+  SystemOne = 'SystemOne',
 }
 
 // Please lowercase the file name
@@ -214,10 +216,23 @@ export const IconMap = {
   [LLMFactory.TrustedRouter]: 'trustedrouter',
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.Runcrate]: 'runcrate',
 };
+
+/**
+ * Providers that may serve a given model type.
+ *
+ * Types without an entry are unrestricted — listing every provider here would
+ * be a second copy of the catalog that goes stale. Decision is intentionally
+ * unrestricted: the backend derives the System One endpoint from the selected
+ * instance's own base URL, so any provider that serves that path on its
+ * instances can offer decision models.
+ */
+export const ModelTypeProviderMap: Record<string, string[]> = {};
 
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
+  decision: 'decision_id',
   embedding: 'embd_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
@@ -227,6 +242,7 @@ export const ModelTypeToField: Record<string, string> = {
 
 export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
+  decision_id: 'decision',
   embd_id: 'embedding',
   img2txt_id: 'vision',
   asr_id: 'asr',
@@ -247,6 +263,8 @@ export const APIMapUrl = {
   [LLMFactory.EmpirioLabs]:
     'https://platform.empiriolabs.ai/dashboard/api-keys',
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.Runcrate]:
+    'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

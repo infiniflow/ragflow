@@ -45,6 +45,8 @@ func setupCompilationStatusHandlerDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.Knowledgebase{},
 		&entity.KnowledgeCompileDataset{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
 		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
@@ -158,15 +160,23 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 	insertCompilationStatusHandlerKB(t, "kb-status-full", "user-1")
 
 	row := entity.KnowledgeCompileDataset{
-		DatasetID:      "kb-status-full",
-		TenantID:       "user-1",
-		BacklogDocIDs:  `[{"doc_id":"d2","event_type":"completed","task_types":["Graph"]}]`,
-		InflightDocIDs: `[{"doc_id":"d1","event_type":"completed","task_types":["Graph"]}]`,
-		State:          entity.DatasetStatePending,
-		ErrorMsg:       "merge failed: boom",
+		DatasetID: "kb-status-full",
+		TenantID:  "user-1",
+		State:     entity.DatasetStatePending,
+		ErrorMsg:  "merge failed: boom",
 	}
 	if err := db.Create(&row).Error; err != nil {
 		t.Fatalf("insert scheduling row: %v", err)
+	}
+	if err := db.Create(&entity.KnowledgeCompileBacklog{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{
+		DatasetID: row.DatasetID, DocID: "d2", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Graph"},
+	}}).Error; err != nil {
+		t.Fatalf("insert backlog: %v", err)
+	}
+	if err := db.Create(&entity.KnowledgeCompileInflight{KnowledgeCompileEntry: entity.KnowledgeCompileEntry{
+		DatasetID: row.DatasetID, DocID: "d1", QueuePosition: 1, EventType: "completed", TaskTypes: []string{"Graph"},
+	}}).Error; err != nil {
+		t.Fatalf("insert inflight: %v", err)
 	}
 
 	status, body := getCompilationStatusWithKind(t, newCompilationStatusHandlerRouter(), "kb-status-full", "graph")
@@ -203,11 +213,9 @@ func TestCompilationStatusHandler_Unauthorized(t *testing.T) {
 	// KB owner to "other-owner".
 	insertCompilationStatusHandlerKB(t, "kb-status-forbidden", "other-owner")
 	if err := db.Create(&entity.KnowledgeCompileDataset{
-		DatasetID:      "kb-status-forbidden",
-		TenantID:       "other-owner",
-		BacklogDocIDs:  "[]",
-		InflightDocIDs: "[]",
-		State:          entity.DatasetStateRunning,
+		DatasetID: "kb-status-forbidden",
+		TenantID:  "other-owner",
+		State:     entity.DatasetStateRunning,
 	}).Error; err != nil {
 		t.Fatalf("insert scheduling row: %v", err)
 	}

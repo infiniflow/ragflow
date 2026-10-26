@@ -20,6 +20,11 @@ import (
 const tsrInputSize = 640
 const tsrCandidates = 8400
 
+// modelFileTsr is the table-structure recognition model filename. Override
+// seam: a downstream build variant assigns this at init/startup, before any
+// inference runs. Set once, never mutated during serving.
+var modelFileTsr = "tsr.ort"
+
 // tsrLabels mirrors TableStructureRecognizer.labels (also tsr_adapter.TSR_CLASS_MAP keys).
 var tsrLabels = []string{
 	"table", "table column", "table row",
@@ -44,7 +49,7 @@ type TSRResult struct {
 // RunTSR runs table-structure recognition on a cropped table image.
 func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error) {
 	blob, sf := tsrPreprocess(img)
-	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "tsr.ort"), "images",
+	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, modelFileTsr), "images",
 		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0")
 	if err != nil {
 		return TSRResult{}, err

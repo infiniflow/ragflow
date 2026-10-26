@@ -37,8 +37,8 @@ func seedStoredMistralOCRProvider(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "user-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "user-1", TenantID: "user-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: mistralOCRStoredKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	}
@@ -58,7 +58,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	access := ModelAccess{TenantID: "tenant-1", UserID: "user-1"}
+	access := ModelAccess{TenantID: "user-1", UserID: "user-1"}
 	for _, tc := range []struct {
 		name      string
 		modelRef  string
@@ -69,7 +69,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 		{name: "catalog composite", modelRef: "mistral-ocr-2512@default@Mistral OCR", wantModel: "mistral-ocr-2512"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, err := NewModelFactory().resolveConfig(t.Context(), access, entity.ModelTypeOCR, tc.modelRef)
+			target, err := NewModelFactory().resolveConfig(serviceTestContext(t, "user-1", "user-1"), access, entity.ModelTypeOCR, tc.modelRef)
 			if err != nil {
 				t.Fatalf("resolveConfig(%q): %v", tc.modelRef, err)
 			}
@@ -96,7 +96,7 @@ func TestModelFactoryResolveModelTypeForStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	types, err := NewModelFactory().ResolveModelType(t.Context(), ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
+	types, err := NewModelFactory().ResolveModelType(serviceTestContext(t, "user-1", "user-1"), ModelAccess{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
 	if err != nil {
 		t.Fatalf("ResolveModelType: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestModelCallServiceResolvesStoredMistralOCRProvider(t *testing.T) {
 	svc := NewModelCallService()
 	for _, modelRef := range []string{"model-mistral-ocr", "mistral-ocr-latest@default@Mistral OCR"} {
 		t.Run(modelRef, func(t *testing.T) {
-			info, err := svc.resolveModelInfo(t.Context(), modelRef, "user-1")
+			info, err := svc.resolveModelInfo(serviceTestContext(t, "user-1", "user-1"), modelRef, "user-1")
 			if err != nil {
 				t.Fatalf("resolveModelInfo(%q): %v", modelRef, err)
 			}
@@ -148,11 +148,11 @@ func TestListProvidersOfTenantSkipsStoredMistralOCRProvider(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
-	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"}).Error; err != nil {
+	if err := db.Create(&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "user-1", ProviderName: "OpenAI"}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
 
-	providers, code, err := NewModelProviderService().ListProvidersOfTenant(t.Context(), "user-1")
+	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"), "user-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListProvidersOfTenant = (%v, %v)", code, err)
 	}

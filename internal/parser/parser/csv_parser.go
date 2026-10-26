@@ -49,7 +49,6 @@ const (
 // CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
 	ParseMethod                    string
-	OutputFormat                   string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -73,9 +72,6 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
 	}
 	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
@@ -105,7 +101,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "csv":
 		// Continue with the local CSV parser.
@@ -120,7 +115,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{
-			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
@@ -145,9 +139,8 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	// One wire shape for csv as for xlsx: a single segmented HTML table with
 	// row-aligned positions (csv has no in-cell image anchors).
-	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil, nil)
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

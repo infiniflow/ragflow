@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 5
 title: Configure SSH and Cloud Providers
 sidebar_label: Configure SSH and Cloud Providers
 slug: /configure_ssh_and_cloud_sandbox_providers

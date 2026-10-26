@@ -74,8 +74,8 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
-			if got, want := res.OutputFormat, "json"; got != want {
-				t.Fatalf("OutputFormat = %q, want %q", got, want)
+			if got, want := res.Produced(), true; got != want {
+				t.Fatalf("produced = %t, want %t", got, want)
 			}
 			if len(res.JSON) != 1 {
 				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
@@ -171,13 +171,13 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("JSON item = %#v, want a table item", res.JSON[0])
 	}
 }

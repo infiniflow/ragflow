@@ -24,8 +24,8 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want at least one item")
@@ -34,8 +34,8 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
 		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
-	if got, _ := res.JSON[0].ToMap()["ck_type"].(string); got != "heading" {
-		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	if got, _ := res.JSON[0].ToMap()["layout"].(string); got != "heading" {
+		t.Fatalf("first item layout = %q, want %q", got, "heading")
 	}
 }
 
@@ -52,8 +52,8 @@ func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
 	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
 		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
-	if got, _ := res.JSON[0].ToMap()["ck_type"].(string); got != "heading" {
-		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	if got, _ := res.JSON[0].ToMap()["layout"].(string); got != "heading" {
+		t.Fatalf("first item layout = %q, want %q", got, "heading")
 	}
 }
 
@@ -79,7 +79,7 @@ func TestMarkdownParser_ListItemsKeepWordBoundaries(t *testing.T) {
 	}
 	var lists []string
 	for _, item := range ItemsToMaps(res.JSON) {
-		if ck, _ := item["ck_type"].(string); ck == "list" {
+		if ck, _ := item["layout"].(string); ck == "list" {
 			text, _ := item["text"].(string)
 			lists = append(lists, text)
 		}
@@ -141,7 +141,7 @@ func TestMarkdownParser_OrderedListKeepsNumbers(t *testing.T) {
 			}
 			var lists []string
 			for _, item := range ItemsToMaps(res.JSON) {
-				if ck, _ := item["ck_type"].(string); ck == "list" {
+				if ck, _ := item["layout"].(string); ck == "list" {
 					text, _ := item["text"].(string)
 					lists = append(lists, text)
 				}
@@ -273,9 +273,6 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 		switch kd {
 		case "table":
 			tableCount++
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Errorf("table item ck_type = %q, want \"table\"", ck)
-			}
 			td, ok := item["table"].(*entity.TableData)
 			if !ok || td == nil {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
@@ -397,15 +394,11 @@ func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":          "deepdoc",
-		"output_format":         "json",
 		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
 		"flatten_media_to_text": false,
 	})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want %q", p.OutputFormat, "json")
 	}
 	if p.VLM == nil {
 		t.Fatal("VLM is nil; want map")
@@ -463,18 +456,21 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, raw, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
+	result, raw, size, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
 	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
+	if size != len("fakeimage") {
+		t.Errorf("size = %d, want %d", size, len("fakeimage"))
+	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
+	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -493,12 +489,15 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	encoded, result, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
+	encoded, result, size, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
 	if encoded != "" || string(result) != "fake-png-bytes" {
 		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+	if size != len("fake-png-bytes") {
+		t.Errorf("size = %d, want %d", size, len("fake-png-bytes"))
 	}
 }
 
@@ -642,9 +641,6 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
-			}
 		}
 	}
 	concat := all.String()
@@ -707,9 +703,6 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
-			}
 		}
 	}
 
@@ -740,8 +733,8 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 }
 
 // TestMarkdownParser_NonTableHTMLBlockNotTable guards against the blanket
-// ck_type:"table" bug: a raw HTML block that is NOT a <table> (e.g. <div>,
-// <style>) must be emitted as ordinary text with no ck_type, so downstream
+// raw-table bug: a raw HTML block that is NOT a <table> (e.g. <div>,
+// <style>) must be emitted as ordinary text with no layout, so downstream
 // consumers (chunker) do not mistake it for a table.
 func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	ctx := t.Context()
@@ -754,9 +747,6 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<div") || strings.Contains(text, "<style") {
-			if ck, ok := item["ck_type"].(string); ok && ck == "table" {
-				t.Fatalf("non-table HTML block wrongly tagged ck_type:\"table\": %q", text)
-			}
 			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 				t.Fatalf("non-table HTML block wrongly tagged doc_type_kwd:\"table\": %q", text)
 			}
@@ -826,9 +816,6 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 			tableCount++
 			if _, ok := item["table"].(*entity.TableData); !ok {
 				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
-			}
-			if ck, _ := item["ck_type"].(string); ck != "table" {
-				t.Fatalf("raw table item ck_type = %q, want \"table\"", ck)
 			}
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"path/filepath"
 	"ragflow/internal/service"
@@ -13,23 +14,15 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
-
-	"go.uber.org/zap"
+	"ragflow/internal/utility"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
-	}
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
-	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -46,18 +39,47 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	for _, doc := range documents {
 		documentByID[doc.ID] = doc
 	}
-
+	accessibleDocuments := make(map[string]*entity.Document, len(documentIDs))
+	var permissionDenied error
+	otherFailures := 0
 	for _, docID := range documentIDs {
 		doc, ok := documentByID[docID]
-		if !ok {
-			result[docID] = map[string]string{"error": "Document not found"}
+		if !ok || doc.KbID != datasetID {
+			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+			otherFailures++
 			hasError = true
 			continue
 		}
-
-		if doc.KbID != datasetID {
-			result[docID] = map[string]string{"error": "Document not found in this dataset."}
+		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+			result[docID] = map[string]string{"error": "Permission denied"}
+			if permissionresponse.IsPermissionError(err) {
+				permissionDenied = err
+			} else {
+				otherFailures++
+			}
 			hasError = true
+			continue
+		}
+		accessibleDocuments[docID] = doc
+	}
+	if len(accessibleDocuments) == 0 {
+		if hasError {
+			if permissionDenied != nil && otherFailures == 0 {
+				code, normalizedErr := permissionresponse.Normalize(permissionDenied)
+				return result, code, normalizedErr
+			}
+			return result, common.CodeServerError, fmt.Errorf("partial failure")
+		}
+		return result, common.CodeSuccess, nil
+	}
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return result, common.CodeDataError, fmt.Errorf("dataset not found")
+	}
+
+	for _, docID := range documentIDs {
+		doc, ok := accessibleDocuments[docID]
+		if !ok {
 			continue
 		}
 
@@ -114,10 +136,11 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
+
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
@@ -133,41 +156,45 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-
-	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
-	if present["meta_fields"] {
-		if err = s.replaceDocumentMetadata(ctx, documentID, req.MetaFields); err != nil {
-			return nil, common.CodeDataError, err
-		}
+	// Normalize chunk_method into the same selection used to clean and save
+	// parser_config. An omitted selection keeps the document's own template.
+	parseType, parserID := req.ParseType, req.ParserID
+	hasSelection := parseType != nil ||
+		(parserID != nil && strings.TrimSpace(*parserID) != "") ||
+		(req.PipelineID != nil && strings.TrimSpace(*req.PipelineID) != "")
+	if !hasSelection && present["chunk_method"] {
+		builtin := int(service.ParseModeBuiltIn)
+		parseType, parserID = &builtin, req.ChunkMethod
 	}
-
-	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
-		if err = s.updateDocumentNameOnly(ctx, doc, kb, *req.Name); err != nil {
-			return nil, common.CodeDataError, err
-		}
-	}
-
-	// Resolve the effective parse mode once via the shared selection value
-	// object. sel is the request selection (nil when the whole selection block
-	// was omitted); current is the dataset's persisted selection. Resolve applies
-	// PATCH semantics: an omitted block inherits the current mode. Both the
-	// parser_config cleaning and the reparse targeting derive from this single
-	// resolution so they can never disagree.
-	sel, selErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	sel, selErr := service.FromRequest(parseType, parserID, req.PipelineID)
 	if selErr != nil {
 		return nil, common.CodeDataError, selErr
 	}
-	current := service.CurrentSelection(kb.ParserID, kb.PipelineID)
+	current := service.CurrentSelection(doc.ParserID, doc.PipelineID)
 	eff, _ := service.Resolve(current, sel)
 	isPipeline, effParserID, effPipelineID := eff.Effective()
+	selectionChanged := current.Mode != eff.Mode ||
+		(isPipeline && current.PipelineID != eff.PipelineID) ||
+		(!isPipeline && current.ParserID != effParserID)
+	if selectionChanged && current.IsBuiltIn() && eff.IsBuiltIn() {
+		registry, err := pipelinepkg.DefaultRegistry()
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("builtin pipeline registry: %w", err)
+		}
+		previous, previousOK := registry.Get(current.ParserID)
+		target, targetOK := registry.Get(effParserID)
+		selectionChanged = !previousOK || !targetOK || previous.ParserID != target.ParserID
+	}
+	hasConfig := present["parser_config"] && req.ParserConfig != nil
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
 			permission.Subject{UserID: userID, TenantID: kb.TenantID},
-			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID},
+			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
 			permission.OperationUse,
@@ -178,68 +205,68 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	if present["parser_config"] && req.ParserConfig != nil {
-		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+	parserUpdates := map[string]interface{}{}
+	if sel != nil || hasConfig {
+		// Validate the target before any document, file, or metadata writes.
+		dslJSON, err := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
-			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
-				zap.Error(err))
-			if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
-				return nil, common.CodeDataError, err
+			return nil, common.CodeDataError, err
+		}
+		rawConfig := req.ParserConfig
+		if !selectionChanged {
+			rawConfig = common.DeepMergeMaps(doc.ParserConfig, req.ParserConfig)
+		}
+		cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, rawConfig)
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("invalid pipeline DSL: %w", err)
+		}
+		if doc.Name != nil {
+			family := componentpkg.ParserFileFamily(utility.GetFileExtension(*doc.Name))
+			if family != "" {
+				if declared, found := configDeclaredFamily(cleaned, family); found && !declared {
+					return nil, common.CodeDataError, fmt.Errorf("selected pipeline does not support file type %q", family)
+				}
 			}
-		} else {
-			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
-			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
-			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
-			if tenantErr == nil && tenant != nil {
-				cleaned = service.ApplyComponentScopedParserConfig(
-					cleaned,
-					tenant.LLMID,
-				)
+		}
+		if selectionChanged || hasConfig {
+			// Inherited runtime delimiters are not an explicit override when
+			// this request changes parent_child.
+			parentChildOverrides := maps.Clone(rawConfig)
+			for componentID, raw := range req.ParserConfig {
+				if requested, ok := raw.(map[string]any); ok {
+					if _, provided := requested["parent_child"]; provided {
+						parentChildOverrides[componentID] = requested
+					}
+				}
 			}
-			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"parser_config": cleaned,
-			}); err != nil {
-				return nil, common.CodeDataError, err
-			}
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
+			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
+			parserUpdates["parser_config"] = cleaned
 		}
 	}
 
-	// Apply parser_id / pipeline_id changes. parse_type is validated earlier
-	// (in validateDatasetDocumentUpdate); reparse only fires when parse_type
-	// explicitly selects a mode. The mode direction comes from the same
-	// isPipeline resolution above.
-	var reparseParserID, reparsePipelineID *string
-	if req.ParseType != nil {
-		switch {
-		case !isPipeline: // BuiltIn
-			if present["parser_id"] && req.ParserID != nil {
-				if p := strings.TrimSpace(*req.ParserID); p != "" {
-					reparseParserID = &p
-				}
-			}
-			// Drop any prior canvas so the worker falls back to the builtin template.
-			empty := ""
-			reparsePipelineID = &empty
-		case isPipeline: // Pipeline
-			if present["pipeline_id"] && req.PipelineID != nil {
-				reparsePipelineID = req.PipelineID
-			}
-		}
-	} else if present["chunk_method"] && req.ChunkMethod != nil {
-		// chunk_method is the public alias for a direct parser change; it does
-		// not require parse_type (mirrors Python's update_chunk_method).
-		if p := strings.TrimSpace(*req.ChunkMethod); !strings.EqualFold(p, doc.ParserID) {
-			reparseParserID = &p
-			empty := ""
-			reparsePipelineID = &empty
-		} else if doc.PipelineID != nil && *doc.PipelineID != "" {
-			empty := ""
-			reparsePipelineID = &empty
+	if sel != nil {
+		if isPipeline {
+			parserUpdates["pipeline_id"] = *effPipelineID
+		} else {
+			parserUpdates["parser_id"] = effParserID
+			parserUpdates["pipeline_id"] = ""
 		}
 	}
-	if reparseParserID != nil || reparsePipelineID != nil {
-		if err = s.resetDocumentForReparse(ctx, doc, kb.TenantID, reparseParserID, reparsePipelineID); err != nil {
+	if present["meta_fields"] {
+		if err = s.replaceDocumentMetadata(ctx, documentID, req.MetaFields); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
+		if err = s.updateDocumentNameOnly(ctx, doc, kb, *req.Name); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+	// Save selection and config together; parsed content changes only on reparse.
+	if len(parserUpdates) > 0 {
+		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, parserUpdates); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -297,7 +324,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	}
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
@@ -336,29 +363,15 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
 			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
 		}
-		cm := strings.TrimSpace(*req.ChunkMethod)
-		if !validDocumentChunkMethods[cm] {
-			return common.CodeDataError, fmt.Errorf("Field: <chunk_method> - Message: <`chunk_method` %s doesn't exist> - Value: <%s>", cm, cm)
+		registry, err := pipelinepkg.DefaultRegistry()
+		if err != nil {
+			return common.CodeDataError, fmt.Errorf("builtin pipeline registry: %w", err)
 		}
-		if (doc.Type == "visual" && cm != "picture") || (isPresentationFile(doc.Name) && cm != "presentation") {
-			return common.CodeDataError, errors.New("not supported yet")
+		if !registry.IsValid(*req.ChunkMethod) {
+			return common.CodeDataError, fmt.Errorf("unknown builtin parser_id: %s", strings.TrimSpace(*req.ChunkMethod))
 		}
 	}
 
-	if present["parse_type"] || present["parser_id"] || present["pipeline_id"] {
-		sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
-		if err != nil {
-			return common.CodeDataError, err
-		}
-		// The parser_id type constraint (visual/presentation) only applies in
-		// builtin mode — in pipeline mode parser_id is not applicable.
-		if sel != nil && sel.IsBuiltIn() && present["parser_id"] && req.ParserID != nil {
-			parserID := strings.TrimSpace(*req.ParserID)
-			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
-				return common.CodeDataError, errors.New("not supported yet")
-			}
-		}
-	}
 	if present["name"] {
 		// An explicit null name is a type error, not an unset field.
 		if req.Name == nil {
@@ -418,14 +431,6 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	return common.CodeSuccess, nil
-}
-
-func isPresentationFile(name *string) bool {
-	if name == nil {
-		return false
-	}
-	ext := strings.ToLower(filepath.Ext(*name))
-	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
 }
 
 func validateMetaFields(meta map[string]any) error {
@@ -494,24 +499,6 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	)
 }
 
-func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, documentID string, config map[string]any) error {
-	if len(config) == 0 {
-		return nil
-	}
-
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, documentID)
-	if err != nil {
-		return fmt.Errorf("document(%s) not found", documentID)
-	}
-
-	merged := common.DeepMergeMaps(doc.ParserConfig, config)
-	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
-
-	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
-		"parser_config": entity.JSONMap(merged),
-	})
-}
-
 func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
 	if metaFields == nil {
 		metaFields = map[string]interface{}{}
@@ -563,13 +550,6 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		UpdateTime:           doc.UpdateTime,
 		UpdateDate:           doc.UpdateDate,
 	}, nil
-}
-
-// validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.
-var validDocumentChunkMethods = map[string]bool{
-	"naive": true, "manual": true, "qa": true, "table": true, "paper": true,
-	"book": true, "laws": true, "presentation": true, "picture": true,
-	"one": true, "knowledge_graph": true, "email": true, "tag": true,
 }
 
 // pythonFloatRepr formats a float the way Python's str()/repr() does:

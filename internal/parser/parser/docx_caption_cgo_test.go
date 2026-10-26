@@ -111,7 +111,6 @@ func docxCaptionFindTable(t *testing.T, res ParseResult) *entity.TableData {
 
 func docxCaptionParse(t *testing.T, bodyInner string) ParseResult {
 	p := NewDOCXParser()
-	p.outputFormat = "json"
 	res := p.ParseWithResult(t.Context(), "caption.docx", docxCaptionTestDOCX(t, bodyInner))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)

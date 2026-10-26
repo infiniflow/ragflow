@@ -30,8 +30,8 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 		t.Fatalf("items = %d, want one segmented HTML table item", len(res.JSON))
 	}
 	item := res.JSON[0].ToMap()
-	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
-		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
+	if item["doc_type_kwd"] != "table" {
+		t.Fatalf("item doc_type_kwd = %v, want table", item["doc_type_kwd"])
 	}
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>ID</th><th>Status</th></tr>\n" +
@@ -81,7 +81,7 @@ func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" || res.JSON[0].ToMap()["table"] == nil {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" || res.JSON[0].ToMap()["table"] == nil {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -186,7 +186,7 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 // user content can never become markup.
 func TestBuildSheetItemsEscapesCellText(t *testing.T) {
 	const tricky = `<b>bold</b> & "quoted" > 1`
-	items := buildSheetItems([][]string{{"Name"}, {tricky}}, "Sheet1", 1, 1, nil, nil)
+	items := buildSheetItems([][]string{{"Name"}, {tricky}}, "Sheet1", 1, 1, nil, nil, nil)
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want one segment", len(items))
 	}
@@ -284,6 +284,95 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 		items := build(t, func(f *excelize.File) { mustSetCell(t, f, "Sheet1", "B4", "row4") })
 		assertSegments(t, items, []string{"row2", "row3"}, []string{"row4", "row5", "row6"})
 	})
+}
+
+// TestXLSXParserImageAnchorDoesNotSplitMergedGroup asserts segmentation keeps
+// a merge group inside one segment. An image anchor inside B2:B3 must move
+// after the group, otherwise row 3 would be a Covered slot whose origin lives
+// in the previous segment.
+func TestXLSXParserImageAnchorDoesNotSplitMergedGroup(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Value")
+		mustSetCell(t, f, "Sheet1", "A2", "q2")
+		mustSetCell(t, f, "Sheet1", "B2", "a2")
+		mustMergeCell(t, f, "Sheet1", "B2", "B3")
+		mustSetCell(t, f, "Sheet1", "A3", "q3")
+		mustSetCell(t, f, "Sheet1", "A4", "q4")
+		mustSetCell(t, f, "Sheet1", "B4", "a4")
+		if err := f.AddPictureFromBytes("Sheet1", "A2", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "fig"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merge-anchor.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want table, image, table", len(items))
+	}
+	if items[1]["doc_type_kwd"] != "image" {
+		t.Fatalf("middle item = %#v, want image", items[1])
+	}
+	first := items[0]["table"].(*entity.TableData)
+	if len(first.Grid) != 3 {
+		t.Fatalf("first segment rows = %d, want header + two merged rows", len(first.Grid))
+	}
+	if first.Grid[1][1].Text != "a2" || first.Grid[1][1].RowSpan != 2 {
+		t.Fatalf("merge origin = %+v, want a2 rowspan 2", first.Grid[1][1])
+	}
+	if !first.Grid[2][1].Covered {
+		t.Fatalf("merge slave = %+v, want Covered", first.Grid[2][1])
+	}
+	second := items[2]["table"].(*entity.TableData)
+	if len(second.Grid) != 2 {
+		t.Fatalf("second segment rows = %d, want header + row4", len(second.Grid))
+	}
+}
+
+// TestXLSXParserImageAnchorAtLastMergedRow covers the boundary where the merge
+// group ends on the last retained data row. The image cut must advance to
+// len(rows) and stop without indexing past the slice.
+func TestXLSXParserImageAnchorAtLastMergedRow(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Value")
+		mustSetCell(t, f, "Sheet1", "A2", "q2")
+		mustSetCell(t, f, "Sheet1", "B2", "a2")
+		mustMergeCell(t, f, "Sheet1", "B2", "B3")
+		mustSetCell(t, f, "Sheet1", "A3", "q3")
+		if err := f.AddPictureFromBytes("Sheet1", "A2", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "fig"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merge-anchor-last.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want table then image", len(items))
+	}
+	first := items[0]["table"].(*entity.TableData)
+	if len(first.Grid) != 3 {
+		t.Fatalf("first segment rows = %d, want header + two merged rows", len(first.Grid))
+	}
+	if first.Grid[1][1].RowSpan != 2 || !first.Grid[2][1].Covered {
+		t.Fatalf("last-row merge = %+v / %+v, want span ending on the last row", first.Grid[1][1], first.Grid[2][1])
+	}
 }
 
 // markupRows extracts the cell texts of every <tr> in rendered spreadsheet
@@ -484,10 +573,11 @@ func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 	}
 }
 
-// TestXLSXParser_MergedHeaderInheritance asserts a horizontally merged header
-// cell's slave columns inherit the master text, so a wide merged title does not
-// render as a row of blank header cells.
-func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
+// TestXLSXParser_MergedHeaderKeepsColspan asserts a horizontally merged
+// header keeps its merge geometry (one origin with colspan) instead of being
+// pre-expanded into duplicate header cells. The table view still projects the
+// label across every column.
+func TestXLSXParser_MergedHeaderKeepsColspan(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		// Row 1 is the header; A1:C1 merged into one wide label "Sales Report".
 		mustSetCell(t, f, "Sheet1", "A1", "Sales Report")
@@ -508,15 +598,25 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th>Sales Report</th><th>Sales Report</th><th>Sales Report</th>") {
-		t.Fatalf("merged master text not inherited into header cells, got:\n%s", text)
+	if !strings.Contains(text, `<th colspan="3">Sales Report</th>`) {
+		t.Fatalf("merged header should keep colspan, got:\n%s", text)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	if len(rows) == 0 || len(rows[0]) != 3 {
+		t.Fatalf("table view header = %v, want three projected columns", rows)
+	}
+	for i, want := range []string{"Sales Report", "Sales Report", "Sales Report"} {
+		if rows[0][i] != want {
+			t.Fatalf("table view header[%d] = %q, want %q", i, rows[0][i], want)
+		}
 	}
 }
 
-// TestXLSXParser_MergedDataCellInheritance asserts a vertically merged data
-// cell's slave rows inherit the master text, so every row chunk keeps its
-// group label instead of rendering an empty first cell.
-func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
+// TestXLSXParser_MergedDataCellKeepsRowspan asserts a vertically merged data
+// cell is stored as rowspan geometry, while the table view still resolves the
+// group label into every projected data row.
+func TestXLSXParser_MergedDataCellKeepsRowspan(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Group")
 		mustSetCell(t, f, "Sheet1", "B1", "Item")
@@ -530,9 +630,16 @@ func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	text := spreadsheetText(res)
-	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
-		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	if td.Grid[1][0].Text != "G1" || td.Grid[1][0].RowSpan != 2 {
+		t.Fatalf("origin cell = %+v, want G1 rowspan 2", td.Grid[1][0])
+	}
+	if !td.Grid[2][0].Covered {
+		t.Fatalf("slave cell = %+v, want Covered", td.Grid[2][0])
+	}
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	if len(rows) != 3 || !reflect.DeepEqual(rows[2], []string{"G1", "y"}) {
+		t.Fatalf("table view row 3 = %v, want [G1 y]", rows)
 	}
 	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != 3 {
@@ -568,7 +675,8 @@ func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
 
 // TestXLSXParser_MergedDataCellBeyondTruncation asserts a merged slave cell
 // past its row's truncation point (excelize drops trailing empties) is still
-// filled: the row grows exactly up to the slave column to host the value.
+// represented by the origin's rowspan, and the table view resolves it into the
+// truncated row.
 func TestXLSXParser_MergedDataCellBeyondTruncation(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "name")
@@ -591,10 +699,11 @@ func TestXLSXParser_MergedDataCellBeyondTruncation(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	text := spreadsheetText(res)
-	want := "<tr><td>Mike</td><td>28</td><td>IT</td><td>Important customer</td></tr>"
-	if !strings.Contains(text, want) {
-		t.Fatalf("truncated slave cells not filled, got:\n%s", text)
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	want := []string{"Mike", "28", "IT", "Important customer"}
+	if len(rows) != 3 || !reflect.DeepEqual(rows[2], want) {
+		t.Fatalf("table view row 3 = %v, want %v", rows, want)
 	}
 }
 
@@ -613,11 +722,139 @@ func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "<tr><th>H</th><th>Name</th></tr>") {
-		t.Fatalf("want header row untouched, got:\n%s", text)
+	if !strings.Contains(text, `<th rowspan="2">H</th>`) {
+		t.Fatalf("want header row to keep its rowspan, got:\n%s", text)
 	}
 	if strings.Contains(text, "<td>H</td>") {
 		t.Fatalf("header merge master leaked into data row, got:\n%s", text)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	if len(rows) != 2 || rows[1][0] != "" {
+		t.Fatalf("table view data row must not inherit the header label: %v", rows)
+	}
+}
+
+// TestXLSXParserHeaderBelowMergedTitle asserts a merged title that starts
+// above the detected header and crosses it is materialized into the header
+// cell instead of being lost after the header row is reordered to the front.
+func TestXLSXParserHeaderBelowMergedTitle(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Title")
+		mustMergeCell(t, f, "Sheet1", "A1", "A3")
+		mustSetCell(t, f, "Sheet1", "B3", "Name")
+		mustSetCell(t, f, "Sheet1", "C3", "Value")
+		idx := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCellStyle(t, f, "Sheet1", "B3", "C3", idx)
+		mustSetCell(t, f, "Sheet1", "B4", "Alice")
+		mustSetCell(t, f, "Sheet1", "C4", "1")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Title</th><th>Name</th><th>Value</th>") {
+		t.Fatalf("merged title above the header was lost:\n%s", text)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	if len(td.Grid[0]) != 3 || td.Grid[0][0].Text != "Title" {
+		t.Fatalf("header grid = %+v, want Title in the first column", td.Grid[0])
+	}
+}
+
+// TestXLSXParserFullyCoveredRowRetained asserts a row with no cells of its own
+// is still kept when a non-blank merge master covers it. Dropping the row would
+// let the origin's rowspan continue into the next retained row and misalign it.
+func TestXLSXParserFullyCoveredRowRetained(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+		mustSetCell(t, f, "Sheet1", "A4", "G2")
+		mustSetCell(t, f, "Sheet1", "B4", "y")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	if len(td.Grid) != 4 {
+		t.Fatalf("grid rows = %d, want header + three data rows: %+v", len(td.Grid), td.Grid)
+	}
+	if !td.Grid[2][0].Covered {
+		t.Fatalf("covered row lost its marker: %+v", td.Grid[2])
+	}
+	rows := tableutil.ResolveRows(td, tableutil.RowsTable)
+	if len(rows) != 4 || rows[2][0] != "G1" || rows[3][0] != "G2" {
+		t.Fatalf("table view rows = %v, want G1 on the covered row and G2 after it", rows)
+	}
+}
+
+// TestXLSXParserHeaderSpanClampedPerSegment asserts a header-origin merge does
+// not reserve its column in a later image segment whose body starts after the
+// merge. Only the segment that actually carries the covered rows owns the span.
+func TestXLSXParserHeaderSpanClampedPerSegment(t *testing.T) {
+	const pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Q")
+		mustSetCell(t, f, "Sheet1", "B1", "shared")
+		mustMergeCell(t, f, "Sheet1", "B1", "B2")
+		mustSetCell(t, f, "Sheet1", "A2", "q2")
+		mustSetCell(t, f, "Sheet1", "A3", "q3")
+		mustSetCell(t, f, "Sheet1", "B3", "a3")
+		if err := f.AddPictureFromBytes("Sheet1", "A2", &excelize.Picture{
+			Extension: ".png",
+			File:      mustDecodeBase64(t, pngBase64),
+			Format:    &excelize.GraphicOptions{AltText: "fig"},
+		}); err != nil {
+			t.Fatalf("AddPictureFromBytes: %v", err)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "header-span.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 3 {
+		t.Fatalf("items = %d, want table, image, table", len(items))
+	}
+	first := items[0]["table"].(*entity.TableData)
+	if first.Grid[0][1].RowSpan != 2 || !first.Grid[1][1].Covered {
+		t.Fatalf("first segment header span = %+v, want rowspan 2 with a covered row", first.Grid)
+	}
+	second := items[2]["table"].(*entity.TableData)
+	if second.Grid[0][1].RowSpan > 1 {
+		t.Fatalf("second segment header span = %d, want it clamped", second.Grid[0][1].RowSpan)
+	}
+	if second.Grid[1][1].Covered || second.Grid[1][1].Text != "a3" {
+		t.Fatalf("second segment body = %+v, want a3 not covered", second.Grid[1])
+	}
+}
+
+// TestMaterializeDetachedMergesCapsWidth asserts a crafted far merge that
+// crosses the header cannot allocate one cell per worksheet column.
+func TestMaterializeDetachedMergesCapsWidth(t *testing.T) {
+	rows := map[int][]string{
+		1: {"Title"},
+		2: {},
+		3: {"", "Name"},
+	}
+	ranges := []mergeRange{{sr: 1, sc: 1, er: 3, ec: 16384}}
+	kept := materializeDetachedMerges(rows, 3, ranges)
+	if len(kept) != 0 {
+		t.Fatalf("detached merge left geometry: %v", kept)
+	}
+	if len(rows[3]) != maxMergeExtentCols {
+		t.Fatalf("header width = %d, want capped at %d", len(rows[3]), maxMergeExtentCols)
+	}
+	if rows[3][0] != "Title" || rows[3][1] != "Name" {
+		t.Fatalf("header cells = %q, want Title/Name", rows[3][:2])
 	}
 }
 
@@ -875,26 +1112,6 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	}
 	if got := spreadsheetHeaderText(res); got != "Product; Units" {
 		t.Fatalf("header text = %v, want Product; Units", got)
-	}
-}
-
-// TestInheritMergedHeader unit-tests the merge inheritance helper directly.
-func TestInheritMergedHeader(t *testing.T) {
-	records := [][]string{
-		{"MASTER", "", "Q2"}, // header row: B1 blank, merged from master A1
-		{"a", "b", "c"},
-	}
-	mm := map[[2]int][2]int{
-		{1, 1}: {1, 1},
-		{1, 2}: {1, 1}, // B1's master is A1
-		{1, 3}: {1, 3},
-	}
-	inheritMergedHeader(records, 1, mm)
-	if records[0][1] != "MASTER" {
-		t.Fatalf("expected B1 to inherit A1 master text, got %q", records[0][1])
-	}
-	if records[0][2] != "Q2" {
-		t.Fatalf("expected non-merged C1 to keep its value, got %q", records[0][2])
 	}
 }
 

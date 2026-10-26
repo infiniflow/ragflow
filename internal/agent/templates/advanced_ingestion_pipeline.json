@@ -127,7 +127,6 @@
                             }
                         },
                         "doc": {
-                            "output_format": "json",
                             "preprocess": "main_content",
                             "suffix": [
                                 "doc"
@@ -135,7 +134,6 @@
                         },
                         "docx": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": "main_content",
                             "suffix": [
                                 "docx"
@@ -153,7 +151,6 @@
                                 "body",
                                 "attachments"
                             ],
-                            "output_format": "text",
                             "preprocess": "main_content",
                             "suffix": [
                                 "eml",
@@ -161,7 +158,6 @@
                             ]
                         },
                         "html": {
-                            "output_format": "json",
                             "preprocess": "main_content",
                             "suffix": [
                                 "htm",
@@ -169,7 +165,6 @@
                             ]
                         },
                         "image": {
-                            "output_format": "json",
                             "parse_method": "ocr",
                             "preprocess": "main_content",
                             "suffix": [
@@ -182,7 +177,6 @@
                         },
                         "markdown": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": "main_content",
                             "suffix": [
                                 "md",
@@ -193,7 +187,6 @@
                         },
                         "pdf": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": "main_content",
                             "suffix": [
@@ -202,7 +195,6 @@
                             "vlm": {}
                         },
                         "slides": {
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": "main_content",
                             "suffix": [
@@ -212,7 +204,6 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
                             "parse_method": "DeepDOC",
                             "preprocess": "main_content",
                             "suffix": [
@@ -223,7 +214,6 @@
                             "vlm": {}
                         },
                         "text&code": {
-                            "output_format": "json",
                             "preprocess": "main_content",
                             "suffix": [
                                 "txt",
@@ -374,20 +364,17 @@
                                 {
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "image",
-                                    "output_format": "json",
                                     "parse_method": "ocr",
                                     "preprocess": "main_content",
                                     "system_prompt": ""
@@ -404,39 +391,32 @@
                                         "attachments"
                                     ],
                                     "fileFormat": "email",
-                                    "output_format": "text",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "markdown",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "text&code",
-                                    "output_format": "json",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "html",
-                                    "output_format": "json",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "doc",
-                                    "output_format": "json",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": "main_content"
                                 },
                                 {
                                     "fileFormat": "slides",
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": "main_content"
                                 }

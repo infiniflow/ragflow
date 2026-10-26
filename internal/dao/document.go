@@ -397,12 +397,13 @@ func (dao *DocumentDAO) GetChunkingConfig(ctx context.Context, db *gorm.DB, docI
 			knowledgebase.language,
 			knowledgebase.embd_id,
 			tenant.id AS tenant_id,
-			tenant.img2txt_id,
-			tenant.asr_id,
-			tenant.llm_id
+			user_tenant.img2txt_id,
+			user_tenant.asr_id,
+			user_tenant.llm_id
 		`).
 		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
 		Joins("JOIN tenant ON knowledgebase.tenant_id = tenant.id").
+		Joins("LEFT JOIN user_tenant ON user_tenant.id = (SELECT id FROM user_tenant WHERE tenant_id = tenant.id AND status = '1' AND (role = 'owner' OR user_id = tenant.id) ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END LIMIT 1)").
 		Where("document.id = ?", docID).
 		Take(&row).Error
 	if err != nil {

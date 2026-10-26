@@ -28,13 +28,10 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
-
-	"go.uber.org/zap"
 )
 
 type parserSetupConfigurer interface {
@@ -65,8 +62,8 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // its structured ParseWithResult contract.
 //
 // The function NEVER returns a partial result. On error the result
-// is the zero value (OutputFormat == "" + Err != nil). Callers can
-// detect the success/failure boundary on the OutputFormat alone.
+// is the zero value (Err != nil, no JSON and no File). Callers detect the
+// success/failure boundary with ParseResult.Produced().
 //
 // fileType may be utility.FileTypeOTHER when the upstream did not
 // supply a filename; the dispatch then takes text-page mode
@@ -251,6 +248,9 @@ func familyToExt(family string) utility.FileType {
 // Python family identifier used by ParserComponent setups.
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
+	if utility.IsVideoExtension(raw) || raw == "video" {
+		return "video"
+	}
 	switch raw {
 	case "pdf":
 		return "pdf"
@@ -258,7 +258,7 @@ func pythonFamilyName(raw string) string {
 		return "doc"
 	case "docx":
 		return "docx"
-	case "ppt", "pptx", "slides":
+	case "ppt", "pptx", "pages", "dps", "dpt", "slides":
 		return "slides"
 	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"
@@ -275,9 +275,6 @@ func pythonFamilyName(raw string) string {
 	case "text&code", "txt", "py", "js", "java", "c", "cpp", "h", "php",
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
-	case "mp4", "avi", "mkv", "mov", "webm", "flv",
-		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
-		return "video"
 	case "eml", "msg", "email":
 		return "email"
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
@@ -318,7 +315,7 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	if lang != "" {
 		out["lang"] = lang
 	}
-	if dispatched.Err == nil && dispatched.OutputFormat != "" {
+	if dispatched.Produced() {
 		out["output_format"] = "json"
 		// Emit the parser's typed []DocItem directly. The chunker consumes
 		// it via schema.ChunkDocsFromDocItem (no ToMap round-trip); other
@@ -354,21 +351,7 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}
-	if dispatched.Markdown != "" {
-		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
-	}
-	if dispatched.Text != "" {
-		return []parser.DocItem{parser.NewTextJSONItem(dispatched.Text)}
-	}
 	return []parser.DocItem{}
-}
-
-func warnParserNormalizationFallback(filename, source string, err error) {
-	common.Warn("parser normalization fell back to text",
-		zap.String("filename", filename),
-		zap.String("normalized_from", source),
-		zap.Error(err),
-	)
 }
 
 func parserInputName(inputs map[string]any, docID string) string {

@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -1250,11 +1252,14 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, dialog.TenantID)
-		if err != nil || tenant.LLMID == "" {
+		membership, err := NewTenantService().defaultModelMembership(ctx, userID, dialog.TenantID)
+		if err != nil || membership.LLMID == "" {
 			return fail(errors.New("no default chat model for tenant"))
 		}
-		dialog.LLMID = tenant.LLMID
+		dialog.LLMID = membership.LLMID
+		if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+			dialog.TenantLLMID = membership.TenantLLMID
+		}
 		if dialog.LLMSetting == nil {
 			dialog.LLMSetting = entity.JSONMap{}
 		}
@@ -1322,6 +1327,7 @@ func (s *ChatSessionService) ChatCompletions(
 					// through to the DAO.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+					attachTurnCost(finalLegacyAnswer, result)
 					continue
 				}
 				if result.StartToThink {
@@ -1379,6 +1385,7 @@ func (s *ChatSessionService) ChatCompletions(
 							ans["created_at"] = result.CreatedAt
 						}
 						ans["final"] = true
+						attachTurnCost(ans, result)
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
@@ -1608,7 +1615,9 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 }
 
 // GetOrCreateForChannel finds or creates the deterministic conversation for one external chat.
-func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID string) (*entity.ChatSession, error) {
+// firstQuery and channelName only affect the display name, and only when the
+// conversation is created here; an existing conversation keeps its name.
+func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID, firstQuery, channelName string) (*entity.ChatSession, error) {
 	sessionID := channelSessionID(dialogID, channelID, chatID)
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 	if err == nil {
@@ -1620,7 +1629,10 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 
 	messagesJSON, _ := json.Marshal([]map[string]interface{}{})
 	referenceJSON, _ := json.Marshal([]interface{}{})
-	name := fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	name := channelSessionName(firstQuery, channelName)
+	if name == "" {
+		name = fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	}
 	session = &entity.ChatSession{
 		ID:        sessionID,
 		DialogID:  dialogID,
@@ -1642,6 +1654,47 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 func channelSessionID(dialogID, channelID, chatID string) string {
 	sum := sha256.Sum256([]byte(dialogID + ":" + channelID + ":" + chatID))
 	return fmt.Sprintf("%x", sum[:])[:32]
+}
+
+// channelSessionNameMaxRunes matches the conversation.name column width.
+const channelSessionNameMaxRunes = 255
+
+// channelMentionMarkup matches platform mention markup that carries an opaque
+// ID instead of readable text, such as Discord's <@123>, <@!123>, <@&123>, and
+// <#123>.
+var channelMentionMarkup = regexp.MustCompile(`<(?:@[!&]?|#)\d+>`)
+
+// channelSessionName builds the display name for a newly created channel
+// session: the chat-channel name in parentheses, then the first user query,
+// as in "(channel: cc) who is Lin Daiyu". Mention markup is removed from the query,
+// so a bot mention never shows up in the name. It returns the empty string
+// when both inputs are blank, so the caller can fall back to the deterministic
+// ID-based name.
+func channelSessionName(firstQuery, channelName string) string {
+	query := normalizeChannelSessionNameText(channelMentionMarkup.ReplaceAllString(firstQuery, " "))
+	channel := normalizeChannelSessionNameText(channelName)
+	if channel == "" {
+		return utility.TruncateRunes(query, channelSessionNameMaxRunes)
+	}
+
+	prefix := "(channel: " + channel + ") "
+	if query == "" {
+		return utility.TruncateRunes(strings.TrimSpace(prefix), channelSessionNameMaxRunes)
+	}
+	prefixRunes := []rune(prefix)
+	if len(prefixRunes) >= channelSessionNameMaxRunes {
+		return string(prefixRunes[:channelSessionNameMaxRunes])
+	}
+	if room := channelSessionNameMaxRunes - len(prefixRunes); len([]rune(query)) > room {
+		query = utility.TruncateRunes(query, room)
+	}
+	return prefix + query
+}
+
+// normalizeChannelSessionNameText collapses every whitespace run, including
+// newlines, into one space and trims the ends.
+func normalizeChannelSessionNameText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // appendSessionMessage appends the last user message to the session's message history.
@@ -1791,6 +1844,11 @@ type sseAnswerChunk struct {
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
 	ThinkEvent   interface{}            `json:"think_event,omitempty"`
+	// What the turn cost. Only the final event carries it: a delta is partial
+	// and would need merging, and a zero total would render as "0 tokens",
+	// which reads as a measurement rather than an absence.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order:
@@ -1901,8 +1959,18 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	startToThink, _ := ans["start_to_think"].(bool)
 	endToThink, _ := ans["end_to_think"].(bool)
 
+	// These two are built from the map rather than from a struct field, so a
+	// value that is absent stays absent.
+	var usage *ChatTurnUsage
+	if u, ok := ans["usage"].(*ChatTurnUsage); ok {
+		usage = u
+	}
+	elapsedMs, _ := ans["elapsed_ms"].(float64)
+
 	chunk := sseAnswerChunk{
 		Answer:       answer,
+		Usage:        usage,
+		ElapsedMs:    elapsedMs,
 		Reference:    ref,
 		AudioBinary:  ans["audio_binary"],
 		Prompt:       prompt,
@@ -1917,6 +1985,24 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	}
 	wrapper := sseWrapper{Code: 0, Message: "success", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
+}
+
+// attachTurnCost copies a turn's cost onto an SSE payload.
+//
+// The payload is assembled field by field rather than marshalled from
+// AsyncChatResult, so a field added to the result does not reach the wire on its
+// own — it has to be copied here. Only the final event carries it; the deltas
+// are partial and would each need merging.
+func attachTurnCost(payload map[string]interface{}, result AsyncChatResult) {
+	if payload == nil {
+		return
+	}
+	if result.Usage != nil {
+		payload["usage"] = result.Usage
+	}
+	if result.ElapsedMs > 0 {
+		payload["elapsed_ms"] = result.ElapsedMs
+	}
 }
 
 func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {
