@@ -772,8 +772,7 @@ type aliyunUploadPolicyResponse struct {
 
 // aliyunAudioExt lower-cases the filename extension for the OSS object key
 // and keeps it URL-safe: a dot followed by alphanumerics only. Anything else
-// ("clip.wav#1" -> ".wav#1", bare ".", no extension) falls back to ".wav",
-// the same default the MIME mapping uses.
+// ("clip.wav#1" -> ".wav#1", bare ".", no extension) falls back to ".wav".
 func aliyunAudioExt(filename string) string {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if len(ext) > 1 && strings.TrimFunc(ext[1:], func(r rune) bool {
