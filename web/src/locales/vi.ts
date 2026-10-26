@@ -107,7 +107,7 @@ export default {
       webCrawl: 'Web Crawl',
       chunkNumber: 'Số lượng khối',
       uploadDate: 'Ngày tải lên',
-      chunkMethod: 'Phương thức khối',
+      parsingMode: 'Chế độ phân tích',
       enabled: 'Bật',
       disabled: 'Tắt',
       action: 'Hành động',
@@ -191,6 +191,7 @@ export default {
       documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
+      parsingMode: 'Chế độ phân tích',
       builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
       imageTableContextWindowTip:
@@ -213,8 +214,6 @@ export default {
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
         'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo. Không có khối mới nào được tạo ra trừ khi một dấu phân cách được gặp, ngay cả khi ngưỡng này bị vượt quá.',
-      chunkMethod: 'Phương thức khối',
-      chunkMethodTip: 'Mẹo ở bên phải.',
       upload: 'Tải lên',
       english: 'Tiếng Anh',
       chinese: 'Tiếng Trung',

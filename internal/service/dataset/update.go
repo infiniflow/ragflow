@@ -301,7 +301,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
-				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				parserConfig, buildErr := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				if buildErr != nil {
+					txCode = common.CodeDataError
+					return buildErr
+				}
 				updates["parser_config"] = preserveDatasetParserConfigState(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
@@ -353,8 +357,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		}
 		if effectiveParserConfig != nil {
 			llmID := ""
-			if ownerTenant, tenantErr := d.tenantDAO.GetByID(ctx, tx, lockedKB.TenantID); tenantErr == nil && ownerTenant != nil {
-				llmID = ownerTenant.LLMID
+			var membership entity.UserTenant
+			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
+				llmID = membership.LLMID
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,

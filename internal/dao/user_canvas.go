@@ -77,6 +77,10 @@ func NewUserCanvasDAO() *UserCanvasDAO {
 
 // Create user canvas
 func (dao *UserCanvasDAO) Create(ctx context.Context, db *gorm.DB, userCanvas *entity.UserCanvas) error {
+	if userCanvas != nil && (userCanvas.TenantID == nil || strings.TrimSpace(*userCanvas.TenantID) == "") {
+		tenantID := strings.TrimSpace(userCanvas.UserID)
+		userCanvas.TenantID = &tenantID
+	}
 	return db.WithContext(ctx).Create(userCanvas).Error
 }
 
@@ -182,20 +186,21 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 
 // UserCanvasListItem is the joined row returned by ListByIDs.
 type UserCanvasListItem struct {
-	ID             string  `gorm:"column:id"`
-	Avatar         *string `gorm:"column:avatar"`
-	Title          *string `gorm:"column:title"`
-	Description    *string `gorm:"column:description"`
-	Permission     string  `gorm:"column:permission"`
-	UserID         string  `gorm:"column:user_id"`
-	TenantID       string  `gorm:"column:tenant_id"`
-	Nickname       *string `gorm:"column:nickname"`
-	TenantAvatar   *string `gorm:"column:tenant_avatar"`
-	CanvasType     *string `gorm:"column:canvas_type"`
-	CanvasCategory string  `gorm:"column:canvas_category"`
-	Tags           string  `gorm:"column:tags"`
-	CreateTime     *int64  `gorm:"column:create_time"`
-	UpdateTime     *int64  `gorm:"column:update_time"`
+	ID                 string  `gorm:"column:id"`
+	Avatar             *string `gorm:"column:avatar"`
+	Title              *string `gorm:"column:title"`
+	Description        *string `gorm:"column:description"`
+	Permission         string  `gorm:"column:permission"`
+	UserID             string  `gorm:"column:user_id"`
+	TenantID           string  `gorm:"column:tenant_id"`
+	Nickname           *string `gorm:"column:nickname"`
+	TenantAvatar       *string `gorm:"column:tenant_avatar"`
+	CanvasType         *string `gorm:"column:canvas_type"`
+	CanvasCategory     string  `gorm:"column:canvas_category"`
+	OperatorPermission int32   `gorm:"-"`
+	Tags               string  `gorm:"column:tags"`
+	CreateTime         *int64  `gorm:"column:create_time"`
+	UpdateTime         *int64  `gorm:"column:update_time"`
 }
 
 // ListByIDs lists permission-filtered canvases with optional metadata filters.
@@ -211,7 +216,7 @@ func (dao *UserCanvasDAO) ListByIDs(ctx context.Context, db *gorm.DB, canvasIDs,
 		user_canvas.description,
 		user_canvas.permission,
 		user_canvas.user_id,
-		user_canvas.user_id AS tenant_id,
+		COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) AS tenant_id,
 		user.nickname,
 		user.avatar AS tenant_avatar,
 		user_canvas.canvas_type,

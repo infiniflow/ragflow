@@ -267,10 +267,10 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` 拉取並解壓 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 詞表、DeepDoc 模型與 embedding 分詞器資源到 `ragflow_deps/`。兩個腳本均為 Python 腳本，`uv run` 會自動安裝其聲明的依賴（`requests`，模型與分詞器下載另需 `huggingface-hub`）。如果已透過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+   `download_dev_deps.py` 拉取並解壓 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 詞表、DeepDoc 模型與 embedding 分詞器資源到 `deps/`。兩個腳本均為 Python 腳本，`uv run` 會自動安裝其聲明的依賴（`requests`，模型與分詞器下載另需 `huggingface-hub`）。如果已透過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
 
 3. 編譯：
 

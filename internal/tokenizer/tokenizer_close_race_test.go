@@ -42,7 +42,7 @@ func prepareCloseRaceTest(t *testing.T) {
 		dir = "/usr/share/infinity/resource"
 	}
 	if _, err := os.Stat(filepath.Join(dir, "rag", "huqie.trie")); err != nil {
-		t.Skipf("analyzer dictionary not present at %s (%v); run ragflow_deps/download_deps.py", dir, err)
+		t.Skipf("analyzer dictionary not present at %s (%v); run deps/download_deps.py", dir, err)
 	}
 }
 

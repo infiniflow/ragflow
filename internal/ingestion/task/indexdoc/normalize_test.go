@@ -3,6 +3,7 @@ package indexdoc
 import (
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -23,6 +24,54 @@ func TestNormalizeChunks_ChunksFormat(t *testing.T) {
 	}
 	if result[0]["text"] != "hello" {
 		t.Errorf("result[0][\"text\"] = %q, want \"hello\"", result[0]["text"])
+	}
+}
+
+// TestNormalizeChunks_TypedChunkDocCarrier: once a chunker/tokenizer emits the
+// typed []ChunkDoc carrier, NormalizeChunks must bridge it to the map wire form
+// instead of silently dropping every chunk (which would yield zero index
+// writes).
+func TestNormalizeChunks_TypedChunkDocCarrier(t *testing.T) {
+	input := map[string]any{
+		"chunks": []schema.ChunkDoc{
+			{Text: "typed-a", ID: "1"},
+			{Text: "typed-b", ID: "2"},
+		},
+	}
+	result := NormalizeChunks(input)
+	if len(result) != 2 {
+		t.Fatalf("len = %d, want 2 (typed []ChunkDoc carrier)", len(result))
+	}
+	if result[0]["text"] != "typed-a" {
+		t.Errorf("result[0][\"text\"] = %q, want \"typed-a\"", result[0]["text"])
+	}
+}
+
+// TestNormalizeChunks_PreservesAnyCarrierFields locks the legacy []any-of-map
+// carrier path: such a carrier must be preserved verbatim (matching the
+// historical toChunkMaps behavior), NOT round-tripped through ChunkDoc. The
+// ChunkDoc round-trip drops non-ChunkDoc fields (e.g. content_with_weight) and
+// forces an empty "text" key, which the index path would then persist as an
+// empty content_with_weight.
+func TestNormalizeChunks_PreservesAnyCarrierFields(t *testing.T) {
+	input := map[string]any{
+		"chunks": []any{
+			map[string]any{"id": "c1", "content_with_weight": "hello world"},
+			map[string]any{"id": "c2", "text": "body", "content_with_weight": "rich text"},
+		},
+	}
+	result := NormalizeChunks(input)
+	if len(result) != 2 {
+		t.Fatalf("len = %d, want 2", len(result))
+	}
+	if result[0]["content_with_weight"] != "hello world" {
+		t.Errorf("result[0] content_with_weight lost: %+v", result[0])
+	}
+	if _, hasText := result[0]["text"]; hasText {
+		t.Errorf("result[0] must not gain a spurious empty text key: %+v", result[0])
+	}
+	if result[1]["text"] != "body" || result[1]["content_with_weight"] != "rich text" {
+		t.Errorf("result[1] fields lost: %+v", result[1])
 	}
 }
 

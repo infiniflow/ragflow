@@ -166,10 +166,10 @@ _seed_from_system() {
 # pre-seed first, then the network. A failure here is deliberately NOT fatal —
 # the loader stays the final gate, and its panic message names the file.
 CL100K_TABLE_URL="https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-CL100K_TABLE_RELPATH="ragflow_deps/cl100k_base.tiktoken"
+CL100K_TABLE_RELPATH="deps/cl100k_base.tiktoken"
 SYSTEM_DEPS_TOKENIZER="/opt/ragflow_deps"
 
-# Provision the cl100k_base BPE table into ragflow_deps/ (no-op if present).
+# Provision the cl100k_base BPE table into deps/ (no-op if present).
 # Returns 0 when the table is in place, 1 when it could not be provisioned.
 _ensure_cl100k_table() {
     local dest="${PROJECT_ROOT}/${CL100K_TABLE_RELPATH}"
@@ -344,7 +344,7 @@ check_ort_version_consistency() {
 # that lacks those custom slots links successfully and only fails at runtime.
 # The check below catches that by comparing the local release ZIP against the
 # published {asset}.sha256 sidecar (same source of truth the download scripts
-# use). Devs who ran a download script have the zip under ragflow_deps/; CI
+# use). Devs who ran a download script have the zip under deps/; CI
 # seeds from /opt and has no zip, where the bake is authoritative.
 check_onnxruntime_deps() {
     # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
@@ -434,7 +434,7 @@ check_onnxruntime_deps() {
     # macOS zip against the Linux digest would warn on every build, so an
     # unknown target verifies nothing instead.
     local asset="onnxruntime-v${ort_version}-$(ort_release_target).zip"
-    local zip_path="${PROJECT_ROOT}/ragflow_deps/${asset}"
+    local zip_path="${PROJECT_ROOT}/deps/${asset}"
     local expected=""
     case "$asset" in
         onnxruntime-v*-linux-x86_64.zip)
@@ -495,12 +495,12 @@ check_office_oxide_deps() {
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
         echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
-        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/ragflow_deps/$(office_oxide_asset)"
+        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/deps/$(office_oxide_asset)"
         if ! (cd "${PROJECT_ROOT}" && uv run tools/scripts/download_dev_deps.py); then
             echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
             echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
             echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-            echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/$(office_oxide_asset)"
+            echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
             echo "    uv run tools/scripts/download_dev_deps.py"
             exit 1
         fi
@@ -628,7 +628,7 @@ check_pdf_oxide_deps() {
                 echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
-                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/$(pdf_oxide_asset)"
+                echo "    rm -rf ${PDF_OXIDE_PREFIX} deps/$(pdf_oxide_asset)"
                 echo "    uv run tools/scripts/download_dev_deps.py"
                 return 1
                 ;;

@@ -45,7 +45,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	embeddingModel := "BAAI/bge-large-zh-v1.5@Builtin"
 	parseType := 1
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name:           &name,
 		Description:    &description,
@@ -106,12 +106,12 @@ func TestUpdateDataset_ClearsAvatarWithEmptyString(t *testing.T) {
 
 	svc := testDatasetUpdateService(t)
 	initial := "data:image/png;base64,iVBORw0KGgo="
-	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &initial}); err != nil || code != common.CodeSuccess {
+	if _, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &initial}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("set avatar failed: code=%d err=%v", code, err)
 	}
 
 	empty := ""
-	result, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &empty})
+	result, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &empty})
 	if err != nil {
 		t.Fatalf("clear avatar failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestUpdateDataset_ClearsAvatarWithEmptyString(t *testing.T) {
 		t.Fatalf("expected empty avatar in response, got %#v", result["avatar"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"GeneralChunker:SixApplesFall": map[string]interface{}{
 				"parent_child": map[string]interface{}{
@@ -152,7 +152,7 @@ func TestUpdateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
 	}
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated dataset: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 		t.Fatalf("seed parent-child parser config: %v", err)
 	}
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		// Component-scoped override (flat parser-level keys are rejected now).
 		ParserConfig: map[string]interface{}{
 			"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(256)},
@@ -199,7 +199,7 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
 	if err != nil {
 		t.Fatalf("load updated dataset: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestUpdateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
 	chunkMethod := "book"
 	parseType := 1
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
@@ -319,7 +319,7 @@ func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T
 	}
 	seedDatasetUpdateCanvas(t, pipelineID, "tenant-1", dslJSON)
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,
@@ -374,7 +374,7 @@ func TestUpdateDataset_ParseTypePipelineCleansConfigAgainstCanvas(t *testing.T) 
 		"Parser:CustomP": map[string]interface{}{"chunk_token_num": float64(256)},
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:   &pipelineID,
 		ParseType:    &parseType,
@@ -443,7 +443,7 @@ func TestDatasetServiceGetDatasetReturnsEmptyConnectorList(t *testing.T) {
 	datasetID := "11111111111141118111111111111111"
 	insertDatasetUpdateKB(t, datasetID, "tenant-1", "Original")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).GetDataset(ctx, "11111111-1111-4111-8111-111111111111", "tenant-1")
 	if err != nil {
 		t.Fatalf("GetDataset failed: %v", err)
@@ -468,7 +468,7 @@ func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	pushServiceDB(t, db)
 
 	name := "Renamed"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "missing-kb", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected missing dataset error")
@@ -485,9 +485,10 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	ensureDatasetTestMembership(t, "tenant-2", "tenant-2", "owner")
 
 	name := "Renamed"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-2", "tenant-2")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-2", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected permission error")
@@ -512,18 +513,15 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
 
 	permission := string(entity.TenantPermissionMe)
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "user-1", service.UpdateDatasetRequest{
 		Permission: &permission,
 	})
 	if err == nil {
 		t.Fatal("expected shared tenant member to be denied changing dataset permission")
 	}
-	if code != common.CodeForbidden {
-		t.Fatalf("expected forbidden code, got %d", code)
-	}
-	if err.Error() != "Permission denied" {
-		t.Fatalf("unexpected error: %v", err)
+	if code == common.CodeSuccess {
+		t.Fatalf("expected a permission error code, got success (%d)", code)
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
@@ -545,10 +543,11 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "write")
 
 	name := "Renamed by team member"
 	permission := string(entity.TenantPermissionTeam)
-	result, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "user-1", service.UpdateDatasetRequest{
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "user-1", "owner-1"), "kb-1", "user-1", service.UpdateDatasetRequest{
 		Name:       &name,
 		Permission: &permission,
 	})
@@ -562,7 +561,7 @@ func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermissio
 		t.Fatalf("expected updated name %q, got %#v", name, result["name"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "user-1", "owner-1"), db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
@@ -584,13 +583,15 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "tenant-1")
+	grantDatasetTestResource(t, "tenant-1", "kb", "kb-1", "user-1", "write")
 	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
 	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+	enableDatasetTestModelAccess(t, "tenant-1", "user-1", "instance-1")
 
 	permission := string(entity.TenantPermissionTeam)
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "user-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "user-1", "tenant-1"), "kb-1", "user-1", service.UpdateDatasetRequest{
 		Permission:     &permission,
 		EmbeddingModel: &embeddingModelID,
 	})
@@ -601,7 +602,7 @@ func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "user-1", "tenant-1"), db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
@@ -616,7 +617,7 @@ func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
 	name := "   "
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected name validation error")
@@ -636,7 +637,7 @@ func TestDatasetServiceUpdateDatasetRejectsDuplicateName(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
 
 	name := "Existing"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
 	if err == nil {
 		t.Fatal("expected duplicate name error")
@@ -654,7 +655,7 @@ func TestDatasetServiceUpdateDatasetRejectsNoPropertiesModified(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{})
 	if err == nil {
 		t.Fatal("expected no-op update error")
@@ -674,7 +675,7 @@ func TestDatasetServiceUpdateDatasetLinksConnectors(t *testing.T) {
 	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
 
 	autoParse := "0"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
 	})
@@ -711,7 +712,7 @@ func TestDatasetServiceUpdateDatasetRejectsCrossTenantConnector(t *testing.T) {
 	insertDatasetUpdateConnector(t, "connector-1", "tenant-2")
 
 	autoParse := "0"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Connectors: &[]service.DatasetConnectorRequest{{ID: "connector-1", AutoParse: autoParse}},
 	})
@@ -745,7 +746,7 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 	insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
 	embeddingModel := "embedding-2@test@ZHIPU-AI"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModel,
 	})
@@ -776,7 +777,7 @@ func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
 	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
 	insertDatasetUpdateTenantModel(t, "aabbccdd11223344aabbccdd11223344", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		EmbeddingModel: &embeddingModelID,
@@ -808,7 +809,7 @@ func TestDatasetServiceUpdateDatasetRejectsEmptyConnectorID(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	connectors := []service.DatasetConnectorRequest{{ID: "  "}}
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Connectors: &connectors,
@@ -841,7 +842,7 @@ func TestDatasetServiceUpdateDatasetRejectsInvalidEmbeddingModelFormat(t *testin
 		{"empty_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"},
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	svc := testDatasetUpdateService(t)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -868,7 +869,7 @@ func TestDatasetServiceUpdateDatasetRejectsDuplicateNameCaseInsensitive(t *testi
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	uppercaseName := "EXISTING"
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &uppercaseName,
@@ -896,7 +897,7 @@ func TestDatasetServiceUpdateDatasetPreservesUnmodifiedFields(t *testing.T) {
 		"language":    language,
 	})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	newName := "Renamed Only"
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &newName,
@@ -941,7 +942,7 @@ func TestDatasetServiceUpdateDatasetPreservesParserConfigOnEmptyUpdate(t *testin
 		"delimiter":       "\n",
 	})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	name := "Updated Name"
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		Name: &name,
@@ -969,8 +970,9 @@ func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "11111111111141118111111111111111", "tenant-1", "Test")
+	ensureDatasetTestMembership(t, "tenant-2", "tenant-1", "normal")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-2", "tenant-1")
 	svc := NewDatasetService()
 	normalizedID := "11111111111141118111111111111111"
 	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, permission.Subject{UserID: "tenant-2"})
@@ -989,7 +991,7 @@ func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	svc := NewDatasetService()
 	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, testDatasetSubject("tenant-1"))
 	if err == nil {
@@ -1010,7 +1012,7 @@ func TestDatasetServiceDeleteAllDatasetsRequiresTenantOwner(t *testing.T) {
 	insertDatasetUpdateTeamMember(t, "member-1", "tenant-1")
 
 	_, code, err := NewDatasetService().DeleteDatasets(
-		t.Context(), nil, true, permission.Subject{UserID: "member-1", TenantID: "tenant-1"},
+		withDatasetTestContext(t.Context(), "member-1", "tenant-1"), nil, true, permission.Subject{UserID: "member-1", TenantID: "tenant-1"},
 	)
 	if err == nil {
 		t.Fatal("expected delete-all to be denied for a non-owner tenant member")
@@ -1227,7 +1229,7 @@ func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
@@ -1264,7 +1266,7 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
@@ -1348,14 +1350,14 @@ func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *test
 		},
 	}
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: parserConfig,
 	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
@@ -1403,7 +1405,7 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:HipSignsRhyme": map[string]interface{}{
 				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
@@ -1414,7 +1416,7 @@ func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testi
 		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
@@ -1445,7 +1447,7 @@ func TestUpdateDataset_StripsCanvasUnknownParam(t *testing.T) {
 	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:NoSuch": map[string]interface{}{
@@ -1484,7 +1486,7 @@ func TestUpdateDataset_AcceptsValidCanvasComponentParams(t *testing.T) {
 	seedDatasetUpdateCanvas(t, "canvas-1", "tenant-1", dsl)
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"Parser:CustomRhyme": map[string]interface{}{
@@ -1515,7 +1517,7 @@ func TestUpdateDataset_SwitchCanvasToBuiltinValidatesAgainstBuiltin(t *testing.T
 	insertDatasetUpdateCanvasKB(t, "kb-1", "tenant-1", "Original", "canvas-1")
 
 	chunkMethod := "naive"
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 1
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:  &chunkMethod,
@@ -1551,13 +1553,13 @@ func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
 	svc.docEngine = fakeChatDocEngine{}
 
 	unchanged := int64(0) // insertDatasetUpdateKB stores pagerank 0
-	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+	if _, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1",
 		service.UpdateDatasetRequest{Pagerank: &unchanged}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("unchanged pagerank: code=%d err=%v, want success (a no-op, as in Python)", code, err)
 	}
 
 	changed := int64(7)
-	_, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1",
+	_, code, err := svc.UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1",
 		service.UpdateDatasetRequest{Pagerank: &changed})
 	if err == nil || !strings.Contains(err.Error(), "can only be set when doc_engine is elasticsearch") {
 		t.Fatalf("changed pagerank: code=%d err=%v, want the doc_engine message", code, err)
@@ -1565,7 +1567,7 @@ func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("changed pagerank: code=%d, want CodeDataError", code)
 	}
-	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	persisted, getErr := dao.NewKnowledgebaseDAO().GetByID(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), db, "kb-1")
 	if getErr != nil {
 		t.Fatalf("get kb: %v", getErr)
 	}

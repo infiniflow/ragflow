@@ -43,7 +43,6 @@ type PPTXParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
-	OutputFormat                   string
 }
 
 func NewPPTXParser() *PPTXParser {
@@ -75,17 +74,10 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["markdown_image_response_type"].(string); ok {
 		p.TCADPMarkdownImageResponseType = v
 	}
-	if v, ok := setup["output_format"].(string); ok {
-		p.OutputFormat = v
-	}
-	if p.OutputFormat == "" {
-		p.OutputFormat = "json"
-	}
 }
 
 // ParseWithResult emits one JSON item per slide with the slide's
-// plain text. Forces OutputFormat to "json" and emits one JSON item
-// per slide section.
+// plain text.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// p == nil guard: the struct is embedded by value in PPTParser and
 	// always created via NewPPTXParser or the "ppt"-format constructor in
@@ -108,7 +100,6 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "deepdoc":
 		// Continue with the local office_oxide parser.
@@ -156,9 +147,8 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("presentation ir-json: empty result")}
 		}
 		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename, "format": effFormat},
-			JSON:         MapsToItems(itemsFromPlainText(plainText)),
+			File: map[string]any{"name": filename, "format": effFormat},
+			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
 	budget := newEmbeddedMediaBudget()
@@ -182,9 +172,8 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": effFormat},
-		JSON:         MapsToItems(items),
-		Warnings:     budget.warnings(),
+		File:     map[string]any{"name": filename, "format": effFormat},
+		JSON:     MapsToItems(items),
+		Warnings: budget.warnings(),
 	}
 }

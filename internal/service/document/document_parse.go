@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/service"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,6 +88,12 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
 
+	if opts.ApplyKB {
+		if err := s.applyKnowledgebaseParserConfig(ctx, doc, kb); err != nil {
+			return err
+		}
+	}
+
 	if opts.RerunWithDelete {
 		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
 			return err
@@ -104,6 +111,168 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		return fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
 	}
 	return nil
+}
+
+// applyKnowledgebaseParserConfig merges the dataset-scoped parser_config into
+// the document's existing component-scoped config and persists the merged
+// result before parsing when ApplyKB is requested.
+//
+// The dataset may contribute a top-level llm_id (used only to fill empty
+// Extractor / Compiler node llm_ids) and a top-level modular metadata object
+// (parser_config["metadata"] = {enabled, metadata, built_in_metadata}). Those
+// are scoped onto the document's existing Extractor nodes via
+// service.ApplyComponentScopedParserConfig, which also strips legacy flat
+// metadata fields. No top-level llm_id is written, and when the dataset sets
+// no metadata no top-level metadata key is left behind; the document's own
+// component nodes and unrelated keys are preserved. Nested maps/slices are
+// deep-copied so a failed persist cannot mutate the caller's document or the
+// source dataset. On a persistence failure the document's in-memory config is
+// left untouched.
+func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase) error {
+	if doc == nil || kb == nil {
+		return fmt.Errorf("apply dataset parser config: document and dataset are required")
+	}
+
+	merged := deepCopyJSONMap(doc.ParserConfig)
+	if merged == nil {
+		merged = entity.JSONMap{}
+	}
+
+	// The dataset's llm_id is used only as the helper's fill value for empty
+	// Extractor/Compiler node llm_ids. It is resolved from the same persisted
+	// source the dataset writer uses (explicit top-level value, else the
+	// tenant-resolved value already scoped into the dataset's Extractor nodes).
+	// No top-level llm_id flat key is written (the pipeline ignores it), and
+	// any legacy top-level llm_id the document already carries is dropped
+	// rather than re-written into the result.
+	llmID := resolveDatasetLLMID(kb.ParserConfig)
+	delete(merged, "llm_id")
+
+	// Carry the dataset's modular metadata object when present. Resolution
+	// follows the dataset reader contract: the top-level modular object
+	// first, else the first (sorted) Extractor node carrying modular metadata
+	// — the stored form after component scoping. When absent everywhere the
+	// dataset expresses "no metadata config": reset each existing Extractor
+	// node's metadata to the disabled default directly, mirroring the Python
+	// apply_kb defaults, without creating a top-level key the helper would
+	// otherwise have to clean up.
+	meta, metaOK, fromTopLevel := resolveDatasetModularMetadata(kb.ParserConfig)
+	if metaOK {
+		merged["metadata"] = deepCopyValue(meta)
+	} else {
+		for _, cpnID := range sortedExtractorKeys(merged) {
+			params, ok := nodeParams(merged[cpnID])
+			if !ok {
+				continue
+			}
+			params["metadata"] = map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			}
+		}
+	}
+
+	merged = service.ApplyComponentScopedParserConfig(merged, llmID)
+	if !fromTopLevel {
+		// The dataset itself carries no top-level modular object: never leave
+		// the transport key behind, mirroring the stored dataset shape.
+		delete(merged, "metadata")
+	}
+
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+		"parser_config": entity.JSONMap(merged),
+	}); err != nil {
+		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
+	}
+	doc.ParserConfig = merged
+	return nil
+}
+
+// sortedExtractorKeys returns the component IDs in parserConfig that name
+// Extractor nodes, in sorted order so multi-Extractor configs resolve
+// deterministically instead of depending on Go map iteration order.
+func sortedExtractorKeys(parserConfig entity.JSONMap) []string {
+	var keys []string
+	for k := range parserConfig {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// nodeParams returns a writable view of a component node's params, accepting
+// both the decoded (map[string]any) and entity (entity.JSONMap) shapes.
+// The returned map shares storage with the input, so writes are visible.
+func nodeParams(raw any) (map[string]any, bool) {
+	switch params := raw.(type) {
+	case map[string]any:
+		return params, true
+	case entity.JSONMap:
+		return map[string]any(params), true
+	default:
+		return nil, false
+	}
+}
+
+// nodeModularMetadata returns the node's modular metadata object
+// ({enabled, metadata, built_in_metadata}) in either stored map shape.
+func nodeModularMetadata(params map[string]any) (map[string]any, bool) {
+	if meta, ok := params["metadata"].(map[string]any); ok {
+		return meta, true
+	}
+	if meta, ok := params["metadata"].(entity.JSONMap); ok {
+		return map[string]any(meta), true
+	}
+	return nil, false
+}
+
+// resolveDatasetModularMetadata returns the dataset's effective modular
+// metadata config, following the dataset reader contract: the top-level
+// modular object first, else the first (sorted) Extractor node carrying
+// modular metadata — the stored form after component scoping. It reports
+// whether any was found and whether it came from the top level. The returned
+// map is a live view of the dataset config; callers must copy before mutating.
+func resolveDatasetModularMetadata(parserConfig entity.JSONMap) (map[string]any, bool, bool) {
+	if mm, ok := parserConfig["metadata"].(map[string]any); ok {
+		return mm, true, true
+	}
+	if mm, ok := parserConfig["metadata"].(entity.JSONMap); ok {
+		return map[string]any(mm), true, true
+	}
+	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+		params, ok := nodeParams(parserConfig[cpnID])
+		if !ok {
+			continue
+		}
+		if meta, ok := nodeModularMetadata(params); ok {
+			return meta, true, false
+		}
+	}
+	return nil, false, false
+}
+
+// resolveDatasetLLMID returns the dataset's effective LLM id: an explicit
+// non-empty top-level llm_id first, else the first (sorted) Extractor node's
+// non-empty llm_id (populated from the tenant default at dataset write time).
+// Empty means the dataset carries no llm_id and empty node llm_ids stay empty.
+func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
+	if s, ok := parserConfig["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
+		return s
+	}
+	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+		params, ok := nodeParams(parserConfig[cpnID])
+		if !ok {
+			continue
+		}
+		if s, ok := params["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // AssertIngestionTasksTerminal verifies none of the documents has an

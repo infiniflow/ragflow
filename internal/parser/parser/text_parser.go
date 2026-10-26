@@ -47,7 +47,6 @@ func NewTextParser() *TextParser {
 func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	decoded, encName := DecodeToUTF8(data, "text/plain")
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

@@ -59,7 +59,6 @@ func (p *EPUBParser) String() string {
 func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if len(data) == 0 {
 		return ParseResult{
-			OutputFormat: "json",
 			File: map[string]any{
 				"name":     filename,
 				"size":     0,
@@ -92,7 +91,6 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

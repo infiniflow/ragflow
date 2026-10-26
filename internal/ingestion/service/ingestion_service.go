@@ -101,7 +101,7 @@ type Ingestor struct {
 	// Option E) owned by this ingestor. It is driven by kcConcurrency owned
 	// worker goroutines, each running the Consumer's Run loop (poll MySQL
 	// scheduling rows + NATS notify → claim closed batch → merge → ack). The
-	// MySQL knowledge_compile_docs table — not the broker — is the scheduling
+	// MySQL knowledge_compile_docs and its queue tables are the scheduling
 	// system of record and the source of same-KB serialization, so different
 	// datasets compile in parallel while the same dataset is serialized by its
 	// claim row. The workers are started/joined within the ingestor (via
@@ -413,7 +413,7 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 }
 
 // startDatasetKnowledgeCompile provisions the dataset-level compile scheduling
-// store (MySQL knowledge_compile_docs + NATS notify subject), builds the
+// store (MySQL scheduling tables + NATS notify subject), builds the
 // Consumer, and starts the owned compile-worker pool. The consumer is driven by
 // the ingestor's own goroutine set — kcConcurrency compileLoop workers, each
 // running the Consumer's Run loop (see §11.7 of knowledge_compile_design.md) —
