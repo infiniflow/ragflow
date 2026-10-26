@@ -275,15 +275,18 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	texts := make([]string, 0, len(sections))
 	maxPage := 0
 	for _, section := range sections {
-		if section.imageOnly {
-			continue
-		}
-		texts = append(texts, section.text)
+		// Page identity is independent of text: an image-only section still
+		// inserts an item for its page in Attach, so it must count toward
+		// page_count here or File.page_count undercounts the last pages.
 		if len(section.position) == 5 {
 			if page, ok := section.position[0].(int); ok && page > maxPage {
 				maxPage = page
 			}
 		}
+		if section.imageOnly {
+			continue
+		}
+		texts = append(texts, section.text)
 	}
 	md := strings.Join(texts, "\n\n")
 	res := normalizePDFMarkdown(ctx, filename, md, setup)
@@ -296,6 +299,17 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		if _, ok := res.File["page_count"]; !ok {
 			res.File["page_count"] = maxPage
 		}
+	}
+	if res.File == nil {
+		res.File = map[string]any{}
+	}
+	// Match the sibling MinerU contract: consumers read parse_method and
+	// outline from File regardless of the vision backend.
+	if _, ok := res.File["outline"]; !ok {
+		res.File["outline"] = []map[string]any{}
+	}
+	if _, ok := res.File["parse_method"]; !ok {
+		res.File["parse_method"] = "monkeyocrv2"
 	}
 	return res, nil
 }
@@ -534,7 +548,28 @@ func monkeyOCRv2EmbeddedImage(markdown string, images map[string]*zip.File, budg
 	if len(match) != 3 {
 		return "", false, false
 	}
-	file := images[path.Base(strings.Trim(strings.TrimSpace(match[2]), `"'`))]
+	target := strings.Trim(strings.TrimSpace(match[2]), `"'`)
+	if strings.HasPrefix(strings.ToLower(target), "data:") {
+		// The service already inlined the payload: the ZIP lookup can never
+		// find it. Apply the shared budget to the decoded bytes instead, so
+		// a present payload is kept (or falls back to a position-only
+		// carrier) instead of being silently lost.
+		comma := strings.Index(target, ",")
+		if comma < 0 {
+			return "", false, true
+		}
+		decoded, err := base64.StdEncoding.DecodeString(target[comma+1:])
+		if err != nil || len(decoded) == 0 || len(decoded) > parser.MaxImagePayloadBytes {
+			return "", false, true
+		}
+		if budget != nil {
+			if included, _ := budget.Include(decoded); !included {
+				return match[1], false, true
+			}
+		}
+		return match[0], true, true
+	}
+	file := images[path.Base(target)]
 	if file == nil {
 		return "", false, true
 	}
@@ -602,42 +637,62 @@ func monkeyOCRv2AttachPositions(res parser.ParseResult, sections []monkeyOCRv2Se
 	}
 	byText := map[string][]int{}
 	var imageSections []int
+	var tableSections []int
 	for i, section := range sections {
 		if section.imageOnly {
+			continue
+		}
+		if strings.HasPrefix(section.text, "![") {
+			// Collect every inlined image, positioned or not: the item-side
+			// counter advances per image item, so skipping an unpositioned
+			// section here would shift every later image's position one
+			// section early.
+			imageSections = append(imageSections, i)
 			continue
 		}
 		if len(section.position) != 5 {
 			continue
 		}
-		if strings.HasPrefix(section.text, "![") {
-			imageSections = append(imageSections, i)
-			continue
-		}
 		text := monkeyOCRv2NormalizeText(section.text)
-		// The markdown parse consumes heading/list syntax from the section
-		// text, so index the form the items will carry.
-		if stripped := monkeyOCRv2MarkdownPrefix.ReplaceAllString(text, ""); stripped != text {
-			text = stripped
-		}
 		if text == "" {
 			continue
 		}
 		byText[text] = append(byText[text], i)
+		if monkeyOCRv2LayoutKind(section.label) == "table" {
+			tableSections = append(tableSections, i)
+		}
 	}
 
 	itemMaps := make([]map[string]any, len(res.JSON))
 	matched := false
 	used := map[string]int{}
 	imageIdx := 0
+	tableIdx := 0
 	itemForSection := map[int]int{}
 	for i, item := range res.JSON {
 		m := item.ToMap()
+		if _, isTable := m["table"]; isTable {
+			// Structured table items carry no text, so they can never meet a
+			// byText entry: attach the next table section's position in
+			// document order, mirroring the image channel.
+			if tableIdx < len(tableSections) {
+				sectionIdx := tableSections[tableIdx]
+				monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
+				itemForSection[sectionIdx] = i
+				matched = true
+			}
+			tableIdx++
+			itemMaps[i] = m
+			continue
+		}
 		if img, _ := m["image"].(string); img != "" {
 			// Sections whose payloads were inlined keep their order through
 			// markdown normalization, so their positions attach ordinally.
 			if imageIdx < len(imageSections) {
 				sectionIdx := imageSections[imageIdx]
-				monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
+				if len(sections[sectionIdx].position) == 5 {
+					monkeyOCRv2SetPosition(m, sections[sectionIdx].position)
+				}
 				itemForSection[sectionIdx] = i
 				matched = true
 			}

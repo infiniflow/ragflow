@@ -39,7 +39,7 @@ type embeddedMediaBudget struct {
 }
 
 // EmbeddedMediaBudget exports the shared embedded-media budget so ingestion
-// components outside this package (for example the MinerU PDF dispatch)
+// components outside this package (for example the MonkeyOCRv2 PDF dispatch)
 // apply the same per-image, per-document and item-count limits instead of
 // private caps.
 type EmbeddedMediaBudget = embeddedMediaBudget
