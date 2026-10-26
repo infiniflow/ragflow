@@ -399,6 +399,7 @@ func TestRESTDocumentParserConfigurationAndMetadataConfig(t *testing.T) {
 		}
 	}
 	// Flat Python-era options are discarded by the component-scoped Go contract.
+	beforeFlatConfig := persisted["parser_config"]
 	restOK(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"parser_config": apiObject{"chunk_token_num": -1, "raptor": apiObject{"use_raptor": true}}}, nil))
 	persisted = getRESTDocument(t, id, docID)
 	pc := object(t, persisted["parser_config"])
@@ -407,8 +408,8 @@ func TestRESTDocumentParserConfigurationAndMetadataConfig(t *testing.T) {
 			t.Fatalf("flat parser key retained: %s", key)
 		}
 	}
-	if object(t, pc[component])["chunk_token_size"] != object(t, config[component])["chunk_token_size"] {
-		t.Fatalf("flat options did not restore component defaults: got=%v defaults=%v", pc[component], config[component])
+	if !reflect.DeepEqual(pc, beforeFlatConfig) {
+		t.Fatalf("ignored flat options changed existing config: got=%v want=%v", pc, beforeFlatConfig)
 	}
 	metadata := apiObject{"author": "alice", "tags": []any{"one", "two"}}
 	metadataPath := path + "/metadata/config"
