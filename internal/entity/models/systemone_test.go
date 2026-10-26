@@ -92,6 +92,93 @@ func TestSystemOneListModelsProbesBaseURL(t *testing.T) {
 	}
 }
 
+// Decide must probe the decision endpoint, not the models list: the list is what
+// offering the model already proved, and it answers even when the deployment
+// serves no decision endpoint at all.
+func TestSystemOneDecideProbesDecisionEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+
+	var gotBody map[string]any
+	probed := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = true
+		if r.URL.Path != "/v1/systemone" {
+			t.Errorf("path=%s, want /v1/systemone", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Errorf("Authorization=%q", got)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Errorf("undecodable request body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"answers": map[string]any{"reachability": map[string]any{"noul": 1}},
+		})
+	}))
+	defer srv.Close()
+
+	apiKey := "sk-test"
+	modelName := "decision-model-preview"
+	resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
+		context.Background(), &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil,
+	)
+	if err != nil {
+		t.Fatalf("Decide: %v", err)
+	}
+	if !probed {
+		t.Fatal("Decide did not probe the decision endpoint")
+	}
+	if resp == nil {
+		t.Fatal("Decide returned no response")
+	}
+	if got := gotBody["model"]; got != "decision-model-preview" {
+		t.Errorf("body model=%v", got)
+	}
+	questions, ok := gotBody["questions"].(map[string]any)
+	if !ok || len(questions) != 1 {
+		t.Fatalf("body questions=%v, want exactly one probe question", gotBody["questions"])
+	}
+}
+
+// A decision model that cannot answer must not be addable: verification is the
+// last check before the model is saved, and it is the only one that speaks the
+// decision endpoint.
+func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
+	withSSRFBypass(t)
+
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"rejected credential", http.StatusUnauthorized},
+		{"no decision endpoint", http.StatusNotFound},
+		{"server error", http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"error":"no"}`))
+			}))
+			defer srv.Close()
+
+			apiKey := "sk-test"
+			modelName := "decision-model-preview"
+			resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
+				context.Background(), &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil,
+			)
+			if err == nil {
+				t.Fatalf("Decide accepted status %d", tc.status)
+			}
+			if resp != nil {
+				t.Errorf("Decide returned a response alongside the error")
+			}
+		})
+	}
+}
+
 // An unreachable base URL must fail the listing rather than fall back to the
 // static catalog, or the model would appear even though it cannot be called.
 func TestSystemOneListModelsFailsWhenProbeFails(t *testing.T) {

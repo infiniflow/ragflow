@@ -230,6 +230,90 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 	}
 }
 
+// A decision model has no verification except the decision endpoint, so the
+// type must be dispatched to Decide; falling through the switch leaves nothing
+// passing and the model fails to add even though it works.
+// decisionProbeDriver stands in for a driver whose decision endpoint is the only
+// thing worth verifying. It records what Decide was asked, because the point of
+// the decision case in verifyProviderModel is which call it dispatches to.
+type decisionProbeDriver struct {
+	*modelModule.DummyModel
+	decideCalls  int
+	decidedModel string
+	decideErr    error
+}
+
+func (d *decisionProbeDriver) Decide(_ context.Context, modelName *string, _ *modelModule.DecideRequest, _ *modelModule.APIConfig, _ *common.ModelUsage) (*modelModule.DecideResponse, error) {
+	d.decideCalls++
+	if modelName != nil {
+		d.decidedModel = *modelName
+	}
+	if d.decideErr != nil {
+		return nil, d.decideErr
+	}
+	return &modelModule.DecideResponse{}, nil
+}
+
+func TestVerifyProviderModelVerifiesDecisionModels(t *testing.T) {
+	driver := &decisionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "decision-model-preview", ModelTypes: []string{entity.ModelTypeDecision.String()}}},
+		&modelModule.APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("verifyProviderModel() error = %v", err)
+	}
+	if driver.decideCalls != 1 {
+		t.Fatalf("Decide calls = %d, want 1", driver.decideCalls)
+	}
+	if driver.decidedModel != "decision-model-preview" {
+		t.Fatalf("Decide model = %q, want decision-model-preview", driver.decidedModel)
+	}
+	if result["decision-model-preview"] != entity.ModelVerifySuccess {
+		t.Fatalf("verification result = %#v, want success", result)
+	}
+}
+
+// A type falling through the switch collects no error, so the failure must name
+// it: joining no errors returns nil, which %w renders as "%!w(<nil>)" — the
+// message that hid this very case while decision had no verifier.
+func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
+	driver := modelModule.NewDummyModel(nil, modelModule.URLSuffix{})
+
+	_, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "hypothetical-model", ModelTypes: []string{"quantum"}}},
+		&modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want a failure")
+	}
+	if strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("verifyProviderModel() leaked a formatting error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "quantum") {
+		t.Fatalf("verifyProviderModel() error = %v, want it to name the unverifiable type", err)
+	}
+}
+
+func TestVerifyProviderModelReportsFailingDecisionModels(t *testing.T) {
+	driver := &decisionProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		decideErr:  errors.New("endpoint answered 404"),
+	}
+
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "decision-model-preview", ModelTypes: []string{entity.ModelTypeDecision.String()}}},
+		&modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want the endpoint failure")
+	}
+	if !strings.Contains(err.Error(), "endpoint answered 404") {
+		t.Fatalf("verifyProviderModel() error = %v, want the endpoint failure", err)
+	}
+	if result["decision-model-preview"] != entity.ModelVerifyFail {
+		t.Fatalf("verification result = %#v, want fail", result)
+	}
+}
+
 func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
 	factoryBatchSize := 128

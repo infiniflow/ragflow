@@ -1131,6 +1131,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	var errs []error
 	errSet := make(map[string]bool)
 	passedTypes := make(map[string]bool)
+	unverifiableTypes := make(map[string]bool)
 
 	for _, model := range modelsToVerify {
 		modelName := model.Name
@@ -1187,7 +1188,10 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
 			case "doc_parse":
 				err = driver.CheckConnection(ctx, apiConfig)
+			case "decision":
+				err = verifyDecisionModel(ctx, driver, modelName, apiConfig)
 			default:
+				unverifiableTypes[mtLower] = true
 				continue
 			}
 
@@ -1212,6 +1216,22 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
+		// An empty errs must not reach %w: errors.Join over no arguments returns
+		// nil, and %w renders a nil error as "%!w(<nil>)". Nothing was attempted
+		// in that case, so there is no provider error to report — name the type
+		// that has no verifier instead, which is what the form reports to whoever
+		// is trying to add the model.
+		if len(errs) == 0 {
+			unverifiable := make([]string, 0, len(unverifiableTypes))
+			for modelType := range unverifiableTypes {
+				unverifiable = append(unverifiable, modelType)
+			}
+			sort.Strings(unverifiable)
+			if len(unverifiable) == 0 {
+				return modelVerifyResult, fmt.Errorf("model verification did not run: the requested models declare no model type")
+			}
+			return modelVerifyResult, fmt.Errorf("model verification did not run: %s has no verification in this build", strings.Join(unverifiable, ", "))
+		}
 		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
@@ -1323,6 +1343,19 @@ func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	// rather than performing full document parsing.
 	_, err := driver.OCRFile(ctx, &modelName, minimalPNG(), nil, apiConfig, nil, nil)
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// verifyDecisionModel asks the decision endpoint the probe question.
+//
+// It goes through Decide rather than CheckConnection: CheckConnection is the
+// models list, which the picker already called to offer this model, so reusing
+// it here would verify nothing that has not been verified. Decide exercises the
+// endpoint the product will call.
+func verifyDecisionModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+	if _, err := driver.Decide(ctx, &modelName, nil, apiConfig, nil); err != nil {
 		return err
 	}
 	return nil
