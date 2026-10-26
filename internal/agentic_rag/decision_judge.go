@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/rag/decisionhead"
 )
 
 // The decision-model backend answers the filter's per-passage question over
