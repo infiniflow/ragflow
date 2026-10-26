@@ -5431,6 +5431,108 @@ Failure:
 
 
 
+### Delete agent version
+
+**DELETE** `/api/v1/agents/{agent_id}/versions/{version_id}`
+
+Deletes one saved version belonging to the specified agent. The current agent
+and its other saved versions remain unchanged. This also allows deleting the
+last saved version.
+
+#### Request
+
+- Method: DELETE
+- URL: `/api/v1/agents/{agent_id}/versions/{version_id}`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body: none.
+
+##### Request example
+
+```bash
+curl --request DELETE \
+     --url http://{address}/api/v1/agents/{agent_id}/versions/{version_id} \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Path parameters
+
+- `agent_id`: `string`, required. The agent whose history contains the version.
+- `version_id`: `string`, required. The saved version to delete.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+The caller must have permission to edit the agent. A missing or inaccessible
+agent, a missing version, or a version belonging to a different agent returns
+business code `103` with the message `"Make sure you have permission to access the agent."`.
+
+---
+
+### Apply agent version
+
+**POST** `/api/v1/agents/{agent_id}/versions/{version_id}/apply`
+
+Restores the saved version's workflow DSL into the current agent as an unpublished
+draft. The agent's title, description, ownership, sharing, and other metadata are
+preserved. The source version and existing history are retained. The restored DSL
+passes the same validation and normalization as an ordinary agent update.
+
+Applying saves the restored workflow to version history using the normal save
+behavior: it creates a new draft version when the latest DSL differs or the
+latest version is published, and refreshes an identical latest draft. Publish
+the agent separately when the restored workflow is ready for release.
+
+#### Request
+
+- Method: POST
+- URL: `/api/v1/agents/{agent_id}/versions/{version_id}/apply`
+- Headers:
+  - `'Authorization: Bearer <YOUR_API_KEY>'`
+- Body: none.
+
+##### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/agents/{agent_id}/versions/{version_id}/apply \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+##### Path parameters
+
+- `agent_id`: `string`, required. The agent to update.
+- `version_id`: `string`, required. A saved version belonging to that agent.
+
+#### Response
+
+Success:
+
+```json
+{
+    "code": 0,
+    "data": true,
+    "message": "success"
+}
+```
+
+The caller must have permission to edit the agent. A missing or inaccessible
+agent, a missing version, or a version belonging to a different agent returns
+business code `103` with the message `"Make sure you have permission to access the agent."`.
+A version without a DSL or a workflow that fails validation returns business
+code `102`; the current agent and its history remain unchanged.
+
+---
+
 ## MEMORY MANAGEMENT
 
 ### Create Memory

@@ -46,6 +46,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, subject, "dataset", permission.ActionWrite); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
 
 	// parse_type is required on dataset creation: it explicitly selects BuiltIn
 	// (1) or Pipeline (2) mode. This replaces the previous silent default to
@@ -67,14 +71,14 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 
 	parserID := string(entity.ParserTypeGeneral)
-	permission := "me"
+	visibility := "me"
 	embeddingModel := ""
 	var language *string
 	pipelineID := req.PipelineID
 
 	if req.Permission != nil {
-		permission = strings.TrimSpace(*req.Permission)
-		if permission != "me" && permission != "team" {
+		visibility = strings.TrimSpace(*req.Permission)
+		if visibility != "me" && visibility != "team" {
 			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
 		}
 	}
@@ -140,7 +144,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		common.Warn("failed to load pipeline DSL for building parser_config",
 			zap.String("parserID", parserID), zap.Error(dslErr))
 	} else {
-		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		var buildErr error
+		parserConfig, buildErr = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		if buildErr != nil {
+			return nil, common.CodeArgumentError, buildErr
+		}
 	}
 
 	// Preserve the public default shape without overriding pipeline delimiters
@@ -180,8 +188,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
-	embdID := tenant.EmbdID
-	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
+	embdID, tenantEmbdID, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, service.ModelAccess{UserID: userID, TenantID: tenantID})
 		if !ok {
@@ -208,10 +218,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	name = dedupedName
 
-	parserConfig = service.ApplyComponentScopedParserConfig(
-		parserConfig,
-		tenant.LLMID,
-	)
+	llmID, _, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeChat)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
@@ -221,14 +232,19 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		ParserID:     parserID,
 		PipelineID:   pipelineID,
 		ParserConfig: entity.JSONMap(parserConfigMap),
-		Permission:   permission,
+		Permission:   visibility,
 		Language:     language,
 		EmbdID:       embdID,
 		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
 		Status:       &status,
 	}
 
-	if err = d.kbDAO.Create(ctx, dao.DB, kb); err != nil {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := d.kbDAO.Create(ctx, tx, kb); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
 		}
@@ -282,6 +298,15 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	}
 
 	data := datasetToMap(kb)
+	operatorPermission, err := service.ResolveOperatorPermission(ctx, userID, permission.ResourceRef{
+		Kind: permission.ResourceKindDataset,
+		ID:   kb.ID,
+	})
+	if err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+	data["operator_permission"] = operatorPermission
 
 	size, err := d.documentDAO.SumSizeByDatasetID(ctx, dao.DB, datasetID)
 	if err != nil {
@@ -548,6 +573,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 	var deniedIDs []string
+	operatorPermissions := make(map[string]int32)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		checker := permission.NewDatabaseChecker(tx)
 		subject := permission.Subject{UserID: userID}
@@ -612,6 +638,19 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			return err
 		}
 		kbs, total = listed, count
+		for _, kb := range kbs {
+			if kb == nil {
+				continue
+			}
+			access, accessErr := checker.ResolveAccess(ctx, subject, permission.ResourceRef{
+				Kind: permission.ResourceKindDataset,
+				ID:   kb.ID,
+			})
+			if accessErr != nil {
+				return accessErr
+			}
+			operatorPermissions[kb.ID] = access.PermissionMask
+		}
 		return nil
 	})
 	if err != nil {
@@ -636,6 +675,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			continue
 		}
 		item := datasetListItemToMap(kb)
+		item["operator_permission"] = operatorPermissions[kb.ID]
 		// Mirror the memory list: surface the concrete model display name
 		// (modelName@instance@provider) instead of a raw tenant_model ID.
 		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)

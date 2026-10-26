@@ -21,10 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/entity"
 	"regexp"
 	"strings"
 	"time"
+
+	"ragflow/internal/entity"
 
 	"ragflow/internal/common"
 	permissionresponse "ragflow/internal/permission/response"
@@ -131,6 +132,7 @@ type OpenAIChatRequest struct {
 	Messages  []map[string]interface{} `json:"messages"`
 	Stream    *bool                    `json:"stream,omitempty"`
 	ExtraBody interface{}              `json:"extra_body,omitempty"`
+	Reasoning interface{}              `json:"reasoning,omitempty"`
 
 	Temperature      *float64 `json:"temperature,omitempty"`
 	TopP             *float64 `json:"top_p,omitempty"`
@@ -185,8 +187,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	var needReference = false
-	var includeRefMetadata = false
+	needReference := false
+	includeRefMetadata := false
 	var metadataFields []string
 	var metadataCondition map[string]interface{}
 	if eb, ok := req.ExtraBody.(map[string]interface{}); ok {
@@ -333,14 +335,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	chatKwargs := map[string]interface{}{
-		"toolcall_session": nil, // no tool calls on OpenAI-compat path
-		"tools":            nil,
-		"quote":            needReference,
-	}
-	if docIDsStr != "" {
-		chatKwargs["doc_ids"] = docIDsStr
-	}
+	chatKwargs := openAIChatKwargs(&req, needReference, docIDsStr)
 	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
@@ -552,7 +547,7 @@ func (s *OpenAIChatService) filterMessages(messages []map[string]interface{}) []
 
 // cleanCitationMarkers strips "##N$$" markers from the answer.
 func cleanCitationMarkers(s string) string {
-	var citationMarkerRegex = regexp.MustCompile(`##\d+\$\$`)
+	citationMarkerRegex := regexp.MustCompile(`##\d+\$\$`)
 	return citationMarkerRegex.ReplaceAllString(s, "")
 }
 
@@ -568,6 +563,27 @@ func isContentDelta(answer *string) bool {
 		return false
 	}
 	return true
+}
+
+// openAIChatKwargs builds the pipeline kwargs for one OpenAI-compat request.
+//
+// `reasoning` rides in the kwargs only. It never joins the generation config,
+// which MergeGenerationConfig folds into the dialog's saved llm_setting, so the
+// selection lasts one turn. Leaving the key out when the request omits it keeps
+// AsyncChat falling back to the dialog's prompt_config level.
+func openAIChatKwargs(req *OpenAIChatRequest, needReference bool, docIDsStr string) map[string]interface{} {
+	kwargs := map[string]interface{}{
+		"toolcall_session": nil, // no tool calls on OpenAI-compat path
+		"tools":            nil,
+		"quote":            needReference,
+	}
+	if docIDsStr != "" {
+		kwargs["doc_ids"] = docIDsStr
+	}
+	if req.Reasoning != nil {
+		kwargs["reasoning"] = req.Reasoning
+	}
+	return kwargs
 }
 
 // extractGenerationConfig mirrors Python's extract_generation_config.

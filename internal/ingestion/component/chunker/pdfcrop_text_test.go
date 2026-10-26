@@ -88,12 +88,13 @@ func TestCropImageChunksKeepsSeparateMediaBoxes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Original media layout: 94px context, two 50px boxes, 170px
-			// context, and four 6px gaps. Touching media boxes remain separate.
-			if img.Bounds().Dy() != 388 {
-				t.Fatalf("media height = %d, want 388", img.Bounds().Dy())
+			// Media layout (Python cropout): two 50px boxes and two 6px
+			// stitch gaps, no context bands. Touching media boxes remain
+			// separate; the gap between them stays gray.
+			if img.Bounds().Dy() != 112 {
+				t.Fatalf("media height = %d, want 112", img.Bounds().Dy())
 			}
-			if got := color.RGBAModel.Convert(img.At(0, 150)); got != (color.RGBA{245, 245, 245, 255}) {
+			if got := color.RGBAModel.Convert(img.At(0, 52)); got != (color.RGBA{245, 245, 245, 255}) {
 				t.Fatalf("media box separator = %v, want original gap", got)
 			}
 		})

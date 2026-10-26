@@ -256,8 +256,7 @@ func doclingTextsToResult(filename string, texts []string, pageCount int) ParseR
 		})
 	}
 	return ParseResult{
-		OutputFormat: "json",
-		File:         pdfFileMeta(filename, pageCount),
-		JSON:         MapsToItems(items),
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }

@@ -115,7 +115,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{
-			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
@@ -142,7 +141,6 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	// row-aligned positions (csv has no in-cell image anchors).
 	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

@@ -63,10 +63,9 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		budget := newEmbeddedMediaBudget()
 		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
 			return ParseResult{
-				OutputFormat: "json",
-				File:         map[string]any{"name": filename, "format": "doc"},
-				JSON:         MapsToItems(sections),
-				Warnings:     budget.warnings(),
+				File:     map[string]any{"name": filename, "format": "doc"},
+				JSON:     MapsToItems(sections),
+				Warnings: budget.warnings(),
 			}
 		}
 	}
@@ -74,9 +73,8 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
 	}
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": "doc"},
-		JSON:         []DocItem{NewTextJSONItem(text)},
+		File: map[string]any{"name": filename, "format": "doc"},
+		JSON: []DocItem{NewTextJSONItem(text)},
 	}
 }
 

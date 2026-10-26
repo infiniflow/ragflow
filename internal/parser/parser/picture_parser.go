@@ -88,7 +88,6 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		return ParseResult{Err: err}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":         filename,
 			"size":         len(data),

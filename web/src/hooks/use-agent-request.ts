@@ -28,6 +28,7 @@ import {
   IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
+  IAgentWebhookCredential,
   IPipeLineListRequest,
   ITraceData,
   IWebhookTrace,
@@ -48,6 +49,8 @@ import agentService, {
   fetchSharedTrace,
   fetchTrace,
   fetchWebhookTrace,
+  issueAgentWebhookCredential,
+  revokeAgentWebhookCredential,
   updateAgent,
   updateAgentTags,
   uploadAgentFile,
@@ -89,6 +92,8 @@ export const enum AgentApiAction {
   CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
+  CreateWebhookCredential = 'createWebhookCredential',
+  RevokeWebhookCredential = 'revokeWebhookCredential',
   FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
   FetchSessionById = 'fetchSessionById',
   CreateAgentSession = 'createAgentSession',
@@ -1194,6 +1199,42 @@ export const useFetchWebhookTrace = (autoStart: boolean = true) => {
     currentNextSinceTs,
   };
 };
+
+export function useCreateAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.CreateWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await issueAgentWebhookCredential(id);
+      if (data?.code !== 0 || !data?.data?.webhook_url) {
+        throw new Error(data?.message || 'Failed to create webhook URL');
+      }
+
+      return data.data as IAgentWebhookCredential;
+    },
+  });
+
+  return { createWebhookCredential: mutateAsync, loading };
+}
+
+export function useRevokeAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.RevokeWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await revokeAgentWebhookCredential(id);
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to revoke webhook URL');
+      }
+    },
+  });
+
+  return { revokeWebhookCredential: mutateAsync, loading };
+}
 
 export function useCreateAgentSession() {
   const queryClient = useQueryClient();

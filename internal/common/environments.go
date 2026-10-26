@@ -445,7 +445,7 @@ const (
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - ragflow_deps/download_deps.py re-lists them as DEEPDOC_MODEL_FILES
+//   - deps/download_deps.py re-lists them as DEEPDOC_MODEL_FILES
 //     (it fetches the files one by one, so it MUST be edited by hand when this
 //     slice changes);
 var DeepDocModelFiles = []string{
