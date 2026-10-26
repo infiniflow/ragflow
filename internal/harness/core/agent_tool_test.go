@@ -603,6 +603,53 @@ func TestAgentTool_FullChatHistory_ReusedToolCallID(t *testing.T) {
 	}
 }
 
+// TestAgentTool_FullChatHistory_ExcludesParentSystemPrompt verifies that any RoleSystem
+// messages in RootInput (parent agent's instructions) are excluded from sub-agent history
+// so they do not conflict with the sub-agent's own system prompt.
+func TestAgentTool_FullChatHistory_ExcludesParentSystemPrompt(t *testing.T) {
+	captureM := &capturingHistoryModel{resp: "inner captured"}
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: captureM,
+	}).WithName("nosys_inner").WithDescription("inner agent")
+
+	toolWithHistory := NewAgentTool(t.Context(), innerAgent, WithFullChatHistoryAsInput())
+
+	rc := &runContext{
+		RootInput: &AgentInput{
+			Messages: []Message{
+				schema.SystemMessage("You are the parent coordinator"),
+				schema.UserMessage("Parent user query"),
+			},
+		},
+	}
+	ctx := context.WithValue(t.Context(), runContextKey{}, rc)
+
+	res, err := toolWithHistory.Invoke(ctx, "Sub-agent query")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != "inner captured" {
+		t.Fatalf("unexpected result: %q", res)
+	}
+
+	msgs := captureM.getCapturedMsgs()
+	// Strip the sub-agent's own system prompt inserted by ReActAgent
+	if len(msgs) > 0 && msgs[0].Role == schema.RoleSystem {
+		msgs = msgs[1:]
+	}
+
+	// Expected: only parent user message + current sub-agent query (no parent system prompt!)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 dialogue messages, got %d: %v", len(msgs), msgs)
+	}
+	if msgs[0].Role != schema.RoleUser || msgs[0].Content != "Parent user query" {
+		t.Errorf("expected msgs[0] = User('Parent user query'), got %v", msgs[0])
+	}
+	if msgs[1].Role != schema.RoleUser || msgs[1].Content != "Sub-agent query" {
+		t.Errorf("expected msgs[1] = User('Sub-agent query'), got %v", msgs[1])
+	}
+}
+
 func init() {
 	schema.RegisterType("_test_agent_tool", func() any { return &AgentToolOptions{} })
 }

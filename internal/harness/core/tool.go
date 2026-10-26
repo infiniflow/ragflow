@@ -120,14 +120,14 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 			case *AgentInput:
 				if inp != nil {
 					for _, m := range inp.Messages {
-						if m != nil {
+						if m != nil && m.Role != schema.RoleSystem {
 							rootMsgs = append(rootMsgs, m)
 						}
 					}
 				}
 			case []Message:
 				for _, m := range inp {
-					if m != nil {
+					if m != nil && m.Role != schema.RoleSystem {
 						rootMsgs = append(rootMsgs, m)
 					}
 				}
