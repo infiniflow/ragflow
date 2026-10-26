@@ -401,6 +401,10 @@ export default {
   },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
+  issueAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
+  revokeAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
