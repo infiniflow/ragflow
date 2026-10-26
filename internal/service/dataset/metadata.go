@@ -48,14 +48,10 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 	if kb == nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
-	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
-	if tenantErr != nil {
+	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
-	llmID := ""
-	if tenant != nil {
-		llmID = tenant.LLMID
-	}
+	llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
@@ -122,6 +118,9 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
 		return nil, code, permissionErr
 	}
+	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
 
 	if req == nil {
 		req = &service.MetadataConfigRequest{}
@@ -160,14 +159,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 	}
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "built_in_metadata")
-	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
-	if tenantErr != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
-	}
-	llmID := ""
-	if tenant != nil {
-		llmID = tenant.LLMID
-	}
+	llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {

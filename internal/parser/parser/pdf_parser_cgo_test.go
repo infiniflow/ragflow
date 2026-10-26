@@ -24,8 +24,8 @@ func TestPDFParser_ParseWithResult_CGOEmpty(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("empty input: want nil err, got %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "empty.pdf"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -43,7 +43,7 @@ func TestPDFParser_ParseWithResult_CGOEmpty(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if text, _ := res.JSON[0]["text"].(string); strings.TrimSpace(text) != "" {
+	if text, _ := res.JSON[0].ToMap()["text"].(string); strings.TrimSpace(text) != "" {
 		t.Fatalf("JSON[0].text = %q, want empty", text)
 	}
 }

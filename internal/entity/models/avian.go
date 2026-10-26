@@ -224,3 +224,7 @@ func (a *AvianModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 func (a *AvianModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }
+
+func (a *AvianModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}

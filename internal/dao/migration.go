@@ -80,38 +80,7 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
-	// Drop the unused tenant-level model group tables. Failover is configured
-	// per conversation instead, so nothing reads or writes these any more.
-	if err := dropModelGroupTables(ctx, db); err != nil {
-		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
-	}
-
 	common.Info("All manual migrations completed successfully")
-	return nil
-}
-
-// dropModelGroupTables removes tenant_model_group and
-// tenant_model_group_mapping.
-//
-// The tables were created by AutoMigrate for a tenant-scoped failover-group
-// feature that was never shipped: no service read them, and the per-conversation
-// failover path replaced the concept entirely. Their Go definitions are gone, so
-// without this they would linger in every existing database with no way to remove
-// them. AutoMigrate cannot express a drop, hence the explicit migration.
-//
-// Guarded by HasTable so a database that never had them is a no-op, and
-// mapping-first because it references the group table.
-func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
-	migrator := db.WithContext(ctx).Migrator()
-	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
-		if !migrator.HasTable(table) {
-			continue
-		}
-		if err := migrator.DropTable(table); err != nil {
-			return fmt.Errorf("drop %s: %w", table, err)
-		}
-		common.Info("Dropped unused table", zap.String("table", table))
-	}
 	return nil
 }
 
@@ -499,10 +468,10 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 // system_settings under mysql_migration.database.version, the marker shared with
 // the other versioned steps, so work already performed by a previous run is
 // skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2.dev1 step deletes. raptor and graphrag moved out of the dataset
+// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 
@@ -669,7 +638,6 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 	}
-
 	return nil
 }
 

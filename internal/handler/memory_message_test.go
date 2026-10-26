@@ -10,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
@@ -67,7 +69,7 @@ func TestParseMemoryMessagePath(t *testing.T) {
 func TestForgetMessageRejectsMalformedPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	h := NewMemoryHandler(service.NewMemoryService())
+	h := NewMemoryHandler(service.NewMemoryService(dao.DB, engine.Get()))
 	router.DELETE("/api/v1/messages/:memory_message", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
 		h.ForgetMessage(c)

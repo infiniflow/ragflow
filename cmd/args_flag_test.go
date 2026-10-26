@@ -125,7 +125,7 @@ func TestParseArgsBoolFlagForms(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 		}
-		if !args.enablePProf {
+		if !args.EnablePProf {
 			t.Errorf("%q enablePProf = false, want true", form)
 		}
 	}
@@ -134,7 +134,7 @@ func TestParseArgsBoolFlagForms(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 		}
-		if args.enablePProf {
+		if args.EnablePProf {
 			t.Errorf("%q enablePProf = true, want false", form)
 		}
 	}
@@ -143,13 +143,13 @@ func TestParseArgsBoolFlagForms(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 		}
-		if !args.initSuperUser {
+		if !args.InitSuperUser {
 			t.Errorf("%q initSuperUser = false, want true", form)
 		}
 	}
 	if args, err := parseArgsFrom([]string{"ragflow_server", "--admin", "--init-superuser=false"}); err != nil {
 		t.Fatalf("--init-superuser=false error = %v", err)
-	} else if args.initSuperUser {
+	} else if args.InitSuperUser {
 		t.Error("--init-superuser=false initSuperUser = true, want false")
 	}
 	// Non-boolean values are rejected, matching standard flag semantics.
@@ -169,8 +169,8 @@ func TestParseArgsModeFlags(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 			}
-			if args.mode == nil || *args.mode != mode {
-				t.Errorf("parseArgsFrom(%q) mode = %v, want %s", form, args.mode, mode)
+			if args.Mode == nil || *args.Mode != mode {
+				t.Errorf("parseArgsFrom(%q) mode = %v, want %s", form, args.Mode, mode)
 			}
 		}
 	}
@@ -191,8 +191,8 @@ func TestParseArgsModeFlags(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%v) error = %v", c.argv, err)
 		}
-		if args.mode == nil || *args.mode != c.want {
-			t.Errorf("parseArgsFrom(%v) mode = %v, want %s", c.argv, args.mode, c.want)
+		if args.Mode == nil || *args.Mode != c.want {
+			t.Errorf("parseArgsFrom(%v) mode = %v, want %s", c.argv, args.Mode, c.want)
 		}
 	}
 
@@ -201,8 +201,8 @@ func TestParseArgsModeFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--api=false error = %v", err)
 	}
-	if args.mode != nil {
-		t.Errorf("--api=false mode = %v, want nil", args.mode)
+	if args.Mode != nil {
+		t.Errorf("--api=false mode = %v, want nil", args.Mode)
 	}
 	// Non-boolean mode values are rejected.
 	for _, form := range []string{"--api=maybe", "-migrate=1.5"} {
@@ -219,16 +219,16 @@ func TestParseArgsDoubleDashTerminator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--api -- error = %v", err)
 	}
-	if args.mode == nil || *args.mode != "api" {
-		t.Errorf("--api -- mode = %v, want api", args.mode)
+	if args.Mode == nil || *args.Mode != "api" {
+		t.Errorf("--api -- mode = %v, want api", args.Mode)
 	}
 
 	args, err = parseArgsFrom([]string{"ragflow_server", "--"})
 	if err != nil {
 		t.Fatalf("bare -- error = %v", err)
 	}
-	if args.mode != nil {
-		t.Errorf("bare -- mode = %v, want nil", args.mode)
+	if args.Mode != nil {
+		t.Errorf("bare -- mode = %v, want nil", args.Mode)
 	}
 
 	for _, argv := range [][]string{
@@ -287,8 +287,8 @@ func TestParseArgsValueEdgeCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--name=foo=bar error = %v", err)
 	}
-	if args.name == nil || *args.name != "foo=bar" {
-		t.Errorf("--name=foo=bar name = %v, want foo=bar", args.name)
+	if args.Name == nil || *args.Name != "foo=bar" {
+		t.Errorf("--name=foo=bar name = %v, want foo=bar", args.Name)
 	}
 
 	// In the space form the next argument is consumed literally even when it
@@ -297,11 +297,11 @@ func TestParseArgsValueEdgeCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--name --api error = %v", err)
 	}
-	if args.name == nil || *args.name != "--api" {
-		t.Errorf("--name --api name = %v, want --api", args.name)
+	if args.Name == nil || *args.Name != "--api" {
+		t.Errorf("--name --api name = %v, want --api", args.Name)
 	}
-	if args.mode != nil {
-		t.Errorf("--name --api mode = %v, want nil", args.mode)
+	if args.Mode != nil {
+		t.Errorf("--name --api mode = %v, want nil", args.Mode)
 	}
 
 	// An explicitly empty string value is a valid (if odd) string value.
@@ -309,15 +309,15 @@ func TestParseArgsValueEdgeCases(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--name= error = %v", err)
 	}
-	if args.name == nil || *args.name != "" {
-		t.Errorf("--name= name = %v, want empty string", args.name)
+	if args.Name == nil || *args.Name != "" {
+		t.Errorf("--name= name = %v, want empty string", args.Name)
 	}
 	args, err = parseArgsFrom([]string{"ragflow_server", "--api", "--config="})
 	if err != nil {
 		t.Fatalf("--config= error = %v", err)
 	}
-	if args.configPath == nil || *args.configPath != "" {
-		t.Errorf("--config= configPath = %v, want empty string", args.configPath)
+	if args.ConfigPath == nil || *args.ConfigPath != "" {
+		t.Errorf("--config= configPath = %v, want empty string", args.ConfigPath)
 	}
 
 	// Empty values still fail validation for constrained flags.
@@ -374,8 +374,8 @@ func TestParseArgsNumericValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--deepdoc-inference-cpu-cores=0 error = %v", err)
 	}
-	if args.deepdocInferenceCPUCores == nil || *args.deepdocInferenceCPUCores != 0 {
-		t.Errorf("--deepdoc-inference-cpu-cores=0 = %v, want 0 (all cores)", args.deepdocInferenceCPUCores)
+	if args.DeepdocInferenceCPUCores == nil || *args.DeepdocInferenceCPUCores != 0 {
+		t.Errorf("--deepdoc-inference-cpu-cores=0 = %v, want 0 (all cores)", args.DeepdocInferenceCPUCores)
 	}
 
 	for _, port := range []string{"0", "70000", "-1", "abc"} {
@@ -398,11 +398,11 @@ func TestParseArgsAdminHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--admin-host=127.0.0.1:8000 error = %v", err)
 	}
-	if args.adminHost == nil || *args.adminHost != "127.0.0.1" {
-		t.Errorf("adminHost = %v, want 127.0.0.1", args.adminHost)
+	if args.AdminHost == nil || *args.AdminHost != "127.0.0.1" {
+		t.Errorf("adminHost = %v, want 127.0.0.1", args.AdminHost)
 	}
-	if args.adminPort == nil || *args.adminPort != 8000 {
-		t.Errorf("adminPort = %v, want 8000", args.adminPort)
+	if args.AdminPort == nil || *args.AdminPort != 8000 {
+		t.Errorf("adminPort = %v, want 8000", args.AdminPort)
 	}
 
 	for _, v := range []string{"127.0.0.1", ":8000", "127.0.0.1:", "127.0.0.1:abc", "::1:80", ""} {
@@ -413,22 +413,22 @@ func TestParseArgsAdminHost(t *testing.T) {
 }
 
 // TestParseArgsPresenceSemantics guards the "unspecified vs explicit zero"
-// contract: only flags present on the command line populate serverArgs.
+// contract: only flags present on the command line populate bootstrap.ServerArgs.
 func TestParseArgsPresenceSemantics(t *testing.T) {
 	args, err := parseArgsFrom([]string{"ragflow_server", "--api"})
 	if err != nil {
 		t.Fatalf("parseArgsFrom error = %v", err)
 	}
 	for name, got := range map[string]bool{
-		"logLevel":                     args.logLevel != nil,
-		"configPath":                   args.configPath != nil,
-		"port":                         args.port != nil,
-		"adminHost":                    args.adminHost != nil,
-		"name":                         args.name != nil,
-		"deepdocInferenceConcurrency":  args.deepdocInferenceConcurrency != nil,
-		"ingestorMaxConcurrentWorkers": args.ingestorMaxConcurrentWorkers != nil,
-		"ingestorPageConcurrency":      args.ingestorPageConcurrency != nil,
-		"deepdocInferenceCPUCores":     args.deepdocInferenceCPUCores != nil,
+		"logLevel":                     args.LogLevel != nil,
+		"configPath":                   args.ConfigPath != nil,
+		"port":                         args.Port != nil,
+		"adminHost":                    args.AdminHost != nil,
+		"name":                         args.Name != nil,
+		"deepdocInferenceConcurrency":  args.DeepdocInferenceConcurrency != nil,
+		"ingestorMaxConcurrentWorkers": args.IngestorMaxConcurrentWorkers != nil,
+		"ingestorPageConcurrency":      args.IngestorPageConcurrency != nil,
+		"deepdocInferenceCPUCores":     args.DeepdocInferenceCPUCores != nil,
 	} {
 		if got {
 			t.Errorf("%s set with no flag on the command line", name)
@@ -439,14 +439,14 @@ func TestParseArgsPresenceSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgsFrom error = %v", err)
 	}
-	if args.port == nil || *args.port != 9380 {
-		t.Errorf("port = %v, want 9380", args.port)
+	if args.Port == nil || *args.Port != 9380 {
+		t.Errorf("port = %v, want 9380", args.Port)
 	}
-	if args.configPath == nil || *args.configPath != "conf.yaml" {
-		t.Errorf("configPath = %v, want conf.yaml", args.configPath)
+	if args.ConfigPath == nil || *args.ConfigPath != "conf.yaml" {
+		t.Errorf("configPath = %v, want conf.yaml", args.ConfigPath)
 	}
-	if args.deepdocInferenceCPUCores == nil || *args.deepdocInferenceCPUCores != 0 {
-		t.Errorf("deepdocInferenceCPUCores = %v, want explicit 0", args.deepdocInferenceCPUCores)
+	if args.DeepdocInferenceCPUCores == nil || *args.DeepdocInferenceCPUCores != 0 {
+		t.Errorf("deepdocInferenceCPUCores = %v, want explicit 0", args.DeepdocInferenceCPUCores)
 	}
 }
 
@@ -458,11 +458,11 @@ func TestParseArgsHelpVersion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 		}
-		if !args.helpFlag {
+		if !args.HelpFlag {
 			t.Errorf("%q helpFlag = false, want true", form)
 		}
-		if args.mode == nil || *args.mode != "api" {
-			t.Errorf("%q mode = %v, want api (help must not clear the mode)", form, args.mode)
+		if args.Mode == nil || *args.Mode != "api" {
+			t.Errorf("%q mode = %v, want api (help must not clear the mode)", form, args.Mode)
 		}
 	}
 	for _, form := range []string{"-v", "--version", "-version"} {
@@ -470,7 +470,7 @@ func TestParseArgsHelpVersion(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", form, err)
 		}
-		if !args.versionFlag {
+		if !args.VersionFlag {
 			t.Errorf("%q versionFlag = false, want true", form)
 		}
 	}
@@ -478,7 +478,7 @@ func TestParseArgsHelpVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--help=false error = %v", err)
 	}
-	if args.helpFlag {
+	if args.HelpFlag {
 		t.Error("--help=false helpFlag = true, want false")
 	}
 }
@@ -504,8 +504,8 @@ func TestParseArgsEmptyArgv(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%v) error = %v", argv, err)
 		}
-		if args.mode != nil {
-			t.Errorf("parseArgsFrom(%v) mode = %v, want nil", argv, args.mode)
+		if args.Mode != nil {
+			t.Errorf("parseArgsFrom(%v) mode = %v, want nil", argv, args.Mode)
 		}
 	}
 }
@@ -530,8 +530,8 @@ func TestParseArgsDashValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("--name -- error = %v", err)
 	}
-	if args.name == nil || *args.name != "--" {
-		t.Errorf("--name -- name = %v, want --", args.name)
+	if args.Name == nil || *args.Name != "--" {
+		t.Errorf("--name -- name = %v, want --", args.Name)
 	}
 }
 
@@ -542,22 +542,22 @@ func TestParseArgsRepeatedFlagLastWins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("repeated --port error = %v", err)
 	}
-	if args.port == nil || *args.port != 90 {
-		t.Errorf("port = %v, want 90 (last wins)", args.port)
+	if args.Port == nil || *args.Port != 90 {
+		t.Errorf("port = %v, want 90 (last wins)", args.Port)
 	}
 	args, err = parseArgsFrom([]string{"ragflow_server", "--api", "--log-level", "debug", "--log-level", "error"})
 	if err != nil {
 		t.Fatalf("repeated --log-level error = %v", err)
 	}
-	if args.logLevel == nil || *args.logLevel != "error" {
-		t.Errorf("logLevel = %v, want error (last wins)", args.logLevel)
+	if args.LogLevel == nil || *args.LogLevel != "error" {
+		t.Errorf("logLevel = %v, want error (last wins)", args.LogLevel)
 	}
 	args, err = parseArgsFrom([]string{"ragflow_server", "--api", "-f", "a.yaml", "--config", "b.yaml"})
 	if err != nil {
 		t.Fatalf("repeated -f/--config error = %v", err)
 	}
-	if args.configPath == nil || *args.configPath != "b.yaml" {
-		t.Errorf("configPath = %v, want b.yaml (last wins)", args.configPath)
+	if args.ConfigPath == nil || *args.ConfigPath != "b.yaml" {
+		t.Errorf("configPath = %v, want b.yaml (last wins)", args.ConfigPath)
 	}
 }
 
@@ -572,8 +572,8 @@ func TestParseArgsBoolDoesNotConsumePositional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error = %v", err)
 	}
-	if !args.enablePProf || !args.initSuperUser {
-		t.Errorf("enablePProf = %v, initSuperUser = %v, want both true", args.enablePProf, args.initSuperUser)
+	if !args.EnablePProf || !args.InitSuperUser {
+		t.Errorf("enablePProf = %v, initSuperUser = %v, want both true", args.EnablePProf, args.InitSuperUser)
 	}
 }
 
@@ -613,8 +613,8 @@ func TestParseArgsModeBoolSynonyms(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%v) error = %v", c.argv, err)
 		}
-		if args.mode == nil || *args.mode != c.want {
-			t.Errorf("parseArgsFrom(%v) mode = %v, want %s", c.argv, args.mode, c.want)
+		if args.Mode == nil || *args.Mode != c.want {
+			t.Errorf("parseArgsFrom(%v) mode = %v, want %s", c.argv, args.Mode, c.want)
 		}
 	}
 
@@ -624,8 +624,8 @@ func TestParseArgsModeBoolSynonyms(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgsFrom(%q) error = %v", argv, err)
 		}
-		if args.mode != nil {
-			t.Errorf("parseArgsFrom(%q) mode = %v, want nil (falsy boolean selects no mode)", argv, args.mode)
+		if args.Mode != nil {
+			t.Errorf("parseArgsFrom(%q) mode = %v, want nil (falsy boolean selects no mode)", argv, args.Mode)
 		}
 	}
 }

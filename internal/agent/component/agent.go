@@ -1055,7 +1055,6 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = query
 		}
 	}
-
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -1928,6 +1927,9 @@ func agentParamFromMap(params map[string]any) AgentParam {
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
+		if err := validateAgentToolEntries(params["tools"], false); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("Agent: %v", err))
+		}
 		return NewAgentComponent(agentParamFromMap(params)), nil
 	})
 }

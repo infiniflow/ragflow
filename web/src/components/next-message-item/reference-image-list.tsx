@@ -26,9 +26,8 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import PdfDrawer from '@/pages/next-search/document-preview-modal';
-import { buildCitationDisplayMap } from '@/utils/chat';
+import { buildCitationDisplayMap, resolveCitationChunk } from '@/utils/chat';
 import { middleEllipsis } from '@/utils/common-util';
-import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
@@ -182,22 +181,15 @@ export function ReferenceImageList({
   messageContent,
 }: IProps) {
   const images = useMemo(() => {
-    // Same positional mapping as the citation chips in next-markdown-content:
-    // each unique marker is a 0-based position by first occurrence and the
-    // chunk is read by insertion order. This works for both plain chat and
-    // agent references (whose markers are [ID:<chunkId>] and chunks are arrays).
-    const displayIndexes = [
-      ...buildCitationDisplayMap(messageContent).values(),
-    ];
-    const orderedChunks = Array.isArray(referenceChunks)
-      ? referenceChunks
-      : isPlainObject(referenceChunks)
-        ? Object.values(referenceChunks ?? {})
-        : [];
+    // The marker itself selects the chunk: plain-chat numeric markers index
+    // the retrieved chunks array (chip renders n + 1); agent [ID:<chunkId>]
+    // markers match the chunk's own id. Either way a citation lands on its
+    // own chunk regardless of the payload's retrieval order.
+    const keyToPosition = buildCitationDisplayMap(messageContent);
 
-    return displayIndexes
-      .map((position) => {
-        const chunk = orderedChunks[position];
+    return [...keyToPosition.entries()]
+      .map(([key, position]) => {
+        const chunk = resolveCitationChunk(referenceChunks, key);
         if (!chunk?.image_id || !chunk?.document_id) {
           return null;
         }
@@ -205,7 +197,7 @@ export function ReferenceImageList({
           id: chunk.image_id,
           documentId: chunk.document_id,
           documentName: chunk.document_name,
-          index: position,
+          index: typeof key === 'number' ? key : position,
         } as ImageItem;
       })
       .filter((item): item is ImageItem => item !== null);

@@ -115,23 +115,15 @@ export default function Agent() {
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  // Saving is always allowed — the canvas checklist flags issues and gates
-  // only the publish/run/embed/explore entry points.
   const handleSave = useCallback(() => {
     saveGraph();
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { issues, getLatestIssues } = useCanvasChecklist({
+  // The checklist displays all issues; Run separately checks blocking rules.
+  const { issues } = useCanvasChecklist({
     ownerTenantId: agentDetail?.tenant_id,
     canvasID: id,
   });
-  const hasBlockingIssues = useCallback(() => {
-    if (getLatestIssues().length > 0) {
-      message.warning(t('flow.checklistResolveBefore'));
-      return true;
-    }
-    return false;
-  }, [getLatestIssues, t]);
   const { buildDslData } = useBuildDslData();
   const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
@@ -222,9 +214,6 @@ export default function Agent() {
   });
 
   const handleButtonRunClick = useCallback(async () => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     if (isWebhookMode) {
       if ((await saveGraph())?.code === 0) showWebhookTestSheet();
     } else if (isPipeline) {
@@ -233,7 +222,6 @@ export default function Agent() {
       handleRun();
     }
   }, [
-    hasBlockingIssues,
     handleRun,
     handleRunPipeline,
     isPipeline,
@@ -243,18 +231,12 @@ export default function Agent() {
   ]);
 
   const handleExploreClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     navigateToAgentExplore(id as string)();
-  }, [hasBlockingIssues, id, navigateToAgentExplore]);
+  }, [id, navigateToAgentExplore]);
 
   const handleEmbedClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     showEmbedModal();
-  }, [hasBlockingIssues, showEmbedModal]);
+  }, [showEmbedModal]);
 
   // Single source for the Run button so the tooltip gating in the JSX below
   // doesn't duplicate it.
@@ -351,7 +333,6 @@ export default function Agent() {
             agentDetail={agentDetail}
             loading={loading}
             onPublish={() => saveGraph(undefined, undefined, true)}
-            onBeforeOpen={hasBlockingIssues}
           />
           <CanvasChecklist issues={issues} />
           <DropdownMenu>

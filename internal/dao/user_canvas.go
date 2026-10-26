@@ -77,6 +77,10 @@ func NewUserCanvasDAO() *UserCanvasDAO {
 
 // Create user canvas
 func (dao *UserCanvasDAO) Create(ctx context.Context, db *gorm.DB, userCanvas *entity.UserCanvas) error {
+	if userCanvas != nil && (userCanvas.TenantID == nil || strings.TrimSpace(*userCanvas.TenantID) == "") {
+		tenantID := strings.TrimSpace(userCanvas.UserID)
+		userCanvas.TenantID = &tenantID
+	}
 	return db.WithContext(ctx).Create(userCanvas).Error
 }
 
@@ -180,37 +184,23 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	return canvases, err
 }
 
-// GetAllCanvasesByTenantIDs get all permitted canvases by tenant IDs
-// Similar to Python UserCanvasService.get_all_agents_by_tenant_ids
-func (dao *UserCanvasDAO) GetAllCanvasesByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string) ([]*CanvasBasicInfo, error) {
-
-	query := db.WithContext(ctx).Model(&entity.UserCanvas{}).
-		Select("id, avatar, title, permission, canvas_type, canvas_category").
-		Where("user_id IN (?) AND permission = ?", tenantIDs, "team").
-		Or("user_id = ?", userID).
-		Order("create_time ASC")
-
-	var results []*CanvasBasicInfo
-	err := query.Scan(&results).Error
-	return results, err
-}
-
 // UserCanvasListItem is the joined row returned by ListByIDs.
 type UserCanvasListItem struct {
-	ID             string  `gorm:"column:id"`
-	Avatar         *string `gorm:"column:avatar"`
-	Title          *string `gorm:"column:title"`
-	Description    *string `gorm:"column:description"`
-	Permission     string  `gorm:"column:permission"`
-	UserID         string  `gorm:"column:user_id"`
-	TenantID       string  `gorm:"column:tenant_id"`
-	Nickname       *string `gorm:"column:nickname"`
-	TenantAvatar   *string `gorm:"column:tenant_avatar"`
-	CanvasType     *string `gorm:"column:canvas_type"`
-	CanvasCategory string  `gorm:"column:canvas_category"`
-	Tags           string  `gorm:"column:tags"`
-	CreateTime     *int64  `gorm:"column:create_time"`
-	UpdateTime     *int64  `gorm:"column:update_time"`
+	ID                 string  `gorm:"column:id"`
+	Avatar             *string `gorm:"column:avatar"`
+	Title              *string `gorm:"column:title"`
+	Description        *string `gorm:"column:description"`
+	Permission         string  `gorm:"column:permission"`
+	UserID             string  `gorm:"column:user_id"`
+	TenantID           string  `gorm:"column:tenant_id"`
+	Nickname           *string `gorm:"column:nickname"`
+	TenantAvatar       *string `gorm:"column:tenant_avatar"`
+	CanvasType         *string `gorm:"column:canvas_type"`
+	CanvasCategory     string  `gorm:"column:canvas_category"`
+	OperatorPermission int32   `gorm:"-"`
+	Tags               string  `gorm:"column:tags"`
+	CreateTime         *int64  `gorm:"column:create_time"`
+	UpdateTime         *int64  `gorm:"column:update_time"`
 }
 
 // ListByIDs lists permission-filtered canvases with optional metadata filters.
@@ -226,7 +216,7 @@ func (dao *UserCanvasDAO) ListByIDs(ctx context.Context, db *gorm.DB, canvasIDs,
 		user_canvas.description,
 		user_canvas.permission,
 		user_canvas.user_id,
-		user_canvas.user_id AS tenant_id,
+		COALESCE(NULLIF(user_canvas.tenant_id, ''), user_canvas.user_id) AS tenant_id,
 		user.nickname,
 		user.avatar AS tenant_avatar,
 		user_canvas.canvas_type,
@@ -355,16 +345,6 @@ func (dao *UserCanvasDAO) ListTagsByCanvasIDs(ctx context.Context, db *gorm.DB, 
 // GetByCanvasID get user canvas by canvas ID (alias for GetByID)
 func (dao *UserCanvasDAO) GetByCanvasID(ctx context.Context, db *gorm.DB, canvasID string) (*entity.UserCanvas, error) {
 	return dao.GetByID(ctx, db, canvasID)
-}
-
-// CanvasBasicInfo basic canvas information for list responses
-type CanvasBasicInfo struct {
-	ID             string  `gorm:"column:id" json:"id"`
-	Avatar         *string `gorm:"column:avatar" json:"avatar,omitempty"`
-	Title          *string `gorm:"column:title" json:"title,omitempty"`
-	Permission     string  `gorm:"column:permission" json:"permission"`
-	CanvasType     *string `gorm:"column:canvas_type" json:"canvas_type,omitempty"`
-	CanvasCategory string  `gorm:"column:canvas_category" json:"canvas_category"`
 }
 
 // DeleteByUserID deletes all canvases by user ID (hard delete)

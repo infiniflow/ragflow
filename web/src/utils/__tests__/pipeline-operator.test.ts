@@ -263,3 +263,107 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     expect(form).not.toHaveProperty('metadata');
   });
 });
+
+describe('TitleChunker per-method config round trip', () => {
+  it('keeps hierarchy and group rules independent across load and save', () => {
+    const form = transformApiConfigToForm('TitleChunker', {
+      method: 'hierarchy',
+      hierarchy: 3,
+      levels: [['^#[^#]']],
+      chunk_token_cap: 1024,
+      hierarchyHierarchy: '3',
+      hierarchyGroup: '0',
+      hierarchyRules: [{ levels: [{ expression: '^#[^#]' }] }],
+      groupRules: [{ levels: [{ expression: '第[0-9]+章' }] }],
+    });
+    expect(form.hierarchyRules).toEqual([
+      { levels: [{ expression: '^#[^#]' }] },
+    ]);
+    expect(form.groupRules).toEqual([
+      { levels: [{ expression: '第[0-9]+章' }] },
+    ]);
+    expect(form.hierarchyHierarchy).toBe('3');
+    expect(form.hierarchyGroup).toBe('0');
+    // The shared backend-facing cap seeds both per-method fields on load.
+    expect(form.hierarchyChunkTokenCap).toBe(1024);
+    expect(form.groupChunkTokenCap).toBe(1024);
+    expect(form).not.toHaveProperty('levels');
+    expect(form).not.toHaveProperty('hierarchy');
+    expect(form).not.toHaveProperty('chunk_token_cap');
+
+    // Switch to group mode, edit only the group rules and the group cap, and
+    // save: the shared levels/hierarchy/chunk_token_cap keys carry the active
+    // method's values while the hierarchy config survives untouched under its
+    // own keys.
+    const api = transformFormConfigToApi('TitleChunker', {
+      ...form,
+      method: 'group',
+      hierarchyGroup: '2',
+      groupRules: [
+        { levels: [{ expression: '第[0-9]+章' }] },
+        { levels: [{ expression: '第[0-9]+节' }] },
+      ],
+      groupChunkTokenCap: 2048,
+    });
+    expect(api.method).toBe('group');
+    expect(api.levels).toEqual([['第[0-9]+章'], ['第[0-9]+节']]);
+    expect(api.hierarchy).toBe(2);
+    expect(api.chunk_token_cap).toBe(2048);
+    expect(api.hierarchyRules).toEqual([
+      { levels: [{ expression: '^#[^#]' }] },
+    ]);
+    expect(api.groupRules).toEqual([
+      { levels: [{ expression: '第[0-9]+章' }] },
+      { levels: [{ expression: '第[0-9]+节' }] },
+    ]);
+    expect(api.hierarchyHierarchy).toBe('3');
+    expect(api.hierarchyGroup).toBe('2');
+    expect(api.hierarchyChunkTokenCap).toBe(1024);
+    expect(api.groupChunkTokenCap).toBe(2048);
+    expect(api).not.toHaveProperty('rules');
+  });
+
+  it('resolves the shared chunk_token_cap from the active method on save', () => {
+    const base = {
+      hierarchyHierarchy: '3',
+      hierarchyGroup: '0',
+      hierarchyRules: [{ levels: [{ expression: '^#[^#]' }] }],
+      groupRules: [{ levels: [{ expression: '第[0-9]+章' }] }],
+      hierarchyChunkTokenCap: 1024,
+      groupChunkTokenCap: 2048,
+    };
+    expect(
+      transformFormConfigToApi('TitleChunker', {
+        ...base,
+        method: 'hierarchy',
+      }).chunk_token_cap,
+    ).toBe(1024);
+    expect(
+      transformFormConfigToApi('TitleChunker', { ...base, method: 'group' })
+        .chunk_token_cap,
+    ).toBe(2048);
+  });
+
+  it('falls back to a stored shared chunk_token_cap when split keys are absent', () => {
+    // Canvas snapshots saved before the split carry only the shared key; the
+    // save path must preserve it instead of dropping the configured cap.
+    const api = transformFormConfigToApi('TitleChunker', {
+      method: 'hierarchy',
+      hierarchyHierarchy: '3',
+      hierarchyRules: [{ levels: [{ expression: '^#[^#]' }] }],
+      groupRules: [{ levels: [{ expression: '第[0-9]+章' }] }],
+      chunk_token_cap: 777,
+    });
+    expect(api.chunk_token_cap).toBe(777);
+  });
+
+  it('migrates a legacy levels-only config into both method rule sets', () => {
+    const form = transformApiConfigToForm('TitleChunker', {
+      method: 'hierarchy',
+      hierarchy: 2,
+      levels: [['^##']],
+    });
+    expect(form.hierarchyRules).toEqual([{ levels: [{ expression: '^##' }] }]);
+    expect(form.groupRules).toEqual([{ levels: [{ expression: '^##' }] }]);
+  });
+});

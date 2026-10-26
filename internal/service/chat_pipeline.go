@@ -100,6 +100,12 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Usage and ElapsedMs are this turn's cost, emitted on the final chunk so a
+	// client can show what the answer cost. They are the same numbers the
+	// Langfuse generation below records; without them a UI has to parse the
+	// human-readable prompt text to learn anything about cost.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 	// Internal-only: set when Answer is the run's authoritative full text —
 	// <think> stretch included, citation handles already compacted against the
 	// shipped reference — so the session writer must persist it instead of the
@@ -107,6 +113,15 @@ type AsyncChatResult struct {
 	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
+}
+
+// ChatTurnUsage is one turn's token cost. CompletionTokens is an estimate (the
+// answer has no tokenizer on this path), which is why it is reported separately
+// rather than folded into a single "tokens" number a reader would trust.
+type ChatTurnUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ThinkEvent is one structured agentic reasoning step as it goes over the
@@ -183,7 +198,7 @@ type ThinkEvent struct {
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
-//	│         TOC enhance → child chunk retrieval →         │
+//	│         child chunk retrieval →                       │
 //	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
@@ -691,7 +706,6 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		// When hasKnowledgeParam is true, runs standard retrieval, then:
-		//   - TOC enhancement (if toc_enhance is enabled).
 		//   - Child chunk retrieval.
 		//   - Web search provider (if internet is enabled).
 		//   - Knowledge graph retrieval (if use_kg is enabled).
@@ -699,7 +713,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			// Regular RAG mirroring Python's async_chat — native docStore
-			// retrieval, then the TOC / child chunk / web search / KG
+			// retrieval, then the child chunk / web search / KG
 			// enhancements below.
 			searchQuestion := strings.Join(questions, " ")
 			if embModel != nil {
@@ -767,23 +781,6 @@ func (s *ChatPipelineService) AsyncChat(
 						Final:  true,
 					}
 					return
-				}
-			}
-
-			// TOC enhancement
-			if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-				enhancer := NewTOCEnhancer(
-					engine.Get(),
-					chatModel,
-					kbTenantIDStrings(kbs),
-					kbIDStrings(kbs),
-					searchQuestion,
-					int(chat.TopN),
-				)
-				if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-					common.Warn("TOC enhance failed", zap.Error(err))
-				} else if added > 0 {
-					common.Debug("TOC enhance added chunks", zap.Int("added", added))
 				}
 			}
 
@@ -3098,6 +3095,14 @@ func (s *ChatPipelineService) decorateAnswer(
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
+		// Same numbers the Langfuse generation above records, on the wire so a
+		// client does not have to parse the human-readable prompt to learn them.
+		Usage: &ChatTurnUsage{
+			PromptTokens:     usedTokenCount,
+			CompletionTokens: tkNum,
+			TotalTokens:      usedTokenCount + tkNum,
+		},
+		ElapsedMs: totalMs,
 	}
 }
 
