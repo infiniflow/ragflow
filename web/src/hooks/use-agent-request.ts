@@ -53,6 +53,7 @@ import agentService, {
   revokeAgentWebhookCredential,
   updateAgent,
   updateAgentTags,
+  updateVersion,
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -906,11 +907,7 @@ export const useUpdateVersion = () => {
       versionId: string;
       alias: string;
     }) => {
-      const { data } = await agentService.updateVersion({
-        agentId: canvasId,
-        versionId,
-        alias,
-      });
+      const { data } = await updateVersion(canvasId, versionId, { alias });
       return data?.code === 0;
     },
     onSuccess: (_result, variables) => {
