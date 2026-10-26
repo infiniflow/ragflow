@@ -131,7 +131,7 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 		if err := ctx.Err(); err != nil {
 			return nil, sheetCount, err
 		}
-		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil)...)
+		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil, nil)...)
 	}
 	if err := reader.Err(); err != nil {
 		return nil, sheetCount, fmt.Errorf("read BIFF workbook: %w", err)
@@ -140,6 +140,10 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 }
 
 func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int, int) {
+	// The BIFF reader exposes cell values but not merged ranges, so .xls rows
+	// are emitted without ColSpan/RowSpan geometry. A vertical merge in a
+	// legacy workbook therefore stays a dense row with an empty slave cell;
+	// xlsx is the format that carries full merge geometry into TableData.
 	type numberedRow struct {
 		number int
 		cells  []string
