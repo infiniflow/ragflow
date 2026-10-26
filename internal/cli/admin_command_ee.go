@@ -44,6 +44,18 @@ func (p *Parser) parseAdminListIngestionTasks() (*Command, error) {
 	return nil, errors.New("listing admin ingestion tasks is not supported in the open-source edition")
 }
 
+func (p *Parser) parseAdminShowIngestionLog() (*Command, error) {
+	return nil, errors.New("ingestion logs are only available in the enterprise edition")
+}
+
+func (c *CLI) AdminShowIngestionLogCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("ingestion logs are only available in the enterprise edition")
+}
+
+func (c *CLI) AdminShowIngestionMessagesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return nil, errors.New("ingestion logs are only available in the enterprise edition")
+}
+
 func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	return nil, errors.New("listing user ingestion tasks in admin mode is not supported in the open-source edition")
 }
