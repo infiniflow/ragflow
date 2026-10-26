@@ -33,6 +33,12 @@ func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 			return
 		}
 		options, _ := body["options"].(map[string]any)
+		if _, isChunked := options["do_chunking"]; !isChunked {
+			// Standard payloads are tried first; this server only supports chunking.
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"detail":"standard conversion unsupported"}`))
+			return
+		}
 		if got, want := options["do_chunking"], true; got != want {
 			t.Errorf("do_chunking = %#v, want %#v", got, want)
 			return
@@ -57,8 +63,8 @@ func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 			t.Errorf("uploaded file = %q, want PDF bytes", got)
 			return
 		}
-		if current != 1 {
-			t.Errorf("request count = %d, want first chunked request only", current)
+		if current != 3 {
+			t.Errorf("chunked success on request %d, want 3 (after both standard endpoints 422)", current)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -90,49 +96,44 @@ func TestPDFParser_ParseWithResult_DoclingChunkedIntegration(t *testing.T) {
 	if !strings.Contains(got.String(), "Chunk A") || !strings.Contains(got.String(), "Chunk B") {
 		t.Fatalf("JSON text = %q, want both chunks", got.String())
 	}
+	warned := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "positions unavailable") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatalf("chunked fallback must warn that positions are unavailable: %#v", res.Warnings)
+	}
 }
 
-func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_DoclingStandardPreferredIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	var requestCount atomic.Int32
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		current := requestCount.Add(1)
-		switch current {
-		case 1:
-			if r.URL.Path != "/v1/convert/source" {
-				t.Errorf("request 1 path = %q, want /v1/convert/source", r.URL.Path)
-				return
-			}
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
-		case 2:
-			if r.URL.Path != "/v1alpha/convert/source" {
-				t.Errorf("request 2 path = %q, want /v1alpha/convert/source", r.URL.Path)
-				return
-			}
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
-		case 3:
-			if r.URL.Path != "/v1/convert/source" {
-				t.Errorf("request 3 path = %q, want /v1/convert/source", r.URL.Path)
-				return
-			}
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Errorf("Decode: %v", err)
-				return
-			}
-			options, _ := body["options"].(map[string]any)
-			if _, exists := options["do_chunking"]; exists {
-				t.Errorf("standard fallback payload unexpectedly contains do_chunking: %#v", options)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))
-		default:
+		if current != 1 {
+			t.Errorf("request %d: standard conversion must succeed on the first request", current)
 			http.NotFound(w, r)
+			return
 		}
+		if r.URL.Path != "/v1/convert/source" {
+			t.Errorf("request 1 path = %q, want /v1/convert/source", r.URL.Path)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("Decode: %v", err)
+			return
+		}
+		options, _ := body["options"].(map[string]any)
+		if _, exists := options["do_chunking"]; exists {
+			t.Errorf("standard payload unexpectedly contains do_chunking: %#v", options)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))
 	}))
 	defer server.Close()
 
@@ -153,7 +154,7 @@ func TestPDFParser_ParseWithResult_DoclingFallbackToStandardJSONIntegration(t *t
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want markdown-normalized items")
 	}
-	if got, want := requestCount.Load(), int32(3); got != want {
+	if got, want := requestCount.Load(), int32(1); got != want {
 		t.Fatalf("requestCount = %d, want %d", got, want)
 	}
 }
@@ -229,13 +230,13 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 						t.Errorf("request %d: options[%q] = %#v, want %#v", current, key, got, want)
 					}
 				}
-				// Reject both chunked requests so the standard payload is checked too.
+				// Reject both standard requests so the chunked payload is checked too.
 				if current < 3 {
 					w.WriteHeader(http.StatusUnprocessableEntity)
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))
+				_, _ = w.Write([]byte(`[{"text":"Chunk A"}]`))
 			}))
 			defer server.Close()
 
@@ -259,7 +260,7 @@ func TestPDFParser_ParseWithResult_DoclingConvertOptions(t *testing.T) {
 }
 
 const doclingPositionsResponse = `{"document":{"md_content":"# Docling Title\n\nDocling body.\n\nUnmatched paragraph.\n","json_content":{
- "pages":{"1":{"page_no":1},"2":{"page_no":2},"3":{"page_no":3}},
+ "pages":{"1":{"page_no":1,"size":{"width":612,"height":792}},"2":{"page_no":2,"size":{"width":612,"height":792}},"3":{"page_no":3,"size":{"width":612,"height":792}}},
  "texts":[
   {"label":"section_header","text":"Docling Title","prov":[{"page_no":1,"bbox":{"l":10,"t":700,"r":200,"b":680,"coord_origin":"BOTTOMLEFT"}}]},
   {"label":"text","text":"Docling body.","prov":[{"page_no":2,"bbox":{"l":15,"t":100,"r":300,"b":140,"coord_origin":"TOPLEFT"}}]}
@@ -295,7 +296,8 @@ func TestPDFParser_ParseWithResult_DoclingEmitsPositionsAndPageCount(t *testing.
 		t.Fatalf("page_count = %v, want 3 (pages, not documents)", got)
 	}
 	want := map[string][]any{
-		"Docling Title": {1, 10.0, 200.0, 680.0, 700.0},
+		// BOTTOMLEFT y=700/680 on a 792pt page convert to top-origin 92/112.
+		"Docling Title": {1, 10.0, 200.0, 92.0, 112.0},
 		"Docling body.": {2, 15.0, 300.0, 100.0, 140.0},
 	}
 	found := map[string]bool{}
@@ -337,6 +339,18 @@ func TestDoclingPageCountFallsBackToProvenanceThenDocuments(t *testing.T) {
 	}
 	if got := doclingPageCount(noPages, 0); got != 1 {
 		t.Fatalf("unreadable source page count = %d, want 1 (document count)", got)
+	}
+}
+
+func TestDoclingPageCountMaxAcrossDuplicateDocuments(t *testing.T) {
+	// A single source converts to one logical document; payload shapes that
+	// repeat it (document + documents + results) must not multiply the page
+	// count.
+	pageful := doclingDocument{JSONContent: map[string]any{
+		"pages": map[string]any{"1": map[string]any{"page_no": 1.0}, "2": map[string]any{"page_no": 2.0}, "3": map[string]any{"page_no": 3.0}},
+	}}
+	if got := doclingPageCount([]doclingDocument{pageful, pageful}, 0); got != 3 {
+		t.Fatalf("duplicated documents must not sum pages: got %v, want 3", got)
 	}
 }
 
@@ -424,14 +438,14 @@ func TestDoclingAttachPositionsKeepsLeadingDigits(t *testing.T) {
 
 func TestDoclingChunkedResultPrefersSourcePageCount(t *testing.T) {
 	body := []byte(`[{"text":"chunk one"},{"text":"chunk two"}]`)
-	res, ok := parseDoclingChunkedResult("a.pdf", body, "json", 9)
+	res, ok := parseDoclingChunkedResult("a.pdf", body, 9)
 	if !ok {
 		t.Fatal("chunked parse failed")
 	}
 	if got := res.File["page_count"]; got != 9 {
 		t.Fatalf("chunked page_count = %v, want source PDF count 9", got)
 	}
-	res, ok = parseDoclingChunkedResult("a.pdf", body, "json", 0)
+	res, ok = parseDoclingChunkedResult("a.pdf", body, 0)
 	if !ok {
 		t.Fatal("chunked parse failed")
 	}
@@ -468,10 +482,10 @@ func TestDoclingProvPositionConvertsBottomLeftOrigin(t *testing.T) {
 	if pos[3] != 20.0 || pos[4] != 30.0 {
 		t.Fatalf("BOTTOMLEFT not converted: %#v", pos)
 	}
-	// Unknown page height: keep the sorted values rather than guessing.
-	pos = doclingProvPosition(prov, map[int]float64{})
-	if pos == nil || pos[3] != 170.0 || pos[4] != 180.0 {
-		t.Fatalf("missing height must keep sorted values: %#v", pos)
+	// Unknown page height: the bottom-origin Y cannot meet the top-origin
+	// contract, so the position is dropped rather than emitted wrong.
+	if pos = doclingProvPosition(prov, map[int]float64{}); pos != nil {
+		t.Fatalf("missing height must drop the position, got %#v", pos)
 	}
 	// TOPLEFT boxes are untouched even with a known height.
 	provTL := map[string]any{"page_no": 1.0, "bbox": map[string]any{

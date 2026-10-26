@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ledongthuc/pdf"
+	"go.uber.org/zap"
 
 	models "ragflow/internal/entity/models"
 )
@@ -70,16 +71,10 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		body     func() map[string]any
 		chunked  bool
 	}{
-		{
-			endpoint: "/v1/convert/source",
-			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false, convertOptions) },
-		},
-		{
-			endpoint: "/v1alpha/convert/source",
-			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true, convertOptions) },
-		},
+		// Standard responses carry per-page provenance (json_content.prov), so
+		// they are tried first: positions are the point of this path. Chunked
+		// responses have no provenance and stay as the fallback for servers or
+		// documents the standard conversion rejects.
 		{
 			endpoint: "/v1/convert/source",
 			chunked:  false,
@@ -89,6 +84,16 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 			endpoint: "/v1alpha/convert/source",
 			chunked:  false,
 			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, true, convertOptions) },
+		},
+		{
+			endpoint: "/v1/convert/source",
+			chunked:  true,
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false, convertOptions) },
+		},
+		{
+			endpoint: "/v1alpha/convert/source",
+			chunked:  true,
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true, convertOptions) },
 		},
 	}
 
@@ -120,6 +125,9 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		}
 		if candidate.chunked {
 			if res, ok := parseDoclingChunkedResult(filename, body, sourcePages); ok {
+				common.Warn("Docling chunked response carries no page provenance; positions unavailable",
+					zap.String("filename", filename))
+				res.Warnings = append(res.Warnings, "Docling chunked responses carry no page provenance; positions unavailable")
 				return res
 			}
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
@@ -258,8 +266,11 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 
 // doclingPageCount returns the number of PDF pages described by the Docling
 // documents: the size of json_content.pages when present, otherwise the
-// highest page_no found in any provenance entry. It falls back to the number
-// of documents only when the response carries no page information.
+// highest page_no found in any provenance entry. A single source converts to
+// one logical document, so payload shapes that repeat it (document,
+// documents, results) are duplicates: the maximum per-document count wins,
+// never the sum. It falls back to the number of documents only when the
+// response carries no page information.
 func doclingPageCount(docs []doclingDocument, sourcePages int) int {
 	total := 0
 	for _, doc := range docs {
@@ -277,7 +288,9 @@ func doclingPageCount(docs []doclingDocument, sourcePages int) int {
 				}
 			}
 		}
-		total += count
+		if count > total {
+			total = count
+		}
 	}
 	// Provenance can end before the final page when the backend extracts a
 	// partial document, so the source PDF page count is a lower bound.
@@ -355,9 +368,14 @@ func doclingProvPosition(prov map[string]any, heights map[int]float64) []any {
 	}
 	left, top, right, bottom := v[0], v[1], v[2], v[3]
 	if origin, _ := bbox["coord_origin"].(string); strings.EqualFold(origin, "BOTTOMLEFT") {
-		if h := heights[int(page)]; h > 0 {
-			top, bottom = h-top, h-bottom
+		h := heights[int(page)]
+		if h <= 0 {
+			// Without the page height the bottom-origin Y cannot be converted
+			// to the top-origin contract downstream; a missing position is
+			// safer than a silently wrong crop.
+			return nil
 		}
+		top, bottom = h-top, h-bottom
 	}
 	if left > right {
 		left, right = right, left
@@ -429,13 +447,13 @@ func doclingAttachPositions(res ParseResult, content map[string]any) ParseResult
 	// provenance: the i-th parsed occurrence takes the i-th entry's
 	// positions instead of every position of every identical entry.
 	byText := map[string][][][]any{}
+	heights := doclingPageHeights(content)
 	for _, entry := range doclingTextEntries(content) {
 		text := doclingNormalizeText(stringValue(entry["text"]))
 		if text == "" {
 			continue
 		}
 		var positions [][]any
-		heights := doclingPageHeights(content)
 		for _, prov := range doclingProvs(entry) {
 			if pos := doclingProvPosition(prov, heights); pos != nil {
 				positions = append(positions, pos)
