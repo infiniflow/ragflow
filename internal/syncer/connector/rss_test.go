@@ -285,18 +285,17 @@ func TestRSSConnectorAtomSourceIDKeepsEarlierTitle(t *testing.T) {
 	}
 }
 
-// TestRSSConnectorAtomSourceIDSeparatesXHTMLTitles verifies that Atom entries
-// with no id or link and different XHTML titles get different source IDs.
-func TestRSSConnectorAtomSourceIDSeparatesXHTMLTitles(t *testing.T) {
+// TestRSSConnectorAtomSourceIDKeepsEmptyTitle verifies that an Atom entry
+// with no id or link and an XHTML title, whose character data is empty, keeps
+// the source ID of the empty string, while the document name uses the XHTML
+// text.
+func TestRSSConnectorAtomSourceIDKeepsEmptyTitle(t *testing.T) {
 	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/atom.xml"})
 	if err != nil {
 		t.Fatalf("NewRSSConnector failed: %v", err)
 	}
 	connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
-		return []byte(`<feed xmlns="http://www.w3.org/2005/Atom">` +
-			`<entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">First XHTML title</div></title></entry>` +
-			`<entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">Second XHTML title</div></title></entry>` +
-			`</feed>`), nil
+		return []byte(`<feed xmlns="http://www.w3.org/2005/Atom"><entry><title type="xhtml"><div xmlns="http://www.w3.org/1999/xhtml">XHTML title</div></title></entry></feed>`), nil
 	}
 	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
 	if err != nil {
@@ -306,13 +305,15 @@ func TestRSSConnectorAtomSourceIDSeparatesXHTMLTitles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 {
-		t.Fatalf("documents = %d, want 2", len(batch.Documents))
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents = %d, want 1", len(batch.Documents))
 	}
-	for i, title := range []string{"First XHTML title", "Second XHTML title"} {
-		if got, want := batch.Documents[i].SourceID, expectedRSSSourceID(title); got != want {
-			t.Fatalf("document %d source ID = %q, want %q", i, got, want)
-		}
+	doc := batch.Documents[0]
+	if got, want := doc.SemanticIdentifier, "XHTML title"; got != want {
+		t.Fatalf("semantic identifier = %q, want %q", got, want)
+	}
+	if got, want := doc.SourceID, expectedRSSSourceID(""); got != want {
+		t.Fatalf("source ID = %q, want %q", got, want)
 	}
 }
 
@@ -351,6 +352,32 @@ func TestRSSConnectorAtomSourceIDPrefersIDAndLink(t *testing.T) {
 				t.Fatalf("source ID = %q, want %q", got, tt.wantID)
 			}
 		})
+	}
+}
+
+// TestRSSConnectorRSSSourceIDFallsBackToTitle verifies that an RSS 2.0 item
+// with no guid or link takes its source ID from its title.
+func TestRSSConnectorRSSSourceIDFallsBackToTitle(t *testing.T) {
+	connector, err := NewRSSConnector(map[string]any{"feed_url": "https://example.com/feed.xml"})
+	if err != nil {
+		t.Fatalf("NewRSSConnector failed: %v", err)
+	}
+	connector.fetchFeed = func(ctx context.Context, feedURL string) ([]byte, error) {
+		return []byte(`<rss version="2.0"><channel><item><title>Only a title</title></item></channel></rss>`), nil
+	}
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents = %d, want 1", len(batch.Documents))
+	}
+	if got, want := batch.Documents[0].SourceID, expectedRSSSourceID("Only a title"); got != want {
+		t.Fatalf("source ID = %q, want %q", got, want)
 	}
 }
 

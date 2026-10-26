@@ -271,7 +271,8 @@ type rssEntry struct {
 	id         string
 	link       string
 	title      string
-	idTitle    string // Atom title as read before typed text, so stored source IDs stay the same
+	idTitle    string // Atom title as character data, hashed for the source ID so stored IDs stay the same
+	idTitleSet bool   // Atom entries hash idTitle even when it is empty. RSS 2.0 items hash title
 	author     string
 	categories []string
 	content    string
@@ -281,7 +282,11 @@ type rssEntry struct {
 
 // sourceID returns the RSS source document ID.
 func (e rssEntry) sourceID() string {
-	stable := firstNonEmpty(e.id, e.link, e.idTitle, e.title)
+	title := e.title
+	if e.idTitleSet {
+		title = e.idTitle
+	}
+	stable := firstNonEmpty(e.id, e.link, title)
 	sum := md5.Sum([]byte(stable))
 	return "rss:" + hex.EncodeToString(sum[:])
 }
@@ -467,6 +472,7 @@ func parseAtomXML(data []byte) ([]rssEntry, error) {
 			link:       atomEntryLink(item.Links),
 			title:      htmlToText(item.Title.asHTML()),
 			idTitle:    htmlToText(item.Title.Text),
+			idTitleSet: true,
 			author:     strings.TrimSpace(item.Author.Name),
 			categories: atomCategories(item.Categories),
 			content:    item.Content.asHTML(),
