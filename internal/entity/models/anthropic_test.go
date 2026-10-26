@@ -252,7 +252,7 @@ func TestAnthropicChatValidationErrors(t *testing.T) {
 	if _, err := m.ChatWithMessages(ctx, "claude", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("empty messages: got %v", err)
 	}
-	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "tool", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "developer", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
 		t.Errorf("bad role: got %v", err)
 	}
 	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "video_url"}}}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported content block type") {
@@ -292,8 +292,8 @@ func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "no text content") {
-		t.Errorf("expected no-text error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid tool_use") {
+		t.Errorf("expected invalid tool_use error, got %v", err)
 	}
 }
 
