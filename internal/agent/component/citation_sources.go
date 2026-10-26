@@ -39,7 +39,9 @@ const citationMarkerMaxLength = 128
 
 // citationGroundingMarkerCaptureRe matches a canonical [ID:<id>] marker and
 // captures the id. Whitespace after "ID:" is tolerated and normalized away.
-var citationGroundingMarkerCaptureRe = regexp.MustCompile(`\[ID:\s*([^\]]*)\]`)
+// The id cannot contain "[": an unclosed [ID: must not swallow the text up to
+// a later ] (for example a Markdown link that follows it).
+var citationGroundingMarkerCaptureRe = regexp.MustCompile(`\[ID:\s*([^\[\]]*)\]`)
 
 // limitCitationSources keeps sources in order until the next one would exceed
 // the token budget. Empty sources are skipped. The first valid source is

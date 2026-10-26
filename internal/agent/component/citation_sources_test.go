@@ -75,6 +75,7 @@ func TestFilterCitationMarkers(t *testing.T) {
 		{"drops empty id", "[ID:]", []string{"good"}, ""},
 		{"drops all when no sources", "[ID:good]", nil, ""},
 		{"leaves plain brackets", "see [note]", []string{"good"}, "see [note]"},
+		{"leaves an unclosed marker before a markdown link", "answer [ID:oops more [link] end", []string{"good"}, "answer [ID:oops more [link] end"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -170,6 +171,7 @@ func TestCitationMarkerStreamFilter_MatchesFinalFilter(t *testing.T) {
 		{name: "unclosed marker", content: "answer [ID:good more text", splits: []int{7, 15}},
 		{name: "over-long marker", content: "[ID:" + strings.Repeat("x", citationMarkerMaxLength+10) + "] tail", splits: []int{20, 40}},
 		{name: "plain brackets", content: "see [note] and [", splits: []int{5}},
+		{name: "unclosed marker before a markdown link", content: "answer [ID:oops more [link] end", splits: []int{7}},
 		{name: "no markers", content: "just answer text", splits: []int{4}},
 	}
 
