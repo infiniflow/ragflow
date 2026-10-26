@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
@@ -33,33 +34,27 @@ func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
 	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
 		t.Fatalf("migrate canvas table: %v", err)
 	}
-	status := string(entity.StatusValid)
+	ctx := serviceTestContext(t, "caller", "canvas-owner", "canvas-owner")
 	canvas := entity.UserCanvas{
 		ID:         "canvas-1",
 		UserID:     "canvas-owner",
+		TenantID:   sptr("canvas-owner"),
 		Permission: string(entity.TenantPermissionTeam),
 	}
 	if err := dao.DB.Create(&canvas).Error; err != nil {
 		t.Fatalf("seed canvas: %v", err)
 	}
-	for _, membership := range []*entity.UserTenant{
-		{ID: "canvas-owner-membership", UserID: "canvas-owner", TenantID: "canvas-owner", Role: string(permission.RoleOwner), Status: &status},
-		{ID: "caller-canvas-membership", UserID: "caller", TenantID: "canvas-owner", Role: string(permission.RoleNormal), Status: &status},
-		{ID: "memory-owner-membership", UserID: "canvas-owner", TenantID: "memory-tenant", Role: string(permission.RoleNormal), Status: &status},
-		{ID: "memory-tenant-owner-membership", UserID: "memory-tenant", TenantID: "memory-tenant", Role: string(permission.RoleOwner), Status: &status},
-	} {
-		if err := dao.DB.Create(membership).Error; err != nil {
-			t.Fatalf("seed membership: %v", err)
-		}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "canvas-owner", "caller", "canvas-owner"); err != nil {
+		t.Fatalf("prepare canvas permission fixture: %v", err)
 	}
 	memory := entity.Memory{
 		ID:               "memory-1",
 		Name:             "Shared memory",
-		TenantID:         "memory-tenant",
+		TenantID:         "canvas-owner",
 		StorageType:      "table",
 		EmbdID:           "embedding",
 		LLMID:            "chat",
-		Permissions:      string(entity.TenantPermissionTeam),
+		Permissions:      string(entity.TenantPermissionMe),
 		ForgettingPolicy: string(ForgettingPolicyFIFO),
 	}
 	if err := dao.DB.Create(&memory).Error; err != nil {
@@ -69,7 +64,13 @@ func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
-	ctx := runtime.WithState(serviceTestContext(t, "caller", "canvas-owner"), state)
+	ctx = runtime.WithState(ctx, state)
+	ownerCtx := permission.WithSubject(ctx, permission.Subject{UserID: "canvas-owner", TenantID: "canvas-owner"})
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ownerCtx, permission.Subject{UserID: "canvas-owner"}, permission.ResourceRef{
+		Kind: permission.ResourceKindMemory, ID: memory.ID,
+	}, permission.OperationUse); err != nil {
+		t.Fatalf("canvas owner should be able to use memory: %v", err)
+	}
 
 	// req.UserID is the memory-message partition key and must not be trusted as
 	// the permission subject. The canvas owner can access memory-1, but caller

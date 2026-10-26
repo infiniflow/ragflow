@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 const (
@@ -59,6 +60,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.IngestionTaskLog{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -117,7 +119,9 @@ func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberI
 					}
 				}
 			}
-			prepareServiceTestContextEE(t, tenantID, memberIDs...)
+			if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberIDs...); err != nil {
+				t.Fatalf("prepare enterprise permission fixture: %v", err)
+			}
 		}
 	}
 	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})

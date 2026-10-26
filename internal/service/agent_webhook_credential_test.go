@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
@@ -34,9 +35,13 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	if err := db.Create(canvas).Error; err != nil {
 		t.Fatalf("seed canvas: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, tenantID, "caller-1", "owner-1"); err != nil {
+		t.Fatalf("prepare webhook permission fixture: %v", err)
+	}
 
 	svc := NewAgentWebhookCredentialService(db)
-	firstToken, err := svc.Issue(t.Context(), permission.Subject{UserID: "caller-1"}, canvas)
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "caller-1", TenantID: tenantID})
+	firstToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
 	if err != nil {
 		t.Fatalf("issue credential: %v", err)
 	}
@@ -51,7 +56,7 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 		t.Fatalf("stored hash = %q, raw token must not be stored", stored.TokenHash)
 	}
 
-	resolved, err := svc.Resolve(t.Context(), canvas.ID, firstToken)
+	resolved, err := svc.Resolve(ctx, canvas.ID, firstToken)
 	if err != nil {
 		t.Fatalf("resolve credential: %v", err)
 	}
@@ -59,48 +64,52 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 		t.Fatalf("resolved principal = (%q, %q), want (caller-1, %q)", resolved.UserID, resolved.TenantID, tenantID)
 	}
 
-	secondToken, err := svc.Issue(t.Context(), permission.Subject{UserID: "caller-1"}, canvas)
+	secondToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
 	if err != nil {
 		t.Fatalf("rotate credential: %v", err)
 	}
 	if secondToken == firstToken {
 		t.Fatal("rotating a credential returned the same token")
 	}
-	if _, err := svc.Resolve(t.Context(), canvas.ID, firstToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
+	if _, err := svc.Resolve(ctx, canvas.ID, firstToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("old token resolution error = %v, want invalid credential", err)
 	}
-	if _, err := svc.Resolve(t.Context(), canvas.ID, secondToken); err != nil {
+	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); err != nil {
 		t.Fatalf("resolve rotated token: %v", err)
 	}
-	if _, err := svc.Resolve(t.Context(), "different-canvas", secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
+	if _, err := svc.Resolve(ctx, "different-canvas", secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("credential used for another canvas error = %v, want invalid credential", err)
 	}
-	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
-		Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
-		t.Fatalf("make canvas private: %v", err)
+	var revokeErr error
+	if db.Migrator().HasTable("permission") {
+		revokeErr = db.Table("permission").
+			Where("tenant_id = ? AND resource_type = ? AND resource_id = ? AND member_id = ?", tenantID, "canvas", canvas.ID, "membership-1").
+			Update("status", entity.StatusInvalid).Error
+	} else {
+		revokeErr = db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
+			Update("permission", string(entity.TenantPermissionMe)).Error
 	}
-	if _, err := svc.Resolve(t.Context(), canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
+	if revokeErr != nil {
+		t.Fatalf("revoke caller canvas permission: %v", revokeErr)
+	}
+	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("revoked run permission error = %v, want invalid credential", err)
-	}
-	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
-		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
-		t.Fatalf("restore tenant sharing: %v", err)
 	}
 
 	removed := entity.TenantMembershipStatusRemoved
 	if err := db.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", "caller-1", tenantID).Update("status", removed).Error; err != nil {
 		t.Fatalf("remove caller membership: %v", err)
 	}
-	if _, err := svc.Resolve(t.Context(), canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
+	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("removed member token resolution error = %v, want invalid credential", err)
 	}
-	if err := svc.Revoke(t.Context(), canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
 		t.Fatalf("revoke credential: %v", err)
 	}
-	if err := svc.Revoke(t.Context(), canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
 		t.Fatalf("repeat revoke: %v", err)
 	}
-	if _, err := svc.Resolve(t.Context(), canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
+	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("revoked token resolution error = %v, want invalid credential", err)
 	}
 }
