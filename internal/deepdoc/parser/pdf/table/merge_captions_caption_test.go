@@ -529,12 +529,21 @@ func TestMergeCaptions_ProperNounCrossReferenceLandsInCaption(t *testing.T) {
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
 	}
 	result := MergeCaptions(sections)
+	inCaption := false
 	for _, s := range result {
-		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, sentence) {
-			return
+		if s.LayoutType == pdf.LayoutTypeTable {
+			start := strings.Index(s.Text, "<caption>")
+			end := strings.Index(s.Text, "</caption>")
+			if start >= 0 && end > start && strings.Contains(s.Text[start+len("<caption>"):end], sentence) {
+				inCaption = true
+			}
+		} else if strings.Contains(s.Text, sentence) {
+			t.Errorf("misclassified sentence survived as a standalone section: %v", textsOf(result))
 		}
 	}
-	t.Errorf("misclassified sentence vanished from the output; sections = %v", textsOf(result))
+	if !inCaption {
+		t.Errorf("misclassified sentence not placed in the table's <caption>; sections = %v", textsOf(result))
+	}
 }
 
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
