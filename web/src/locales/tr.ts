@@ -2372,6 +2372,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         image2text: 'OCR',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'İçeriği göster',
       hideToc: 'İçeriği gizle',

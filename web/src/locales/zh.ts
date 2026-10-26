@@ -2037,6 +2037,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       modelFeatures: '模型特性',
       modelNameRequired: '请输入模型名称',

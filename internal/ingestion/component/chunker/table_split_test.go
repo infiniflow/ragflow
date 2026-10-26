@@ -15,6 +15,7 @@
 package chunker
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -223,6 +224,48 @@ func TestSplitLargeTableHeaderRowSpanClippedPerPart(t *testing.T) {
 	}
 	if covered != 5 {
 		t.Fatalf("parts cover %d data rows, want 5", covered)
+	}
+}
+
+// TestSplitLargeTableHeaderSpanSurvivesJSON pins the wire contract the table
+// splitter needs: OriginRow/OriginCol must survive the parser payload's JSON
+// round-trip so a header span can be clamped against the rows a part owns.
+func TestSplitLargeTableHeaderSpanSurvivesJSON(t *testing.T) {
+	td, err := tableutil.ParseTableHTML(`<table>
+<tr><th rowspan="3">A</th><th>x</th></tr>
+<tr><td>y</td></tr>
+<tr><td>z</td></tr>
+<tr><td>p</td><td>q</td></tr>
+<tr><td>r</td><td>s</td></tr>
+</table>`)
+	if err != nil || td == nil {
+		t.Fatalf("parse: %v", err)
+	}
+	blob, err := json.Marshal(td)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded entity.TableData
+	if err := json.Unmarshal(blob, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := decoded.Grid[2][0]; !got.Covered || got.OriginRow != 0 || got.OriginCol != 0 {
+		t.Fatalf("header span origin lost in JSON: %+v", got)
+	}
+	headerCost := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: decoded.Grid[:1], HeaderRows: 1}))
+	budget := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: decoded.Grid[:3], HeaderRows: 1})) - headerCost
+	parts, ranges, headerRows := splitLargeTable(&decoded, budget, charTokens, "")
+	if headerRows != 1 || len(parts) < 2 || ranges[0] != [2]int{0, 2} {
+		t.Fatalf("parts=%d ranges=%v headerRows=%d", len(parts), ranges, headerRows)
+	}
+	for i := range parts {
+		assertPartGridContract(t, &parts[i], i)
+	}
+	if got := parts[0].Grid[0][0].RowSpan; got != 3 {
+		t.Fatalf("part 0 A RowSpan = %d, want 3", got)
+	}
+	if got := parts[1].Grid[0][0].RowSpan; got != 1 {
+		t.Fatalf("part 1 A RowSpan = %d, want 1", got)
 	}
 }
 
