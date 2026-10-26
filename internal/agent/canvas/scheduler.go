@@ -205,11 +205,11 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 // payload under Outputs[cpnID]["result"] would force every template
 // to use {{cpnID@result.content}} which the v1 DSL never writes.
 //
-// The write is mirrored into the context-attached *CanvasState when
-// one is present, so downstream components that read state via
-// runtime.GetStateFromContext (Begin / Message / LLM) see the
-// upstream output. The eino per-run state stays the source of truth
-// for the snapshot exposed via statePre.
+// Node outputs are mirrored into context for components that read
+// state via runtime.GetStateFromContext. Components may also mutate
+// that context state directly (for example VariableAssigner); copy
+// those output changes back to the eino state before statePre syncs it
+// in the opposite direction for the next node.
 func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
 	cpnID, _ := out["__cpn_id__"].(string)
 	if cpnID == "" {
@@ -228,6 +228,11 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 		}
 	}
 	if ctxState != nil && state != nil && ctxState != state {
+		for cpnID, bucket := range ctxState.Snapshot() {
+			for k, v := range bucket {
+				state.SetVar(cpnID, k, v)
+			}
+		}
 		sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
 		state.ReplaceNamespaces(sysNS, envNS, globalsNS)
 		state.SetHistory(ctxState.SnapshotHistory())
