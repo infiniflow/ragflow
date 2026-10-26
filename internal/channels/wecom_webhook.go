@@ -47,12 +47,21 @@ const (
 	weComWebhookBodyLimit       = 1024 * 1024
 	weComWebhookShutdownTimeout = 5 * time.Second
 	weComPKCS7BlockSize         = 32
+	// weComReplayWindow is the maximum accepted difference between the callback
+	// timestamp and the server clock.
+	weComReplayWindow = 5 * time.Minute
+	// weComNonceTTL is how long a handled callback nonce is remembered, so a
+	// replay of a processed delivery is refused.
+	weComNonceTTL = 10 * time.Minute
 )
 
 type wecomCrypto struct {
 	token     string
 	aesKey    []byte
 	receiveID string
+
+	nonceMu sync.Mutex
+	nonces  map[string]time.Time
 }
 
 type wecomEncryptedXML struct {
@@ -105,6 +114,7 @@ func newWeComCrypto(token, encodingAESKey, receiveID string) (*wecomCrypto, erro
 		token:     token,
 		aesKey:    aesKey,
 		receiveID: receiveID,
+		nonces:    map[string]time.Time{},
 	}, nil
 }
 
@@ -114,6 +124,17 @@ func (c *wecomCrypto) decrypt(signature, timestamp, nonce, encrypted string) ([]
 	}
 	if !c.hasValidSignature(signature, timestamp, nonce, encrypted) {
 		return nil, errors.New("invalid WeCom message signature")
+	}
+	sentAt, err := parseWeComTimestamp(timestamp)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if diff := now.Sub(sentAt); diff > weComReplayWindow || diff < -weComReplayWindow {
+		return nil, fmt.Errorf("stale WeCom timestamp: %s", timestamp)
+	}
+	if c.nonceSeen(nonce, now) {
+		return nil, fmt.Errorf("replayed WeCom nonce: %s", nonce)
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
@@ -152,6 +173,41 @@ func (c *wecomCrypto) hasValidSignature(signature, timestamp, nonce, encrypted s
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	expected := hex.EncodeToString(hash[:])
 	return subtle.ConstantTimeCompare([]byte(strings.ToLower(signature)), []byte(expected)) == 1
+}
+
+func parseWeComTimestamp(value string) (time.Time, error) {
+	seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid WeCom timestamp %q: %w", value, err)
+	}
+	return time.Unix(seconds, 0), nil
+}
+
+// nonceSeen reports whether nonce belongs to a delivery that was already
+// handled. It only reads: the nonce is remembered after the message handling
+// succeeded, so a retry of a failed attempt is still accepted.
+func (c *wecomCrypto) nonceSeen(nonce string, now time.Time) bool {
+	c.nonceMu.Lock()
+	defer c.nonceMu.Unlock()
+	c.pruneNoncesLocked(now)
+	_, ok := c.nonces[nonce]
+	return ok
+}
+
+// rememberNonce records a handled callback nonce so a later replay is refused.
+func (c *wecomCrypto) rememberNonce(nonce string, now time.Time) {
+	c.nonceMu.Lock()
+	defer c.nonceMu.Unlock()
+	c.pruneNoncesLocked(now)
+	c.nonces[nonce] = now
+}
+
+func (c *wecomCrypto) pruneNoncesLocked(now time.Time) {
+	for key, seenAt := range c.nonces {
+		if now.Sub(seenAt) > weComNonceTTL {
+			delete(c.nonces, key)
+		}
+	}
 }
 
 func removeWeComPKCS7Padding(payload []byte) ([]byte, error) {
@@ -259,6 +315,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	if r.Method == http.MethodGet {
 		plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, query.Get("echostr"))
 		if err != nil {
+			common.Warn("wecom: webhook verification rejected", zap.String("account_id", accountID), zap.Error(err))
 			http.Error(w, "bad signature", http.StatusForbidden)
 			return
 		}
@@ -285,6 +342,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	}
 	plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, envelope.Encrypt)
 	if err != nil {
+		common.Warn("wecom: callback rejected", zap.String("account_id", accountID), zap.Error(err))
 		http.Error(w, "bad signature", http.StatusForbidden)
 		return
 	}
@@ -295,7 +353,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
+		if err := channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
 			"to_user_name":   message.ToUserName,
 			"from_user_name": message.FromUserName,
 			"create_time":    message.CreateTime,
@@ -303,7 +361,13 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 			"content":        message.Content,
 			"msg_id":         message.MsgID,
 			"xml":            string(plaintext),
-		})
+		}); err != nil {
+			// Keep the nonce unrecorded so the platform's retry of this delivery
+			// is handled instead of being refused as a replay.
+			http.Error(w, "message handling failed", http.StatusInternalServerError)
+			return
+		}
+		channel.crypto.rememberNonce(nonce, time.Now())
 	}
 	w.WriteHeader(http.StatusOK)
 }

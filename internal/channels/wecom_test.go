@@ -27,11 +27,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -118,22 +120,23 @@ func TestWeComCryptoDecryptsAndValidatesReceiveID(t *testing.T) {
 		t.Fatalf("newWeComCrypto() error = %v", err)
 	}
 	encrypted := encryptWeComTestPayload(t, aesKey, []byte("hello"), "corp-id")
-	signature := testWeComSignature("token", "123", "nonce", encrypted)
+	timestamp := currentWeComTimestamp()
+	signature := testWeComSignature("token", timestamp, "nonce", encrypted)
 
-	plaintext, err := crypto.decrypt(signature, "123", "nonce", encrypted)
+	plaintext, err := crypto.decrypt(signature, timestamp, "nonce", encrypted)
 	if err != nil {
 		t.Fatalf("decrypt() error = %v", err)
 	}
 	if string(plaintext) != "hello" {
 		t.Fatalf("decrypt() = %q, want hello", plaintext)
 	}
-	if _, err := crypto.decrypt("bad-signature", "123", "nonce", encrypted); err == nil {
+	if _, err := crypto.decrypt("bad-signature", timestamp, "nonce", encrypted); err == nil {
 		t.Fatal("decrypt() accepted an invalid signature")
 	}
 
 	wrongReceiveID := encryptWeComTestPayload(t, aesKey, []byte("hello"), "other-corp")
-	wrongSignature := testWeComSignature("token", "123", "nonce", wrongReceiveID)
-	if _, err := crypto.decrypt(wrongSignature, "123", "nonce", wrongReceiveID); err == nil {
+	wrongSignature := testWeComSignature("token", timestamp, "nonce", wrongReceiveID)
+	if _, err := crypto.decrypt(wrongSignature, timestamp, "nonce", wrongReceiveID); err == nil {
 		t.Fatal("decrypt() accepted a mismatched receive ID")
 	}
 }
@@ -160,9 +163,10 @@ func TestWeComWebhookHandlesVerificationAndTextMessage(t *testing.T) {
 	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-1": channel}}
 
 	echo := encryptWeComTestPayload(t, aesKey, []byte("verified"), "corp-id")
+	echoTimestamp := currentWeComTimestamp()
 	echoQuery := url.Values{
-		"msg_signature": {testWeComSignature("token", "123", "nonce", echo)},
-		"timestamp":     {"123"},
+		"msg_signature": {testWeComSignature("token", echoTimestamp, "nonce", echo)},
+		"timestamp":     {echoTimestamp},
 		"nonce":         {"nonce"},
 		"echostr":       {echo},
 	}
@@ -173,20 +177,9 @@ func TestWeComWebhookHandlesVerificationAndTextMessage(t *testing.T) {
 		t.Fatalf("verification response = %d %q", echoResponse.Code, echoResponse.Body.String())
 	}
 
-	plaintext := []byte(`<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><CreateTime>123</CreateTime><MsgType>text</MsgType><Content>hello wecom</Content><MsgId>message-1</MsgId></xml>`)
-	encrypted := encryptWeComTestPayload(t, aesKey, plaintext, "corp-id")
-	body, err := xml.Marshal(wecomEncryptedXML{Encrypt: encrypted})
-	if err != nil {
-		t.Fatalf("marshal encrypted XML: %v", err)
-	}
-	query := url.Values{
-		"msg_signature": {testWeComSignature("token", "124", "nonce-2", encrypted)},
-		"timestamp":     {"124"},
-		"nonce":         {"nonce-2"},
-	}
-	request := httptest.NewRequest(http.MethodPost, "/wecom/account-1/callback?"+query.Encode(), bytes.NewReader(body))
+	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><CreateTime>123</CreateTime><MsgType>text</MsgType><Content>hello wecom</Content><MsgId>message-1</MsgId></xml>`
 	response := httptest.NewRecorder()
-	server.handleRequest(response, request)
+	server.handleRequest(response, weComTestMessageRequest(t, aesKey, currentWeComTimestamp(), "nonce-2", plaintext))
 	if response.Code != http.StatusOK {
 		t.Fatalf("message response status = %d, body=%q", response.Code, response.Body.String())
 	}
@@ -198,6 +191,92 @@ func TestWeComWebhookHandlesVerificationAndTextMessage(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for webhook message")
+	}
+}
+
+func TestWeComWebhookRejectsOutOfWindowTimestamp(t *testing.T) {
+	encodingAESKey, aesKey := testWeComAESKey()
+	handled := make(chan struct{}, 1)
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
+		handled <- struct{}{}
+		return nil
+	})
+	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
+
+	for name, offset := range map[string]time.Duration{
+		"stale":  -weComReplayWindow - time.Minute,
+		"future": weComReplayWindow + time.Minute,
+	} {
+		t.Run(name, func(t *testing.T) {
+			timestamp := strconv.FormatInt(time.Now().Add(offset).Unix(), 10)
+			response := httptest.NewRecorder()
+			server.handleRequest(response, weComTestMessageRequest(t, aesKey, timestamp, "nonce-"+name, plaintext))
+			if response.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+			}
+		})
+	}
+	select {
+	case <-handled:
+		t.Fatal("out-of-window message was handled")
+	default:
+	}
+}
+
+func TestWeComWebhookDropsReplayedNonce(t *testing.T) {
+	encodingAESKey, aesKey := testWeComAESKey()
+	calls := 0
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
+		calls++
+		return nil
+	})
+	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
+	timestamp := currentWeComTimestamp()
+	request := func() *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		server.handleRequest(response, weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext))
+		return response
+	}
+
+	if response := request(); response.Code != http.StatusOK {
+		t.Fatalf("first delivery status = %d, body=%q", response.Code, response.Body.String())
+	}
+	if calls != 1 {
+		t.Fatalf("handler calls = %d, want 1", calls)
+	}
+	if response := request(); response.Code != http.StatusForbidden {
+		t.Fatalf("replayed delivery status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	if calls != 1 {
+		t.Fatalf("handler calls after replay = %d, want 1", calls)
+	}
+}
+
+func TestWeComWebhookRetriesAfterFailedHandling(t *testing.T) {
+	encodingAESKey, aesKey := testWeComAESKey()
+	calls := 0
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
+		calls++
+		return errors.New("transient failure")
+	})
+	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
+	timestamp := currentWeComTimestamp()
+	request := func() *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		server.handleRequest(response, weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext))
+		return response
+	}
+
+	if response := request(); response.Code != http.StatusInternalServerError {
+		t.Fatalf("failed attempt status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	// The failed attempt must not record the nonce, otherwise the platform's
+	// retry of the same callback is refused as a replay.
+	if response := request(); response.Code != http.StatusInternalServerError {
+		t.Fatalf("retried delivery status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	if calls != 2 {
+		t.Fatalf("handler calls = %d, want 2", calls)
 	}
 }
 
@@ -521,4 +600,46 @@ func testWeComSignature(token, timestamp, nonce, encrypted string) string {
 	sort.Strings(parts)
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	return hex.EncodeToString(hash[:])
+}
+
+// currentWeComTimestamp returns the Unix-second timestamp WeCom puts in the
+// callback query string.
+func currentWeComTimestamp() string {
+	return strconv.FormatInt(time.Now().Unix(), 10)
+}
+
+// newWeComTestWebhookServer builds a webhook server with one channel whose
+// message handler is the given function.
+func newWeComTestWebhookServer(t *testing.T, encodingAESKey string, handler core.MessageHandler) *wecomWebhookServer {
+	t.Helper()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-1",
+		ConnectionType: "webhook",
+		CorpID:         "corp-id",
+		AgentID:        1000001,
+		Secret:         "secret",
+		Token:          "token",
+		AESKey:         encodingAESKey,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	channel.SetMessageHandler(handler)
+	return &wecomWebhookServer{channels: map[string]*wecomChannel{"account-1": channel}}
+}
+
+// weComTestMessageRequest builds a signed callback for plaintext.
+func weComTestMessageRequest(t *testing.T, aesKey []byte, timestamp, nonce, plaintext string) *http.Request {
+	t.Helper()
+	encrypted := encryptWeComTestPayload(t, aesKey, []byte(plaintext), "corp-id")
+	body, err := xml.Marshal(wecomEncryptedXML{Encrypt: encrypted})
+	if err != nil {
+		t.Fatalf("marshal encrypted XML: %v", err)
+	}
+	query := url.Values{
+		"msg_signature": {testWeComSignature("token", timestamp, nonce, encrypted)},
+		"timestamp":     {timestamp},
+		"nonce":         {nonce},
+	}
+	return httptest.NewRequest(http.MethodPost, "/wecom/account-1/callback?"+query.Encode(), bytes.NewReader(body))
 }
