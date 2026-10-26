@@ -116,6 +116,7 @@ export enum LLMFactory {
   TrustedRouter = 'TrustedRouter',
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
+  Runcrate = 'Runcrate',
 }
 
 // Please lowercase the file name
@@ -214,6 +215,7 @@ export const IconMap = {
   [LLMFactory.TrustedRouter]: 'trustedrouter',
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.Runcrate]: 'runcrate',
 };
 
 /**
@@ -264,6 +266,8 @@ export const APIMapUrl = {
   [LLMFactory.EmpirioLabs]:
     'https://platform.empiriolabs.ai/dashboard/api-keys',
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.Runcrate]:
+    'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
