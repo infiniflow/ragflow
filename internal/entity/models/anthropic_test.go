@@ -60,6 +60,47 @@ func TestAnthropicName(t *testing.T) {
 	}
 }
 
+func TestAnthropicToolOptionalFields(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		function map[string]any
+		want     string
+		wantErr  bool
+	}{
+		{"omitted parameters and description", map[string]any{"name": "clock"}, `{"input_schema":{"properties":{},"type":"object"},"name":"clock"}`, false},
+		{"string description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": "Read clock"}, `{"description":"Read clock","input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"non-string description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": 42}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"null description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": nil}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
+		{"null parameters", map[string]any{"name": "clock", "parameters": nil}, "", true},
+		{"non-object parameters", map[string]any{"name": "clock", "parameters": "invalid"}, "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := make(map[string]any)
+			err := applyAnthropicChatConfig(body, &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected invalid parameters to be rejected")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			tools, ok := body["tools"].([]map[string]any)
+			if !ok || len(tools) != 1 {
+				t.Fatalf("tools = %#v, want one tool", body["tools"])
+			}
+			got, err := json.Marshal(tools[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.want {
+				t.Errorf("tool = %s, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAnthropicChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
@@ -252,7 +293,7 @@ func TestAnthropicChatValidationErrors(t *testing.T) {
 	if _, err := m.ChatWithMessages(ctx, "claude", nil, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("empty messages: got %v", err)
 	}
-	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "tool", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
+	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "developer", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported message role") {
 		t.Errorf("bad role: got %v", err)
 	}
 	if _, err := m.ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: []interface{}{map[string]interface{}{"type": "video_url"}}}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "unsupported content block type") {
@@ -292,8 +333,8 @@ func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(ctx, "claude", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "no text content") {
-		t.Errorf("expected no-text error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid tool_use") {
+		t.Errorf("expected invalid tool_use error, got %v", err)
 	}
 }
 
@@ -367,6 +408,113 @@ func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
 	}
 	if modelUsage.TotalTokens != 7 {
 		t.Errorf("TotalTokens=%d, want 7", modelUsage.TotalTokens)
+	}
+}
+
+func TestAnthropicStreamToolCalls(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name   string
+		events []string
+		want   []map[string]interface{}
+	}{
+		{
+			name: "fragmented arguments and multiple tools",
+			events: []string{
+				`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"weather","input":{}}}`,
+				`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"San "}}`,
+				`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"Francisco\",\"days\":2}"}}`,
+				`{"type":"content_block_stop","index":1}`,
+				`{"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"call_2","name":"clock","input":{}}}`,
+				`{"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"zone\":\"UTC\"}"}}`,
+				`{"type":"content_block_stop","index":2}`,
+			},
+			want: []map[string]interface{}{
+				{"id": "call_1", "type": "function", "function": map[string]interface{}{"name": "weather", "arguments": `{"city":"San Francisco","days":2}`}},
+				{"id": "call_2", "type": "function", "function": map[string]interface{}{"name": "clock", "arguments": `{"zone":"UTC"}`}},
+			},
+		},
+		{
+			name: "empty arguments",
+			events: []string{
+				`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"clock","input":{}}}`,
+				`{"type":"content_block_stop","index":1}`,
+			},
+			want: []map[string]interface{}{
+				{"id": "call_1", "type": "function", "function": map[string]interface{}{"name": "clock", "arguments": `{}`}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, event := range append(tc.events, `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`, `{"type":"message_stop"}`) {
+					_, _ = io.WriteString(w, "data: "+event+"\n\n")
+				}
+			})
+			defer srv.Close()
+			apiKey := "test-key"
+			config := &ChatConfig{}
+			sawDone := false
+			err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(t.Context(), "claude", []Message{{Role: "user", Content: "use tools"}}, &APIConfig{ApiKey: &apiKey}, config, nil, func(text, _ *string) error {
+				if text != nil && *text == "[DONE]" {
+					sawDone = true
+					if config.ToolCallsResult == nil {
+						t.Error("tool calls missing when stream completes")
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !sawDone || config.ToolCallsResult == nil {
+				t.Fatal("stream did not complete with tool calls")
+			}
+			got, _ := json.Marshal(*config.ToolCallsResult)
+			want, _ := json.Marshal(tc.want)
+			if string(got) != string(want) {
+				t.Errorf("tool calls = %s, want %s", got, want)
+			}
+		})
+	}
+}
+
+func TestAnthropicStreamRejectsInvalidToolInput(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name    string
+		partial string
+		stop    bool
+	}{
+		{"malformed JSON", `{`, true},
+		{"non-object JSON", `[]`, true},
+		{"null JSON", `null`, true},
+		{"unfinished tool block", `{}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: "+`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"weather","input":{}}}`+"\n\n")
+				fragment, _ := json.Marshal(map[string]interface{}{"type": "content_block_delta", "index": 0, "delta": map[string]interface{}{"type": "input_json_delta", "partial_json": tc.partial}})
+				_, _ = io.WriteString(w, "data: "+string(fragment)+"\n\n")
+				if tc.stop {
+					_, _ = io.WriteString(w, "data: "+`{"type":"content_block_stop","index":0}`+"\n\n")
+				}
+				_, _ = io.WriteString(w, "data: "+`{"type":"message_stop"}`+"\n\n")
+			})
+			defer srv.Close()
+			apiKey := "test-key"
+			config := &ChatConfig{}
+			sawDone := false
+			err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(t.Context(), "claude", []Message{{Role: "user", Content: "use tools"}}, &APIConfig{ApiKey: &apiKey}, config, nil, func(text, _ *string) error {
+				sawDone = text != nil && *text == "[DONE]"
+				return nil
+			})
+			if err == nil || sawDone || config.ToolCallsResult != nil {
+				t.Fatalf("invalid tool input: err=%v, done=%v, calls=%v", err, sawDone, config.ToolCallsResult)
+			}
+		})
 	}
 }
 

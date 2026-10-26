@@ -18,8 +18,6 @@ package service
 
 import "testing"
 
-func prepareServiceTestContextEE(_ *testing.T, _ string, _ ...string) {}
-
 func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {}
 
 func restrictServiceTestFeatureRole(_ *testing.T, _ string, _ string, _ int32) {}

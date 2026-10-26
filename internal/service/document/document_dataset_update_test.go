@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -490,6 +491,9 @@ func TestBatchUpdateDocumentStatusReturnsPermissionErrorWhenAllDenied(t *testing
 	}).Error; err != nil {
 		t.Fatalf("create tenant member: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "member"); err != nil {
+		t.Fatalf("prepare document status permission fixture: %v", err)
+	}
 
 	svc := testDocumentService(t)
 	ctx := documentTestActorContext(t.Context(), "member", "tenant-1")
@@ -519,6 +523,9 @@ func TestBatchUpdateDocumentStatusRetainsPartialFailure(t *testing.T) {
 		ID: "member-tenant-1", UserID: "member", TenantID: "tenant-1", Role: "normal", Status: &valid,
 	}).Error; err != nil {
 		t.Fatalf("create tenant member: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "member"); err != nil {
+		t.Fatalf("prepare document status permission fixture: %v", err)
 	}
 
 	svc := testDocumentService(t)

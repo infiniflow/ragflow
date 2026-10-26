@@ -369,8 +369,8 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			state.SetVar(outputCpnID, k, v)
 		}
 		if runtime.IsDeferredStream(out["content"]) {
-			runtime.RegisterDeferredNode(ctx, cpnID, func() {
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nodeErr)
 			})
 		} else {
 			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)

@@ -42,19 +42,26 @@ func testFileService() *FileService {
 }
 
 func TestDeploymentUploadMaxBytes(t *testing.T) {
+	t.Setenv("MAX_MULTIPART_CONTENT_LENGTH", "")
 	t.Setenv("MAX_CONTENT_LENGTH", "")
 	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
 		t.Fatalf("default limit = %d, want %d", got, defaultDeploymentUploadMaxBytes)
 	}
 
-	t.Setenv("MAX_CONTENT_LENGTH", "12345")
+	t.Setenv("MAX_MULTIPART_CONTENT_LENGTH", "12345")
 	if got := DeploymentUploadMaxBytes(); got != 12345 {
 		t.Fatalf("configured limit = %d, want 12345", got)
 	}
 
-	t.Setenv("MAX_CONTENT_LENGTH", "invalid")
+	t.Setenv("MAX_MULTIPART_CONTENT_LENGTH", "invalid")
 	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
 		t.Fatalf("invalid limit = %d, want default %d", got, defaultDeploymentUploadMaxBytes)
+	}
+
+	t.Setenv("MAX_MULTIPART_CONTENT_LENGTH", "")
+	t.Setenv("MAX_CONTENT_LENGTH", "54321")
+	if got := DeploymentUploadMaxBytes(); got != 54321 {
+		t.Fatalf("legacy configured limit = %d, want 54321", got)
 	}
 }
 
