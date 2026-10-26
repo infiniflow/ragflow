@@ -283,4 +283,3 @@ func equalMessages(a, b *schema.Message) bool {
 	}
 	return true
 }
-

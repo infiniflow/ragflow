@@ -199,7 +199,6 @@ func TestAgentTool_ResumeAfterInterrupt(t *testing.T) {
 	t.Log("agent tool resume-after-interrupt cycle completed")
 }
 
-
 type capturingHistoryModel struct {
 	mu           sync.Mutex
 	capturedMsgs []Message
