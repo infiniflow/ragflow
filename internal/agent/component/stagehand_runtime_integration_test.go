@@ -52,6 +52,7 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,13 +183,8 @@ func cacheDirGuess() string {
 	return filepath.Join(home, ".cache", "stagehand", "lib")
 }
 
-// TestBrowser_E2E_Extract exercises browser.go's Invoke pipeline
-// end-to-end against a real stagehand-server-v3 subprocess, a real
-// OpenAI-compatible LLM, and a local httptest server. The component
-// navigates to a local page and extracts the page content via
-// Sessions.Extract with a {"type": "string"} schema.
-//
-// Skipped unless OPENAI_* env vars are configured.
+// TestBrowser_E2E_Extract exercises Browser's extraction against a local page.
+// Requires OPENAI_* credentials and Chrome.
 func TestBrowser_E2E_Extract(t *testing.T) {
 	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
@@ -210,12 +206,14 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	// Override tenant LLM lookup so the test doesn't need a real DB.
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, _, _ string) (string, string, string, string, error) {
+	previousLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, tenantID, modelRef string) (string, string, string, string, error) {
+		if tenantID != "tenant-1" {
+			return "", "", "", "", fmt.Errorf("unexpected tenant %q", tenantID)
+		}
 		return "OpenAI", model, apiKey, baseURL, nil
 	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = previousLookup })
 
 	// --- use production stagehand runtime ---
 	r := newStagehandRuntimeFromEnv()
@@ -242,24 +240,18 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 
 	ctx := canvas.WithState(t.Context(), canvas.NewCanvasState("run-1", "task-1"))
 	state, _ := runtime.GetStateFromContext(ctx)
-	state.Sys["user_id"] = "tenant-1"
+	state.Sys["tenant_id"] = "tenant-1"
 
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	t.Logf("starting browser.Invoke (RunExtract) against %s (timeout 3m)", srv.URL)
 	out, err := c.Invoke(invokeCtx, nil, nil)
 	if err != nil {
-		t.Logf("extraction failed (best-effort): %v", err)
-		return
+		t.Fatalf("Invoke: %v", err)
 	}
-	if out == nil {
-		t.Logf("Invoke returned nil output (best-effort pass)")
-		return
+	content, ok := out["content"].(string)
+	if !ok || strings.TrimSpace(content) == "" || content == "null" {
+		t.Fatalf("missing browser result: %#v", out)
 	}
-
-	if content, ok := out["content"].(string); ok && content != "" {
-		t.Logf("extracted content: %s", content)
-	} else {
-		t.Logf("extracted content is empty or missing (LLM-dependent)")
-	}
+	t.Logf("extracted content: %s", content)
 }
