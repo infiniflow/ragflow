@@ -117,6 +117,7 @@ export enum LLMFactory {
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
   Runcrate = 'Runcrate',
+  SystemOne = 'SystemOne',
 }
 
 // Please lowercase the file name
