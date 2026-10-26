@@ -815,7 +815,13 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 	return zipBytes, nil
 }
 
-const mineruMaxImageBytes = 20 << 20
+const (
+	mineruMaxImageBytes = 20 << 20
+	// mineruMaxMiddleBytes bounds middle.json, which carries the full
+	// layout/span payload and can legitimately reach tens of megabytes on
+	// long documents, while still refusing a zip-bomb-sized member.
+	mineruMaxMiddleBytes = 64 << 20
+)
 
 // mineruExtractJSONItems reads MinerU content_list.json from a zip and
 // emits JSON parser items with captions, embedded zip images, and
@@ -847,16 +853,11 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 		}
 		// middle.json is optional: it only carries page_size, which lets
 		// positions be converted to points. A zip without it keeps the
-		// pre-existing passthrough behavior instead of failing the parse.
+		// pre-existing passthrough behavior instead of failing the parse,
+		// and so does an oversized (or lying-header) member.
 		if strings.HasSuffix(f.Name, "middle.json") && len(middleJSON) == 0 {
-			if rc, openErr := f.Open(); openErr == nil {
-				if data, readErr := io.ReadAll(rc); readErr == nil {
-					if closeErr := rc.Close(); closeErr == nil {
-						middleJSON = data
-					}
-				} else {
-					_ = rc.Close()
-				}
+			if data, ok := mineruReadBounded(f, mineruMaxMiddleBytes); ok {
+				middleJSON = data
 			}
 		}
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
@@ -891,9 +892,12 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 
 // mineruPageSizes parses the per-page page_size ([width, height] in PDF
 // points, written by MinerU's pdfium page.get_size()) out of middle.json,
-// indexed by 0-based page_idx. Returns nil when middle.json is absent or
-// unparseable.
-func mineruPageSizes(middleJSON []byte) [][2]float64 {
+// keyed by 0-based page_idx. A map rather than a slice because partial
+// jobs are legal and preserve the source page indices, so pdf_info can be
+// sparse (entries for pages 5 and 6 only). Entries without a usable
+// page_idx fall back to their position in pdf_info. Returns nil when
+// middle.json is absent or unparseable.
+func mineruPageSizes(middleJSON []byte) map[int][2]float64 {
 	if len(middleJSON) == 0 {
 		return nil
 	}
@@ -906,20 +910,24 @@ func mineruPageSizes(middleJSON []byte) [][2]float64 {
 	if err := json.Unmarshal(middleJSON, &parsed); err != nil || len(parsed.PdfInfo) == 0 {
 		return nil
 	}
-	sizes := make([][2]float64, len(parsed.PdfInfo))
+	sizes := make(map[int][2]float64, len(parsed.PdfInfo))
 	for i, page := range parsed.PdfInfo {
+		if len(page.PageSize) < 2 {
+			continue
+		}
 		idx := i
-		if page.PageIdx != nil && *page.PageIdx >= 0 && *page.PageIdx < len(sizes) {
+		if page.PageIdx != nil && *page.PageIdx >= 0 {
 			idx = *page.PageIdx
 		}
-		if len(page.PageSize) >= 2 {
-			sizes[idx] = [2]float64{page.PageSize[0], page.PageSize[1]}
-		}
+		sizes[idx] = [2]float64{page.PageSize[0], page.PageSize[1]}
+	}
+	if len(sizes) == 0 {
+		return nil
 	}
 	return sizes
 }
 
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes [][2]float64) map[string]any {
+func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -1009,7 +1017,7 @@ func mineruItemText(item map[string]any, typ string) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-func mineruItemPositions(item map[string]any, pageSizes [][2]float64) [][]any {
+func mineruItemPositions(item map[string]any, pageSizes map[int][2]float64) [][]any {
 	if raw, ok := item["_mineru_positions"].([]any); ok {
 		var out [][]any
 		for _, entry := range raw {
@@ -1031,7 +1039,7 @@ func mineruItemPositions(item map[string]any, pageSizes [][2]float64) [][]any {
 	return nil
 }
 
-func mineruBBoxPosition(pageRaw, bboxRaw any, pageSizes [][2]float64) []any {
+func mineruBBoxPosition(pageRaw, bboxRaw any, pageSizes map[int][2]float64) []any {
 	pageIdx, ok := mineruJSONInt(pageRaw)
 	if !ok {
 		return nil
@@ -1049,13 +1057,11 @@ func mineruBBoxPosition(pageRaw, bboxRaw any, pageSizes [][2]float64) []any {
 	// until it is rescaled. When middle.json carried the page size, undo the
 	// normalization exactly; without it, keep the pre-existing passthrough.
 	left, right, top, bottom := bbox[0], bbox[2], bbox[1], bbox[3]
-	if pageIdx >= 0 && pageIdx < len(pageSizes) {
-		if w, h := pageSizes[pageIdx][0], pageSizes[pageIdx][1]; w > 0 && h > 0 {
-			left *= w / 1000.0
-			right *= w / 1000.0
-			top *= h / 1000.0
-			bottom *= h / 1000.0
-		}
+	if size, ok := pageSizes[pageIdx]; ok && size[0] > 0 && size[1] > 0 {
+		left *= size[0] / 1000.0
+		right *= size[0] / 1000.0
+		top *= size[1] / 1000.0
+		bottom *= size[1] / 1000.0
 	}
 	// Downstream position_int is 1-based [page, left, right, top, bottom].
 	return []any{pageIdx + 1, left, right, top, bottom}
@@ -1113,6 +1119,26 @@ func mineruJSONFloatSlice(raw any) []float64 {
 	}
 }
 
+// mineruReadBounded reads a zip member, refusing anything that is empty or
+// larger than limit bytes. The size is checked both against the declared
+// uncompressed size and against the bytes actually produced, since a
+// hostile member can understate the former.
+func mineruReadBounded(f *zip.File, limit int64) ([]byte, bool) {
+	if f == nil || f.UncompressedSize64 > uint64(limit) {
+		return nil, false
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	rc.Close()
+	if err != nil || len(data) == 0 || int64(len(data)) > limit {
+		return nil, false
+	}
+	return data, true
+}
+
 func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
@@ -1126,16 +1152,8 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 			break
 		}
 	}
-	if file == nil || file.UncompressedSize64 > mineruMaxImageBytes {
-		return ""
-	}
-	rc, err := file.Open()
-	if err != nil {
-		return ""
-	}
-	data, err := io.ReadAll(io.LimitReader(rc, mineruMaxImageBytes+1))
-	rc.Close()
-	if err != nil || len(data) == 0 || len(data) > mineruMaxImageBytes {
+	data, ok := mineruReadBounded(file, mineruMaxImageBytes)
+	if !ok {
 		return ""
 	}
 	mediaType := mime.TypeByExtension(path.Ext(file.Name))

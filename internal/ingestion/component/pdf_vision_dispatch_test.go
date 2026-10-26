@@ -333,6 +333,53 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 	}
 }
 
+// MinerU V1 accepts partial jobs and preserves the source page indices in
+// its artifacts, so middle.json pdf_info can be sparse (page_idx 5 and 6
+// only). Sizes must be keyed by page_idx, not entry order: with two entries
+// the old slice lookup rejected index 5 and either passed the box through
+// unscaled or applied the wrong page's dimensions.
+func TestMinerUPageSizesKeysSparsePageIdx(t *testing.T) {
+	sizes := mineruPageSizes([]byte(`{"pdf_info":[
+		{"page_idx":5,"page_size":[400,800]},
+		{"page_idx":6,"page_size":[600,900]}
+	]}`))
+	if len(sizes) != 2 {
+		t.Fatalf("len(sizes)=%d, want 2", len(sizes))
+	}
+	pos := mineruBBoxPosition(6, []any{500, 500, 1000, 1000}, sizes)
+	if pos == nil {
+		t.Fatal("expected a position, got nil")
+	}
+	// page 6 is 600x900pt: x*0.6, y*0.9.
+	want := []float64{300, 600, 450, 900} // left, right, top, bottom
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := pos[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, pos[key], want[i], pos)
+		}
+	}
+	// A page missing from a partial job stays passthrough, not another
+	// page's scale.
+	missing := mineruBBoxPosition(4, []any{100, 100, 200, 200}, sizes)
+	if missing == nil {
+		t.Fatal("expected a position for missing page, got nil")
+	}
+	if left, _ := missing[1].(float64); left != 100 {
+		t.Fatalf("left = %#v, want 100 (passthrough)", missing[1])
+	}
+}
+
+// Entries with no page_idx at all fall back to their position in pdf_info.
+func TestMinerUPageSizesFallsBackToEntryOrder(t *testing.T) {
+	sizes := mineruPageSizes([]byte(`{"pdf_info":[
+		{"page_size":[500,1000]},
+		{"page_size":[400,800]}
+	]}`))
+	if got, ok := sizes[1]; !ok || got != [2]float64{400, 800} {
+		t.Fatalf("sizes[1] = %#v, want [400 800]", sizes)
+	}
+}
+
 // Without middle.json there is no trustworthy page size, so boxes keep the
 // pre-existing passthrough behavior (a known degraded mode, not a failure).
 func TestMinerUBBoxPositionWithoutPageSizesIsPassthrough(t *testing.T) {
