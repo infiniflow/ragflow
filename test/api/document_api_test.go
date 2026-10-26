@@ -290,6 +290,8 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 		{"nested_meta", apiObject{"meta_fields": apiObject{"nested": apiObject{"x": 1}}}, 102},
 		{"nested_meta_list", apiObject{"meta_fields": apiObject{"nested": []any{apiObject{"x": 1}}}}, 102},
 		{"invalid_chunk_method", apiObject{"chunk_method": "unknown"}, 102}, {"empty_chunk_method", apiObject{"chunk_method": ""}, 102},
+		{"removed_knowledge_graph", apiObject{"name": "must_not_persist.txt", "chunk_method": "knowledge_graph"}, 102},
+		{"removed_tag", apiObject{"name": "must_not_persist.txt", "chunk_method": "tag"}, 102},
 		{"parser_not_object", apiObject{"parser_config": []any{}}, 102},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -303,7 +305,29 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 			}
 		})
 	}
-	for _, method := range []string{"naive", "manual", "qa", "table", "paper", "book", "laws", "presentation", "picture", "one", "knowledge_graph", "email", "tag"} {
+	catalog := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/pipelines", nil, apiObject{"type": "builtin"}))["data"])
+	pipelines := array(t, catalog["canvas"])
+	if len(pipelines) == 0 {
+		t.Fatal("builtin pipeline catalog is empty")
+	}
+	methods := []string{"naive"}
+	for _, pipeline := range pipelines {
+		methods = append(methods, object(t, pipeline)["id"].(string))
+	}
+	for _, method := range methods {
+		// This document is text: registry membership alone does not mean a
+		// template supports its file family.
+		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table"}, method) {
+			before := getRESTDocument(t, id, docID)
+			restCode(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method, "name": "must_not_persist.txt"}, nil), 200, 102)
+			after := getRESTDocument(t, id, docID)
+			for _, key := range []string{"name", "parser_id", "pipeline_id", "parser_config"} {
+				if !reflect.DeepEqual(before[key], after[key]) {
+					t.Fatalf("unsupported template %s changed %s: before=%v after=%v", method, key, before[key], after[key])
+				}
+			}
+			continue
+		}
 		restOK(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method}, nil))
 		persisted := getRESTDocument(t, id, docID)
 		if persisted["chunk_method"] != method || persisted["parser_id"] != method {
@@ -375,6 +399,7 @@ func TestRESTDocumentParserConfigurationAndMetadataConfig(t *testing.T) {
 		}
 	}
 	// Flat Python-era options are discarded by the component-scoped Go contract.
+	beforeFlatConfig := persisted["parser_config"]
 	restOK(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"parser_config": apiObject{"chunk_token_num": -1, "raptor": apiObject{"use_raptor": true}}}, nil))
 	persisted = getRESTDocument(t, id, docID)
 	pc := object(t, persisted["parser_config"])
@@ -383,8 +408,8 @@ func TestRESTDocumentParserConfigurationAndMetadataConfig(t *testing.T) {
 			t.Fatalf("flat parser key retained: %s", key)
 		}
 	}
-	if object(t, pc[component])["chunk_token_size"] != object(t, config[component])["chunk_token_size"] {
-		t.Fatalf("flat options did not restore component defaults: got=%v defaults=%v", pc[component], config[component])
+	if !reflect.DeepEqual(pc, beforeFlatConfig) {
+		t.Fatalf("ignored flat options changed existing config: got=%v want=%v", pc, beforeFlatConfig)
 	}
 	metadata := apiObject{"author": "alice", "tags": []any{"one", "two"}}
 	metadataPath := path + "/metadata/config"

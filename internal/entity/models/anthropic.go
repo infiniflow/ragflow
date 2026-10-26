@@ -95,7 +95,9 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	applyAnthropicChatConfig(reqBody, chatModelConfig)
+	if err := applyAnthropicChatConfig(reqBody, chatModelConfig); err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -124,9 +126,10 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
 }
 
-func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) {
+func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) error {
+	reqBody["max_tokens"] = 1024
 	if chatModelConfig == nil {
-		return
+		return nil
 	}
 	if chatModelConfig.MaxTokens != nil {
 		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
@@ -142,6 +145,59 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	if chatModelConfig.Stop != nil {
 		reqBody["stop_sequences"] = *chatModelConfig.Stop
 	}
+	var tools []map[string]any
+	for _, raw := range normalizeToolList(chatModelConfig.Tools) {
+		tool, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("anthropic: invalid tool definition")
+		}
+		function, ok := tool["function"].(map[string]any)
+		if !ok {
+			function = tool
+		}
+		name, _ := function["name"].(string)
+		if name == "" {
+			return fmt.Errorf("anthropic: tool name is required")
+		}
+		inputSchema := map[string]any{"type": "object", "properties": map[string]any{}}
+		if parameters, present := function["parameters"]; present {
+			inputSchema, ok = parameters.(map[string]any)
+			if !ok || inputSchema == nil {
+				return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+			}
+		}
+		nativeTool := map[string]any{"name": name, "input_schema": inputSchema}
+		if description, ok := function["description"].(string); ok {
+			nativeTool["description"] = description
+		}
+		tools = append(tools, nativeTool)
+	}
+	if len(tools) > 0 {
+		reqBody["tools"] = tools
+	}
+	if choice := chatModelConfig.ToolChoiceValue; choice != nil {
+		value, ok := choice.(map[string]any)
+		if !ok {
+			return fmt.Errorf("anthropic: invalid tool choice")
+		}
+		function, _ := value["function"].(map[string]any)
+		name, _ := function["name"].(string)
+		if name == "" {
+			return fmt.Errorf("anthropic: tool choice name is required")
+		}
+		reqBody["tool_choice"] = map[string]any{"type": "tool", "name": name}
+	} else if choice := chatModelConfig.ToolChoice; choice != nil {
+		value := *choice
+		switch value {
+		case "required":
+			value = "any"
+		case "auto", "none":
+		default:
+			return fmt.Errorf("anthropic: unsupported tool choice %q", value)
+		}
+		reqBody["tool_choice"] = map[string]any{"type": value}
+	}
+	return nil
 }
 
 func setAnthropicHeaders(req *http.Request, apiKey string, streaming bool) {
@@ -160,6 +216,51 @@ func anthropicMessages(messages []Message) ([]map[string]interface{}, string, er
 	systemPrompts := make([]string, 0)
 	for _, msg := range messages {
 		role := strings.ToLower(strings.TrimSpace(msg.Role))
+		if role == "tool" {
+			if msg.ToolCallID == "" {
+				return nil, "", fmt.Errorf("anthropic: tool result requires tool_call_id")
+			}
+			content, err := anthropicContent(msg.Content)
+			if err != nil {
+				return nil, "", err
+			}
+			block := map[string]any{"type": "tool_result", "tool_use_id": msg.ToolCallID, "content": content}
+			if len(apiMessages) > 0 && apiMessages[len(apiMessages)-1]["role"] == "user" {
+				if blocks, ok := apiMessages[len(apiMessages)-1]["content"].([]map[string]any); ok {
+					apiMessages[len(apiMessages)-1]["content"] = append(blocks, block)
+					continue
+				}
+			}
+			apiMessages = append(apiMessages, map[string]any{"role": "user", "content": []map[string]any{block}})
+			continue
+		}
+		if role == "assistant" && len(msg.ToolCalls) > 0 {
+			var blocks []map[string]any
+			if msg.Content != nil && msg.Content != "" {
+				content, err := anthropicContent(msg.Content)
+				if err != nil {
+					return nil, "", err
+				}
+				if text, ok := content.(string); ok {
+					blocks = append(blocks, map[string]any{"type": "text", "text": text})
+				} else {
+					blocks = content.([]map[string]any)
+				}
+			}
+			for _, call := range msg.ToolCalls {
+				function, _ := call["function"].(map[string]any)
+				name, _ := function["name"].(string)
+				id, _ := call["id"].(string)
+				arguments, _ := function["arguments"].(string)
+				var input map[string]any
+				if id == "" || name == "" || json.Unmarshal([]byte(arguments), &input) != nil || input == nil {
+					return nil, "", fmt.Errorf("anthropic: invalid assistant tool call")
+				}
+				blocks = append(blocks, map[string]any{"type": "tool_use", "id": id, "name": name, "input": input})
+			}
+			apiMessages = append(apiMessages, map[string]any{"role": role, "content": blocks})
+			continue
+		}
 		content, err := anthropicContent(msg.Content)
 		if err != nil {
 			return nil, "", err
@@ -336,9 +437,12 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 	var result struct {
 		ID      string `json:"id"`
 		Content []struct {
-			Type     string `json:"type"`
-			Text     string `json:"text"`
-			Thinking string `json:"thinking"`
+			Type     string         `json:"type"`
+			Text     string         `json:"text"`
+			Thinking string         `json:"thinking"`
+			ID       string         `json:"id"`
+			Name     string         `json:"name"`
+			Input    map[string]any `json:"input"`
 		} `json:"content"`
 		Usage struct {
 			InputTokens  int `json:"input_tokens"`
@@ -354,15 +458,25 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 
 	var answer strings.Builder
 	var reasoning strings.Builder
+	var toolCalls []map[string]any
 	for _, block := range result.Content {
 		switch block.Type {
 		case "text":
 			answer.WriteString(block.Text)
 		case "thinking":
 			reasoning.WriteString(block.Thinking)
+		case "tool_use":
+			if block.ID == "" || block.Name == "" || block.Input == nil {
+				return chatResponseParts{}, fmt.Errorf("invalid tool_use in Anthropic response")
+			}
+			arguments, err := json.Marshal(block.Input)
+			if err != nil {
+				return chatResponseParts{}, fmt.Errorf("anthropic: marshal tool input: %w", err)
+			}
+			toolCalls = append(toolCalls, map[string]any{"id": block.ID, "type": "function", "function": map[string]any{"name": block.Name, "arguments": string(arguments)}})
 		}
 	}
-	if answer.Len() == 0 {
+	if answer.Len() == 0 && len(toolCalls) == 0 {
 		return chatResponseParts{}, fmt.Errorf("no text content in Anthropic response")
 	}
 
@@ -381,6 +495,7 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 		RequestID:     result.ID,
 		Content:       &ans,
 		ReasonContent: &reason,
+		ToolCalls:     toolCalls,
 		Usage:         usage,
 	}, nil
 }
@@ -448,6 +563,9 @@ func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+	}
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -478,7 +596,9 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	applyAnthropicChatConfig(reqBody, modelConfig)
+	if err := applyAnthropicChatConfig(reqBody, modelConfig); err != nil {
+		return err
+	}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -508,9 +628,29 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	sawTerminal := false
 	var streamUsage TokenUsage
 	sawUsage := false
+	type toolBlock struct {
+		id, name string
+		input    map[string]any
+		partial  strings.Builder
+	}
+	pendingTools := make(map[float64]*toolBlock)
+	toolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		eventType, _ := event["type"].(string)
 		switch eventType {
+		case "content_block_start":
+			block, _ := event["content_block"].(map[string]any)
+			if block["type"] != "tool_use" {
+				return nil
+			}
+			index, ok := event["index"].(float64)
+			id, _ := block["id"].(string)
+			name, _ := block["name"].(string)
+			input, _ := block["input"].(map[string]any)
+			if !ok || index < 0 || index != float64(int(index)) || id == "" || name == "" || input == nil {
+				return fmt.Errorf("anthropic: invalid streamed tool_use block")
+			}
+			pendingTools[index] = &toolBlock{id: id, name: name, input: input}
 		case "content_block_delta":
 			delta, ok := event["delta"].(map[string]interface{})
 			if !ok {
@@ -518,6 +658,14 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			}
 			deltaType, _ := delta["type"].(string)
 			switch deltaType {
+			case "input_json_delta":
+				index, ok := event["index"].(float64)
+				tool := pendingTools[index]
+				partial, valid := delta["partial_json"].(string)
+				if !ok || tool == nil || !valid {
+					return fmt.Errorf("anthropic: invalid streamed tool input delta")
+				}
+				tool.partial.WriteString(partial)
 			case "text_delta":
 				if text, ok := delta["text"].(string); ok && text != "" {
 					if err := sender(&text, nil); err != nil {
@@ -530,6 +678,27 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 						return err
 					}
 				}
+			}
+		case "content_block_stop":
+			index, ok := event["index"].(float64)
+			if tool := pendingTools[index]; ok && tool != nil {
+				if tool.partial.Len() > 0 {
+					if err := json.Unmarshal([]byte(tool.partial.String()), &tool.input); err != nil {
+						return fmt.Errorf("anthropic: invalid streamed tool input: %w", err)
+					}
+				}
+				if tool.input == nil {
+					return fmt.Errorf("anthropic: streamed tool input must be an object")
+				}
+				arguments, err := json.Marshal(tool.input)
+				if err != nil {
+					return fmt.Errorf("anthropic: marshal streamed tool input: %w", err)
+				}
+				toolCalls[int(index)] = map[string]any{
+					"id": tool.id, "type": "function",
+					"function": map[string]any{"name": tool.name, "arguments": string(arguments)},
+				}
+				delete(pendingTools, index)
 			}
 		case "message_start":
 			message, ok := event["message"].(map[string]interface{})
@@ -567,6 +736,10 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if !done && !sawTerminal {
 		return fmt.Errorf("anthropic: stream ended before message_stop")
 	}
+	if len(pendingTools) > 0 {
+		return fmt.Errorf("anthropic: stream ended before tool content_block_stop")
+	}
+	setSortedToolCallsResult(modelConfig, toolCalls)
 
 	if sawUsage {
 		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens

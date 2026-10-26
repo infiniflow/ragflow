@@ -195,6 +195,10 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	if _, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID); err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
+	membership, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil {
+		return nil, common.CodeForbidden, err
+	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
 		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
@@ -261,10 +265,6 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		req["kb_ids"] = []string{}
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
-		membership, membershipErr := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-		if membershipErr != nil {
-			return nil, common.CodeForbidden, membershipErr
-		}
 		modelName, modelID := defaultModelRefs(membership, entity.ModelTypeChat)
 		req["llm_id"] = modelName
 		if modelID != "" {
@@ -894,7 +894,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if value, ok := req["decision_id"]; ok {
-		decisionID := fmt.Sprint(value)
+		decisionID := stringFromValue(value)
 		if decisionID == "" {
 			// Clearing the override is meaningful: it falls back to the tenant
 			// default rather than disabling the gate for this chat.

@@ -85,6 +85,14 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
+# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# GitHub at main-image build time. gopdf reads it at runtime from
+# /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
+    mkdir -p /usr/local/share/fonts/truetype/noto && \
+    cp /tmp/NotoSansCJKsc-VF.ttf /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf
+
 # Setup apt
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
@@ -99,11 +107,30 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     chmod 1777 /tmp && \
     apt update && \
     apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
-    mkdir -p /usr/local/share/fonts/truetype/noto && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
-        -o /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf \
-        https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf && \
     fc-cache -f && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean
+
+# Stagehand launches Chrome over CDP; its server binary does not bundle a browser.
+ARG CHROME_VERSION=156.0.8078.47
+ENV CHROME_PATH=/opt/chrome/chrome
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        libnss3 libatk-bridge2.0-0 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \
+        libxrandr2 libgbm1 libasound2t64 libxkbcommon0 libpango-1.0-0 libcairo2 libcups2t64 && \
+    case "$(dpkg --print-architecture)" in \
+        amd64) chrome_platform=linux64 ;; \
+        arm64) chrome_platform=linux-arm64 ;; \
+        *) echo "Unsupported Chrome architecture" >&2; exit 1 ;; \
+    esac && \
+    curl --retry 5 --retry-all-errors -fsSL \
+        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${chrome_platform}/chrome-${chrome_platform}.zip" \
+        -o /tmp/chrome.zip && \
+    unzip -q /tmp/chrome.zip -d /opt && \
+    mv "/opt/chrome-${chrome_platform}" /opt/chrome && \
+    "$CHROME_PATH" --version && \
+    "$CHROME_PATH" --headless --no-sandbox --disable-dev-shm-usage --dump-dom about:blank | grep -q '<html>' && \
+    rm /tmp/chrome.zip && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Download resource from GitHub to /usr/share/infinity

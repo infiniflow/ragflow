@@ -425,14 +425,18 @@ func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
 	})
 	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
 	completed := false
-	runtime.RegisterDeferredNode(ctx, "agent_0", func() { completed = true })
+	var completedErr error
+	runtime.RegisterDeferredNode(ctx, "agent_0", func(err error) {
+		completed = true
+		completedErr = err
+	})
 
 	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
 	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
 		t.Fatalf("Invoke error = %v, want upstream 402", err)
 	}
-	if completed {
-		t.Fatal("deferred node completed after result _ERROR")
+	if !completed || completedErr == nil || !strings.Contains(completedErr.Error(), "upstream 402") {
+		t.Fatalf("expected deferred node completion with error, got completed=%v, err=%v", completed, completedErr)
 	}
 }
 

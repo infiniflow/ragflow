@@ -56,7 +56,7 @@ func TestApplyVersionDraftSave(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			ctx := t.Context()
+			ctx := serviceTestContext(t, "user-1", "user-1")
 			var wantErr error
 			if scenario == "version_save_failure" {
 				wantErr = errors.New("version write failed")

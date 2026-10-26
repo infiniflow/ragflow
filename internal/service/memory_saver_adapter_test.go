@@ -69,7 +69,7 @@ func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
-	ctx := runtime.WithState(t.Context(), state)
+	ctx := runtime.WithState(serviceTestContext(t, "caller", "canvas-owner"), state)
 
 	// req.UserID is the memory-message partition key and must not be trusted as
 	// the permission subject. The canvas owner can access memory-1, but caller
