@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -58,19 +59,38 @@ func isStandaloneDeepDocServer(st common.ServerType) bool {
 		st == common.ServerTypeDeepDocAscend
 }
 
-// startPProfIfRequested launches the pprof HTTP server on localhost:6060.
-// The blank "net/http/pprof" import above registers the handlers on
-// http.DefaultServeMux, so only the listener needs starting. Both boot
-// paths (standalone DeepDoc and the regular one) call it right after the
-// logger is up, so its startup line lands in the run's log file. A bind
-// failure is logged and non-fatal, matching the previous inline behavior.
-func startPProfIfRequested() {
+// ErrPProfBindFailed is returned by startPProf when the profiling port is
+// unavailable. Callers treat it as non-fatal: the inference server matters more
+// than profiling, so a bind failure is logged and startup continues.
+var ErrPProfBindFailed = errors.New("pprof bind failed")
+
+// startPProf opens a TCP listener on addr and serves the pprof handlers
+// (registered by the blank "net/http/pprof" import) for the process lifetime.
+// It returns ErrPProfBindFailed if addr is already taken instead of crashing
+// the server. The address is configurable via pprofAddr so tests (and ops) can
+// avoid the hard-coded localhost:6060 clash.
+func startPProf(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPProfBindFailed, err)
+	}
 	go func() {
-		common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
-		if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
+		common.Info("Starting pprof server", zap.String("addr", addr))
+		if pprofErr := http.Serve(ln, nil); pprofErr != nil {
 			common.Error("pprof server failed", pprofErr)
 		}
 	}()
+	return nil
+}
+
+// pprofAddr returns the listen address for the pprof server. It honors
+// RAGFLOW_PPROF_ADDR so callers/tests can override the default localhost:6060,
+// eliminating hard-coded-port clashes between concurrent tests and processes.
+func pprofAddr() string {
+	if a := os.Getenv("RAGFLOW_PPROF_ADDR"); a != "" {
+		return a
+	}
+	return "localhost:6060"
 }
 
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
@@ -392,7 +412,9 @@ func main() {
 		// path skips, so --profile must be honored here or the flag the
 		// --deepdoc help text advertises would be silently ignored.
 		if arguments.EnablePProf {
-			startPProfIfRequested()
+			if err := startPProf(pprofAddr()); err != nil {
+				common.Error("pprof server failed", err)
+			}
 		}
 		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
@@ -515,7 +537,9 @@ func main() {
 
 	// Start pprof server if requested
 	if arguments.EnablePProf {
-		startPProfIfRequested()
+		if err := startPProf(pprofAddr()); err != nil {
+			common.Error("pprof server failed", err)
+		}
 	}
 
 	// Initialize database. The migrate mode stops here: it needs neither the

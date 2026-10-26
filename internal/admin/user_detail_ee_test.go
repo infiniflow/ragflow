@@ -15,3 +15,9 @@
 //
 
 package admin
+
+import "testing"
+
+func TestUserAgentsRouteRequiresEE(_ *testing.T) {}
+
+func TestUserDatasetsRouteRequiresEE(_ *testing.T) {}
