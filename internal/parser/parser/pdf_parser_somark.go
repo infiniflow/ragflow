@@ -170,16 +170,46 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 	items := make([]map[string]any, 0)
 	state := &htmlWalkState{}
 	var warnings []string
+
+	// Positions reference real document pages: prefer the source PDF's page
+	// count when it is known, falling back to the number of pages the
+	// service returned.
+	pageCount := len(pages)
+	if len(pageSizes) > 0 {
+		pageCount = len(pageSizes)
+	}
+
+	// Pixel dimensions of each page, keyed by the same resolved page number
+	// positions use, so a block whose page_idx points at another page scales
+	// against THAT page's pixel space instead of the enclosing page's.
+	pixByPage := make(map[int][2]float64, len(pages))
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
 			continue
 		}
+		// SoMark pages carry a 0-based page_num; positions and page_number
+		// are 1-based.
 		pageNumber := pageIndex + 1
-		if n, ok := soMarkPageIndex(page["page_number"]); ok && n > 0 {
-			pageNumber = n
+		if n, ok := soMarkPageIndex(page["page_num"]); ok {
+			pageNumber = n + 1
 		}
-		srcW, srcH := soMarkPagePixelSize(page["page_size"])
+		if w, h := soMarkPagePixelSize(page["page_size"]); w > 0 && h > 0 {
+			pixByPage[pageNumber] = [2]float64{w, h}
+		}
+	}
+
+	for pageIndex, pageRaw := range pages {
+		page, ok := pageRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		// SoMark pages carry a 0-based page_num; positions and page_number
+		// are 1-based.
+		pageNumber := pageIndex + 1
+		if n, ok := soMarkPageIndex(page["page_num"]); ok {
+			pageNumber = n + 1
+		}
 		blocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range blocks {
 			block, ok := blockRaw.(map[string]any)
@@ -191,12 +221,27 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			for _, item := range blockItems {
 				item["page_number"] = pageNumber
 				// A block may carry its own 0-based page_idx; it wins over the
-				// enclosing page value, which stays as the fallback.
+				// enclosing page value, which stays as the fallback. An index
+				// beyond the known page range (the source PDF's pages when
+				// readable, else the returned pages) falls back too: emitting
+				// it would point at a page that does not exist and inflate
+				// page_count downstream.
 				blockPage := pageNumber
-				if n, ok := soMarkPageIndex(block["page_idx"]); ok {
+				pageBound := len(pages)
+				if len(pageSizes) > 0 {
+					pageBound = len(pageSizes)
+				}
+				if n, ok := soMarkPageIndex(block["page_idx"]); ok && n < pageBound {
 					blockPage = n + 1
 				}
-				if pos := soMarkBlockPosition(block, blockPage, srcW, srcH, pageSizes); pos != nil {
+				if len(pageSizes) > 0 && blockPage > len(pageSizes) {
+					// The page is not in the source document; a position for
+					// it cannot be correct, so the item goes out without one.
+					items = append(items, item)
+					continue
+				}
+				src := pixByPage[blockPage]
+				if pos := soMarkBlockPosition(block, blockPage, src[0], src[1], pageSizes); pos != nil {
 					item["positions"] = [][]any{pos}
 					item["_pdf_positions"] = [][]any{pos}
 				}
@@ -204,7 +249,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			}
 		}
 	}
-	return items, len(pages), append(state.warnings(), warnings...)
+	return items, pageCount, append(state.warnings(), warnings...)
 }
 
 // soMarkBlockPosition converts a SoMark block bbox ([x0, top, x1, bottom]) and
@@ -229,7 +274,7 @@ func soMarkBlockPosition(block map[string]any, pageNumber int, srcW, srcH float6
 	var v [4]float64
 	for i, raw := range bbox {
 		n, ok := numericAny(raw)
-		if !ok {
+		if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
 			return nil
 		}
 		v[i] = n
@@ -291,7 +336,17 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 		}
 		x0, y0 := box.Index(0).Float64(), box.Index(1).Float64()
 		x1, y1 := box.Index(2).Float64(), box.Index(3).Float64()
-		sizes = append(sizes, [2]float64{math.Abs(x1 - x0), math.Abs(y1 - y0)})
+		w, h := math.Abs(x1-x0), math.Abs(y1-y0)
+		// A quarter-turn /Rotate (also inheritable) swaps the dimensions of
+		// the rendered page SoMark sees; scaling and clamping must use the
+		// rotated size.
+		if rot := soMarkInheritedPageValue(r.Page(p), "Rotate"); !rot.IsNull() {
+			switch deg := ((int(rot.Float64()) % 360) + 360) % 360; deg {
+			case 90, 270:
+				w, h = h, w
+			}
+		}
+		sizes = append(sizes, [2]float64{w, h})
 	}
 	return sizes
 }
