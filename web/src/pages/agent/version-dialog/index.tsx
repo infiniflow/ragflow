@@ -52,6 +52,41 @@ type PendingAction =
   | { kind: 'restore'; versionId: string; title: string }
   | null;
 
+// AliasInput is a controlled input for a single canvas version's free-text alias
+// (design G2/section 4.4). It keeps the value in local state and is keyed by
+// version id, so parent re-renders (including version-list refetches triggered by
+// focus changes or row selection) never unmount the field and wipe in-progress
+// keystrokes the way an uncontrolled defaultValue input with a volatile key could.
+const AliasInput = ({
+  placeholder,
+  versionId,
+  canvasId,
+  initialAlias,
+  onCommit,
+}: {
+  placeholder: string;
+  versionId: string;
+  canvasId: string;
+  initialAlias: string;
+  onCommit: (alias: string) => void;
+}) => {
+  const [val, setVal] = useState(initialAlias);
+  return (
+    <Input
+      className="h-7 text-xs"
+      placeholder={placeholder}
+      value={val}
+      onChange={(e) => setVal(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onBlur={() => {
+        const v = val.trim();
+        if (v === initialAlias) return;
+        onCommit(v);
+      }}
+    />
+  );
+};
+
 export function VersionDialog({
   hideModal,
 }: IModalProps<any> & { initialName?: string; title?: ReactNode }) {
@@ -182,25 +217,22 @@ export function VersionDialog({
                       </div>
                       <div className="mt-1">
                         {/* Editable alias (design G2, section 4.4): PATCHes the
-                          version metadata without creating a new version or
-                          touching the DSL. Clicking the input must not also
-                          select the row. */}
-                        <Input
-                          key={`alias-${x.id}-${x.alias ?? ''}`}
-                          className="h-7 text-xs"
-                          placeholder={t('flow.version.alias')}
-                          defaultValue={x.alias ?? ''}
-                          onClick={(e) => e.stopPropagation()}
-                          onBlur={(e) => {
-                            const v = e.target.value.trim();
-                            if (v === (x.alias ?? '')) return;
-                            updateVersion({
-                              canvasId: canvasId ?? '',
-                              versionId: x.id,
-                              alias: v,
-                            });
-                          }}
-                        />
+  version metadata without creating a new version or touching the DSL.
+  Clicking the input must not also select the row. Controlled via AliasInput
+  so re-renders never wipe in-progress keystrokes. */}
+<AliasInput
+  placeholder={t('flow.version.alias')}
+  versionId={x.id}
+  canvasId={canvasId ?? ''}
+  initialAlias={x.alias ?? ''}
+  onCommit={(alias) =>
+    updateVersion({
+      canvasId: canvasId ?? '',
+      versionId: x.id,
+      alias,
+    })
+  }
+/>
                       </div>
                     </li>
                   );

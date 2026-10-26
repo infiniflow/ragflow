@@ -41,6 +41,8 @@ jest.mock('@xyflow/react', () => ({
   ConnectionMode: { Loose: 'loose' },
 }));
 
+const mockUpdateVersion = jest.fn();
+
 const mockVersions = [
   {
     id: 'v-latest',
@@ -68,7 +70,7 @@ jest.mock('@/hooks/use-agent-request', () => ({
   }),
   useSetAgent: () => ({ setAgent: jest.fn(), loading: false }),
   useUpdateVersion: () => ({
-    updateVersion: jest.fn(),
+    updateVersion: mockUpdateVersion,
     loading: false,
     isError: false,
   }),
@@ -118,5 +120,39 @@ describe('VersionDialog alias filter (A2/F1, T19)', () => {
     expect(screen.getByText('Latest')).toBeInTheDocument();
     expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
     expect(screen.getAllByText('!')).toHaveLength(1);
+  });
+});
+
+describe('VersionDialog alias edit commits on blur (G2/section 4.4, T35)', () => {
+  it('PATCHes the trimmed new alias when the input loses focus', () => {
+    mockUpdateVersion.mockClear();
+    render(<VersionDialog hideModal={jest.fn()} />);
+
+    // mockVersions order: [v-latest (alias prod), v-old (alias old)].
+    const inputs = screen.getAllByPlaceholderText('flow.version.alias');
+    const oldInput = inputs[1];
+
+    fireEvent.change(oldInput, { target: { value: '  renamed  ' } });
+    fireEvent.blur(oldInput);
+
+    expect(mockUpdateVersion).toHaveBeenCalledTimes(1);
+    expect(mockUpdateVersion).toHaveBeenCalledWith({
+      canvasId: 'canvas-1',
+      versionId: 'v-old',
+      alias: 'renamed',
+    });
+  });
+
+  it('does not PATCH when the alias is unchanged', () => {
+    mockUpdateVersion.mockClear();
+    render(<VersionDialog hideModal={jest.fn()} />);
+
+    const inputs = screen.getAllByPlaceholderText('flow.version.alias');
+    const oldInput = inputs[1]; // alias old
+
+    fireEvent.change(oldInput, { target: { value: 'old' } });
+    fireEvent.blur(oldInput);
+
+    expect(mockUpdateVersion).not.toHaveBeenCalled();
   });
 });
