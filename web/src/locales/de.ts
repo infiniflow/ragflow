@@ -1399,6 +1399,7 @@ Beispiel: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'Img2txt',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
     },
     message: {

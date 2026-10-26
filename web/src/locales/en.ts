@@ -2432,6 +2432,7 @@ Example: Virtual Hosted Style`,
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
@@ -2919,7 +2920,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
@@ -3031,7 +3032,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       news: 'News',
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
-        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+        'Controls how much recent conversation history is available to the selected model as context. Larger windows use more tokens and may include unrelated context.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -3811,6 +3812,20 @@ Important structured information may include: names, dates, locations, events, k
       variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
+        endpoint: 'Endpoint',
+        testEndpoint: 'Test endpoint',
+        personalUrl: 'Personal webhook URL',
+        credentialDescription:
+          'Anyone with this URL can run the agent as you. Keep it secret; creating a new URL invalidates the old one.',
+        createCredential: 'Create or rotate URL',
+        revokeCredential: 'Revoke my URL',
+        credentialCreated:
+          'Webhook URL created. Copy and store it now; it will not be shown again after you leave this page.',
+        credentialRevoked: 'Webhook URL revoked.',
+        credentialRequestFailed: 'Unable to update the webhook URL.',
+        revokeCredentialTitle: 'Revoke your webhook URL?',
+        revokeCredentialDescription:
+          'Requests using this URL will stop working. You can create a new URL at any time.',
         methods: 'Methods',
         contentTypes: 'Content types',
         security: 'Security',

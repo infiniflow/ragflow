@@ -339,7 +339,62 @@ func (p *Parser) ocrMergeChars(ctx context.Context, pageImg image.Image, chars [
 		return nil
 	}
 	boxChars := matchCharsToBoxes(boxes, chars)
-	return p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
+	result := p.buildTextBoxes(ctx, pageImg, boxes, boxChars, doc, scale, pageNum)
+
+	// Detection must not decide which native text survives: chars outside
+	// every detect box are emitted as native line boxes. Main dropped them.
+	if uncovered := charsOutsideDetectBoxes(chars, boxes); len(uncovered) > 0 {
+		result = append(result, lyt.CharsToBoxes(uncovered, pageNum, p.Config.SortByTop)...)
+	}
+
+	// Interleave native and uncovered boxes for TextMerge's left-to-right pass
+	// (FinalReadingOrderMerge re-sorts by Top afterwards).
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Top != result[j].Top {
+			return result[i].Top < result[j].Top
+		}
+		return result[i].X0 < result[j].X0
+	})
+	return result
+}
+
+// charsOutsideDetectBoxes returns the usable glyphs no detect box overlaps.
+// These are the characters main's merge path silently dropped when detection
+// missed their region (figure labels, marginalia, rotated text).
+func charsOutsideDetectBoxes(chars []pdf.TextChar, boxes []ocrDetectBox) []pdf.TextChar {
+	var out []pdf.TextChar
+	for _, c := range chars {
+		if strings.TrimSpace(c.Text) == "" || !usableNativeChar(c) {
+			continue
+		}
+		covered := false
+		for i := range boxes {
+			// Match matchCharsToBoxes' assignment threshold: a glyph it would
+			// not assign (overlap < 1e-6) must not be treated as covered here,
+			// or it would be consumed by neither path.
+			if charBoxOverlapRatio(c, boxes[i].x0, boxes[i].x1, boxes[i].y0, boxes[i].y1) >= 1e-6 {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// usableNativeChar reports whether a glyph can be emitted as native text:
+// finite, non-degenerate geometry and a mapped (non-PUA/control) glyph.
+func usableNativeChar(c pdf.TextChar) bool {
+	if math.IsNaN(c.X0) || math.IsNaN(c.X1) || math.IsNaN(c.Top) || math.IsNaN(c.Bottom) ||
+		math.IsInf(c.X0, 0) || math.IsInf(c.X1, 0) || math.IsInf(c.Top, 0) || math.IsInf(c.Bottom, 0) {
+		return false
+	}
+	if c.X0 >= c.X1 || c.Top >= c.Bottom {
+		return false
+	}
+	return !util.IsGarbledChar(c.Text)
 }
 
 // ocrCoordinateScale returns the factor that converts image pixels into PDF

@@ -43,6 +43,7 @@ const (
 	mcpServerNameLimit          = 255
 	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
+	mcpPermissionBatchSize      = 256
 	mcpServerDateFormat         = "2006-01-02T15:04:05"
 	maskedMCPSecret             = "********"
 )
@@ -557,7 +558,17 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 		return nil, code, normalized
 	}
 
-	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	subject := permission.Subject{UserID: userID, TenantID: tenantID}
+	queryScope, err := checker.QueryScope(ctx, subject, permission.ScopeQuery{
+		Kind:      permission.ResourceKindMCPServer,
+		Operation: permission.OperationRead,
+	})
+	if err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return nil, code, normalized
+	}
+	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc, page, pageSize, queryScope.Apply)
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
 		if errors.As(err, &orderbyErr) {
@@ -565,21 +576,32 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 		}
 		return nil, common.CodeServerError, err
 	}
-	if servers == nil {
-		servers = []*entity.MCPServer{}
-	}
-	servers = paginateMCPServers(servers, page, pageSize)
 
-	items := make([]*MCPServerListItem, 0, len(servers))
-	checker := permission.NewDatabaseChecker(dao.DB)
-	for _, server := range servers {
-		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
-			Kind: permission.ResourceKindMCPServer,
-			ID:   server.ID,
-		})
+	permissionMasks := make(map[string]int32)
+	for offset := 0; offset < len(servers); offset += mcpPermissionBatchSize {
+		end := min(offset+mcpPermissionBatchSize, len(servers))
+		refs := make([]permission.ResourceRef, 0, end-offset)
+		for _, server := range servers[offset:end] {
+			refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
+		}
+		accesses, err := checker.ResolveAccesses(ctx, subject, refs)
 		if err != nil {
 			code, normalized := normalizeMCPServerPermissionError(err)
 			return nil, code, normalized
+		}
+		for _, ref := range refs {
+			access, ok := accesses[ref]
+			if !ok || !access.Allows(permission.OperationRead) {
+				continue
+			}
+			permissionMasks[ref.ID] = access.PermissionMask
+		}
+	}
+	items := make([]*MCPServerListItem, 0, len(servers))
+	for _, server := range servers {
+		permissionMask, ok := permissionMasks[server.ID]
+		if !ok {
+			continue
 		}
 		variables := server.Variables
 		if variables == nil {
@@ -594,7 +616,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 			Variables:          MCPVariablesForResponse(variables),
 			CreateDate:         formatMCPServerDate(server.CreateDate),
 			UpdateDate:         formatMCPServerDate(server.UpdateDate),
-			OperatorPermission: access.PermissionMask,
+			OperatorPermission: permissionMask,
 		})
 	}
 
@@ -961,37 +983,4 @@ func formatMCPServerDate(date *time.Time) *string {
 	}
 	formatted := date.Format(mcpServerDateFormat)
 	return &formatted
-}
-
-func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
-	if page == 0 || pageSize == 0 {
-		return servers
-	}
-
-	start := (page - 1) * pageSize
-	stop := page * pageSize
-	return sliceMCPServers(servers, start, stop)
-}
-
-func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
-	length := len(servers)
-	start = normalizeMCPServerSliceIndex(start, length)
-	stop = normalizeMCPServerSliceIndex(stop, length)
-	if stop < start {
-		return []*entity.MCPServer{}
-	}
-	return servers[start:stop]
-}
-
-func normalizeMCPServerSliceIndex(index, length int) int {
-	if index < 0 {
-		index += length
-	}
-	if index < 0 {
-		return 0
-	}
-	if index > length {
-		return length
-	}
-	return index
 }

@@ -74,10 +74,11 @@ type chatAgentService interface {
 
 // AgentHandler agent handler
 type AgentHandler struct {
-	agentService *service.AgentService
-	chatRunner   chatAgentService
-	fileService  agentFileService
-	loader       canvasLoader
+	agentService       *service.AgentService
+	chatRunner         chatAgentService
+	fileService        agentFileService
+	loader             canvasLoader
+	webhookCredentials agentWebhookCredentialManager
 	// redisGet fetches a raw string from Redis. Defaults to the global
 	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a

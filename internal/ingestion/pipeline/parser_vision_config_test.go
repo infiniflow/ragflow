@@ -11,7 +11,7 @@ func TestBuildParserConfigPreservesGlobalVisionSettings(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		for _, model := range []string{"model-B", ""} {
 			want := map[string]any{"enable_vision_enhancement": enabled, "vlm": map[string]any{"llm_id": model}}
-			params := BuildParserConfig(generalDSL(t), map[string]any{id: want})[id].(map[string]any)
+			params := buildTestParserConfig(t, generalDSL(t), map[string]any{id: want})[id].(map[string]any)
 			for key, value := range want {
 				if !reflect.DeepEqual(params[key], value) {
 					t.Fatalf("existing canvas saved %s = %v, want %v", key, params[key], value)
@@ -68,7 +68,7 @@ func TestBuiltinParserVisionSettings(t *testing.T) {
 			}
 			for _, enabled := range []bool{true, false} {
 				want := map[string]any{"enable_vision_enhancement": enabled, "vlm": map[string]any{"llm_id": "model-B"}}
-				params := BuildParserConfig(dsl, map[string]any{id: want})[id].(map[string]any)
+				params := buildTestParserConfig(t, dsl, map[string]any{id: want})[id].(map[string]any)
 				for key, value := range want {
 					if !reflect.DeepEqual(params[key], value) {
 						t.Fatalf("saved %s = %v, want %v", key, params[key], value)

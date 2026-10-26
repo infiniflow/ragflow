@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
-	"ragflow/internal/rag/decisionhead"
 )
 
 // The intent is per CALL, so it must survive on the call's own context and be
