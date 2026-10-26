@@ -733,6 +733,14 @@ func formatChunksXML(ctx context.Context, docID string, chunks []runtime.Retriev
 	// first also makes `fetched` keep its one invariant — it counts the <chunk>
 	// elements below it.
 	chunks = filterChunks(ctx, chunks)
+	return renderChunksXML(ctx, docID, chunks, anchorMeta, notice)
+}
+
+// renderChunksXML renders deep-read passages without the sufficiency filter. It
+// is for the places whose result set IS the evidence the model is being asked to
+// judge - a page that has already been decided must be shown whole, so the
+// filter has no business shortening it.
+func renderChunksXML(ctx context.Context, docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
 	// Deep-read passages are citable too: stamp the same [ID:n] handle the locate
 	// tools use, so a fact read from the full text can be cited.
 	reg := evidenceRegistryFrom(ctx)

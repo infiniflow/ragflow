@@ -41,13 +41,13 @@ const listChunksToolDescription = `Read the full original text of SELECTED chunk
 
 Use this AFTER grep_chunks / search_chunks / search_bm25_chunks locate documents: pass their chunk_ids as anchor_chunk_ids to read the complete chunk text — including surrounding context that match snippets and graph triples omit. Cover a document by chaining anchored calls — each reply's doc_chunks_total tells you what is still uncovered — until the span you need is fetched.
 
-The FIRST call for a set of anchors returns that set's COMPILED statements instead of the passage: one atomic fact per line, the verbatim quote it was compiled from, and a ref handle for citing the source chunk. If those statements already state the fact you need, answer from them and cite their ref handles — no second call, no passage. If they do not, or you need the surrounding context, call again with raw=true to read the original text. Match snippets and graph triples never carry enough to cite on their own.
+The FIRST call for a set of anchors returns, for each anchor, its COMPILED statements when that chunk has any — one atomic fact per line, the verbatim quote it was compiled from, and a ref handle for citing the source chunk — and the chunk's original text when it has none. That is the whole of what these chunks state, so judge on it directly: if the statements already state the fact you need, answer from them and cite their ref handles; if not, or you need the surrounding context, call again with raw=true to read the original text of every anchor. Match snippets and graph triples never carry enough to cite on their own.
 
 ## Input
 - doc_id: REQUIRED — the document id to read (use the doc_id value from locate-tool output).
 - anchor_chunk_ids: REQUIRED — one or more chunk_ids from locate output (at most 20). The read covers these chunks (and their neighborhoods, see below).
 - number_neighbors (optional, default 0): 0 fetches ONLY the anchored chunks themselves; N>0 centers a window of N chunks before AND after EVERY anchor (overlapping windows merge).
-- raw (optional, default false): false returns the compiled statements of these anchors first (see above); true reads the original text.
+- raw (optional, default false): false returns each anchor as its compiled statements, or as its text when it has none (see above); true reads the original text of every anchor.
 
 ## Output (XML)
 Root <chunks> element carries doc_id, fetched, anchored_chunk_ids and number_neighbors; whenever number_neighbors > 0 it also carries doc_chunks_total — the document's total readable-chunk count — so you can tell whether the returned window covered the entire document. Each chunk carries chunk_id/doc_id/page_num/chunk_index/dataset_id/doc_name plus a <content> element with the FULL original text in reading order; doc_name is the doc engine's document name (the docnm field — typically the source file name such as 66090.md). Graph relation/entity chunks are excluded.`
@@ -192,14 +192,22 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 			listChunksMaxAnchors, len(anchors))
 	}
 
-	// Claim-first, raw only when it is still needed: this is the most expensive
-	// call the loop can make - it pays for whole chunks of prose - so the
-	// compiled statements of exactly these chunks are offered once before the
-	// text is fetched. A caller that finds them sufficient answers from them and
-	// never pays for the passage; a caller that does not re-calls with raw=true.
+	// Claim-first: a chunk that carries compiled statements is represented by
+	// them, so the read returns those statements instead of the passage. A chunk
+	// that carries none is represented by its text, in the SAME answer - one call
+	// is always enough for "claims where they exist, the chunk itself where they
+	// do not". A caller that finds the statements insufficient re-calls with
+	// raw=true and gets the passage.
+	var claimBlock string
+	readAnchors := anchors
 	if !args.Raw {
-		if gated := compiledEvidenceGate(ctx, anchors); gated != "" {
-			return gated, nil
+		block, covered := compiledEvidenceGate(ctx, anchors)
+		if block != "" {
+			claimBlock = block
+			readAnchors = anchorsWithout(anchors, covered)
+			if len(readAnchors) == 0 {
+				return claimBlock, nil
+			}
 		}
 	} else {
 		// Paired with the gate's own line, this is the hit/miss ratio of the
@@ -248,9 +256,9 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 
 	switch {
 	case directAnchorsOnly:
-		selectIDs = dedupStrings(anchors)
+		selectIDs = dedupStrings(readAnchors)
 		anchorMeta = fmt.Sprintf(` anchored_chunk_ids=%q number_neighbors="0"`,
-			xmlEscape(strings.Join(anchors, ",")))
+			xmlEscape(strings.Join(readAnchors, ",")))
 
 	default:
 		index, err := dr.ListDocumentChunkIndex(ctx, scope)
@@ -267,7 +275,7 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 		}
 		var missing []string
 		mark := make([]bool, len(index))
-		for _, a := range anchors {
+		for _, a := range readAnchors {
 			pos, ok := posOf[a]
 			if !ok {
 				missing = append(missing, a)
@@ -278,7 +286,7 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 			}
 		}
 		anchorMeta = fmt.Sprintf(` anchored_chunk_ids=%q doc_chunks_total="%d" number_neighbors="%d"`,
-			xmlEscape(strings.Join(anchors, ",")), len(index), nb)
+			xmlEscape(strings.Join(readAnchors, ",")), len(index), nb)
 		// FAIL FAST on unresolved anchors: an anchor absent from this
 		// document means the caller cited an id that does not exist here, so
 		// there is nothing trustworthy to expand a window around. Report it
@@ -290,10 +298,10 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 		// verified.
 		if len(missing) > 0 {
 			common.WarnCtx(ctx, "agentic_rag: list_chunks unresolved anchors",
-				zap.String("doc_id", docID), zap.Strings("anchors", anchors),
+				zap.String("doc_id", docID), zap.Strings("anchors", readAnchors),
 				zap.Strings("missing", missing))
-			return formatChunksXML(ctx, docID, nil, anchorMeta,
-				unresolvedNotice(missing, len(missing) == len(anchors))), nil
+			return claimBlock + formatChunksXML(ctx, docID, nil, anchorMeta,
+				unresolvedNotice(missing, len(missing) == len(readAnchors))), nil
 		}
 		for i, m := range mark {
 			if m {
@@ -321,12 +329,13 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 		// caller (the model) needs to SEE the outcome to judge it. Report it
 		// in-band instead.
 		common.WarnCtx(ctx, "agentic_rag: list_chunks found no text for the anchors",
-			zap.String("doc_id", docID), zap.Strings("anchors", anchors))
-		return chunksXMLNoText(docID, anchorMeta, len(selectIDs)), nil
+			zap.String("doc_id", docID), zap.Strings("anchors", readAnchors))
+		return claimBlock + chunksXMLNoText(docID, anchorMeta, len(selectIDs)), nil
 	}
 
 	common.DebugCtx(ctx, "agentic_rag: list_chunks result",
 		zap.Int("anchors", len(anchors)),
+		zap.Int("read_as_text", len(readAnchors)),
 		zap.Int("neighbors", nb),
 		zap.Bool("direct_anchors_only", directAnchorsOnly),
 		zap.Int("selected", len(selectIDs)),
@@ -336,7 +345,26 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 
 	// Only the nb=0 path reaches here: the nb>0 path returns early on
 	// unresolved anchors, and its empty case is reported by chunksXMLNoText.
-	return formatChunksXML(ctx, docID, chunks, anchorMeta, ""), nil
+	return claimBlock + formatChunksXML(ctx, docID, chunks, anchorMeta, ""), nil
+}
+
+// anchorsWithout returns the anchors that are not in keep, preserving order.
+func anchorsWithout(anchors, keep []string) []string {
+	if len(keep) == 0 {
+		return anchors
+	}
+	kept := make(map[string]struct{}, len(keep))
+	for _, id := range keep {
+		kept[id] = struct{}{}
+	}
+	out := make([]string, 0, len(anchors))
+	for _, a := range anchors {
+		if _, ok := kept[a]; ok {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // resolveDocDatasetID returns the knowledge-base id that owns the given document,

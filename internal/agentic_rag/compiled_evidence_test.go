@@ -78,8 +78,8 @@ func TestPrefetchSearchesThenLooksUpClaims(t *testing.T) {
 	})
 	installClaimLookup(t, func(_ context.Context, _ string, _ []string, chunkIDs, _ []string, limit int) []claimHit {
 		gotChunks = append([]string(nil), chunkIDs...)
-		if limit < compiledPrefetchClaims {
-			t.Errorf("lookup limit = %d, want at least %d", limit, compiledPrefetchClaims)
+		if limit < len(chunkIDs) {
+			t.Errorf("lookup limit = %d, want at least one row per chunk (%d)", limit, len(chunkIDs))
 		}
 		return []claimHit{
 			{chunkID: "c2", docID: "d2", name: "Acme employs 900 people", quote: "a workforce of 900"},
@@ -108,6 +108,38 @@ func TestPrefetchSearchesThenLooksUpClaims(t *testing.T) {
 	}
 	if len(pf.chunks) != 2 {
 		t.Errorf("prefetch must report its anchors, got %v", pf.chunks)
+	}
+}
+
+// TestPrefetchServesDedupedChunksOnlyAsClaims: a chunk whose statement another
+// chunk of the same page already stated is deduped off the claim page, but it
+// still HAS claims - so its raw text must not be appended as if it carried none.
+// Otherwise the same fact is offered twice, once as a statement and once as prose.
+func TestPrefetchServesDedupedChunksOnlyAsClaims(t *testing.T) {
+	installClaimProbe(t, true)
+	installAnchorSearch(t, func(context.Context, string, []string, []string, string, int) []runtime.RetrievalChunk {
+		return chunkPage("c1", "c2")
+	})
+	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
+		return []claimHit{
+			{chunkID: "c1", docID: "d1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
+			{chunkID: "c2", docID: "d2", name: "ACME was founded in 1994", quote: "duplicate of c1"},
+		}
+	})
+	ctx := WithEvidenceRegistry(context.Background(), NewEvidenceRegistry())
+
+	pf := prefetchCompiledEvidence(ctx, "tenant-1", []string{"kb1"}, questionMessages("when was Acme founded"))
+
+	if len(pf.claims) != 1 {
+		t.Fatalf("claims = %d, want the deduped page of 1: %+v", len(pf.claims), pf.claims)
+	}
+	if !strings.Contains(pf.evidence, "Acme was founded in 1994") {
+		t.Errorf("the surviving statement must be on the page, got:\n%s", pf.evidence)
+	}
+	for _, body := range []string{"body of c1", "body of c2"} {
+		if strings.Contains(pf.evidence, body) {
+			t.Errorf("chunk %q already has claims and must not be served as raw text:\n%s", body, pf.evidence)
+		}
 	}
 }
 
@@ -158,11 +190,10 @@ func TestPrefetchWithoutAnchorChunks(t *testing.T) {
 	}
 }
 
-// TestCompiledClaimsDedupedAndSpentPerAnchorRound: the page is deduped by
-// statement, the best-ranked anchor leads with its best-covering claim, the
-// second slot goes to the next anchor, and only then does the best anchor take
-// its second claim.
-func TestCompiledClaimsDedupedAndSpentPerAnchorRound(t *testing.T) {
+// TestCompiledClaimsDedupedAndGroupedByAnchor: the page is deduped by
+// statement, every claim of every chunk is kept, and the best-ranked anchor's
+// claims all lead (closest to the question first) before the next anchor's.
+func TestCompiledClaimsDedupedAndGroupedByAnchor(t *testing.T) {
 	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
 		return []claimHit{
 			{chunkID: "c2", name: "Acme employs 900 people", quote: "a workforce of 900"},
@@ -171,18 +202,18 @@ func TestCompiledClaimsDedupedAndSpentPerAnchorRound(t *testing.T) {
 			{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
 		}
 	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1", "c2"}, nil, "where was Acme founded and when", 4, compiledAnchorDepth)
+	claims, _ := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1", "c2"}, "where was Acme founded and when")
 	if len(claims) != 3 {
 		t.Fatalf("claims = %d, want the 3 distinct anchored claims: %+v", len(claims), claims)
 	}
 	if claims[0].name != "Acme was founded in 1994" {
 		t.Errorf("the best-ranked anchor must lead with its best-covering claim, got %q", claims[0].name)
 	}
-	if claims[1].chunkID != "c2" {
-		t.Errorf("the second slot must go to the next anchor, got %q", claims[1].chunkID)
+	if claims[1].chunkID != "c1" {
+		t.Errorf("the best anchor's remaining claims must stay with it, got %q", claims[1].chunkID)
 	}
-	if claims[2].chunkID != "c1" {
-		t.Errorf("the third slot must return to the best anchor for depth, got %q", claims[2].chunkID)
+	if claims[2].chunkID != "c2" {
+		t.Errorf("the next anchor's claims must follow the best anchor's, got %q", claims[2].chunkID)
 	}
 }
 
@@ -194,7 +225,7 @@ func TestCompiledClaimsKeepDifferentlyWordedClaim(t *testing.T) {
 	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
 		return []claimHit{{chunkID: "c1", name: "Something unrelated entirely", quote: "x"}}
 	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, nil, "when was Acme founded", 4, compiledAnchorDepth)
+	claims, _ := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
 	if len(claims) != 1 {
 		t.Fatalf("the anchored claim must survive regardless of wording, got %+v", claims)
 	}
@@ -203,17 +234,14 @@ func TestCompiledClaimsKeepDifferentlyWordedClaim(t *testing.T) {
 // TestCompiledClaimsReachSecondHopAnchor: the fact that answers a second hop is
 // often compiled from a mid-ranked chunk, names the second-hop entity rather
 // than the question's terms, and is only the SECOND best-covering claim of that
-// chunk. A rank-ordered budget lets the top anchors consume the whole page: the
-// traced FRAMES case had 41 claim rows on the top three anchors of a 30-chunk
-// page, so the 12-claim budget stopped before anchor #5, whose second claim is
-// "Robinson made his MLB debut on April 15, 1947" (the first is a 1956
-// appearance, which scores higher against the question).
+// chunk. Nothing is capped, so a mid-ranked anchor's second claim is on the page
+// even when the top three anchors carry eight claims each.
 func TestCompiledClaimsReachSecondHopAnchor(t *testing.T) {
 	anchors := []string{"c0", "c1", "c2", "c3", "c4", "c5"}
 	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
 		rows := make([]claimHit, 0, 26)
-		// Eight World-Series claims per top anchor: enough to spend a 12-claim
-		// budget before anchor #5 is reached, exactly as the store returns them.
+		// Eight claims on each of the three top anchors: more than any old
+		// per-result budget, exactly as the store returns them.
 		for _, anchor := range []string{"c0", "c1", "c2"} {
 			for i := 0; i < 8; i++ {
 				rows = append(rows, claimHit{
@@ -236,11 +264,10 @@ func TestCompiledClaimsReachSecondHopAnchor(t *testing.T) {
 			})
 		return rows
 	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, anchors, nil,
-		"As of August 2024, the Atlanta Braves beat the Houston Astros the last time they won the World Series. How many years before this did Jackie Robinson join the Brooklyn Dodgers?",
-		compiledPrefetchClaims, compiledAnchorDepth)
-	if len(claims) != compiledPrefetchClaims {
-		t.Fatalf("claims = %d, want the budget %d", len(claims), compiledPrefetchClaims)
+	claims, _ := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, anchors,
+		"As of August 2024, the Atlanta Braves beat the Houston Astros the last time they won the World Series. How many years before this did Jackie Robinson join the Brooklyn Dodgers?")
+	if len(claims) != 26 {
+		t.Fatalf("claims = %d, want every claim of every anchor (26)", len(claims))
 	}
 	found := false
 	for _, c := range claims {
@@ -267,16 +294,19 @@ func TestCompiledEvidenceGateWithholdsRawTextOnce(t *testing.T) {
 	ctx = WithQuery(ctx, "when was Acme founded")
 	ctx = withCompiledRun(ctx, "tenant-1", []string{"kb1"})
 
-	gated := compiledEvidenceGate(ctx, []string{"c1"})
+	gated, covered := compiledEvidenceGate(ctx, []string{"c1"})
 	if gated == "" {
 		t.Fatal("first read attempt must be answered with compiled evidence")
+	}
+	if len(covered) != 1 || covered[0] != "c1" {
+		t.Errorf("the gate must report the chunks it represented, got %v", covered)
 	}
 	for _, want := range []string{"<compiled_evidence", "Acme was founded in 1994", "raw=true", "ref=0"} {
 		if !strings.Contains(gated, want) {
 			t.Errorf("gate block missing %q:\n%s", want, gated)
 		}
 	}
-	if again := compiledEvidenceGate(ctx, []string{"c1"}); again != "" {
+	if again, _ := compiledEvidenceGate(ctx, []string{"c1"}); again != "" {
 		t.Fatalf("the same statements must not be offered twice, got:\n%s", again)
 	}
 }
@@ -286,7 +316,7 @@ func TestCompiledEvidenceGateWithholdsRawTextOnce(t *testing.T) {
 func TestCompiledEvidenceGateEmptyWithoutClaimRows(t *testing.T) {
 	installClaimProbe(t, false)
 	ctx := withCompiledRun(context.Background(), "tenant-1", []string{"kb1"})
-	if gated := compiledEvidenceGate(ctx, []string{"c1"}); gated != "" {
+	if gated, covered := compiledEvidenceGate(ctx, []string{"c1"}); gated != "" || len(covered) != 0 {
 		t.Fatalf("a claim-less corpus must not gate anything, got:\n%s", gated)
 	}
 }
@@ -388,7 +418,7 @@ func TestClaimsAttributedToTheMatchedAnchor(t *testing.T) {
 			quote:          "Acme, founded in 1994",
 		}}
 	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1", "c2"}, nil, "when was Acme founded", 4, compiledAnchorDepth)
+	claims, _ := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1", "c2"}, "when was Acme founded")
 	if len(claims) != 1 {
 		t.Fatalf("claims = %d, want 1: %+v", len(claims), claims)
 	}
@@ -407,7 +437,7 @@ func TestClaimsOffEveryAnchorAreDropped(t *testing.T) {
 			{docID: "d1", chunkID: "c1", sourceChunkIDs: []string{"c1"}, name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
 		}
 	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, nil, "when was Acme founded", 4, compiledAnchorDepth)
+	claims, _ := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"}, []string{"c1"}, "when was Acme founded")
 	if len(claims) != 1 {
 		t.Fatalf("only the anchored claim may survive, got %+v", claims)
 	}
@@ -579,105 +609,60 @@ func TestCompiledEvidenceNoticeRanksOnThisCall(t *testing.T) {
 	}
 }
 
-// installDocClaimLookup replaces the document-scoped claim lookup.
-func installDocClaimLookup(t *testing.T, fn func(context.Context, string, []string, []string, string, []string, int) []claimHit) {
-	t.Helper()
-	prev := compiledClaimsByDoc
-	compiledClaimsByDoc = fn
-	t.Cleanup(func() { compiledClaimsByDoc = prev })
-}
-
-// TestCompiledClaimsReachSiblingChunk: the answer's own document was accepted by
-// the retrieval, but the fact sits on a chunk the retrieval did not anchor on.
-// A chunk-anchored page structurally cannot hold it, so the document's other
-// claims fill the leftover budget - after the anchored ones, never before.
-func TestCompiledClaimsReachSiblingChunk(t *testing.T) {
-	installClaimLookup(t, func(_ context.Context, _ string, _ []string, chunkIDs, _ []string, _ int) []claimHit {
-		if len(chunkIDs) == 0 {
-			return nil
-		}
-		return []claimHit{
-			{chunkID: "c1", docID: "d1", name: "The locomotive was built in 1921", quote: "built in 1921"},
-		}
+// TestPrefetchKeepsEveryClaimOfAnAnchor: the page is the retrieved chunks' own
+// claims, so a chunk that states twenty facts contributes twenty rows. Capping a
+// chunk at its top-ranked claims would decide, before the verdict, which of its
+// statements count as evidence.
+func TestPrefetchKeepsEveryClaimOfAnAnchor(t *testing.T) {
+	installClaimProbe(t, true)
+	installAnchorSearch(t, func(context.Context, string, []string, []string, string, int) []runtime.RetrievalChunk {
+		return chunkPage("c1")
 	})
-	var gotDocs []string
-	installDocClaimLookup(t, func(_ context.Context, _ string, _ []string, docIDs []string, need string, _ []string, _ int) []claimHit {
-		if need == "" {
-			t.Error("the doc leg must be asked the caller's need text")
-		}
-		gotDocs = append([]string(nil), docIDs...)
-		return []claimHit{
-			// Same document, a chunk the retrieval never anchored on: this is the
-			// row that answers the question.
-			{chunkID: "c9", docID: "d1", name: "The locomotive's top speed was 96 km/h", quote: "top speed 96 km/h"},
-			// Deduped against the anchored claim above.
-			{chunkID: "c1", docID: "d1", name: "The locomotive was built in 1921", quote: "built in 1921"},
-			// A document that was NOT accepted by the retrieval.
-			{chunkID: "c7", docID: "d9", name: "Unrelated statement about another document", quote: "x"},
-		}
-	})
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"},
-		[]string{"c1", "c2"}, []string{"d1", "d2"}, "how fast was the locomotive built in 1921", 4, compiledAnchorDepth)
-
-	if len(gotDocs) != 2 || gotDocs[0] != "d1" {
-		t.Fatalf("the doc leg must be asked about the anchors' documents, got %v", gotDocs)
-	}
-	if len(claims) == 0 || claims[0].chunkID != "c1" {
-		t.Fatalf("the anchored claim must lead the page, got %+v", claims)
-	}
-	found := false
-	for _, c := range claims {
-		if c.chunkID == "c9" {
-			found = true
-		}
-		if c.docID == "d9" {
-			t.Errorf("a document the retrieval rejected must not enter the page: %+v", c)
-		}
-	}
-	if !found {
-		t.Errorf("the sibling-chunk claim of an accepted document must reach the page, got %+v", claims)
-	}
-}
-
-// TestCompiledClaimsReserveRoomForSiblingChunks: the doc-scoped pool cannot be
-// starved by anchored claims, and cannot take over the page either.
-func TestCompiledClaimsReserveRoomForSiblingChunks(t *testing.T) {
-	installClaimLookup(t, func(_ context.Context, _ string, _ []string, _ []string, _ []string, _ int) []claimHit {
-		rows := make([]claimHit, 0, 30)
-		for i := 0; i < 30; i++ {
+	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
+		rows := make([]claimHit, 0, 20)
+		for i := 0; i < 20; i++ {
 			rows = append(rows, claimHit{
 				chunkID: "c1", docID: "d1",
-				name:  fmt.Sprintf("anchored statement number %d about the locomotive", i),
-				quote: "q",
+				name:  fmt.Sprintf("Leonardo completed work %d", i+1),
+				quote: fmt.Sprintf("work %d", i+1),
 			})
 		}
 		return rows
 	})
-	installDocClaimLookup(t, func(_ context.Context, _ string, _ []string, _ []string, _ string, _ []string, _ int) []claimHit {
-		rows := make([]claimHit, 0, 12)
-		for i := 0; i < 12; i++ {
-			rows = append(rows, claimHit{
-				chunkID: fmt.Sprintf("s%d", i), docID: "d1",
-				name:  fmt.Sprintf("sibling statement number %d", i),
-				quote: "q",
-			})
-		}
-		return rows
+	ctx := WithEvidenceRegistry(context.Background(), NewEvidenceRegistry())
+
+	pf := prefetchCompiledEvidence(ctx, "tenant-1", []string{"kb1"}, questionMessages("what did Leonardo work on"))
+	if len(pf.claims) != 20 {
+		t.Fatalf("claims = %d, want every claim of the anchor (20)", len(pf.claims))
+	}
+	if got := strings.Count(pf.evidence, "[claim]"); got != 20 {
+		t.Errorf("evidence lines = %d, want 20", got)
+	}
+}
+
+// TestPrefetchServesClaimlessChunkAsText: an anchor that carries no compiled
+// claims is on the page as its own text. Leaving it out would ask the verdict
+// whether the evidence answers the question while withholding one of the
+// retrieved chunks.
+func TestPrefetchServesClaimlessChunkAsText(t *testing.T) {
+	installClaimProbe(t, true)
+	installAnchorSearch(t, func(context.Context, string, []string, []string, string, int) []runtime.RetrievalChunk {
+		return chunkPage("c1", "c2")
 	})
-	const limit = 12
-	claims := compiledClaimsForChunks(context.Background(), "tenant-1", []string{"kb1"},
-		[]string{"c1"}, []string{"d1"}, "the locomotive", limit, 1)
-	if len(claims) != limit {
-		t.Fatalf("page = %d claims, want the budget %d", len(claims), limit)
+	installClaimLookup(t, func(context.Context, string, []string, []string, []string, int) []claimHit {
+		return []claimHit{{chunkID: "c1", docID: "d1", name: "Acme was founded in 1994", quote: "founded in 1994"}}
+	})
+	ctx := WithEvidenceRegistry(context.Background(), NewEvidenceRegistry())
+
+	pf := prefetchCompiledEvidence(ctx, "tenant-1", []string{"kb1"}, questionMessages("when was Acme founded"))
+	if len(pf.claims) != 1 {
+		t.Fatalf("claims = %d, want the one claim c1 carries", len(pf.claims))
 	}
-	sibling := 0
-	for _, c := range claims {
-		if strings.HasPrefix(c.chunkID, "s") {
-			sibling++
-		}
+	if !strings.Contains(pf.evidence, "Acme was founded in 1994") {
+		t.Errorf("claimed chunk must be served as its statements:\n%s", pf.evidence)
 	}
-	if sibling != limit/3 {
-		t.Errorf("reserved sibling slots = %d, want %d", sibling, limit/3)
+	if !strings.Contains(pf.evidence, "body of c2") {
+		t.Errorf("claim-less chunk must be served as its text:\n%s", pf.evidence)
 	}
 }
 

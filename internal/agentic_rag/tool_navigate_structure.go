@@ -263,6 +263,50 @@ func claimQueryVector(ctx context.Context, tenantID, text string) (vec []float64
 	return nil
 }
 
+// claimLegSearch runs ONE leg of a claim recall inside an already-fixed query
+// scope (index, datasets, filter). Both the per-document drilldown and the
+// pre-loop prefetch build it, so neither can drift to a different signal.
+type claimLegSearch func(matchExprs []interface{}) []claimHit
+
+// fusedClaimLegs recalls claims with BOTH legs and fuses them by reciprocal
+// rank: the dense leg over the question's own vector, the lexical leg over its
+// terms.
+//
+// It is one function because the two callers must not diverge: a lexical-only
+// recall ranks a second-hop statement against the question's literal words, and
+// a multi-hop statement names the hop's own entity, so it scores near zero there
+// ("birth of X" does not match "X was born on"). The dense leg is what makes the
+// same statement reachable, and a lexical-only caller is exactly the caller that
+// finds nothing while the fact sits in an accepted document.
+func fusedClaimLegs(ctx context.Context, search claimLegSearch, text string, qvec []float64, pool int) []claimHit {
+	var denseLeg, textLeg []claimHit
+	if len(qvec) > 0 {
+		denseLeg = search([]interface{}{&enginetypes.MatchDenseExpr{
+			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(qvec)),
+			EmbeddingData:     qvec,
+			EmbeddingDataType: "float",
+			DistanceType:      "cosine",
+			TopN:              pool,
+			ExtraOptions:      map[string]interface{}{"similarity": navClaimDenseSimilarity},
+		}})
+	}
+	if strings.TrimSpace(text) != "" {
+		textLeg = search([]interface{}{&enginetypes.MatchTextExpr{
+			Fields:       []string{"content_ltks", "content_sm_ltks"},
+			MatchingText: text,
+			TopN:         pool,
+		}})
+	}
+	common.DebugCtx(ctx, "claim recall legs",
+		zap.Int("dense", len(denseLeg)),
+		zap.Int("text", len(textLeg)),
+		zap.Bool("query_vector", len(qvec) > 0))
+	if len(denseLeg) == 0 && len(textLeg) == 0 {
+		return nil
+	}
+	return rrfFuse(navClaimRRFK, pool, denseLeg, textLeg)
+}
+
 // structureRow is one compiled-structure row: the doc-store fields the structure
 // reader reads.
 type structureRow struct {
@@ -400,27 +444,10 @@ func (engineStructureReader) ReadClaims(ctx context.Context, tenantID, kbID stri
 		return hits
 	}
 
-	var denseLeg, textLeg []claimHit
-	if len(qvec) > 0 {
-		denseLeg = leg([]interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(qvec)),
-			EmbeddingData:     qvec,
-			EmbeddingDataType: "float",
-			DistanceType:      "cosine",
-			TopN:              pool,
-			ExtraOptions:      map[string]interface{}{"similarity": navClaimDenseSimilarity},
-		}})
-	}
-	textLeg = leg([]interface{}{&enginetypes.MatchTextExpr{
-		Fields:       []string{"content_ltks", "content_sm_ltks"},
-		MatchingText: text,
-		TopN:         pool,
-	}})
-	if len(denseLeg) == 0 && len(textLeg) == 0 {
+	fused := fusedClaimLegs(ctx, leg, text, qvec, pool)
+	if len(fused) == 0 {
 		return nil, nil
 	}
-
-	fused := rrfFuse(navClaimRRFK, pool, denseLeg, textLeg)
 	question := claimTokens(text)
 	out := make([]claimHit, 0, len(fused))
 	for _, h := range fused {
