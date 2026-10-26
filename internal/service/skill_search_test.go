@@ -64,8 +64,13 @@ func (e *skillSearchEngine) Search(_ context.Context, req *types.SearchRequest) 
 	return &types.SearchResult{Chunks: e.searchResults, Total: int64(len(e.searchResults))}, nil
 }
 
-// setupSkillSearchTenant wires an in-memory DB where userID owns tenantID via
-// the default ("default") skill space path (requireOwnedTenantID).
+// setupSkillSearchTenant wires an in-memory DB for user "owner" resolving to
+// its own tenant via the default ("default") skill space path.
+//
+// The tenant ID is intentionally == the user ID ("owner"). In CE the resolver
+// walks the owner-role membership below; in EE the resolver returns the user's
+// personal tenant whose ID is the user ID. Keeping them equal makes the test
+// pass under either policy.
 func setupSkillSearchTenant(t *testing.T) {
 	t.Helper()
 	db := setupServiceTestDB(t)
@@ -75,23 +80,21 @@ func setupSkillSearchTenant(t *testing.T) {
 	pushServiceDB(t, db)
 
 	active := string(entity.StatusValid)
-	// A user-tenant membership with RoleOwner makes requireOwnedTenantID
-	// resolve userID -> tenantID. The user's own tenant must exist too.
-	if err := db.Create(&entity.Tenant{ID: "tenant-1", Name: sptr("tenant-1")}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: "owner", Name: sptr("owner")}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
 	if err := db.Create(&entity.UserTenant{
-		ID: "skill-search-membership", UserID: "owner", TenantID: "tenant-1",
+		ID: "skill-search-membership", UserID: "owner", TenantID: "owner",
 		Role: "owner", Status: &active,
 	}).Error; err != nil {
 		t.Fatalf("create membership: %v", err)
 	}
 }
 
-// saveSkillSearchConfig inserts an active config row for tenant-1/default.
+// saveSkillSearchConfig inserts an active config row for owner/default.
 func saveSkillSearchConfig(t *testing.T, config *entity.SkillSearchConfig) {
 	t.Helper()
-	config.TenantID = "tenant-1"
+	config.TenantID = "owner"
 	config.SpaceID = normalizeSpaceID(config.SpaceID)
 	config.Status = "1"
 	if config.ID == "" {
@@ -106,7 +109,7 @@ func saveSkillSearchConfig(t *testing.T, config *entity.SkillSearchConfig) {
 func lastSkillConfigID(t *testing.T) string {
 	t.Helper()
 	var config entity.SkillSearchConfig
-	if err := dao.DB.Where("tenant_id = ? AND space_id = ? AND status = ?", "tenant-1", "default", "1").
+	if err := dao.DB.Where("tenant_id = ? AND space_id = ? AND status = ?", "owner", "default", "1").
 		First(&config).Error; err != nil {
 		t.Fatalf("load config: %v", err)
 	}
@@ -615,7 +618,7 @@ func TestUpdateConfigCreatesThenUpdatesSingleActiveConfig(t *testing.T) {
 
 	var activeCount int64
 	if err := dao.DB.Model(&entity.SkillSearchConfig{}).
-		Where("tenant_id = ? AND space_id = ? AND status = ?", "tenant-1", "default", "1").
+		Where("tenant_id = ? AND space_id = ? AND status = ?", "owner", "default", "1").
 		Count(&activeCount).Error; err != nil {
 		t.Fatalf("count active configs: %v", err)
 	}
@@ -660,7 +663,7 @@ func TestGetConfigWithEmbdIDCreatesMissingConfig(t *testing.T) {
 	}
 
 	var stored entity.SkillSearchConfig
-	if err := dao.DB.Where("tenant_id = ? AND space_id = ?", "tenant-1", "default").First(&stored).Error; err != nil {
+	if err := dao.DB.Where("tenant_id = ? AND space_id = ?", "owner", "default").First(&stored).Error; err != nil {
 		t.Fatalf("config row missing after GetOrCreate: %v", err)
 	}
 	if stored.EmbdID != "embd-1" {
