@@ -17,6 +17,7 @@ package infinity
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -276,58 +277,6 @@ func TestTransformedCompiledRowNamesOnlyMappingColumns(t *testing.T) {
 			continue
 		}
 		t.Errorf("transformed key %q is not a column of conf/infinity_mapping.json", k)
-	}
-}
-
-// pptxRowsForTransform builds the post-indexdoc rows a Presentation-template
-// upload produces on Infinity. The PPTX parser emits slide_number on every
-// slide item and media_order on every image item (as the docx and html
-// parsers do for their media); ck_type/image are stripped as pipeline-only
-// bookkeeping, but the ordinals ride ChunkDoc.Extra to the write boundary and
-// transformChunkFields passes them through as top-level columns.
-func pptxRowsForTransform() map[string]map[string]interface{} {
-	base := func() map[string]interface{} {
-		return map[string]interface{}{
-			"id":                  "c1",
-			"doc_id":              "d1",
-			"kb_id":               "kb1",
-			"content_with_weight": "slide body",
-			"create_time":         "2026-10-13 00:00:00",
-			"q_3_vec":             []float64{0.1, 0.2, 0.3},
-		}
-	}
-	slideRow := base()
-	slideRow["doc_type_kwd"] = "text"
-	slideRow["slide_number"] = 3
-	imageRow := base()
-	imageRow["doc_type_kwd"] = "image"
-	imageRow["slide_number"] = 3
-	imageRow["media_order"] = 2
-	return map[string]map[string]interface{}{
-		"slide": slideRow,
-		"image": imageRow,
-	}
-}
-
-// TestTransformedParserMediaRowNamesOnlyMappingColumns is the regression test
-// for the reported PPTX-on-Infinity failure:
-//
-//	InfinityException(3013, Failed to insert data: INSERT: Column slide_number
-//	not found in table ragflow_<tenant>_<dataset>)
-//
-// Every field the parser-media rows persist this way must be a column of
-// conf/infinity_mapping.json, or Infinity rejects the whole insert batch
-// while Elasticsearch's dynamic mapping silently accepts the same rows.
-func TestTransformedParserMediaRowNamesOnlyMappingColumns(t *testing.T) {
-	columns := chunkMappingColumns(t)
-	vectorColumn := regexp.MustCompile(`^q_\d+_vec$`)
-	for name, row := range pptxRowsForTransform() {
-		for k := range transformChunkFields(row, nil) {
-			if columns[k] || vectorColumn.MatchString(k) {
-				continue
-			}
-			t.Errorf("%s row: transformed key %q is not a column of conf/infinity_mapping.json", name, k)
-		}
 	}
 }
 
@@ -1092,5 +1041,44 @@ func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
 	}
 	if got := sorted([]map[string]interface{}{unset, withPage}); !reflect.DeepEqual(got, want) {
 		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
+	}
+}
+
+// TestMediaOrdinalColumnsMatchMapping pins the legacy-table reconcile
+// definitions to conf/infinity_mapping.json: ensureMediaOrdinalColumns must
+// add exactly the columns — name, type, and default — that newly created
+// tables get from the mapping, or a legacy table would end up with a column
+// that diverges from fresh ones (#20500).
+func TestMediaOrdinalColumnsMatchMapping(t *testing.T) {
+	path, err := utility.FindConfFileInProject("infinity_mapping.json")
+	if err != nil || path == nil {
+		t.Fatalf("locate infinity_mapping.json: %v", err)
+	}
+	data, err := os.ReadFile(*path)
+	if err != nil {
+		t.Fatalf("read %s: %v", *path, err)
+	}
+	var columns map[string]struct {
+		Type    string      `json:"type"`
+		Default interface{} `json:"default"`
+	}
+	if err := json.Unmarshal(data, &columns); err != nil {
+		t.Fatalf("parse %s: %v", *path, err)
+	}
+
+	// ensureMediaOrdinalColumns draws its AddColumns entries from the shared
+	// mediaOrdinalColumns definitions; pin each one to the mapping so a
+	// legacy table ends up with exactly the columns fresh tables have.
+	for _, col := range mediaOrdinalColumns {
+		declared, ok := columns[col.Name]
+		if !ok {
+			t.Fatalf("%s is not declared in conf/infinity_mapping.json; the reconcile would add a column fresh tables do not have", col.Name)
+		}
+		if declared.Type != col.DataType {
+			t.Errorf("%s reconcile type = %q, mapping declares %q", col.Name, col.DataType, declared.Type)
+		}
+		if fmt.Sprint(declared.Default) != fmt.Sprint(col.Default) {
+			t.Errorf("%s reconcile default = %v, mapping declares %v", col.Name, col.Default, declared.Default)
+		}
 	}
 }

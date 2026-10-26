@@ -48,3 +48,35 @@ func TestParserIDFromChunks(t *testing.T) {
 		})
 	}
 }
+
+// TestBatchNeedsMediaOrdinalColumns pins the gate for the media ordinal
+// reconcile on the insert path: only a batch that actually carries
+// slide_number or media_order (the PPTX slide/image rows) should reconcile
+// the columns onto a legacy table, in any batch position.
+func TestBatchNeedsMediaOrdinalColumns(t *testing.T) {
+	tests := []struct {
+		name   string
+		chunks []map[string]interface{}
+		want   bool
+	}{
+		{name: "no chunks", chunks: nil, want: false},
+		{name: "plain chunk", chunks: []map[string]interface{}{{"id": "c1"}}, want: false},
+		{name: "slide row", chunks: []map[string]interface{}{{"slide_number": 3}}, want: true},
+		{name: "image row", chunks: []map[string]interface{}{{"media_order": 2}}, want: true},
+		{
+			name: "slide row after a plain chunk",
+			chunks: []map[string]interface{}{
+				{"id": "c1"},
+				{"id": "c2", "slide_number": 1},
+			},
+			want: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := batchNeedsMediaOrdinalColumns(tc.chunks); got != tc.want {
+				t.Fatalf("batchNeedsMediaOrdinalColumns() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
