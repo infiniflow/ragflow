@@ -52,14 +52,13 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 	"strings"
 	"testing"
 	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
-
-	"gorm.io/gorm"
 )
 
 // TestStagehandRuntime_Extract is the single happy-path integration
@@ -183,8 +182,8 @@ func cacheDirGuess() string {
 	return filepath.Join(home, ".cache", "stagehand", "lib")
 }
 
-// TestBrowser_E2E_Extract exercises Browser's extraction against a local page.
-// Requires OPENAI_* credentials and Chrome.
+// TestBrowser_E2E_Extract exercises Browser's agent through the shared model
+// driver against a local page. Requires OPENAI_* credentials and Chrome.
 func TestBrowser_E2E_Extract(t *testing.T) {
 	apiKey := common.GetEnv(common.EnvOpenAIAPIKey)
 	baseURL := common.GetEnv(common.EnvOpenAIBaseURL)
@@ -206,14 +205,16 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	previousLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, tenantID, modelRef string) (string, string, string, string, error) {
+	driver := models.NewOpenAIAPICompatibleModel(map[string]string{"default": strings.TrimRight(baseURL, "/")}, models.URLSuffix{Chat: "chat/completions"})
+	chatModel := models.NewChatModel(driver, &model, &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+	previousFactory := browserModelFactory
+	SetBrowserModelFactory(func(_ context.Context, tenantID, modelRef string) (*models.ChatModel, error) {
 		if tenantID != "tenant-1" {
-			return "", "", "", "", fmt.Errorf("unexpected tenant %q", tenantID)
+			return nil, fmt.Errorf("unexpected tenant %q", tenantID)
 		}
-		return "OpenAI", model, apiKey, baseURL, nil
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = previousLookup })
+		return chatModel, nil
+	})
+	t.Cleanup(func() { SetBrowserModelFactory(previousFactory) })
 
 	// --- use production stagehand runtime ---
 	r := newStagehandRuntimeFromEnv()
@@ -244,7 +245,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
-	t.Logf("starting browser.Invoke (RunExtract) against %s (timeout 3m)", srv.URL)
+	t.Logf("starting browser.Invoke (RunTask) against %s (timeout 3m)", srv.URL)
 	out, err := c.Invoke(invokeCtx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
