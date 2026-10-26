@@ -739,7 +739,7 @@ func TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 		SourceDocument: syncerconnector.SourceDocument{Blob: []byte("plain text")},
 	}
 	svc := testDocumentService(t)
-	res, err := svc.insertSyncDocument(t.Context(), input, "laws.txt", "", "txt", "", "tenant-1")
+	res, err := svc.insertSyncDocument(documentTestContext(t.Context()), input, "laws.txt", "", "txt", "", "tenant-1")
 	if err != nil {
 		t.Fatalf("insertSyncDocument: %v", err)
 	}

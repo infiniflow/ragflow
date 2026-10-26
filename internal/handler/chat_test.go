@@ -179,9 +179,13 @@ func TestPatchChatHandlerSuccess(t *testing.T) {
 func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	db := setupChatHandlerTestDB(t)
 	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-2", "tenant-2", "user-1"); err != nil {
+		t.Fatalf("prepare non-owner chat permission fixture: %v", err)
+	}
 
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
 	c, w := setupGinContextWithUser("PUT", "/api/v1/chats/chat-1", `{"name":"updated"}`)
+	setGinContextSubject(c, "user-1", "tenant-2")
 	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
 
 	h.UpdateChat(c)

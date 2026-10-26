@@ -101,6 +101,9 @@ func requestWebhookTrace(t *testing.T, h *AgentHandler, canvasID, userID string,
 	if err := dao.DB.Where("id = ?", userID).FirstOrCreate(&user, entity.User{ID: userID}).Error; err != nil {
 		t.Fatalf("ensure webhook trace caller: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "u1", userID, "u1"); err != nil {
+		t.Fatalf("prepare webhook trace caller permission: %v", err)
+	}
 	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
 		UserID: userID, TenantID: "u1",
 	}))

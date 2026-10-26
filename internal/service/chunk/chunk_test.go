@@ -2725,7 +2725,7 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 		return nil
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, userID)
 	result, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "doc-1"},
 	})
@@ -2758,7 +2758,7 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 		calledDocID = doc.ID
 		return nil
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
@@ -2778,7 +2778,7 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 	svc := newParseTestService(t)
 	var called bool
 	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error { called = true; return nil }
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, code, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected error for document without ingestion task")
@@ -2813,7 +2813,7 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)

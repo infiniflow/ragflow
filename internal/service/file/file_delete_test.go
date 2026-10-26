@@ -148,7 +148,10 @@ func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
 func TestFileService_CheckFileTreeAccessBatchesWideSubtrees(t *testing.T) {
 	db := setupFolderTestDB(t)
 	entries := make([]entity.File, 0, 1+2*510)
-	entries = append(entries, entity.File{ID: "tree-root", ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "/", Type: FileTypeFolder})
+	entries = append(entries,
+		entity.File{ID: "tenant-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "/", Type: FileTypeFolder},
+		entity.File{ID: "tree-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "tree", Type: FileTypeFolder},
+	)
 	for i := 0; i < 510; i++ {
 		folderID := fmt.Sprintf("folder-%04d", i)
 		entries = append(entries,

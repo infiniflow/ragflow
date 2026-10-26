@@ -14,6 +14,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -150,6 +152,7 @@ func newIngestionMessagesHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions/:log_id/messages", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 		h.ListIngestionMessages(c)
 	})
 	return r
@@ -161,6 +164,7 @@ func newIngestionLogsHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 		h.ListIngestionLogs(c)
 	})
 	return r
@@ -205,5 +209,8 @@ func insertIngestionMessagesHandlerKB(t *testing.T, db *gorm.DB, id, userID stri
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, userID, userID); err != nil {
+		t.Fatalf("prepare ingestion permission fixture: %v", err)
 	}
 }

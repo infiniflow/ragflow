@@ -40,7 +40,7 @@ func seedFileBrowsing(t *testing.T) {
 func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	ctx := t.Context()
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "reader", TenantID: "owner"})
 	list, err := svc.ListFilesForTenant(ctx, "reader", "owner", "", 1, 1, nil, "")
 	if err != nil {
 		t.Fatalf("list shared tenant files: %v", err)

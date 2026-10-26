@@ -384,6 +384,12 @@ func setupGinContextWithUserInTenant(method, path, body, userID, tenantID string
 	return c, w
 }
 
+func setupHandlerAccessContext(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupGinContextWithUser(method, path, body)
+	setGinContextSubject(c, "user-1", "tenant-1")
+	return c, w
+}
+
 func setGinContextSubject(c *gin.Context, userID, tenantID string) {
 	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
 		UserID: userID, TenantID: tenantID,
@@ -847,6 +853,9 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare upload permission fixture: %v", err)
+	}
 
 	fake := &fakeDocumentService{
 		uploadLocalData: []map[string]interface{}{
@@ -887,6 +896,9 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare upload permission fixture: %v", err)
+	}
 
 	fake := &fakeDocumentService{
 		uploadLocalData: []map[string]interface{}{
@@ -1301,6 +1313,9 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 		ID: "doc-1", KbID: "ds-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
 		CreatedBy: "user-1", Type: "pdf", Suffix: "pdf", Status: sptr(string(entity.StatusValid)),
 	})
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare document handler permission fixture: %v", err)
+	}
 
 	return db
 }
@@ -1329,7 +1344,7 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1381,7 +1396,7 @@ func TestListDocumentsRejectsInvalidRunFilter(t *testing.T) {
 	}
 
 	for _, invalid := range []string{"1", "DONE", "CANCEL", "FAIL", "SCHEDULE"} {
-		c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
+		c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
 		c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 		h.ListDocuments(c)
@@ -1428,7 +1443,7 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1476,7 +1491,7 @@ func TestListDocumentsHandlerReturnsUnstartWhenNoIngestionTask(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1528,7 +1543,7 @@ func TestListDocumentsHandlerReturnsHasActiveTasks(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1575,7 +1590,7 @@ func TestListDocumentsHandlerReturnsHasActiveTasksFalse(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1622,7 +1637,7 @@ func TestListDocumentsHandlerKeepsPollingWhenActiveTaskCheckFails(t *testing.T) 
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1664,7 +1679,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1696,7 +1711,7 @@ func TestStopParseDocumentsHandler_Success(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)
@@ -1732,7 +1747,7 @@ func TestStopParseDocumentsHandler_ServiceError(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)
@@ -1875,7 +1890,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.MetadataSummaryByDataset(c)
@@ -2200,6 +2215,7 @@ func downloadContextAs(userID, datasetID, docID string) (*gin.Context, *httptest
 	c.Request = httptest.NewRequest("GET", "/api/v1/datasets/"+datasetID+"/documents/"+docID, nil)
 	c.Set("user", &entity.User{ID: userID})
 	c.Set("user_id", userID)
+	setGinContextSubject(c, userID, "tenant-1")
 	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: docID}}
 	return c, w
 }

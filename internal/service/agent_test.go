@@ -2139,6 +2139,9 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if err := dao.DB.WithContext(ctx).Where("id = ?", "user-1").FirstOrCreate(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
 		t.Fatalf("failed to seed user: %v", err)
 	}
+	if err := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", "user-1").Update("nickname", "owner").Error; err != nil {
+		t.Fatalf("failed to set user nickname: %v", err)
+	}
 	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
 		ID:             "canvas-version-draft",
 		UserID:         "user-1",
@@ -2550,6 +2553,9 @@ func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	if err := dao.DB.WithContext(ctx).Where("id = ?", "user-1").FirstOrCreate(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
 		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", "user-1").Update("nickname", "owner").Error; err != nil {
+		t.Fatalf("failed to set user nickname: %v", err)
 	}
 	initialDSL := entity.JSONMap{
 		"components": map[string]any{},

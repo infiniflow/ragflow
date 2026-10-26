@@ -30,7 +30,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 		Permission: string(entity.TenantPermissionTeam), Status: &valid,
 	}
 	privateDataset := entity.Knowledgebase{
-		ID: "private-dataset", TenantID: "other-owner", CreatedBy: "other-owner",
+		ID: "private-dataset", TenantID: "canvas-owner", CreatedBy: "other-owner",
 		Permission: string(entity.TenantPermissionMe), Status: &valid,
 	}
 	sharedMemory := entity.Memory{
@@ -38,7 +38,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 		Permissions: string(entity.TenantPermissionTeam),
 	}
 	callerOnlyMemory := entity.Memory{
-		ID: "caller-only-memory", Name: "Caller only", TenantID: "caller",
+		ID: "caller-only-memory", Name: "Caller only", TenantID: "canvas-owner",
 		Permissions: string(entity.TenantPermissionMe),
 	}
 	ownerOnlyMemory := entity.Memory{

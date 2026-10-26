@@ -28,15 +28,15 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed tenant membership: %v", err)
 	}
-	if err := testsupport.PrepareEnterprisePermissionFixture(db, tenantID, "caller-1", "owner-1"); err != nil {
-		t.Fatalf("prepare webhook permission fixture: %v", err)
-	}
 	canvas := &entity.UserCanvas{
 		ID: "canvas-1", UserID: "owner-1", TenantID: &tenantID,
 		Permission: string(entity.TenantPermissionTeam), CanvasCategory: "agent_canvas",
 	}
 	if err := db.Create(canvas).Error; err != nil {
 		t.Fatalf("seed canvas: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, tenantID, "caller-1", "owner-1"); err != nil {
+		t.Fatalf("prepare webhook permission fixture: %v", err)
 	}
 
 	svc := NewAgentWebhookCredentialService(db)
@@ -80,16 +80,20 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	if _, err := svc.Resolve(ctx, "different-canvas", secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("credential used for another canvas error = %v, want invalid credential", err)
 	}
-	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
-		Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
-		t.Fatalf("make canvas private: %v", err)
+	var revokeErr error
+	if db.Migrator().HasTable("permission") {
+		revokeErr = db.Table("permission").
+			Where("tenant_id = ? AND resource_type = ? AND resource_id = ? AND member_id = ?", tenantID, "canvas", canvas.ID, "membership-1").
+			Update("status", entity.StatusInvalid).Error
+	} else {
+		revokeErr = db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
+			Update("permission", string(entity.TenantPermissionMe)).Error
+	}
+	if revokeErr != nil {
+		t.Fatalf("revoke caller canvas permission: %v", revokeErr)
 	}
 	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("revoked run permission error = %v, want invalid credential", err)
-	}
-	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", canvas.ID).
-		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
-		t.Fatalf("restore tenant sharing: %v", err)
 	}
 
 	removed := entity.TenantMembershipStatusRemoved
