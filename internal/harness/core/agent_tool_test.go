@@ -356,6 +356,171 @@ func TestAgentTool_FullChatHistoryAsInput(t *testing.T) {
 	}
 }
 
+// TestAgentTool_FullChatHistory_DeduplicateRestoredSession verifies that in resume
+// or restored session flows where identical turns exist in both RootInput.Messages
+// and Session historical events, turns are not duplicated in the sub-agent input.
+func TestAgentTool_FullChatHistory_DeduplicateRestoredSession(t *testing.T) {
+	captureM := &capturingHistoryModel{resp: "inner captured"}
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: captureM,
+	}).WithName("dedupe_inner").WithDescription("inner agent")
+
+	toolWithHistory := NewAgentTool(t.Context(), innerAgent, WithFullChatHistoryAsInput())
+
+	sess := newRunSession()
+	// Session was restored with prior events that match the turns in RootInput:
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: &schema.Message{
+					Role:    schema.RoleAssistant,
+					Content: "Prior assistant reply",
+				},
+			},
+		},
+	})
+	// Plus an event generated in the current run before the sub-agent call:
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.ToolMessage("calc result: 42", "calc_1"),
+			},
+		},
+	})
+
+	rc := &runContext{
+		RootInput: &AgentInput{
+			Messages: []Message{
+				schema.UserMessage("Prior user query"),
+				schema.AssistantMessage("Prior assistant reply"),
+			},
+		},
+		Session: sess,
+	}
+	ctx := context.WithValue(t.Context(), runContextKey{}, rc)
+
+	res, err := toolWithHistory.Invoke(ctx, "Next turn query")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != "inner captured" {
+		t.Fatalf("unexpected result: %q", res)
+	}
+
+	msgs := captureM.getCapturedMsgs()
+	if len(msgs) > 0 && msgs[0].Role == schema.RoleSystem {
+		msgs = msgs[1:]
+	}
+
+	// Expected:
+	// 0: User: "Prior user query"
+	// 1: Assistant: "Prior assistant reply" (only once, NOT duplicated from session)
+	// 2: Tool: "calc result: 42"
+	// 3: User: "Next turn query"
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 dialogue messages after deduplication, got %d: %v", len(msgs), msgs)
+	}
+	if msgs[0].Content != "Prior user query" {
+		t.Errorf("expected msgs[0] = 'Prior user query', got %q", msgs[0].Content)
+	}
+	if msgs[1].Content != "Prior assistant reply" {
+		t.Errorf("expected msgs[1] = 'Prior assistant reply', got %q", msgs[1].Content)
+	}
+	if msgs[2].Role != schema.RoleTool || msgs[2].Name != "calc_1" {
+		t.Errorf("expected msgs[2] = tool message 'calc_1', got %v", msgs[2])
+	}
+	if msgs[3].Content != "Next turn query" {
+		t.Errorf("expected msgs[3] = 'Next turn query', got %q", msgs[3].Content)
+	}
+}
+
+// TestAgentTool_FullChatHistory_ReusedToolCallID verifies occurrence-based matching
+// ensures a completed tool call is retained while a subsequent pending tool call reusing
+// the same ID is stripped.
+func TestAgentTool_FullChatHistory_ReusedToolCallID(t *testing.T) {
+	captureM := &capturingHistoryModel{resp: "inner captured"}
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: captureM,
+	}).WithName("reused_id_inner").WithDescription("inner agent")
+
+	toolWithHistory := NewAgentTool(t.Context(), innerAgent, WithFullChatHistoryAsInput())
+
+	sess := newRunSession()
+	// Turn 1: assistant calls fetch with ID "call_shared"
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: &schema.Message{
+					Role: schema.RoleAssistant,
+					ToolCalls: []schema.ToolCall{
+						{ID: "call_shared", Function: schema.ToolCallFunction{Name: "fetch", Arguments: "{}"}},
+					},
+				},
+			},
+		},
+	})
+	// Turn 1: tool returns result for "call_shared"
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.ToolMessage("data 1", "call_shared"),
+			},
+		},
+	})
+	// Turn 2: assistant makes another call that reuses ID "call_shared" but is still pending (no tool result)
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: &schema.Message{
+					Role: schema.RoleAssistant,
+					ToolCalls: []schema.ToolCall{
+						{ID: "call_shared", Function: schema.ToolCallFunction{Name: "fetch", Arguments: "{}"}},
+					},
+				},
+			},
+		},
+	})
+
+	rc := &runContext{
+		RootInput: &AgentInput{
+			Messages: []Message{
+				schema.UserMessage("Run twice"),
+			},
+		},
+		Session: sess,
+	}
+	ctx := context.WithValue(t.Context(), runContextKey{}, rc)
+
+	_, err := toolWithHistory.Invoke(ctx, "sub-agent task")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msgs := captureM.getCapturedMsgs()
+	if len(msgs) > 0 && msgs[0].Role == schema.RoleSystem {
+		msgs = msgs[1:]
+	}
+
+	// Expected:
+	// 0: User: "Run twice"
+	// 1: Assistant with completed call_shared
+	// 2: Tool: "data 1" (call_shared)
+	// (Pending second call_shared stripped and omitted)
+	// 3: User: "sub-agent task"
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 dialogue messages, got %d: %v", len(msgs), msgs)
+	}
+	if len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "call_shared" {
+		t.Errorf("expected first tool call retained, got %v", msgs[1].ToolCalls)
+	}
+	if msgs[2].Role != schema.RoleTool || msgs[2].Name != "call_shared" {
+		t.Errorf("expected tool result retained, got %v", msgs[2])
+	}
+	if msgs[3].Content != "sub-agent task" {
+		t.Errorf("expected msgs[3] = 'sub-agent task', got %q", msgs[3].Content)
+	}
+}
+
 func init() {
 	schema.RegisterType("_test_agent_tool", func() any { return &AgentToolOptions{} })
 }

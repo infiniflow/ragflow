@@ -115,28 +115,42 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	messages := []Message{schema.UserMessage(args)}
 	if t.opts.FullChatHistoryAsInput {
 		if rc := getRunCtx(ctx); rc != nil {
-			var history []Message
+			var rootMsgs []Message
 			switch inp := rc.RootInput.(type) {
 			case *AgentInput:
 				if inp != nil {
 					for _, m := range inp.Messages {
 						if m != nil {
-							history = append(history, m)
+							rootMsgs = append(rootMsgs, m)
 						}
 					}
 				}
 			case []Message:
 				for _, m := range inp {
 					if m != nil {
-						history = append(history, m)
+						rootMsgs = append(rootMsgs, m)
 					}
 				}
 			}
+			history := append([]Message(nil), rootMsgs...)
+
 			if rc.Session != nil {
+				matchedRoot := make([]bool, len(rootMsgs))
 				for _, ev := range rc.Session.getEvents() {
 					if ae, ok := ev.(*AgentEvent); ok {
 						if m := msgFromEvent(ae); m != nil {
-							history = append(history, m)
+							// Deduplicate turns that already exist in RootInput (e.g. on session restore/resume)
+							isDupe := false
+							for i, rm := range rootMsgs {
+								if !matchedRoot[i] && equalMessages(rm, m) {
+									matchedRoot[i] = true
+									isDupe = true
+									break
+								}
+							}
+							if !isDupe {
+								history = append(history, m)
+							}
 						}
 					}
 				}
@@ -145,10 +159,10 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 			// Exclude or sanitize assistant messages containing pending (unresolved)
 			// tool calls so inner agent does not receive dangling tool calls without results.
 			if len(history) > 0 {
-				toolResults := make(map[string]bool)
+				availableResults := make(map[string]int)
 				for _, m := range history {
 					if m.Role == schema.RoleTool && m.Name != "" {
-						toolResults[m.Name] = true
+						availableResults[m.Name]++
 					}
 				}
 
@@ -157,7 +171,8 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 					if m.Role == schema.RoleAssistant && len(m.ToolCalls) > 0 {
 						var completedCalls []schema.ToolCall
 						for _, tc := range m.ToolCalls {
-							if toolResults[tc.ID] {
+							if availableResults[tc.ID] > 0 {
+								availableResults[tc.ID]--
 								completedCalls = append(completedCalls, tc)
 							}
 						}
@@ -237,3 +252,27 @@ func (t *agentTool) Stream(ctx context.Context, args string, opts ...ToolOption)
 	}
 	return schema.StreamReaderFromArray([]string{r}), nil
 }
+
+func equalMessages(a, b *schema.Message) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Role != b.Role || a.Content != b.Content || a.Name != b.Name || a.ToolName != b.ToolName {
+		return false
+	}
+	if len(a.ToolCalls) != len(b.ToolCalls) {
+		return false
+	}
+	for i := range a.ToolCalls {
+		if a.ToolCalls[i].ID != b.ToolCalls[i].ID ||
+			a.ToolCalls[i].Function.Name != b.ToolCalls[i].Function.Name ||
+			a.ToolCalls[i].Function.Arguments != b.ToolCalls[i].Function.Arguments {
+			return false
+		}
+	}
+	return true
+}
+
