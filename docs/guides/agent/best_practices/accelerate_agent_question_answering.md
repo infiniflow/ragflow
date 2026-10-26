@@ -16,6 +16,6 @@ Use a representative question and inspect component results and execution logs t
 | External tools | Inspect individual tool durations, response sizes, timeouts, and provider errors before increasing retries. |
 | Iteration | For independent items, try a bounded Maximum concurrency greater than `1`. Respect model and service rate limits. |
 
-If the model exposes reasoning controls, compare their effect on speed and correctness for your task. There is no universal prompt command that disables reasoning across all models.
+If the selected model provides reasoning settings, adjust them and compare response time and answer quality.
 
 Retest a normal question, a question with no matching knowledge, and a tool failure after tuning. A faster answer is useful only if routing, evidence, and error handling still work.

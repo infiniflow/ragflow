@@ -41,7 +41,7 @@ Steps:
 
 ![Create from blank entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_1.jpg)
 4. Select **Workflow**, **Ingestion pipeline**, or **Compilation operator**, enter **Name**, and click **Confirm**. Choose Workflow for a conversational Agent.
-5. Open the created card to enter its canvas.
+5. Open the created card to enter its canvas. For **Compilation operator**, configure the template group and model as described in [Configure the Compiler Component](./ingestion_pipeline/understand_core_ingestion_pipeline_components.md#configure-the-compiler-component).
 6. For a Workflow, click the outgoing connection point on **Begin** and add the next component.
 
 ![Add components to a blank Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_3.jpg)
@@ -52,11 +52,18 @@ Steps:
 The `Begin` component is the start of the workflow. Each Agent can only have one Begin component and it cannot be deleted. After creation, configure Begin first, then configure subsequent components.
 :::
 ## Search, Copy and Delete Agent
-In the Agent list, you can search for target Agents by name. If copy, delete or other operation entries are available on the interface, confirm the Agent name and permission scope before operation. Deletion is usually irreversible. Please confirm whether the Agent is referenced by embedded web pages, API calls or other workflows.
+- **Search**: Enter the Agent name in the list's search box.
+- **Copy**: Open the Agent, choose **Management > Export**, then [import the JSON](./import_and_export_agents.md#import-agent) with a different name.
+- **Delete**: Open the card's **…** menu, select **Delete**, and confirm the Agent name. Deletion removes the Agent and its saved versions. Export a copy first if you need to keep its configuration.
 
 ## Save and Publish
 
-The editor displays the latest autosave time. Click **Save** to save the current editing configuration. **Publish** is a separate action; do not treat saving as publishing. Run the workflow and check its results before publishing it for use.
+The editor shows the latest autosave time.
+
+- **Save**: Save the editing configuration.
+- **Run**: Test the workflow in the editor.
+- **Launch**: Open the conversation page in Conversational mode.
+- **Publish**: Create a published version after checking the test results.
 
 ## Management
 

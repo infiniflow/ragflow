@@ -11,7 +11,7 @@ sidebar_custom_props: {
 # Understand the Canvas
 
 ## Add Components
-Click the plus sign next to any component on the canvas to select the next component. Common components include `Begin`, `Agent`, `Retrieval`, `Message`, `Await response`, `Switch`, `Iteration`, `Categorize`, `Code`, `Text processing`, `Execute SQL`, `HTTP Request`, and pipeline-related components such as `Parser`, `Title chunker`, `Token chunker`, `Transformer`, and `Indexer`.
+Click the plus sign next to any component on the canvas to select the next component. Workflow and Ingestion pipeline canvases offer different component menus. Workflow components include `Begin`, `Agent`, `Retrieval`, `Message`, `Await response`, `Switch`, `Iteration`, `Categorize`, `Code`, `Text processing`, `Execute SQL`, `HTTP Request`, while Ingestion pipeline components include `Parser`, `Title chunker`, `Token chunker`, `Transformer`, `Compiler`, and `Indexer`.
 
 After adding a component, click the component itself to open the configuration panel on the right. Fields in the configuration panel define input data, processing logic, output variables, and references for subsequent steps.
 
@@ -20,7 +20,7 @@ After adding a component, click the component itself to open the configuration p
 ## Use Variables
 Components on the Agent canvas support variable references to implement data transmission between components. Variable sources include system variables, global variables defined in the Begin component, and outputs from upstream components.
 
-In input boxes supporting variable references, type `/` or click the variable button next to the input box to open the variable selector.
+In fields that support variables, type `/` or click the variable button to open the variable selector, then choose the required variable. This inserts a reference to the component on your canvas; names shown in examples are illustrative and should not be typed as references.
 
 Common variables:
 | Variable | Description |
@@ -32,8 +32,8 @@ Common variables:
 
 Operation Steps:
 1. Enter the Agent page and open the target canvas for editing.
-2. Select a component supporting variable references, e.g. Agent, Retrieval, Message, Code, HTTP Request, SQL.
-3. On the right configuration panel, click the input box that needs variable reference, such as System Prompt, User Prompt, Query, etc.
+2. Select a component supporting variable references, e.g. Agent, Retrieval, Message, Code, HTTP Request, Execute SQL.
+3. On the right configuration panel, click the input box that needs variable reference, such as **System prompt**, **User prompt**, or **Query variables**.
 4. Open the variable selector via either method:
    - Type `/` inside the input box
    - Click the variable icon next to the input box (may display as `{}`, `+` or other icons in different versions)

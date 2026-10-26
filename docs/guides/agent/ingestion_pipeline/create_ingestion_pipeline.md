@@ -17,6 +17,6 @@ sidebar_custom_props: {
 5. From Token Chunker, add **Transformer** if enrichment is needed, then add **Indexer**. A basic flow is **Begin → Parser → Token Chunker → Transformer → Indexer**.
 6. Configure each component, review **Checklist**, and click **Save**.
 
-Add components through the outgoing connection menu; available choices depend on the current node. For example, the current Transformer menu offers Indexer and Compiler.
+Use each component's outgoing connection point to add the next step. After Transformer, choose Indexer or Compiler.
 
 See [Validate the pipeline](./test_run.md) before processing a collection of documents.

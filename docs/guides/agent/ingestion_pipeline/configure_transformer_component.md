@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Configure the Transformer Component
 
-The **Transformer** component is designed to bridge the "semantic gap". In general, it uses AI models to add semantic metadata, making your content easier to discover during retrieval.
+**Transformer** uses a chat model to generate summaries, keywords, questions, tags, or metadata for document chunks. These additions provide more ways to find relevant content during retrieval.
 
 Enable one or more of the following options:
 
@@ -35,4 +35,4 @@ Prompt engineering:
 Connection and input:
 
 - Connect **Transformer** to an upstream node that provides document chunks. It enriches those chunks with the enabled extraction results.
-- After **Transformer**, use the outgoing connection point to add **Indexer** or **Compiler**. The current menu does not offer another Transformer. A generated summary enriches the chunk; it does not replace the original text.
+- After **Transformer**, add **Indexer** for indexing or **Compiler** for knowledge compilation. Generated summaries are stored alongside the original chunk text.

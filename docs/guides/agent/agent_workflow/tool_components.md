@@ -12,6 +12,8 @@ sidebar_custom_props: {
 
 Tool components connect external search, databases, HTTP APIs, email sending, document generation, financial queries, and web content extraction capabilities to Agents. When building Agents, first understand each tool's purpose and security boundaries.
 
+In the tables below, **No** means manual input is optional; keep any default shown. Conditions are stated in the description. Replace bracketed placeholders with your own settings; **Leave blank** is an instruction, not text to enter.
+
 ## Tool Selection Suggestions
 
 | Tool Category | Typical Components | Use Case |
@@ -36,7 +38,7 @@ Tavily is a web search service for LLMs. It is suitable for retrieving general w
 | Topic | string | No | general | Search type. Options are `general` or `news`. |
 | Include Domains | array[string] | No | Empty list | Keep only results from these domains, such as `www.nasa.gov`. |
 | Exclude Domains | array[string] | No | Empty list | Exclude results from these domains. |
-| API Key | string | No | Empty | Tavily API key. |
+| API Key | string | Conditional | Empty | Enter a Tavily key unless your administrator has configured one for the service. |
 | Search Depth | string | No | basic | Search depth. Options are `basic` or `advanced`. |
 | Max Results | integer | No | 6 | Maximum number of results. |
 | Days | integer | No | 14 | Time range in days for news retrieval. |
@@ -80,7 +82,7 @@ Tavily Extract reads the body content of one or more known URLs. A common workfl
 | URLs | array[string] | Yes | Empty list | URL list to extract. If input is a string, it is split by English commas. |
 | Extract Depth | string | No | basic | `advanced` can extract more tables and embedded content, with higher cost and latency. |
 | Format | string | No | markdown | Extraction result format. Options are `markdown` or `text`. |
-| API Key | string | No | Empty | Tavily API key. |
+| API Key | string | Conditional | Empty | Enter a Tavily key unless your administrator has configured one for the service. |
 
 #### Supported Parameter Values
 
@@ -98,7 +100,7 @@ Tavily Extract reads the body content of one or more known URLs. A common workfl
 | URLs | `["https://www.ragflow.io/docs/dev/"]` |
 | Extract Depth | basic |
 | Format | markdown |
-| API Key |  |
+| API Key | `<your API key>` |
 
 #### Output Result
 
@@ -158,7 +160,7 @@ Google Search obtains Google organic search results through SerpApi. It is suita
 | Query | RAGFlow official documentation |
 | Start | 0 |
 | Num | 6 |
-| API Key |  |
+| API Key | `<your API key>` |
 | Country | cn |
 | Language | en |
 
@@ -177,24 +179,22 @@ DuckDuckGo is a privacy-focused search engine component. It does not require a s
 | Parameter | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | Query | string | Yes | Current user input | Search keywords. |
-| Channel | string | No | general | Message channel: `general` or `news`. |
-| Top N | integer | Node configuration | 10 | Maximum number of returned results. |
+| Channel | string | No | text | Select `text` for web pages or `news` for news results. |
+| Top N | integer | No | 10 | Maximum number of returned results. |
 
 #### Configuration Example
 
 | Configuration Item | Example Value |
 | --- | --- |
 | Query | RAGFlow open source |
-| Channel | general |
+| Channel | text |
 | Top N | 10 |
 
 #### Output Result
 
 The output contains titles, links, and summaries returned by DuckDuckGo. It can be used for web material summarization, news lead organization, or subsequent page extraction.
 
-![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_1.jpg)
-
-![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_2.jpg)
+![DuckDuckGo results displayed in Message](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_1.jpg)
 
 ### SearXNG
 
@@ -230,9 +230,9 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Search keywords. |
 | site | string | No | Empty | Limit results to a single domain, such as `techcrunch.com`. |
-| api_key | string | Node configuration | Empty | Optional Keenable API key. |
-| mode | string | Node configuration | pro | `pro` for deeper retrieval or `realtime` for low latency. `realtime` requires an API key. |
-| top_n | integer | Node configuration | 10 | Maximum number of results. |
+| api_key | string | Conditional | Empty | Optional in pro mode; required in realtime mode. |
+| mode | string | No | pro | `pro` for deeper retrieval or `realtime` for low latency. `realtime` requires an API key. |
+| top_n | integer | No | 10 | Maximum number of results. |
 
 #### Configuration Example
 
@@ -240,7 +240,7 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 | --- | --- |
 | Query | RAGFlow Agent workflow |
 | Site | github.com |
-| API Key |  |
+| API Key | Leave blank for pro mode |
 | Mode | pro |
 | Top N | 10 |
 
@@ -261,9 +261,9 @@ Sofya is a web search API for AI Agents. It returns the text of the result pages
 | query | string | Yes | `{sys.query}` | Search keywords. |
 | topic | string | No | general | `general` for web search or `news` for current events. |
 | freshness | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
-| api_key | string | Node configuration | Empty | Sofya API key. |
-| search_depth | string | Node configuration | basic | `basic` returns the content of the result pages. `snippets` returns search snippets only, which is faster and cheaper. |
-| top_n | integer | Node configuration | 10 | Maximum number of results, up to 20. |
+| api_key | string | Yes | Empty | Sofya API key. |
+| search_depth | string | No | basic | `basic` returns the content of the result pages. `snippets` returns search snippets only, which is faster and cheaper. |
+| top_n | integer | No | 10 | Maximum number of results, up to 20. |
 
 #### Configuration Example
 
@@ -290,8 +290,8 @@ Search1API searches the web or the news through one API and lets you choose the 
 | channel | string | No | general | `general` for web search or `news` for news search. The Agent can override the node value. |
 | search_service | string | No | google | The search service to query. The Agent can override the node value with any service the channel supports. |
 | time_range | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
-| api_key | string | Node configuration | Empty | Search1API API key. |
-| top_n | integer | Node configuration | 10 | Maximum number of results, up to 50. |
+| api_key | string | Yes | Empty | Search1API API key. |
+| top_n | integer | No | 10 | Maximum number of results, up to 50. |
 
 #### Supported Parameter Values
 
@@ -325,7 +325,7 @@ Search1API Crawl reads one web page and returns its title and full content. A co
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page to read. As an Agent tool, the Agent supplies the URL. |
-| api_key | string | Node configuration | Empty | Search1API API key. |
+| api_key | string | Yes | Empty | Search1API API key. |
 
 #### Configuration Example
 
@@ -346,8 +346,8 @@ The Wikipedia component searches encyclopedia entries and extracts entry summari
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Specific entry topic or keyword. |
-| top_n | integer | Node configuration | 10 | Maximum number of search entries. |
-| language | string | Node configuration | en | Wikipedia language code, such as `zh`, `en`, or `ja`. |
+| top_n | integer | No | 10 | Maximum number of search entries. |
+| language | string | No | en | Wikipedia language code, such as `zh`, `en`, or `ja`. |
 
 #### Configuration Example
 
@@ -372,7 +372,7 @@ The GitHub component searches repositories through the GitHub Repository Search 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | GitHub repository search syntax or keywords. |
-| top_n | integer | Node configuration | 10 | Maximum number of returned repositories. |
+| top_n | integer | No | 10 | Maximum number of returned repositories. |
 
 #### Configuration Example
 
@@ -385,7 +385,7 @@ The GitHub component searches repositories through the GitHub Repository Search 
 
 The output contains matching repository names, links, descriptions, and star counts.
 
-![GitHub](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/GitHub.jpg)
+![GitHub repository search component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/github.jpg)
 
 ## Academic Literature Retrieval
 
@@ -398,11 +398,11 @@ Google Scholar is used to retrieve papers, dissertations, books, abstracts, and 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Paper topic or keyword. |
-| top_n | integer | Node configuration | 12 | Maximum number of papers. |
-| sort_by | string | Node configuration | relevance | Sorting method: `date` or `relevance`. |
-| year_low | integer/null | Node configuration | null | Earliest publication year. |
-| year_high | integer/null | Node configuration | null | Latest publication year. |
-| patents | boolean | Node configuration | true | Whether to include patents. |
+| top_n | integer | No | 12 | Maximum number of papers. |
+| sort_by | string | No | relevance | Sorting method: `date` or `relevance`. |
+| year_low | integer/null | No | Unset | Earliest publication year. |
+| year_high | integer/null | No | Unset | Latest publication year. |
+| patents | boolean | No | true | Whether to include patents. |
 
 #### Configuration Example
 
@@ -411,8 +411,8 @@ Google Scholar is used to retrieve papers, dissertations, books, abstracts, and 
 | Query | retrieval augmented generation evaluation |
 | Top N | 12 |
 | Sort By | relevance |
-| Year Low | null |
-| Year High | null |
+| Year Low | Leave blank |
+| Year High | Leave blank |
 | Patents | true |
 
 #### Output Result
@@ -430,8 +430,8 @@ ArXiv is used to retrieve open preprints across fields such as computer science,
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Retrieval keywords. |
-| top_n | integer | Node configuration | 12 | Maximum number of returned papers. |
-| sort_by | string | Node configuration | submittedDate | Sorting method: `submittedDate`, `lastUpdatedDate`, or `relevance`. |
+| top_n | integer | No | 12 | Maximum number of returned papers. |
+| sort_by | string | No | submittedDate | Sorting method: `submittedDate`, `lastUpdatedDate`, or `relevance`. |
 
 #### Configuration Example
 
@@ -445,8 +445,6 @@ ArXiv is used to retrieve open preprints across fields such as computer science,
 
 The output contains paper titles, authors, abstracts, publication times, categories, and paper links. It can be used by the Agent to generate paper summaries or research comparisons.
 
-![ArXiv](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/arxiv.jpg)
-
 ### PubMed
 
 PubMed is used to retrieve life science and biomedical literature. The component queries through NCBI E-utilities and returns titles, authors, journals, DOIs, abstracts, and other information.
@@ -456,8 +454,8 @@ PubMed is used to retrieve life science and biomedical literature. The component
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | PubMed search term. Medical subject headings or Boolean retrieval expressions are supported. |
-| top_n | integer | Node configuration | 12 | Maximum number of papers. |
-| email | string | Node configuration | `A.N.Other@example.com` | NCBI Entrez contact email. Replace it with a real maintainer email in production. |
+| top_n | integer | No | 12 | Maximum number of papers. |
+| email | string | No | `A.N.Other@example.com` | NCBI Entrez contact email. Replace it with a real maintainer email in production. |
 
 #### Configuration Example
 
@@ -482,9 +480,9 @@ BGPT retrieves scientific papers and returns structured evidence, including rese
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Natural-language scientific retrieval question. |
-| top_n | integer | Node configuration | 10 | Maximum number of results. |
-| api_key | string | Node configuration | Empty | Optional API key. If not configured, the public service path is used. |
-| days_back | integer/null | Node configuration | null | Optional. Limits retrieval to content from the most recent number of days. |
+| top_n | integer | No | 10 | Maximum number of results. |
+| api_key | string | No | Empty | Optional API key. If not configured, the public service path is used. |
+| days_back | integer/null | No | Unset | Optional. Limits retrieval to content from the most recent number of days. |
 
 #### Configuration Example
 
@@ -492,8 +490,8 @@ BGPT retrieves scientific papers and returns structured evidence, including rese
 | --- | --- |
 | Query | Does sleep deprivation impair working memory in adults? |
 | Top N | 10 |
-| API Key |  |
-| Days Back | null |
+| API Key | Leave blank (optional) |
+| Days Back | Leave blank |
 
 #### Output Result
 
@@ -507,7 +505,7 @@ The output contains biomedical knowledge retrieval results and summaries, which 
 
 Execute SQL connects to an external database and executes SQL statements. The result is formatted as text or table content.
 
-To protect system security, the database address must pass server-side security checks. To connect to a local or internal database, first confirm that the deployment environment allows access.
+Use a database address that the RAGFlow server can reach. If the connection is rejected, check the address, credentials, and network access settings.
 
 #### Parameter Description
 
@@ -517,7 +515,7 @@ To protect system security, the database address must pass server-side security 
 | db_type | string | Yes | mysql | Supports `mysql`, `postgres`, `mariadb`, `mssql`, `trino`, and `oceanbase`. |
 | database | string | Yes | Empty | Database name. Trino uses `catalog.schema` or `catalog`. |
 | username | string | Yes | Empty | Database account. |
-| host | string | Yes | Empty | Database address, which must pass server-side security checks. |
+| host | string | Yes | Empty | Database address reachable from the RAGFlow server. |
 | port | integer | Yes | 3306 | Database port. |
 | password | string | Conditionally required | Empty | Database password. It can be empty for Trino. |
 | max_records | integer | No | 1024 | Maximum number of records returned per statement. |
@@ -535,9 +533,11 @@ To protect system security, the database address must pass server-side security 
 
 #### Configuration Example
 
+Ask your administrator to prepare a MySQL test database named `demo_sql` with a `products` table containing `id`, `name`, and `stock`. Use two sample rows: `(1, Model A, 12)` and `(2, Model B, 0)`. The account needs permission to read this table.
+
 | Configuration Item | Example Value |
 | --- | --- |
-| SQL | `SELECT * FROM XXX;` |
+| SQL | `SELECT id, name FROM products WHERE stock > 0 ORDER BY id;` |
 | Database Type | mysql |
 | Database | demo_sql |
 | Username | ragflow_reader |
@@ -545,6 +545,10 @@ To protect system security, the database address must pass server-side security 
 | Port | 3306 |
 | Password | `<read-only database account password>` |
 | Max Records | 10 |
+
+Replace `<host>`, the username, and the password with your test database connection details; change `demo_sql` if your database has a different name.
+
+Connect **Begin → Execute SQL → Message**. Configure Execute SQL as above, then insert its `formalized_content` output into Message through the variable selector. Save and click **Run**. The result should contain only `1, Model A`, because Model B has no stock.
 
 #### Output Result
 
@@ -561,14 +565,14 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | stock_code | string | Yes | `{sys.query}` | Stock code or company name. Use exchange-standard codes when possible. |
-| info | boolean | Node configuration | true | Output company and quote information. |
-| history | boolean | Node configuration | false | Output historical market data. |
-| count | boolean | Node configuration | false | Include share-count statistics. |
-| financials | boolean | Node configuration | false | Output earnings dates and other financial calendar events returned by Yahoo Finance. |
-| income_stmt | boolean | Node configuration | false | Include annual and quarterly income statements. |
-| balance_sheet | boolean | Node configuration | false | Output balance sheet and quarterly balance sheet. |
-| cash_flow_statement | boolean | Node configuration | false | Output cash flow statement and quarterly cash flow statement. |
-| news | boolean | Node configuration | true | Output related news. |
+| info | boolean | No | true | Output company and quote information. |
+| history | boolean | No | false | Output historical market data. |
+| count | boolean | No | false | Include share-count statistics. |
+| financials | boolean | No | false | Output earnings dates and other financial calendar events returned by Yahoo Finance. |
+| income_stmt | boolean | No | false | Include annual and quarterly income statements. |
+| balance_sheet | boolean | No | false | Output balance sheet and quarterly balance sheet. |
+| cash_flow_statement | boolean | No | false | Output cash flow statement and quarterly cash flow statement. |
+| news | boolean | No | true | Output related news. |
 
 #### Configuration Example
 
@@ -596,8 +600,8 @@ WenCai is used to screen financial data such as stocks, indices, funds, Hong Kon
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Stock selection or financial condition, such as "A-shares with P/E ratio below 20". |
-| top_n | integer | Node configuration | 20 | Maximum number of results. |
-| query_type | string | Node configuration | stock | Supports `stock`, `zhishu`, `fund`, `hkstock`, `usstock`, `threeboard`, `conbond`, `insurance`, `futures`, `lccp`, and `foreign_exchange`. |
+| top_n | integer | No | 20 | Maximum number of results. |
+| query_type | string | No | stock | Supports `stock`, `zhishu`, `fund`, `hkstock`, `usstock`, `threeboard`, `conbond`, `insurance`, `futures`, `lccp`, and `foreign_exchange`. |
 
 #### Supported Query Types
 
@@ -629,7 +633,7 @@ The output contains a financial data list that matches the natural-language scre
 
 :::tip NOTE
 
-Before using the WenCai component, confirm that the WenCai query service is available in the current environment. If the service is not enabled, the component will not return real financial data.
+Configure the WenCai query service before using this component.
 
 :::
 
@@ -647,12 +651,12 @@ The Email component sends HTML emails through SMTP. Configure the recipients, CC
 | cc_email | string | No | Empty | CC email addresses. Separate multiple addresses with English commas. |
 | content | string | No | Empty | Email body, sent as HTML content. |
 | subject | string | No | Empty | Email subject. |
-| smtp_server | string | Node configuration | Empty | SMTP server address. |
-| smtp_port | integer | Node configuration | 465 | SMTP port. Port 465 uses SSL, and other ports use STARTTLS. |
-| email | string | Node configuration | Empty | Sender email address. |
-| smtp_username | string | Node configuration | Empty | SMTP login account. If empty, the sender email address is used. |
-| password | string | Node configuration | Empty | SMTP authorization code or password. |
-| sender_name | string | Node configuration | Empty | Sender display name. |
+| smtp_server | string | Yes | Empty | SMTP server address. |
+| smtp_port | integer | No | 465 | SMTP port. Port 465 uses SSL, and other ports use STARTTLS. |
+| email | string | Yes | Empty | Sender email address. |
+| smtp_username | string | No | Empty | SMTP login account. If empty, the sender email address is used. |
+| password | string | Yes | Empty | SMTP authorization code or password. |
+| sender_name | string | No | Empty | Sender display name. |
 
 :::tip NOTE
 
@@ -665,15 +669,15 @@ Although some SMTP fields are displayed as optional in the UI, a valid SMTP serv
 | Configuration Item | Example Value |
 | --- | --- |
 | To Email | receiver@example.com |
-| CC Email |  |
+| CC Email | Leave blank (optional) |
 | Content | `<p>This is a test email sent by RAGFlow.</p>` |
 | Subject | RAGFlow email tool test |
-| SMTP Server |  |
+| SMTP Server | `<your SMTP server>` |
 | SMTP Port | 465 |
-| Email |  |
-| SMTP Username |  |
-| Password |  |
-| Sender Name |  |
+| Email | `<your sender email>` |
+| SMTP Username | Leave blank to use the sender email |
+| Password | `<your SMTP authorization code or password>` |
+| Sender Name | Leave blank (optional) |
 
 #### Output Result
 
@@ -685,7 +689,7 @@ The output contains sending status and error information. `success` being `true`
 
 MCP connects an Agent to tools provided by a configured MCP server. Add MCP tools through the **Agent** component's tool selector; they are not a standalone HTTP Request node.
 
-1. Configure the MCP server and its authentication in the application's MCP server settings.
+1. Open **User settings > MCP > Add MCP**, enter the server URL and authentication, refresh **Tools available**, and click **Save**. See [Connect an external MCP server](../../../develop/mcp/connect_an_external_mcp_to_ragflow.md).
 2. Open the **Agent** component, use its tool selector to choose the server, and select the tools to expose.
 3. Describe when to use those tools in **System prompt**, then run a small test task.
 
@@ -719,7 +723,7 @@ The HTTP Request component calls external HTTP APIs, allowing business systems, 
 
 #### Output Result
 
-The business output is `result`, a string containing the response body. Pass the text to an Agent for summarization, or parse a JSON response body before accessing its fields.
+The `result` output contains the response body as text. Pass the text to an Agent for summarization, or parse a JSON response body before accessing its fields.
 
 If a URL is rejected, the output can contain `_ERROR` with a null `result`. Check for errors before consuming the response. Other request failures can surface as component execution errors.
 
@@ -757,17 +761,6 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 | add_timestamp                    | boolean | No       | true          | Whether to add generation time.                                                                   |
 | font_size                        | number  | No       | 12            | Font size, which must be greater than or equal to 12.                                             |
 
-#### Supported Values
-
-| Parameter     | Supported Value | Description                                    |
-|---------------|-----------------|------------------------------------------------|
-| Output Format | pdf             | PDF document.                                  |
-| Output Format | docx            | Word document.                                 |
-| Output Format | html            | HTML document.                                 |
-| Output Format | txt             | Text file.                                     |
-| Output Format | markdown        | Markdown file.                                 |
-| Font Size     | >=12            | Font size must be greater than or equal to 12. |
-
 #### Configuration Example
 
 | Configuration Item                                              | Example Value          |
@@ -784,9 +777,14 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 
 #### Output Result
 
-The output includes `doc_id`, `filename`, `mime_type`, and `size`. `download` is a string containing a JSON download descriptor, not a bare URL. `download_info` contains the corresponding structured metadata, including download and preview URLs. Use those URL fields to construct links, or pass the descriptor to a Message component for attachment handling.
+Use `download` to display the generated file in a Message. The other outputs identify the file and describe its name, type, and size.
 
-![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.jpg)
+#### Example: generate a downloadable PDF
+
+1. Connect **Begin → Document Generator → Message**. Begin needs no additional inputs.
+2. In Document Generator, set **Content** to `# Sample report`, **Output Format** to **PDF**, and **Filename** to `sample-report.pdf`. Keep the other settings at their defaults.
+3. In Message, open the variable selector and insert Document Generator's `download` output.
+4. Save and click **Run**. The conversation should show a downloadable file named `sample-report.pdf`; open it to check that it contains the heading Sample report.
 
 ### Browser (Browser)
 
@@ -796,7 +794,7 @@ Browser uses a configured chat model and a natural-language instruction to extra
 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
-| llm_id | string | Yes | Empty | Configured chat model ID used for extraction. |
+| Model | Selection | Yes | None | Select a configured chat model from the dropdown. |
 | prompts | string | Yes | `{sys.query}` | Extraction instruction. Canvas variables are supported. |
 | headless | boolean | No | true | Whether to run the browser without a visible window. |
 
@@ -804,7 +802,7 @@ Browser uses a configured chat model and a natural-language instruction to extra
 
 | Configuration Item | Example Value |
 | --- | --- |
-| LLM ID | `<configured chat model ID>` |
+| Model | Select an available chat model |
 | Prompt | Extract the main navigation labels from https://www.ragflow.io and return a concise bullet list. |
 | Headless | true |
 

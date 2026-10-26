@@ -6,7 +6,7 @@ slug: /build_customer_support_agent
 
 # Build a Customer Support Agent
 
-Build a workflow that routes product questions to knowledge retrieval and collects appointment preferences in a form.
+Build a workflow that answers product questions through retrieval and collects customer details for an installation visit.
 
 ## Prepare
 
@@ -35,12 +35,12 @@ Answer product questions using the provided product guide.
 If the guide does not contain the answer, say so and ask for clarification.
 ```
 
-4. In **User prompt**, enter `Question: ` and insert `sys.query`. On a new line, enter `Product guide: ` and insert Retrieval's `formalized_content`. Insert variables with `/` rather than typing node names manually.
+4. In **User prompt**, enter `Question: ` and insert `sys.query`. On a new line, enter `Product guide: ` and insert Retrieval's `formalized_content`. Open the variable selector with `/` and select the components on your canvas. Names in this example are illustrative; do not type them as variable references.
 5. In Message, insert the Agent's `content` output.
 
 ### Appointment branch
 
-Connect **Appointment → Await Response → Message**. Follow the [appointment form example](../agent_workflow/dialogue_component.md#example-collect-appointment-details) to collect the name and preferred time. In Message, display those values and say that the preference has been collected. Do not claim that a booking has been created: this example has no booking-system connection.
+Connect **Appointment → Await Response → Message**. Follow the [form example](../agent_workflow/dialogue_component.md#example-collect-appointment-details) to collect the customer's name and preferred installation time, then display them in Message. This branch collects installation preferences; it does not book a service visit.
 
 ## Test
 

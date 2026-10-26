@@ -11,7 +11,7 @@ sidebar_custom_props: {
 # Agent Overview
 
 ## Purpose of Agent
-Agent is the business workflow orchestration capability in RAGFlow. Users can add components on a no-code canvas and define execution order via connections. Components can be executed sequentially, or enter different paths according to conditional branches, classification results or loop logic.
+Use Agent to build automated workflows by connecting components on a visual canvas. Connections define the execution order; conditions, categories, and loops control which steps run.
 
 Agents are commonly used in the following scenarios:
 - Answering user questions based on knowledge bases.

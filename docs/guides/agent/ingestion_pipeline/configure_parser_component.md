@@ -14,14 +14,12 @@ The **Parser** component converts your files into structured text while preservi
 
 The initial configuration lists 12 file categories: **PDF**, **Spreadsheet**, **Image**, **Email**, **Markdown**, **Text & Code**, **HTML**, **DOC**, **DOCX**, **PPTX**, **Video**, and **Audio**. Configure the options for each required category.
 
-![Select parser file format](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)
-
 Key configurations:
 
 For PDF files, select one of the following:
 
-- **DeepDoc** (default): RAGFlow's built-in model. Best suited for scanned documents or complex layouts with tables.
-- **MinerU**: Industry-leading for complex elements such as mathematical formulas and complex layouts.
+- **DeepDoc** (default): RAGFlow's built-in model. Use for scanned documents or complex layouts with tables.
+- **MinerU**: Parses mathematical formulas, tables, and complex page layouts.
 - **Naive**: Simple text extraction. Use it for clean, text-based PDFs without complex elements.
 
 ![Configure PDF parser method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
@@ -42,14 +40,17 @@ If the model is unavailable or its connection settings are incomplete, parsing f
 
 For image files:
 
-- **OCR** is enabled by default. Turn it off when text recognition is not needed.
+- **OCR** is enabled by default. To turn it off, first enable **Enable vision enhancement**. Keep at least one of these options enabled so that images can produce searchable text.
+- **OCR model** selects local DeepDOC or an available configured PaddleOCR model. The model must be available to the canvas owner.
 - **Enable vision enhancement** separately controls image descriptions. Enabling OCR does not enable vision enhancement.
 - SVG text is read directly.
-- Check parsing warnings if text recognition fails. Images without recognized text or a description do not produce searchable text.
+- Check parsing warnings if text recognition fails. A configuration with both OCR and vision enhancement disabled is rejected.
 
 For email files:
 
 - Select specific fields to parse, such as `subject` and `body`, for precise extraction.
+
+![Select email fields to parse](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)
 
 For spreadsheets:
 
@@ -61,9 +62,9 @@ For Word/PPT:
 
 For text and markup (HTML/MD):
 
-- Extracts document content for downstream chunking. Do not assume the node returns only a plain-text string.
+- Extracts document content as structured items for downstream chunking.
 
 
 ### Output
 
-Use `json` to read the structured parsing results; `output_format` is `json`. Although the panel also lists `markdown`, `text`, and `html`, those fields may be empty. Check the actual parsing result before referencing them.
+Select the `json` output to use the parsed content. It contains structured items such as paragraphs and tables. Connect **Token Chunker** or **Title Chunker** after Parser to split this content into `chunks` for Transformer, Compiler, or Indexer.
