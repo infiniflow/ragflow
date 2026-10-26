@@ -315,6 +315,19 @@ func TestRESTDocumentUpdatesPersistAndRejectAtomically(t *testing.T) {
 		methods = append(methods, object(t, pipeline)["id"].(string))
 	}
 	for _, method := range methods {
+		// This document is text: registry membership alone does not mean a
+		// template supports its file family.
+		if !slices.Contains([]string{"naive", "general", "book", "laws", "one", "qa", "table"}, method) {
+			before := getRESTDocument(t, id, docID)
+			restCode(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method, "name": "must_not_persist.txt"}, nil), 200, 102)
+			after := getRESTDocument(t, id, docID)
+			for _, key := range []string{"name", "parser_id", "pipeline_id", "parser_config"} {
+				if !reflect.DeepEqual(before[key], after[key]) {
+					t.Fatalf("unsupported template %s changed %s: before=%v after=%v", method, key, before[key], after[key])
+				}
+			}
+			continue
+		}
 		restOK(t, restCall(t, TestConfig, http.MethodPatch, path, apiObject{"chunk_method": method}, nil))
 		persisted := getRESTDocument(t, id, docID)
 		if persisted["chunk_method"] != method || persisted["parser_id"] != method {

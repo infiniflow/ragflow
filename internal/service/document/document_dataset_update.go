@@ -13,10 +13,12 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -174,6 +176,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	current := service.CurrentSelection(doc.ParserID, doc.PipelineID)
 	eff, _ := service.Resolve(current, sel)
 	isPipeline, effParserID, effPipelineID := eff.Effective()
+	selectionChanged := current.Mode != eff.Mode ||
+		(isPipeline && current.PipelineID != eff.PipelineID) ||
+		(!isPipeline && current.ParserID != effParserID)
+	hasConfig := present["parser_config"] && req.ParserConfig != nil
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
@@ -190,18 +196,30 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	parserUpdates := map[string]interface{}{}
-	if sel != nil || (present["parser_config"] && req.ParserConfig != nil) {
+	if sel != nil || hasConfig {
 		// Validate the target before any document, file, or metadata writes.
 		dslJSON, err := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
-		cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		rawConfig := req.ParserConfig
+		if !selectionChanged && !hasConfig {
+			rawConfig = doc.ParserConfig
+		}
+		cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, rawConfig)
 		if err != nil {
 			return nil, common.CodeDataError, fmt.Errorf("invalid pipeline DSL: %w", err)
 		}
-		if present["parser_config"] && req.ParserConfig != nil {
-			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
+		if doc.Name != nil {
+			family := componentpkg.ParserFileFamily(utility.GetFileExtension(*doc.Name))
+			if family != "" {
+				if declared, found := configDeclaredFamily(cleaned, family); found && !declared {
+					return nil, common.CodeDataError, fmt.Errorf("selected pipeline does not support file type %q", family)
+				}
+			}
+		}
+		if selectionChanged || hasConfig {
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, rawConfig)
 			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			parserUpdates["parser_config"] = cleaned

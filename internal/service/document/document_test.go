@@ -2489,12 +2489,13 @@ func int64Ptr(value int64) *int64 { return &value }
 
 func TestUpdateDatasetDocumentSavesVisionModelAcrossFileTypes(t *testing.T) {
 	for _, file := range []struct {
-		name    string
-		docType string
+		name     string
+		docType  string
+		parserID string
 	}{
-		{"image.png", "visual"},
-		{"deck.pptx", "ppt"},
-		{"report.docx", "doc"},
+		{"image.png", "visual", "general"},
+		{"deck.pptx", "ppt", "presentation"},
+		{"report.docx", "doc", "manual"},
 	} {
 		for _, selection := range []string{"parser_id", "chunk_method"} {
 			t.Run(file.name+"/"+selection, func(t *testing.T) {
@@ -2515,16 +2516,15 @@ func TestUpdateDatasetDocumentSavesVisionModelAcrossFileTypes(t *testing.T) {
 					},
 				}
 				present := map[string]bool{"parser_config": true, selection: true}
-				wantParser := "general"
+				wantParser := file.parserID
 				if selection == "parser_id" {
 					req.ParseType = new(1)
-					req.ParserID = new("general")
+					req.ParserID = &file.parserID
 					req.PipelineID = new("")
 					present["parse_type"] = true
 					present["pipeline_id"] = true
 				} else {
-					req.ChunkMethod = new("manual")
-					wantParser = "manual"
+					req.ChunkMethod = &file.parserID
 				}
 				resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
 				if err != nil || code != common.CodeSuccess {
@@ -2642,7 +2642,7 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 			insertTestCanvas(t, pipelineID, "user-1")
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_duration", 42).Error; err != nil {
@@ -3590,7 +3590,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 
 	// Seed a prior canvas-backed document so the builtin transition must
 	// actively clear the persisted pipeline_id. Without this, a regression in

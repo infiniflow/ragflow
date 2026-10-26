@@ -1,6 +1,7 @@
 package document
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,25 +12,139 @@ import (
 	"ragflow/internal/service"
 )
 
+func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testing.T) {
+	for _, filename := range []string{"image.png", "deck.pptx"} {
+		for _, selection := range []string{"chunk_method", "parser_id"} {
+			for _, withConfig := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/config=%t", filename, selection, withConfig), func(t *testing.T) {
+					db := setupServiceTestDB(t)
+					pushServiceDB(t, db)
+					insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+					insertNamedTestDoc(t, "doc-1", "kb-1", filename, 0, 0)
+					insertTestFile(t, "file-1", "folder-1", filename, &filename)
+					insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+					if filename == "image.png" {
+						if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]any{
+							"type": "visual", "parser_id": "picture", "parser_config": pictureParserConfig(),
+						}).Error; err != nil {
+							t.Fatal(err)
+						}
+					}
+					before, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					req := &UpdateDatasetDocumentRequest{Name: new("renamed." + strings.SplitN(filename, ".", 2)[1]), MetaFields: map[string]any{"author": "changed"}}
+					present := map[string]bool{"name": true, "meta_fields": true, selection: true}
+					if selection == "parser_id" {
+						req.ParseType, req.ParserID = new(1), new("manual")
+						present["parse_type"] = true
+					} else {
+						req.ChunkMethod = new("manual")
+					}
+					if withConfig {
+						req.ParserConfig = map[string]any{"Parser:HipSignsRhyme": map[string]any{"enable_vision_enhancement": true}}
+						present["parser_config"] = true
+					}
+					engine := newMetadataDocEngine(map[string]map[string]any{"doc-1": {"author": "original"}}, map[string]string{"doc-1": "kb-1"})
+					svc := testDocumentService(t)
+					svc.docEngine = engine
+					svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+					_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+					if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "does not support") {
+						t.Fatalf("expected unsupported file rejection: code=%d err=%v", code, err)
+					}
+					after, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+					if err != nil || !reflect.DeepEqual(before, after) {
+						t.Fatalf("rejected request changed document: before=%#v after=%#v err=%v", before, after, err)
+					}
+					file, err := dao.NewFileDAO().GetByID(t.Context(), db, "file-1")
+					if err != nil || file.Name != filename {
+						t.Fatalf("rejected request changed file: file=%#v err=%v", file, err)
+					}
+					if !reflect.DeepEqual(engine.records["doc-1"], map[string]any{"author": "original"}) {
+						t.Fatalf("rejected request changed metadata: %#v", engine.records)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestUpdateDatasetDocumentSelectionWithoutConfig(t *testing.T) {
+	for _, selection := range []string{"chunk_method", "parser_id"} {
+		for _, current := range []string{"general", "manual"} {
+			t.Run(selection+"/"+current, func(t *testing.T) {
+				db := setupServiceTestDB(t)
+				pushServiceDB(t, db)
+				insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+				insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+				config := entity.JSONMap{"ManualChunker:NineInsectsFind": map[string]any{"hierarchy": float64(7)}}
+				if current == "general" {
+					config = entity.JSONMap{"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 123}}
+				}
+				if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]any{"parser_id": current, "parser_config": config}).Error; err != nil {
+					t.Fatal(err)
+				}
+				req := &UpdateDatasetDocumentRequest{}
+				present := map[string]bool{selection: true}
+				if selection == "parser_id" {
+					req.ParseType, req.ParserID = new(1), new("manual")
+					present["parse_type"] = true
+				} else {
+					req.ChunkMethod = new("manual")
+				}
+				_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("update: code=%d err=%v", code, err)
+				}
+				doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if doc.ParserID != "manual" {
+					t.Fatalf("parser=%q", doc.ParserID)
+				}
+				if current == "manual" {
+					if !reflect.DeepEqual(doc.ParserConfig, config) {
+						t.Fatalf("unchanged selection reset config: %#v", doc.ParserConfig)
+					}
+					return
+				}
+				if _, ok := doc.ParserConfig["ManualChunker:NineInsectsFind"]; !ok {
+					t.Fatalf("new template config missing: %#v", doc.ParserConfig)
+				}
+				if _, ok := doc.ParserConfig["GeneralChunker:SixApplesFall"]; ok {
+					t.Fatalf("old template config retained: %#v", doc.ParserConfig)
+				}
+				parser, ok := doc.ParserConfig["Parser:HipSignsRhyme"].(map[string]any)
+				if !ok || parser["docx"] == nil {
+					t.Fatalf("target file family missing: %#v", doc.ParserConfig)
+				}
+			})
+		}
+	}
+}
+
 func TestUpdateDatasetDocumentChunkMethodAcceptsCurrentTemplates(t *testing.T) {
-	for _, method := range []string{"general", "audio"} {
-		t.Run(method, func(t *testing.T) {
+	for _, file := range []struct{ method, name string }{{"general", "report.docx"}, {"audio", "recording.mp3"}} {
+		t.Run(file.method, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-			insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", file.name, 0, 0)
 			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-				ChunkMethod: &method,
+				ChunkMethod: &file.method,
 			}, map[string]bool{"chunk_method": true})
 			if err != nil || code != common.CodeSuccess {
-				t.Fatalf("select %s: code=%d err=%v", method, code, err)
+				t.Fatalf("select %s: code=%d err=%v", file.method, code, err)
 			}
 			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if resp.ParserID != method || doc.ParserID != method {
-				t.Fatalf("selection not saved: response=%q stored=%q want=%q", resp.ParserID, doc.ParserID, method)
+			if resp.ParserID != file.method || doc.ParserID != file.method {
+				t.Fatalf("selection not saved: response=%q stored=%q want=%q", resp.ParserID, doc.ParserID, file.method)
 			}
 		})
 	}
@@ -89,7 +204,7 @@ func TestUpdateDatasetDocumentKeepsDocumentCanvasForConfigPatch(t *testing.T) {
 		DSL: entity.JSONMap{
 			"components": map[string]any{
 				"Parser:custom": map[string]any{"obj": map[string]any{
-					"component_name": "Parser", "params": map[string]any{},
+					"component_name": "Parser", "params": map[string]any{"docx": map[string]any{}},
 				}},
 			},
 		},

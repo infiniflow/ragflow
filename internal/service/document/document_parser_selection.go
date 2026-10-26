@@ -35,8 +35,7 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	}
 
 	// The presentation and email extensions all classify as FileTypeDOC, so the
-	// name decides (same name-based rule as Python's get_parser and the
-	// document parser_id guard in document_dataset_update.go).
+	// name decides which dedicated pipeline owns them.
 	name := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(name, ".ppt"),
