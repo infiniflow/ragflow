@@ -434,6 +434,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		return
 	}
 	setAuthIdentity(c, identity)
+	ctx = c.Request.Context()
 	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))

@@ -88,6 +88,8 @@ const (
 	EnvDocEngine                         = "DOC_ENGINE"
 	EnvMaxFileNumPerUser                 = "MAX_FILE_NUM_PER_USER"
 	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
+	EnvMaxJSONContentLength              = "MAX_JSON_CONTENT_LENGTH"
+	EnvMaxMultipartContentLength         = "MAX_MULTIPART_CONTENT_LENGTH"
 	EnvRAGFlowDictPath                   = "RAGFLOW_DICT_PATH"
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"

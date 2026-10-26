@@ -1417,3 +1417,64 @@ func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T
 		})
 	}
 }
+
+// TestGeneralContextSourceTextProjectsMergedRows pins the general-context
+// projection: data-origin row spans stay visible, header-origin spans do not
+// leak into data rows, and a colspan is not duplicated.
+func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
+	cases := []struct {
+		name string
+		td   *entity.TableData
+		want string
+	}{
+		{
+			name: "data rowspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "Group"}, {Text: "Item"}},
+				{{Text: "G1", RowSpan: 2}, {Text: "x"}},
+				{{Covered: true}, {Text: "y"}},
+			}},
+			want: "G1 x\nG1 y",
+		},
+		{
+			name: "header-origin rowspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "H", RowSpan: 2}, {Text: "Name"}},
+				{{Covered: true}, {Text: "Alice"}},
+			}},
+			want: "Alice",
+		},
+		{
+			name: "data colspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "A"}, {Text: "B"}, {Text: "C"}},
+				{{Text: "Wide", ColSpan: 2}, {Covered: true}, {Text: "z"}},
+			}},
+			want: "Wide z",
+		},
+		{
+			name: "rowspan and colspan block",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "A"}, {Text: "B"}, {Text: "C"}},
+				{{Text: "Wide", RowSpan: 2, ColSpan: 2}, {Covered: true}, {Text: "x"}},
+				{{Covered: true}, {Covered: true}, {Text: "y"}},
+			}},
+			want: "Wide x\nWide y",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := generalContextSourceText(schema.ChunkDoc{
+				DocType:   "table",
+				Sheet:     "Sheet1",
+				TableData: tc.td,
+			})
+			if !ok {
+				t.Fatal("generalContextSourceText did not accept the spreadsheet table")
+			}
+			if got != tc.want {
+				t.Fatalf("context = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

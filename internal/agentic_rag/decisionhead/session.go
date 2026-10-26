@@ -204,15 +204,23 @@ func (s *Session) run(ctx context.Context, seq Sequence) ([]float32, error) {
 	}
 	defer runOpts.Destroy()
 	// Terminate the ORT run when ctx is done; done closes once run returns so
-	// the watcher exits on the success path too.
+	// the watcher exits on the success path too. Join the watcher before
+	// runOpts.Destroy() executes (defers run LIFO) so Terminate() can never
+	// touch a freed handle.
 	done := make(chan struct{})
-	defer close(done)
+	var watcher sync.WaitGroup
+	watcher.Add(1)
 	go func() {
+		defer watcher.Done()
 		select {
 		case <-ctx.Done():
 			_ = runOpts.Terminate()
 		case <-done:
 		}
+	}()
+	defer func() {
+		close(done)
+		watcher.Wait()
 	}()
 
 	outputs := []ort.Value{nil, nil}
