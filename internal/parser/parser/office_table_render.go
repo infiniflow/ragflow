@@ -112,7 +112,9 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	if headerRow <= 0 {
 		headerRow = 1
 	}
-	header := append([]string(nil), records[0]...)
+	rowByNum, rowNums := sheetRowIndex(records, headerRow, dataRows)
+	ranges = materializeDetachedMerges(rowByNum, headerRow, ranges)
+	header := append([]string(nil), rowByNum[headerRow]...)
 	headerColEnd := len(header)
 	if headerColEnd == 0 {
 		for _, row := range records {
@@ -126,26 +128,13 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 	}
 	headerTuple := []float64{float64(sheetIndex), float64(headerRow), float64(headerRow), 1, float64(headerColEnd)} // [sheet, rowStart, rowEnd, colStart, colEnd]
 
-	rowByNum := make(map[int][]string, len(records))
-	rowByNum[headerRow] = header
-	for i, row := range records[1:] {
-		rowNum := headerRow + i + 1
-		if len(dataRows) == len(records)-1 {
-			rowNum = dataRows[i]
-		}
-		rowByNum[rowNum] = row
-	}
-
 	rows := make([]spreadsheetSegmentRow, 0, len(records)-1)
-	for i, source := range records[1:] {
-		cells := append([]string(nil), source...)
+	for i := range records[1:] {
+		rowNum := rowNums[i]
+		cells := append([]string(nil), rowByNum[rowNum]...)
 		colStart, colEnd := nonEmptyColumnRange(cells)
 		if colStart == 0 {
 			continue
-		}
-		rowNum := headerRow + i + 1
-		if len(dataRows) == len(records)-1 {
-			rowNum = dataRows[i]
 		}
 		// A merge slave can be the row's only value in a column before the
 		// surviving real cells. The position tuple still has to cover the
@@ -224,7 +213,7 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		for _, r := range body {
 			matrix = append(matrix, r.tuple)
 		}
-		td := buildCanonicalTable(headerRow, header, body, rowByNum, ranges, sheet)
+		td := buildCanonicalTable(headerRow, header, body, ranges, sheet)
 		ti := NewTableDataJSONItem(td, sheet, SpreadsheetPositions(matrix)).(TableItem)
 		ti.Extra = map[string]any{"sheet_index": sheetIndex}
 		return ti.ToMap()
@@ -294,13 +283,89 @@ func nonEmptyColumnRange(row []string) (int, int) {
 	return start, end
 }
 
+// sheetRowIndex maps absolute sheet row numbers to the reordered records and
+// returns the data rows' numbers in record order. The header row is records[0].
+func sheetRowIndex(records [][]string, headerRow int, dataRows []int) (map[int][]string, []int) {
+	byNum := make(map[int][]string, len(records))
+	nums := make([]int, len(records)-1)
+	byNum[headerRow] = records[0]
+	for i, row := range records[1:] {
+		rowNum := headerRow + i + 1
+		if len(dataRows) == len(records)-1 {
+			rowNum = dataRows[i]
+		}
+		nums[i] = rowNum
+		byNum[rowNum] = row
+	}
+	return byNum, nums
+}
+
+// materializeDetachedMerges handles a merge that starts above the detected
+// header and crosses it. Reordering the header to records[0] puts such a
+// merge's origin after the row it covers, which a grid cannot represent as a
+// span. The legacy parser filled the text into the header (and data rows) with
+// no span, so mirror that shape: write the master text into the rows the range
+// covers and drop the range from the geometry. All other merges stay canonical.
+func materializeDetachedMerges(rowByNum map[int][]string, headerRow int, ranges []mergeRange) []mergeRange {
+	if len(ranges) == 0 {
+		return ranges
+	}
+	kept := make([]mergeRange, 0, len(ranges))
+	for _, m := range ranges {
+		if m.sr >= headerRow || m.er < headerRow {
+			kept = append(kept, m)
+			continue
+		}
+		masterRow := rowByNum[m.sr]
+		if m.sc < 1 || m.sc > len(masterRow) {
+			continue
+		}
+		master := masterRow[m.sc-1]
+		if strings.TrimSpace(master) == "" {
+			continue
+		}
+		for row := m.sr; row <= m.er; row++ {
+			cells, ok := rowByNum[row]
+			if !ok {
+				continue
+			}
+			if m.ec > len(cells) {
+				grown := make([]string, m.ec)
+				copy(grown, cells)
+				cells = grown
+				rowByNum[row] = cells
+			}
+			if row == headerRow {
+				// The header row carried a merged title across the columns
+				// the range covers; the legacy header-inheritance path filled
+				// every one of them.
+				for c := m.sc; c <= m.ec; c++ {
+					if strings.TrimSpace(cells[c-1]) == "" {
+						cells[c-1] = master
+					}
+				}
+				continue
+			}
+			// Data rows only inherit a vertical merge's master. A horizontal
+			// data merge keeps its value on the origin column, matching the
+			// legacy data-inheritance rule.
+			if m.sc == m.ec || row == m.sr {
+				if strings.TrimSpace(cells[m.sc-1]) == "" {
+					cells[m.sc-1] = master
+				}
+			}
+		}
+	}
+	return kept
+}
+
 // buildCanonicalTable assembles one segment's TableData from the segment's
 // source rows and the sheet's merge rectangles. The grid keeps merge geometry
 // instead of pre-expanding it: an origin cell carries ColSpan/RowSpan and the
 // positions it engulfs are Covered markers. Consumers choose how to project
 // those covered slots (see tableutil.ResolveRows), so the parser no longer has
 // to decide whether a merged value is a header label or a data value.
-func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegmentRow, rowByNum map[int][]string, ranges []mergeRange, sheet string) *entity.TableData {
+func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegmentRow, ranges []mergeRange, sheet string) *entity.TableData {
 	type sourceRow struct {
 		num   int
 		cells []string
@@ -308,11 +373,7 @@ func buildCanonicalTable(headerRow int, header []string, body []spreadsheetSegme
 	sources := make([]sourceRow, 0, len(body)+1)
 	sources = append(sources, sourceRow{num: headerRow, cells: header})
 	for _, r := range body {
-		cells := rowByNum[r.rowNum]
-		if cells == nil {
-			cells = r.cells
-		}
-		sources = append(sources, sourceRow{num: r.rowNum, cells: cells})
+		sources = append(sources, sourceRow{num: r.rowNum, cells: r.cells})
 	}
 
 	logical := make([][]tableutil.CellInput, 0, len(sources))

@@ -697,6 +697,35 @@ func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
 	}
 }
 
+// TestXLSXParserHeaderBelowMergedTitle asserts a merged title that starts
+// above the detected header and crosses it is materialized into the header
+// cell instead of being lost after the header row is reordered to the front.
+func TestXLSXParserHeaderBelowMergedTitle(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Title")
+		mustMergeCell(t, f, "Sheet1", "A1", "A3")
+		mustSetCell(t, f, "Sheet1", "B3", "Name")
+		mustSetCell(t, f, "Sheet1", "C3", "Value")
+		idx := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCellStyle(t, f, "Sheet1", "B3", "C3", idx)
+		mustSetCell(t, f, "Sheet1", "B4", "Alice")
+		mustSetCell(t, f, "Sheet1", "C4", "1")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Title</th><th>Name</th><th>Value</th>") {
+		t.Fatalf("merged title above the header was lost:\n%s", text)
+	}
+	td := res.JSON[0].ToMap()["table"].(*entity.TableData)
+	if len(td.Grid[0]) != 3 || td.Grid[0][0].Text != "Title" {
+		t.Fatalf("header grid = %+v, want Title in the first column", td.Grid[0])
+	}
+}
+
 // TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
 // characters around cell text are removed, so labels wrapped in U+200C match
 // their clean form in search text.

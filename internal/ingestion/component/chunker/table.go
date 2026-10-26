@@ -133,32 +133,20 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 }
 
 // expandHTMLTableRows turns one table payload into one chunk per data row.
-// tableChunkRows projects a structured TableData to row-major cell texts while
-// preserving one value per logical column. It is the table chunker's view of
-// the canonical merge geometry: data-origin spans are repeated across their
-// covered slots so each projected row keeps the same column count as the
-// header, while a header-origin span stays inside the header block and is not
-// stamped into a data row.
-func tableChunkRows(td *entity.TableData) [][]string {
-	return tableutil.ResolveRows(td, tableutil.RowsTable)
-}
-
-// expandHTMLTableRows turns one table payload into one chunk per data row.
-// It reads the structured TableData contract the parser emits on
-// ChunkDoc.TableData; items without TableData (pre-upgrade HTML markup or
-// non-table records) pass through unchanged as a single chunk. Every emitted
-// chunk carries its content rendered as an HTML <table> on Text, so the
-// persisted content and the chunk id (a hash of Text) describe the same bytes
-// and the UI/index can display a real table; the structured TableData is
-// dropped here and never serialized to the index. Header-only and fallback
-// chunks keep the whole table's HTML (merge geometry intact); per-row chunks
-// carry a flat header+row sub-table (merge-free, see cellGrid).
+// It reads the table's canonical merge geometry through tableutil.RowsTable:
+// data-origin spans are repeated across their covered slots so each projected
+// row keeps the same column count as the header, while a header-origin span
+// stays inside the header block and is not stamped into a data row.
+//
+// Items without TableData pass through unchanged as a single chunk. A
+// header-only or fallback chunk keeps the whole table's canonical HTML; each
+// per-row chunk carries a flat header+row sub-table (see cellGrid).
 func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	td := item.TableData
 	if td == nil {
 		return []schema.ChunkDoc{item}
 	}
-	rows, headerCount := tableChunkRows(td), td.HeaderRows
+	rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsTable), td.HeaderRows
 	if len(rows) <= headerCount {
 		out := item
 		out.Text = tableutil.RenderTableHTML(td)
