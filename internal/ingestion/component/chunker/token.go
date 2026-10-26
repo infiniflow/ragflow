@@ -143,6 +143,9 @@ type TokenChunkerComponent struct {
 // Errors here surface as canvas compile failures (mirrors the
 // python check() phase).
 func NewTokenChunker(params map[string]any) (runtime.Component, error) {
+	if err := schema.ValidateDelimiterEntries(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("TokenChunker: %s", err))
+	}
 	p := defaultsToken(tokenChunkerParam{})
 	p.Update(params)
 	if err := p.TokenChunkerParam.Validate(); err != nil {

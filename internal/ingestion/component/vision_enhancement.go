@@ -189,8 +189,9 @@ func maybeDispatchVisionEnhancement(
 ) (parser.ParseResult, bool, error) {
 	w := window
 
-	// Only enhance successful JSON output format containing items.
-	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
+	// Only enhance successful results that carry JSON items. Produced()
+	// replaces the historical OutputFormat != "json" check.
+	if dispatched.Err != nil || len(dispatched.JSON) == 0 {
 		return stripBackendDescribedResult(dispatched), false, nil
 	}
 

@@ -25,7 +25,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-// insertTTSTestTenant inserts a tenant row; ttsID may be nil (no default
+// insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default
 // TTS model configured).
 func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	t.Helper()
@@ -33,13 +33,16 @@ func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	row := &entity.Tenant{
 		ID:        id,
 		Name:      &name,
-		LLMID:     "glm-4-flash@ZHIPU-AI",
-		EmbdID:    "BAAI/bge-m3@ZHIPU-AI",
-		TTSID:     ttsID,
 		ParserIDs: "naive",
 	}
 	if err := dao.DB.Create(row).Error; err != nil {
 		t.Fatalf("insert test tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "owner-" + id, UserID: id, TenantID: id, Role: "owner", Status: sptr(string(entity.StatusValid)),
+		LLMID: "glm-4-flash@ZHIPU-AI", EmbdID: "BAAI/bge-m3@ZHIPU-AI", TTSID: ttsID,
+	}).Error; err != nil {
+		t.Fatalf("insert test owner membership: %v", err)
 	}
 }
 

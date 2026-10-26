@@ -40,7 +40,7 @@ var extractorValidParamKeys = func() map[string]struct{} {
 }()
 
 // componentParamSchemaKeys maps a DSL component_name (lower-cased) to the
-// param keys its param schema declares. CleanComponentParams unions these with
+// param keys its param schema declares. cleanComponentParams unions these with
 // the keys a template already bakes, so a param the component can read is
 // never dropped just because a template — or a canvas snapshot saved before
 // the param existed — does not carry it.
@@ -186,21 +186,14 @@ func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
 	return nil, false
 }
 
-// CleanComponentParams filters rawConfig against the DSL schema given by dslJSON.
+// cleanComponentParams filters rawConfig against the extracted DSL schemas.
 // Keys containing ':' are treated as component IDs; they are kept only when both
 // the cpnID AND the param name exist in one of the accepted-key sources: the DSL
 // schema (the params the template bakes), the schema-derived per-component table
 // (componentParamSchemaKeys), or the component's dynamic parameter schema (e.g.
 // Extractor modular features). Keys without ':' (legacy flat fields) are dropped
 // with a warning.
-func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[string]interface{} {
-	schemas, err := ExtractAllComponentParams(dslJSON)
-	if err != nil {
-		common.Warn("CleanComponentParams: failed to extract DSL schema, returning input as-is",
-			zap.Error(err))
-		return rawConfig
-	}
-
+func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]interface{}) map[string]interface{} {
 	validCPNs := make(map[string]map[string]struct{}, len(schemas))
 	componentNames := make(map[string]string, len(schemas))
 	for _, s := range schemas {
@@ -233,13 +226,13 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 	result := make(map[string]interface{}, len(rawConfig))
 	for key, val := range rawConfig {
 		if !strings.Contains(key, ":") {
-			common.Warn("CleanComponentParams: dropping legacy flat field",
+			common.Warn("cleanComponentParams: dropping legacy flat field",
 				zap.String("key", key))
 			continue
 		}
 		validKeys, ok := validCPNs[key]
 		if !ok {
-			common.Warn("CleanComponentParams: dropping unknown cpnID",
+			common.Warn("cleanComponentParams: dropping unknown cpnID",
 				zap.String("cpnID", key))
 			continue
 		}
@@ -274,7 +267,7 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 					continue
 				}
 			}
-			common.Warn("CleanComponentParams: dropping unknown param",
+			common.Warn("cleanComponentParams: dropping unknown param",
 				zap.String("cpnID", key), zap.String("param", pk))
 		}
 		if len(cleaned) > 0 {
@@ -374,17 +367,16 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 // BuildParserConfig builds the final parser_config by starting from the DSL
 // defaults for every component, then overlaying the cleaned incoming overrides.
 // This ensures all components from the current pipeline are present while
-// stripping stale params from other pipelines.
-func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.JSONMap {
-	cleaned := CleanComponentParams(dslJSON, rawConfig)
-	defaults, err := ComponentParamsDefaults(dslJSON)
+// stripping stale params from other pipelines. Invalid DSL returns an error.
+func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) (entity.JSONMap, error) {
+	schemas, err := ExtractAllComponentParams(dslJSON)
 	if err != nil {
-		common.Warn("BuildParserConfig: failed to extract DSL defaults, using cleaned only",
-			zap.Error(err))
-		return entity.JSONMap(cleaned)
+		return nil, err
 	}
-	result := make(entity.JSONMap, len(defaults))
-	for cpnID, params := range defaults {
+	cleaned := cleanComponentParams(schemas, rawConfig)
+	result := make(entity.JSONMap, len(schemas))
+	for _, component := range schemas {
+		cpnID, params := component.CpnID, component.ParamsDefaults
 		base := make(map[string]interface{}, len(params))
 		for k, v := range params {
 			base[k] = v
@@ -398,7 +390,7 @@ func BuildParserConfig(dslJSON []byte, rawConfig map[string]interface{}) entity.
 		}
 		result[cpnID] = base
 	}
-	return result
+	return result, nil
 }
 
 // ApplyParentChildChunkerConfig derives runtime children_delimiters from the

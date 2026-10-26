@@ -19,16 +19,13 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -321,10 +318,9 @@ func buildArxivReferences(envelope map[string]any) ([]map[string]any, []map[stri
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(arxivHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(arxivHashInt(documentID, 500), 10)
 		title := arxivText(paper["title"])
 		resultURL := arxivText(paper["pdf_url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -369,12 +365,6 @@ func arxivText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func arxivHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateArxivRunes(value string, limit int) string {

@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // SkillSpaceService handles business logic for skills space operations
@@ -152,10 +153,23 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	if req.Name == "" {
 		return nil, common.CodeDataError, fmt.Errorf("space name is required")
 	}
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		code, normalized := normalizeSkillSpacePermissionError(err)
 		return nil, code, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "file", permission.ActionWrite); err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	defaultEmbdID := req.EmbdID
+	if defaultEmbdID == "" {
+		defaultEmbdID, _, err = NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
+		if err != nil {
+			common.Error("Failed to resolve default embedding model for skill space", err,
+				zap.String("tenantID", tenantID), zap.String("userID", userID))
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", err)
+		}
 	}
 
 	// Tenant-scoped serialization to prevent concurrent create/delete races
@@ -237,11 +251,6 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 		SourceType: "skill_space",
 	}
 
-	if err = s.fileDAO.Create(ctx, dao.DB, folder); err != nil {
-		common.Error("Failed to create space folder", err)
-		return nil, common.CodeOperatingError, fmt.Errorf("failed to create space folder: %w", err)
-	}
-
 	// Create the space
 	space := &entity.SkillSpace{
 		ID:          spaceID,
@@ -255,23 +264,28 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 		Status:      "1",
 	}
 
-	if err = s.spaceDAO.Create(ctx, dao.DB, space); err != nil {
-		// Rollback: delete the created folder
-		common.Error("Failed to create space in database", err)
-		s.fileDAO.DeleteByIDs(ctx, dao.DB, []string{folderID})
-		return nil, common.CodeOperatingError, fmt.Errorf("failed to create space: %w", err)
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.fileDAO.Create(ctx, tx, folder); err != nil {
+			return fmt.Errorf("failed to create space folder: %w", err)
+		}
+		if err := s.spaceDAO.Create(ctx, tx, space); err != nil {
+			return fmt.Errorf("failed to create space: %w", err)
+		}
+		checker := permission.NewDatabaseChecker(tx)
+		if err := checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
+			return err
+		}
+		return checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
+	}); err != nil {
+		common.Error("Failed to create skill space", err)
+		return nil, common.CodeOperatingError, err
 	}
 
 	// Create default search config for this space
-	defaultEmbdID := req.EmbdID
-	if defaultEmbdID == "" {
-		tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
-		if err == nil && tenant != nil && tenant.EmbdID != "" {
-			defaultEmbdID = tenant.EmbdID
-			common.Info("Using tenant default embedding model", zap.String("tenantID", tenantID), zap.String("embdID", defaultEmbdID))
-		} else {
-			common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", tenantID))
-		}
+	if req.EmbdID == "" && defaultEmbdID != "" {
+		common.Info("Using tenant member default embedding model", zap.String("tenantID", tenantID), zap.String("embdID", defaultEmbdID))
+	} else if defaultEmbdID == "" {
+		common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", tenantID))
 	}
 	if defaultEmbdID != "" {
 		if _, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, defaultEmbdID); err != nil {

@@ -641,7 +641,11 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 		if td == nil {
 			return "", false
 		}
-		rows, headerCount := td.CellTexts(), td.HeaderRows
+		// RowsData is the general-context view: data-origin row spans are
+		// resolved at the origin column, header-origin spans stay out of data
+		// rows, and a colspan is not duplicated. CellTexts would skip every
+		// Covered slot, dropping a data rowspan from the context entirely.
+		rows, headerCount := tableutil.ResolveRows(td, tableutil.RowsData), td.HeaderRows
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))

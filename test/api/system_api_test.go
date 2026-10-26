@@ -43,7 +43,7 @@ func TestRESTSystemPublicContracts(t *testing.T) {
 
 func TestRESTSystemProtectedContracts(t *testing.T) {
 	unauth := unauthenticatedConfig()
-	for _, path := range []string{"/system/status", "/system/stats", "/system/tokens", "/system/config/log"} {
+	for _, path := range []string{"/system/status", "/system/stats/chat", "/system/tokens", "/system/config/log"} {
 		result := restCall(t, &unauth, http.MethodGet, path, nil, nil)
 		if result.Status != http.StatusUnauthorized || result.JSON["code"] != float64(401) {
 			t.Fatalf("%s auth contract: status=%d body=%v", path, result.Status, result.JSON)
@@ -55,7 +55,7 @@ func TestRESTSystemProtectedContracts(t *testing.T) {
 			t.Fatalf("status missing %q: %v", key, status)
 		}
 	}
-	stats := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/system/stats", nil, nil))["data"])
+	stats := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/system/stats/chat", nil, nil))["data"])
 	for _, key := range []string{"pv", "uv", "speed", "tokens", "round", "thumb_up"} {
 		if _, ok := stats[key].([]any); !ok {
 			t.Fatalf("stats[%q] must be an array: %T", key, stats[key])

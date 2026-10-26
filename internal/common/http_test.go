@@ -158,7 +158,7 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	})
 
 	payload := &trackingReadCloser{reader: strings.NewReader(`{"query":"hello"}`)}
-	client := &http.Client{Transport: newProviderLoggingTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: NewProviderLoggingTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusNoContent,
 			Header:     make(http.Header),

@@ -218,8 +218,8 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))

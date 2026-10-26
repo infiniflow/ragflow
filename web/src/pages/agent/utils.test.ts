@@ -272,7 +272,7 @@ describe('transformTokenChunkerParams', () => {
     } as any);
 
     expect(result.overlapped_percent).toBeCloseTo(0.3);
-    expect(result.delimiters).toEqual(['\n']);
+    expect(result.delimiters).toEqual(['\n', '']);
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
