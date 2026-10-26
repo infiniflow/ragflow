@@ -172,6 +172,9 @@ func (p *communityPolicy) Scope(ctx context.Context, subject Subject, query Scop
 }
 
 func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, bool, error) {
+	if query.Kind == ResourceKindMCPServer && query.Operation == OperationRead && query.Parent.ID == "" && query.Parent.Kind == "" && query.Entry == nil {
+		return p.mcpServerReadQueryScope(ctx, subject)
+	}
 	if query.Kind == ResourceKindFile || query.Kind == ResourceKindFolder {
 		return p.fileReadQueryScope(ctx, subject, query)
 	}
@@ -212,6 +215,27 @@ func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query
 			Where("EXISTS (?)", activeOwner).
 			Where("(EXISTS (?) OR (knowledgebase.permission = ? AND EXISTS (?)))", callerIsOwner, string(entity.TenantPermissionTeam), callerIsMember)
 		return query.Where("knowledgebase.id IN (?)", accessibleDatasets)
+	}}, true, nil
+}
+
+func (p *communityPolicy) mcpServerReadQueryScope(ctx context.Context, subject Subject) (QueryScope, bool, error) {
+	if err := validateSubject(subject); err != nil {
+		return QueryScope{}, true, err
+	}
+	tenantID := strings.TrimSpace(subject.TenantID)
+	if tenantID == "" {
+		return QueryScope{}, true, ErrInvalidSubject
+	}
+	source, ok := p.source.(*databaseSource)
+	if !ok || source.db == nil {
+		return QueryScope{}, false, nil
+	}
+	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+		activeOwner := source.db.WithContext(ctx).Model(&entity.UserTenant{}).
+			Select("1").
+			Where("user_tenant.tenant_id = mcp_server.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?",
+				subject.UserID, string(RoleOwner), string(entity.StatusValid))
+		return query.Where("mcp_server.tenant_id = ?", tenantID).Where("EXISTS (?)", activeOwner)
 	}}, true, nil
 }
 
@@ -298,12 +322,9 @@ func (p *communityPolicy) FilterResources(ctx context.Context, subject Subject, 
 	return accessible, nil
 }
 
-func (p *communityPolicy) FilterAccesses(ctx context.Context, subject Subject, refs []ResourceRef, operation Operation) (map[ResourceRef]Access, error) {
+func (p *communityPolicy) ResolveAccesses(ctx context.Context, subject Subject, refs []ResourceRef) (map[ResourceRef]Access, error) {
 	if err := validateSubject(subject); err != nil {
 		return nil, err
-	}
-	if !validOperation(operation) {
-		return nil, ErrInvalidPermission
 	}
 	evaluation := newEvaluation(p.source)
 	refs = uniqueRefs(refs)
@@ -313,17 +334,30 @@ func (p *communityPolicy) FilterAccesses(ctx context.Context, subject Subject, r
 	accesses := make(map[ResourceRef]Access, len(refs))
 	for _, ref := range refs {
 		access, err := evaluation.resolveAccess(ctx, subject, ref)
-		if err == nil && access.Allows(operation) {
-			accesses[ref] = access
-			continue
-		}
 		if err == nil {
+			accesses[ref] = access
 			continue
 		}
 		if errorsIsPermissionDenial(err) || errors.Is(err, ErrResourceNotFound) {
 			continue
 		}
 		return nil, err
+	}
+	return accesses, nil
+}
+
+func (p *communityPolicy) FilterAccesses(ctx context.Context, subject Subject, refs []ResourceRef, operation Operation) (map[ResourceRef]Access, error) {
+	if !validOperation(operation) {
+		return nil, ErrInvalidPermission
+	}
+	accesses, err := p.ResolveAccesses(ctx, subject, refs)
+	if err != nil {
+		return nil, err
+	}
+	for ref, access := range accesses {
+		if !access.Allows(operation) {
+			delete(accesses, ref)
+		}
 	}
 	return accesses, nil
 }

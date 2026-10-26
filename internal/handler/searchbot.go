@@ -290,7 +290,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.tenantSvc != nil {
 		ctx := c.Request.Context()
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
+		defaultModel, err := h.tenantSvc.GetDefaultModelNameForUser(ctx, user.ID, entity.ModelTypeChat)
 		if err == nil && defaultModel != "" {
 			modelID = defaultModel
 		}
