@@ -218,7 +218,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
