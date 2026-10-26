@@ -43,6 +43,13 @@ package agentic_rag
 //     repeated.
 //
 // A corpus without compiled claims pays one existence probe and nothing else.
+//
+// Coverage, measured on the FRAMES corpus: of the 68,677 chunks the retrieval
+// can actually return (available_int=1), 51,222 (75%) are referenced by at least
+// one claim, and the compiled rows carry 4-36 claims per chunk. So most hits can
+// be answered from their compiled artifacts, but not all: a run whose
+// covered_chunks/chunks ratio is low is looking at uncompiled chunks, and the raw
+// chunk is the only evidence there is.
 
 import (
 	"context"
