@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -440,6 +441,7 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 			content = tavilyText(item["content"])
 		}
 		content = tavilyDataImagePattern.ReplaceAllString(content, "")
+		content = rewriteTavilyImageURLs(content, tavilyText(item["url"]))
 		content = truncateTavilyRunes(content, 10000)
 		if content == "" {
 			continue
@@ -469,6 +471,23 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 		})
 	}
 	return chunks, docAggs
+}
+
+var tavilyMarkdownImagePattern = regexp.MustCompile(`(!\[[^]]*\]\()([^\s)]+)(\))`)
+
+func rewriteTavilyImageURLs(content, pageURL string) string {
+	base, err := url.Parse(pageURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return content
+	}
+	return tavilyMarkdownImagePattern.ReplaceAllStringFunc(content, func(image string) string {
+		parts := tavilyMarkdownImagePattern.FindStringSubmatch(image)
+		ref, err := url.Parse(parts[2])
+		if err != nil || ref.Scheme != "" || ref.Host != "" || strings.HasPrefix(parts[2], "data:") {
+			return image
+		}
+		return parts[1] + base.ResolveReference(ref).String() + parts[3]
+	})
 }
 
 func renderTavilyReferences(chunks []map[string]any, maxTokens int) string {
