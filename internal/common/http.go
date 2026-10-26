@@ -38,6 +38,11 @@ import (
 const (
 	redactedLogValue      = "[REDACTED]"
 	maxLoggedVectorFloats = 3
+
+	// MaxJSONRequestBodyBytes is the default request body limit for API requests.
+	MaxJSONRequestBodyBytes int64 = 1 << 20
+	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
+	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
 )
 
 var ssrfHttpClient *http.Client
