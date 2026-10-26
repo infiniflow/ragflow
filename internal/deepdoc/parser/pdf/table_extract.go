@@ -209,9 +209,8 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 }
 
 // dedupTableBoxes drops contained text fragments without merging distinct rows.
-// OCR fragments may overshoot their container vertically; require most of the
-// fragment's height to overlap, strict horizontal containment, and no greater
-// height. Adjacent repeated rows and repeated values in different columns survive.
+// An OCR fragment that overshoots vertically must be a strict text substring
+// with smaller height and most of its area inside the containing box.
 func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 	keep := make([]bool, len(boxes))
 	for i := range boxes {
@@ -238,12 +237,12 @@ func dedupTableBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 				keep[j] = false
 				continue
 			}
-			if !inner.IsOCR || !outer.IsOCR {
+			if !inner.IsOCR || !outer.IsOCR || at == bt {
 				continue
 			}
 			height := inner.Bottom - inner.Top
 			overlap := math.Min(inner.Bottom, outer.Bottom) - math.Max(inner.Top, outer.Top)
-			if height > 0 && height <= outer.Bottom-outer.Top && overlap >= height*0.6 {
+			if height > 0 && height < outer.Bottom-outer.Top && overlap >= height*0.6 {
 				keep[j] = false
 			}
 		}

@@ -367,3 +367,37 @@ func TestProcessOneTable_PreservesAdjacentRows(t *testing.T) {
 		t.Fatalf("rows = %v, want %v", item.Rows, want)
 	}
 }
+
+func TestProcessOneTable_PreservesOverlappingRows(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		boxes []pdf.TextBox
+		want  [][]string
+	}{
+		{"identical text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true},
+		}, [][]string{{"R/W"}, {"R/W"}}},
+		{"substring text", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 5, Bottom: 15, Text: "100", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "10", IsOCR: true},
+		}, [][]string{{"100"}, {"10"}}},
+		{"identical text with different heights", []pdf.TextBox{
+			{X0: 0, X1: 50, Top: 3, Bottom: 15, Text: "R/W", IsOCR: true},
+			{X0: 0, X1: 50, Top: 9, Bottom: 19, Text: "R/W", IsOCR: true},
+		}, [][]string{{"R/W"}, {"R/W"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			builder := &twoRowTableBuilder{cells: []pdf.TSRCell{
+				{X0: 0, X1: 150, Y0: 0, Y1: 30},
+				{X0: 0, X1: 150, Y0: 30, Y1: 60},
+			}}
+			match := tbl.TableMatch{Region: pdf.DLARegion{X0: 0, Y0: 0, X1: 150, Y1: 60}, BoxIdx: []int{0, 1}}
+			item := NewParser(pdf.DefaultParserConfig()).processOneTable(t.Context(), image.NewGray(image.Rect(0, 0, 180, 90)), tc.boxes, 0, &orientationScoringDoc{}, builder, match, pdf.DlaScale)
+			tbl.ConstructTable(item.Cells, nil, "", &item)
+			if !reflect.DeepEqual(item.Rows, tc.want) {
+				t.Fatalf("rows = %v, want %v", item.Rows, tc.want)
+			}
+		})
+	}
+}
