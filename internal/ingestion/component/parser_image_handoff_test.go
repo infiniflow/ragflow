@@ -29,30 +29,36 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-// TestImageHandoffAlwaysEmitsJSON pins the #16835 contract: the Parser's image
-// branch hands the Tokenizer a JSON payload regardless of what the user's
-// setups["image"]["output_format"] says. The image parser has no text payload
-// to fall back on, so the emitted format is not a user choice.
+// TestImageHandoffAlwaysEmitsJSON pins the #16835 contract at the place it
+// actually breaks: a Parser run over an image must hand the Tokenizer a JSON
+// payload, and the Tokenizer must turn it into a chunk. The image parser has no
+// text payload to fall back on, so the emitted format is not a user choice and
+// setups["image"]["output_format"] must not reach it.
 //
-// The failure mode is silent: a "text" handoff routes the Tokenizer to its
-// text branch, which reads the top-level text field the image parser never
-// fills, and the document indexes zero chunks while the pipeline reports
-// success.
+// The failure mode is silent: a "text" handoff routes the Tokenizer to its text
+// branch, which reads the top-level text field the image parser never fills, and
+// the document indexes zero chunks while the pipeline reports success.
+//
+// The single write point is buildParserOutputs; every media branch (image,
+// audio, PDF vision) leaves through it, so asserting here covers them all.
+// TestMaybeDispatchImage_HardcodesJSONOutput and TestLegacyOutputFormatKeyIsIgnored
+// pin the same invariant one level down; this is the only one that measures the
+// reported symptom.
 func TestImageHandoffAlwaysEmitsJSON(t *testing.T) {
+	withFileComponentTestDB(t)
+
 	origResolver := resolveTenantModelByType
 	t.Cleanup(func() { resolveTenantModelByType = origResolver })
 
 	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
 	}
 
-	setups := defaultSetups()
-	setups["image"] = schema.ParserSetup{
-		"parse_method":  "ocr",
-		"suffix":        []any{"png"},
-		"output_format": "text",
-	}
+	// OCR off, so the only text source is the vision model: a non-empty item
+	// proves the payload came through the handoff rather than a local fallback.
+	setups := imageSwitchSetups(t, false)
+	setups["image"]["output_format"] = "text"
 
 	c := &ParserComponent{setups: setups, enableVisionEnhancement: true}
 	out, err := c.Invoke(t.Context(), dao.DB, map[string]any{
@@ -76,13 +82,10 @@ func TestImageHandoffAlwaysEmitsJSON(t *testing.T) {
 	if item["doc_type_kwd"] != "image" {
 		t.Fatalf("doc_type_kwd = %v, want image", item["doc_type_kwd"])
 	}
-	text, _ := item["text"].(string)
-	if text == "" {
-		t.Fatal("image item carries no text; the vision answer was lost")
+	if text, _ := item["text"].(string); text != "captured" {
+		t.Fatalf("image item text = %q, want the vision answer %q", text, "captured")
 	}
 
-	// The reported symptom is measured at the Tokenizer boundary, so assert the
-	// handoff there rather than only on the Parser's own map.
 	upstream, err := decodeTokenizerFromUpstream(out)
 	if err != nil {
 		t.Fatalf("decodeTokenizerFromUpstream: %v", err)
@@ -94,7 +97,7 @@ func TestImageHandoffAlwaysEmitsJSON(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1", len(chunks))
 	}
-	if chunks[0].Text != text {
-		t.Errorf("chunk text = %q, want %q", chunks[0].Text, text)
+	if chunks[0].Text != "captured" {
+		t.Errorf("chunk text = %q, want %q", chunks[0].Text, "captured")
 	}
 }
