@@ -140,6 +140,14 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		pxW := int(math.Round(pw * scale))
 		pxH := int(math.Round(ph * scale))
 
+		// Reject absurd pages before pdfium allocates the bitmap: the fill loop
+		// below touches every pixel, so an unbounded bitmap is an OOM vector.
+		const maxBitmapBytes = 1 << 30
+		if int64(pxW)*int64(pxH)*4 > maxBitmapBytes {
+			err = fmt.Errorf("pdfium: page %d bitmap %dx%d exceeds %d bytes", pageIdx, pxW, pxH, maxBitmapBytes)
+			return
+		}
+
 		bitmap := C.FPDFBitmap_Create(C.int(pxW), C.int(pxH), 1) // 1 = RGBA
 		if bitmap == nil {
 			err = fmt.Errorf("pdfium: FPDFBitmap_Create(%d,%d) returned nil", pxW, pxH)
@@ -151,7 +159,13 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		// (e.g. outside crop box) are white rather than undefined.
 		stride := int(C.FPDFBitmap_GetStride(bitmap))
 		buf := C.FPDFBitmap_GetBuffer(bitmap)
-		pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[: pxH*stride : pxH*stride]
+		if stride <= 0 || buf == nil {
+			err = fmt.Errorf("pdfium: bitmap %dx%d has invalid buffer (stride %d)", pxW, pxH, stride)
+			return
+		}
+		// pdfium owns a pxH*stride byte buffer. Describe it directly instead of
+		// slicing a fixed [1<<30]byte array, which panicked on large pages.
+		pixels := unsafe.Slice((*byte)(buf), pxH*stride)
 		for i := range pixels {
 			pixels[i] = 255
 		}

@@ -28,6 +28,44 @@ func addBox(boxes *[]pdf.TextBox, x0, x1 float64) {
 	})
 }
 
+// TestGapColumnWidthsCapsHistogram proves the OOM guard: an absurd page extent
+// must not allocate one histogram bin per point. The call is expected to return
+// quickly with a bounded bin count instead of trying a multi-GB allocation.
+func TestGapColumnWidthsCapsHistogram(t *testing.T) {
+	// The shared bin helper must widen the bin instead of allocating one bin
+	// per point for an absurd extent.
+	effBin, nb := columnHistogramBins(1e9, binPt)
+	if nb > maxBins+1 {
+		t.Fatalf("bin count %d exceeds cap %d", nb, maxBins)
+	}
+	if effBin <= binPt {
+		t.Fatalf("bin width %v was not widened for a 1e9 extent", effBin)
+	}
+	// Normal page extents keep the configured resolution.
+	if eff, n := columnHistogramBins(600, binPt); eff != binPt || n != 301 {
+		t.Fatalf("normal extent bins = (%v, %d), want (%v, 301)", eff, n, binPt)
+	}
+
+	var lines []pdf.TextBox
+	for i := 0; i < 20; i++ {
+		lines = append(lines, pdf.TextBox{X0: 100, X1: 300})
+	}
+	for i := 0; i < 20; i++ {
+		lines = append(lines, pdf.TextBox{X0: 400, X1: 600})
+	}
+	lines = append(lines, pdf.TextBox{X0: 100, X1: 1e9}) // malformed extent
+
+	widths := gapColumnWidths(lines)
+	if len(widths) == 0 {
+		t.Fatal("gapColumnWidths returned no widths for a two-column page")
+	}
+	for _, w := range widths {
+		if w <= 0 || w > 1e9 {
+			t.Fatalf("implausible column width %v", w)
+		}
+	}
+}
+
 // TestTextProjectionLinesStripsFigures proves A1: image and equation
 // placeholders must not feed the column projection (a figure spanning the
 // gutter would otherwise mask a real column boundary). Text and table boxes
