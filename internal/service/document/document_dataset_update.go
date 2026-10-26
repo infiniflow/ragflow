@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"path/filepath"
 	"ragflow/internal/service"
@@ -179,6 +180,15 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	selectionChanged := current.Mode != eff.Mode ||
 		(isPipeline && current.PipelineID != eff.PipelineID) ||
 		(!isPipeline && current.ParserID != effParserID)
+	if selectionChanged && current.IsBuiltIn() && eff.IsBuiltIn() {
+		registry, err := pipelinepkg.DefaultRegistry()
+		if err != nil {
+			return nil, common.CodeDataError, fmt.Errorf("builtin pipeline registry: %w", err)
+		}
+		previous, previousOK := registry.Get(current.ParserID)
+		target, targetOK := registry.Get(effParserID)
+		selectionChanged = !previousOK || !targetOK || previous.ParserID != target.ParserID
+	}
 	hasConfig := present["parser_config"] && req.ParserConfig != nil
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
@@ -219,7 +229,17 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		}
 		if selectionChanged || hasConfig {
-			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, rawConfig)
+			// Inherited runtime delimiters are not an explicit override when
+			// this request changes parent_child.
+			parentChildOverrides := maps.Clone(rawConfig)
+			for componentID, raw := range req.ParserConfig {
+				if requested, ok := raw.(map[string]any); ok {
+					if _, provided := requested["parent_child"]; provided {
+						parentChildOverrides[componentID] = requested
+					}
+				}
+			}
+			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			parserUpdates["parser_config"] = cleaned
@@ -342,6 +362,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc
 	if present["chunk_method"] {
 		if req.ChunkMethod == nil || strings.TrimSpace(*req.ChunkMethod) == "" {
 			return common.CodeDataError, errors.New("`chunk_method` (empty string) is not valid")
+		}
+		registry, err := pipelinepkg.DefaultRegistry()
+		if err != nil {
+			return common.CodeDataError, fmt.Errorf("builtin pipeline registry: %w", err)
+		}
+		if !registry.IsValid(*req.ChunkMethod) {
+			return common.CodeDataError, fmt.Errorf("unknown builtin parser_id: %s", strings.TrimSpace(*req.ChunkMethod))
 		}
 	}
 

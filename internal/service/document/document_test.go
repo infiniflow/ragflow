@@ -2495,6 +2495,9 @@ func TestUpdateDatasetDocumentSavesVisionModelAcrossFileTypes(t *testing.T) {
 	}{
 		{"image.png", "visual", "general"},
 		{"deck.pptx", "ppt", "presentation"},
+		{"deck.pages", "doc", "presentation"},
+		{"DECK.DPS", "ppt", "presentation"},
+		{"deck.dpt", "ppt", "presentation"},
 		{"report.docx", "doc", "manual"},
 	} {
 		for _, selection := range []string{"parser_id", "chunk_method"} {

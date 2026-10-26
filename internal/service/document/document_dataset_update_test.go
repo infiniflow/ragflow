@@ -12,6 +12,53 @@ import (
 	"ragflow/internal/service"
 )
 
+func TestUpdateDatasetDocumentParentChildPatchUsesRequestedFields(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		children []any
+		patch    map[string]any
+		want     []any
+	}{
+		{"enable", false, []any{}, map[string]any{"parent_child": map[string]any{"use_parent_child": true}}, []any{"|"}},
+		{"disable", true, []any{"|"}, map[string]any{"parent_child": map[string]any{"use_parent_child": false}}, []any{}},
+		{"delimiter", true, []any{"|"}, map[string]any{"parent_child": map[string]any{"children_delimiter": "!"}}, []any{"!"}},
+		{"explicit children", true, []any{"|"}, map[string]any{"parent_child": map[string]any{"children_delimiter": "!"}, "children_delimiters": []any{"?"}}, []any{"?"}},
+		{"unrelated patch", false, []any{"|"}, map[string]any{"chunk_token_size": 128}, []any{"|"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "report.txt", 0, 0)
+			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+				"GeneralChunker:SixApplesFall": map[string]any{
+					"children_delimiters": tc.children,
+					"parent_child":        map[string]any{"use_parent_child": tc.enabled, "children_delimiter": "|"},
+				},
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+				ParserConfig: map[string]any{"GeneralChunker:SixApplesFall": tc.patch},
+			}, map[string]bool{"parser_config": true})
+			if code != common.CodeSuccess || err != nil {
+				t.Fatalf("update: code=%d err=%v", code, err)
+			}
+			doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, config := range []map[string]any{resp.ParserConfig, doc.ParserConfig} {
+				chunker, _ := config["GeneralChunker:SixApplesFall"].(map[string]any)
+				if !reflect.DeepEqual(chunker["children_delimiters"], tc.want) {
+					t.Fatalf("children_delimiters=%v, want=%v", chunker["children_delimiters"], tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) {
 	for _, selection := range []string{"omitted", "same builtin", "same canvas"} {
 		t.Run(selection, func(t *testing.T) {
@@ -70,7 +117,7 @@ func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) 
 }
 
 func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testing.T) {
-	for _, filename := range []string{"image.png", "deck.pptx"} {
+	for _, filename := range []string{"image.png", "deck.pptx", "deck.pages", "DECK.DPS", "deck.dpt"} {
 		for _, selection := range []string{"chunk_method", "parser_id"} {
 			for _, withConfig := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/config=%t", filename, selection, withConfig), func(t *testing.T) {
@@ -121,6 +168,66 @@ func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testin
 					}
 					if !reflect.DeepEqual(engine.records["doc-1"], map[string]any{"author": "original"}) {
 						t.Fatalf("rejected request changed metadata: %#v", engine.records)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestUpdateDatasetDocumentParserAliasPreservesConfig(t *testing.T) {
+	for _, current := range []string{"naive", "general"} {
+		for _, selection := range []string{"chunk_method", "parser_id"} {
+			for _, withConfig := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/config=%t", current, selection, withConfig), func(t *testing.T) {
+					db := setupServiceTestDB(t)
+					pushServiceDB(t, db)
+					insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+					insertNamedTestDoc(t, "doc-1", "kb-1", "report.docx", 0, 0)
+					if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]any{
+						"parser_id":     current,
+						"parser_config": entity.JSONMap{"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 123}},
+					}).Error; err != nil {
+						t.Fatal(err)
+					}
+					target := "general"
+					if current == "general" {
+						target = "naive"
+					}
+					req := &UpdateDatasetDocumentRequest{}
+					present := map[string]bool{selection: true}
+					if selection == "parser_id" {
+						req.ParseType, req.ParserID = new(1), &target
+						present["parse_type"] = true
+					} else {
+						req.ChunkMethod = &target
+					}
+					if withConfig {
+						req.ParserConfig = map[string]any{"Parser:HipSignsRhyme": map[string]any{"enable_vision_enhancement": true}}
+						present["parser_config"] = true
+					}
+					resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+					if err != nil || code != common.CodeSuccess {
+						t.Fatalf("update: code=%d err=%v", code, err)
+					}
+					doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					if resp.ParserID != target || doc.ParserID != target {
+						t.Fatalf("parser ID not saved: response=%q stored=%q want=%q", resp.ParserID, doc.ParserID, target)
+					}
+					for _, config := range []map[string]any{resp.ParserConfig, doc.ParserConfig} {
+						chunker, _ := config["GeneralChunker:SixApplesFall"].(map[string]any)
+						if chunker["chunk_token_size"] != float64(123) {
+							t.Fatalf("alias switch reset chunk size: %#v", config)
+						}
+						if withConfig {
+							parser, _ := config["Parser:HipSignsRhyme"].(map[string]any)
+							if parser["enable_vision_enhancement"] != true {
+								t.Fatalf("alias switch lost config patch: %#v", config)
+							}
+						}
 					}
 				})
 			}
@@ -288,7 +395,7 @@ func TestUpdateDatasetDocumentKeepsDocumentCanvasForConfigPatch(t *testing.T) {
 }
 
 func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
-	for _, failure := range []string{"unknown builtin", "unknown builtin without config", "empty canvas", "malformed canvas", "invalid selection", "knowledge_graph", "tag"} {
+	for _, failure := range []string{"unknown builtin", "unknown builtin without config", "empty canvas", "malformed canvas", "invalid selection", "knowledge_graph", "tag", "invalid chunk with builtin", "invalid chunk with canvas"} {
 		t.Run(failure, func(t *testing.T) {
 			db := setupServiceTestDB(t)
 			pushServiceDB(t, db)
@@ -304,6 +411,17 @@ func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
 			present := map[string]bool{"name": true, "parse_type": true, "parser_id": true, "parser_config": true, "meta_fields": true}
 			wantError := "unknown builtin parser_id"
 			switch failure {
+			case "invalid chunk with builtin", "invalid chunk with canvas":
+				req.ParserID, req.ChunkMethod = new("general"), new("does-not-exist")
+				present["chunk_method"] = true
+				wantError = "unknown builtin parser_id: does-not-exist"
+				if failure == "invalid chunk with canvas" {
+					const pipelineID = "1234567890abcdef1234567890abcdef"
+					insertTestCanvas(t, pipelineID, "user-1")
+					req.ParseType, req.ParserID, req.PipelineID = new(2), nil, new(pipelineID)
+					delete(present, "parser_id")
+					present["pipeline_id"] = true
+				}
 			case "knowledge_graph", "tag":
 				req.ParseType, req.ParserID, req.ChunkMethod = nil, nil, &failure
 				delete(present, "parse_type")
