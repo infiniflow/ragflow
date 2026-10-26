@@ -166,6 +166,10 @@ type CreateDatasetRequest struct {
 	Permission     *string                `json:"permission,omitempty"`
 	ParserID       *string                `json:"parser_id,omitempty"`
 	PipelineID     *string                `json:"pipeline_id,omitempty"`
+	// PipelineVersionID optionally pins a specific canvas version when
+	// ParseType is Pipeline. When empty the latest version is bound (design
+	// section 5 sticky snapshot). Ownership is validated against PipelineID.
+	PipelineVersionID *string `json:"pipeline_version_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
@@ -191,6 +195,10 @@ type UpdateDatasetRequest struct {
 	Pagerank       *int64                     `json:"pagerank,omitempty"`
 	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
 	PipelineID     *string                    `json:"pipeline_id,omitempty"`
+	// PipelineVersionID optionally pins a specific canvas version when
+	// ParseType is Pipeline. When empty the latest version is bound (design
+	// section 5 sticky snapshot). Ownership is validated against PipelineID.
+	PipelineVersionID *string `json:"pipeline_version_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`

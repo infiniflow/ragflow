@@ -322,19 +322,20 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 	parserID, pipelineID := parserSelectionColumns(selection)
 	loc := location
 	doc := &entity.Document{
-		ID:           docID,
-		KbID:         kb.ID,
-		ParserID:     parserID,
-		PipelineID:   pipelineID,
-		ParserConfig: parserConfig,
-		CreatedBy:    tenantID,
-		Type:         filetype,
-		SourceType:   src,
-		Name:         &filename,
-		Location:     &loc,
-		Size:         size,
-		Suffix:       suffix,
-		Status:       &status,
+		ID:                docID,
+		KbID:              kb.ID,
+		ParserID:          parserID,
+		PipelineID:        pipelineID,
+		PipelineVersionID: kb.PipelineVersionID,
+		ParserConfig:      parserConfig,
+		CreatedBy:         tenantID,
+		Type:              filetype,
+		SourceType:        src,
+		Name:              &filename,
+		Location:          &loc,
+		Size:              size,
+		Suffix:            suffix,
+		Status:            &status,
 	}
 	if blob != nil {
 		hash := contentHashHex(blob)

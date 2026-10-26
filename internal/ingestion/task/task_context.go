@@ -57,7 +57,11 @@ type TaskContext struct {
 	Tenant entity.Tenant
 
 	PipelineID string
-	File       any
+	// PipelineVersionID pins the canvas version to execute (design section 5
+	// sticky snapshot). Empty means the latest version (or legacy canvas DSL)
+	// is used at runtime (design section 6.2).
+	PipelineVersionID string
+	File              any
 
 	// taskID is the authoritative TaskMessage identity used for admission,
 	// execution, settlement, and logging. It is unexported so it cannot change
@@ -137,13 +141,14 @@ func LoadFromIngestionTask(ctx context.Context, db *gorm.DB, ingestionTask *enti
 	pipelineID := resolvePipelineID(doc)
 
 	return &TaskContext{
-		Ctx:           ctx,
-		taskID:        ingestionTask.ID,
-		IngestionTask: ingestionTask,
-		PipelineID:    pipelineID,
-		Doc:           *doc,
-		KB:            *kb,
-		Tenant:        *tenant,
+		Ctx:               ctx,
+		taskID:            ingestionTask.ID,
+		IngestionTask:     ingestionTask,
+		PipelineID:        pipelineID,
+		PipelineVersionID: resolvePipelineVersionID(doc),
+		Doc:               *doc,
+		KB:                *kb,
+		Tenant:            *tenant,
 	}, nil
 }
 
@@ -151,6 +156,16 @@ func LoadFromIngestionTask(ctx context.Context, db *gorm.DB, ingestionTask *enti
 func resolvePipelineID(doc *entity.Document) string {
 	if doc != nil && doc.PipelineID != nil {
 		return strings.TrimSpace(*doc.PipelineID)
+	}
+	return ""
+}
+
+// resolvePipelineVersionID resolves the pinned canvas version for a document.
+// Returns "" when the document has no pinned version, so the runtime falls
+// back to the latest version (design section 6.2).
+func resolvePipelineVersionID(doc *entity.Document) string {
+	if doc != nil && doc.PipelineVersionID != nil {
+		return strings.TrimSpace(*doc.PipelineVersionID)
 	}
 	return ""
 }

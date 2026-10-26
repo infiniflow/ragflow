@@ -3437,6 +3437,24 @@ This delimiter is used to split the input text into several text pieces echo of 
         loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
+        label: 'Pipeline version',
+        latest: 'Latest version',
+        filterByAlias: 'Filter by alias',
+        alias: 'Alias',
+        pinnedTooltip:
+          'This dataset is pinned to a specific version. New versions published on the canvas will not affect it.',
+        outdated:
+          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+        delete: 'Delete version',
+        deleteConfirmTitle: 'Delete this version?',
+        deleteConfirmContent:
+          'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
+        restore: 'Restore as current',
+        restoreConfirmTitle: 'Restore this version as the current canvas?',
+        restoreConfirmContent:
+          'The current canvas DSL will be replaced by this version. Publish again to save it as a new version.',
+        missingContent:
+          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {

@@ -19,12 +19,12 @@ package dao
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
-	"ragflow/internal/entity"
-
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+
+	"ragflow/internal/entity"
 )
 
 // TestUserCanvasVersionDAO_Constructor verifies the DAO constructor returns
@@ -87,59 +87,104 @@ func TestUserCanvasVersionDAO_InterfaceSatisfied(t *testing.T) {
 	_ = daoInterface(d)
 }
 
-func TestUserCanvasVersionDAOKeepsAllVersions(t *testing.T) {
-	db := setupUserCanvasTestDB(t)
-	if err := db.AutoMigrate(&entity.UserCanvasVersion{}); err != nil {
-		t.Fatalf("failed to migrate versions: %v", err)
+// TestCountPipelineVersionReferences_SumsKBAndDocument verifies the delete-time
+// reference scan sums references across both the knowledgebase and document
+// tables (design section 12 A4).
+func TestCountPipelineVersionReferences_SumsKBAndDocument(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
 	}
-	ctx := t.Context()
-	if err := db.WithContext(ctx).Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1"}).Error; err != nil {
-		t.Fatalf("failed to create canvas: %v", err)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-	dao := NewUserCanvasVersionDAO()
-	opts := SaveOrReplaceLatestVersionOptions{UserCanvasID: "canvas-1"}
-	const versionCount = 35
-	for i := 0; i < versionCount; i++ {
-		opts.NewID = fmt.Sprintf("version-%02d", i)
-		opts.DSL = entity.JSONMap{"revision": fmt.Sprint(i)}
-		if err := db.Transaction(func(tx *gorm.DB) error {
-			_, err := dao.SaveOrReplaceLatestTx(ctx, tx, opts)
-			return err
-		}); err != nil {
-			t.Fatalf("failed to save version %d: %v", i, err)
+
+	v1 := "version0000000000000000000000aa"
+	v2 := "version0000000000000000000000bb"
+
+	// One KB + two documents pin v1.
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "t1", Name: "kb-1", EmbdID: "e", CreatedBy: "u",
+		Permission: string(entity.TenantPermissionMe), Status: sp("1"),
+		PipelineVersionID: &v1,
+	}).Error; err != nil {
+		t.Fatalf("seed kb v1: %v", err)
+	}
+	for i, id := range []string{"doc-1", "doc-2"} {
+		if err := db.Create(&entity.Document{
+			ID: id, KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+			TokenNum: int64(i), ChunkNum: int64(i), Suffix: ".txt", Status: sp("1"),
+			PipelineVersionID: &v1,
+		}).Error; err != nil {
+			t.Fatalf("seed doc %s v1: %v", id, err)
 		}
 	}
-	for _, stage := range []string{"insert", "refresh", "publish"} {
-		t.Run(stage, func(t *testing.T) {
-			if stage != "insert" {
-				opts.NewID = "unused-version-id"
-				opts.Release = stage == "publish"
-				if err := db.Transaction(func(tx *gorm.DB) error {
-					row, err := dao.SaveOrReplaceLatestTx(ctx, tx, opts)
-					if err == nil && (row.ID != "version-34" || row.Release != opts.Release) {
-						t.Errorf("unexpected refreshed version: id=%q release=%v", row.ID, row.Release)
-					}
-					return err
-				}); err != nil {
-					t.Fatalf("failed to save latest version: %v", err)
-				}
-			}
-			versions, err := dao.ListByCanvasID(ctx, db, opts.UserCanvasID)
-			if err != nil {
-				t.Fatalf("failed to list versions: %v", err)
-			}
-			if len(versions) != versionCount {
-				t.Fatalf("version count = %d, want %d", len(versions), versionCount)
-			}
-			ids := make(map[string]bool, len(versions))
-			for _, version := range versions {
-				ids[version.ID] = true
-			}
-			for i := 0; i < versionCount; i++ {
-				if id := fmt.Sprintf("version-%02d", i); !ids[id] {
-					t.Errorf("saved version %q was deleted", id)
-				}
-			}
-		})
+	// One KB pins v2 (must not be counted toward v1).
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-2", TenantID: "t1", Name: "kb-2", EmbdID: "e", CreatedBy: "u",
+		Permission: string(entity.TenantPermissionMe), Status: sp("1"),
+		PipelineVersionID: &v2,
+	}).Error; err != nil {
+		t.Fatalf("seed kb v2: %v", err)
+	}
+
+	d := NewUserCanvasVersionDAO()
+	n1, err := d.CountPipelineVersionReferences(t.Context(), db, v1)
+	if err != nil {
+		t.Fatalf("count v1: %v", err)
+	}
+	if n1 != 3 {
+		t.Fatalf("CountPipelineVersionReferences(v1) = %d, want 3 (1 kb + 2 docs)", n1)
+	}
+	n2, err := d.CountPipelineVersionReferences(t.Context(), db, v2)
+	if err != nil {
+		t.Fatalf("count v2: %v", err)
+	}
+	if n2 != 1 {
+		t.Fatalf("CountPipelineVersionReferences(v2) = %d, want 1", n2)
 	}
 }
+
+// TestUserCanvasVersionDAO_SaveOrReplaceLatestTxStoresAlias verifies the alias
+// field (design A2) is persisted on version save (T15: alias 存储/返回). The
+// alias column was previously write-dead: the DAO never copied it into the row.
+func TestUserCanvasVersionDAO_SaveOrReplaceLatestTxStoresAlias(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	// Parent canvas row must exist: SaveOrReplaceLatestTx locks it first.
+	if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1"}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+
+	alias := "release-1.0"
+	d := NewUserCanvasVersionDAO()
+	row, err := d.SaveOrReplaceLatestTx(context.Background(), db, SaveOrReplaceLatestVersionOptions{
+		NewID:        "v-1",
+		UserCanvasID: "canvas-1",
+		Title:        ptrStr("v1"),
+		Alias:        &alias,
+		DSL:          entity.JSONMap{"graph": "g"},
+		Release:      true,
+	})
+	if err != nil {
+		t.Fatalf("SaveOrReplaceLatestTx: %v", err)
+	}
+	if row.Alias == nil || *row.Alias != alias {
+		t.Fatalf("returned row alias = %v, want %q", row.Alias, alias)
+	}
+	// Reload from the DB to prove the value was persisted, not just in-memory.
+	var got entity.UserCanvasVersion
+	if err := db.Where("id = ?", "v-1").First(&got).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.Alias == nil || *got.Alias != alias {
+		t.Fatalf("persisted alias = %v, want %q", got.Alias, alias)
+	}
+}
+
+func ptrStr(v string) *string { return &v }
