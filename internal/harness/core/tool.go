@@ -135,20 +135,20 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 			history := append([]Message(nil), rootMsgs...)
 
 			if rc.Session != nil {
-				matchedRoot := make([]bool, len(rootMsgs))
+				rootIdx := 0
 				for _, ev := range rc.Session.getEvents() {
 					if ae, ok := ev.(*AgentEvent); ok {
 						if m := msgFromEvent(ae); m != nil {
-							// Deduplicate turns that already exist in RootInput (e.g. on session restore/resume)
-							isDupe := false
-							for i, rm := range rootMsgs {
-								if !matchedRoot[i] && equalMessages(rm, m) {
-									matchedRoot[i] = true
-									isDupe = true
+							// Deduplicate turns that already exist in RootInput prefix (e.g. on session restore/resume)
+							matched := false
+							for i := rootIdx; i < len(rootMsgs); i++ {
+								if equalMessages(rootMsgs[i], m) {
+									rootIdx = i + 1
+									matched = true
 									break
 								}
 							}
-							if !isDupe {
+							if !matched {
 								history = append(history, m)
 							}
 						}
@@ -158,6 +158,7 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 
 			// Exclude or sanitize assistant messages containing pending (unresolved)
 			// tool calls so inner agent does not receive dangling tool calls without results.
+			// Also omit orphan tool results that do not answer any accepted assistant tool call.
 			if len(history) > 0 {
 				availableResults := make(map[string]int)
 				for _, m := range history {
@@ -166,6 +167,7 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 					}
 				}
 
+				expectedResults := make(map[string]int)
 				var sanitized []Message
 				for _, m := range history {
 					if m.Role == schema.RoleAssistant && len(m.ToolCalls) > 0 {
@@ -174,6 +176,7 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 							if availableResults[tc.ID] > 0 {
 								availableResults[tc.ID]--
 								completedCalls = append(completedCalls, tc)
+								expectedResults[tc.ID]++
 							}
 						}
 						if len(completedCalls) > 0 {
@@ -184,6 +187,11 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 							cp := *m
 							cp.ToolCalls = nil
 							sanitized = append(sanitized, &cp)
+						}
+					} else if m.Role == schema.RoleTool {
+						if expectedResults[m.Name] > 0 {
+							expectedResults[m.Name]--
+							sanitized = append(sanitized, m)
 						}
 					} else {
 						sanitized = append(sanitized, m)

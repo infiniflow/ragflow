@@ -415,10 +415,10 @@ func TestAgentTool_FullChatHistory_DeduplicateRestoredSession(t *testing.T) {
 	// Expected:
 	// 0: User: "Prior user query"
 	// 1: Assistant: "Prior assistant reply" (only once, NOT duplicated from session)
-	// 2: Tool: "calc result: 42"
-	// 3: User: "Next turn query"
-	if len(msgs) != 4 {
-		t.Fatalf("expected 4 dialogue messages after deduplication, got %d: %v", len(msgs), msgs)
+	// (calc_1 is an unmatched tool result without a preceding assistant tool call, so it is omitted)
+	// 2: User: "Next turn query"
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 dialogue messages after deduplication and omitting unmatched tool result, got %d: %v", len(msgs), msgs)
 	}
 	if msgs[0].Content != "Prior user query" {
 		t.Errorf("expected msgs[0] = 'Prior user query', got %q", msgs[0].Content)
@@ -426,11 +426,94 @@ func TestAgentTool_FullChatHistory_DeduplicateRestoredSession(t *testing.T) {
 	if msgs[1].Content != "Prior assistant reply" {
 		t.Errorf("expected msgs[1] = 'Prior assistant reply', got %q", msgs[1].Content)
 	}
-	if msgs[2].Role != schema.RoleTool || msgs[2].Name != "calc_1" {
-		t.Errorf("expected msgs[2] = tool message 'calc_1', got %v", msgs[2])
+	if msgs[2].Content != "Next turn query" {
+		t.Errorf("expected msgs[2] = 'Next turn query', got %q", msgs[2].Content)
 	}
-	if msgs[3].Content != "Next turn query" {
-		t.Errorf("expected msgs[3] = 'Next turn query', got %q", msgs[3].Content)
+}
+
+// TestAgentTool_FullChatHistory_RepeatedOrdinaryTurnsPreserved verifies that sequential
+// prefix matching deduplicates only the restored turns matching RootInput, while preserving
+// later ordinary conversation turns even if they have identical content (e.g. repeated "OK").
+func TestAgentTool_FullChatHistory_RepeatedOrdinaryTurnsPreserved(t *testing.T) {
+	captureM := &capturingHistoryModel{resp: "inner captured"}
+	innerAgent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: captureM,
+	}).WithName("repeated_inner").WithDescription("inner agent")
+
+	toolWithHistory := NewAgentTool(t.Context(), innerAgent, WithFullChatHistoryAsInput())
+
+	sess := newRunSession()
+	// Turn 1 reply restored in session:
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.AssistantMessage("OK"),
+			},
+		},
+	})
+	// Turn 2 in normal conversation flow, where assistant again replies "OK":
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.UserMessage("Are you sure?"),
+			},
+		},
+	})
+	sess.addEvent(&AgentEvent{
+		Output: &AgentOutput{
+			MessageOutput: &MessageVariant{
+				Message: schema.AssistantMessage("OK"),
+			},
+		},
+	})
+
+	rc := &runContext{
+		RootInput: &AgentInput{
+			Messages: []Message{
+				schema.UserMessage("Hello"),
+				schema.AssistantMessage("OK"),
+			},
+		},
+		Session: sess,
+	}
+	ctx := context.WithValue(t.Context(), runContextKey{}, rc)
+
+	res, err := toolWithHistory.Invoke(ctx, "Proceed")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res != "inner captured" {
+		t.Fatalf("unexpected result: %q", res)
+	}
+
+	msgs := captureM.getCapturedMsgs()
+	if len(msgs) > 0 && msgs[0].Role == schema.RoleSystem {
+		msgs = msgs[1:]
+	}
+
+	// Expected:
+	// 0: User: "Hello"
+	// 1: Assistant: "OK" (restored prefix, deduplicated)
+	// 2: User: "Are you sure?"
+	// 3: Assistant: "OK" (later ordinary turn preserved)
+	// 4: User: "Proceed"
+	if len(msgs) != 5 {
+		t.Fatalf("expected 5 dialogue messages, got %d: %v", len(msgs), msgs)
+	}
+	if msgs[0].Content != "Hello" {
+		t.Errorf("expected msgs[0] = 'Hello', got %q", msgs[0].Content)
+	}
+	if msgs[1].Content != "OK" {
+		t.Errorf("expected msgs[1] = 'OK', got %q", msgs[1].Content)
+	}
+	if msgs[2].Content != "Are you sure?" {
+		t.Errorf("expected msgs[2] = 'Are you sure?', got %q", msgs[2].Content)
+	}
+	if msgs[3].Content != "OK" {
+		t.Errorf("expected msgs[3] = 'OK', got %q", msgs[3].Content)
+	}
+	if msgs[4].Content != "Proceed" {
+		t.Errorf("expected msgs[4] = 'Proceed', got %q", msgs[4].Content)
 	}
 }
 
