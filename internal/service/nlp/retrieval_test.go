@@ -1096,3 +1096,98 @@ func (e *unscoredDocScopeEngine) Search(_ context.Context, req *types.SearchRequ
 	}
 	return &types.SearchResult{Chunks: rows, Total: int64(len(rows))}, nil
 }
+
+// TestRetrievalLastPartialPageNotRejected is the regression test for the
+// floor-division off-by-one in the page validation. With rerankCandidatesCount
+// not a multiple of pageSize, the last partial page must still return its
+// remainder. The old `page > rerankCandidatesCount/pageSize` check floored
+// 64/10 to 6 and rejected page 7, even though page 7 starts at offset 60 and
+// holds 4 of the 64 candidates.
+func TestRetrievalLastPartialPageNotRejected(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	// 70 rows so the engine can satisfy a candidate pool of 64.
+	rows := make([]map[string]interface{}, 70)
+	for i := range rows {
+		rows[i] = map[string]interface{}{
+			"id":                  fmt.Sprintf("chunk-%02d", i),
+			"content_ltks":        "alpha",
+			"content_with_weight": "alpha",
+			"_score":              0.9,
+		}
+	}
+	engine := &retrievalCountEngine{rows: rows}
+	service := NewRetrievalService(engine, &dao.DocumentDAO{})
+	top := 100
+	threshold := 0.5
+	vectorWeight := 1.0
+	aggs := false
+	rerankCandidatesCount := 64
+
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   7, // last partial page: offset 60, 4 of 64
+		PageSize:               10,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+		RerankCandidatesCount:  &rerankCandidatesCount,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval page 7 failed (last partial page must not be rejected): %v", err)
+	}
+	if len(result.Chunks) != 4 {
+		t.Fatalf("page 7 chunk count = %d, want 4 (64 candidates, offset 60): %v", len(result.Chunks), result.Chunks)
+	}
+	if result.Total != 64 {
+		t.Fatalf("total = %d, want 64 (candidate pool size)", result.Total)
+	}
+}
+
+// TestRetrievalPageBeyondCandidatePoolRejected confirms the validation still
+// rejects a page whose start offset is at or beyond the candidate pool — the
+// fix must not admit pages that contain no candidates.
+func TestRetrievalPageBeyondCandidatePoolRejected(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	rows := make([]map[string]interface{}, 70)
+	for i := range rows {
+		rows[i] = map[string]interface{}{
+			"id":                  fmt.Sprintf("chunk-%02d", i),
+			"content_ltks":        "alpha",
+			"content_with_weight": "alpha",
+			"_score":              0.9,
+		}
+	}
+	engine := &retrievalCountEngine{rows: rows}
+	service := NewRetrievalService(engine, &dao.DocumentDAO{})
+	top := 100
+	threshold := 0.5
+	vectorWeight := 1.0
+	aggs := false
+	rerankCandidatesCount := 64
+
+	// Page 8 starts at offset 70 >= 64: no candidates, must be rejected.
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   8,
+		PageSize:               10,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+		RerankCandidatesCount:  &rerankCandidatesCount,
+	})
+	if err == nil {
+		t.Fatal("Retrieval page 8 (offset 70 >= 64 candidates) must be rejected, got nil error")
+	}
+}
