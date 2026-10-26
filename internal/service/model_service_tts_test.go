@@ -25,7 +25,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-// insertTTSTestTenant inserts a tenant row; ttsID may be nil (no default
+// insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default
 // TTS model configured).
 func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	t.Helper()

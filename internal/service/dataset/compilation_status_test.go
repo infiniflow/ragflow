@@ -99,7 +99,7 @@ func TestGetDatasetCompilationStatus_NoRowIsIdle(t *testing.T) {
 	insertCompilationOwnerKB(t, "kb-no-row", "user-1")
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-1", "kb-no-row", "graph")
+		withDatasetTestContext(t.Context(), "user-1", "user-1"), "user-1", "kb-no-row", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestGetDatasetCompilationStatus_FullOutput(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-1", "kb-full", "graph")
+		withDatasetTestContext(t.Context(), "user-1", "user-1"), "user-1", "kb-full", "graph")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 	}
 
 	st, code, err := testCompilationStatusService().GetDatasetCompilationStatus(
-		t.Context(), "user-2", "kb-other", "graph")
+		withDatasetTestContext(t.Context(), "user-2", "user-1"), "user-2", "kb-other", "graph")
 	if err == nil {
 		t.Fatalf("expected authorization error, got nil (status=%+v)", st)
 	}

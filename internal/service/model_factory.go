@@ -59,7 +59,7 @@ type ModelAccess struct {
 // ModelFactory resolves model references, checks access, and constructs typed
 // model instances. Provider and instance details stay inside this boundary.
 type ModelFactory struct {
-	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
 	modelProviderDAO *dao.TenantModelProviderDAO
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
@@ -68,7 +68,7 @@ type ModelFactory struct {
 // NewModelFactory creates a factory backed by the standard model DAOs.
 func NewModelFactory() *ModelFactory {
 	return &ModelFactory{
-		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
 		modelProviderDAO: dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
@@ -460,24 +460,19 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 	if modelType == entity.ModelTypeOCR {
 		return nil, fmt.Errorf("OCR model name is required")
 	}
-	if f.tenantDAO == nil {
-		return nil, fmt.Errorf("%w: tenant DAO is not initialized", errModelConfigUnavailable)
+	if f.userTenantDAO == nil {
+		return nil, fmt.Errorf("%w: user Tenant DAO is not initialized", errModelConfigUnavailable)
 	}
-
-	if _, err := f.tenantDAO.GetByID(ctx, dao.DB, access.TenantID); err != nil {
-		return nil, fmt.Errorf("failed to get tenant: %s type %s: %w", access.TenantID, modelType, err)
-	}
-	membershipDAO := dao.NewUserTenantDAO()
 	var membership *entity.UserTenant
 	var err error
 	if access.UserID != "" {
-		membership, err = membershipDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
+		membership, err = f.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
 		if err != nil && (access.UserID != access.TenantID || !errors.Is(err, gorm.ErrRecordNotFound)) {
 			return nil, fmt.Errorf("failed to get user tenant model settings: %s type %s: %w", access.TenantID, modelType, err)
 		}
 	}
 	if membership == nil {
-		membership, err = membershipDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
+		membership, err = f.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tenant owner model settings: %s type %s: %w", access.TenantID, modelType, err)
 		}
