@@ -11,7 +11,7 @@ func defaultRenderPDFVisionPages(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 	return nil, fmt.Errorf("tenant-aware PDF IMAGE2TEXT backend requires cgo rendering support")
 }
 
-func mineruPageSizes(ctx context.Context, _ []byte) (map[int][2]float64, error) {
+func mineruPdfiumPageSizes(ctx context.Context, _ []byte) (map[int][2]float64, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

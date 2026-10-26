@@ -16,7 +16,7 @@ import (
 
 const pdfVisionZoom = 3.0
 
-// mineruPageSizes maps each zero-based page index to its effective size in PDF
+// mineruPdfiumPageSizes maps each zero-based page index to its effective size in PDF
 // points. MinerU content_list boxes are normalized to 0-1000, so both axes
 // need the real page box before they can become positions.
 //
@@ -24,7 +24,7 @@ const pdfVisionZoom = 3.0
 // opening the document, so the first call (no indexes: no page loads) reports
 // the count and the second load sizes every page in one pass. Per-page calls
 // would reopen and reparse the whole document per page, O(pages × file size).
-func mineruPageSizes(ctx context.Context, binary []byte) (map[int][2]float64, error) {
+func mineruPdfiumPageSizes(ctx context.Context, binary []byte) (map[int][2]float64, error) {
 	_, count, err := pdfium.PageSizes(ctx, binary, nil)
 	if err != nil {
 		return nil, err

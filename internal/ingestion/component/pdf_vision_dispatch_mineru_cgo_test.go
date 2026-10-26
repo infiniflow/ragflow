@@ -19,9 +19,9 @@ func TestMineruPageSizesReadsEveryPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sizes, err := mineruPageSizes(t.Context(), data)
+	sizes, err := mineruPdfiumPageSizes(t.Context(), data)
 	if err != nil {
-		t.Fatalf("mineruPageSizes: %v", err)
+		t.Fatalf("mineruPdfiumPageSizes: %v", err)
 	}
 	if len(sizes) != 3 {
 		t.Fatalf("sizes = %v, want 3 pages", sizes)
@@ -37,7 +37,7 @@ func TestMineruPageSizesReadsEveryPage(t *testing.T) {
 func TestMineruPageSizesHonorsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := mineruPageSizes(ctx, []byte("%PDF-1.4")); !errors.Is(err, context.Canceled) {
+	if _, err := mineruPdfiumPageSizes(ctx, []byte("%PDF-1.4")); !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 }
