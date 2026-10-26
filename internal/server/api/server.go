@@ -126,6 +126,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
+	component.SetBrowserModelFactory(func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
+		return modelFactory.NewChatModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+	})
 	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
 
 	// Wire the real MemorySaver so the Message component can persist
