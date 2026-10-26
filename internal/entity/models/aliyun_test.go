@@ -1432,3 +1432,53 @@ func TestAliyunUploadAudioNormalisesSchemelessUploadHost(t *testing.T) {
 		t.Errorf("error = %q, want it to name the normalised https:// upload target", err)
 	}
 }
+
+// TestAliyunAudioExt pins the URL-safe extension normalization: only a
+// dot followed by alphanumerics survives, everything URL-sensitive falls
+// back to ".wav".
+func TestAliyunAudioExt(t *testing.T) {
+	for filename, want := range map[string]string{
+		"clip.wav":    ".wav",
+		"CLIP.MP3":    ".mp3",
+		"clip.wav#1":  ".wav",
+		"clip.tar.gz": ".gz",
+		"clip.wav ":   ".wav",
+		"clip.wav%23": ".wav",
+		"clip.音频":     ".wav",
+		"no-ext":      ".wav",
+		".":           ".wav",
+		"":            ".wav",
+		"clip.":       ".wav",
+		"dir.d/clip":  ".wav",
+	} {
+		if got := aliyunAudioExt(filename); got != want {
+			t.Errorf("aliyunAudioExt(%q) = %q, want %q", filename, got, want)
+		}
+	}
+}
+
+// TestAliyunUploadAudioSanitisesFragmentFilename pins that a filename whose
+// extension carries a URL fragment marker never reaches the returned oss://
+// URL: "clip.wav#1" must upload as <uuid>.wav, not <uuid>.wav#1.
+func TestAliyunUploadAudioSanitisesFragmentFilename(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServer(t, "hello")
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	audioURL, err := model.uploadAudio(t.Context(), stub.Server.URL+"/"+aliyunASRTestSuffix, "test-key", "qwen-asr-flash", "clip.wav#1", []byte("data"))
+	if err != nil {
+		t.Fatalf("uploadAudio: %v", err)
+	}
+	if strings.Contains(audioURL, "#") {
+		t.Errorf("audio url = %q, want no fragment character", audioURL)
+	}
+	if !strings.HasPrefix(audioURL, "oss://"+aliyunUploadTestDir+"/") || !strings.HasSuffix(audioURL, ".wav") {
+		t.Errorf("audio url = %q, want oss://%s/<uuid>.wav", audioURL, aliyunUploadTestDir)
+	}
+	upload := <-stub.Uploads
+	if upload.Fields["key"] != strings.TrimPrefix(audioURL, "oss://") {
+		t.Errorf("uploaded key = %q, want %q", upload.Fields["key"], strings.TrimPrefix(audioURL, "oss://"))
+	}
+}

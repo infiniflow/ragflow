@@ -770,6 +770,20 @@ type aliyunUploadPolicyResponse struct {
 	Message   string             `json:"message"`
 }
 
+// aliyunAudioExt lower-cases the filename extension for the OSS object key
+// and keeps it URL-safe: a dot followed by alphanumerics only. Anything else
+// ("clip.wav#1" -> ".wav#1", bare ".", no extension) falls back to ".wav",
+// the same default the MIME mapping uses.
+func aliyunAudioExt(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if len(ext) > 1 && strings.TrimFunc(ext[1:], func(r rune) bool {
+		return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+	}) == "" {
+		return ext
+	}
+	return ".wav"
+}
+
 // uploadAudio stores audio in DashScope's temporary OSS space and returns the
 // oss:// URL to send as the ASR audio field. The policy endpoint is derived
 // from the ASR endpoint's origin, so the configured region is preserved.
@@ -824,10 +838,11 @@ func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, mode
 	}
 
 	// The object name lands inside an oss:// URL the provider later resolves,
-	// and a caller-supplied filename may contain characters (spaces, '#',
-	// non-ASCII) that URL cannot carry. A generated name keeps the extension,
-	// which is what the provider reads, and drops everything else.
-	objectName := uuid.NewString() + strings.ToLower(filepath.Ext(filename))
+	// so it must stay URL-safe. A generated name keeps a normalised extension,
+	// which is what the provider reads for the audio format, and drops
+	// everything else a caller-supplied filename may carry (spaces, '#',
+	// non-ASCII).
+	objectName := uuid.NewString() + aliyunAudioExt(filename)
 	objectKey := strings.Trim(data.UploadDir, "/") + "/" + objectName
 	fields := [][2]string{
 		{"OSSAccessKeyId", data.OSSAccessKeyID},
