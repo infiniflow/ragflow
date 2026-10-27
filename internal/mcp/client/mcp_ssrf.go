@@ -51,7 +51,7 @@ func sameOrigin(a, b *url.URL) bool {
 // AssertMCPURLSafe validates an MCP server URL. It delegates to
 // common.AssertURLSafe by default. When allowPrivateHosts is true (a
 // deployment-level operator decision, sourced from
-// RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS at the call site), the
+// ALLOW_ANY_HOST at the call site), the
 // public-routability requirement is relaxed so self-hosted MCP servers on
 // private/docker networks work — scheme validation, DNS resolution, and
 // connection pinning to the resolved IP still apply.
