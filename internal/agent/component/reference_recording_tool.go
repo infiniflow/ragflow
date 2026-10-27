@@ -35,7 +35,8 @@ const maxToolLogResultRunes = 4096
 const maxToolLogInputRunes = 8192
 const maxToolLogInvocations = 64
 
-var sensitiveToolLogText = regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|authorization|password|secret)(["']?\s*[:=]\s*["']?)([^"'\s,}]+)`)
+var sensitiveToolLogText = regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|authorization|auth|token|password|secret)(["']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:bearer|basic)\s+[^\s,}]+|[^"'\s,}]+)`)
+var bearerToolLogText = regexp.MustCompile(`(?i)\b(?:bearer|basic)\s+[^\s"',}]+`)
 
 type toolInvocationRecorder struct {
 	mu      sync.Mutex
@@ -79,13 +80,7 @@ func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON
 	if err != nil {
 		logResult = err.Error()
 	}
-	var resultJSON any
-	if json.Unmarshal([]byte(logResult), &resultJSON) == nil {
-		if redacted, err := json.Marshal(redactToolLogValue(resultJSON)); err == nil {
-			logResult = string(redacted)
-		}
-	}
-	logResult = sensitiveToolLogText.ReplaceAllString(logResult, "$1$2[REDACTED]")
+	logResult = redactToolLogText(logResult)
 	redactedArgs := redactToolLogValue(args)
 	if encoded, marshalErr := json.Marshal(redactedArgs); marshalErr == nil && len(encoded) > maxToolLogInputRunes {
 		redactedArgs = map[string]any{"_truncated": true, "preview": utility.TruncateRunes(string(encoded), maxToolLogInputRunes)}
@@ -99,7 +94,7 @@ func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON
 		"status":       status,
 	}
 	if err != nil {
-		entry["error"] = utility.TruncateRunes(err.Error(), maxToolLogResultRunes)
+		entry["error"] = utility.TruncateRunes(redactToolLogText(err.Error()), maxToolLogResultRunes)
 	}
 	t.recorder.mu.Lock()
 	if len(t.recorder.entries) < maxToolLogInvocations {
@@ -127,12 +122,14 @@ func wrapToolInvocationRecording(tools []einotool.BaseTool, recorder *toolInvoca
 
 func redactToolLogValue(value any) any {
 	switch v := value.(type) {
+	case string:
+		return redactToolLogText(v)
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, child := range v {
 			lower := strings.ToLower(key)
 			normalized := strings.NewReplacer("_", "", "-", "").Replace(lower)
-			if strings.Contains(normalized, "apikey") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || lower == "authorization" {
+			if strings.Contains(normalized, "apikey") || strings.Contains(lower, "token") || strings.Contains(lower, "password") || strings.Contains(lower, "secret") || lower == "auth" || lower == "authorization" {
 				out[key] = "[REDACTED]"
 			} else {
 				out[key] = redactToolLogValue(child)
@@ -148,6 +145,25 @@ func redactToolLogValue(value any) any {
 	default:
 		return value
 	}
+}
+
+func redactToolLogText(value string) string {
+	var structured any
+	if json.Unmarshal([]byte(value), &structured) == nil {
+		if redacted, err := json.Marshal(redactToolLogValue(structured)); err == nil {
+			return string(redacted)
+		}
+	}
+	value = sensitiveToolLogText.ReplaceAllStringFunc(value, func(match string) string {
+		parts := sensitiveToolLogText.FindStringSubmatch(match)
+		redacted := parts[1] + parts[2]
+		credential := parts[3]
+		if len(credential) >= 2 && credential[0] == credential[len(credential)-1] && (credential[0] == '"' || credential[0] == '\'') {
+			return redacted + string(credential[0]) + "[REDACTED]" + string(credential[0])
+		}
+		return redacted + "[REDACTED]"
+	})
+	return bearerToolLogText.ReplaceAllString(value, "[REDACTED]")
 }
 
 // referenceRecordingTool decorates an Agent tool so each invocation records

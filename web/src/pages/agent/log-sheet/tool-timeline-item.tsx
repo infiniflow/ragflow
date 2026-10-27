@@ -180,7 +180,9 @@ const ToolTimelineItem = ({
                               : 'bg-state--success',
                           )}
                         >
-                          <span className="sr-only">Online</span>
+                          <span className="sr-only">
+                            {tool.status === 'error' ? 'Error' : 'Online'}
+                          </span>
                         </span>
                       </div>
                     </AccordionTrigger>
