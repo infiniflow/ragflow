@@ -1091,15 +1091,20 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
-		if invocations := p.toolInvocations.snapshot(); len(invocations) > 0 {
-			return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
-		}
+		invocations := p.toolInvocations.snapshot()
 		// Only step exhaustion is an _ERROR output. Model/tool failures must
 		// stop execution before downstream nodes read an absent content output.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
+			if len(invocations) > 0 {
+				return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
+			}
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
+		out := map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
+		if len(invocations) > 0 {
+			out["tool_invocations"] = invocations
+		}
+		return out, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated

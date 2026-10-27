@@ -47,12 +47,12 @@ var ErrPipelineVersionMissing = errors.New("pipeline version missing or not owne
 // (pipeline_version_id is empty / not selected). Per design C5/G3 the empty
 // version is no longer auto-backfilled to the canvas latest; instead the Save is
 // rejected so the UI can surface the red "Missing" badge and the
-// "版本信息缺失" error. BuiltIn mode (no canvas bound) is exempt.
-var ErrPipelineVersionEmpty = errors.New("版本信息缺失")
+// "version information is missing" error. BuiltIn mode (no canvas bound) is exempt.
+var ErrPipelineVersionEmpty = errors.New("version information is missing")
 
 // userFacingVersionHint is appended to every Missing-state error so the runtime
 // parse path can surface a human-readable instruction (design section 6.2, C4).
-const userFacingVersionHint = "pipeline 版本不存在，请重新选择版本"
+const userFacingVersionHint = "pipeline version does not exist. Please select a version again"
 
 // MaxCanvasVersions is the per-canvas cap on the number of DSL versions (K=64,
 // design: limit the number of versions of a DSL). When a canvas already holds
@@ -65,7 +65,7 @@ const MaxCanvasVersions = 64
 // ErrCanvasVersionLimitExceeded is returned by SaveOrReplaceLatestTx when a new
 // version write would exceed MaxCanvasVersions. The handler surfaces it to the
 // frontend as a data error with this user-facing hint.
-var ErrCanvasVersionLimitExceeded = errors.New("版本数已达上限（最多 64 个），请删除旧的不再使用的版本")
+var ErrCanvasVersionLimitExceeded = errors.New("version limit reached (maximum 64). Please delete old versions that are no longer in use")
 
 // LoadCanvasVersionDSL resolves the DSL for a dataflow canvas version. When
 // versionID is non-empty it pins that exact version; when empty it resolves the

@@ -12,15 +12,14 @@ sidebar_custom_props: {
 
 ## Basic Information
 
-The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Embedding model**, **PageRank**, and **Tag sets**.
+The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Embedding model**, **PageRank**.
 
 - **Name**: The dataset name. It can still be modified after creation and is used in list cards and the detail page title.
 - **Language**: The primary language of the dataset. The language setting affects language assumptions during parsing and model processing.
 - **Avatar**: The dataset avatar. Image uploads are supported, and the maximum image size is 4 MB.
 - **Description**: The dataset description, used to describe the material scope, business purpose, or maintenance notes.
-- **Embedding model**: The model used to vectorize chunks. Changing the embedding model after content has already been parsed usually affects the index and should be handled carefully.
+- **Embedding model**: The model used to vectorize chunks. Before the dataset contains chunks, you can change the model directly. Once chunks exist, selecting a different model on the configuration page triggers a compatibility check against sampled existing vectors. The vector dimensions must match, and the average cosine similarity must be at least 0.9. If the check fails, the previous selection is restored. Saving a model change does not automatically re-embed existing chunks.
 - **PageRank**: Sets the dataset's PageRank score. During retrieval, this score is added to the hybrid similarity score of matched chunks in the dataset, increasing their ranking weight. This is suitable when content from a specific dataset needs higher priority during retrieval across multiple datasets.
-- **Tag sets**: Used to associate one or more tag sets with a dataset and add tags to chunks in bulk based on text similarity. During retrieval, queries are also automatically associated with corresponding tags, improving retrieval accuracy with tag information. A tag set must be generated as a sample before use.
 
 ## Parsing Method
 
@@ -41,7 +40,6 @@ The following built-in parsing methods are available:
 - **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.
 - **Presentation**: Designed for presentations in PDF and PPTX formats. Each page or slide is typically treated as an individual chunk.
 - **One**: Treats the entire document as a single chunk. This method is suitable for relatively short documents when the complete context needs to be preserved.
-- **Tag**: Used to create a tag set. A dataset using this method provides tags for chunks and queries in other datasets and does not directly participate in the RAG retrieval process.
 - **Audio**: An audio parsing method for audio files such as WAV, MP3, AAC, FLAC, and OGG. It uses an ASR model to transcribe audio into text and then generates chunks from the transcription.
 - **Email**: An email parsing method for email files such as EML and MSG. It extracts content including the sender, recipients, subject, body, and attachments, and generates chunks from the extracted content.
 
@@ -314,7 +312,7 @@ The pipeline must be created and configured in **Agent > Ingestion Pipeline** in
 
 Usage:
 
-1. Create and configure an **Ingestion Pipeline** in **Agent > Pipeline**.
+1. Create and configure an **Ingestion Pipeline** in **Agent > Ingestion Pipeline**.
 2. Go to **Dataset > Configuration** and select **Pipeline** as the parsing method.
 3. Select the pipeline to use from the pipeline list.
 4. Save the configuration. Afterward, documents in the dataset are processed according to the selected pipeline.

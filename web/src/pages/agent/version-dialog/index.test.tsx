@@ -68,6 +68,7 @@ jest.mock('@/hooks/use-agent-request', () => ({
     isError: false,
   }),
   useSaveAgent: () => ({ saveAgent: jest.fn(), loading: false }),
+  useApplyVersion: () => ({ applyVersion: jest.fn(), loading: false }),
   useUpdateVersion: () => ({
     updateVersion: mockUpdateVersion,
     loading: false,

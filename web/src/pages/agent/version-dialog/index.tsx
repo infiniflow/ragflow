@@ -24,6 +24,7 @@ import { Spin } from '@/components/ui/spin';
 import { AntToolTip, RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
 import {
+  useApplyVersion,
   useDeleteVersion,
   useFetchVersion,
   useFetchVersionList,
@@ -100,6 +101,7 @@ export function VersionDialog({
 
   const { deleteVersion, loading: deleting } = useDeleteVersion();
   const { saveAgent, loading: restoring } = useSaveAgent(false);
+  const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
 
   // Backend returns the list newest-first (design section 7/E1); the first
@@ -147,6 +149,12 @@ export function VersionDialog({
         dsl: agent?.dsl,
         title: agent?.title,
       });
+
+      const ok = await applyVersion({
+        canvasId,
+        versionId: pending.versionId,
+      });
+      if (ok) hideModal?.();
     }
     setPending(null);
   }, [
@@ -294,7 +302,10 @@ export function VersionDialog({
                         }
                         title={t('flow.version.restore')}
                         disabled={
-                          selectedId === latestId || !selectedId || restoring
+                          selectedId === latestId ||
+                          !selectedId ||
+                          restoring ||
+                          applyRestoring
                         }
                       >
                         <RotateCcw />
