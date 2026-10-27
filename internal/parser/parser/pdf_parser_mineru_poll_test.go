@@ -110,7 +110,7 @@ func TestPollMinerUTask_ReportsTimeoutWhenStatusReturnsLate(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(5 * time.Second):
 		case <-r.Context().Done():
 			return
 		}
