@@ -117,7 +117,7 @@ type htmlWalkState struct {
 func (s *htmlWalkState) warnings() []string {
 	warnings := s.mediaBudget.warnings()
 	if s.skippedInlineImages > 0 {
-		warnings = append(warnings, fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
 	return warnings
 }

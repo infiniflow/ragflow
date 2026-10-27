@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"testing"
 
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 )
 
 // slideChunksOf drives PageChunker.Invoke and returns the emitted maps.
@@ -145,6 +147,31 @@ func TestPageChunkerPreservesSlideTableItems(t *testing.T) {
 	for _, chunk := range chunks {
 		if got := fmt.Sprint(chunk["slide_number"]); got != "1" {
 			t.Fatalf("slide_number lost: %#v", chunk)
+		}
+	}
+}
+
+// TestPageChunkerPreservesTypedSlideTableItems covers the in-memory
+// []parser.DocItem leg, which bypasses the JSON-map decode path.
+func TestPageChunkerPreservesTypedSlideTableItems(t *testing.T) {
+	table := &entity.TableData{
+		Grid:       [][]entity.TableCell{{{Text: "cell"}}},
+		HeaderRows: 1,
+	}
+	maps := []map[string]any{
+		{"text": "Before", "doc_type_kwd": "text", "slide_number": 1},
+		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "table": table},
+		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-1", "image": "one"},
+	}
+	chunks := slideChunksOf(t, map[string]any{
+		"name": "deck.pptx", "output_format": "json", "json": parser.MapsToItems(maps),
+	})
+	if len(chunks) != len(maps) {
+		t.Fatalf("chunks = %d, want %d: %#v", len(chunks), len(maps), chunks)
+	}
+	for _, chunk := range chunks {
+		if got := fmt.Sprint(chunk["slide_number"]); got != "1" {
+			t.Fatalf("slide_number lost through typed DocItem input: %#v", chunk)
 		}
 	}
 }

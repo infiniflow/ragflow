@@ -80,3 +80,23 @@ func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
 		t.Fatal("oversized inline image should produce a parser warning")
 	}
 }
+
+func TestHTMLParser_DocumentImageLimit(t *testing.T) {
+	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, maxEmbeddedMediaItems+44) + "</p>"
+	result := NewHTMLParser().ParseWithResult(context.Background(), "many.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	images := 0
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != maxEmbeddedMediaItems {
+		t.Fatalf("images = %d, want document limit %d", images, maxEmbeddedMediaItems)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", result.Warnings)
+	}
+}

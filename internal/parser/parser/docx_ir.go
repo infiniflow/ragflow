@@ -424,10 +424,11 @@ func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, table
 		}
 		for ei := 0; ei < len(elements); ei++ {
 			el := elements[ei]
-			// TEMPORARY: this merge is a stopgap. Revisit it once office_oxide
-			// populates `TableRow.is_header` for .doc tables (upstream issue
+			// TEMPORARY: this merge is a stopgap. Revisit it once docxIRRow
+			// carries a three-state header field and office_oxide populates
+			// `TableRow.is_header` for .doc tables (upstream issue
 			// yfedoseev/office_oxide#456) — at that point prefer rejoining via
-			// the real `is_header` flag and drop the structural proxy below.
+			// the real header flag and drop the structural proxy below.
 			//
 			// office_oxide splits a .doc table whose first row is a styled
 			// header/title row into a 1-row "header" table immediately
