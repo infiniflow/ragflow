@@ -47,6 +47,9 @@ const (
 	DefaultMaxDocumentUploadBytes int64 = 128 << 20
 	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
 	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
+
+	ssrfResponseHeaderTimeoutDefault       = 20 * time.Minute
+	schemeSafeResponseHeaderTimeoutDefault = 20 * time.Minute
 )
 
 // GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
@@ -87,6 +90,13 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
 
+// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// headers, which is what a hung provider endpoint spends on every retry. Each
+// client keeps its own default while the override is unset.
+func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
+}
+
 func GetSSRFHTTPClient() *http.Client {
 	if ssrfHttpClient == nil {
 		var t *http.Transport
@@ -99,7 +109,7 @@ func GetSSRFHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
@@ -122,7 +132,7 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
