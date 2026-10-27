@@ -152,7 +152,9 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderAppliesConfiguredTimeout(t *tes
 	if !errors.Is(res.Err, context.DeadlineExceeded) {
 		t.Fatalf("error = %v, want context.DeadlineExceeded", res.Err)
 	}
-	if elapsed >= 2*time.Second {
+	// The configured value is in seconds: neither firing early (milliseconds)
+	// nor never firing (the setting ignored) is a pass.
+	if elapsed < 900*time.Millisecond || elapsed >= 2500*time.Millisecond {
 		t.Fatalf("elapsed = %s, want the request cut off at the configured 1s", elapsed)
 	}
 }
