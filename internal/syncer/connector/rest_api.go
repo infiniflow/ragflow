@@ -635,7 +635,7 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		}
 	}
 	currentAuth := c.basicAuth
-	previousNetloc := connectorNetloc(currentURL)
+	previousOrigin := connectorOrigin(currentURL)
 	sensitiveHeaders := make([]string, 0, len(c.authHeaders))
 	for name := range c.authHeaders {
 		sensitiveHeaders = append(sensitiveHeaders, name)
@@ -685,11 +685,11 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			return wait, true
 		},
 		NextHop: func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop {
-			nextNetloc := connectorNetloc(nextURL)
-			if nextNetloc != "" && nextNetloc != previousNetloc {
+			nextOrigin := connectorOrigin(nextURL)
+			if nextOrigin != "" && nextOrigin != previousOrigin {
 				currentAuth = nil
 			}
-			previousNetloc = nextNetloc
+			previousOrigin = nextOrigin
 			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
 				hop.Method = http.MethodGet
 				hop.Body = nil

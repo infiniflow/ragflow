@@ -308,7 +308,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		opts.MaxRedirects = 10
 	}
 	hop := connectorRequestHop{Method: opts.Method, URL: opts.RawURL, Body: opts.Body, Headers: opts.Headers}
-	previousNetloc := connectorNetloc(hop.URL)
+	previousOrigin := connectorOrigin(hop.URL)
 	var via []*http.Request
 	for redirects := 0; ; redirects++ {
 		hostname, pinIP, err := opts.Validate(hop.URL)
@@ -384,8 +384,8 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		if err != nil {
 			return nil, err
 		}
-		nextNetloc := connectorNetloc(nextURL)
-		if nextNetloc != "" && nextNetloc != previousNetloc {
+		nextOrigin := connectorOrigin(nextURL)
+		if nextOrigin != "" && nextOrigin != previousOrigin {
 			hop.Headers = connectorStripAuthHeaders(hop.Headers, opts.SensitiveHeaders...)
 			// 307/308 preserve the request method and body; never forward a
 			// request body (which may carry credentials, e.g. a Seafile or
@@ -394,7 +394,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				return nil, fmt.Errorf("redirect to a different origin is not allowed for a request with a body")
 			}
 		}
-		previousNetloc = nextNetloc
+		previousOrigin = nextOrigin
 		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
 			hop.Method = http.MethodGet
 			hop.Body = nil
@@ -494,12 +494,27 @@ func connectorStripAuthHeaders(headers map[string]string, additional ...string) 
 	return out
 }
 
-func connectorNetloc(rawURL string) string {
+func connectorOrigin(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" {
 		return ""
 	}
-	return parsed.Host
+
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	port := parsed.Port()
+	if port == "" {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return ""
+		}
+	}
+
+	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
 func connectorResolveURL(base, location string) (string, error) {
