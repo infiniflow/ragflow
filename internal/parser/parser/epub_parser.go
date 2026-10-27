@@ -191,6 +191,16 @@ func readOPFSpine(r *zip.Reader, opfPath string) ([]string, error) {
 
 var epubSpaceEntity = regexp.MustCompile(`&(?:nbsp|#0*160|#[xX]0*[aA]0);`)
 
+// epubSelfClosingRawText matches a self-closing non-void XHTML element whose
+// content HTML parsers treat as raw text. HTML5 parsing turns <script src="x"/>
+// into an unclosed start tag, so the rest of the chapter becomes script text
+// and the walker drops it. Restoring the end tag keeps the chapter body.
+var epubSelfClosingRawText = regexp.MustCompile(`(?is)<(script|style|title|textarea)(\s[^<>]*?)?\s*/>`)
+
+func normalizeEPUBSelfClosing(source string) string {
+	return epubSelfClosingRawText.ReplaceAllString(source, "<$1$2></$1>")
+}
+
 // extractEPUBTextItems reads chapters in spine order and preserves their blocks.
 // An item that cannot be read is skipped; when items were
 // skipped and no other item could be read, it returns an error instead of an
@@ -219,6 +229,7 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 		// Retain chapter text normalization for named quotes and spaces.
 		source := epubSpaceEntity.ReplaceAllString(string(decoded), " ")
 		source = strings.NewReplacer("&lsquo;", "'", "&rsquo;", "'", "&ldquo;", "\"", "&rdquo;", "\"").Replace(source)
+		source = normalizeEPUBSelfClosing(source)
 		doc, err := html.Parse(strings.NewReader(source))
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", href, err))

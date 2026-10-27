@@ -659,18 +659,7 @@ func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCX
 
 	var flat []flatBlock
 	for _, sec := range ir.Sections {
-		for _, el := range sec.Elements {
-			if el.Type == "image" {
-				flat = append(flat, flatBlock{imageData: el.Data})
-				continue
-			}
-			if el.Type == "paragraph" || el.Type == "heading" {
-				flat = append(flat, docxInlineFlatBlocks(el)...)
-				continue
-			}
-			text := docxElementText(el, "\n")
-			flat = append(flat, flatBlock{text: text})
-		}
+		flat = appendDOCXFigureBlocks(flat, sec.Elements)
 	}
 
 	var figures []DOCXFigure
@@ -713,6 +702,43 @@ func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCX
 		}
 	}
 	return figures
+}
+
+// appendDOCXFigureBlocks flattens IR elements in document order, including
+// images nested in tables, lists and text boxes. Section emission recurses
+// through the same containers, so figure metadata must use the same traversal
+// instead of recording only top-level images.
+func appendDOCXFigureBlocks(flat []flatBlock, elements []docxIRElement) []flatBlock {
+	for _, el := range elements {
+		switch el.Type {
+		case "image":
+			if len(el.Data) > 0 {
+				flat = append(flat, flatBlock{imageData: el.Data})
+			}
+		case "paragraph", "heading":
+			flat = append(flat, docxInlineFlatBlocks(el)...)
+		case "table":
+			for _, row := range el.Rows {
+				for _, cell := range row.Cells {
+					flat = appendDOCXFigureBlocks(flat, cell.Content)
+				}
+			}
+		case "list":
+			for _, item := range el.Items {
+				flat = appendDOCXFigureBlocks(flat, item.Content)
+				if item.Nested != nil {
+					flat = appendDOCXFigureBlocks(flat, []docxIRElement{{Type: "list", Items: item.Nested.Items}})
+				}
+			}
+		case "text_box":
+			flat = appendDOCXFigureBlocks(flat, el.contentBlocks())
+		default:
+			if text := docxElementText(el, "\n"); text != "" {
+				flat = append(flat, flatBlock{text: text})
+			}
+		}
+	}
+	return flat
 }
 
 // docxInlineFlatBlocks preserves the text/image sequence inside a paragraph

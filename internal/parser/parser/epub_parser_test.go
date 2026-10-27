@@ -245,6 +245,31 @@ func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	}
 }
 
+// A self-closing raw-text element is valid XHTML but an unclosed start tag
+// under HTML5 rules, which would swallow the rest of the chapter.
+func TestEPUBParser_SelfClosingRawTextKeepsFollowingContent(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			`<script src="chapter.js"/><style type="text/css"/><p>After self-closing.</p>` +
+				`<table><tr><td>Owner</td><td>RET</td></tr></table>`)},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text := epubTestText(res); !strings.Contains(text, "After self-closing.") {
+		t.Fatalf("body after self-closing raw-text element lost: %q", text)
+	}
+	tables := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "table" {
+			tables++
+		}
+	}
+	if tables != 1 {
+		t.Fatalf("table after self-closing raw-text element lost: %#v", ItemsToMaps(res.JSON))
+	}
+}
+
 // XHTML has no &nbsp; and EPUB tools often write numeric character
 // references; only a fixed list of named entities was decoded, so
 // "don&#8217;t" reached the index as written.

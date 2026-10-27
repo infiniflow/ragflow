@@ -516,6 +516,28 @@ func TestExtractDOCXFiguresFromIR_NonParagraphContext(t *testing.T) {
 	}
 }
 
+// TestExtractDOCXFiguresFromIR_NestedImages verifies that images inside
+// tables and text boxes reach the figure metadata. Section emission recurses
+// into these containers, so a top-level-only figure walk would omit images
+// the parser actually emits.
+func TestExtractDOCXFiguresFromIR_NestedImages(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"cell"},{"type":"image","data":"aGVsbG8="}]}]}]}]},
+		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"image","data":"d29ybGQ="}]}]}
+	]}]}`
+	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
+	if len(figs) != 2 {
+		t.Fatalf("expected 2 nested figures, got %d: %+v", len(figs), figs)
+	}
+	if figs[0].Image != "aGVsbG8=" || figs[1].Image != "d29ybGQ=" {
+		t.Fatalf("nested figures = %+v", figs)
+	}
+	if !strings.Contains(figs[0].ContextAbove, "cell") {
+		t.Errorf("ContextAbove = %q, want the nested cell text", figs[0].ContextAbove)
+	}
+}
+
 // TestCollectDOCXText_BoundedByMaxLen pins that the joined context
 // never exceeds maxLen runes, even though newline separators are
 // inserted between blocks (they are not counted by the per-block
