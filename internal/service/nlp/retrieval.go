@@ -389,9 +389,13 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	// This is useful for showing users which documents are most relevant to their query.
 	var docAggs []map[string]interface{}
 	if req.Aggs != nil && *req.Aggs {
-		docAggsMap := make(map[string]struct {
-			docID string
-			count int
+		type docAggKey struct {
+			docID   string
+			docName string
+		}
+		docAggsMap := make(map[docAggKey]struct {
+			docName string
+			count   int
 		})
 		for _, i := range validIdx {
 			if i < 0 || i >= len(searchResult.IDs) {
@@ -413,14 +417,19 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			if kbID, _ := chunk["kb_id"].(string); docID != "" && docID == kbID {
 				continue
 			}
-			if entry, exists := docAggsMap[docName]; exists {
+			key := docAggKey{docID: docID}
+			if docID == "" {
+				// Preserve name-based grouping for chunks without a document ID.
+				key.docName = docName
+			}
+			if entry, exists := docAggsMap[key]; exists {
 				entry.count++
-				docAggsMap[docName] = entry
+				docAggsMap[key] = entry
 			} else {
-				docAggsMap[docName] = struct {
-					docID string
-					count int
-				}{docID: docID, count: 1}
+				docAggsMap[key] = struct {
+					docName string
+					count   int
+				}{docName: docName, count: 1}
 			}
 		}
 
@@ -431,8 +440,8 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			count   int
 		}
 		docAggsList := make([]docAggEntry, 0, len(docAggsMap))
-		for docName, entry := range docAggsMap {
-			docAggsList = append(docAggsList, docAggEntry{docName: docName, docID: entry.docID, count: entry.count})
+		for key, entry := range docAggsMap {
+			docAggsList = append(docAggsList, docAggEntry{docName: entry.docName, docID: key.docID, count: entry.count})
 		}
 		sort.Slice(docAggsList, func(i, j int) bool {
 			return docAggsList[i].count > docAggsList[j].count

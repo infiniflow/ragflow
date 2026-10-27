@@ -223,6 +223,96 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 	}
 }
 
+func TestRetrievalAggregatesDocumentsByID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	docs := []entity.Document{
+		{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}},
+		{ID: "doc-2", KbID: "kb-1", ParserConfig: entity.JSONMap{}},
+		{ID: "doc-3", KbID: "kb-2", ParserConfig: entity.JSONMap{}},
+	}
+	if err := db.Create(&docs).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB, oldQueryBuilder := dao.DB, globalQueryBuilder
+	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
+	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
+
+	var rows []map[string]interface{}
+	for i, docID := range []string{"doc-1", "doc-2", "doc-3", "doc-1", "doc-3", "doc-1"} {
+		kbID := "kb-1"
+		if docID == "doc-3" {
+			kbID = "kb-2"
+		}
+		rows = append(rows, map[string]interface{}{
+			"id": fmt.Sprintf("chunk-%d", i), "doc_id": docID, "kb_id": kbID,
+			"docnm_kwd": "report.pdf", "content_ltks": "alpha", "_score": 0.9,
+		})
+	}
+	// Display names may vary, but chunks still belong to the same document.
+	rows[3]["docnm_kwd"] = "renamed.pdf"
+	eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: rows}}
+	result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1", "kb-2"}, Page: 1, PageSize: 1,
+		VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Chunks) != 1 || result.Total != int64(len(rows)) {
+		t.Fatalf("chunks=%d total=%d, want one paginated chunk and total %d", len(result.Chunks), result.Total, len(rows))
+	}
+	want := []map[string]interface{}{
+		{"doc_id": "doc-1", "doc_name": "report.pdf", "count": 3},
+		{"doc_id": "doc-3", "doc_name": "report.pdf", "count": 2},
+		{"doc_id": "doc-2", "doc_name": "report.pdf", "count": 1},
+	}
+	if !slices.EqualFunc(result.DocAggs, want, func(got, want map[string]interface{}) bool {
+		return maps.Equal(got, want)
+	}) {
+		t.Fatalf("doc_aggs=%v, want separate documents ordered by chunk count: %v", result.DocAggs, want)
+	}
+}
+
+func TestRetrievalAggregatesDocumentsWithoutIDsByName(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+	var rows []map[string]interface{}
+	for i, name := range []string{"first.pdf", "second.pdf", "first.pdf"} {
+		rows = append(rows, map[string]interface{}{
+			"id": fmt.Sprintf("chunk-%d", i), "docnm_kwd": name, "content_ltks": "alpha", "_score": 0.9,
+		})
+	}
+	eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: rows}}
+	result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, Page: 1, PageSize: 1,
+		VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(true),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []map[string]interface{}{
+		{"doc_id": "", "doc_name": "first.pdf", "count": 2},
+		{"doc_id": "", "doc_name": "second.pdf", "count": 1},
+	}
+	if !slices.EqualFunc(result.DocAggs, want, func(got, want map[string]interface{}) bool {
+		return maps.Equal(got, want)
+	}) {
+		t.Fatalf("doc_aggs=%v, want name-based fallback for chunks without document IDs: %v", result.DocAggs, want)
+	}
+}
+
 type projectedRetrievalEngine struct{ retrievalCountEngine }
 
 func (e *projectedRetrievalEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
