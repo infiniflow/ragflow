@@ -28,7 +28,6 @@ import {
   useDeleteVersion,
   useFetchVersion,
   useFetchVersionList,
-  useSaveAgent,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
@@ -100,7 +99,6 @@ export function VersionDialog({
   const [pending, setPending] = useState<PendingAction>(null);
 
   const { deleteVersion, loading: deleting } = useDeleteVersion();
-  const { saveAgent, loading: restoring } = useSaveAgent(false);
   const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
 
@@ -144,12 +142,6 @@ export function VersionDialog({
       });
       if (ok && selectedId === pending.versionId) setSelectedId('');
     } else if (pending.kind === 'restore') {
-      await saveAgent({
-        id: canvasId,
-        dsl: agent?.dsl,
-        title: agent?.title,
-      });
-
       const ok = await applyVersion({
         canvasId,
         versionId: pending.versionId,
@@ -157,15 +149,7 @@ export function VersionDialog({
       if (ok) hideModal?.();
     }
     setPending(null);
-  }, [
-    pending,
-    canvasId,
-    deleteVersion,
-    selectedId,
-    saveAgent,
-    agent?.dsl,
-    agent?.title,
-  ]);
+  }, [pending, canvasId, deleteVersion, selectedId, applyVersion, hideModal]);
 
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
@@ -304,7 +288,6 @@ export function VersionDialog({
                         disabled={
                           selectedId === latestId ||
                           !selectedId ||
-                          restoring ||
                           applyRestoring
                         }
                       >

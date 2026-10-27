@@ -2488,7 +2488,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         restore: '恢复为当前版本',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
-          '当前智能体 DSL 将被此版本替换。再次发布会将其保存为新版本。',
+          '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
         missingContent:
           '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
