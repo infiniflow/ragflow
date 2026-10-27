@@ -26,16 +26,13 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="license">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -54,6 +51,22 @@
 <a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
+<details open>
+<summary><b>📕 目次</b></summary>
+
+- 💡 [RAGFlow とは？](#-ragflow-とは)
+- 🎮 [はじめに](#-はじめに)
+- 🔥 [最新情報](#-最新情報)
+- 🌟 [主な特徴](#-主な特徴)
+- 🔎 [システム構成](#-システム構成)
+- 🏠 [ローカルデプロイ](#-ローカルデプロイ)
+- 📚 [ドキュメンテーション](#-ドキュメンテーション)
+- 📜 [ロードマップ](#-ロードマップ)
+- 🏄 [コミュニティ](#-コミュニティ)
+- 🙌 [コントリビュート](#-コントリビュート)
+
+</details>
+
 ## 💡 RAGFlow とは？
 
 [RAGFlow](https://ragflow.io/) は、先進的な[RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型[コンテキストエンジン](https://ragflow.io/basics/what-is-agent-context-engine)と事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
@@ -62,6 +75,8 @@
 
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
+ローカルにデプロイする場合は、[セルフホスティング](#-セルフホスティング)を参照してください。
+
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
 <img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
@@ -69,18 +84,14 @@
 
 ## 🔥 最新情報
 
-- 2026-06-15 Feishu、Discord、Telegram、Lineなどの複数のチャットチャンネルをサポートします。
-- 2026-04-24 DeepSeek v4 をサポート。
-- 2026-03-24 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — OpenClaw経由でRAGFlowデータセットにアクセスする公式スキルを提供。
-- 2025-12-26 AIエージェントの「メモリ」機能をサポート。
-- 2025-11-19 Gemini 3 Proをサポートしています。
-- 2025-11-12 Confluence、S3、Notion、Discord、Google Drive からのデータ同期をサポートします。
-- 2025-10-23 ドキュメント解析方法として MinerU と Docling をサポートします。
-- 2025-10-15 オーケストレーションされたデータパイプラインのサポート。
-- 2025-08-08 OpenAI の最新 GPT-5 シリーズモデルをサポートします。
-- 2025-08-01 エージェントワークフローとMCPをサポート。
-- 2025-05-23 エージェントに Python/JS コードエグゼキュータコンポーネントを追加しました。
-- 2025-03-19 PDFまたはDOCXファイル内の画像を理解するために、多モーダルモデルを使用することをサポートします。
+- 2026-09-29 RAGFlow 1.0.0-rc1 をリリース。
+
+- 2026-09-10 SitemapによるWebコンテンツの取り込みに対応。
+- 2026-08-19 Knowledge Compilationを導入。ドキュメントおよびデータセット単位でWiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skillsを生成できます。
+- 2026-08-19 Low、Medium、High、Ultraの思考モードを備えたAgentic RAGを導入。
+- 2026-07-02 Google BigQueryデータソースの取り込みと増分同期に対応。
+
+その他の更新については[リリースノート全文](https://ragflow.io/docs/dev/release_notes)を参照してください。
 
 
 ## 🎉 続きを楽しみに
@@ -95,13 +106,23 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 複雑な形式の非構造化データからの[深い文書理解](./deepdoc/README.md)ベースの知識抽出。
+- 複雑な形式の非構造化データからの深い文書理解ベースの知識抽出。
 - 無限のトークンから"干し草の山の中の針"を見つける。
 
 ### 🍱 **テンプレートベースのチャンク化**
 
 - 知的で解釈しやすい。
 - テンプレートオプションが豊富。
+
+### 🧩 **ナレッジコンパイル（Knowledge Compilation）**
+
+- ドキュメントやデータセットのコンテンツを、Wiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skills などの構造化された成果物に整理します。
+- コンパイルモデルと処理ルールを設定し、成果物の表示、更新、再生成を行えます。
+
+### 🧠 **Agentic Retrieval**
+
+- 複雑な質問を分析し、必要に応じて分解、ナレッジ検索、根拠確認を複数段階で行います。
+- Low、Medium、High、Ultra の思考モードで、質問の複雑さに応じて検索と推論の深さを調整できます。
 
 ### 🌱 **ハルシネーションが軽減された根拠のある引用**
 
@@ -110,7 +131,7 @@
 
 ### 🍔 **多様なデータソースとの互換性**
 
-- Word、スライド、Excel、txt、画像、スキャンコピー、構造化データ、Web ページなどをサポート。
+- Word 文書、PowerPoint プレゼンテーション、Excel スプレッドシート、TXT ファイル、画像、PDF、スキャンデータ、構造化データ、Web ページなどをサポート。
 
 ### 🛀 **自動化された楽な RAG ワークフロー**
 
@@ -122,26 +143,23 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
 </div>
 
-## 🎬 セルフホスティング
+## 🏠 ローカルデプロイ
 
-### 📝 必要条件
+Docker は迅速な評価、統合テスト、本番環境に、ソース起動は開発とデバッグに適しています。Docker に Go は不要です。ソース起動には `go.mod` 指定の Go、フロントエンド開発には Node.js と npm が必要です。
 
-- CPU >= 4 cores
-- RAM >= 16 GB
-- Disk >= 50 GB
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): RAGFlowのコード実行（サンドボックス）機能を利用する場合のみ必要です。
+### 🐳 Docker デプロイ
 
-> [!TIP]
-> ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
+#### 📝 前提条件
 
-### 🚀 サーバーを起動
+- 推奨される初期構成：4 CPU コア、16 GB RAM、50 GB の空きディスク容量。
+- Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
 
-1. `vm.max_map_count` >= 262144 であることを確認する:
+#### 🚀 サーバーを起動
+
+1. Elasticsearch を使用する場合は、Docker ホストの `vm.max_map_count` を 262144 以上に設定してください。Infinity を使用する場合は通常この手順は不要です:
 
    > `vm.max_map_count` の値をチェックするには:
    >
@@ -149,7 +167,7 @@
    > sysctl vm.max_map_count
    > ```
    >
-   > `vm.max_map_count` が 262144 より大きい値でなければリセットする。
+   > Elasticsearch を使用していて、値が 262144 未満の場合は、リセットしてください:
    >
    > ```bash
    > # In this case, we set it to 262144:
@@ -162,206 +180,108 @@
    > vm.max_map_count=262144
    > ```
    >
-2. リポジトリをクローンする:
+
+2. `git clone https://github.com/infiniflow/ragflow.git`
+
+3. Docker:
 
    ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   ```
-3. ビルド済みの Docker イメージをビルドし、サーバーを起動する:
-
-> [!CAUTION]
-> 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
-> ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
-
-> 以下のコマンドは、RAGFlow Docker イメージの v0.27.2 エディションをダウンロードします。異なる RAGFlow エディションの説明については、以下の表を参照してください。v0.27.2 とは異なるエディションをダウンロードするには、docker/.env ファイルの RAGFLOW_IMAGE 変数を適宜更新し、docker compose を使用してサーバーを起動してください。
-
-```bash
    cd ragflow/docker
-
-   git checkout v0.27.2
-   # 任意: 安定版タグを利用 (一覧: https://github.com/infiniflow/ragflow/releases)
-   # この手順は、コード内の entrypoint.sh ファイルが Docker イメージのバージョンと一致していることを確認します。
-
-   # Use CPU for DeepDoc tasks:
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> 注意：`v0.22.0` より前のバージョンでは、embedding モデルを含むイメージと、embedding モデルを含まない slim イメージの両方を提供していました。詳細は以下の通りです：
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> `v0.22.0` 以降、当プロジェクトでは slim エディションのみを提供し、イメージタグに **-slim** サフィックスを付けなくなりました。
-
-   1. サーバーを立ち上げた後、サーバーの状態を確認する:
-
-   ```bash
-   docker logs -f docker-ragflow-cpu-1
    ```
 
-   _以下の出力は、システムが正常に起動したことを確認するものです:_
+4. サービスと API の準備状況を確認します:
 
    ```bash
-        ____   ___    ______ ______ __
-       / __ \ /   |  / ____// ____// /____  _      __
-      / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-     / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-    /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
+   curl -f http://localhost/api/v1/system/healthz
+   docker logs --tail 50 ragflow-cpu
    ```
 
-   > もし確認ステップをスキップして直接 RAGFlow にログインした場合、その時点で RAGFlow が完全に初期化されていない可能性があるため、ブラウザーがネットワーク異常エラーを表示するかもしれません。
-   >
-2. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
+5. ブラウザで `http://IP_OF_YOUR_MACHINE` を開いてログインします。デフォルト設定では、HTTP ポート `80` は省略できます。
 
-   > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
-   >
-3. [service_conf.yaml.template](./docker/service_conf.yaml.template) で、`user_default_llm` で希望の LLM ファクトリを選択し、`API_KEY` フィールドを対応する API キーで更新する。
+6. モデルプロバイダーページで LLM、Embedding、Reranker を追加します。詳細は [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
 
-   > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
-   >
+詳細は[クイックスタート](./docs/quickstart.mdx)を参照してください。
 
-   _これで初期設定完了！ショーの開幕です！_
+#### ⚙️ Docker の設定と調整
 
-## 🔧 コンフィグ
+`docker/.env` と `docker/docker-compose.yml` を使用します。[Docker 設定](./docker/README.md)および[イメージのビルドとプラットフォームサポート](./docs/develop/build_docker_image.mdx)を参照してください。macOS は現在サポートされていません。
 
-システムコンフィグに関しては、以下のファイルを管理する必要がある:
+### 🔨 ソースコードから起動
 
-- [.env](./docker/.env): `SVR_HTTP_PORT`、`MYSQL_PASSWORD`、`MINIO_PASSWORD` などのシステムの基本設定を保持する。
-- [service_conf.yaml.template](./docker/service_conf.yaml.template): バックエンドのサービスを設定します。
-- [docker-compose.yml](./docker/docker-compose.yml): システムの起動は [docker-compose.yml](./docker/docker-compose.yml) に依存している。
+#### 📝 前提条件
 
-[.env](./docker/.env) ファイルの変更が [service_conf.yaml.template](./docker/service_conf.yaml.template) ファイルの内容と一致していることを確認する必要があります。
-
-> [./docker/README](./docker/README.md) ファイル ./docker/README には、service_conf.yaml.template ファイルで ${ENV_VARS} として使用できる環境設定とサービス構成の詳細な説明が含まれています。
-
-デフォルトの HTTP サービングポート(80)を更新するには、[docker-compose.yml](./docker/docker-compose.yml) にアクセスして、`80:80` を `<YOUR_SERVING_PORT>:80` に変更します。
-
-> すべてのシステム設定のアップデートを有効にするには、システムの再起動が必要です:
->
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Elasticsearch から Infinity にドキュメントエンジンを切り替えます
-
-RAGFlow はデフォルトで Elasticsearch を使用して全文とベクトルを保存します。［Infinity］に切り替え（https://github.com/infiniflow/infinity/)、次の手順に従います。
-
-1. 実行中のすべてのコンテナを停止するには：
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-   Note: `-v` は docker コンテナのボリュームを削除し、既存のデータをクリアします。
-2. **docker/.env** の「DOC \_ ENGINE」を「infinity」に設定します。
-3. 起動コンテナ：
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-   > [!WARNING]
-   > Linux/arm64 マシンでの Infinity への切り替えは正式にサポートされていません。
-   >
-
-## 🔧 ソースコードで Docker イメージを作成
-
-この Docker イメージのサイズは約 1GB で、外部の大モデルと埋め込みサービスに依存しています。
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-プロキシ環境下にいる場合は、プロキシ引数を指定できます：
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 ソースコードからサービスを起動する方法
-
-1. `uv` をインストールする。すでにインストールされている場合は、このステップをスキップしてください:
-
-   ```bash
-   pipx install uv
-   ```
-2. ソースコードをクローンし、Python の依存関係をインストールする:
+1. リポジトリをクローンし、`go.mod` で指定された Go、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2、および CGO に必要なネイティブライブラリをインストールします。
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   cd ragflow
    ```
-3. Docker Compose を使用して依存サービス（MinIO、Elasticsearch、Redis、MySQL）を起動する:
+
+2. Go ビルドがリンクするネイティブ静的ライブラリ（`download_dev_deps.py`）と、バックエンドが実行時に読み込むモデル / トークナイザーリソース（`download_deps.py`）を、依存関係ダウンロードスクリプトで用意します:
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   uv run tools/scripts/download_dev_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `/etc/hosts` に以下の行を追加して、**conf/service_conf.yaml** に指定されたすべてのホストを `127.0.0.1` に解決します:
+   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
 
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. HuggingFace にアクセスできない場合は、`HF_ENDPOINT` 環境変数を設定してミラーサイトを使用してください:
+3. サービスをビルドします:
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./build.sh --all
    ```
-5. オペレーティングシステムにjemallocがない場合は、次のようにインストールします:
+
+4. ローカル依存サービスを起動します:
 
    ```bash
-   # ubuntu
-   sudo apt-get install libjemalloc-dev
-   # centos
-   sudo yum install jemalloc
-   # mac
-   brew install jemalloc
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
-6. バックエンドサービスを起動する:
+
+5. データベースをマイグレーションします:
 
    ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
+   ./bin/ragflow_server --migrate
    ```
-7. フロントエンドの依存関係をインストールする:
+
+6. 4つのサービスを4つのターミナルで起動します:
+
+   ターミナル1: Admin (`9381`)。
+
+   ```bash
+   ./bin/ragflow_server --admin
+   ```
+
+   ```bash
+   ./bin/ragflow_server --ingestor
+   ```
+
+   ターミナル3: Syncer。
+
+   ```bash
+   ./bin/ragflow_server --syncer
+   ```
+
+   ターミナル4: API (`9380`)。
+
+   ```bash
+   ./bin/ragflow_server --api
+   ```
+
+7. フロントエンド開発時のみ Node.js と npm をインストールし、API を確認します:
 
    ```bash
    cd web
    npm install
-   ```
-8. フロントエンドサービスを起動する:
-
-   ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   _以下の画面で、システムが正常に起動したことを示します:_
+詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. 開発が完了したら、RAGFlow のフロントエンド サービスとバックエンド サービスを停止します:
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_dev_deps.py` はネイティブライブラリを、`download_deps.py` はモデルとトークナイザーリソースを準備します。どちらも `uv run` で実行します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 

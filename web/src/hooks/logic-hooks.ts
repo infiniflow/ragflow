@@ -217,8 +217,11 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPagination({ page: pageNumber, pageSize });
+    (pageNumber: number, pageSize?: number) => {
+      setPagination((pre) => ({
+        page: pageNumber,
+        pageSize: pageSize ?? pre.pageSize,
+      }));
     },
     [],
   );
@@ -850,9 +853,6 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        // Always pass the truncated history explicitly, even when it is
-        // empty (regenerating the first question), so the backend can
-        // overwrite the session with it via pass_all_history_messages.
         const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
           // Keep the original id so the question/answer pair id stays

@@ -1,5 +1,3 @@
-//go:build cgo
-
 //
 // Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
@@ -7,93 +5,82 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
 
 package parser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
-	officeOxide "github.com/yfedoseev/office_oxide/go"
+	deepdocoffice "ragflow/internal/deepdoc/parser/office"
 )
 
-type DOCParser struct {
-	OutputFormat string
-}
+// docExtract is the native office_oxide extraction seam for the DOC family.
+var docExtract = deepdocoffice.OpenAndExtract
+
+type DOCParser struct{}
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{
-		OutputFormat: "json",
-	}
+	return &DOCParser{}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-}
-
-// ParseWithResult extracts text for the DOC family and converts it to the
-// requested output format (defaulting to "json" to match Python's default).
+// ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	doc, err := officeOxide.OpenFromBytes(data, "doc")
+	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
-		return ParseResult{Err: fmt.Errorf("doc open: %w", err)}
+		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
+			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
+		}
+		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
-	defer doc.Close()
 
-	text, mdText, err := extractDocText(doc)
+	text, _, err := extractDocText(irJSON, mdText, plainText)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "json"
+	// Prefer the structured IR, which office_oxide recovers table
+	// (and list) structure for. Emitting structured sections lets the chunker
+	// render tables as HTML (#20918) instead of losing them to plain text — the
+	// legacy path flattened the whole document (tables included) into a single
+	// text item. Fall back to the flattened text only when the IR yields no
+	// usable sections, so a document whose IR is empty/unusable still keeps its
+	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
+	if strings.TrimSpace(irJSON) != "" {
+		budget := newEmbeddedMediaBudget()
+		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
+			return ParseResult{
+				File:     map[string]any{"name": filename, "format": "doc"},
+				JSON:     MapsToItems(sections),
+				Warnings: budget.warnings(),
+			}
+		}
 	}
-
-	markdownPayload := text
-	if strings.TrimSpace(mdText) != "" {
-		markdownPayload = mdText
+	if strings.TrimSpace(text) == "" {
+		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
 	}
-
-	res := ParseResult{
-		OutputFormat: outFmt,
-		File:         map[string]any{"name": filename, "format": "doc"},
-		Text:         text,
-		Markdown:     markdownPayload,
+	return ParseResult{
+		File: map[string]any{"name": filename, "format": "doc"},
+		JSON: []DocItem{NewTextJSONItem(text)},
 	}
-
-	if strings.EqualFold(outFmt, "markdown") {
-		return res
-	}
-	if strings.EqualFold(outFmt, "text") {
-		return res
-	}
-
-	res.OutputFormat = "json"
-	res.JSON = []map[string]any{NewTextJSONItem(text)}
-	return res
 }
 
 // extractDocText returns the best-effort plain text for a legacy .doc
-// document. office_oxide exposes three text views:
+// document. office_oxide exposes three text views (documented on the cgo
+// OpenAndExtract contract):
 //   - ToIRJSON: a structured DocumentIR, flattened to plain text via
 //     flattenDocIR. Recovers table structure (office_oxide/go v0.1.9, #116)
 //     and, when the reader surfaces them, list structure.
@@ -104,26 +91,24 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 // unique to the IR view and would be silently dropped under a pure length
 // comparison — a prose-heavy document can make PlainText longer than the IR
 // even though the IR is more complete). Otherwise the longest non-empty view
-// is chosen so a sparser view never shadows a more complete one. A failure at
-// every stage degrades to the PlainText error, preserving the original "no
-// text at all" failure semantics.
-func extractDocText(doc *officeOxide.Document) (string, string, error) {
-	var irJSON, irText, mdText, plainText string
-	if j, err := doc.ToIRJSON(); err == nil {
-		irJSON = j
-		irText = flattenDocIR(j)
+// is chosen so a sparser view never shadows a more complete one.
+func extractDocText(irJSON, mdText, plainText string) (string, string, error) {
+	var irText string
+	if irJSON != "" {
+		irText = flattenDocIR(irJSON)
 	}
-	if md, err := doc.ToMarkdown(); err == nil {
-		mdText = md
+	text := selectDocTextView(irJSON, irText, mdText, plainText)
+	// Fail loud when the document yielded no usable text in any view. The
+	// OpenAndExtract contract swallows per-view errors, so an empty selected
+	// view plus an empty Markdown view is the only signal we get that the
+	// document has no extractable text — surfacing it avoids silently
+	// producing 0 chunks (Finding A). A legitimately empty payload (e.g. a
+	// scanned-image doc with OCR off) is rare and failing is safer than
+	// silent data loss.
+	if strings.TrimSpace(text) == "" && strings.TrimSpace(mdText) == "" {
+		return "", "", fmt.Errorf("doc extract: no text content")
 	}
-	if plain, err := doc.PlainText(); err == nil {
-		plainText = plain
-	} else if strings.TrimSpace(irText) == "" && strings.TrimSpace(mdText) == "" {
-		// Every view failed (or produced nothing): keep the original
-		// "no text at all" failure semantics.
-		return "", "", err
-	}
-	return selectDocTextView(irJSON, irText, mdText, plainText), mdText, nil
+	return text, mdText, nil
 }
 
 // selectDocTextView chooses the best plain-text rendering from office_oxide's

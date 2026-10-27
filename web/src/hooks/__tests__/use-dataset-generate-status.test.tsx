@@ -9,17 +9,13 @@ jest.mock('react-router', () => ({
   useParams: jest.fn(() => ({ id: 'kb1' })),
 }));
 
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: jest.fn(() => true),
-}));
-
 jest.mock('@/services/knowledge-service', () => ({
   getDatasetCompilationStatus: jest.fn(),
 }));
 
 // use-dataset-generate imports agent-service (and transitively register-server /
 // next-request / locales config that touch import.meta.env). Mock it so the
-// Go status path under test doesn't pull in that module graph.
+// status path under test doesn't pull in that module graph.
 jest.mock('@/services/agent-service', () => ({
   __esModule: true,
   default: { cancelDataflow: jest.fn(), deletePipelineTask: jest.fn() },
@@ -30,7 +26,6 @@ jest.mock('react-i18next', () => ({
 }));
 
 import { getDatasetCompilationStatus } from '@/services/knowledge-service';
-import { useIsGoBackend } from '@/utils/backend-variant';
 
 const mockStatus = jest.mocked(getDatasetCompilationStatus);
 
@@ -53,10 +48,9 @@ function makeWrapper() {
   return Wrapper;
 }
 
-describe('useTraceRunData (Go compile-status contract)', () => {
+describe('useTraceRunData (compile-status contract)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (useIsGoBackend as jest.Mock).mockReturnValue(true);
   });
 
   it('maps a successful status to the scheduler contract fields', async () => {

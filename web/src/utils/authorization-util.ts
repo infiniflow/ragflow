@@ -15,51 +15,66 @@
  */
 
 import {
+  AdminAuthorization,
+  AdminToken,
+  AdminUserInfo,
   Authorization,
   ThinkingLevel,
   Token,
   UserInfo,
 } from '@/constants/authorization';
 import { getSearchValue } from './common-util';
-const KeySet = [Authorization, Token, UserInfo];
 
-const storage = {
-  getAuthorization: () => {
-    return localStorage.getItem(Authorization);
-  },
-  getToken: () => {
-    return localStorage.getItem(Token);
-  },
-  getUserInfo: () => {
-    return localStorage.getItem(UserInfo);
-  },
+type CredentialKeys = {
+  authorization: string;
+  token: string;
+  userInfo: string;
+};
+
+const UserCredentialKeys: CredentialKeys = {
+  authorization: Authorization,
+  token: Token,
+  userInfo: UserInfo,
+};
+
+const AdminCredentialKeys: CredentialKeys = {
+  authorization: AdminAuthorization,
+  token: AdminToken,
+  userInfo: AdminUserInfo,
+};
+
+type LoginCredentials = {
+  authorization: string;
+  token: string;
+  userInfo: string;
+};
+
+const createCredentialStorage = (keys: CredentialKeys) => ({
+  getAuthorization: (): string =>
+    localStorage.getItem(keys.authorization) ?? '',
   getUserInfoObject: () => {
-    const userInfoStr = localStorage.getItem(UserInfo);
+    const userInfoStr = localStorage.getItem(keys.userInfo);
     return userInfoStr ? JSON.parse(userInfoStr) : null;
   },
   setAuthorization: (value: string) => {
-    localStorage.setItem(Authorization, value);
+    localStorage.setItem(keys.authorization, value);
   },
-  setToken: (value: string) => {
-    localStorage.setItem(Token, value);
-  },
-  setUserInfo: (value: string | Record<string, unknown>) => {
-    const valueStr = typeof value !== 'string' ? JSON.stringify(value) : value;
-    localStorage.setItem(UserInfo, valueStr);
-  },
-  setItems: (pairs: Record<string, string>) => {
-    Object.entries(pairs).forEach(([key, value]) => {
-      localStorage.setItem(key, value);
-    });
-  },
-  removeAuthorization: () => {
-    localStorage.removeItem(Authorization);
+  saveLoginCredentials: (credentials: LoginCredentials) => {
+    localStorage.setItem(keys.authorization, credentials.authorization);
+    localStorage.setItem(keys.token, credentials.token);
+    localStorage.setItem(keys.userInfo, credentials.userInfo);
   },
   removeAll: () => {
-    KeySet.forEach((x) => {
-      localStorage.removeItem(x);
+    Object.values(keys).forEach((key) => {
+      localStorage.removeItem(key);
     });
   },
+});
+
+export type CredentialStorage = ReturnType<typeof createCredentialStorage>;
+
+const storage = {
+  ...createCredentialStorage(UserCredentialKeys),
   setLanguage: (lng: string) => {
     localStorage.setItem('lng', lng);
   },
@@ -69,16 +84,20 @@ const storage = {
   setThinkingLevel: (level: string) => {
     localStorage.setItem(ThinkingLevel, level);
   },
+  // Only Naive (0) and Agentic (5) are offered; a level persisted by a
+  // since-removed option falls back to the Naive default rather than reaching
+  // the request as NaN.
   getThinkingLevel: (): string => {
-    return localStorage.getItem(ThinkingLevel) || '1';
+    const level = localStorage.getItem(ThinkingLevel);
+    return level === '0' || level === '5' ? level : '0';
   },
 };
 
+export const adminStorage = createCredentialStorage(AdminCredentialKeys);
+
 export const getAuthorization = () => {
   const auth = getSearchValue('auth');
-  const authorization = auth
-    ? 'Bearer ' + auth
-    : storage.getAuthorization() || '';
+  const authorization = auth ? 'Bearer ' + auth : storage.getAuthorization();
 
   return authorization;
 };

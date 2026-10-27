@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestHierarchyTitleChunker_Registered(t *testing.T) {
@@ -88,7 +89,7 @@ func TestHierarchyTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -111,7 +112,7 @@ func TestHierarchyTitleChunker_NestedHeadings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -166,7 +167,7 @@ func TestHierarchyChunker_StructuredMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	found := false
 	for _, ck := range chunks {
 		if dt, _ := ck["doc_type_kwd"].(string); dt == "image" {
@@ -200,7 +201,7 @@ func TestHierarchyTitleChunker_InvokeDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		texts := make([]string, len(chunks))
 		for i, ck := range chunks {
 			texts[i], _ = ck["text"].(string)
@@ -253,7 +254,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -285,7 +286,7 @@ func TestHierarchyTitleChunker_ColonTitleShortLine_Negative(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -320,7 +321,7 @@ func TestHierarchyTitleChunker_ShortNumericLineFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -396,7 +397,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion_CJK_EdgeCase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -434,7 +435,7 @@ func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -445,12 +446,12 @@ func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
 	}
 }
 
-// TestHierarchyTitleChunker_CKTypeHeadingFallback verifies that
-// records with ck_type "heading" (from office_oxide DOCX parsing)
+// TestHierarchyTitleChunker_LayoutHeadingFallback verifies that
+// records with layout "heading" (from office_oxide DOCX parsing)
 // are treated as heading nodes in the tree, even when their text
 // doesn't match any regex pattern. Without the fix, such records
 // are treated as body text — all content merges into one chunk.
-func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
+func TestHierarchyTitleChunker_LayoutHeadingFallback(t *testing.T) {
 	c, err := NewHierarchyTitleChunker(map[string]any{
 		"hierarchy": 2,
 		"levels":    [][]string{{`^# `}, {`^## `}},
@@ -459,11 +460,11 @@ func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
 		t.Fatalf("NewHierarchyTitleChunker: %v", err)
 	}
 	items := []map[string]any{
-		{"text": "Introduction", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Introduction", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Intro body.", "doc_type_kwd": "text"},
-		{"text": "Background", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Background", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Background body.", "doc_type_kwd": "text"},
-		{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
+		{"text": "Conclusion", "doc_type_kwd": "text", "layout": "heading"},
 		{"text": "Final words.", "doc_type_kwd": "text"},
 	}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
@@ -473,14 +474,14 @@ func TestHierarchyTitleChunker_CKTypeHeadingFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
 	// Without the fix: 1 chunk (all text merged as body under root).
 	// With the fix: 3 chunks (one per heading + its body).
 	if len(chunks) != 3 {
-		t.Fatalf("len(chunks) = %d, want 3 (3 ck_type=headings should produce 3 chunks)", len(chunks))
+		t.Fatalf("len(chunks) = %d, want 3 (3 layout=headings should produce 3 chunks)", len(chunks))
 	}
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -514,7 +515,7 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	idx := func(sub string) int {
 		for i, ck := range chunks {
 			if text, _ := ck["text"].(string); strings.Contains(text, sub) {
@@ -589,7 +590,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\nbefore figure\n",
-				"figure\n",
+				"figure",
 				"# Chapter 1\nafter figure\n",
 			},
 		},
@@ -608,7 +609,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\n## 1.1 Background\nbefore figure\n",
-				"figure\n",
+				"figure",
 				"# Chapter 1\n## 1.1 Background\nafter figure\n",
 				"# Chapter 1\n## 1.2 Goals\ngoals body\n",
 			},
@@ -627,7 +628,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\nchapter intro\n## 1.1 Background\nbefore figure\n",
-				"figure\n",
+				"figure",
 				"# Chapter 1\n## 1.1 Background\nafter figure\n",
 			},
 		},
@@ -645,8 +646,8 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\n## 1.1 Background\nbefore figures\n",
-				"figure A\n",
-				"figure B\n",
+				"figure A",
+				"figure B",
 				"# Chapter 1\n## 1.1 Background\nafter figures\n",
 			},
 		},
@@ -660,7 +661,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 				textItem("body"),
 			},
 			want: []string{
-				"cover\n",
+				"cover",
 				"# Chapter 1\nbody\n",
 			},
 		},
@@ -675,7 +676,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\n",
-				"figure\n",
+				"figure",
 				"# Chapter 1\nafter figure\n",
 			},
 		},
@@ -692,7 +693,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\nbody one\n",
-				"figure\n",
+				"figure",
 				"# Chapter 2\nbody two\n",
 			},
 		},
@@ -713,7 +714,7 @@ func TestHierarchyTitleChunker_HeadingPathSurvivesMedia(t *testing.T) {
 			},
 			want: []string{
 				"# Chapter 1\n## 1.1 Background\nbackground body\n## 1.2 Goals\ngoals body\n",
-				"figure\n",
+				"figure",
 				"# Chapter 1\n## 1.2 Goals\nafter figure\n",
 			},
 		},

@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -41,6 +42,14 @@ const componentNameExeSQL = "ExeSQL"
 
 func newToolComponentFactory(componentName, toolName string) Factory {
 	return func(params map[string]any) (Component, error) {
+		if componentName == componentNameExeSQL {
+			if err := validateExeSQLParams(params, false); err != nil {
+				if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
+					return nil, fmt.Errorf("%s: %w", componentName, err)
+				}
+				return nil, runtime.NewUserFacingError(fmt.Sprintf("%s: %s", componentName, err))
+			}
+		}
 		base, err := agenttool.BuildByName(toolName, params)
 		if err != nil {
 			return nil, err
@@ -68,7 +77,7 @@ func (c *ToolBackedComponent) GetInputForm() map[string]any { return c.spec.Inpu
 func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	argsJSON, err := json.Marshal(inputs)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: %s: encode inputs: %w", c.name, err)
+		return nil, fmt.Errorf("agent: %s: encode inputs: %w", c.name, err)
 	}
 
 	raw, invokeErr := c.tool.InvokableRun(ctx, string(argsJSON))
@@ -80,9 +89,9 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	}
 	if rawValue, invalid := decoded["_raw"]; invalid {
 		if invokeErr != nil {
-			return nil, fmt.Errorf("canvas: %s: %w", c.name, invokeErr)
+			return nil, fmt.Errorf("agent: %s: %w", c.name, invokeErr)
 		}
-		return nil, fmt.Errorf("canvas: %s: invalid tool result: %v", c.name, rawValue)
+		return nil, fmt.Errorf("agent: %s: invalid tool result: %v", c.name, rawValue)
 	}
 	if existing, _ := decoded["_ERROR"].(string); strings.TrimSpace(existing) != "" {
 		outputs := c.tool.BuildComponentOutputs(decoded)
@@ -93,7 +102,7 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 		return outputs, nil
 	}
 	if invokeErr != nil {
-		return nil, fmt.Errorf("canvas: %s: %w", c.name, invokeErr)
+		return nil, fmt.Errorf("agent: %s: %w", c.name, invokeErr)
 	}
 
 	if builder, ok := c.tool.(agenttool.ReferenceBuilder); ok {
@@ -138,12 +147,16 @@ var toolComponentRegistrations = []struct {
 	{componentName: "PubMed", toolName: "pubmed"},
 	{componentName: "QueritContents", toolName: "querit_contents"},
 	{componentName: "QueritSearch", toolName: "querit_search"},
+	{componentName: "Search1APICrawl", toolName: "search1api_crawl"},
+	{componentName: "Search1APISearch", toolName: "search1api"},
 	{componentName: "SearXNG", toolName: "searxng"},
+	{componentName: "SofyaSearch", toolName: "sofya"},
 	{componentName: "TavilySearch", toolName: "tavily"},
 	{componentName: "TavilyExtract", toolName: "tavily_extract"},
 	{componentName: "WenCai", toolName: "wencai"},
 	{componentName: "Wikipedia", toolName: "wikipedia"},
 	{componentName: "YahooFinance", toolName: "yahoo_finance"},
+	{componentName: "YouComSearch", toolName: "youcom"},
 }
 
 func init() {

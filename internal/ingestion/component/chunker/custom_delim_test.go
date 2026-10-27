@@ -2,6 +2,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"slices"
 	"testing"
 )
@@ -14,8 +15,7 @@ import (
 //
 // Plain text/markdown/html inputs must not gain doc_type_kwd merely because a
 // custom delimiter is configured: Python emits only text for those paths.
-// Structured JSON inputs keep their source doc_type_kwd, while ck_type remains
-// on Go text chunks for downstream crop dispatch.
+// Structured JSON inputs keep their source doc_type_kwd.
 
 const backtickNewline = "`\n`"
 
@@ -32,7 +32,7 @@ func invokeTokenChunks(t *testing.T, params, input map[string]any) []map[string]
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("Go returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 
@@ -54,16 +54,13 @@ func assertPlainCustomDelimiterMetadata(t *testing.T, chunks []map[string]any) {
 		if _, ok := chunk["doc_type_kwd"]; ok {
 			t.Errorf("chunk[%d] must not synthesize doc_type_kwd: %v", i, chunk)
 		}
-		if got := chunk["ck_type"]; got != "text" {
-			t.Errorf("chunk[%d] ck_type: want %q got %v", i, "text", got)
-		}
 	}
 }
 
-// TestCustomDelimTextChildrenKeepCKType covers primary and child splitting in
-// combination: child chunks remain unstructured but retain Go's live CKType,
-// and every delimiter (primary "::" and children "--") is kept.
-func TestCustomDelimTextChildrenKeepCKType(t *testing.T) {
+// TestCustomDelimTextChildrenKeepDelimiters covers primary and child splitting
+// in combination: child chunks remain unstructured and every delimiter
+// (primary "::" and children "--") is kept.
+func TestCustomDelimTextChildrenKeepDelimiters(t *testing.T) {
 	params := map[string]any{
 		"chunk_token_size":    float64(128),
 		"delimiters":          []string{"`::`"},

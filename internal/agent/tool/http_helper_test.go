@@ -114,6 +114,92 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	}
 }
 
+func TestHTTPHelper_PostDoesNotRetry5xx(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	resp, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || hits.Load() != 1 {
+		t.Fatalf("status = %d, server hits = %d; want 503 and 1 hit", resp.StatusCode, hits.Load())
+	}
+}
+
+func TestHTTPHelper_PostDoesNotRetryAfterTransportError(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		hits.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	_, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err == nil {
+		t.Fatal("Do unexpectedly succeeded after server closed the connection")
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("server hits = %d, want 1 (request body was already delivered)", got)
+	}
+}
+
+func TestHTTPHelper_DoPinnedClosesConnectionAfterResponse(t *testing.T) {
+	t.Parallel()
+	closed := make(chan struct{}, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	u, err := neturl.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newTestHelper(3, time.Millisecond, 5*time.Millisecond)
+	resp, err := h.DoPinned(t.Context(), http.MethodGet, "http://example.test:"+port+"/",
+		"", "", nil, "example.test", net.ParseIP("127.0.0.1"))
+	if err != nil {
+		t.Fatalf("DoPinned: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("pinned connection remained idle after response body was closed")
+	}
+}
+
 // TestHTTPHelper_NoRetryOn4xx verifies that 4xx is returned immediately with
 // no retry — the caller is responsible for fixing 4xx, retrying won't help.
 func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
@@ -191,8 +277,11 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Do err = %v, want context.DeadlineExceeded (callers branch on errors.Is for this)", err)
 	}
-	if got := atomic.LoadInt32(&hits); got != 1 {
-		t.Errorf("server hits = %d, want 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
+	// 0 is allowed: under a loaded machine the 50ms deadline can expire during the
+	// dial, before the request reaches the handler. What this test really pins is
+	// that a ctx deadline is NOT retried (a regression would show 2+ attempts).
+	if got := atomic.LoadInt32(&hits); got > 1 {
+		t.Errorf("server hits = %d, want at most 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
 	}
 }
 
@@ -399,6 +488,50 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	}
 	if got := err.Error(); !contains(got, "would break TLS SNI") {
 		t.Errorf("error %q does not mention TLS SNI breakage", got)
+	}
+}
+
+// TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost locks in that the
+// DoPinned host guard is case-insensitive. DNS hostnames are
+// case-insensitive, so a URL host spelled with a different case than
+// originalHost (e.g. a user-typed "EXAMPLE.TEST" vs the resolver's
+// lowercased "example.test") must still be pinned and delivered, not
+// refused. A genuinely different host is still refused by
+// TestHTTPHelper_DoPinnedRefusesMismatchedURLHost.
+func TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	u, perr := neturl.Parse(srv.URL)
+	if perr != nil {
+		t.Fatalf("parse server URL %q: %v", srv.URL, perr)
+	}
+	serverHost, serverPort, sperr := net.SplitHostPort(u.Host)
+	if sperr != nil {
+		t.Fatalf("split server host:port from %q: %v", u.Host, sperr)
+	}
+	// URL host is UPPER-case; originalHost (as a resolver would record
+	// it) is lower-case — DNS-equivalent, so the pin must proceed.
+	targetURL := fmt.Sprintf("http://EXAMPLE.TEST:%s/", serverPort)
+	pinnedIP := net.ParseIP(serverHost)
+	if pinnedIP == nil {
+		t.Fatalf("server host %q is not an IP literal", serverHost)
+	}
+
+	h := NewHTTPHelper()
+	resp, err := h.DoPinned(ctx,
+		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
+	if err != nil {
+		t.Fatalf("DoPinned rejected case-insensitive equivalent host: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
 

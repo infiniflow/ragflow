@@ -3,18 +3,24 @@ import { Form } from '@/components/ui/form';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { DatasetMetadata } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useFetchChat, useUpdateChat } from '@/hooks/use-chat-request';
+import {
+  AgenticRagKeys,
+  useFetchChat,
+  useUpdateChat,
+} from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import {
   useRevalidateStaleDatasetIds,
   useStaleDatasetFormSchema,
 } from '@/hooks/use-stale-dataset-validation';
+import { IAgenticRagSettings } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import {
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQueryClient } from '@tanstack/react-query';
 import { isEmpty, omit } from 'lodash';
 import { LucidePanelRightClose, LucideSettings } from 'lucide-react';
 import { useEffect } from 'react';
@@ -24,6 +30,7 @@ import { useParams } from 'react-router';
 import { z } from 'zod';
 import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
+import { resolveAgenticRagSubmitValue } from './agentic-rag-submit';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
@@ -41,6 +48,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   );
   const { updateChat, loading } = useUpdateChat();
   const findLlmByUuid = useFindLlmByUuid();
+  const queryClient = useQueryClient();
   const { id } = useParams();
   const { t } = useTranslation();
 
@@ -54,6 +62,10 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     onModelSettingOpenChange,
     advancedSettingOpen,
     onAdvancedSettingOpenChange,
+    naiveSettingOpen,
+    onNaiveSettingOpenChange,
+    agenticSettingOpen,
+    onAgenticSettingOpenChange,
   } = useRevealSubmitErrors();
 
   type FormSchemaType = z.infer<typeof formSchema>;
@@ -81,15 +93,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        reference_metadata: {
-          include: false,
-          fields: undefined,
-        },
       },
       top_n: 8,
       rerank_candidates_count: 64,
       similarity_threshold: 0.2,
-      vector_similarity_weight: 0.2,
+      keywords_similarity_weight: 0.8,
       meta_data_filter: {
         method: DatasetMetadata.Disabled,
         manual: [],
@@ -102,14 +110,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
-    const referenceMetadata = nextValues?.prompt_config?.reference_metadata;
-    if (
-      referenceMetadata &&
-      Array.isArray(referenceMetadata.fields) &&
-      referenceMetadata.fields.length === 0
-    ) {
-      referenceMetadata.fields = undefined;
-    }
 
     // Add model_type to llm_setting based on the selected llm_id
     if (nextValues.llm_id) {
@@ -117,6 +117,27 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...nextValues.llm_setting,
         model_type: findLlmByUuid(nextValues.llm_id)?.model_type || 'chat',
       };
+    }
+
+    // Keep the override in sync with the shipped default on every save while
+    // preserving a custom content or complete tools override.
+    const agenticRag = resolveAgenticRagSubmitValue(
+      values.prompt_config?.agentic_rag,
+      queryClient.getQueryData<IAgenticRagSettings>(AgenticRagKeys.config(id))
+        ?.defaults?.content,
+    );
+
+    nextValues.prompt_config = {
+      ...nextValues.prompt_config,
+      agentic_rag: agenticRag,
+    };
+
+    // The decision TreeSelect clears to '', but the backend reads only a
+    // missing key / null as "inherit the tenant default" and would treat ''
+    // as a literal empty model id. Normalise at the point where form values
+    // become the wire payload, so clearing the override really persists.
+    if (nextValues.decision_id === '') {
+      nextValues.decision_id = null;
     }
 
     updateChat({
@@ -127,6 +148,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
           'tenant_id',
           'tenant_llm_id',
           'tenant_rerank_id',
+          'tenant_decision_id',
           'created_by',
           'create_time',
           'create_date',
@@ -144,23 +166,17 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
-    const referenceMetadata = data?.prompt_config?.reference_metadata;
-    const normalizedReferenceMetadata =
-      referenceMetadata &&
-      Array.isArray(referenceMetadata.fields) &&
-      referenceMetadata.fields.length === 0
-        ? { ...referenceMetadata, fields: undefined }
-        : referenceMetadata;
 
+    const keywordsSimilarityWeight = data.keywords_similarity_weight ?? 0.7;
     const nextData = {
-      ...omit(data, 'top_k'),
+      ...omit(data, ['top_k']),
       prompt_config: {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
-        reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
+      keywords_similarity_weight: keywordsSimilarityWeight,
     };
 
     if (!isEmpty(data)) {
@@ -225,8 +241,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
                       onCollapseOpenChange={onModelSettingOpenChange}
                     ></ChatBasicSetting>
                     <ChatPromptEngine
-                      collapseOpen={advancedSettingOpen}
-                      onCollapseOpenChange={onAdvancedSettingOpenChange}
+                      advancedSettingOpen={advancedSettingOpen}
+                      onAdvancedSettingOpenChange={onAdvancedSettingOpenChange}
+                      naiveSettingOpen={naiveSettingOpen}
+                      onNaiveSettingOpenChange={onNaiveSettingOpenChange}
+                      agenticSettingOpen={agenticSettingOpen}
+                      onAgenticSettingOpenChange={onAgenticSettingOpenChange}
                     ></ChatPromptEngine>
                   </section>
                 </ScrollArea>

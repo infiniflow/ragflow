@@ -357,6 +357,22 @@ func TestValidateMaxBodySize_OverflowGuard(t *testing.T) {
 	}
 }
 
+func TestParseMaxBodySizeDefaultsTo10MB(t *testing.T) {
+	for _, cfg := range []map[string]any{
+		nil,
+		{},
+		{"max_body_size": ""},
+	} {
+		got, err := parseMaxBodySize(cfg)
+		if err != nil {
+			t.Fatalf("parseMaxBodySize(%v): %v", cfg, err)
+		}
+		if got != common.MaxWebhookRequestBodyBytes {
+			t.Errorf("parseMaxBodySize(%v) = %d, want %d", cfg, got, common.MaxWebhookRequestBodyBytes)
+		}
+	}
+}
+
 // TestParseMaxBodySize_DecimalUnits documents the per-user-request
 // SI-decimal unit base: 1 kb = 1 000 B, 1 mb = 1 000 000 B.
 // (The python reference uses 1 024 / 1 048 576.)
@@ -517,13 +533,6 @@ func TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof(t *testing.T) {
 	}
 }
 
-// TestValidateIPWhitelist_BehindBundledProxy covers the shipped deployment:
-// docker/entrypoint.sh runs nginx in the same container and
-// docker/nginx/ragflow.conf.golang proxies the webhook route to
-// 127.0.0.1:9380 with X-Forwarded-For set by proxy.conf. The socket peer is
-// therefore always loopback and the whitelist has to be evaluated against
-// the forwarded address, which the loopback default in
-// common.DefaultTrustedProxies makes gin.ClientIP() return.
 func TestValidateIPWhitelist_BehindBundledProxy(t *testing.T) {
 	cfg := map[string]any{"ip_whitelist": []any{"203.0.113.7"}}
 

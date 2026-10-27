@@ -10,27 +10,14 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// Accessible reports whether docID belongs to a knowledge base
-// reachable by userID. Used to gate actions on a document the caller
-// has access to. Returns false on any lookup failure or empty inputs
-// so callers can treat a denial as a 404-equivalent and avoid leaking
-// whether the document exists at all.
-func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) bool {
-	if docID == "" || userID == "" {
-		return false
-	}
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil {
-		return false
-	}
-	return s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID)
-}
 
 func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *entity.Document) (string, string, error) {
 	if doc == nil {
@@ -70,8 +57,14 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, fmt.Errorf("specify document_id please")
 	}
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("document not found")
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, ErrDocumentNotFound
+		}
+		return nil, fmt.Errorf("failed to get document %s: %w", docID, err)
+	}
+	if doc == nil || doc.KbID != datasetID {
+		return nil, ErrDocumentNotFound
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
@@ -145,7 +138,7 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	if err != nil {
 		return common.CodeServerError, err
 	}
-	if err = s.updateDocumentNameOnly(ctx, document, kb.TenantID, *req.Name); err != nil {
+	if err = s.updateDocumentNameOnly(ctx, document, kb, *req.Name); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -226,13 +219,13 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
-	// 1. Check dataset is accessible by the user
-	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
-	}
-
-	// 2. Resolve document IDs
+	// Deleting the entire dataset requires dataset-level access; deleting
+	// explicit documents also accepts direct document grants.
 	if deleteAll {
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return 0, permissionErr
+		}
 		if err := dao.DB.Model(&entity.Document{}).
 			Where("kb_id = ?", datasetID).
 			Pluck("id", &ids).Error; err != nil {
@@ -242,14 +235,26 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	if len(ids) == 0 {
 		return 0, nil
 	}
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil &&
+		!errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrMembershipNotFound) {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return 0, permissionErr
+	}
 
 	// 3. Deduplicate (before validation so dup count doesn't matter)
 	ids = common.Deduplicate(ids)
 
-	// 4. Validate IDs belong to this dataset (only for explicit ids; deleteAll is already scoped)
+	// Validate IDs and permissions before mutating any document.
 	if !deleteAll {
-		if _, err := s.validateDocsInDataset(ctx, ids, datasetID); err != nil {
+		documents, err := s.validateDocsInDataset(ctx, ids, datasetID)
+		if err != nil {
 			return 0, err
+		}
+		for _, doc := range documents {
+			if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationDeleteContent); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return 0, permissionErr
+			}
 		}
 	}
 
@@ -358,8 +363,8 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 // counter in a single transaction. Mirrors Python DocumentService.insert, which
 // updates dataset/document counters on insert. The document's ID and timestamps
 // are populated by the caller / model hooks before insertion.
-func (s *DocumentService) InsertDocument(doc *entity.Document) error {
-	return dao.DB.Transaction(func(tx *gorm.DB) error {
+func (s *DocumentService) InsertDocument(ctx context.Context, doc *entity.Document) error {
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("failed to create document: %w", err)
 		}
@@ -377,6 +382,9 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 		if result.RowsAffected == 0 {
 			return fmt.Errorf("knowledgebase %s not found", doc.KbID)
 		}
+		if err := grantDocumentOwnerEE(ctx, tx, doc); err != nil {
+			return fmt.Errorf("grant document owner: %w", err)
+		}
 		return nil
 	})
 }
@@ -386,15 +394,9 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 // Returns an error when the existing-name lookup fails so callers never write
 // blind and risk duplicated document names.
 func (s *DocumentService) UniqueDocumentName(ctx context.Context, kbID, name string) (string, error) {
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kbID)
-	if err != nil {
-		return "", err
-	}
-	taken := make(map[string]bool, len(names))
-	for _, n := range names {
-		taken[n] = true
-	}
-	return uniqueUploadName(name, taken), nil
+	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kbID, candidate)
+	})
 }
 
 // resolveDocAndKB loads the document and its knowledgebase, returning both or

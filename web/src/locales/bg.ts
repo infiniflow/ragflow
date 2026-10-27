@@ -197,6 +197,8 @@ export default {
       parserRequired: 'Методът за разделяне е задължителен',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Продължете с качването и системата автоматично ще превключи тези файлове към поддържана вградена конфигурация за анализиране.',
       metadata: {
         selectFiles: 'Избрани {{count}} файла',
         fieldNameInvalid:
@@ -311,7 +313,7 @@ export default {
       webCrawl: 'Уеб обхождане',
       chunkNumber: 'Фрагменти',
       uploadDate: 'Дата на качване',
-      chunkMethod: 'Метод за разделяне',
+      parsingMode: 'Режим на обработка',
       enabled: 'Активирай',
       disabled: 'Деактивирай',
       action: 'Действие',
@@ -426,6 +428,7 @@ export default {
       reRankModelWaring: 'Моделът за преподреждане е много времеемък.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'Използва се за генериране на авто-метаданни, авто-ключови думи и авто-въпроси. Производителността на модела влияе на качеството на генерирането.',
       globalIndexModel: 'Индексиращ модел',
@@ -499,7 +502,7 @@ export default {
       dataFlowPlaceholder: 'Моля, изберете конвейер.',
       buildItFromScratch: 'Изградете от нулата',
       dataFlow: 'Конвейер',
-      parseType: 'Тип обработка',
+      parsingMode: 'Режим на обработка',
       manualSetup: 'Избери конвейер',
       builtIn: 'Вграден',
       titleDescription:
@@ -522,8 +525,6 @@ export default {
         "Ако е зададено на 'Екип', всички членове на вашия екип ще могат да управляват базата от знания.",
       chunkTokenNumberTip:
         'Задава прага на токените за създаване на фрагмент. Сегмент с по-малко токени от този праг ще бъде комбиниран със следващите сегменти, докато броят на токените не надвиши прага, след което се създава фрагмент.',
-      chunkMethod: 'Метод за разделяне',
-      chunkMethodTip: 'Вижте съветите вдясно.',
       upload: 'Качване',
       english: 'Английски',
       chinese: 'Китайски',
@@ -902,8 +903,6 @@ The above is the content you need to summarize.`,
       },
       cancel: 'Отказ',
       chatSetting: 'Настройки на чат',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `По време на обработката на документа е генерирана информация за съдържание (вижте опцията 'Активиране на извличане на съдържание' в метода General). Това позволява на големия модел да върне елементи от съдържанието, релевантни на заявката на потребителя, като използва тези елементи за извличане на свързани фрагменти и прилагане на тегло върху тях при сортирането.`,
       batchDeleteSessions: 'Групово изтриване',
       deleteSelectedConfirm: 'Изтриване на избраните {count} сесия(и)?',
       showChunkMetadata: 'Показване на метаданни за чанк',
@@ -1177,7 +1176,7 @@ The above is the content you need to summarize.`,
         'LLM по подразбиране за всяка новосъздадена база от знания.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Embedding модел по подразбиране за всяка новосъздадена база от знания. Ако не можете да намерите embedding модел от падащия списък, проверете дали използвате RAGFlow slim edition (която не включва embedding модели) или проверете https://ragflow.io/docs/dev/supported_models.',
+        'Embedding модел по подразбиране за всяка новосъздадена база от знания. Ако не можете да намерите embedding модел от падащия списък, проверете дали използвате RAGFlow slim edition (която не включва embedding модели) или проверете страницата „Доставчици на модели“.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'VLM по подразбиране за всяка новосъздадена база от знания. Описва изображение или видео.',
@@ -1357,6 +1356,7 @@ The above is the content you need to summarize.`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Покажи съдържание',
       hideToc: 'Скрий съдържание',
@@ -1517,7 +1517,7 @@ The above is the content you need to summarize.`,
       dataManipulation: 'Манипулация на данни',
       flow: 'Поток',
       dialog: 'Диалог',
-      cite: 'Цитирай',
+      cite: 'Показвай цитатите',
       citeTip: 'citeTip',
       name: 'Име',
       nameMessage: 'Моля, въведете име',

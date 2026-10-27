@@ -383,6 +383,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowRequired: 'Il flusso dati è richiesto',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continua il caricamento: il sistema passerà automaticamente questi file a una configurazione di analisi integrata supportata.',
       metadata: {
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
@@ -501,7 +503,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunk',
       uploadDate: 'Data caricamento',
-      chunkMethod: 'Metodo di chunking',
+      parsingMode: 'Modalità di analisi',
       enabled: 'Abilita',
       disabled: 'Disabilita',
       action: 'Azione',
@@ -617,6 +619,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Il seme è il punto di partenza per un algoritmo pseudo-casuale che garantisce la riproducibilità dello stesso output in esecuzioni diverse.',
       datasetDescription: 'Descrivi il tuo dataset',
@@ -694,7 +697,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowPlaceholder: 'Seleziona una pipeline.',
       buildItFromScratch: 'Costruiscilo da zero',
       dataFlow: 'Pipeline',
-      parseType: 'Tipo di analisi',
+      parsingMode: 'Modalità di analisi',
       manualSetup: 'Pipeline',
       builtIn: 'Integrato',
       titleDescription:
@@ -717,8 +720,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         "Se impostato su 'Team', tutti i membri del team potranno gestire il dataset.",
       chunkTokenNumberTip:
         'Imposta in qualche modo la soglia di token per creare un chunk. Un segmento con meno token di questa soglia sarà combinato con i segmenti successivi finché il conteggio dei token non supera la soglia, a quel punto viene creato un chunk. Non viene creato un nuovo chunk a meno che non si incontri un delimitatore, anche se la soglia viene superata.',
-      chunkMethod: 'Metodo di chunking',
-      chunkMethodTip: 'Visualizza i suggerimenti a destra.',
       upload: 'Carica',
       english: 'Inglese',
       chinese: 'Cinese',
@@ -1166,8 +1167,6 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       },
       cancel: 'Annulla',
       chatSetting: 'Impostazioni chat',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: ` Durante l'analisi del documento, sono state generate informazioni sull'indice (vedi l'opzione 'Abilita estrazione indice' nel metodo Generale). Questo permette al modello grande di restituire elementi dell'indice rilevanti per la query dell'utente, usando così questi elementi per recuperare i chunk correlati e applicare una ponderazione a questi chunk durante il processo di ordinamento. Questo approccio imita il comportamento umano di ricerca delle informazioni nei libri.`,
       batchDeleteSessions: 'Eliminazione multipla',
       deleteSelectedConfirm: 'Eliminare le {{count}} sessioni selezionate?',
       showChunkMetadata: 'Mostra metadati del chunk',
@@ -1592,18 +1591,18 @@ Esempio: Virtual Hosted Style`,
       chatModelTip: 'Il LLM predefinito per ogni nuovo dataset creato.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.",
+        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.",
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Il modello ASR predefinito per ogni nuovo dataset creato. Usa questo modello per tradurre le voci in testo corrispondente.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.`,
+      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       workspace: 'workspace',
       upgrade: 'Aggiorna',
       addLlmTitle: 'Aggiungi LLM',
@@ -1776,6 +1775,7 @@ Esempio: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Mostra contenuto',
       hideToc: 'Nascondi contenuto',
@@ -1989,7 +1989,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       dataManipulation: 'Manipolazione dati',
       flow: 'Flusso',
       dialog: 'Dialogo',
-      cite: 'Cita',
+      cite: 'Mostra citazioni',
       citeTip: 'citeTip',
       name: 'Nome',
       nameMessage: 'Inserisci nome',

@@ -17,7 +17,7 @@
 package handler
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -59,14 +58,16 @@ func filterUnsupportedProviders(providers []map[string]interface{}) []map[string
 type ProviderHandler struct {
 	userService          *service.UserService
 	modelProviderService *service.ModelProviderService
+	modelCallService     *service.ModelCallService
 	userTenantDAO        *dao.UserTenantDAO
 }
 
 // NewProviderHandler create provider handler
-func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService) *ProviderHandler {
+func NewProviderHandler(userService *service.UserService, modelProviderService *service.ModelProviderService, modelCallService *service.ModelCallService) *ProviderHandler {
 	return &ProviderHandler{
 		userService:          userService,
 		modelProviderService: modelProviderService,
+		modelCallService:     modelCallService,
 		userTenantDAO:        dao.NewUserTenantDAO(),
 	}
 }
@@ -177,6 +178,44 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
+	apiKey := strings.TrimSpace(c.Query("api_key"))
+	baseURL := strings.TrimSpace(c.Query("base_url"))
+	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+		if err == nil {
+			for _, model := range instanceModels {
+				if _, ok := model["max_tokens"]; !ok {
+					if contextLength, ok := model["context_length"]; ok && contextLength != nil {
+						model["max_tokens"] = contextLength
+					}
+				}
+			}
+			common.SuccessWithData(c, instanceModels, "success")
+			return
+		}
+		if apiKey == "" && baseURL == "" {
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+	}
+
+	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL)
+	if err != nil {
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) {
+			common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+		} else {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		}
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+// FetchProviderModels returns the bundled model catalog, optionally enriched
+// with models discovered from the configured provider endpoint. Admin uses the
+// same catalog behavior while resolving its system-scoped provider data.
+func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL string) ([]map[string]interface{}, error) {
 	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
@@ -184,10 +223,17 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	}
 
 	// 2. Attempt live API fetch when the provider has enough connection data.
-	apiKey := c.Query("api_key")
-	baseURL := c.Query("base_url")
+	apiKey = strings.TrimSpace(apiKey)
+	baseURL = strings.TrimSpace(baseURL)
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
+	// remoteFetchErr records why a requested live fetch produced nothing, so it
+	// can be reported when the catalog has no fallback. For a provider that
+	// bundles models an unreachable upstream is not worth failing the request
+	// over — the catalog is still usable — but for one whose whole model list
+	// comes from the live call, an empty result with a swallowed error is
+	// indistinguishable from "this provider serves nothing".
+	var remoteFetchErr error
 
 	bedrockProvider := strings.EqualFold(providerName, "Bedrock")
 	bedrockAPIKeyAuth := false
@@ -217,30 +263,32 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 					ApiKey: &apiKey,
 					Region: &region,
 				}
-				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
+				if liveModels, err := driver.ListModels(ctx, apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
-						maxTokens := 8192
-						if m.MaxOutput != nil {
-							maxTokens = *m.MaxOutput
+						legacyMaxTokens := 0
+						if m.ContextLength != nil {
+							legacyMaxTokens = *m.ContextLength
 						}
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":        m.Name,
-							"model_types": m.ModelTypes,
-							"max_tokens":  maxTokens,
+							"name":           m.Name,
+							"model_types":    m.ModelTypes,
+							"context_length": m.ContextLength,
+							"max_output":     m.MaxOutput,
+							"max_tokens":     legacyMaxTokens,
 						})
 					}
 				} else if bedrockAPIKeyAuth {
-					common.ErrorWithCode(c, common.CodeServerError, err.Error())
-					return
+					return nil, common.NewCodedError(common.CodeServerError, err.Error())
+				} else {
+					remoteFetchErr = err
 				}
 			}
 		}
 	}
 	if remoteFetched && bedrockAPIKeyAuth {
 		if len(remoteModels) == 0 {
-			common.ErrorWithCode(c, common.CodeDataError, "No Bedrock models were discovered")
-			return
+			return nil, common.NewCodedError(common.CodeDataError, "No Bedrock models were discovered")
 		}
 		remoteNames := make(map[string]struct{}, len(remoteModels))
 		for _, model := range remoteModels {
@@ -259,10 +307,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		staticModels = filtered
 	}
 
-	// 3. Both empty — return empty success
+	// 3. Nothing to show. A failed live fetch is reported here rather than being
+	// flattened into an empty list: the model list callback is the only signal
+	// the user gets about whether the base URL and key are right, and an empty
+	// success makes a wrong credential look like a provider with no models.
 	if len(staticModels) == 0 && len(remoteModels) == 0 {
-		common.SuccessWithData(c, []map[string]interface{}{}, "success")
-		return
+		if remoteFetchErr != nil {
+			return nil, common.NewCodedError(common.CodeDataError, remoteFetchErr.Error())
+		}
+		return []map[string]interface{}{}, nil
 	}
 
 	// 4. Merge: static as base, remote overrides on name conflicts.
@@ -271,7 +324,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	// 5. Fill missing model types using only the merged list.
 	fillProviderModelMapTypes(result)
 
-	common.SuccessWithData(c, result, "success")
+	return result, nil
 }
 
 // mergeProviderModels collapses the bundled catalog listing and a live upstream
@@ -283,16 +336,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types inherits the catalog's types, and
-// `max_tokens` always comes from the catalog when the catalog declares one —
-// an upstream listing reports the provider's ceiling, which is not the value
-// RAGFlow is configured to send.
+// entry that carries no model types inherits the catalog's types, and the
+// legacy `max_tokens` alias remains the input/context window. `max_output` is
+// kept as a separate provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
 	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
 		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
-			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
-				m["max_tokens"] = maxOutput
+			if contextLength, ok := m["context_length"]; ok && contextLength != nil {
+				m["max_tokens"] = contextLength
 			}
 		}
 		name, ok := m["name"].(string)
@@ -408,50 +460,6 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 	common.SuccessWithData(c, model, "success")
 }
 
-type CreateProviderInstanceRequest struct {
-	InstanceName string                            `json:"instance_name" binding:"required"`
-	APIKey       json.RawMessage                   `json:"api_key"`
-	BaseURL      string                            `json:"base_url"`
-	Region       string                            `json:"region"`
-	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
-}
-
-// instanceNamePattern restricts an instance name to digits, underscores,
-// hyphens, and ASCII letters in both cases.
-var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
-
-// validateInstanceName rejects an empty instance name or one carrying any
-// character outside digits, underscores, hyphens, and ASCII letters.
-func validateInstanceName(instanceName string) error {
-	if instanceName == "" {
-		return errors.New("instance name is required")
-	}
-	if !instanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
-	}
-	return nil
-}
-
-// normalizeAPIKey accepts api_key as either a JSON string or a JSON object
-// (credential bundles such as XunFei Spark's
-// {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
-// the string form persisted on the instance.
-func normalizeAPIKey(raw json.RawMessage) string {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" || trimmed == "null" {
-		return ""
-	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
-	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, raw); err != nil {
-		return trimmed
-	}
-	return buf.String()
-}
-
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -460,19 +468,19 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	var req CreateProviderInstanceRequest
+	var req service.CreateProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
-	if err := validateInstanceName(req.InstanceName); err != nil {
+	if err := service.ValidateProviderInstanceName(req.InstanceName); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	userID := c.GetString("user_id")
-	apiKey := normalizeAPIKey(req.APIKey)
+	apiKey := service.NormalizeAPIKey(req.APIKey)
 
 	// If the request body only contains "instance_name", create a name-only
 	// instance without API key validation or model creation.
@@ -581,7 +589,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, normalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -683,14 +691,6 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 	common.SuccessWithData(c, taskResponse, "success")
 }
 
-type AlterProviderInstanceRequest struct {
-	InstanceName string                             `json:"instance_name"`
-	APIKey       json.RawMessage                    `json:"api_key"`
-	BaseURL      string                             `json:"base_url"`
-	Region       string                             `json:"region"`
-	ModelInfo    *[]service.CreateInstanceModelInfo `json:"model_info" binding:"required"`
-}
-
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
@@ -705,7 +705,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	var req AlterProviderInstanceRequest
+	var req service.AlterProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
@@ -717,7 +717,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, normalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, service.NormalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -726,17 +726,13 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	common.SuccessWithMessage(c, "success")
 }
 
-type DropProviderInstanceRequest struct {
-	Instances []string `json:"instances" binding:"required,min=1,dive,required"`
-}
-
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
-	var req DropProviderInstanceRequest
+	var req service.DropProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -795,14 +791,6 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	common.SuccessWithData(c, modelInstances, "success")
 }
 
-type AlterModelRequest struct {
-	ModelID   string      `json:"model_id"`
-	Status    string      `json:"status"`
-	MaxTokens int         `json:"max_tokens"`
-	ModelType interface{} `json:"model_type"`
-	Extra     interface{} `json:"extra"`
-}
-
 func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -816,7 +804,7 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 		return
 	}
 
-	var req AlterModelRequest
+	var req service.AlterModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -920,10 +908,6 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 	common.ErrorWithCode(c, code, "success")
 }
 
-type DropInstanceModelRequest struct {
-	ModelNames []string `json:"model_name"`
-}
-
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -936,7 +920,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 
-	var req DropInstanceModelRequest
+	var req service.DropInstanceModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
@@ -1013,15 +997,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 			return
 		}
 	}
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
+	}
 
 	if !req.Thinking {
 		req.Effort = nil
 		req.Verbosity = nil
-	}
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
 	}
 
 	chatConfig := models.ChatConfig{
@@ -1040,12 +1025,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	userID := c.GetString("user_id")
 	email := c.GetString("email")
 	modelUsage := common.ModelUsage{
-		UserID:       userID,
-		UserEmail:    email,
-		ProviderName: *req.ProviderName,
-		ModelName:    *req.ModelName,
-		Type:         "chat",
-		StartAt:      time.Now(),
+		UserID:    userID,
+		UserEmail: email,
+		Type:      "chat",
+		StartAt:   time.Now(),
+	}
+	if req.ProviderName != nil {
+		modelUsage.ProviderName = *req.ProviderName
+	}
+	if req.ModelName != nil {
+		modelUsage.ModelName = *req.ModelName
 	}
 	// Check if it's a stream request
 	if req.Stream {
@@ -1089,15 +1078,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		}
 
 		// Stream response using sender function (the best performance, no channel)
-		errorCode, err := h.modelProviderService.ChatToModelStreamWithSender(
+		errorCode, err := h.modelCallService.ChatToModelStreamWithSender(
 			ctx,
-			req.ProviderName,
-			req.InstanceName,
-			req.ModelName,
-			req.ModelID,
+			modelRef,
 			userID,
 			messages,
-			&apiConfig,
 			&chatConfig,
 			&modelUsage,
 			sender,
@@ -1120,15 +1105,11 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		content := msg["content"]
 		messages[i] = models.Message{Role: role, Content: content}
 	}
-	response, errorCode, err = h.modelProviderService.ChatToModelWithMessages(
+	response, errorCode, err = h.modelCallService.ChatToModelWithMessages(
 		ctx,
-		req.ProviderName,
-		req.InstanceName,
-		req.ModelName,
-		req.ModelID,
+		modelRef,
 		userID,
 		messages,
-		&apiConfig,
 		&chatConfig,
 		&modelUsage,
 	)
@@ -1187,10 +1168,11 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	embeddingConfig := models.EmbeddingConfig{
@@ -1202,7 +1184,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.EmbedText(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Texts, &apiConfig, &embeddingConfig)
+	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, userID, req.Texts, &embeddingConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1253,10 +1235,11 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	rerankConfig := models.RerankConfig{
@@ -1268,7 +1251,7 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.RerankDocument(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Query, req.Documents, &apiConfig, &rerankConfig)
+	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, userID, req.Query, req.Documents, &rerankConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1320,10 +1303,11 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	asrConfig := models.ASRConfig{}
@@ -1365,7 +1349,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.TranscribeAudioStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig, sender)
+		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, userID, req.File, &asrConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1377,7 +1361,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.TranscribeAudio(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.File, &apiConfig, &asrConfig)
+	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, userID, req.File, &asrConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1428,10 +1412,11 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	ttsConfig := models.TTSConfig{}
@@ -1473,7 +1458,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelProviderService.AudioSpeechStream(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig, sender)
+		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, userID, req.Text, &ttsConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1485,7 +1470,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.AudioSpeech(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Text, &apiConfig, &ttsConfig)
+	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, userID, req.Text, &ttsConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1536,9 +1521,11 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	OCRConfig := models.OCRConfig{}
@@ -1548,7 +1535,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.OCRFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &OCRConfig)
+	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, userID, req.Content, req.URL, &OCRConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1564,6 +1551,9 @@ type ParseFileRequest struct {
 	ModelID      *string `json:"model_id"`
 	Content      []byte  `json:"content"`
 	URL          *string `json:"url"`
+	// Optional MinerU async /file/parse overrides (setup → provider api_key JSON → env).
+	Backend   *string `json:"backend"`
+	ServerURL *string `json:"server_url"`
 }
 
 func (h *ProviderHandler) ParseFile(c *gin.Context) {
@@ -1599,19 +1589,27 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	apiConfig := models.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	modelRef := ""
+	if req.ModelID != nil {
+		modelRef = *req.ModelID
+	} else {
+		modelRef = fmt.Sprintf("%s@%s@%s", *req.ModelName, *req.InstanceName, *req.ProviderName)
 	}
 
 	parseFileConfig := models.ParseFileConfig{}
+	if req.Backend != nil {
+		parseFileConfig.Backend = strings.TrimSpace(*req.Backend)
+	}
+	if req.ServerURL != nil {
+		parseFileConfig.ServerURL = strings.TrimRight(strings.TrimSpace(*req.ServerURL), "/")
+	}
 
 	// Non-stream response
 	var response *models.ParseFileResponse
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelProviderService.ParseFile(ctx, req.ProviderName, req.InstanceName, req.ModelName, req.ModelID, userID, req.Content, req.URL, &apiConfig, &parseFileConfig)
+	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, userID, req.Content, req.URL, &parseFileConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1643,10 +1641,10 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	}
 
 	modelType := c.Query("type")
-	ownerTenantID := c.Query("owner_tenant_id")
+	tenantID := c.Query("tenant_id")
 	ctx := c.Request.Context()
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, ownerTenantID, modelType)
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, tenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

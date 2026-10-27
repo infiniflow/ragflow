@@ -34,7 +34,7 @@ import "testing"
 // structurally valid but wrong table.
 //
 // This test needs the real cl100k_base table on disk (TIKTOKEN_CACHE_DIR,
-// the Dockerfile's /ragflow/<sha1> file, or ragflow_deps/cl100k_base.tiktoken),
+// the Dockerfile's /ragflow/<sha1> file, or deps/cl100k_base.tiktoken),
 // so it is tagged `manual` and runs only under `build.sh --test-manual`,
 // which the docker builder provisions with /usr/share/infinity/resource.
 func TestNumTokensFromString_MatchesPythonAnchors(t *testing.T) {

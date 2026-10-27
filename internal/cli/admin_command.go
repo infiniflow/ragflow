@@ -20,12 +20,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
 	"strconv"
 )
 
-// PingServer pings the server to check if it's alive
-// Returns benchmark result map if iterations > 1, otherwise prints status
+// PingAdmin pings the server to check if it's alive
 func (c *CLI) PingAdmin(commandCount int, cmd *Command) (ResponseIf, error) {
 	// Single mode
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ping", "web", nil, nil)
@@ -206,7 +206,7 @@ func (c *CLI) AdminDropRoleCommand(commandCount int, cmd *Command) (ResponseIf, 
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, nil)
+	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", utils.APIPath("/admin/roles", roleName), "admin", nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop role: %w", err)
 	}
@@ -233,7 +233,7 @@ func (c *CLI) AdminAlterRole(commandCount int, cmd *Command) (ResponseIf, error)
 		payload["description"] = description
 	}
 
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", fmt.Sprintf("/admin/roles/%s", roleName), "admin", nil, payload)
+	resp, err := c.AdminServerClient.Request(commandCount, "PUT", utils.APIPath("/admin/roles", roleName), "admin", nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to alter role: %w", err)
 	}
@@ -311,7 +311,7 @@ func (c *CLI) AdminGrantRolePermissionCommand(commandCount int, cmd *Command) (R
 		"resource": resource,
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "POST", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -347,7 +347,7 @@ func (c *CLI) AdminRevokeRolePermissionCommand(commandCount int, cmd *Command) (
 		"resource": resource,
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
 	if err != nil {
@@ -368,7 +368,7 @@ func (c *CLI) AdminShowRolePermissionCommand(commandCount int, cmd *Command) (Re
 		return nil, fmt.Errorf("role_name not provided")
 	}
 
-	apiURL := fmt.Sprintf("/admin/roles/%s/permission", roleName)
+	apiURL := utils.APIPath("/admin/roles", roleName, "permission")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -569,7 +569,7 @@ func (c *CLI) AdminStartServiceCommand(commandCount int, cmd *Command) (Response
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "POST", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -590,7 +590,7 @@ func (c *CLI) AdminRestartServiceCommand(commandCount int, cmd *Command) (Respon
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "PUT", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -611,7 +611,7 @@ func (c *CLI) AdminShutdownServiceCommand(commandCount int, cmd *Command) (Respo
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -632,7 +632,7 @@ func (c *CLI) AdminShowService(commandCount int, cmd *Command) (ResponseIf, erro
 		return nil, fmt.Errorf("service_name not provided")
 	}
 
-	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
+	endPoint := utils.APIPath("/admin/services", serviceName)
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -907,7 +907,7 @@ func (c *CLI) AdminSetRoleDefaultModelsCommand(commandCount int, cmd *Command) (
 		}
 	}
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "PATCH", endPoint, "admin", nil, payload)
 	if err != nil {
@@ -960,7 +960,7 @@ func (c *CLI) AdminResetRoleDefaultModelsCommand(commandCount int, cmd *Command)
 		"model_type": modelType,
 	}
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", endPoint, "admin", nil, payload)
 	if err != nil {
@@ -1017,53 +1017,6 @@ func (c *CLI) AdminDropUserAPIKeyCommand(commandCount int, cmd *Command) (Respon
 	}
 
 	return HandleCommonDataResponse(resp, "drop API key")
-}
-
-// ListUserDatasets lists datasets for a specific user (admin mode)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) ListUserDatasets(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list datasets: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list datasets: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	resJSON, err := resp.JSON()
-	if err != nil {
-		return nil, fmt.Errorf("invalid JSON response: %w", err)
-	}
-
-	data, ok := resJSON["data"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid response format")
-	}
-
-	// Convert to slice of maps and remove avatar
-	tableData := make([]map[string]interface{}, 0, len(data))
-	for _, item := range data {
-		if itemMap, ok := item.(map[string]interface{}); ok {
-			delete(itemMap, "avatar")
-			tableData = append(tableData, itemMap)
-		}
-	}
-
-	PrintTableSimple(tableData)
-	return nil, nil
 }
 
 // ShowUserPermission shows user's permissions (admin mode only)
@@ -1130,61 +1083,6 @@ func (c *CLI) ListAdminIngestors(commandCount int, cmd *Command) (ResponseIf, er
 	}
 
 	return HandleCommonResponse(resp, "list ingestors")
-}
-
-func (c *CLI) ListAdminIngestionTasks(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/ingestion/tasks", "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list admin tasks: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "list admin tasks")
-}
-
-func (c *CLI) AdminStopIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	tasks, ok := cmd.Params["tasks"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("uri not provided")
-	}
-	payload := map[string]interface{}{
-		"tasks": tasks,
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", "/admin/ingestion/tasks", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stop ingestion: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "stop ingestion")
-}
-
-func (c *CLI) AdminRemoveIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	tasks, ok := cmd.Params["tasks"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("uri not provided")
-	}
-	payload := map[string]interface{}{
-		"tasks": tasks,
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", "/admin/ingestion/tasks", "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove ingestion: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "remove ingestion")
 }
 
 func (c *CLI) AdminShutdownIngestor(commandCount int, cmd *Command) (ResponseIf, error) {
@@ -1320,6 +1218,26 @@ func (c *CLI) AdminCheckLicenseCommand(commandCount int, cmd *Command) (Response
 	return HandleCommonDataResponse(resp, "check license")
 }
 
+func (c *CLI) AdminVerifyLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	licenseStr, ok := cmd.Params["license"].(string)
+	if !ok {
+		return nil, fmt.Errorf("license not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/system/license?license=%s", licenseStr)
+
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify license: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "verify license")
+}
+
 // AdminShowFingerprintCommand show fingerprint command (admin mode only)
 func (c *CLI) AdminShowFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -1398,7 +1316,7 @@ func (c *CLI) AdminShowRoleCommand(commandCount int, cmd *Command) (ResponseIf, 
 
 	roleName := cmd.Params["role_name"].(string)
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName) + "/"
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -1416,7 +1334,7 @@ func (c *CLI) AdminShowRoleDefaultModelsCommand(commandCount int, cmd *Command) 
 
 	roleName := cmd.Params["role_name"].(string)
 
-	endPoint := fmt.Sprintf("/admin/roles/%s/default-models", roleName)
+	endPoint := utils.APIPath("/admin/roles", roleName, "default-models")
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -2222,92 +2140,6 @@ func (c *CLI) AdminPurgeUsersCommand(commandCount int, cmd *Command) (ResponseIf
 	return HandleCommonDataResponse(resp, "purge users data")
 }
 
-func (c *CLI) AdminListUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("plan_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s ingestion tasks: %w", userName, err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list user %s ingestion tasks: HTTP %d, body: %s", userName, resp.StatusCode, string(resp.Body))
-	}
-
-	var result OrderedCommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list user %s ingestion tasks failed: invalid JSON (%w)", userName, err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-func (c *CLI) AdminListUserDatasetsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/datasets", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s datasets: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("list user %s datasets", userName))
-}
-func (c *CLI) AdminListUserAgentsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/agents", encodedUserName)
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list user %s agents: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("list user %s agents", userName))
-}
 func (c *CLI) AdminListUserChatsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
@@ -2480,7 +2312,7 @@ func (c *CLI) AdminListUserProviderInstancesCommand(commandCount int, cmd *Comma
 	}
 
 	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances", encodedUserName, providerName)
+	apiURL := fmt.Sprintf("/admin/users/%s/%s", encodedUserName, utils.APIPath("providers", providerName, "instances"))
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2510,7 +2342,7 @@ func (c *CLI) AdminListUserProviderInstanceModelsCommand(commandCount int, cmd *
 	}
 
 	encodedUserName := url.PathEscape(userName)
-	apiURL := fmt.Sprintf("/admin/users/%s/providers/%s/instances/%s/models", encodedUserName, providerName, instanceName)
+	apiURL := fmt.Sprintf("/admin/users/%s/%s", encodedUserName, utils.APIPath("providers", providerName, "instances", instanceName, "models"))
 
 	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
 	if err != nil {
@@ -2571,66 +2403,6 @@ func (c *CLI) AdminListUserLogsCommand(commandCount int, cmd *Command) (Response
 	}
 
 	return HandleCommonResponse(resp, fmt.Sprintf("list user %s logs", userName))
-}
-
-func (c *CLI) AdminStopUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "PUT", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to stop user %s ingestion tasks: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("stop user %s ingestion tasks", userName))
-}
-
-func (c *CLI) AdminRemoveUserIngestionTasksCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	userName, ok := cmd.Params["user_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("user_name not provided")
-	}
-
-	payload := map[string]interface{}{
-		"email": userName,
-	}
-
-	status, ok := cmd.Params["status"].(string)
-	if ok {
-		payload["status"] = status
-	}
-
-	apiURL := "/admin/ingestion/tasks"
-
-	resp, err := c.AdminServerClient.Request(commandCount, "DELETE", apiURL, "admin", nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove user %s ingestion tasks: %w", userName, err)
-	}
-
-	return HandleCommonResponse(resp, fmt.Sprintf("remove user %s ingestion tasks", userName))
 }
 
 // AdminAddProviderCommand add provider

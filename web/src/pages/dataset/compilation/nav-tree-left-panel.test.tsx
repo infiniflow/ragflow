@@ -16,12 +16,6 @@ jest.mock('@/components/ui/tree-view', () => ({
   ),
 }));
 
-jest.mock('@/components/confirm-delete-dialog', () => ({
-  ConfirmDeleteDialog: ({ children }: { children: React.ReactNode }) => (
-    <>{children}</>
-  ),
-}));
-
 jest.mock('@/components/ui/input', () => ({
   SearchInput: () => <input data-testid="nav-search" />,
 }));
@@ -32,10 +26,6 @@ jest.mock('@/components/ui/spin', () => ({
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
-}));
-
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: () => true,
 }));
 
 const mockCompileStatus = { value: GenerateStatus.Start };
@@ -62,8 +52,6 @@ const PanelHandlers = {
   onNodeClick: jest.fn(),
   onNodeExpand: jest.fn(),
   onEntityClick: jest.fn(),
-  onDeleteAll: jest.fn(),
-  onDeleteNode: jest.fn(),
 };
 
 describe('NavTreeLeftPanel', () => {
@@ -81,8 +69,6 @@ describe('NavTreeLeftPanel', () => {
         activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
-        deleteNavLoading={false}
-        deleteNodeLoading={false}
         {...PanelHandlers}
       />,
     );
@@ -103,8 +89,6 @@ describe('NavTreeLeftPanel', () => {
         activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
-        deleteNavLoading={false}
-        deleteNodeLoading={false}
         {...PanelHandlers}
       />,
     );
@@ -115,7 +99,7 @@ describe('NavTreeLeftPanel', () => {
     expect(screen.queryByTestId('nav-tree')).not.toBeInTheDocument();
   });
 
-  it('shows no compile log entry when no Go compile is running', () => {
+  it('shows no compile log entry when no compile is running', () => {
     render(
       <NavTreeLeftPanel
         navList={{ total: 1, items: [NavItem] }}
@@ -124,8 +108,6 @@ describe('NavTreeLeftPanel', () => {
         activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
-        deleteNavLoading={false}
-        deleteNodeLoading={false}
         {...PanelHandlers}
       />,
     );
@@ -135,7 +117,7 @@ describe('NavTreeLeftPanel', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('opens the log sheet from the compile log entry while a Go compile runs', () => {
+  it('opens the log sheet from the compile log entry while a compile runs', () => {
     mockCompileStatus.value = GenerateStatus.Running;
     render(
       <NavTreeLeftPanel
@@ -145,8 +127,6 @@ describe('NavTreeLeftPanel', () => {
         activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
-        deleteNavLoading={false}
-        deleteNodeLoading={false}
         traceData={{ compilationState: 'running' } as any}
         {...PanelHandlers}
       />,
@@ -159,7 +139,7 @@ describe('NavTreeLeftPanel', () => {
     );
   });
 
-  it('shows the error diagnostic on the log entry when a Go compile failed', () => {
+  it('shows the error diagnostic on the log entry when a compile failed', () => {
     mockCompileStatus.value = GenerateStatus.Failed;
     render(
       <NavTreeLeftPanel
@@ -169,8 +149,6 @@ describe('NavTreeLeftPanel', () => {
         activeKeywords=""
         childrenMap={{}}
         structureMap={{}}
-        deleteNavLoading={false}
-        deleteNodeLoading={false}
         traceData={{ compilationError: 'embed boom' } as any}
         {...PanelHandlers}
       />,

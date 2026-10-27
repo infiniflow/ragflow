@@ -16,9 +16,10 @@
 
 // Package tool — MCP (Model Context Protocol) wrapper.
 //
-// Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
+// Wraps a single MCP-server-discovered tool (mcpclient.Tool) as
 // an eino BaseTool so it can be invoked from inside the Agent's
-// ReAct loop. Discovery and invocation use the utility MCP client.
+// ReAct loop. Discovery and invocation use the MCP client
+// (ragflow/internal/mcp/client).
 package tool
 
 import (
@@ -28,7 +29,7 @@ import (
 	"net/http"
 	"time"
 
-	mcpclient "ragflow/internal/utility"
+	mcpclient "ragflow/internal/mcp/client"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -48,14 +49,15 @@ import (
 // a URL (legacy callers) fall back to the "not yet wired"
 // sentinel so existing call sites don't break.
 type MCPToolAdapter struct {
-	mcpTool     mcpclient.Tool
-	visibleName string
-	serverType  string
-	variables   map[string]string
-	serverURL   string
-	headers     map[string]string
-	timeout     time.Duration
-	httpClient  *http.Client
+	mcpTool           mcpclient.Tool
+	visibleName       string
+	serverType        string
+	variables         map[string]string
+	serverURL         string
+	headers           map[string]string
+	timeout           time.Duration
+	httpClient        *http.Client
+	allowPrivateHosts bool
 }
 
 // NewMCPToolAdapter constructs a wrapper for a single MCP tool.
@@ -94,7 +96,7 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 
 // NewMCPToolAdapterWithOptions preserves the server transport and header variables.
 func NewMCPToolAdapterWithOptions(t mcpclient.Tool, opts mcpclient.CallOptions) *MCPToolAdapter {
-	return &MCPToolAdapter{mcpTool: t, serverURL: opts.URL, serverType: opts.ServerType, headers: opts.Headers, variables: opts.Variables, timeout: opts.Timeout, httpClient: opts.HTTPClient}
+	return &MCPToolAdapter{mcpTool: t, serverURL: opts.URL, serverType: opts.ServerType, headers: opts.Headers, variables: opts.Variables, timeout: opts.Timeout, httpClient: opts.HTTPClient, allowPrivateHosts: opts.AllowPrivateHosts}
 }
 
 // Name returns the underlying MCP tool name.
@@ -148,14 +150,15 @@ func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 		return "", mErr
 	}
 	res, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
-		URL:        m.serverURL,
-		ServerType: m.serverType,
-		Variables:  m.variables,
-		Headers:    m.headers,
-		ToolName:   m.mcpTool.Name,
-		Arguments:  argsJSON,
-		Timeout:    m.timeout,
-		HTTPClient: m.httpClient,
+		URL:               m.serverURL,
+		ServerType:        m.serverType,
+		Variables:         m.variables,
+		Headers:           m.headers,
+		ToolName:          m.mcpTool.Name,
+		Arguments:         argsJSON,
+		Timeout:           m.timeout,
+		HTTPClient:        m.httpClient,
+		AllowPrivateHosts: m.allowPrivateHosts,
 	})
 	if err != nil {
 		return "", err

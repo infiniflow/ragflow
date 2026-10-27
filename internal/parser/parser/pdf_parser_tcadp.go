@@ -14,11 +14,10 @@ import (
 // parsePDFWithTCADP sends PDF binary data to the TCADP cloud reconstruction
 // service. Thin wrapper over the shared parseWithTCADP core — env-fallbacks
 // and request construction live there.
-func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseResult {
-	return parseWithTCADP(context.Background(), filename, data, "PDF",
+func parsePDFWithTCADP(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
+	return parseWithTCADP(ctx, filename, data, "PDF",
 		parser.TCADPAPIServer, parser.TCADPAPIKey,
-		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
-		parser.OutputFormat)
+		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType)
 }
 
 func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {
@@ -84,7 +83,8 @@ func tcadpAnyToItems(raw any) []map[string]any {
 		emit := func(text, docType, layout string) []map[string]any {
 			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
 			if page > 0 {
-				// 1-indexed 5-tuple. AddPositions is a passthrough so
+				m["page_number"] = page
+				// 1-indexed 5-tuple. addPDFPositions is a passthrough so
 				// the final position_int / page_num_int carry the same
 				// 1-indexed page number the caller passes. Mirrors
 				// Python presentation.py:148-149.
@@ -100,7 +100,11 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return emit(text, pdfTableDocType(text), "table")
+			items := emit(text, pdfTableDocType(text), "table")
+			for _, it := range items {
+				projectPDFTable(it)
+			}
+			return items
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {

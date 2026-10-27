@@ -19,7 +19,7 @@
 // that did not previously satisfy ParseResultProducer:
 //
 //   - HTMLParser — block-level walker that emits the python-compatible
-//     {text, doc_type_kwd, ck_type} shape.
+//     {text, doc_type_kwd, layout} shape.
 //   - TextParser — normalized one-unit output for the text&code family
 //     (.txt / .py / .js / .java / .c / .cpp / .h / .php / .go / .ts
 //     / .sh / .cs / .kt / .sql).
@@ -52,8 +52,8 @@ func TestTextParser_ParseWithResult_PreservesOneTextUnit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "doc.txt"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -61,10 +61,10 @@ func TestTextParser_ParseWithResult_PreservesOneTextUnit(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1: %#v", len(res.JSON), res.JSON)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "text"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
-	got, _ := res.JSON[0]["text"].(string)
+	got, _ := res.JSON[0].ToMap()["text"].(string)
 	want := "First sentence.\n\nSecond sentence!\nThird sentence?"
 	if got != want {
 		t.Errorf("JSON[0].text = %q, want %q", got, want)
@@ -103,7 +103,7 @@ func TestTextParser_ParseWithResult_NoSizeCap(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (no per-item size cap)", len(res.JSON))
 	}
-	if txt, _ := res.JSON[0]["text"].(string); txt != long {
+	if txt, _ := res.JSON[0].ToMap()["text"].(string); txt != long {
 		t.Errorf("text len = %d, want %d (full content preserved, not sliced)", len(txt), len(long))
 	}
 }
@@ -124,7 +124,7 @@ func TestTextParser_ParseWithResult_GBK(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("want non-empty items")
 	}
-	got, _ := res.JSON[0]["text"].(string)
+	got, _ := res.JSON[0].ToMap()["text"].(string)
 	if got != "测试中文文本内容" {
 		t.Errorf("got %q, want %q", got, "测试中文文本内容")
 	}
@@ -135,7 +135,7 @@ func TestTextParser_ParseWithResult_GBK(t *testing.T) {
 
 // TestHTMLParser_ParseWithResult_BlockSplit pins the HTML walker.
 // Three block elements (heading, paragraph, list) yield three
-// items with the python-compatible ck_type vocabulary.
+// items with the structural layout vocabulary.
 func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	ctx := t.Context()
 	p := NewHTMLParser()
@@ -148,28 +148,28 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (h1, p, ul)", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["ck_type"], "heading"; got != want {
-		t.Errorf("JSON[0].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[0].ToMap()["layout"], "heading"; got != want {
+		t.Errorf("JSON[0].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["text"], "Title"; got != want {
+	if got, want := res.JSON[0].ToMap()["text"], "Title"; got != want {
 		t.Errorf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["ck_type"], "paragraph"; got != want {
-		t.Errorf("JSON[1].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[1].ToMap()["layout"], "paragraph"; got != want {
+		t.Errorf("JSON[1].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["text"], "First paragraph."; got != want {
+	if got, want := res.JSON[1].ToMap()["text"], "First paragraph."; got != want {
 		t.Errorf("JSON[1].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["ck_type"], "list"; got != want {
-		t.Errorf("JSON[2].ck_type = %v, want %v", got, want)
+	if got, want := res.JSON[2].ToMap()["layout"], "list"; got != want {
+		t.Errorf("JSON[2].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["text"], "Item one"; got != want {
+	if got, want := res.JSON[2].ToMap()["text"], "Item one"; got != want {
 		t.Errorf("JSON[2].text = %v, want %v", got, want)
 	}
 }
@@ -195,7 +195,7 @@ Tail text
 	}
 	want := []struct {
 		text   string
-		ckType string
+		layout string
 	}{
 		{"Intro text", "text"},
 		{"Title", "heading"},
@@ -207,14 +207,14 @@ Tail text
 		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
 	}
 	for i, w := range want {
-		if got := res.JSON[i]["text"]; got != w.text {
+		if got := res.JSON[i].ToMap()["text"]; got != w.text {
 			t.Errorf("JSON[%d].text = %v, want %v", i, got, w.text)
 		}
-		if got := res.JSON[i]["doc_type_kwd"]; got != "text" {
+		if got := res.JSON[i].ToMap()["doc_type_kwd"]; got != "text" {
 			t.Errorf("JSON[%d].doc_type_kwd = %v, want text", i, got)
 		}
-		if got := res.JSON[i]["ck_type"]; got != w.ckType {
-			t.Errorf("JSON[%d].ck_type = %v, want %v", i, got, w.ckType)
+		if got := res.JSON[i].ToMap()["layout"]; got != w.layout {
+			t.Errorf("JSON[%d].layout = %v, want %v", i, got, w.layout)
 		}
 	}
 }
@@ -235,18 +235,19 @@ Tail text`)
 		t.Fatalf("JSON len = %d, want %d: %#v", len(res.JSON), len(want), res.JSON)
 	}
 	for i, text := range want {
-		if got := res.JSON[i]["text"]; got != text {
+		if got := res.JSON[i].ToMap()["text"]; got != text {
 			t.Errorf("JSON[%d].text = %v, want %v", i, got, text)
 		}
 	}
 }
 
-func TestWalkHTMLBlocks_SkipsHeadLooseText(t *testing.T) {
+func TestWalkHTMLBlocksWithState_SkipsHeadLooseText(t *testing.T) {
 	head := &html.Node{Type: html.ElementNode, Data: "head"}
 	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
 
 	var items []map[string]any
-	walkHTMLBlocks(head, &items)
+	state := &htmlWalkState{}
+	walkHTMLBlocksWithState(head, &items, state)
 	if len(items) != 0 {
 		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)
 	}
@@ -272,7 +273,7 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Errorf("JSON len = %d, want 3 (script+style+noscript skipped)", len(res.JSON))
 	}
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		if txt, _ := it["text"].(string); strings.Contains(txt, "alert") ||
 			strings.Contains(txt, "color") ||
 			strings.Contains(txt, "inline alert") ||
@@ -315,7 +316,7 @@ func TestTextParser_ParseWithResult_NewlineNormalization(t *testing.T) {
 			t.Fatalf("ParseWithResult: %v", res.Err)
 		}
 		out := make([]string, 0, len(res.JSON))
-		for _, it := range res.JSON {
+		for _, it := range ItemsToMaps(res.JSON) {
 			if txt, _ := it["text"].(string); txt != "" {
 				out = append(out, txt)
 			}
@@ -381,7 +382,7 @@ func TestTextParser_AlignmentGolden(t *testing.T) {
 			gd := LoadGoldenDoc(t, tc.golden)
 			ignore := AcceptedDivergences(gd.Meta)
 
-			goText := FilterOutDocTypes(FilterByDocType(res.JSON, "text"), ignore)
+			goText := FilterOutDocTypes(FilterByDocType(ItemsToMaps(res.JSON), "text"), ignore)
 			pyText := FilterOutDocTypes(FilterByDocType(gd.Items, "text"), ignore)
 
 			delimiter, _ := gd.Meta["delimiter"].(string)

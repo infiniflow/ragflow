@@ -215,16 +215,12 @@ export interface ISearchAppDetailProps {
     top_k: number;
     rerank_candidates_count: number;
     use_kg: boolean;
-    vector_similarity_weight: number;
+    keywords_similarity_weight?: number;
     web_search: boolean;
     chat_settingcross_languages: string[];
     meta_data_filter?: {
       method: string;
       manual: { key: string; op: string; value: string }[];
-    };
-    reference_metadata?: {
-      include?: boolean;
-      fields?: string[];
     };
   };
   tenant_id: string;
@@ -398,9 +394,11 @@ export const useRenameSearch = () => {
       if (res && !search?.id) {
         navigateToSearch(res?.search_id)();
       }
-      callBack?.();
       setLoading(false);
-      handleHideModal();
+      if (res) {
+        callBack?.();
+        handleHideModal();
+      }
     },
     [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
   );

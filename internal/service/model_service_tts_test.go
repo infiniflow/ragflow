@@ -25,7 +25,7 @@ import (
 	"ragflow/internal/entity"
 )
 
-// insertTTSTestTenant inserts a tenant row; ttsID may be nil (no default
+// insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default
 // TTS model configured).
 func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	t.Helper()
@@ -33,13 +33,16 @@ func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	row := &entity.Tenant{
 		ID:        id,
 		Name:      &name,
-		LLMID:     "glm-4-flash@ZHIPU-AI",
-		EmbdID:    "BAAI/bge-m3@ZHIPU-AI",
-		TTSID:     ttsID,
 		ParserIDs: "naive",
 	}
 	if err := dao.DB.Create(row).Error; err != nil {
 		t.Fatalf("insert test tenant: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "owner-" + id, UserID: id, TenantID: id, Role: "owner", Status: sptr(string(entity.StatusValid)),
+		LLMID: "glm-4-flash@ZHIPU-AI", EmbdID: "BAAI/bge-m3@ZHIPU-AI", TTSID: ttsID,
+	}).Error; err != nil {
+		t.Fatalf("insert test owner membership: %v", err)
 	}
 }
 
@@ -53,9 +56,9 @@ func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-1", nil)
 
-	svc := NewModelProviderService()
+	svc := NewModelCallService()
 	text := "hello"
-	resp, code, err := svc.AudioSpeech(t.Context(), nil, nil, nil, nil, "tenant-1", &text, nil, nil)
+	resp, code, err := svc.AudioSpeech(t.Context(), "", "tenant-1", &text, nil)
 	if err == nil {
 		t.Fatalf("expected error for missing default TTS model, got resp=%v", resp)
 	}
@@ -70,29 +73,6 @@ func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
 	}
 }
 
-// TestAudioSpeech_PartialNamesRejected verifies the by-name lookup guard:
-// a modelName without provider/instance names (the shape the auto_play
-// dispatch used to send, e.g. "gtts") returns a clear error instead of
-// panicking.
-func TestAudioSpeech_PartialNamesRejected(t *testing.T) {
-	testDB := setupServiceTestDB(t)
-	pushServiceDB(t, testDB)
-
-	svc := NewModelProviderService()
-	text := "hello"
-	badModel := "gtts"
-	resp, code, err := svc.AudioSpeech(t.Context(), nil, nil, &badModel, nil, "tenant-1", &text, nil, nil)
-	if err == nil {
-		t.Fatalf("expected error for partial model names, got resp=%v", resp)
-	}
-	if !strings.Contains(err.Error(), "provider name, instance name and model name are required") {
-		t.Fatalf("err = %v, want it to mention the required-name guard", err)
-	}
-	if code != common.CodeNotFound {
-		t.Errorf("code = %d, want %d", code, common.CodeNotFound)
-	}
-}
-
 // TestResolveDefaultModelConfig_NilTTSPointer verifies the tenant
 // default-model resolution is nil-safe when the tts_id column is NULL
 // (the reporter's configuration: every default set except TTS).
@@ -101,7 +81,7 @@ func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-2", nil)
 
-	_, err := NewModelSolver().ResolveDefaultModelConfig(t.Context(), "tenant-2", entity.ModelTypeTTS)
+	_, err := NewModelFactory().resolveDefaultConfig(t.Context(), ModelAccess{TenantID: "tenant-2"}, entity.ModelTypeTTS)
 	if err == nil {
 		t.Fatal("expected error for nil tts_id, got nil")
 	}

@@ -158,7 +158,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 		Title:          sptr("Victim Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed victim canvas: %v", err)
+		t.Fatalf("seed victim agent: %v", err)
 	}
 
 	// Seed tenant-B (the attacker's tenant).
@@ -171,10 +171,10 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 		t.Fatalf("seed tenant-B: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
-	title, _, _, _, _, code, err := svc.AgentbotInputs(t.Context(),
+	title, _, _, _, _, code, err := svc.AgentbotInputs(serviceTestContext(t, "tenant-B", "tenant-B"),
 		"tenant-B", "agent-victim")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
@@ -213,6 +213,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 	if err := db.Create(&entity.UserCanvas{
 		ID:             "agent-1",
 		UserID:         "owner-1",
+		TenantID:       sptr("tenant-1"),
 		Title:          &title,
 		Avatar:         &avatar,
 		CanvasCategory: "agent_canvas",
@@ -233,12 +234,12 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 			},
 		},
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
-		t.Context(), "owner-1", "agent-1")
+		serviceTestContext(t, "owner-1", "tenant-1"), "owner-1", "agent-1")
 	if err != nil {
 		t.Fatalf("AgentbotInputs: %v", err)
 	}
@@ -407,8 +408,8 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 
 	// llmService is nil — any attempt to reach the LLM path would
 	// fail loudly, so a successful run proves the LLM was skipped.
-	svc := NewBotService(nil, nil)
-	frames, code, err := svc.ChatbotCompletion(t.Context(),
+	svc := NewBotService(nil)
+	frames, code, err := svc.ChatbotCompletion(serviceTestContext(t, "tenant-1", "tenant-1"),
 		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
 	if err != nil {
 		t.Fatalf("ChatbotCompletion: %v", err)
@@ -509,7 +510,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	ref := map[string]any{
 		"chunks":   []any{map[string]any{"chunk_id": "c1"}},
 		"doc_aggs": []any{},
@@ -574,7 +575,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	if err := svc.persistChatbotQuestion(ctx, sess, "q", "msg-p2", 2); err != nil {
 		t.Fatalf("persist question: %v", err)
 	}
@@ -623,7 +624,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 		t.Fatalf("seed session: %v", err)
 	}
 
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 	// Both callers hold the same stale snapshot loaded before their
 	// streams started — exactly the race the lock fixes.
 	var wg sync.WaitGroup
@@ -706,7 +707,7 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s1", "q1", "msg-s1")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	ref := map[string]any{
 		"chunks":   []any{map[string]any{"chunk_id": "c1"}, map[string]any{"chunk_id": "c2"}},
@@ -764,7 +765,7 @@ func TestStreamChatbotTurn_ThinkMarkersPersistedAsTags(t *testing.T) {
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s2", "q2", "msg-s2")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	results := make(chan AsyncChatResult, 5)
 	results <- AsyncChatResult{StartToThink: true}
@@ -800,7 +801,7 @@ func TestStreamChatbotTurn_SingleShotFinalKeepsText(t *testing.T) {
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s3", "q3", "msg-s3")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	ref := map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	results := make(chan AsyncChatResult, 1)
@@ -837,7 +838,7 @@ func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s4", "q4", "msg-s4")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	results := make(chan AsyncChatResult, 1)
 	results <- AsyncChatResult{Answer: "**ERROR**: boom", Final: true}
@@ -875,7 +876,7 @@ func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s5", "q5", "msg-s5")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	results := make(chan AsyncChatResult, 2)
 	results <- AsyncChatResult{Answer: "partial", Reference: map[string]any{}}
@@ -919,7 +920,7 @@ func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
 	pushServiceDB(t, db)
 
 	seedStreamTurnSession(t, "sess-s6", "q6", "msg-s6")
-	svc := NewBotService(nil, nil)
+	svc := NewBotService(nil)
 
 	results := make(chan AsyncChatResult, 5)
 	results <- AsyncChatResult{StartToThink: true}

@@ -84,24 +84,6 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	common.SuccessWithData(c, config, "success")
 }
 
-// GetConfigs get all system configurations
-// @Summary Get All System Configurations
-// @Description Get all system configurations from globalConfig
-// @Tags system
-// @Accept json
-// @Produce json
-// @Success 200 {object} config.Config
-// @Router /v1/system/configs [get]
-func (h *SystemHandler) GetConfigs(c *gin.Context) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Configuration not initialized")
-		return
-	}
-
-	common.SuccessWithData(c, cfg, "success")
-}
-
 // GetStatus get RAGFlow status
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
@@ -184,78 +166,6 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
-}
-
-// ListVariables handle list variables
-func (h *SystemHandler) ListVariables(c *gin.Context) {
-	ctx := c.Request.Context()
-
-	variables, err := h.systemService.ListAllVariables(ctx)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, variables, "SUCCESS")
-}
-
-// SetVariableHTTPRequest set variable request
-type SetVariableHTTPRequest struct {
-	VarName  string `json:"var_name" binding:"required"`
-	VarValue string `json:"var_value" binding:"required"`
-}
-
-// SetVariable handle set variable
-// Python logic: update or create a system setting with the given name and value
-func (h *SystemHandler) SetVariable(c *gin.Context) {
-	var req SetVariableHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
-		return
-	}
-
-	if req.VarName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
-		return
-	}
-
-	if req.VarValue == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	if err := h.systemService.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessNoData(c, "SUCCESS")
-}
-
-func (h *SystemHandler) ShowVariable(c *gin.Context) {
-	encodedVarName := c.Param("var_name")
-
-	varName, err := common.DecodeFromBase64(encodedVarName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-		return
-	}
-	if varName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	variable, err := h.systemService.ShowVariable(ctx, varName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, variable, "SUCCESS")
 }
 
 // ListEnvironments handle list environments

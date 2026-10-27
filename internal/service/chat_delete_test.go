@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupChatDeleteServiceTestDB(t *testing.T) *gorm.DB {
@@ -21,7 +23,7 @@ func setupChatDeleteServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}); err != nil {
+	if err := db.AutoMigrate(&entity.Chat{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -60,10 +62,10 @@ func TestChatServiceDeleteChatRejectsNonOwner(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-1", "tenant-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "tenant-1")
 	err := svc.DeleteChat(ctx, "user-1", "chat-1")
-	if err == nil || err.Error() != "no authorization" {
-		t.Fatalf("expected no authorization, got %v", err)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 
 	chat, getErr := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
@@ -82,7 +84,7 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 	createChatDeleteServiceTestChat(t, db, "chat-3", "tenant-2")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{DeleteAll: true})
 	if err != nil {
 		t.Fatalf("BulkDeleteChats failed: %v", err)
@@ -123,7 +125,7 @@ func TestChatServiceBulkDeleteChatsReturnsPartialSuccessErrors(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-2", "tenant-2")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{
 		IDs: []string{"chat-1", "chat-2", "chat-1"},
 	})

@@ -44,6 +44,7 @@ const (
 	CodeLicenseNotFound         ErrorCode = 325
 	CodeLicenseUnexpectedError  ErrorCode = 326
 	CodeLicenseNotValidYet      ErrorCode = 327
+	CodeErrorServerStatus       ErrorCode = 330
 	CodeBadRequest              ErrorCode = 400
 	CodeUnauthorized            ErrorCode = 401
 	CodeForbidden               ErrorCode = 403
@@ -55,6 +56,7 @@ const (
 
 var errorMessages = map[ErrorCode]string{
 	CodeSuccess:                 "Success",
+	CodeLackResources:           "Lack resources",
 	CodeNotEffective:            "Not effective",
 	CodeExceptionError:          "System exception",
 	CodeArgumentError:           "Invalid argument",
@@ -75,12 +77,15 @@ var errorMessages = map[ErrorCode]string{
 	CodeLicenseTimeRollback:     "License time rollback detected",
 	CodeLicenseNotFound:         "License not found",
 	CodeLicenseUnexpectedError:  "Unexpected license error",
+	CodeLicenseNotValidYet:      "License not valid yet",
+	CodeErrorServerStatus:       "Error server status",
 	CodeBadRequest:              "Bad request",
 	CodeUnauthorized:            "Unauthorized",
 	CodeForbidden:               "Forbidden",
 	CodeNotFound:                "Resource not found",
 	CodeConflict:                "Resource conflict",
 	CodeServerError:             "Internal server error",
+	CodeNotImplemented:          "Not implemented",
 }
 
 func (e ErrorCode) Message() string {

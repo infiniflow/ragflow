@@ -11,7 +11,6 @@ import (
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 )
@@ -155,11 +154,12 @@ func loadSnapshot(t *testing.T, path string) snapshot {
 func snapshotBoxesToGo(sbs []snapshotBox) []pdf.TextBox {
 	boxes := make([]pdf.TextBox, len(sbs))
 	for i, sb := range sbs {
+		sbR, _ := common.ToInt(sb.R)
 		boxes[i] = pdf.TextBox{
 			X0: sb.X0, X1: sb.X1, Top: sb.Top, Bottom: sb.Bottom,
 			Text: sb.Text, PageNumber: sb.PageNumber - 1, // pdfplumber uses 1-based
 			LayoutType: sb.LayoutType, LayoutNo: sb.LayoutNo,
-			ColID: sb.ColID, R: toInt(sb.R),
+			ColID: sb.ColID, R: sbR,
 		}
 	}
 	return boxes
@@ -230,23 +230,6 @@ func TestSnapshotRoundtrip(t *testing.T) {
 			t.Logf("%s: %d stages, %s bytes", name, len(stages),
 				formatBytes(len(data)))
 		})
-	}
-}
-
-func toInt(v interface{}) int {
-	if v == nil {
-		return 0
-	}
-	switch x := v.(type) {
-	case float64:
-		return int(x)
-	case int:
-		return x
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	default:
-		return 0
 	}
 }
 

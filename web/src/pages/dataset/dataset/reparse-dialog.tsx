@@ -16,7 +16,6 @@ export const ReparseDialog = memo(
     handleOperationIconClick,
     chunk_num,
     enable_metadata = false,
-    forceDelete = false,
     visible = true,
     hideModal,
   }: DialogProps & {
@@ -26,9 +25,6 @@ export const ReparseDialog = memo(
       apply_kb: boolean;
     }) => void;
     enable_metadata?: boolean;
-    // Go always drops existing chunks on re-ingest, so it only shows a plain
-    // confirmation with no checkboxes.
-    forceDelete?: boolean;
     visible: boolean;
     hideModal: () => void;
   }) => {
@@ -37,33 +33,13 @@ export const ReparseDialog = memo(
     const { t } = useTranslation();
 
     useEffect(() => {
+      // delete has no checkbox in this dialog; seed it so the payload keeps
+      // dropping existing chunks (the backend skips re-parse when delete is
+      // false and the previous task completed).
       setDefaultValues({
-        delete: forceDelete || chunk_num > 0,
+        delete: true,
         apply_kb: false,
       });
-      const deleteField = {
-        name: 'delete',
-        label: '',
-        type: FormFieldType.Checkbox,
-        render: (fieldProps: ControllerRenderProps) => (
-          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
-            <Checkbox
-              {...fieldProps}
-              checked={fieldProps.value}
-              onCheckedChange={(checked: boolean) => {
-                fieldProps.onChange(checked);
-              }}
-            />
-            <span className="ml-2">
-              {chunk_num > 0
-                ? t(`knowledgeDetails.redo`, {
-                    chunkNum: chunk_num,
-                  })
-                : t('knowledgeDetails.redoAll')}
-            </span>
-          </div>
-        ),
-      };
       const applyKBField = {
         name: 'apply_kb',
         label: '',
@@ -84,32 +60,21 @@ export const ReparseDialog = memo(
           </div>
         ),
       };
-      // Go only needs a plain confirm: chunks are always dropped, so no
-      // checkboxes are rendered.
-      if (forceDelete) {
-        setFields([]);
-      } else if (chunk_num > 0 && enable_metadata) {
-        setFields([deleteField, applyKBField]);
-      } else if (chunk_num > 0 && !enable_metadata) {
-        setFields([deleteField]);
-      } else if (chunk_num <= 0 && enable_metadata) {
+      if (enable_metadata) {
         setFields([applyKBField]);
       } else {
         setFields([]);
       }
-    }, [chunk_num, t, enable_metadata, forceDelete]);
+    }, [t, enable_metadata]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
     const handleCancel = useCallback(() => {
-      // handleOperationIconClick(false);
       hideModal?.();
-      // formInstance?.reset();
       formCallbackRef?.current?.reset();
     }, [formCallbackRef, hideModal]);
 
     const handleSave = useCallback(async () => {
-      // const instance = formInstance;
       const instance = formCallbackRef?.current;
       if (!instance) {
         console.error('Form instance is null');
@@ -120,7 +85,6 @@ export const ReparseDialog = memo(
       if (check) {
         instance.submit();
         const formValues = instance.getValues();
-        console.log(formValues);
         handleOperationIconClick({
           delete: formValues.delete,
           apply_kb: formValues.apply_kb,
@@ -137,7 +101,7 @@ export const ReparseDialog = memo(
         okButtonText={t('common.confirm')}
         content={{
           title: t(
-            forceDelete
+            chunk_num > 0
               ? `knowledgeDetails.clearChunksReparseTip`
               : `knowledgeDetails.parseFileTip`,
           ),
@@ -150,22 +114,11 @@ export const ReparseDialog = memo(
                 ref={formCallbackRef}
                 fields={fields}
                 defaultValues={defaultValues}
-              >
-                {/* <DynamicForm.CancelButton
-                handleCancel={() => handleOperationIconClick(false)}
-                cancelText={t('common.cancel')}
-              />
-              <DynamicForm.SavingButton
-                buttonText={t('common.confirm')}
-                submitFunc={handleSave}
-              /> */}
-              </DynamicForm.Root>
+              ></DynamicForm.Root>
             </div>
           ),
         }}
-      >
-        {/* {children} */}
-      </ConfirmDeleteDialog>
+      ></ConfirmDeleteDialog>
     );
   },
 );

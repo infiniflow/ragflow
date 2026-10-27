@@ -16,15 +16,13 @@
 
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { isDatasetId } from '@/utils/dataset-util';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ParseType } from '@/constants/knowledge';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
   IArtifact,
-  IArtifactAlteration,
   IArtifactGraph,
   IArtifactPage,
   IArtifactTopic,
@@ -49,9 +47,7 @@ import i18n from '@/locales/config';
 import kbService, {
   checkEmbedding,
   clearWiki,
-  deleteArtifactsStructure,
   deleteKnowledgeGraph,
-  getArtifactsAlteration,
   getArtifactGraph,
   getArtifactPage,
   getArtifactsStructure,
@@ -67,7 +63,6 @@ import kbService, {
   listWikiCommits,
   removeTag,
   renameTag,
-  runIndex,
   updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
@@ -93,7 +88,6 @@ import {
   normalizeParserConfig,
 } from './parser-config-utils';
 import { useSetPaginationParams } from './route-hook';
-import { DatasetGenerateKeys } from './use-dataset-generate';
 
 export const enum KnowledgeApiAction {
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
@@ -297,7 +291,7 @@ export const useCreateKnowledge = () => {
       name: string;
       embedding_model?: string;
       chunk_method?: string;
-      parseType?: ParseType;
+      parse_type?: ParseType;
       pipeline_id?: string | null;
       language?: string;
       [key: string]: any;
@@ -491,28 +485,6 @@ export const ArtifactTopicKeys = {
   listByDataset: (datasetId: string) =>
     [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
 };
-
-export const ArtifactAlterationKeys = {
-  detail: (datasetId: string, kind: string) =>
-    [KnowledgeApiAction.FetchArtifactAlteration, datasetId, kind] as const,
-};
-
-export function useFetchArtifactAlteration(kind: string) {
-  const knowledgeBaseId = useKnowledgeBaseId();
-
-  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
-    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-    initialData: null,
-    enabled: !!knowledgeBaseId && !!kind,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await getArtifactsAlteration(knowledgeBaseId, kind);
-      return data?.data ?? null;
-    },
-  });
-
-  return { data, loading };
-}
 
 const wikiCommitKeys = {
   list: (datasetId: string, pageType: string, slug: string) =>
@@ -880,31 +852,6 @@ export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
   return { data, loading };
 }
 
-export const useDeleteDatasetStructure = () => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
-    mutationFn: async (kind: string) => {
-      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
-        });
-      }
-      return data?.code;
-    },
-  });
-
-  return { data, loading, deleteDatasetStructure: mutateAsync };
-};
-
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
     Record<string, Record<string, string[]>>
@@ -998,11 +945,7 @@ export const useClearWiki = () => {
   return { data, loading, clearWiki: mutateAsync };
 };
 
-export const useRunArtifactIndex = (kind: string) => {
-  const knowledgeBaseId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
-
+export const useRunArtifactIndex = () => {
   const {
     data,
     isPending: loading,
@@ -1010,33 +953,11 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
-      // Go: wiki compilation is auto-driven by the scheduler; there is no
-      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
-      // update can't be mistaken for a real re-merge (the UI hides/disables the
-      // update control — plan v4.1 §4.2).
-      if (isGo) {
-        throw new Error(i18n.t('message.compileNotSupported'));
-      }
-      const { data } = await runIndex(knowledgeBaseId, 'wiki');
-      if (data?.code === 0) {
-        message.success(i18n.t('message.operated'));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
-        });
-        queryClient.invalidateQueries({
-          queryKey: DatasetGenerateKeys.traceById(
-            GenerateType.Artifact,
-            knowledgeBaseId,
-          ),
-        });
-      }
-      return data;
+      // Wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a
+      // wiki update can't be mistaken for a real re-merge (the UI hides/
+      // disables the update control).
+      throw new Error(i18n.t('message.compileNotSupported'));
     },
   });
 
@@ -1050,29 +971,24 @@ export const KnowledgeListKeys = {
     shouldFilterListWithoutDocument: boolean,
     keywords: string,
     pageSize: number,
-    ownerTenantId?: string,
+    canvasID?: string,
   ) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
       shouldFilterListWithoutDocument,
       keywords,
       pageSize,
-      ownerTenantId,
+      canvasID,
     ] as const,
-  byIds: (ids: string[], ownerTenantId?: string) =>
-    [
-      KnowledgeApiAction.FetchKnowledgeList,
-      'byIds',
-      ids,
-      ownerTenantId,
-    ] as const,
+  byIds: (ids: string[], canvasID?: string) =>
+    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids, canvasID] as const,
 };
 
 export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
   pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
-  ownerTenantId?: string,
+  canvasID?: string,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -1087,7 +1003,7 @@ export const useFetchKnowledgeList = (
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
-        // ownerTenantId,
+        canvasID,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1097,8 +1013,7 @@ export const useFetchKnowledgeList = (
           page,
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
-          // Viewing a shared canvas: list the canvas owner's datasets.
-          // ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+          ...(canvasID ? { canvas_id: canvasID } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1155,24 +1070,22 @@ export const useFetchKnowledgeList = (
  * users pick variables alongside datasets); those are not resolvable ids and
  * are dropped before the request is built.
  */
-export const useFetchDatasetsByIds = (
-  ids: string[],
-  ownerTenantId?: string,
-) => {
+export const useFetchDatasetsByIds = (ids: string[], canvasID?: string) => {
   const sortedIds = useMemo(
     () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
     [ids],
   );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
-    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    queryKey: KnowledgeListKeys.byIds(sortedIds, canvasID),
     enabled: sortedIds.length > 0,
     gcTime: 0,
-    // Hold the previous result across id-list changes so consumers rendering
-    // from `data` don't flash an empty state while the next lookup is in
+    // Keep the previous result across id-list changes in the same canvas, but
+    // never show resources from a different canvas while its lookup is in
     // flight.
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[3] === canvasID ? previousData : undefined,
     queryFn: async () => {
-      const { data } = await listDatasetByIds(sortedIds);
+      const { data } = await listDatasetByIds(sortedIds, canvasID);
       return (data?.data ?? []) as IDataset[];
     },
   });
@@ -1188,7 +1101,7 @@ export const useFetchDatasetsByIds = (
  */
 export const useStaleDatasetIds = (
   datasetIds?: string[],
-  ownerTenantId?: string,
+  canvasID?: string,
 ) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
@@ -1199,7 +1112,7 @@ export const useStaleDatasetIds = (
   );
   const { data: datasets, loading } = useFetchDatasetsByIds(
     persistedIds,
-    ownerTenantId,
+    canvasID,
   );
 
   const staleDatasetIds = useMemo(() => {

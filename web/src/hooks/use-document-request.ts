@@ -17,7 +17,7 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 
 import message from '@/components/ui/message';
-import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
+import { IngestionTaskStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
@@ -29,10 +29,7 @@ import {
   IClaimsResponse,
   IStructureGraphResponse,
 } from '@/interfaces/database/document-structure';
-import {
-  IChangeParserConfigRequestBody,
-  IDocumentMetaRequestBody,
-} from '@/interfaces/request/document';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import {
@@ -56,7 +53,6 @@ import kbService, {
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { buildChunkHighlights } from '@/utils/document-util';
 import {
   keepPreviousData,
@@ -197,7 +193,6 @@ export const useFetchDocumentList = (loop = true) => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
   const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
@@ -294,9 +289,6 @@ export const useFetchDocumentList = (loop = true) => {
   // data.docs reference-identical while a stopped document's fields no longer
   // change, which is exactly the stuck case this has to fire in.
   useEffect(() => {
-    if (!isGo) {
-      return;
-    }
     const overdueIds = observeStoppingDocuments(
       data.docs.map((doc) => doc.id),
       data.docs.filter(isDocumentStopping).map((doc) => doc.id),
@@ -317,7 +309,7 @@ export const useFetchDocumentList = (loop = true) => {
       },
       () => {},
     );
-  }, [data.docs, dataUpdatedAt, isGo, queryClient]);
+  }, [data.docs, dataUpdatedAt, queryClient]);
 
   return {
     loading,
@@ -457,7 +449,6 @@ export const useSetDocumentStatus = () => {
 // This hook is used to run a document by its IDs
 export const useRunDocument = () => {
   const queryClient = useQueryClient();
-  const isGo = useIsGoBackend();
 
   const {
     data,
@@ -476,10 +467,9 @@ export const useRunDocument = () => {
     }) => {
       // Optimistically move started documents into an active state so the
       // 5s list polling starts immediately and the row leaves its idle
-      // action. Python drives the worker through the legacy run field
-      // (RUNNING); Go has no run field and reports the task lifecycle via
-      // ingestion_status, so CREATED renders as QUEUED until the next poll
-      // observes the real status (SCHEDULED/RUNNING/COMPLETED/...).
+      // action. The task lifecycle is reported via ingestion_status, so
+      // CREATED renders as QUEUED until the next poll observes the real
+      // status (SCHEDULED/RUNNING/COMPLETED/...).
       if (run === 1) {
         const documentIdSet = new Set(documentIds);
         queryClient.setQueriesData<{
@@ -495,9 +485,7 @@ export const useRunDocument = () => {
               documentIdSet.has(doc.id)
                 ? {
                     ...doc,
-                    ...(isGo
-                      ? { ingestion_status: IngestionTaskStatus.CREATED }
-                      : { run: RunningStatus.RUNNING }),
+                    ingestion_status: IngestionTaskStatus.CREATED,
                     progress: 0,
                     process_duration: 0,
                     process_begin_at: dayjs().format('YYYY-MM-DD HH:mm:ss'),
@@ -520,9 +508,7 @@ export const useRunDocument = () => {
         // all() prefix also covers the byIds views, so their in-flight
         // refetches are dropped the same way.
         await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
-        if (isGo) {
-          markCancelRequested(documentIds);
-        }
+        markCancelRequested(documentIds);
         const documentIdSet = new Set(documentIds);
         queryClient.setQueriesData<{
           docs: IDocumentInfo[];
@@ -537,9 +523,7 @@ export const useRunDocument = () => {
               documentIdSet.has(doc.id)
                 ? {
                     ...doc,
-                    ...(isGo
-                      ? { ingestion_status: IngestionTaskStatus.STOPPING }
-                      : { run: RunningStatus.CANCEL }),
+                    ingestion_status: IngestionTaskStatus.STOPPING,
                   }
                 : doc,
             ),
@@ -652,65 +636,10 @@ export const useSaveDocumentName = () => {
   return { loading, saveName: mutateAsync, data };
 };
 
-export const useSetDocumentParser = () => {
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.SetDocumentParser],
-    mutationFn: async ({
-      parserId,
-      pipelineId,
-      documentId,
-      datasetId,
-      parserConfig,
-    }: {
-      parserId: string;
-      pipelineId: string;
-      documentId: string;
-      datasetId: string;
-      parserConfig?: IChangeParserConfigRequestBody;
-    }) => {
-      // Build update payload
-      const updateData: Record<string, unknown> = {};
-      if (pipelineId) {
-        updateData.pipeline_id = pipelineId;
-      } else if (parserId) {
-        updateData.chunk_method = parserId;
-      }
-
-      if (parserConfig) {
-        updateData.parser_config = normalizeParserConfig(parserConfig);
-      }
-
-      const { data } = await changeDocumentParser(
-        datasetId,
-        documentId,
-        updateData,
-      );
-      if (data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
-
-        message.success(i18n.t('message.modified'));
-      }
-      return data.code;
-    },
-  });
-
-  return { setDocumentParser: mutateAsync, data, loading };
-};
-
 /**
- * Go-backend variant of useSetDocumentParser. The Go document endpoint takes
- * `parser_id` (instead of the legacy `chunk_method`) and expects the
- * pipeline-shaped parser_config (keyed by operator id) to be sent as-is.
- * Keep it parallel to the Python version — the original hook stays untouched
- * and can be dropped once the Python backend is retired.
+ * Change a document's parser. The document endpoint takes `parser_id`
+ * (instead of the legacy `chunk_method`) and expects the pipeline-shaped
+ * parser_config (keyed by operator id) to be sent as-is.
  */
 export const useSetDocumentPipelineParser = () => {
   const queryClient = useQueryClient();
@@ -724,25 +653,36 @@ export const useSetDocumentPipelineParser = () => {
     mutationFn: async ({
       parserId,
       pipelineId,
-      parseType,
+      parse_type,
       documentId,
       datasetId,
       parserConfig,
+      pipelineVersionId,
     }: {
       parserId: string;
       pipelineId: string;
-      parseType?: number;
+      parse_type?: number;
       documentId: string;
       datasetId: string;
       parserConfig?: IChangeParserConfigRequestBody;
+      pipelineVersionId?: string;
     }) => {
       const updateData: Record<string, unknown> = {
         parser_id: parserId,
         pipeline_id: pipelineId,
       };
 
-      if (parseType !== undefined) {
-        updateData.parse_type = parseType;
+      if (parse_type !== undefined) {
+        updateData.parse_type = parse_type;
+      }
+
+      // Pin a specific dataflow canvas version (design section 5 sticky
+      // snapshot). An explicit empty string means the user picked
+      // Latest (track the canvas latest), so it must be sent for the
+      // backend to clear the pin; only an omitted value (undefined) keeps
+      // the current pin.
+      if (pipelineVersionId !== undefined) {
+        updateData.pipeline_version_id = pipelineVersionId;
       }
 
       if (parserConfig) {
@@ -768,39 +708,6 @@ export const useSetDocumentPipelineParser = () => {
   });
 
   return { setDocumentPipelineParser: mutateAsync, data, loading };
-};
-
-export const useSetDocumentMeta = () => {
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.SetDocumentMeta],
-    mutationFn: async (params: IDocumentMetaRequestBody) => {
-      try {
-        const { data } = await kbService.setMeta({
-          meta: params.meta,
-          doc_id: params.documentId,
-        });
-
-        if (data?.code === 0) {
-          queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
-
-          message.success(i18n.t('message.modified'));
-        }
-        return data?.code;
-      } catch (error) {
-        message.error('error:' + error);
-      }
-    },
-  });
-
-  return { setDocumentMeta: mutateAsync, data, loading };
 };
 
 export const useCreateDocument = () => {

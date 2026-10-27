@@ -26,16 +26,13 @@
         <img alt="Badge statique" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.27.2">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="RAGFlow Docker image downloads">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Derniere%20version" alt="Dernière version">
     </a>
     <a href="https://github.com/infiniflow/ragflow/blob/main/LICENSE">
         <img height="21" src="https://img.shields.io/badge/License-Apache--2.0-ffffff?labelColor=d4eaf7&color=2e6cc4" alt="licence">
-    </a>
-    <a href="https://deepwiki.com/infiniflow/ragflow">
-        <img alt="Ask DeepWiki" src="https://deepwiki.com/badge.svg">
     </a>
 </p>
 
@@ -59,13 +56,10 @@
 
 - 💡 [Qu'est-ce que RAGFlow?](#-quest-ce-que-ragflow)
 - 🎮 [Démarrage](#-démarrage)
-- 📌 [Dernières mises à jour](#-dernières-mises-à-jour)
+- 🔥 [Dernières mises à jour](#-dernières-mises-à-jour)
 - 🌟 [Fonctionnalités clés](#-fonctionnalités-clés)
 - 🔎 [Architecture du système](#-architecture-du-système)
-- 🎬 [Auto-hébergement](#-auto-hébergement)
-- 🔧 [Configurations](#-configurations)
-- 🔧 [Construire une image Docker](#-construire-une-image-docker)
-- 🔨 [Lancer le service depuis les sources pour le développement](#-lancer-le-service-depuis-les-sources-pour-le-développement)
+- 🏠 [Déploiement local](#-déploiement-local)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Communauté](#-communauté)
@@ -88,18 +82,14 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ## 🔥 Dernières mises à jour
 
-- 15-06-2026 Prise en charge de plusieurs canaux de discussion tels que Feishu, Discord, Telegram, Line, etc.
-- 24-04-2026 Prise en charge de DeepSeek v4.
-- 24-03-2026 [RAGFlow Skill on OpenClaw](https://clawhub.ai/yingfeng/ragflow-skill) — Fournit un skill officiel pour accéder aux datasets RAGFlow via OpenClaw.
-- 26-12-2025 Prise en charge de la « Mémoire » pour l'agent IA.
-- 19-11-2025 Prise en charge de Gemini 3 Pro.
-- 12-11-2025 Prise en charge de la synchronisation de données depuis Confluence, S3, Notion, Discord et Google Drive.
-- 23-10-2025 Prise en charge de MinerU & Docling comme méthodes d'analyse de documents.
-- 15-10-2025 Prise en charge du pipeline d'ingestion orchestrable.
-- 08-08-2025 Prise en charge des derniers modèles de la série GPT-5 d'OpenAI.
-- 01-08-2025 Prise en charge du flux de travail agentique et de MCP.
-- 23-05-2025 Ajout d'un composant exécuteur de code Python/JavaScript à l'Agent.
-- 19-03-2025 Prise en charge de l'utilisation d'un modèle multi-modal pour analyser les images dans les fichiers PDF ou DOCX.
+- 2026-09-29 Publication de RAGFlow 1.0.0-rc1.
+
+- 2026-09-10 Ajout de l’ingestion de contenus Web à partir de sitemaps.
+- 2026-08-19 Lancement de Knowledge Compilation pour générer des wikis, graphes, arbres, PageIndex, cartes mentales, chronologies et compétences au niveau des documents et des bases de connaissances.
+- 2026-08-19 Lancement d’Agentic RAG avec quatre modes de réflexion : Low, Medium, High et Ultra.
+- 2026-07-02 Ajout de l’ingestion de données depuis Google BigQuery et de la synchronisation incrémentielle.
+
+Consultez les [notes de version complètes](https://ragflow.io/docs/dev/release_notes) pour découvrir les autres nouveautés.
 
 ## 🎉 Restez informé
 
@@ -113,13 +103,23 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ### 🍭 **"Quality in, quality out"**
 
-- Extraction de connaissances basée sur la [compréhension approfondie des documents](./deepdoc/README.md) à partir de données non structurées aux formats complexes.
+- Extraction de connaissances basée sur la compréhension approfondie des documents à partir de données non structurées aux formats complexes.
 - Trouve "l'aiguille dans la meule de données" de tokens littéralement illimités.
 
 ### 🍱 **Découpage(Chunking) basé sur des templates**
 
 - Intelligent et explicable.
 - De nombreuses options de templates disponibles.
+
+### 🧩 **Compilation des connaissances (Knowledge Compilation)**
+
+- Transformez le contenu des documents et des jeux de données en connaissances structurées, notamment Wiki, Graph, Tree, PageIndex, Mind Map, Timeline et Skills.
+- Configurez les modèles et règles de traitement, puis consultez, mettez à jour ou régénérez les résultats.
+
+### 🧠 **Recherche agentique (Agentic Retrieval)**
+
+- Le modèle analyse les questions complexes et peut les décomposer, rechercher des connaissances et vérifier les preuves en plusieurs étapes.
+- Les modes Low, Medium, High et Ultra permettent de régler la profondeur de recherche et de raisonnement selon la complexité de la question.
 
 ### 🌱 **Citations fondées avec réduction des hallucinations**
 
@@ -128,7 +128,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ### 🍔 **Compatibilité avec des sources de données hétérogènes**
 
-- Prend en charge Word, présentations, Excel, txt, images, copies numérisées, données structurées, pages web, et plus encore.
+- Prend en charge les documents Word, les présentations PowerPoint, les feuilles Excel, les fichiers TXT, les images, les PDF, les copies numérisées, les données structurées, les pages web, et plus encore.
 
 ### 🛀 **Flux de travail RAG automatisé et sans effort**
 
@@ -140,248 +140,138 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 ## 🔎 Architecture du système
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
 </div>
 
-## 🎬 Auto-hébergement
+## 🏠 Déploiement local
 
-### 📝 Prérequis
+Le déploiement local prend en charge Docker et le lancement depuis les sources. Docker convient à l’évaluation rapide, aux tests d’intégration et à la production, tandis que le lancement depuis les sources est destiné au développement et au débogage de RAGFlow. Docker ne nécessite pas de compilateur Go ; le lancement depuis les sources requiert la version de Go indiquée dans `go.mod`, ainsi que Node.js et npm pour le développement de l’interface.
 
-- CPU >= 4 cœurs
-- RAM >= 16 Go
-- Disque >= 50 Go
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- Python >= 3.13
-- [gVisor](https://gvisor.dev/docs/user_guide/install/) : Requis uniquement si vous souhaitez utiliser la fonctionnalité d'exécuteur de code (sandbox) de RAGFlow.
+### 🐳 Déploiement Docker
 
-> [!TIP]
-> Si vous n'avez pas installé Docker sur votre machine locale (Windows, Mac ou Linux), consultez [Installer Docker Engine](https://docs.docker.com/engine/install/).
+#### 📝 Prérequis du déploiement Docker
 
-### 🚀 Démarrer le serveur
+- Configuration de départ recommandée : 4 cœurs CPU, 16 Go de RAM et 50 Go d’espace disque disponible.
+- Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
 
-1. Assurez-vous que `vm.max_map_count` >= 262144 :
+#### 🚀 Démarrer le serveur
 
-   > Pour vérifier la valeur de `vm.max_map_count` :
-   >
+1. Avec Elasticsearch, définissez `vm.max_map_count` sur au moins 262144. Cette étape n’est généralement pas nécessaire avec Infinity :
+
    > ```bash
    > sysctl vm.max_map_count
-   > ```
-   >
-   > Réinitialisez `vm.max_map_count` à une valeur d'au moins 262144 si ce n'est pas le cas.
-   >
-   > ```bash
-   > # Dans ce cas, nous le définissons à 262144 :
    > sudo sysctl -w vm.max_map_count=262144
    > ```
-   >
-   > Ce changement sera réinitialisé après un redémarrage du système. Pour que votre modification reste permanente, ajoutez ou mettez à jour la valeur `vm.max_map_count` dans **/etc/sysctl.conf** :
-   >
-   > ```bash
-   > vm.max_map_count=262144
-   > ```
-   >
+
 2. Clonez le dépôt :
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Démarrez le serveur en utilisant les images Docker préconstruites :
 
-> [!CAUTION]
-> Toutes les images Docker sont construites pour les plateformes x86. Nous ne proposons pas actuellement d'images Docker pour ARM64.
-> Si vous êtes sur une plateforme ARM64, suivez [ce guide](https://ragflow.io/docs/dev/build_docker_image) pour construire une image Docker compatible avec votre système.
+3. Accédez au répertoire Docker, sélectionnez le tag de version, puis démarrez les services :
 
-> La commande ci-dessous télécharge l'édition `v0.27.2` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.27.2`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
-
-```bash
+   ```bash
    cd ragflow/docker
-
-   git checkout v0.27.2
-   # Optionnel : utiliser un tag stable (voir les versions : https://github.com/infiniflow/ragflow/releases)
-   # Cette étape garantit que le fichier **entrypoint.sh** dans le code correspond à la version de l'image Docker.
-
-   # Use CPU for DeepDoc tasks:
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
-
-   # To use GPU to accelerate DeepDoc tasks:
-   # sed -i '1i DEVICE=gpu' .env
-   # docker compose -f docker-compose.yml up -d
-```
-
-> Remarque : Avant `v0.22.0`, nous fournissions à la fois des images avec des modèles d'embedding et des images slim sans modèles d'embedding. Détails ci-dessous :
-
-| RAGFlow image tag | Image size (GB) | Has embedding models? | Stable?        |
-|-------------------|-----------------|-----------------------|----------------|
-| v0.21.1           | &approx;9       | ✔️                    | Stable release |
-| v0.21.1-slim      | &approx;2       | ❌                     | Stable release |
-
-> À partir de `v0.22.0`, nous ne distribuons que l'édition slim et ne rajoutons plus le suffixe **-slim** au tag d'image.
-
-4. Vérifiez l'état du serveur après son démarrage :
-
-   ```bash
-   docker logs -f docker-ragflow-cpu-1
    ```
 
-   _La sortie suivante confirme un lancement réussi du système :_
+   > RAGFlow 1.0 open source uses CPU inference for DeepDoc layout analysis, OCR, and table recognition.
+
+4. Vérifiez l’état des dépendances et la disponibilité de l’API :
 
    ```bash
-
-         ____   ___    ______ ______ __
-        / __ \ /   |  / ____// ____// /____  _      __
-       / /_/ // /| | / / __ / /_   / // __ \| | /| / /
-      / _, _// ___ |/ /_/ // __/  / // /_/ /| |/ |/ /
-     /_/ |_|/_/  |_|\____//_/    /_/ \____/ |__/|__/
-
-    * Running on all addresses (0.0.0.0)
+   curl -f http://localhost/api/v1/system/healthz
+   docker logs --tail 50 ragflow-cpu
    ```
 
-   > Si vous sautez cette étape de confirmation et vous connectez directement à RAGFlow, votre navigateur peut afficher une erreur `network abnormal`, car à ce moment-là, votre RAGFlow peut ne pas être entièrement initialisé.
-   >
-5. Dans votre navigateur web, entrez l'adresse IP de votre serveur et connectez-vous à RAGFlow.
+5. Ouvrez `http://IP_OF_YOUR_MACHINE` dans un navigateur et connectez-vous. Avec la configuration par défaut, le port HTTP `80` peut être omis.
 
-   > Avec les paramètres par défaut, il vous suffit d'entrer `http://IP_OF_YOUR_MACHINE` (**sans** numéro de port), car le port HTTP par défaut `80` peut être omis lors de l'utilisation des configurations par défaut.
-   >
-6. Dans [service_conf.yaml.template](./docker/service_conf.yaml.template), sélectionnez la fabrique LLM souhaitée dans `user_default_llm` et mettez à jour le champ `API_KEY` avec la clé API correspondante.
+6. Ajoutez un LLM, un modèle d’embedding et un reranker dans la page des fournisseurs de modèles, avec le nom, l’adresse du service et la clé API.
 
-   > Voir [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) pour plus d'informations.
-   >
+   > [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)
 
-   _Le spectacle commence !_
+Consultez le [guide de démarrage rapide](./docs/quickstart.mdx) pour plus de détails.
 
-## 🔧 Configurations
+#### ⚙️ Configuration et ajustement de Docker
 
-En ce qui concerne les configurations système, vous devrez gérer les fichiers suivants :
+Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de configuration Docker](./docker/README.md) pour l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles. Pour les plateformes prises en charge et la construction depuis les sources, consultez le [guide de construction de l’image Go](./docs/develop/build_docker_image.mdx). macOS n’est actuellement pas pris en charge.
 
-- [.env](./docker/.env) : Conserve les paramètres de base du système, tels que `SVR_HTTP_PORT`, `MYSQL_PASSWORD` et `MINIO_PASSWORD`.
-- [service_conf.yaml.template](./docker/service_conf.yaml.template) : Configure les services back-end. Les variables d'environnement dans ce fichier seront automatiquement renseignées au démarrage du conteneur Docker. Toutes les variables d'environnement définies dans le conteneur Docker seront disponibles, vous permettant de personnaliser le comportement du service en fonction de l'environnement de déploiement.
-- [docker-compose.yml](./docker/docker-compose.yml) : Le système s'appuie sur [docker-compose.yml](./docker/docker-compose.yml) pour démarrer.
+### 🔨 Lancer depuis les sources
 
-> Le fichier [./docker/README](./docker/README.md) fournit une description détaillée des paramètres d'environnement et des configurations de services qui peuvent être utilisés comme `${ENV_VARS}` dans le fichier [service_conf.yaml.template](./docker/service_conf.yaml.template).
+#### 📝 Prérequis de la compilation depuis les sources
 
-Pour mettre à jour le port HTTP de service par défaut (80), accédez à [docker-compose.yml](./docker/docker-compose.yml) et changez `80:80` en `<YOUR_SERVING_PORT>:80`.
-
-Les mises à jour des configurations ci-dessus nécessitent un redémarrage de tous les conteneurs pour prendre effet :
-
-> ```bash
-> docker compose -f docker-compose.yml up -d
-> ```
-
-### Passer du moteur de documents Elasticsearch à Infinity
-
-RAGFlow utilise Elasticsearch par défaut pour stocker le texte intégral et les vecteurs. Pour passer à [Infinity](https://github.com/infiniflow/infinity/), suivez ces étapes :
-
-1. Arrêtez tous les conteneurs en cours d'exécution :
-
-   ```bash
-   docker compose -f docker/docker-compose.yml down -v
-   ```
-
-> [!WARNING]
-> `-v` supprimera les volumes des conteneurs Docker, et les données existantes seront effacées.
-
-2. Définissez `DOC_ENGINE` dans **docker/.env** sur `infinity`.
-3. Démarrez les conteneurs :
-
-   ```bash
-   docker compose -f docker/docker-compose.yml up -d
-   ```
-
-> [!WARNING]
-> Le passage à Infinity sur une machine Linux/arm64 n'est pas encore officiellement pris en charge.
-
-## 🔧 Construire une image Docker
-
-Cette image fait environ 2 Go et dépend de services LLM et d'embedding externes.
-
-```bash
-git clone https://github.com/infiniflow/ragflow.git
-cd ragflow/
-docker build --platform linux/amd64 -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-Ou si vous êtes derrière un proxy, vous pouvez passer des arguments de proxy :
-
-```bash
-docker build --platform linux/amd64 \
-  --build-arg http_proxy=http://YOUR_PROXY:PORT \
-  --build-arg https_proxy=http://YOUR_PROXY:PORT \
-  -f Dockerfile -t infiniflow/ragflow:nightly .
-```
-
-## 🔨 Lancer le service depuis les sources pour le développement
-
-1. Installez `uv`, ou ignorez cette étape s'il est déjà installé :
-
-   ```bash
-   pipx install uv
-   ```
-2. Clonez le code source et installez les dépendances Python :
+1. Clonez le dépôt et installez la version de Go indiquée dans `go.mod`, Clang 20, LLD 20, CMake ≥ 4.0, les fichiers de développement PCRE2 et les bibliothèques natives requises par CGO.
 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 ragflow_deps/download_deps.py
-   git config --local --unset core.hooksPath
-   uv tool install lefthook
-   lefthook install
+   cd ragflow
    ```
-3. Lancez les services dépendants (MinIO, Elasticsearch, Redis et MySQL) avec Docker Compose :
+
+2. Exécutez les scripts de téléchargement des dépendances pour préparer les bibliothèques natives statiques liées par la compilation Go (`download_dev_deps.py`) et les ressources de modèles / tokeniseurs chargées à l'exécution par le backend (`download_deps.py`) :
 
    ```bash
-   docker compose -f docker/docker-compose-base.yml up -d
+   uv run tools/scripts/download_dev_deps.py
+   uv run deps/download_deps.py
    ```
 
-   Ajoutez la ligne suivante à `/etc/hosts` pour résoudre tous les hôtes spécifiés dans **docker/.env** vers `127.0.0.1` :
+   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 
-   ```text
-   127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
-   ```
-4. Si vous ne pouvez pas accéder à HuggingFace, définissez la variable d'environnement `HF_ENDPOINT` pour utiliser un site miroir :
+3. Compilez les services :
 
    ```bash
-   export HF_ENDPOINT=https://hf-mirror.com
+   ./build.sh --all
    ```
-5. Si votre système d'exploitation n'a pas jemalloc, installez-le comme suit :
+
+4. Démarrez les dépendances locales et vérifiez que les hôtes et ports de **conf/service_conf.yaml** sont accessibles :
 
    ```bash
-   # Ubuntu
-   sudo apt-get install libjemalloc-dev
-   # CentOS
-   sudo yum install jemalloc
-   # OpenSUSE
-   sudo zypper install jemalloc
-   # macOS
-   brew install jemalloc
+   sudo sysctl -w vm.max_map_count=262144
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
-6. Lancez le service back-end :
+
+5. Exécutez la migration de la base de données :
 
    ```bash
-   source .venv/bin/activate
-   export PYTHONPATH=$(pwd)
-   bash docker/launch_backend_service.sh
+   ./bin/ragflow_server --migrate
    ```
-7. Installez les dépendances front-end :
+
+6. Démarrez les quatre services dans quatre terminaux distincts :
+
+   Terminal 1 : Admin sur le port `9381`.
+
+   ```bash
+   ./bin/ragflow_server --admin
+   ```
+
+   ```bash
+   ./bin/ragflow_server --ingestor
+   ```
+
+   Terminal 3 : Syncer.
+
+   ```bash
+   ./bin/ragflow_server --syncer
+   ```
+
+   Terminal 4 : API sur le port `9380`.
+
+   ```bash
+   ./bin/ragflow_server --api
+   ```
+
+7. Uniquement pour développer le front-end, installez Node.js et npm, puis vérifiez la disponibilité de l’API :
 
    ```bash
    cd web
    npm install
-   ```
-8. Lancez le service front-end :
-
-   ```bash
-   npm run dev
+   curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   _La sortie suivante confirme un lancement réussi du système :_
+Consultez [Lancer le service depuis les sources](./docs/develop/launch_ragflow_from_source.md) pour plus de détails.
 
-   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
-9. Arrêtez les services front-end et back-end de RAGFlow une fois le développement terminé :
-
-   ```bash
-   pkill -f "ragflow_server.py|task_executor.py"
-   ```
+> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_dev_deps.py` prépare les bibliothèques natives et `download_deps.py` les modèles et ressources de tokeniseurs ; les deux s'exécutent via `uv run`. `--migrate` migre puis quitte ; `--admin` démarre le service d’administration, `--ingestor` le service d’ingestion, `--syncer` le service de synchronisation des sources de données externes et `--api` le service API pour l’interface Web et les SDK. Une réponse HTTP 200 indique que l’API est prête.
 
 ## 📚 Documentation
 
@@ -405,5 +295,4 @@ Voir la [Feuille de route RAGFlow 2026](https://github.com/infiniflow/ragflow/is
 
 ## 🙌 Contribuer
 
-RAGFlow s'épanouit grâce à la collaboration open-source. Dans cet esprit, nous accueillons des contributions diverses de la communauté.
-Si vous souhaitez en faire partie, consultez d'abord nos [Directives de contribution](https://ragflow.io/docs/dev/contributing).
+RAGFlow s'épanouit grâce à la collaboration open-source. Dans cet esprit, nous accueillons des contributions diverses de la communauté. Si vous souhaitez en faire partie, consultez d'abord nos [Directives de contribution](https://ragflow.io/docs/dev/contributing).

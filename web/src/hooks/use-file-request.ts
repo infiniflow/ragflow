@@ -225,6 +225,19 @@ export const useFetchFileList = () => {
         page: pagination.current,
       });
 
+      // The requested folder was removed (e.g. by moving an ancestor into
+      // another folder, which recreates the subtree under new IDs). Surface
+      // it as an empty result flagged for redirect instead of an error, so
+      // React Query does not retry a folder that will never come back.
+      if (data?.code === 404) {
+        return {
+          files: [],
+          parent_folder: {} as IFolder,
+          total: 0,
+          folderNotFound: true,
+        };
+      }
+
       return data?.data;
     },
   });
@@ -245,6 +258,7 @@ export const useFetchFileList = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
+    folderNotFound: data?.folderNotFound === true,
   };
 };
 
@@ -329,13 +343,17 @@ export const useRenameFile = () => {
 const LinkedDatasetsPollIntervalMs = 500;
 const LinkedDatasetsPollMaxAttempts = 6;
 
-// Returns true when every affected file row on the current page carries all the
-// newly linked datasets. Rows that are not on the current page, or folder rows
-// (which never carry kbs_info), cannot be verified and are treated as done.
+// Returns true when every affected file row on the current page matches the
+// requested link: the selected datasets are present and, in 'replace' mode, no
+// other dataset is left behind — otherwise clearing the selection (empty kbIds)
+// would look done on the stale row. Rows that are not on the current page, or
+// folder rows (which never carry kbs_info), cannot be verified and are treated
+// as done.
 const areDatasetsLinked = (
   queryClient: QueryClient,
   fileIds: string[],
   kbIds: string[],
+  mode: ConnectFileToKnowledgeMode,
 ) => {
   const cached = queryClient.getQueriesData<IFetchFileListResult>({
     queryKey: [FileApiAction.FetchFileList],
@@ -344,22 +362,27 @@ const areDatasetsLinked = (
     (file) => fileIds.includes(file.id) && file.type !== 'folder',
   );
   if (verifiableFiles.length === 0) return true;
-  return verifiableFiles.every((file) =>
-    kbIds.every((kbId) => file.kbs_info?.some((kb) => kb.kb_id === kbId)),
-  );
+  return verifiableFiles.every((file) => {
+    const linkedIds = (file.kbs_info ?? []).map((kb) => kb.kb_id);
+    return (
+      kbIds.every((kbId) => linkedIds.includes(kbId)) &&
+      (mode === 'add' || linkedIds.length === kbIds.length)
+    );
+  });
 };
 
 // Both backends respond to link-to-datasets before the file↔dataset mappings
 // are written (the conversion runs in the background), so the refetch right
-// after success can still see stale kbs_info. Poll until the newly linked
-// datasets show up in the list data; give up after a bounded window.
+// after success can still see stale kbs_info. Poll until the change shows up in
+// the list data; give up after a bounded window.
 const waitUntilDatasetsLinked = async (
   queryClient: QueryClient,
   fileIds: string[],
   kbIds: string[],
+  mode: ConnectFileToKnowledgeMode,
 ) => {
   for (let attempt = 0; attempt < LinkedDatasetsPollMaxAttempts; attempt++) {
-    if (areDatasetsLinked(queryClient, fileIds, kbIds)) return;
+    if (areDatasetsLinked(queryClient, fileIds, kbIds, mode)) return;
     await new Promise((resolve) =>
       setTimeout(resolve, LinkedDatasetsPollIntervalMs),
     );
@@ -398,6 +421,7 @@ export const useConnectToKnowledge = () => {
           queryClient,
           params.fileIds,
           params.kbIds,
+          params.mode,
         );
       }
       return data.code;
@@ -412,11 +436,18 @@ export const useFetchPureFileList = () => {
     mutationKey: [FileApiAction.FetchPureFileList],
     gcTime: 0,
 
-    mutationFn: async (parentId: string) => {
+    mutationFn: async ({
+      parentId,
+      tenantId,
+    }: {
+      parentId: string;
+      tenantId?: string;
+    }) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
         page_size: 100,
         page: 1,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       });
 
       return data;

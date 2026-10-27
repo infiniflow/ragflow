@@ -17,27 +17,31 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
+	excel "github.com/jloor/go-excel-reader"
 )
 
+// CompoundDocumentSignature is the OLE compound-document magic
+// (D0 CF 11 E0 ...), the on-disk container for legacy BIFF .xls.
+// Shared with the tag source reader (internal/ingestion/component/tag_source.go),
+// which applies the same magic check to legacy .xls tag files.
+var CompoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
+
 type XLSParser struct {
-	libType                        string
 	ParseMethod                    string
-	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSParser(libType string) (*XLSParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSParser(_ string) (*XLSParser, error) {
 	return &XLSParser{
-		libType:                        libType,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -54,12 +58,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -83,7 +82,6 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "excelize":
 		// Continue with the local Excelize parser.
@@ -93,15 +91,116 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
+	var (
+		items       []map[string]any
+		warnings    []string
+		sheetsCount int
+		err         error
+	)
+	if bytes.HasPrefix(data, CompoundDocumentSignature) {
+		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
+	} else {
+		mediaBudget := newEmbeddedMediaBudget()
+		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
+		warnings = append(warnings, mediaBudget.warnings()...)
+	}
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
 
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
-		File:         map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
-		JSON:         items,
-		Warnings:     warnings,
+		File:     map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
+}
+
+func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, error) {
+	reader, err := excel.OpenXLS(bytes.NewReader(data), excel.WithErrorValues(true))
+	if err != nil {
+		return nil, 0, fmt.Errorf("open BIFF workbook: %w", err)
+	}
+	defer reader.Close()
+
+	sheetCount := reader.SheetCount()
+	items := make([]map[string]any, 0, sheetCount)
+	for sheetIndex := 0; reader.NextSheet(); sheetIndex++ {
+		if err := ctx.Err(); err != nil {
+			return nil, sheetCount, err
+		}
+		records, dataRows, headerRow := readBIFF8Records(ctx, reader)
+		if err := ctx.Err(); err != nil {
+			return nil, sheetCount, err
+		}
+		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil, nil)...)
+	}
+	if err := reader.Err(); err != nil {
+		return nil, sheetCount, fmt.Errorf("read BIFF workbook: %w", err)
+	}
+	return items, sheetCount, nil
+}
+
+func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int, int) {
+	// The BIFF reader exposes cell values but not merged ranges, so .xls rows
+	// are emitted without ColSpan/RowSpan geometry. A vertical merge in a
+	// legacy workbook therefore stays a dense row with an empty slave cell;
+	// xlsx is the format that carries full merge geometry into TableData.
+	type numberedRow struct {
+		number int
+		cells  []string
+	}
+
+	rows := make([]numberedRow, 0)
+	for reader.Read() {
+		if ctx.Err() != nil {
+			return nil, nil, 0
+		}
+		cells := make([]string, reader.FieldCount())
+		for col := range cells {
+			cells[col] = SpreadsheetCellString(reader.GetValue(col))
+		}
+		if rowIsEmpty(cells) {
+			continue
+		}
+		rows = append(rows, numberedRow{number: reader.RowIndex() + 1, cells: cells})
+	}
+	if len(rows) == 0 {
+		return nil, nil, 0
+	}
+
+	records := make([][]string, 0, len(rows))
+	dataRows := make([]int, 0, len(rows)-1)
+	records = append(records, rows[0].cells)
+	for _, row := range rows[1:] {
+		records = append(records, row.cells)
+		dataRows = append(dataRows, row.number)
+	}
+	records = trimTrailingEmptyColumns(cleanIllegalControlChars(records))
+	return records, dataRows, rows[0].number
+}
+
+// SpreadsheetCellString renders one BIFF cell as text: times use RFC3339,
+// nil is empty, everything else is Sprint'd and trimmed by the caller.
+// Shared with the tag source reader (internal/ingestion/component/tag_source.go).
+func SpreadsheetCellString(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case time.Time:
+		return value.Format(time.RFC3339)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+func rowIsEmpty(row []string) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell) != "" {
+			return false
+		}
+	}
+	return true
 }

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -41,15 +43,16 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
-		ASRID:     "asr-a",
-		Img2TxtID: "img2txt-a",
-		RerankID:  "rerank-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: &status,
+		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-a",
@@ -125,7 +128,7 @@ func TestChatServiceCreateDefaultsMetaDataFilter(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name": "created chat",
 	})
@@ -155,7 +158,7 @@ func TestChatServiceCreateAcceptsNilMetaDataFilter(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name":             "created chat",
 		"meta_data_filter": nil,
@@ -173,7 +176,7 @@ func TestChatServiceCreateRejectsInvalidMetaDataFilter(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name":             "created chat",
 		"meta_data_filter": []interface{}{"invalid"},
@@ -191,7 +194,7 @@ func TestChatServicePatchChatMergesPromptConfigAndLLMSetting(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"prompt_config": map[string]interface{}{"quote": false},
 		"llm_setting":   map[string]interface{}{"temperature": float64(0.2)},
@@ -229,7 +232,7 @@ func TestChatServiceUpdateChatRejectsTenantID(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"tenant_id": "tenant-2",
 	})
@@ -243,7 +246,7 @@ func TestChatServiceUpdateChatRejectsInvalidLLMSetting(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"llm_setting": "invalid",
 	})
@@ -265,7 +268,7 @@ func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"name": "chat-chat-1",
 		"meta_data_filter": map[string]interface{}{
@@ -286,12 +289,78 @@ func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateChatNormalizesKeywordsSimilarityWeight(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	resp, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if math.Abs(chat.VectorSimilarityWeight-0.3) > similarityWeightTolerance {
+		t.Fatalf("vector_similarity_weight = %v, want 0.3", chat.VectorSimilarityWeight)
+	}
+	if got, ok := resp["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", resp["keywords_similarity_weight"])
+	}
+	if _, exists := resp["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatWithKBNamesMarshalJSONOmitsVectorSimilarityWeight(t *testing.T) {
+	payload, err := json.Marshal(&ChatWithKBNames{
+		Chat:       &entity.Chat{VectorSimilarityWeight: 0.3},
+		KBNames:    []string{"Dataset"},
+		DatasetIDs: []string{"dataset-1"},
+		Nickname:   "Owner",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	response := map[string]interface{}{}
+	if err = json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatServiceUpdateChatRejectsMismatchedSimilarityWeights(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	_, err := NewChatService().UpdateChat(serviceTestContext(t, "user-1", "user-1"), "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+		"vector_similarity_weight":   0.4,
+	})
+	if err == nil || !strings.Contains(err.Error(), "must sum to 1") {
+		t.Fatalf("expected weight sum error, got %v", err)
+	}
+}
+
 func TestChatServiceUpdateChatBackfillsNilMetaDataFilter(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"name": "chat-chat-1",
 	})
@@ -315,7 +384,7 @@ func TestChatServicePatchChatIgnoresTenantIDAndUpdatesName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{
 		"tenant_id": "tenant-2",
 		"name":      "  renamed chat  ",
@@ -340,7 +409,7 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "   "})
 	if err == nil {
 		t.Fatal("expected name validation error")
@@ -353,21 +422,22 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateRejectsDuplicateName(t *testing.T) {
+func TestChatServiceCreateDedupesDuplicateName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "chat-chat-1"})
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	if err != nil {
+		t.Fatalf("expected deduped create to succeed, got %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "duplicated chat name") {
-		t.Fatalf("unexpected error: %v", err)
+	var created entity.Chat
+	if err := db.Where("tenant_id = ? AND name = ?", "user-1", "chat-chat-1(1)").First(&created).Error; err != nil {
+		t.Fatalf("expected a chat named %q: %v", "chat-chat-1(1)", err)
 	}
 }
 
@@ -376,7 +446,7 @@ func TestChatServiceUpdateValidatesName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": "   "})
 	if err == nil {
 		t.Fatal("expected name validation error")
@@ -392,7 +462,7 @@ func TestChatServiceUpdateRejectsDuplicateName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-2", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.UpdateChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": "chat-chat-2"})
 	if err == nil {
 		t.Fatal("expected duplicate name error")
@@ -407,7 +477,7 @@ func TestChatServicePatchChatRejectsEmptyName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": ""})
 	if err == nil || err.Error() != "`name` cannot be empty" {
 		t.Fatalf("expected empty name error, got %v", err)
@@ -419,7 +489,7 @@ func TestChatServicePatchChatRejectsNonStringName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": 123})
 	if err == nil || err.Error() != "chat name must be a string" {
 		t.Fatalf("expected non-string name error, got %v", err)
@@ -431,7 +501,7 @@ func TestChatServicePatchChatRejectsTooLongName(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	longName := strings.Repeat("a", 256)
 	_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": longName})
 	if err == nil {
@@ -448,7 +518,7 @@ func TestChatServiceUpdateRejectsDuplicateNameCaseInsensitive(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-2", "user-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{"name": "CHAT-CHAT-2"})
 	if err == nil || err.Error() != "duplicated chat name" {
 		t.Fatalf("expected case-insensitive duplicate name error, got %v", err)
@@ -459,7 +529,7 @@ func TestChatServiceCreateRejectsTenantID(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name":      "valid chat",
 		"tenant_id": "other-tenant",
@@ -476,7 +546,7 @@ func TestChatServiceCreateRejectsInvalidPromptConfig(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name":          "valid chat",
 		"prompt_config": "invalid",
@@ -494,7 +564,7 @@ func TestChatServiceUpdateRejectsDuplicatePromptParameterKeys(t *testing.T) {
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
-	_, err := svc.UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+	_, err := svc.UpdateChat(serviceTestContext(t, "user-1", "user-1"), "user-1", "chat-1", map[string]interface{}{
 		"prompt_config": map[string]interface{}{
 			"parameters": []interface{}{
 				map[string]interface{}{"key": "knowledge"},
@@ -511,7 +581,7 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name": "prompt defaults chat",
 	})
@@ -552,7 +622,7 @@ func TestChatServiceCreateWithDatasetSeedsDatasetSystemPrompt(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{
 		"name":   "prompt defaults chat with dataset",
 		"kb_ids": []interface{}{"kb-1"},

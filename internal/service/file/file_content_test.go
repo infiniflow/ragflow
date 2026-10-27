@@ -59,12 +59,11 @@ func TestParseFileContent_JSONItems(t *testing.T) {
 
 func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T) {
 	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "first"},
 			{"text": "second"},
 			{"value": 3},
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
@@ -75,88 +74,21 @@ func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T)
 	}
 }
 
-func TestParseResultText_SpreadsheetRowsRenderReadableHTMLTable(t *testing.T) {
+// TestParseResultText_SpreadsheetSegmentsAreTheirOwnMarkup: the wire emits
+// self-describing HTML table segments, so the readable preview is exactly
+// the item text — no parser-side table re-rendering.
+func TestParseResultText_SpreadsheetSegmentsAreTheirOwnMarkup(t *testing.T) {
+	segment := "<table><caption>Data</caption>\n<tr><th>a</th><th>b</th></tr>\n<tr><td>1</td><td>2</td></tr>\n</table>\n"
 	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{
-				"text":         "a; b",
-				"doc_type_kwd": "table",
-				"ck_type":      "table_header",
-				"table_id":     "sheet-1",
-				"sheet":        "Data",
-				"cells":        []string{"a", "b"},
-			},
-			{
-				"text":         "a：1; b：2 ——Data",
-				"doc_type_kwd": "text",
-				"ck_type":      "table_row",
-				"table_id":     "sheet-1",
-				"sheet":        "Data",
-				"headers":      []string{"a", "b"},
-				"cells":        []string{"1", "2"},
-			},
-		},
+		JSON: parser.MapsToItems([]map[string]any{
+			{"text": segment, "doc_type_kwd": "table", "sheet": "Data", "sheet_index": 1},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
 	}
-	for _, want := range []string{"<table", "<caption>Data</caption>", "<th>a</th>", "<td>1</td>"} {
-		if !strings.Contains(result, want) {
-			t.Errorf("parseResultText = %q, want %q", result, want)
-		}
-	}
-}
-
-func TestParseResultText_SpreadsheetRowsWithoutHeaderDoNotDuplicateFirstRow(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{
-				"ck_type": "table_row",
-				"headers": []string{"name", "value"},
-				"cells":   []string{"alpha", "1"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("parseResultText: %v", err)
-	}
-	if !strings.Contains(result, "<th>name</th>") {
-		t.Fatalf("row headers were not rendered: %q", result)
-	}
-	if got := strings.Count(result, "<td>alpha</td>"); got != 1 {
-		t.Fatalf("first row rendered %d times, want once: %q", got, result)
-	}
-}
-
-func TestParseResultText_SpreadsheetRowsWithoutIdentityStaySeparate(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{
-			{
-				"ck_type": "table_header",
-				"cells":   []string{"first"},
-			},
-			{
-				"ck_type": "table_row",
-				"cells":   []string{"one"},
-			},
-			{
-				"ck_type": "table_header",
-				"cells":   []string{"second"},
-			},
-			{
-				"ck_type": "table_row",
-				"cells":   []string{"two"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("parseResultText: %v", err)
-	}
-	if got := strings.Count(result, "<table>"); got != 2 {
-		t.Fatalf("unknown spreadsheet tables were merged: got %d tables in %q", got, result)
+	if result != segment {
+		t.Fatalf("parseResultText = %q, want the segment markup whole", result)
 	}
 }
 
@@ -179,21 +111,8 @@ func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
 	}
 }
 
-func TestParseResultText_EmptyJSONUsesRenderedFallback(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		Markdown:     "legacy markdown",
-	})
-	if err != nil {
-		t.Fatalf("parseResultText: %v", err)
-	}
-	if result != "legacy markdown" {
-		t.Fatalf("parseResultText = %q, want rendered fallback", result)
-	}
-}
-
 func TestParseResultText_EmptyJSONWithoutFallbackReturnsEmpty(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{OutputFormat: "json"})
+	result, err := parseResultText(parser.ParseResult{})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
 	}

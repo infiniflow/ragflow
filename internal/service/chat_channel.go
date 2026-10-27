@@ -23,17 +23,16 @@ import (
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/utility"
-
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 type ChatChannelService struct {
 	chatChannelDAO *dao.ChatChannelDAO
 	chatDAO        *dao.ChatDAO
-	userTenantDAO  *dao.UserTenantDAO
 	chatSessionSvc *ChatSessionService
 }
 
@@ -41,7 +40,6 @@ func NewChatChannelService() *ChatChannelService {
 	return &ChatChannelService{
 		chatChannelDAO: dao.NewChatChannel(),
 		chatDAO:        dao.NewChatDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
 		chatSessionSvc: NewChatSessionService(),
 	}
 }
@@ -78,45 +76,32 @@ func getChatChannelRuntimeProvider() ChatChannelRuntimeProvider {
 	return chatChannelRuntimeProvider
 }
 
-func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatChannel) error {
-	if channel == nil {
-		return errors.New("channel is nil")
+func (s *ChatChannelService) List(ctx context.Context, userID string) ([]*entity.ChatChannelListResponse, error) {
+	channelIDs, err := accessibleChatChannelIDs(ctx, userID, permission.OperationRead)
+	if err != nil {
+		return nil, err
 	}
-	if channel.ID == "" {
-		channel.ID = utility.GenerateUUID()
-	}
-	if channel.Status == 0 {
-		channel.Status = 1
-	}
-	return s.chatChannelDAO.Create(ctx, dao.DB, channel)
+	return s.chatChannelDAO.ListByIDs(ctx, dao.DB, channelIDs)
 }
 
-func (s *ChatChannelService) GetByID(ctx context.Context, id string) (*entity.ChatChannel, error) {
-	if id == "" {
-		return nil, errors.New("id is empty")
+func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, permission.ErrUnauthenticated
 	}
-	return s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, id)
-}
-
-func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
-	return s.chatChannelDAO.ListByTenantID(ctx, dao.DB, tenantID)
-}
-
-func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkFeatureAction(ctx, userID, "chat", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if chatID != nil && *chatID != "" {
-		dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *chatID)
-		if err != nil {
-			if dao.IsNotFoundErr(err) {
-				return nil, errors.New("can't find this chat assistant")
-			}
+		if err := checkChatPermission(ctx, nil, userID, *chatID, permission.OperationUse); err != nil {
 			return nil, err
-		}
-		if dialog.TenantID != tenantID {
-			return nil, errors.New("no authorization")
 		}
 	}
 	row := &entity.ChatChannel{
-		ID:       utility.GenerateUUID(),
+		ID:       common.GenerateUUID(),
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,
@@ -125,56 +110,33 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 		Status:   1,
 	}
 
-	if err := s.Insert(ctx, row); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.chatChannelDAO.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindChatChannel, row.ID)
+	}); err != nil {
 		return nil, err
 	}
 
-	created, err := s.GetByID(ctx, row.ID)
+	created, err := s.chatChannelDAO.GetByID(ctx, dao.DB, row.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load created chat channel: %w", err)
 	}
 	return created, nil
 }
 
-func (s *ChatChannelService) accessible(ctx context.Context, userID, channelID string) (*entity.ChatChannel, bool, error) {
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
-	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-
-	if channel.TenantID == userID {
-		return channel, true, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, tenantID := range tenantIDs {
-		if tenantID == channel.TenantID {
-			return channel, true, nil
-		}
-	}
-
-	return channel, false, nil
-}
-
 func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-	_, ok, err := s.accessible(ctx, userID, channelID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationRead); err != nil {
+		code, permissionErr := normalizeChatChannelPermissionError(err)
+		return nil, code, permissionErr
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("can't find this chat channel")
+			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -182,15 +144,17 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 }
 
 func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(ctx, userID, channelID)
+	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationUpdate); err != nil {
+		code, permissionErr := normalizeChatChannelPermissionError(err)
+		return nil, code, permissionErr
+	}
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if channel == nil {
-		return nil, common.CodeDataError, errors.New("can't find this chat channel")
 	}
 
 	updates := map[string]interface{}{}
@@ -224,15 +188,15 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
 			}
 			if chatID != "" {
-				dialog, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
-				if err != nil {
-					if dao.IsNotFoundErr(err) {
-						return nil, common.CodeDataError, errors.New("can't find this chat assistant")
-					}
-					return nil, common.CodeServerError, err
+				if err := checkChatPermission(ctx, nil, userID, chatID, permission.OperationUse); err != nil {
+					code, normalizedErr := normalizeChatPermissionError(err)
+					return nil, code, normalizedErr
 				}
-				if dialog.TenantID != channel.TenantID {
-					return nil, common.CodeAuthenticationError, errors.New("no authorization")
+				if channel.TenantID != userID {
+					if err := checkChatPermission(ctx, nil, channel.TenantID, chatID, permission.OperationUse); err != nil {
+						code, normalizedErr := normalizeChatPermissionError(err)
+						return nil, code, normalizedErr
+					}
 				}
 			}
 			updates["chat_id"] = chatID
@@ -245,10 +209,11 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		}
 	}
 
-	updated, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	updated, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("can't find this chat channel")
+			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -257,15 +222,17 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 
 // GetChatChannelRuntime returns the live runtime metadata for a WhatsApp chat channel.
 func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
-	conn, ok, err := s.accessible(ctx, userID, channelID)
+	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationUse); err != nil {
+		code, permissionErr := normalizeChatChannelPermissionError(err)
+		return nil, code, permissionErr
+	}
+	conn, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if conn == nil {
-		return nil, common.CodeDataError, errors.New("can't find this chat channel")
 	}
 
 	if conn.Channel != "whatsapp" {
@@ -286,7 +253,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", nil
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, msg.AccountID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, msg.AccountID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return "", nil
@@ -305,7 +272,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", err
 	}
 
-	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID)
+	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID, msg.Text, channel.Name)
 	if err != nil {
 		return "", err
 	}
@@ -337,15 +304,17 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(ctx, userID, channelID)
+	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationDelete); err != nil {
+		code, permissionErr := normalizeChatChannelPermissionError(err)
+		return false, code, permissionErr
+	}
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			return false, code, permissionErr
+		}
 		return false, common.CodeServerError, err
-	}
-	if !ok {
-		return false, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if channel == nil {
-		return false, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if err = s.chatChannelDAO.DeleteByID(ctx, dao.DB, channelID, channel.TenantID); err != nil {

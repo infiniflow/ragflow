@@ -27,6 +27,7 @@ package parser
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"html"
 	"strings"
 )
@@ -188,9 +189,17 @@ func joinCellText(cell docxIRCell) string {
 }
 
 // docxIRTableToHTML converts a table IR element to an HTML table string.
-func docxIRTableToHTML(el docxIRElement) string {
+// A non-empty caption is emitted as a leading <caption> element so the
+// structured TableData contract (ParseTableHTML) carries it through to the
+// chunk renderer, which escapes it again on output.
+func docxIRTableToHTML(el docxIRElement, caption string) string {
 	var sb strings.Builder
 	sb.WriteString("<table>")
+	if caption != "" {
+		sb.WriteString("<caption>")
+		sb.WriteString(html.EscapeString(caption))
+		sb.WriteString("</caption>")
+	}
 	for _, row := range el.Rows {
 		sb.WriteString("<tr>")
 		for _, cell := range row.Cells {
@@ -202,6 +211,81 @@ func docxIRTableToHTML(el docxIRElement) string {
 	}
 	sb.WriteString("</table>")
 	return sb.String()
+}
+
+type docxTableImage struct {
+	data     []byte
+	row      int
+	column   int
+	included bool
+}
+
+func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage) bool) bool {
+	for rowIndex, row := range el.Rows {
+		for columnIndex, cell := range row.Cells {
+			completed := forEachDOCXIRImage(cell.Content, func(data []byte) bool {
+				return visit(docxTableImage{data: data, row: rowIndex + 1, column: columnIndex + 1})
+			})
+			if !completed {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// forEachDOCXIRImage visits image payloads without first collecting a second
+// document-sized slice of image references. Returning false from visit stops
+// traversal as soon as the caller's media budget is exhausted.
+func forEachDOCXIRImage(elements []docxIRElement, visit func([]byte) bool) bool {
+	for _, el := range elements {
+		switch el.Type {
+		case "image":
+			if len(el.Data) > 0 && !visit(el.Data) {
+				return false
+			}
+		case "paragraph", "heading":
+			for _, run := range el.contentRuns() {
+				if run.Type == "image" && len(run.Data) > 0 && !visit(run.Data) {
+					return false
+				}
+				if !forEachDOCXIRImage(run.Content, visit) {
+					return false
+				}
+			}
+		case "table":
+			for _, row := range el.Rows {
+				for _, cell := range row.Cells {
+					if !forEachDOCXIRImage(cell.Content, visit) {
+						return false
+					}
+				}
+			}
+		case "list":
+			if !forEachDOCXIRListImage(docxIRList{Items: el.Items}, visit) {
+				return false
+			}
+		case "text_box":
+			if !forEachDOCXIRImage(el.contentBlocks(), visit) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func forEachDOCXIRListImage(list docxIRList, visit func([]byte) bool) bool {
+	for _, item := range list.Items {
+		if !forEachDOCXIRImage(item.Content, visit) {
+			return false
+		}
+		if item.Nested != nil {
+			if !forEachDOCXIRListImage(*item.Nested, visit) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // docxElementText returns the plain-text rendering of any supported
@@ -250,63 +334,247 @@ func docxElementText(el docxIRElement, cellSep string) string {
 	}
 }
 
+// docxIRTableCols returns the number of cells in a table's first row, used
+// to decide whether two adjacent table elements are fragments of one logical
+// table. It returns 0 for an empty table.
+func docxIRTableCols(el docxIRElement) int {
+	if len(el.Rows) == 0 {
+		return 0
+	}
+	return len(el.Rows[0].Cells)
+}
+
+// docxHeading is one entry of the heading outline stack.
+type docxHeading struct {
+	level int
+	text  string
+}
+
+// pushDOCXHeading folds a heading into the outline stack: a heading at
+// level L supersedes every entry at level >= L (sibling and deeper
+// headings end), then becomes the innermost entry. Empty headings are
+// ignored so they never truncate the outline.
+func pushDOCXHeading(stack []docxHeading, level int, text string) []docxHeading {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return stack
+	}
+	for len(stack) > 0 && stack[len(stack)-1].level >= level {
+		stack = stack[:len(stack)-1]
+	}
+	return append(stack, docxHeading{level: level, text: text})
+}
+
+// docxHeadingLocationCaption renders the heading outline as a table
+// location caption, mirroring Python's Docx.__get_nearest_title, which
+// injected "<caption>Table Location: {hierarchy}</caption>" into the table
+// HTML. It returns "" when the table sits under no heading.
+func docxHeadingLocationCaption(headings []docxHeading) string {
+	if len(headings) == 0 {
+		return ""
+	}
+	titles := make([]string, len(headings))
+	for i, h := range headings {
+		titles[i] = h.text
+	}
+	return "Table Location: " + strings.Join(titles, " > ")
+}
+
 // buildDOCXJSONSections converts an office_oxide IR JSON string into a
 // slice of structured items compatible with the chunker's JSON input
 // contract. Each item carries at least text and doc_type_kwd.
-func buildDOCXJSONSections(irJSON string) []map[string]any {
+//
+// A table carries the heading hierarchy it sits under as its caption,
+// mirroring Python's Docx.__get_nearest_title. office_oxide resolves Word
+// heading styles into element type "heading" plus a level, so the outline
+// is tracked from those elements alone.
+//
+// This is the caption-only (heading hierarchy) entry point. Use
+// buildDOCXJSONSectionsWithCaptions to also attach Caption-styled paragraph
+// text (a temporary stopgap; see docx_caption_scan.go).
+func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, nil)
+}
+
+// buildDOCXJSONSectionsWithCaptions is buildDOCXJSONSections plus the
+// TEMPORARY Caption-styled-paragraph detection. tableCaptions must be aligned
+// by position with the tables in the IR (see docx_caption_scan.go).
+//
+// TEMPORARY: remove once office_oxide emits paragraph styles
+// (yfedoseev/office_oxide#455).
+func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
+	return buildDOCXJSONSectionsCore(irJSON, budget, tableCaptions)
+}
+
+// buildDOCXJSONSectionsCore is the shared implementation of the two entry
+// points above. tableCaptions, when non-nil, supplies a descriptive caption
+// for each table indexed by reading order; an explicit caption is preferred
+// over the synthesized heading-location caption. The position alignment
+// between tableCaptions and the IR tables is approximate (document-body order
+// vs office_oxide IR order) and is a known limitation of the temporary
+// Caption-style stopgap in docx_caption_scan.go.
+func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
+	}
 	var sections []map[string]any
-	for _, sec := range ir.Sections {
-		for _, el := range sec.Elements {
+	tableSequence := 0
+	var headings []docxHeading
+	for si := range ir.Sections {
+		sec := &ir.Sections[si]
+		for ei := 0; ei < len(sec.Elements); ei++ {
+			el := sec.Elements[ei]
+			// TEMPORARY: this merge is a stopgap. Revisit it once office_oxide
+			// populates `TableRow.is_header` for .doc tables (upstream issue
+			// yfedoseev/office_oxide#456) — at that point prefer rejoining via
+			// the real `is_header` flag and drop the structural proxy below.
+			//
+			// office_oxide splits a .doc table whose first row is a styled
+			// header/title row into a 1-row "header" table immediately
+			// followed by the body table (the legacy binary .doc format
+			// stores such a table as two separate Table objects with a blank
+			// paragraph between them; walk_paragraphs flushes a new Element::Table
+			// at every non-fInTable paragraph, and emit_prose drops the blank
+			// one, so the two tables end up adjacent in the IR). Rejoin a
+			// 1-row table fragment with the adjacent following table when their
+			// first rows carry the same column count, so one logical table is
+			// emitted as a single item instead of a header chunk + body chunk
+			// (each would otherwise carry the same caption).
+			//
+			// Why a structural proxy instead of the row's `is_header` flag:
+			// office_oxide's IR DOES carry `TableRow.is_header`, but the .doc
+			// converter (convert_doc.rs) never populates it — every .doc row
+			// arrives with is_header=false, verified on the real document that
+			// triggered this bug. Only the .docx converter sets it, and .docx
+			// never splits. So `is_header` is a dead signal for .doc and cannot
+			// be used to confirm the leading fragment is a header or that the
+			// following table lacks one. The 1-row gate is the strongest
+			// available proxy: a 1-row table adjacent to a same-width table is
+			// overwhelmingly a header fragment, because a genuinely standalone
+			// 1-row table immediately followed by another table (with only a
+			// blank paragraph between) is rare.
+			//
+			// Regression guards baked into the merge condition:
+			//   - leading fragment is exactly 1 row: two genuinely separate
+			//     MULTI-row tables (same width, blank paragraph between) are
+			//     never merged.
+			//   - same first-row column count: differently-shaped tables stay
+			//     separate.
+			//   - adjacency (no element between): any heading/paragraph/image
+			//     in between keeps the two tables distinct.
+			if el.Type == "table" && len(el.Rows) == 1 && ei+1 < len(sec.Elements) {
+				if nxt := sec.Elements[ei+1]; nxt.Type == "table" &&
+					docxIRTableCols(el) > 0 && docxIRTableCols(el) == docxIRTableCols(nxt) {
+					merged := nxt
+					rows := make([]docxIRRow, 0, len(nxt.Rows)+len(el.Rows))
+					rows = append(rows, el.Rows...)
+					rows = append(rows, nxt.Rows...)
+					merged.Rows = rows
+					el = merged
+					ei++ // fold the following table into this one; skip it
+				}
+			}
 			switch el.Type {
 			case "paragraph", "heading":
-				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading")
+				if el.Type == "heading" {
+					level := el.Level
+					if level <= 0 {
+						level = 1
+					}
+					headings = pushDOCXHeading(headings, level, docxElementText(el, "\n"))
+				}
+				// TEMPORARY (docx_caption_scan.go): when a paragraph's text
+				// exactly matches the Caption recovered for the next table,
+				// suppress it as a standalone text section — it is attached
+				// to that table as the caption instead. The text match keeps
+				// this safe if the document scan and the IR element order
+				// ever desync: a non-matching paragraph is never dropped.
+				if tableSequence < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[tableSequence]); explicit != "" &&
+						strings.TrimSpace(docxElementText(el, " ")) == explicit {
+						continue
+					}
+				}
+				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading", budget)
 
 			case "image":
-				b64 := base64.StdEncoding.EncodeToString(el.Data)
-				sections = append(sections, map[string]any{
-					"text":         "",
-					"image":        b64,
-					"doc_type_kwd": "image",
-				})
+				sections, _ = appendDOCXImageSection(sections, el.Data, budget, nil)
 
 			case "table":
-				html := docxIRTableToHTML(el)
-				if html == "<table></table>" {
+				tableSequence++
+				if len(el.Rows) == 0 {
 					continue
 				}
-				sections = append(sections, map[string]any{
+				// Prefer an explicit Caption-styled paragraph (temporary
+				// stopgap, see docx_caption_scan.go) over the synthesized
+				// heading-location caption.
+				caption := docxHeadingLocationCaption(headings)
+				if idx := tableSequence - 1; idx >= 0 && idx < len(tableCaptions) {
+					if explicit := strings.TrimSpace(tableCaptions[idx]); explicit != "" {
+						caption = explicit
+					}
+				}
+				html := docxIRTableToHTML(el, caption)
+				table := map[string]any{
 					"text":         html,
 					"image":        nil,
 					"doc_type_kwd": "table",
+				}
+				projectPDFTable(table)
+				tableID := ""
+				foundImage := false
+				var tableImages []docxTableImage
+				forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
+					foundImage = true
+					included, keepWalking := budget.include(tableImage.data)
+					if included || keepWalking {
+						tableImage.included = included
+						tableImages = append(tableImages, tableImage)
+					}
+					return keepWalking
 				})
+				if foundImage {
+					tableID = fmt.Sprintf("docx-table-%d", tableSequence)
+					table["source_table_id"] = tableID
+				}
+				sections = append(sections, table)
+				for mediaOrder, tableImage := range tableImages {
+					metadata := map[string]any{
+						"parent_table_id": tableID,
+						"row_index":       tableImage.row,
+						"column_index":    tableImage.column,
+						"media_order":     mediaOrder + 1,
+					}
+					sections = appendDOCXImagePayload(sections, tableImage.data, tableImage.included, metadata)
+				}
 
 			case "list":
 				for _, item := range el.Items {
 					text := extractTextFromListItem(item)
-					if text == "" {
-						continue
+					if text != "" {
+						sections = append(sections, map[string]any{
+							"text":         text,
+							"image":        nil,
+							"doc_type_kwd": "text",
+						})
 					}
+					sections = appendDOCXListImageSections(sections, docxIRList{Items: []docxIRListItem{item}}, budget)
+				}
+
+			case "text_box":
+				text := extractTextFromBlockElements(el.contentBlocks())
+				if text != "" {
 					sections = append(sections, map[string]any{
 						"text":         text,
 						"image":        nil,
 						"doc_type_kwd": "text",
 					})
 				}
-
-			case "text_box":
-				text := extractTextFromBlockElements(el.contentBlocks())
-				if text == "" {
-					continue
-				}
-				sections = append(sections, map[string]any{
-					"text":         text,
-					"image":        nil,
-					"doc_type_kwd": "text",
-				})
+				sections = appendDOCXIRImageSections(sections, el.contentBlocks(), budget)
 			}
 		}
 	}
@@ -317,7 +585,7 @@ func buildDOCXJSONSections(irJSON string) []map[string]any {
 // order. A paragraph is not necessarily a single text unit: office_oxide can
 // place an image between two text runs, and dropping that run would make the
 // downstream DOCX chunker lose both media order and adjacency context.
-func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool) []map[string]any {
+func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool, budget *embeddedMediaBudget) []map[string]any {
 	var text strings.Builder
 	flushText := func() {
 		value := strings.TrimSpace(text.String())
@@ -331,19 +599,12 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 			"doc_type_kwd": "text",
 		}
 		if heading {
-			item["ck_type"] = "heading"
+			item["layout"] = "heading"
 		}
 		sections = append(sections, item)
 	}
 	appendImage := func(data []byte) {
-		if len(data) == 0 {
-			return
-		}
-		sections = append(sections, map[string]any{
-			"text":         "",
-			"image":        base64.StdEncoding.EncodeToString(data),
-			"doc_type_kwd": "image",
-		})
+		sections, _ = appendDOCXImageSection(sections, data, budget, nil)
 	}
 	for _, run := range el.contentRuns() {
 		switch run.Type {
@@ -365,28 +626,77 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 	return sections
 }
 
+func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embeddedMediaBudget, metadata map[string]any) ([]map[string]any, bool) {
+	if len(data) == 0 {
+		return sections, true
+	}
+	included, keepWalking := budget.include(data)
+	if !included && !keepWalking {
+		return sections, false
+	}
+	return appendDOCXImagePayload(sections, data, included, metadata), keepWalking
+}
+
+func appendDOCXListImageSections(sections []map[string]any, list docxIRList, budget *embeddedMediaBudget) []map[string]any {
+	for _, item := range list.Items {
+		sections = appendDOCXIRImageSections(sections, item.Content, budget)
+		if item.Nested != nil {
+			sections = appendDOCXListImageSections(sections, *item.Nested, budget)
+		}
+	}
+	return sections
+}
+
+func appendDOCXIRImageSections(sections []map[string]any, elements []docxIRElement, budget *embeddedMediaBudget) []map[string]any {
+	forEachDOCXIRImage(elements, func(data []byte) bool {
+		var keepWalking bool
+		sections, keepWalking = appendDOCXImageSection(sections, data, budget, nil)
+		return keepWalking
+	})
+	return sections
+}
+
+func appendDOCXImagePayload(sections []map[string]any, data []byte, included bool, metadata map[string]any) []map[string]any {
+	item := map[string]any{
+		"text":         "",
+		"image":        nil,
+		"doc_type_kwd": "image",
+	}
+	if included {
+		item["image"] = base64.StdEncoding.EncodeToString(data)
+	} else {
+		item["media_omitted"] = true
+	}
+	for key, value := range metadata {
+		item[key] = value
+	}
+	return append(sections, item)
+}
+
 // --- figure extraction (used by the cgo parser path) ---
 
 // extractDOCXFiguresFromIR parses the office_oxide IR JSON and
-// returns every embedded image block together with the plain text
-// immediately surrounding it. The context matches what Python's
+// returns the images admitted by budget together with the plain text
+// immediately surrounding each image. The context matches what Python's
 // naive_merge_docx attaches as context_above / context_below on
 // each chunk that carries an image.
 //
 // Reuses the IR already obtained from the doc handle in
 // ParseWithResult so the binary is not opened twice.
-func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
+func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCXFigure {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
+	}
+	if budget == nil {
+		budget = newEmbeddedMediaBudget()
 	}
 
 	var flat []flatBlock
 	for _, sec := range ir.Sections {
 		for _, el := range sec.Elements {
 			if el.Type == "image" {
-				b64 := base64.StdEncoding.EncodeToString(el.Data)
-				flat = append(flat, flatBlock{image: b64})
+				flat = append(flat, flatBlock{imageData: el.Data})
 				continue
 			}
 			if el.Type == "paragraph" || el.Type == "heading" {
@@ -400,10 +710,17 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 
 	var figures []DOCXFigure
 	for i, block := range flat {
-		if block.image == "" {
+		if len(block.imageData) == 0 {
 			continue
 		}
-		fig := DOCXFigure{Image: block.image}
+		included, keepWalking := budget.include(block.imageData)
+		if !included && !keepWalking {
+			break
+		}
+		fig := DOCXFigure{}
+		if included {
+			fig.Image = base64.StdEncoding.EncodeToString(block.imageData)
+		}
 
 		// Collect text above (backward scan up to docxContextWindow
 		// chars, or until another image is hit).
@@ -426,6 +743,9 @@ func extractDOCXFiguresFromIR(irJSON string) []DOCXFigure {
 		}
 
 		figures = append(figures, fig)
+		if !keepWalking {
+			break
+		}
 	}
 	return figures
 }
@@ -447,7 +767,7 @@ func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
 		if len(data) == 0 {
 			return
 		}
-		blocks = append(blocks, flatBlock{image: base64.StdEncoding.EncodeToString(data)})
+		blocks = append(blocks, flatBlock{imageData: data})
 	}
 	for _, run := range el.contentRuns() {
 		switch run.Type {
@@ -474,8 +794,8 @@ func docxInlineFlatBlocks(el docxIRElement) []flatBlock {
 // flatBlock is a flattened IR element used internally to collect
 // text / image context around embedded figures.
 type flatBlock struct {
-	text  string
-	image string // base64-encoded image data (empty for non-image)
+	text      string
+	imageData []byte
 }
 
 const docxContextWindow = 512
@@ -484,7 +804,7 @@ func collectDOCXPrevText(flat []flatBlock, idx, maxLen int) string {
 	var parts []string
 	remaining := maxLen
 	for i := idx - 1; i >= 0 && remaining > 0; i-- {
-		if flat[i].image != "" {
+		if len(flat[i].imageData) > 0 {
 			break // stop at previous image
 		}
 		if flat[i].text == "" {
@@ -512,7 +832,7 @@ func collectDOCXNextText(flat []flatBlock, idx, maxLen int) string {
 	var parts []string
 	remaining := maxLen
 	for i := idx + 1; i < len(flat) && remaining > 0; i++ {
-		if flat[i].image != "" {
+		if len(flat[i].imageData) > 0 {
 			break // stop at next image
 		}
 		if flat[i].text == "" {

@@ -32,6 +32,7 @@ import (
 	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	mdparser "github.com/gomarkdown/markdown/parser"
+	"ragflow/internal/parser/tableutil"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -48,7 +49,6 @@ var ssrfAllowLoopback bool
 type MarkdownParser struct {
 	libType            string
 	ParseMethod        string
-	OutputFormat       string
 	VLM                map[string]any
 	FlattenMediaToText bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
@@ -76,9 +76,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 	if v, ok := setup["vlm"].(map[string]any); ok {
 		p.VLM = v
 	}
@@ -88,15 +85,15 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult implements ParseResultProducer (plan §6.5) and
-// returns a structured Markdown payload that mirrors the Python
-// parser's `output_format == "json"` shape. Each top-level block
+// returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
 // data is resolved and the item carries `doc_type_kwd: "image"` with
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	rawText := string(data)
+	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	rawText := string(decoded)
 	// Render any GFM/HTML table inline as an HTML block before parsing. This
 	// keeps the document as one item per top-level block (the table becomes a
 	// normal text item) instead of collapsing the whole document into a single
@@ -108,16 +105,29 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 	doc := markdownNew().Parse([]byte(rendered))
 
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(doc, &items, p.FlattenMediaToText, p.FetchRemoteImages)
+	mediaBudget := newEmbeddedMediaBudget()
+	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	warnings := mediaBudget.warnings()
+	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+		warnings = append(warnings, "Markdown image processing reached the document time budget")
+	}
+	if unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
+	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 		},
-		JSON: items,
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }
 
@@ -370,26 +380,26 @@ func markdownTableCells(line string) []string {
 //
 // Tables: a GFM/HTML table is rendered inline as a single <table> HTML
 // block by renderMarkdownTablesInlineText and kept as one HTML block.
-// It is emitted as ONE structured item (doc_type_kwd:"table",
-// ck_type:"table") in its original document position — there is no
+// It is emitted as ONE structured item (doc_type_kwd:"table")
+// in its original document position — there is no
 // duplicate doc_type_kwd:"text" copy. The downstream chunker consumes
 // doc_type_kwd:"table" to keep the table whole and attach table context
 // to neighbouring chunks (chunker/token.go). Non-table HTML blocks
-// (<div>, <style>, …) are emitted as ordinary text with no ck_type.
-func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool) {
+// (<div>, <style>, …) are emitted as ordinary text with no layout.
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
+	unresolvedImages := 0
 	for _, child := range doc.GetChildren() {
-		var ckType string
+		var layout string
 		var docTypeKwd string
 		var txt string
 
 		switch n := child.(type) {
 		case *ast.Heading:
 			txt = headingText(n)
-			ckType = "heading"
+			layout = "heading"
 			docTypeKwd = "text"
 		case *ast.Paragraph:
 			txt = leafText(n)
-			ckType = "text"
 			docTypeKwd = "text"
 		case *ast.List:
 			// Python's _markdown keeps one item per list entry, marker included
@@ -403,33 +413,39 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, 
 				*out = append(*out, map[string]any{
 					"text":         entry,
 					"doc_type_kwd": "text",
-					"ck_type":      "list",
+					"layout":       "list",
 				})
 			}
 			continue
 		case *ast.CodeBlock:
 			txt = leafText(n)
-			ckType = "code"
+			layout = "code"
 			docTypeKwd = "text"
 		case *ast.HTMLBlock:
 			// An HTML block is either an inlined table (kept as a single
 			// HTML block thanks to the blank lines renderMarkdownTablesInline
 			// wraps around it) or a plain HTML block such as <div>/<style>.
 			// Only a table is emitted as a structured table item; everything
-			// else is treated as ordinary text (no ck_type). We emit exactly
-			// ONE item (doc_type_kwd:"table"/ck_type:"table") in document
+			// else is treated as ordinary text (no layout). We emit exactly
+			// ONE item (doc_type_kwd:"table") in document
 			// order — no duplicate doc_type_kwd:"text" copy — so the table is
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
 			if isTableHTML(txt) {
-				*out = append(*out, map[string]any{
-					"text":         txt,
+				// Emit the structured TableData contract so the chunker reads
+				// rows directly instead of re-parsing markup. ParseTableHTML
+				// mirrors the legacy chunker extraction. html.Parse is
+				// infallible, so the parse always yields a non-nil TableData
+				// and no legacy HTML `text` is kept.
+				td, _ := tableutil.ParseTableHTML(txt)
+				table := map[string]any{
 					"doc_type_kwd": "table",
-					"ck_type":      "table",
-				})
+					"table":        td,
+				}
+				*out = append(*out, table)
 				continue
 			}
-			// Non-table HTML block: ordinary text, no ck_type.
+			// Non-table HTML block: ordinary text, no layout.
 			docTypeKwd = "text"
 		default:
 			txt = leafText(n)
@@ -443,8 +459,8 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, 
 			"text":         txt,
 			"doc_type_kwd": docTypeKwd,
 		}
-		if ckType != "" {
-			item["ck_type"] = ckType
+		if layout != "" {
+			item["layout"] = layout
 		}
 
 		// Resolve Markdown images from the AST node of THIS block only, so
@@ -457,8 +473,26 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, 
 		if imgURL, ok := findBlockImage(child); ok {
 			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
 			if fetchRemoteImages || !isRemote {
-				if imgData, resolved := resolveImageURL(imgURL); resolved && imgData != "" {
-					item["image"] = imgData
+				switch {
+				case isRemote && ctx.Err() != nil:
+					item["media_omitted"] = true
+				case !budget.reserveItem():
+					item["media_omitted"] = true
+				default:
+					encoded, raw, size, resolved := resolveImageURL(ctx, imgURL)
+					if !resolved {
+						unresolvedImages++
+						break
+					}
+					if !budget.includeReservedSize(size) {
+						item["media_omitted"] = true
+						break
+					}
+					if raw != nil {
+						item["image"] = base64.StdEncoding.EncodeToString(raw)
+					} else {
+						item["image"] = encoded
+					}
 					if !flatten {
 						item["doc_type_kwd"] = "image"
 					}
@@ -468,6 +502,7 @@ func walkMarkdownBlocksWithImages(doc ast.Node, out *[]map[string]any, flatten, 
 
 		*out = append(*out, item)
 	}
+	return unresolvedImages
 }
 
 // isTableHTML reports whether block text is an outer <table> element (the
@@ -502,44 +537,54 @@ func findBlockImage(n ast.Node) (string, bool) {
 	return url, found
 }
 
-// resolveImageURL resolves a Markdown image URL to its base64-encoded data.
+// resolveImageURL resolves a Markdown image URL to an encoded payload or raw
+// bytes plus the image size in bytes.
 // Supports:
-//   - data:image/... URIs → decoded directly
+//   - data:image/... URIs → validated, normalized encoded payload
 //   - http:// / https:// URLs → fetched (with basic SSRF filtering)
 //
 // Local / relative paths are not fetched (security). Returns
-// (base64String, true) on success, ("", false) when resolution fails.
-func resolveImageURL(imageURL string) (string, bool) {
-	if strings.HasPrefix(imageURL, dataURIPrefix) {
+// exactly one of encoded and raw populated on success.
+func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, size int, ok bool) {
+	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
 		// data:image/png;base64,xxxx
 		idx := strings.Index(imageURL, "base64,")
 		if idx < 0 {
-			return "", false
+			idx = strings.Index(strings.ToLower(imageURL), "base64,")
 		}
-		return imageURL[idx+len("base64,"):], true
+		if idx < 0 {
+			return "", nil, 0, false
+		}
+		var decodedSize int64
+		encoded, decodedSize, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		if !ok {
+			return "", nil, 0, false
+		}
+		return encoded, nil, int(decodedSize), true
 	}
 	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
-		b64, err := fetchImageAsBase64(imageURL)
+		raw, err := fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", false
+			return "", nil, 0, false
 		}
-		return b64, true
+		return "", raw, len(raw), true
 	}
 	// Local / relative paths — not fetched for security.
-	return "", false
+	return "", nil, 0, false
 }
 
-// fetchImageAsBase64 fetches an HTTP(S) image URL and returns its
-// content as a base64-encoded string. Local/private addresses and
-// redirects to them are rejected (SSRF guard). Hostnames are resolved
-// once and the validated IP is pinned in a custom DialContext to
-// prevent DNS-rebinding TOCTOU attacks.
-func fetchImageAsBase64(rawURL string) (string, error) {
+// fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses
+// and redirects to them are rejected (SSRF guard). Hostnames are resolved
+// once and the validated IP is pinned in a custom DialContext to prevent
+// DNS-rebinding TOCTOU attacks.
+func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	rawURL = strings.TrimSpace(rawURL)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("markdown: invalid image URL: %w", err)
+		return nil, fmt.Errorf("markdown: invalid image URL: %w", err)
 	}
 
 	// pinned maps hostname (without port) → validated IP. The hostname
@@ -549,7 +594,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	pinned := make(map[string]net.IP)
 
 	pinHost := func(host string) error {
-		ip, err := resolveAndValidateHost(host)
+		ip, err := resolveAndValidateHost(ctx, host)
 		if err != nil {
 			return err
 		}
@@ -564,7 +609,7 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 	}
 
 	if err := pinHost(parsed.Host); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	transport := &http.Transport{
@@ -594,32 +639,36 @@ func fetchImageAsBase64(rawURL string) (string, error) {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("markdown: create image request: %w", err)
+		return nil, fmt.Errorf("markdown: create image request: %w", err)
 	}
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
+		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024)) // 32 MiB cap
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
 	if err != nil {
-		return "", fmt.Errorf("markdown: read image %s: %w", rawURL, err)
+		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	return base64.StdEncoding.EncodeToString(body), nil
+	if len(body) > MaxImagePayloadBytes {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	}
+	if len(body) == 0 {
+		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
+	}
+	return body, nil
 }
 
 // resolveAndValidateHost resolves a host (which may include a port),
 // validates none of its IPs are internal/private, and returns the
 // first public IP for connection pinning.
-func resolveAndValidateHost(host string) (net.IP, error) {
+func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
 	hostname := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		hostname = h
@@ -634,7 +683,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 		return ip, nil
 	}
 
-	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), hostname)
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
 	if err != nil {
 		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
 	}
@@ -653,7 +702,7 @@ func resolveAndValidateHost(host string) (net.IP, error) {
 
 // headingText returns a canonical ATX heading (marker plus inline text).
 // Keeping the marker in the parser payload preserves the Markdown structure
-// for GeneralChunker and downstream LLM prompts; ck_type alone does not carry
+// for GeneralChunker and downstream LLM prompts; layout alone does not carry
 // the heading level.
 func headingText(h *ast.Heading) string {
 	var buf bytes.Buffer

@@ -41,7 +41,7 @@ Click the paperclip icon in the message box, or drag files into the message box,
 
 Text files can be parsed into text for the model to reference. Processing images requires a model with multimodal capabilities.
 
-![Upload files in a conversation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
+![Upload files in a conversation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files_chat.jpg)
 
 Files uploaded in a conversation provide supplemental context only and are not automatically added to a knowledge base. To make a file permanently available for knowledge base retrieval, add it to a knowledge base and complete parsing.
 
@@ -59,11 +59,10 @@ After recording, the system converts the speech to text with the configured spee
 
 Click the paper-airplane icon next to the Chat name to open **Embed into website**. Use this configuration to integrate Chat into an external webpage or business system.
 
-RAGFlow provides HTTP and Python APIs for integration:
+RAGFlow provides an HTTP API for integration:
 
 - [Acquire a RAGFlow API key](../../develop/acquire_ragflow_api_key.md)
 - [HTTP API reference](../../references/http_api_reference.md)
-- [Python API reference](../../references/python_api_reference.md)
 
 You can also embed the created Chat assistant in a third-party webpage with an iframe:
 

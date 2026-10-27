@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ type ValidationError struct{ Message string }
 func (e *ValidationError) Error() string { return e.Message }
 
 var providerOrder = []string{
-	"local", "self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox",
+	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "local",
 }
 
 var providerMetadata = map[string]map[string]any{
@@ -91,19 +90,9 @@ func ValidateConfig(provider string, config map[string]any) error {
 		if endpoint, _ := config["endpoint"].(string); endpoint != "" && !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "https://") {
 			return invalid("invalid endpoint format: %s", endpoint)
 		}
-		poolValue, present := config["executor_manager_pool_size"]
-		if !present {
-			poolValue = config["pool_size"]
-		}
-		if pool, ok := integerValue(poolValue); ok && pool <= 0 {
-			return invalid("pool size must be greater than 0")
-		}
 		timeout := integerOr(config["timeout"], 30)
 		if timeout < 1 || timeout > 600 {
 			return invalid("timeout must be between 1 and 600 seconds")
-		}
-		if retries, ok := integerValue(config["max_retries"]); ok && (retries < 0 || retries > 10) {
-			return invalid("max retries must be between 0 and 10")
 		}
 	case "ssh":
 		if strings.TrimSpace(stringValue(config["host"])) == "" {
@@ -252,25 +241,10 @@ func env(key, fallback string) string {
 	return fallback
 }
 
-func envInt(key string, fallback int64) int64 {
-	value, err := strconv.ParseInt(env(key, strconv.FormatInt(fallback, 10)), 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return value
-}
-
 func selfManagedSchema() map[string]any {
 	s := staticSchema("self_managed")
-	s["executor_manager_image"].(map[string]any)["default"] = env("SANDBOX_EXECUTOR_MANAGER_IMAGE", "infiniflow/sandbox-executor-manager:latest")
-	s["executor_manager_pool_size"].(map[string]any)["default"] = envInt("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", 3)
 	s["base_python_image"].(map[string]any)["default"] = env("SANDBOX_BASE_PYTHON_IMAGE", "infiniflow/sandbox-base-python:latest")
 	s["base_nodejs_image"].(map[string]any)["default"] = env("SANDBOX_BASE_NODEJS_IMAGE", "infiniflow/sandbox-base-nodejs:latest")
-	s["executor_manager_port"].(map[string]any)["default"] = envInt("SANDBOX_EXECUTOR_MANAGER_PORT", 9385)
-	s["enable_seccomp"].(map[string]any)["default"] = strings.EqualFold(env("SANDBOX_ENABLE_SECCOMP", "false"), "true")
-	s["max_memory"].(map[string]any)["default"] = env("SANDBOX_MAX_MEMORY", "256m")
-	s["container_network"].(map[string]any)["default"] = env("SANDBOX_CONTAINER_NETWORK", "none")
-	s["sandbox_timeout"].(map[string]any)["default"] = env("SANDBOX_TIMEOUT", "10s")
 	return cloneMap(s)
 }
 
@@ -289,18 +263,11 @@ func staticSchema(provider string) map[string]any {
 		}
 	case "self_managed":
 		return map[string]any{
-			"endpoint":                   fieldWith("string", true, "Executor Manager Endpoint", "placeholder", "http://sandbox-executor-manager:9385", "default", "http://sandbox-executor-manager:9385", "description", "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.", "scope", "runtime", "readonly", false),
-			"api_token":                  fieldWith("string", false, "Executor Manager API Token", "secret", true, "placeholder", "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "default", "", "description", "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.", "scope", "runtime", "readonly", false),
-			"timeout":                    limitsScoped("integer", false, "Request Timeout (seconds)", 30, 5, 300, "Maximum request time for a single code execution call. Unit: seconds.", "runtime", false),
-			"executor_manager_image":     fieldWith("string", false, "Executor Manager Image", "default", "infiniflow/sandbox-executor-manager:latest", "description", "Docker image used by sandbox-executor-manager.", "scope", "deployment", "readonly", true),
-			"executor_manager_pool_size": limitsScoped("integer", false, "Container Pool Size", int64(3), 1, 100, "Container pool size used by sandbox-executor-manager.", "deployment", true),
-			"base_python_image":          fieldWith("string", false, "Base Python Image", "default", "infiniflow/sandbox-base-python:latest", "description", "Python runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
-			"base_nodejs_image":          fieldWith("string", false, "Base Node.js Image", "default", "infiniflow/sandbox-base-nodejs:latest", "description", "Node.js runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
-			"executor_manager_port":      limitsScoped("integer", false, "Executor Manager Port", int64(9385), 1, 65535, "Host port exposed by sandbox-executor-manager.", "deployment", true),
-			"enable_seccomp":             fieldWith("boolean", false, "Enable Seccomp", "default", false, "description", "Whether sandbox-executor-manager starts containers with seccomp enabled.", "scope", "deployment", "readonly", true),
-			"max_memory":                 fieldWith("string", false, "Max Memory", "default", "256m", "description", "Memory limit applied to each sandbox container. Common format: 256m or 1g.", "scope", "deployment", "readonly", true),
-			"container_network":          fieldWith("string", false, "Container Network", "default", "none", "description", "Docker network attached to sandbox containers. Defaults to 'none' (no external network access); set to 'bridge' only if sandboxed code needs outbound network.", "scope", "deployment", "readonly", true),
-			"sandbox_timeout":            fieldWith("string", false, "Sandbox Timeout", "default", "10s", "description", "Executor-manager container timeout for each sandbox run. Common format: 10s or 1m.", "scope", "deployment", "readonly", true),
+			"endpoint":          fieldWith("string", true, "Executor Manager Endpoint", "placeholder", "http://sandbox-executor-manager:9385", "default", "http://sandbox-executor-manager:9385", "description", "HTTP endpoint used by RAGFlow to call sandbox-executor-manager.", "scope", "runtime", "readonly", false),
+			"api_token":         fieldWith("string", false, "Executor Manager API Token", "secret", true, "placeholder", "Optional; defaults to SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "default", "", "description", "Shared secret authenticating RAGFlow to sandbox-executor-manager. Must match SANDBOX_EXECUTOR_MANAGER_API_TOKEN on the executor-manager side.", "scope", "runtime", "readonly", false),
+			"timeout":           limitsScoped("integer", false, "Request Timeout (seconds)", 30, 5, 300, "Maximum request time for a single code execution call. Unit: seconds.", "runtime", false),
+			"base_python_image": fieldWith("string", false, "Base Python Image", "default", "infiniflow/sandbox-base-python:latest", "description", "Python runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
+			"base_nodejs_image": fieldWith("string", false, "Base Node.js Image", "default", "infiniflow/sandbox-base-nodejs:latest", "description", "Node.js runtime image used by executor-managed containers.", "scope", "deployment", "readonly", true),
 		}
 	case "ssh":
 		return sshSchema()

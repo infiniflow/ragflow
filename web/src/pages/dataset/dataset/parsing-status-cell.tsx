@@ -13,9 +13,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,7 +25,9 @@ import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import {
+  getDocumentParserLabel,
   getDocumentRunningStatus,
+  isAutoMetadataEnabled,
   isDocumentProcessing,
   isDocumentStopping,
 } from './utils';
@@ -72,7 +74,7 @@ export function ParseDropdownButton({
   record: IDocumentInfo;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
-  const { pipeline_id, pipeline_name, chunk_method } = record;
+  const parserLabel = getDocumentParserLabel(record);
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
@@ -81,27 +83,22 @@ export function ParseDropdownButton({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div>
+        <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="static" size="auto" className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
+              <Button variant="static" size="auto">
+                {parserLabel}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
-              </p>
+              <p>{parserLabel}</p>
             </TooltipContent>
           </Tooltip>
+          {record.pipeline_version_outdated ? (
+            <RAGFlowTooltip tooltip={t('flow.version.outdated')}>
+              <span className="text-destructive cursor-help font-bold">!</span>
+            </RAGFlowTooltip>
+          ) : null}
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
@@ -123,7 +120,6 @@ export function ParsingStatusCell({
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const { progress, chunk_count, id } = record;
-  // Go reports state via ingestion_status (run is gone); Python keeps run.
   // Resolve one effective status for the icon, state attribute and labels.
   const effectiveRun = getDocumentRunningStatus(record);
   const operationIcon = IconMap[effectiveRun];
@@ -135,7 +131,6 @@ export function ParsingStatusCell({
     showModal: showReparseDialogModal,
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id, showChangeParserModal);
-  const isGo = useIsGoBackend();
   const isRunning = isDocumentProcessing(record);
   const isQueued = effectiveRun === RunningStatus.QUEUED;
   const isStopping = isDocumentStopping(record);
@@ -148,15 +143,12 @@ export function ParsingStatusCell({
     handleRunDocumentByIds(record, isRunning, option);
   };
 
+  const autoMetadataEnabled = isAutoMetadataEnabled(record?.parser_config);
+
   // The confirmation only offers real choices when there are existing chunks to
   // drop or auto-metadata to re-apply. Otherwise, and always when cancelling a
-  // run, the action fires straight away. Go always drops existing chunks
-  // server-side, so its dialog shows the delete notice locked on and only the
-  // auto-metadata choice is Python-only.
-  const needsParseConfirm =
-    !isRunning &&
-    (!isZeroChunk ||
-      (!isGo && Boolean(record?.parser_config?.enable_metadata)));
+  // run, the action fires straight away.
+  const needsParseConfirm = !isRunning && (!isZeroChunk || autoMetadataEnabled);
 
   const handleParseClick = () => {
     if (needsParseConfirm) {
@@ -258,7 +250,7 @@ export function ParsingStatusCell({
                 </div>
               )}
             </div>
-          ) : isGo && isRunLoading ? (
+          ) : isRunLoading ? (
             <Button size="auto" variant="static" disabled>
               <Loader2 className="size-[1em] animate-spin" />
             </Button>
@@ -280,10 +272,9 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          enable_metadata={record?.parser_config?.enable_metadata}
-          forceDelete={isGo}
-          handleOperationIconClick={handleOperationIconClick}
           chunk_num={chunk_count}
+          enable_metadata={autoMetadataEnabled}
+          handleOperationIconClick={handleOperationIconClick}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}
         ></ReparseDialog>

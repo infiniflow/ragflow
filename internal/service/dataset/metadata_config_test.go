@@ -59,30 +59,30 @@ func insertDatasetMetadataConfigKB(t *testing.T, datasetID, tenantID string) {
 		CreatedBy:    tenantID,
 		Permission:   string(entity.TenantPermissionMe),
 		ParserID:     "naive",
-		ParserConfig: entity.JSONMap{},
+		ParserConfig: entity.JSONMap{"Extractor:AutoExtractDefault": map[string]any{}},
 		Status:       sptr("1"),
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func insertDatasetMetadataConfigTeamMember(t *testing.T, userID, tenantID string) {
 	t.Helper()
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        userID + "-" + tenantID,
-		UserID:    userID,
-		TenantID:  tenantID,
-		Role:      "normal",
-		InvitedBy: tenantID,
-		Status:    sptr("1"),
-	}).Error; err != nil {
-		t.Fatalf("insert user tenant: %v", err)
-	}
+	ensureDatasetTestMembership(t, userID, tenantID, "normal")
 }
 
 func insertDatasetMetadataConfigDoc(t *testing.T, docID, datasetID string, parserConfig entity.JSONMap) {
 	t.Helper()
+	if parserConfig == nil {
+		parserConfig = entity.JSONMap{}
+	}
+	// A realistic document parser_config always carries an Extractor node (it
+	// derives from a DSL), so ensure one is present for the metadata-update path.
+	if _, ok := parserConfig["Extractor:AutoExtractDefault"].(map[string]any); !ok {
+		parserConfig["Extractor:AutoExtractDefault"] = map[string]any{}
+	}
 	doc := &entity.Document{
 		ID:           docID,
 		KbID:         datasetID,
@@ -106,7 +106,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{"pages": []interface{}{1, 2}})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	metadata := map[string]interface{}{"author": "Alice", "year": float64(2026)}
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
@@ -128,9 +128,13 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 		t.Fatalf("existing parser_config fields should be preserved: %#v", doc.ParserConfig)
 	}
 
-	updatedMetadata, ok := doc.ParserConfig["metadata"].(map[string]interface{})
+	docExtractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected metadata map, got %#v", doc.ParserConfig["metadata"])
+		t.Fatalf("expected Extractor:AutoExtractDefault node, got %#v", doc.ParserConfig)
+	}
+	updatedMetadata, ok := docExtractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected metadata map, got %#v", docExtractor["metadata"])
 	}
 	if updatedMetadata["author"] != "Alice" || updatedMetadata["year"] != float64(2026) {
 		t.Fatalf("unexpected metadata: %#v", updatedMetadata)
@@ -140,7 +144,11 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to fetch persisted document: %v", err)
 	}
-	if persisted.ParserConfig["metadata"] == nil {
+	persistedExtractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metadata was not persisted: %#v", persisted.ParserConfig)
+	}
+	if persistedExtractor["metadata"] == nil {
 		t.Fatalf("metadata was not persisted: %#v", persisted.ParserConfig)
 	}
 }
@@ -151,7 +159,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRequiresMetadata(t *testing.T
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -174,9 +182,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
+	ensureDatasetTestMembership(t, "user-1", "owner-1", "normal")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -187,10 +196,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeForbidden {
+		t.Fatalf("expected forbidden code, got %d", code)
 	}
-	if err.Error() != "you don't own the dataset" {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -206,9 +215,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetMetadataConfigTeamMember(t, "user-1", "owner-1")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "read", "write")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -222,7 +232,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T
 	if code != common.CodeSuccess {
 		t.Fatalf("expected success code, got %d", code)
 	}
-	if doc.ParserConfig["metadata"] == nil {
+	if doc.ParserConfig["Extractor:AutoExtractDefault"] == nil {
 		t.Fatalf("metadata was not updated: %#v", doc.ParserConfig)
 	}
 }
@@ -253,7 +263,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -377,9 +387,16 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	if _, ok := persisted.ParserConfig["enable_metadata"]; ok {
 		t.Fatalf("enable_metadata should be absent, got %#v", persisted.ParserConfig["enable_metadata"])
 	}
-	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	if _, ok := persisted.ParserConfig["metadata"]; ok {
+		t.Fatalf("top-level flat metadata should be absent, got %#v", persisted.ParserConfig["metadata"])
+	}
+	extractor, ok = persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected modular metadata map, got %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("expected extractor component params, got %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	metaObj, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata map under extractor node, got %#v", extractor["metadata"])
 	}
 	if enabled, ok := metaObj["enabled"].(bool); !ok || enabled {
 		t.Fatalf("expected modular metadata.enabled == false after emptying fields, got %#v", metaObj["enabled"])
@@ -392,7 +409,7 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 	insertCreateDatasetTenant(t, "tenant-1")
 	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -445,7 +462,7 @@ func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
 	// kb-1 points at a tenant that does not exist, so tenantDAO.GetByID fails.
 	insertDatasetMetadataConfigKB(t, "kb-1", "missing-tenant")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -475,7 +492,7 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
 
 	enabled := true
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -496,9 +513,13 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
-	metaObj, ok := persisted.ParserConfig["metadata"].(map[string]interface{})
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected modular metadata, got %#v", persisted.ParserConfig["metadata"])
+		t.Fatalf("expected Extractor:AutoExtractDefault node, got %#v", persisted.ParserConfig)
+	}
+	metaObj, ok := extractor["metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected modular metadata, got %#v", extractor["metadata"])
 	}
 	if persistedEnabled, _ := metaObj["enabled"].(bool); !persistedEnabled {
 		t.Fatalf("expected metadata.enabled=true, got %#v", metaObj["enabled"])
@@ -510,7 +531,7 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetMetadataConfigKB(t, "kb-ok", "owner-1")
 	insertDatasetMetadataConfigDoc(t, "doc-ok", "kb-ok", entity.JSONMap{})
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "owner-1", "owner-1")
 
 	// Missing KB -> database layer should surface as CodeServerError / not found
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
@@ -524,8 +545,9 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 	// KB exists but tenant lookup fails (kb.TenantID points to missing tenant)
 	insertDatasetMetadataConfigKB(t, "kb-bad-tenant", "missing-tenant")
 	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
+	missingTenantCtx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
 	_, code, err = testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
-		ctx, "missing-tenant", "kb-bad-tenant", "doc2",
+		missingTenantCtx, "missing-tenant", "kb-bad-tenant", "doc2",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
 	if code != common.CodeServerError || err == nil {

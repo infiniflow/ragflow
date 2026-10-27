@@ -40,8 +40,8 @@ func NewStatsService() *StatsService {
 	}
 }
 
-// StatsResponse matches Python GET /api/v1/system/stats response data.
-type StatsResponse struct {
+// ChatStatsResponse matches Python GET /api/v1/system/stats response data.
+type ChatStatsResponse struct {
 	PV      []StatPoint `json:"pv"`
 	UV      []StatPoint `json:"uv"`
 	Speed   []StatPoint `json:"speed"`
@@ -50,8 +50,8 @@ type StatsResponse struct {
 	ThumbUp []StatPoint `json:"thumb_up"`
 }
 
-// GetStats returns daily API conversation statistics for the first tenant of a user.
-func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
+// GetChatStats returns daily API conversation statistics for the first tenant of a user.
+func (s *StatsService) GetChatStats(ctx context.Context, userID, fromDate, toDate string, source *string) (*ChatStatsResponse, error) {
 	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil || len(tenants) == 0 {
 		return nil, ErrTenantNotFound
@@ -62,7 +62,7 @@ func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate st
 		return nil, err
 	}
 
-	response := &StatsResponse{
+	response := &ChatStatsResponse{
 		PV:      make([]StatPoint, 0, len(rows)),
 		UV:      make([]StatPoint, 0, len(rows)),
 		Speed:   make([]StatPoint, 0, len(rows)),

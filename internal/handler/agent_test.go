@@ -35,6 +35,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
@@ -73,11 +75,17 @@ func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Conte
 	c.Request = httptest.NewRequest(method, path, nil)
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "user-1",
+	}))
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
 
 	return c, w, db
 }
@@ -157,12 +165,17 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/canvas-b/versions", nil)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-a", "user-a"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-a", TenantID: "user-a"}))
 	c.Set("user", &entity.User{ID: "user-a"})
 	c.Set("user_id", "user-a")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-b"}}
 
 	// Canvas owned by user-b
-	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
+	tenantID := "user-a"
+	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", TenantID: &tenantID, Title: sptr("Not Yours")})
 
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
@@ -191,6 +204,10 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/non-existent/versions", nil)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "non-existent"}}
@@ -308,6 +325,75 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	if code != float64(common.CodeOperatingError) {
 		t.Errorf("expected access-denied code %d, got %v", common.CodeOperatingError, code)
 	}
+}
+
+func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{
+		"user_id":"other-user",
+		"title":"Agent",
+		"dsl":{}
+	}`))
+	seedAgentCreationContext(t, c, db)
+
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.CreateAgent(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("CreateAgent status = %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var created entity.UserCanvas
+	if err := db.Where("title = ?", "Agent").First(&created).Error; err != nil {
+		t.Fatalf("load created agent: %v", err)
+	}
+	if created.UserID != "user-1" {
+		t.Fatalf("created agent owner = %q, want authenticated user user-1", created.UserID)
+	}
+	if created.EffectiveTenantID() == "" {
+		t.Fatal("created agent has no tenant_id")
+	}
+}
+
+func seedAgentCreationContext(t *testing.T, c *gin.Context, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("migrate tenant table: %v", err)
+	}
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Status: &active}).Error; err != nil {
+		t.Fatalf("create active tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "membership-1", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleOwner), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create active tenant membership: %v", err)
+	}
+	for table, statement := range map[string]string{
+		"permission": `CREATE TABLE permission (
+			id TEXT PRIMARY KEY, member_id TEXT, group_id TEXT, tenant_id TEXT NOT NULL,
+			resource_type TEXT NOT NULL, resource_id TEXT, permission INTEGER NOT NULL DEFAULT 0,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+		"permission_change_log": `CREATE TABLE permission_change_log (
+			id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, operator_id TEXT NOT NULL,
+			target_type TEXT NOT NULL, target_id TEXT NOT NULL, resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL, old_permission INTEGER NOT NULL DEFAULT 0,
+			new_permission INTEGER NOT NULL DEFAULT 0, action_type TEXT NOT NULL, reason TEXT,
+			event_type TEXT NOT NULL DEFAULT '', actor_user_id TEXT,
+			scope_type TEXT NOT NULL DEFAULT 'tenant', before_data TEXT, after_data TEXT,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+	} {
+		if db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create Agent permission test table: %v", err)
+		}
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
 }
 
 // sptr returns a pointer to the given string.
@@ -441,7 +527,7 @@ type fullFakeAgentService struct {
 func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
-func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+func (f *fullFakeAgentService) CreateAgent(context.Context, string, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
 	return nil, common.CodeArgumentError, nil
 }
 func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entity.UserCanvas, error) {
@@ -762,6 +848,7 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{
 		{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"hi back","reference":[]}`},
+		{Type: "error", MessageID: "msg-1", SessionID: "sess-1", Data: `{"message":"rerank model is unavailable","kind":"user"}`},
 		{Type: "done", Data: ""},
 	}}
 	h := &AgentHandler{chatRunner: runner}
@@ -775,8 +862,12 @@ func TestAgentChatCompletions_StreamSetsContentType(t *testing.T) {
 		!strings.Contains(body, `"message_id":"msg-1"`) ||
 		!strings.Contains(body, `"task_id":"sess-1"`) ||
 		!strings.Contains(body, `"session_id":"sess-1"`) ||
-		!strings.Contains(body, `"content":"hi back"`) {
+		!strings.Contains(body, `"content":"hi back"`) ||
+		!strings.Contains(body, `"content":"rerank model is unavailable"`) {
 		t.Errorf("body should contain flat agent event with content, got %q", body)
+	}
+	if strings.Contains(body, `"code":500`) {
+		t.Errorf("runner error should be rendered as conversation content, got %q", body)
 	}
 	if !strings.HasSuffix(body, "data:[DONE]\n\n") {
 		t.Errorf("body should end with [DONE] terminator, got %q", body)
@@ -898,7 +989,7 @@ func TestAgentChatCompletions_DefaultBranchNonStreaming(t *testing.T) {
 	}
 }
 
-func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
+func TestAgentChatCompletions_NonStreamingReturnsRunnerErrorAsMessage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -915,14 +1006,19 @@ func TestAgentChatCompletions_NonStreamingReturnsRunnerError(t *testing.T) {
 	(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
 
 	var response struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
+		Code int `json:"code"`
+		Data struct {
+			Event string `json:"event"`
+			Data  struct {
+				Content string `json:"content"`
+			} `json:"data"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if response.Code != int(common.CodeServerError) || response.Message != "Can't find variable: 'Agent:Deleted@content'" {
-		t.Fatalf("response = %+v, want runner error", response)
+	if response.Code != int(common.CodeSuccess) || response.Data.Event != "message" || response.Data.Data.Content != "Can't find variable: 'Agent:Deleted@content'" {
+		t.Fatalf("response = %+v, want runner error as conversation message", response)
 	}
 }
 

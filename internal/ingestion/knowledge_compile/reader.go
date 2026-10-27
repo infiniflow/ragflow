@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -28,6 +29,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // Reader finds the compiled products needed for incremental dedup without
@@ -77,24 +80,29 @@ type documentWikiPageReader interface {
 //
 // The bool reports whether the database is configured. Offline/unit readers do
 // not have document status available and retain the previous engine-only behavior.
-func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, error) {
-	if kcDB == nil {
+func enabledDocumentIDs(ctx context.Context, db *gorm.DB, datasetID string) ([]string, bool, error) {
+	if db == nil {
 		return nil, false, nil
 	}
 	var ids []string
-	err := kcDB.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Model(&entity.Document{}).
 		Where("kb_id = ? AND (status IS NULL OR status <> ?)", datasetID, "0").
 		Pluck("id", &ids).Error
 	return ids, true, err
 }
 
-// engineReader loads the per-document compiled products through the global
-// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
-// process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
-// the storage schema, so this reader is not backend-specific.
+// engineReader loads the per-document compiled products through the injected
+// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). The engine is wired by
+// the server assembly point (see WithDocEngine); the engine abstraction owns
+// the storage schema, so this reader is not backend-specific. A reader without
+// an engine fails fast instead of silently reporting "no products".
 type engineReader struct {
 	eng engine.DocEngine
+	// db is the injected MySQL handle backing enabledDocumentIDs. It is wired by
+	// WithStorage; a zero-value reader has a nil db and enabledDocumentIDs
+	// reports "status unavailable" (the previous engine-only behavior).
+	db *gorm.DB
 }
 
 // compiledSelectFields are the columns needed to reconstruct a Product. Every
@@ -110,10 +118,10 @@ var compiledSelectFields = []string{
 	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
-	// under knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd
+	// under type_kwd (structure: graph/entity/relation) / raptor_kwd
 	// (tree: root/summary). Without these the reader cannot restore Meta["kind"]
 	// and the dataset-nav dispatch would skip structure/tree products (B2).
-	"knowledge_graph_kwd", "raptor_kwd",
+	"type_kwd", "knowledge_graph_kwd", "raptor_kwd",
 	// mention_count_int round-trips the entity mention count for reprojection.
 	// (relation type lives in the content_with_weight payload, matching Python —
 	// there is NO relation_type_kwd column.)
@@ -129,10 +137,11 @@ var compiledSelectFields = []string{
 // LoadDocProducts reconstructs products with an empty Vector, so merged rows
 // carry no embedding and the dataset-level KNN dedup (SearchSimilar on
 // available_int=1 + q_<dim>_vec) can never match an existing wiki page — the
-// graph keeps accumulating cross-run duplicates. ES accepts the wildcard in
-// both _source includes and the fields parameter.
+// graph keeps accumulating cross-run duplicates. ES takes the wildcard verbatim
+// in _source; the Infinity engine expands it against the table's real columns
+// because Infinity's SQL binder rejects a partial wildcard (3013).
 var wikiSelectFields = []string{
-	"page_type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
+	"page_type_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
 	"entity_names_kwd", "summary_with_weight",
 	"related_kb_pages_kwd", "outlinks_kwd", "depth_int",
 	"q_*_vec",
@@ -148,13 +157,10 @@ const loadDocProductsLimit = 5000
 // results are paged so a document with more than loadDocProductsLimit rows is
 // not silently truncated.
 func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	var out []kccommon.Product
 	offset := 0
 	for {
@@ -171,7 +177,7 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 		}
 		for _, c := range res.Chunks {
 			// Only compiled products carry compile_kwd; skip ordinary source chunks.
-			if _, ok := c["compile_kwd"]; !ok {
+			if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
 				continue
 			}
 			// Reverse-map the row's compile_kwd; reject dirty/unknown kinds
@@ -211,11 +217,11 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 }
 
 func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return kccommon.Product{}, errEngineNotConfigured
 	}
-	if eng == nil || id == "" {
+	eng := r.eng
+	if id == "" {
 		return kccommon.Product{}, nil
 	}
 	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
@@ -238,14 +244,11 @@ func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id stri
 }
 
 func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
-	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage}
+	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
 		res, err := eng.Search(ctx, &types.SearchRequest{
@@ -274,14 +277,14 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 }
 
 func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
 	}
-	if eng == nil || len(slugs) == 0 {
+	eng := r.eng
+	if len(slugs) == 0 {
 		return nil, nil
 	}
-	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, r.db, kb)
 	if err != nil {
 		return nil, fmt.Errorf("load enabled Wiki documents: %w", err)
 	}
@@ -290,7 +293,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	}
 	filter := map[string]interface{}{
 		"available_int": 0,
-		"compile_kwd":   compileKwdWikiPage,
+		"type_kwd":      compileKwdWikiPage,
 		"slug_kwd":      slugs,
 	}
 	if statusAvailable {
@@ -351,25 +354,37 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if err != nil || mapped != expect {
 		return kccommon.Product{}, false
 	}
-	// Round-trip the raw compile_kwd (the inferred compile type / autotype:
-	// list/set/hypergraph/timeline/mindmap/…) so the dataset-level merge can
-	// stamp the SAME value on the dataset row as the doc row (Python _do_build
-	// carries the doc row's compile_kwd through verbatim). Without this, the
-	// merge falls back to compileKwdForVariant ("structure"/"mindmap"), which
-	// diverges from the doc row's autotype ("hypergraph"/"timeline").
+	// Preserve compilation metadata for the dataset merge.
 	merged := isAvailable(c["available_int"])
 
 	meta := map[string]any{}
-	// Preserve the raw compile_kwd (autotype) for the dataset merge (see the
-	// round-trip note above). A non-string scalar from the engine is normalized
-	// via asString, matching the variant reverse-map at the top of this func.
+	var payload map[string]any
+	if expect == kccommon.VariantStructure || expect == kccommon.VariantMindmap {
+		if err := json.Unmarshal([]byte(content), &payload); err != nil {
+			if strings.HasPrefix(strings.TrimSpace(content), "{") {
+				common.Warn("knowledge_compile: failed to decode structure payload",
+					zap.String("row_id", id), zap.String("compile_kwd", variant), zap.Error(err))
+			}
+			payload = nil
+		}
+	}
 	if v := asString(c["compile_kwd"]); v != "" {
 		meta["compile_kwd"] = v
 	}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
-		meta["name"] = v
+		name := v
+		for _, key := range []string{"name", "text", "term", "title"} {
+			if extracted, ok := payload[key].(string); ok && extracted != "" && normalizedStructureEntityName(extracted) == normalizedStructureEntityName(v) {
+				name = strings.TrimSpace(extracted)
+				break
+			}
+		}
+		meta["name"] = name
 	}
 	if v, ok := c["entity_type_kwd"].(string); ok && v != "" {
+		if expect == kccommon.VariantMindmap && v == "mindmap" {
+			v = "mind_map"
+		}
 		meta["entity_type"] = v
 	}
 	if v, ok := c["from_entity_kwd"].(string); ok && v != "" {
@@ -379,6 +394,11 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["to_entity_kwd"].(string); ok && v != "" {
 		meta["to"] = v
 		meta["kind"] = "relation"
+	}
+	if metaString(meta, "kind") == "relation" {
+		if v, ok := payload["type"].(string); ok && v != "" {
+			meta["relation_type"] = v
+		}
 	}
 	if v, ok := metaInt(c, "mention_count_int"); ok {
 		meta["mention_count"] = v
@@ -390,7 +410,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	}
 	// Restore wiki page fields so the merged product (and hence the dataset-level
 	// merged row) retains the metadata the artifact API and page renderers read.
-	if v, ok := c["page_type_kwd"].(string); ok && v != "" {
+	if v := types.WikiPageCategory(c); v != "" {
 		meta["page_type"] = v
 	}
 	if v, ok := c["topic_kwd"].(string); ok && v != "" {
@@ -420,12 +440,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		}
 	}
 	// Restore the structure/tree product kind. The component stores it under
-	// knowledge_graph_kwd (structure: graph/entity/relation) / raptor_kwd (tree:
+	// type_kwd (structure: graph/entity/relation) / raptor_kwd (tree:
 	// root/summary), and the dataset-nav dispatch (B2) keys off Meta["kind"] to
 	// pick the root/graph summary. Prefer these over the generic entity default.
 	// Use asString (not a bare type assertion): the engine may return a
 	// list-wrapped keyword column (review Major).
-	if v := asString(c["knowledge_graph_kwd"]); v != "" {
+	if v := asString(c["type_kwd"]); v != "" {
+		meta["kind"] = v
+	} else if v := asString(c["knowledge_graph_kwd"]); v != "" {
 		meta["kind"] = v
 	} else if v := asString(c["raptor_kwd"]); v != "" {
 		meta["kind"] = v
@@ -434,12 +456,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 			meta["kind"] = "entity"
 		}
 	}
-	// compile_kwd IS the page/section discriminator (there is no kind column):
-	// wiki_page -> "page", wiki_section -> "section". Without it the
-	// processBatch "Meta.kind==page" filter would drop every wiki page.
-	if variant == compileKwdWikiPage {
+	// Page and section roles share the wiki compilation kind.
+	if types.CompilationRowType(c) == compileKwdWikiPage {
 		meta["kind"] = "page"
-	} else if variant == compileKwdWikiSection {
+	} else if types.CompilationRowType(c) == compileKwdWikiSection {
 		meta["kind"] = "section"
 	}
 	if v := asString(c["plan_group_kwd"]); v != "" {
@@ -466,10 +486,8 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	}
 
 	vec, _ := kccommon.VectorFromChunkMap(c, 0)
-	// Restore the authoritative template kind (compilation_template_kind_kwd)
-	// so callers (e.g. RebuildDataset's variant recovery, B1a) can map it back
-	// via KindToVariant instead of re-deriving from the ambiguous compile_kwd.
-	kind := asString(c["compilation_template_kind_kwd"])
+	// Restore the producing compilation kind for routing and merging.
+	kind := types.CompilationKind(c)
 	// Restore the compilation template id (from compilation_template_ids) so the
 	// dataset merge can bucket structure rows per template and read/delete paths
 	// can filter by it. A row should carry exactly one template id; if it carries
@@ -496,13 +514,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 // SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
 // compile_kwd=variant) of the KB and returns the closest hit above minScore.
 func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
+	if r.eng == nil {
+		return kccommon.Product{}, 0, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return kccommon.Product{}, 0, nil
-	}
 	if topN <= 0 {
 		topN = 1
 	}
@@ -513,7 +528,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		Limit:      topN,
 		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight",
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
-			"source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd",
+			"source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd", "type_kwd",
 			"create_timestamp_flt", "create_time"},
 			wikiSelectFields...),
 		Filter: map[string]interface{}{
@@ -530,24 +545,17 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 			},
 		},
 	}
+	if variant == kccommon.VariantWiki {
+		req.Filter["type_kwd"] = compileKwdWikiPage
+	}
 	res, err := eng.Search(ctx, req)
 	if err != nil {
 		return kccommon.Product{}, 0, err
 	}
-	// The KNN Filter scopes compile_kwd, but a foreign/legacy row that slipped
-	// past it must not poison the merge candidate. Reject by the raw compile_kwd
-	// (wiki_page vs wiki_section are distinct keywords even though both map to
-	// VariantWiki); the page/section distinction is resolved downstream by
-	// Meta.kind (see productFromChunkMap).
+	// Verify the row family and role even when a backend returns foreign rows.
 	expectKwd := compileKwdForVariant(variant)
 	for _, c := range res.Chunks {
-		// The KNN Filter already scopes compile_kwd, but a foreign/legacy row that
-		// slipped past it must not poison the merge candidate. Reject by the
-		// reverse-mapped variant (the dirty-row contract): productFromChunkMap
-		// validates KwdToVariant(c) == variant and drops dirty/unknown kinds. The
-		// raw-keyword check below is a fast pre-filter before the full product
-		// reconstruction.
-		if asString(c["compile_kwd"]) != expectKwd {
+		if types.CompilationKind(c) != expectKwd || (variant == kccommon.VariantWiki && types.CompilationRowType(c) != compileKwdWikiPage) {
 			continue
 		}
 		p, ok := productFromChunkMap(c, tenant, variant)

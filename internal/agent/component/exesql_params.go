@@ -19,38 +19,23 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	agenttool "ragflow/internal/agent/tool"
 )
 
-// exeSQLDBTypes is the whitelist enforced at save time for an ExeSQL
-// component's db_type. It mirrors Python ExeSQLParam.check
-// (agent/tools/exesql.py), where ExeSQLParam defaults db_type to "mysql"
-// when the DSL omits it.
+// exeSQLDBTypes is the supported persisted connection type list.
 var exeSQLDBTypes = []string{"mysql", "postgres", "mariadb", "mssql", "IBM DB2", "trino", "oceanbase"}
 
-// validateExeSQLParams enforces the required connection settings of an
-// ExeSQL component at save time. The Go agent PUT path validates DSL
-// component parameters through validateDynamicParams; Python performs the
-// same checks via Canvas.validate_component_parameters ->
-// ExeSQLParam.check. Without them a canvas can be persisted with a broken
-// DB tool that only fails at runtime.
-func validateExeSQLParams(params map[string]any) error {
+// validateExeSQLParams allows incomplete drafts but retains type, numeric, and security checks.
+func validateExeSQLParams(params map[string]any, draft bool) error {
 	dbType, explicit := params["db_type"]
 	if !explicit {
-		// Python default when the DSL omits db_type.
+		// Runtime defaults to mysql when db_type is absent.
 		dbType = "mysql"
 	}
 	dbTypeString, ok := dbType.(string)
-	if !ok || !exeSQLDBTypeAllowed(dbTypeString) {
+	if !ok || (!exeSQLDBTypeAllowed(dbTypeString) && !(draft && strings.TrimSpace(dbTypeString) == "")) {
 		return fmt.Errorf("Choose DB type %v is not supported, it should be in %v", dbType, exeSQLDBTypes)
-	}
-
-	// Templates ship ExeSQL nodes whose connection fields are all blank (see
-	// agent/templates/text2sql_data_expert.json): the node is an unconfigured
-	// scaffold the user fills in on the canvas, not a broken configuration.
-	// Requiring the fields here would make such a canvas impossible to create
-	// or save, so only a node the user started configuring is checked.
-	if !exeSQLConnectionStarted(params) {
-		return nil
 	}
 
 	// Connection identity fields have no Python defaults and must be present.
@@ -62,8 +47,13 @@ func validateExeSQLParams(params map[string]any) error {
 		{"username", "database username"},
 		{"host", "IP Address"},
 	} {
-		if !isNonBlankString(params[field.key]) {
-			return fmt.Errorf("%s does not support empty value", field.desc)
+		if value, present := params[field.key]; present {
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("%s must be a string", field.desc)
+			}
+		}
+		if !draft && !isNonBlankString(params[field.key]) {
+			return fmt.Errorf("%w: %s does not support empty value", agenttool.ErrExeSQLNoCredentials, field.desc)
 		}
 	}
 
@@ -75,8 +65,13 @@ func validateExeSQLParams(params map[string]any) error {
 
 	// Trino connects without credentials; every other supported DB type
 	// requires a password.
-	if dbTypeString != "trino" && !isNonBlankString(params["password"]) {
-		return fmt.Errorf("Database password does not support empty value")
+	if password, present := params["password"]; present {
+		if _, ok := password.(string); !ok {
+			return fmt.Errorf("Database password must be a string")
+		}
+	}
+	if !draft && dbTypeString != "trino" && !isNonBlankString(params["password"]) {
+		return fmt.Errorf("%w: Database password does not support empty value", agenttool.ErrExeSQLNoCredentials)
 	}
 
 	if maxRecords, present := params["max_records"]; present {
@@ -85,24 +80,12 @@ func validateExeSQLParams(params map[string]any) error {
 		}
 	}
 
-	// Refuse configs aimed at RAGFlow's own metadata database, mirroring
-	// Python ExeSQLParam.check's security guard.
+	// Never allow connections aimed at RAGFlow's own metadata database.
 	if trimmedDBString(params["database"]) == "rag_flow" &&
 		(trimmedDBString(params["host"]) == "ragflow-mysql" || trimmedDBString(params["password"]) == "infini_rag_flow") {
 		return fmt.Errorf("For the security reason, it does not support database named rag_flow.")
 	}
 	return nil
-}
-
-// exeSQLConnectionStarted reports whether the user filled in at least one
-// ExeSQL connection field. Blanks and absent keys both count as untouched.
-func exeSQLConnectionStarted(params map[string]any) bool {
-	for _, key := range []string{"database", "username", "host", "password"} {
-		if isNonBlankString(params[key]) {
-			return true
-		}
-	}
-	return false
 }
 
 // exeSQLDBTypeAllowed reports whether dbType is one of exeSQLDBTypes.

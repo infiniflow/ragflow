@@ -24,16 +24,15 @@ import (
 	ort "github.com/infiniflow/onnxruntime_go"
 )
 
-// intraOpThreads is the intra-op thread count every session is opened with.
-//
-// ONNX Runtime gives each session its own intra-op thread pool (the C API
-// never switches a session onto a shared/global pool), so the threads DeepDoc
+// intraOpThreads is the intra-op thread count every session is opened with. It
+// is a process-global policy registered once at startup via SetIntraOpThreads
+// (see inference_config.go) and read here on every session creation. ONNX
+// Runtime gives each session its own intra-op thread pool (the C API never
+// switches a session onto a shared/global pool), so the threads DeepDoc
 // inference occupies in this process are intraOpThreads × the number of
-// concurrently running sessions. Pinning it to 1 keeps every Run to a single
-// thread, which is what makes the process ceiling a plain concurrency budget:
-// the capacity registered in inference_limit.go bounds how many Runs may be in
-// flight, and each of them costs exactly one thread.
-const intraOpThreads = 1
+// concurrently running sessions. The capacity registered in inference_limit.go
+// bounds how many Runs may be in flight; together with intraOpThreads this is
+// the process inference budget (see ValidateInferenceConfig).
 
 var (
 	ortOnce    sync.Once
@@ -242,10 +241,12 @@ func newSessionOptions(weights *weightSet) (*ort.SessionOptions, error) {
 	if err != nil {
 		return nil, err
 	}
-	// One intra-op thread per session: the session's Runs then cost one thread
-	// each, so the process-wide inference ceiling is exactly the number of
-	// concurrent Runs the caller admits (see the intraOpThreads constant).
-	if err := opts.SetIntraOpNumThreads(intraOpThreads); err != nil {
+	// One intra-op thread per session by default; the startup path may raise it
+	// via SetIntraOpThreads to share N cores across K Runs (see
+	// ValidateInferenceConfig). The session's Runs then cost intraOpThreadCount()
+	// threads each, and the process-wide inference ceiling (inference_limit.go)
+	// bounds how many Runs may be in flight.
+	if err := opts.SetIntraOpNumThreads(intraOpThreadCount()); err != nil {
 		opts.Destroy()
 		return nil, err
 	}
@@ -303,17 +304,9 @@ func (s *session) Run(ctx context.Context, input []float32) ([]float32, error) {
 		return nil, err
 	}
 	defer opts.Destroy()
-	// Cancel an in-flight Run when the context is done. done closes once Run
-	// returns so the watcher exits even on the success path.
-	done := make(chan struct{})
-	defer close(done)
-	go func() {
-		select {
-		case <-ctx.Done():
-			_ = opts.Terminate()
-		case <-done:
-		}
-	}()
+	// Terminate an in-flight Run on cancellation, and join the watcher before
+	// opts.Destroy() runs (defers are LIFO).
+	defer watchRunOptions(ctx, opts)()
 
 	// Allocate a fresh input tensor for this Run and free it right after the
 	// call. The output is passed as nil so ORT allocates it; we copy the data

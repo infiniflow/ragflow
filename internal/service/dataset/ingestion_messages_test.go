@@ -6,6 +6,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -23,7 +24,7 @@ func TestListIngestionMessagesUsesRunScopedKeysets(t *testing.T) {
 		insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, "detail")
 	}
 
-	response, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 2, nil, nil)
+	response, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1", 2, nil, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", response, code, err)
 	}
@@ -33,7 +34,7 @@ func TestListIngestionMessagesUsesRunScopedKeysets(t *testing.T) {
 	assertMessageEventIDs(t, response.Items, 4, 5)
 
 	afterID := 2
-	response, code, err = NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 2, &afterID, nil)
+	response, code, err = NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1", 2, &afterID, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("after page = (%+v, %v, %v), want success", response, code, err)
 	}
@@ -43,7 +44,7 @@ func TestListIngestionMessagesUsesRunScopedKeysets(t *testing.T) {
 	}
 
 	beforeID := 4
-	if _, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 2, &afterID, &beforeID); err == nil || code != common.CodeArgumentError {
+	if _, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1", 2, &afterID, &beforeID); err == nil || code != common.CodeArgumentError {
 		t.Fatalf("mutually exclusive cursors = code:%v err:%v, want argument error", code, err)
 	}
 }
@@ -58,7 +59,7 @@ func TestListIngestionMessagesRejectsUnnumberedRun(t *testing.T) {
 	insertMessageRun(t, "legacy-run", "kb-1", "doc-1", entity.TaskStatusRunning, 0)
 	insertMessageEvent(t, db, "legacy-run", "task-1", dao.EventTypeMessage, "old detail")
 
-	response, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "legacy-run", 200, nil, nil)
+	response, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "legacy-run", 200, nil, nil)
 	if response != nil || err == nil || code != common.CodeDataError {
 		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want not-found data error", response, code, err)
 	}
@@ -88,7 +89,7 @@ func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
 	insertMessageRun(t, "numbered-sentinel-run", "kb-1", entity.DatasetLogDocumentID, entity.TaskStatusDone, 1)
 	insertMessageEvent(t, db, "dataset-run", "dataset-run", dao.EventTypeTerminal, "Knowledge compilation completed")
 
-	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "dataset", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, nil, "", "", "dataset", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
@@ -98,7 +99,7 @@ func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
 	}
 	assertLatestEventMap(t, logs[0], 1, "Knowledge compilation completed")
 
-	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "dataset-run", 200, nil, nil)
+	messages, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "dataset-run", 200, nil, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", messages, code, err)
 	}
@@ -106,11 +107,72 @@ func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
 		t.Fatalf("dataset messages = %+v, want terminal event stream", messages)
 	}
 
-	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "dataset-run")
+	log, code, err := NewDatasetService().GetIngestionLog(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "dataset-run")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
 	}
 	assertLatestEventMap(t, log, 1, "Knowledge compilation completed")
+}
+
+func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertCompilationOwnerKB(t, "kb-2", "user-1")
+
+	connectors := []entity.Connector{
+		{ID: "connector-1", TenantID: "user-1", Name: "linked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "other", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-3", TenantID: "user-2", Name: "inaccessible", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+	}
+	if err := db.Create(&connectors).Error; err != nil {
+		t.Fatalf("insert connectors: %v", err)
+	}
+	grantDatasetTestResource(t, "user-1", "connector", "connector-1", "user-1", "owner")
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-1-kb-1", ConnectorID: "connector-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link connector to kb-1: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-2-kb-2", ConnectorID: "connector-2", KbID: "kb-2", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link connector to kb-2: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-3-kb-1", ConnectorID: "connector-3", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link inaccessible connector to kb-1: %v", err)
+	}
+
+	logs := []entity.SyncLogs{
+		{ID: "sync-kb-1", ConnectorID: "connector-1", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		{ID: "sync-kb-2", ConnectorID: "connector-2", KbID: "kb-2", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		{ID: "sync-inaccessible", ConnectorID: "connector-3", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		// A stale/unlinked row must not appear in the dataset's configured connector logs.
+		{ID: "sync-unlinked", ConnectorID: "connector-2", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatalf("insert sync logs: %v", err)
+	}
+
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
+	subject := permission.Subject{UserID: "user-1"}
+	checker := permission.NewDatabaseChecker(db)
+	if err := checker.CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: "kb-1"}, permission.OperationRead); err != nil {
+		t.Fatalf("check dataset access fixture: %v", err)
+	}
+	if err := checker.CheckDependency(ctx, subject,
+		permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: "connector-1"},
+		permission.ResourceRef{Kind: permission.ResourceKindSyncTask, ID: "sync-kb-1"},
+		permission.OperationUse, permission.OperationRead); err != nil {
+		t.Fatalf("check linked sync log access fixture: %v", err)
+	}
+	result, code, err := NewDatasetService().ListSyncLogs(ctx, "kb-1", "user-1", 1, 30)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListSyncLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	if result["total"] != int64(1) {
+		t.Fatalf("total = %#v, want 1", result["total"])
+	}
+	items, ok := result["logs"].([]*entity.ConnectorSyncLog)
+	if !ok || len(items) != 1 || items[0].ID != "sync-kb-1" {
+		t.Fatalf("logs = %#v, want only sync-kb-1", result["logs"])
+	}
 }
 
 func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
@@ -132,7 +194,7 @@ func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 		t.Fatalf("insert Python run: %v", err)
 	}
 
-	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "file", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "file", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
@@ -154,7 +216,7 @@ func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 		t.Fatalf("Python file log = %#v, want file-log fields", byID["python-run"])
 	}
 
-	detail, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "python-run")
+	detail, code, err := NewDatasetService().GetIngestionLog(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "python-run")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", detail, code, err)
 	}
@@ -165,7 +227,7 @@ func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 		t.Fatalf("Python detail = %#v, want file-log fields", detail)
 	}
 
-	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "python-run", 200, nil, nil)
+	messages, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "python-run", 200, nil, nil)
 	if err != nil || code != common.CodeSuccess || !messages.Terminal || len(messages.Items) != 0 {
 		t.Fatalf("Python ListIngestionMessages = (%+v, %v, %v), want empty terminal success", messages, code, err)
 	}
@@ -187,7 +249,7 @@ func TestPythonDatasetLogIsReadableAndKeepsProgressMessage(t *testing.T) {
 		t.Fatalf("insert Python dataset run: %v", err)
 	}
 
-	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "dataset", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, []string{"DONE"}, "", "", "dataset", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
@@ -199,7 +261,7 @@ func TestPythonDatasetLogIsReadableAndKeepsProgressMessage(t *testing.T) {
 		t.Fatalf("Python dataset log fields = %#v, want stored status and progress_msg", logs[0])
 	}
 
-	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "python-dataset-run")
+	log, code, err := NewDatasetService().GetIngestionLog(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "python-dataset-run")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
 	}
@@ -207,7 +269,7 @@ func TestPythonDatasetLogIsReadableAndKeepsProgressMessage(t *testing.T) {
 		t.Fatalf("detail progress_msg = %#v, want %q", log["progress_msg"], progressMessage)
 	}
 
-	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "python-dataset-run", 200, nil, nil)
+	messages, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "python-dataset-run", 200, nil, nil)
 	if err != nil || code != common.CodeSuccess || !messages.Terminal || len(messages.Items) != 0 {
 		t.Fatalf("legacy ListIngestionMessages = (%+v, %v, %v), want empty terminal success", messages, code, err)
 	}
@@ -229,7 +291,7 @@ func TestListIngestionLogsEmbedsLatestRunEventWithoutProgressMessage(t *testing.
 	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeTerminal, "latest first")
 	insertMessageEvent(t, db, "run-2", "task-2", dao.EventTypeMessage, "latest second")
 
-	result, code, err := NewDatasetService().ListIngestionLogs(t.Context(), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
@@ -260,7 +322,7 @@ func TestGetIngestionLogEmbedsLatestRunEvent(t *testing.T) {
 	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
 	insertMessageEvent(t, db, "run-1", "task-1", dao.EventTypeMessage, "latest detail")
 
-	result, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
+	result, code, err := NewDatasetService().GetIngestionLog(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", result, code, err)
 	}
@@ -284,7 +346,7 @@ func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {
 		t.Fatalf("record progress event: %v", err)
 	}
 
-	messages, code, err := NewDatasetService().ListIngestionMessages(t.Context(), "kb-1", "user-1", "run-1", 200, nil, nil)
+	messages, code, err := NewDatasetService().ListIngestionMessages(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1", 200, nil, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionMessages = (%+v, %v, %v), want success", messages, code, err)
 	}
@@ -292,7 +354,7 @@ func TestIngestionEventWriterFeedsRunScopedLogReaders(t *testing.T) {
 		t.Fatalf("messages = %+v, want lifecycle then latest progress", messages.Items)
 	}
 
-	log, code, err := NewDatasetService().GetIngestionLog(t.Context(), "kb-1", "user-1", "run-1")
+	log, code, err := NewDatasetService().GetIngestionLog(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", "run-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetIngestionLog = (%+v, %v, %v), want success", log, code, err)
 	}
@@ -358,5 +420,47 @@ func assertLatestEventMap(t *testing.T, log map[string]interface{}, wantID int, 
 	}
 	if event.Message != wantMessage {
 		t.Fatalf("latest event message = %q, want %q", event.Message, wantMessage)
+	}
+}
+
+// TestListIngestionLogsRejectsUnknownLogType checks that only the two
+// selectors the Python service accepts reach a log query. Every other value,
+// including an explicitly empty one, is a data error rather than a dataset
+// listing.
+func TestListIngestionLogsRejectsUnknownLogType(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertMessageRun(t, "run-1", "kb-1", "doc-1", entity.TaskStatusDone, 1)
+
+	const wantMessage = `Invalid "log_type", expected "dataset" or "file"`
+	for _, tc := range []struct {
+		name     string
+		logType  string
+		wantCode common.ErrorCode
+	}{
+		{name: "dataset", logType: "dataset", wantCode: common.CodeSuccess},
+		{name: "file", logType: "file", wantCode: common.CodeSuccess},
+		{name: "bogus", logType: "bogus", wantCode: common.CodeDataError},
+		{name: "empty", logType: "", wantCode: common.CodeDataError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, nil, "", "", tc.logType, "", "")
+			if tc.wantCode == common.CodeSuccess {
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("ListIngestionLogs(%q) = (%+v, %v, %v), want success", tc.logType, result, code, err)
+				}
+				return
+			}
+			if result != nil || err == nil || code != tc.wantCode {
+				t.Fatalf("ListIngestionLogs(%q) = (%+v, %v, %v), want code %v and an error", tc.logType, result, code, err, tc.wantCode)
+			}
+			if err.Error() != wantMessage {
+				t.Fatalf("ListIngestionLogs(%q) error = %q, want %q", tc.logType, err.Error(), wantMessage)
+			}
+		})
 	}
 }

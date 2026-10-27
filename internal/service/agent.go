@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"maps"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 	"reflect"
 	"sort"
 	"strings"
@@ -43,6 +42,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
 	dslpkg "ragflow/internal/agent/dsl"
@@ -71,7 +72,7 @@ type webhookPayloadKey struct{}
 func (s *AgentService) LoadCanvasByID(
 	ctx context.Context, userID, canvasID string,
 ) (*entity.UserCanvas, error) {
-	return s.loadCanvasForUser(ctx, userID, canvasID)
+	return s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead)
 }
 
 // RunAgentWithWebhook is a thin wrapper over RunAgent that attaches the
@@ -315,15 +316,9 @@ func splitMessageContent(content string) []string {
 	return chunks
 }
 
-// ErrAgentNotOwner is returned by DeleteAgent when the canvas exists and
-// is accessible to the caller but is owned by a different user. It maps
-// to the Python "Only the owner of the agent is authorized for this
-// operation." message via handler.mapAgentError.
-//
-// The Python agent API keeps access-check and owner-check as two
-// separate decorators (api/apps/restful_apis/agent_api.py:74-100);
-// we mirror that distinction with ErrUserCanvasNotFound (access) and
-// ErrAgentNotOwner (owner).
+// ErrAgentNotOwner is returned when a caller cannot delete an agent canvas.
+// The handler maps both missing and inaccessible canvases to the same
+// response to avoid revealing resource existence.
 var ErrAgentNotOwner = errors.New("agent not owned by user")
 
 // ErrAgentStorageError identifies internal Agent service failures such as
@@ -434,21 +429,22 @@ func (s *AgentService) ListTemplates(ctx context.Context) ([]*entity.CanvasTempl
 
 // AgentItem is one entry in the list response.
 type AgentItem struct {
-	ID             string  `json:"id"`
-	Avatar         *string `json:"avatar,omitempty"`
-	Title          *string `json:"title,omitempty"`
-	Description    *string `json:"description,omitempty"`
-	Permission     string  `json:"permission"`
-	UserID         string  `json:"user_id"`
-	TenantID       string  `json:"tenant_id"`
-	Nickname       string  `json:"nickname"`
-	TenantAvatar   *string `json:"tenant_avatar,omitempty"`
-	Tags           string  `json:"tags"`
-	CanvasType     *string `json:"canvas_type,omitempty"`
-	CanvasCategory string  `json:"canvas_category"`
-	CreateTime     *int64  `json:"create_time,omitempty"`
-	UpdateTime     *int64  `json:"update_time,omitempty"`
-	ReleaseTime    *int64  `json:"release_time,omitempty"`
+	ID                 string  `json:"id"`
+	Avatar             *string `json:"avatar,omitempty"`
+	Title              *string `json:"title,omitempty"`
+	Description        *string `json:"description,omitempty"`
+	Permission         string  `json:"permission"`
+	UserID             string  `json:"user_id"`
+	TenantID           string  `json:"tenant_id"`
+	Nickname           string  `json:"nickname"`
+	TenantAvatar       *string `json:"tenant_avatar,omitempty"`
+	Tags               string  `json:"tags"`
+	CanvasType         *string `json:"canvas_type,omitempty"`
+	CanvasCategory     string  `json:"canvas_category"`
+	OperatorPermission int32   `json:"operator_permission,omitempty"`
+	CreateTime         *int64  `json:"create_time,omitempty"`
+	UpdateTime         *int64  `json:"update_time,omitempty"`
+	ReleaseTime        *int64  `json:"release_time,omitempty"`
 	// Type discriminates agent vs compilation-template-group items in the merged
 	// /agents response. It is set only for merged items (agent => "agent").
 	Type string `json:"type,omitempty"`
@@ -504,27 +500,15 @@ type AgentFiltersResponse struct {
 // agents page filter bar. Mirrors the ?type=filter branch of Python
 // agent_api.list_agents.
 func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	canvasIDs, err := AccessibleCanvasIDs(ctx, permission.Subject{UserID: userID}, permission.OperationRead)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant IDs: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to scope accessible canvases: %w", err)
 	}
-	ownerIDs := make([]string, 0, len(tenantIDs)+1)
-	seen := make(map[string]struct{}, len(tenantIDs)+1)
-	seen[userID] = struct{}{}
-	ownerIDs = append(ownerIDs, userID)
-	for _, id := range tenantIDs {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		ownerIDs = append(ownerIDs, id)
-	}
-
-	owners, err := s.canvasDAO.GetOwnerFilter(ctx, dao.DB, ownerIDs, userID)
+	owners, err := s.canvasDAO.GetOwnerFilterByCanvasIDs(ctx, dao.DB, canvasIDs)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent owners: %w", err)
 	}
-	categories, err := s.canvasDAO.GetCategoryFilter(ctx, dao.DB, ownerIDs, userID)
+	categories, err := s.canvasDAO.GetCategoryFilterByCanvasIDs(ctx, dao.DB, canvasIDs)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent categories: %w", err)
 	}
@@ -593,20 +577,21 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 		nickname = c.TenantID
 	}
 	return &AgentItem{
-		ID:             c.ID,
-		Avatar:         c.Avatar,
-		Title:          c.Title,
-		Description:    c.Description,
-		Permission:     c.Permission,
-		UserID:         c.UserID,
-		TenantID:       c.TenantID,
-		Nickname:       nickname,
-		TenantAvatar:   c.TenantAvatar,
-		CanvasType:     c.CanvasType,
-		CanvasCategory: c.CanvasCategory,
-		Tags:           c.Tags,
-		CreateTime:     c.CreateTime,
-		UpdateTime:     c.UpdateTime,
+		ID:                 c.ID,
+		Avatar:             c.Avatar,
+		Title:              c.Title,
+		Description:        c.Description,
+		Permission:         c.Permission,
+		UserID:             c.UserID,
+		TenantID:           c.TenantID,
+		Nickname:           nickname,
+		TenantAvatar:       c.TenantAvatar,
+		CanvasType:         c.CanvasType,
+		CanvasCategory:     c.CanvasCategory,
+		OperatorPermission: c.OperatorPermission,
+		Tags:               c.Tags,
+		CreateTime:         c.CreateTime,
+		UpdateTime:         c.UpdateTime,
 	}
 }
 
@@ -614,31 +599,26 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 // Mirrors Python agent_api.list_agents — validates owner_ids against joined tenants,
 // then delegates to the DAO.
 func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string, canvasCategory, canvasType string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
-	// Build the set of tenant IDs the user is authorized to query.
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	subject := permission.Subject{UserID: userID}
+	canvasIDs, err := AccessibleCanvasIDs(ctx, subject, permission.OperationRead)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to get tenant IDs: %w", err)
+		return nil, common.CodeServerError, fmt.Errorf("failed to scope accessible canvases: %w", err)
 	}
-	authorised := make(map[string]struct{}, len(tenantIDs)+1)
-	for _, id := range tenantIDs {
-		authorised[id] = struct{}{}
-	}
-	authorised[userID] = struct{}{}
-
-	var effectiveOwnerIDs []string
+	checker := permission.NewDatabaseChecker(dao.DB)
 	if len(ownerIDs) > 0 {
 		for _, id := range ownerIDs {
-			if _, ok := authorised[id]; !ok {
-				return nil, common.CodeOperatingError, fmt.Errorf("only authorized owner_ids can be queried")
+			if id == userID {
+				continue
+			}
+			if err := checker.CheckTenant(ctx, subject, id, permission.TenantMember); err != nil {
+				if errors.Is(err, permission.ErrMembershipNotFound) {
+					return nil, common.CodeOperatingError, fmt.Errorf("only authorized owner_ids can be queried")
+				}
+				return nil, common.CodeServerError, fmt.Errorf("validate agent owner_id: %w", err)
 			}
 		}
-		effectiveOwnerIDs = ownerIDs
-	} else {
-		effectiveOwnerIDs = make([]string, 0, len(authorised))
-		for id := range authorised {
-			effectiveOwnerIDs = append(effectiveOwnerIDs, id)
-		}
 	}
+	effectiveOwnerIDs := ownerIDs
 
 	// A canvas entry is either an agent (user_canvas) or a compilation template
 	// group. Python splits canvas_category on commas and, when the tenant is the
@@ -655,7 +635,7 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	// the caller is an effective owner; otherwise (e.g. owner_ids names another
 	// user) return an empty list (review Major).
 	if len(categories) == 1 && wantsGroups {
-		if !sliceContains(effectiveOwnerIDs, userID) {
+		if len(ownerIDs) > 0 && !sliceContains(effectiveOwnerIDs, userID) {
 			return &ListAgentsResponse{Canvas: []json.RawMessage{}, Total: 0}, common.CodeSuccess, nil
 		}
 		return s.listAgentsGroupsOnly(ctx, userID, keywords, terms, page, pageSize)
@@ -667,11 +647,11 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	if mergeMode || (wantsGroups && len(agentCategories) > 0) {
 		listPage, listSize = 0, 0
 	}
-	canvases, total, err := s.canvasDAO.ListByTenantIDs(
+	canvases, total, err := s.canvasDAO.ListByIDs(
 		ctx,
 		dao.DB,
+		canvasIDs,
 		effectiveOwnerIDs,
-		userID,
 		listPage,
 		listSize,
 		terms,
@@ -686,6 +666,14 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 
 	agentItems := make([]*AgentItem, len(canvases))
 	for i, c := range canvases {
+		access, accessErr := checker.ResolveAccess(ctx, subject, permission.ResourceRef{
+			Kind: permission.ResourceKindCanvas,
+			ID:   c.ID,
+		})
+		if accessErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf("resolve agent permissions: %w", accessErr)
+		}
+		c.OperatorPermission = access.PermissionMask
 		agentItems[i] = toAgentItem(c)
 	}
 	s.attachReleaseTimes(ctx, agentItems)
@@ -693,7 +681,7 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	// Groups are owner-only (no team sharing) and scoped to the caller, so they
 	// are merged only when the caller's own tenant is an effective owner
 	// (Python include_template_groups).
-	includeGroups := sliceContains(effectiveOwnerIDs, userID)
+	includeGroups := len(ownerIDs) == 0 || sliceContains(effectiveOwnerIDs, userID)
 	if includeGroups && (mergeMode || wantsGroups) {
 		return s.mergeAgentsAndGroups(ctx, userID, agentItems, keywords, terms, page, pageSize)
 	}
@@ -709,7 +697,7 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 // listAgentsGroupsOnly returns only the caller's compilation template groups
 // (Python canvas_category == ["compilation_template_group"] branch).
 func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
-	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", terms)
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -731,7 +719,7 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 // mirrors Python's merged /agents response. A stable sort retains the original
 // agent-before-group order when timestamps are equal.
 func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
-	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", terms)
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -927,7 +915,6 @@ func intValuePtr(p *int64) int64 {
 
 // CreateAgentRequest is the input shape for CreateAgent.
 type CreateAgentRequest struct {
-	UserID         string         `json:"user_id"`
 	Title          *string        `json:"title,omitempty"`
 	Description    *string        `json:"description,omitempty"`
 	Permission     string         `json:"permission"`
@@ -941,9 +928,18 @@ type CreateAgentRequest struct {
 // Returns the standard (T, common.ErrorCode, error) triple so the handler
 // can map validation/duplicate errors to codes 101/102 without
 // introducing a separate error type. Missing DSL or title and a
-// duplicate title under the same owner all surface as specific code
-// values that the Python agent API contract expects.
-func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+// duplicate title under the authenticated owner surface as specific codes.
+func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		code, permissionErr := permissionresponse.Normalize(permission.ErrUnauthenticated)
+		return nil, code, permissionErr
+	}
+	tenantID, err := prepareAgentCreation(ctx, userID)
+	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
 	if req == nil {
 		return nil, common.CodeArgumentError, errors.New("create agent: nil request")
 	}
@@ -963,15 +959,19 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, req.UserID, title, req.CanvasCategory); err != nil {
+	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
+		return s.canvasDAO.TitleExists(ctx, dao.DB, userID, req.CanvasCategory, candidate, "")
+	})
+	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
+	title = uniqueTitle
+	req.Title = &title
+
 	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
-	if err := component.ValidateDynamicEntries(req.DSL); err != nil {
+	if err := component.ValidateDraftDynamicEntries(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
@@ -979,8 +979,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 	row := &entity.UserCanvas{
-		ID:             utility.GenerateUUID(),
-		UserID:         req.UserID,
+		ID:             common.GenerateUUID(),
+		UserID:         userID,
+		TenantID:       &tenantID,
 		Title:          req.Title,
 		Description:    req.Description,
 		Permission:     req.Permission,
@@ -988,7 +989,14 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		CanvasCategory: req.CanvasCategory,
 		DSL:            req.DSL,
 	}
-	if err := s.canvasDAO.Create(ctx, dao.DB, row); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.canvasDAO.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{
+			UserID: userID, TenantID: tenantID,
+		}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: row.ID})
+	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 		}
@@ -1045,21 +1053,20 @@ func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[s
 // raw errors here would have left a DAO-string leak in the very first
 // hop — the earlier af2ac2eda + 804854a5e commits only sanitized the
 // version-read path, missing the canvas-access path.
-func (s *AgentService) loadCanvasForUser(ctx context.Context, userID, canvasID string) (*entity.UserCanvas, error) {
+func (s *AgentService) loadCanvasForUser(ctx context.Context, userID, canvasID string, operation permission.Operation) (*entity.UserCanvas, error) {
 	if canvasID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
 	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	tenants, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			return nil, err
+	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, operation); err != nil {
+		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+			return nil, dao.ErrUserCanvasNotFound
 		}
-		return nil, fmt.Errorf("tenants for user %s: %w: %w", userID, err, ErrAgentStorageError)
+		return nil, fmt.Errorf("check canvas %q permission for user %s: %w: %w", canvasID, userID, err, ErrAgentStorageError)
 	}
-	row, err := s.canvasDAO.GetByIDForUser(ctx, dao.DB, canvasID, userID, tenants)
+	row, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			return nil, err
@@ -1073,7 +1080,19 @@ func (s *AgentService) loadCanvasForUser(ctx context.Context, userID, canvasID s
 // Returns dao.ErrUserCanvasNotFound (not 403) when the canvas is missing
 // or belongs to another user.
 func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*entity.UserCanvas, error) {
-	return s.loadCanvasForUser(ctx, userID, canvasID)
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindCanvas,
+		ID:   canvasID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	canvasInstance.OperatorPermission = access.PermissionMask
+	return canvasInstance, nil
 }
 
 // GetLastPublishTime returns the update_time of the most recently updated
@@ -1093,25 +1112,28 @@ func (s *AgentService) GetLastPublishTime(ctx context.Context, canvasID string) 
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
 //
-// Permission is an owner-only setting: team members who have access to the
-// canvas can still update title/avatar/description, but any permission value
-// they send is ignored so they cannot make a team agent private (or vice
-// versa). The owner can change permission together with title/avatar in one
-// request.
+// Shared users may edit canvas content, but only the owner may change its
+// visibility.
 func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string, patch map[string]interface{}) error {
-	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
 	ownerUserID := canvasInstance.UserID
 
-	if v, ok := patch["permission"]; ok && ownerUserID != userID {
-		requested := strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
-		current := strings.ToLower(strings.TrimSpace(canvasInstance.Permission))
-		if requested != current {
-			return fmt.Errorf("user %s has no permission to edit permission", userID)
+	if v, ok := patch["permission"]; ok {
+		shareErr := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, permission.OperationShare)
+		if shareErr != nil {
+			if !errors.Is(shareErr, permission.ErrPermissionDenied) {
+				return fmt.Errorf("check agent sharing permission: %w", shareErr)
+			}
+			requested := strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+			current := strings.ToLower(strings.TrimSpace(canvasInstance.Permission))
+			if requested != current {
+				return fmt.Errorf("user %s has no permission to edit permission", userID)
+			}
+			delete(patch, "permission")
 		}
-		delete(patch, "permission")
 	}
 
 	updates := map[string]interface{}{}
@@ -1120,6 +1142,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			if key == "title" {
 				if title, ok := value.(string); ok {
 					value = strings.TrimSpace(title)
+				}
+			}
+			if key == "permission" {
+				if permissionValue, ok := value.(string); ok {
+					value = strings.ToLower(strings.TrimSpace(permissionValue))
 				}
 			}
 			updates[key] = value
@@ -1142,11 +1169,50 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		}
 	}
 	updates["release"] = release
+
+	// Autosave signal (design §5.1): the front-end sends autosave:true on its
+	// debounced auto-save. An auto-save refreshes ONLY the live draft
+	// (user_canvas.dsl) and must NOT create a new version. A manual Save (no
+	// autosave flag, or autosave:false) must both update the draft and INSERT a
+	// new version row. v5.2 removes the same-DSL in-place refresh dedup, so
+	// every manual Save produces a version even when the DSL is unchanged.
+	autosave := false
+	if value, ok := patch["autosave"]; ok && value != nil {
+		switch v := value.(type) {
+		case bool:
+			autosave = v
+		case string:
+			autosave = v != "" && v != "false"
+		case float64:
+			autosave = v != 0
+		}
+	}
+
+	// Optional alias carried on a manual Save (design §4.4 carry-on path).
+	var aliasPtr *string
+	if value, ok := patch["alias"]; ok && value != nil {
+		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
+			aliasPtr = &s
+		}
+	}
+	// ApplyVersion restore path: re-applying a version whose DSL already matches
+	// the latest draft must reuse that draft instead of minting a duplicate
+	// version row. We signal this with the "apply" flag so the version save can
+	// fall back to the SameDSL reuse branch instead of always inserting.
+	applyVersion := false
+	if value, ok := patch["apply"]; ok && value != nil {
+		applyVersion = true
+	}
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
-		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, ownerUserID, title, canvasCategory); err != nil {
+		// Exclude the canvas being updated so keeping or only re-casing its
+		// title does not collide with itself, while a move to a category that
+		// already holds the title is still rejected.
+		exists, err := s.canvasDAO.TitleExists(ctx, dao.DB, ownerUserID, canvasCategory, title, canvasID)
+		if err != nil {
 			return fmt.Errorf("check duplicate title: %w", err)
-		} else if existing != nil && existing.ID != canvasID {
+		}
+		if exists {
 			return agentTitleAlreadyExistsError(title)
 		}
 	}
@@ -1162,10 +1228,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		if err := component.ValidateIntegerParameters(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := component.ValidateDynamicEntries(dslMap); err != nil {
+		validateEntries := component.ValidateDraftDynamicEntries
+		if release {
+			validateEntries = component.ValidateDynamicEntries
+		}
+		if err := validateEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := validateAgentChatModels(ctx, userID, dslMap); err != nil {
+		if err := validateAgentChatModelReferences(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap, !release); err != nil {
 			return err
 		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
@@ -1186,8 +1256,17 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		} else if canvasInstance.Title != nil {
 			title = *canvasInstance.Title
 		}
-		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, release)
-		versionOpts = &opts
+		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, aliasPtr, release)
+		// Manual Save (autosave != true) always mints a new version row, even
+		// when the DSL is identical to the previous one (design §5.1). Auto-save
+		// never mints a version at all, so versionOpts stays nil and only the
+		// live draft is refreshed below. ApplyVersion restores a historical DSL
+		// and must reuse the latest draft when the DSL is unchanged, so it does
+		// NOT force a new row (the SameDSL branch governs instead).
+		opts.ForceNew = !autosave && !applyVersion
+		if !autosave {
+			versionOpts = &opts
+		}
 	}
 
 	// The canvas release/DSL update and the version save must commit
@@ -1235,7 +1314,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 // dao.ErrUserCanvasNotFound so mapAgentError emits the same 404 the
 // Python handler does for "canvas not found."
 func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) (entity.JSONMap, error) {
-	row, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	row, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -1252,33 +1331,22 @@ func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) 
 	return row.DSL, nil
 }
 
-// DeleteAgent removes the canvas and cascades to its user_canvas_version
+// DeleteAgent removes a canvas and cascades to its user_canvas_version
 // rows in a single transaction so a mid-flight failure cannot leave
-// orphan version rows (Phase 5 §2.9; review follow-up M2).
-//
-// Owner-only by design (mirrors _require_canvas_owner_sync in the Python
-// agent API). Both "canvas does not exist" and "canvas is owned by
-// someone else" surface as ErrAgentNotOwner so the handler emits the
-// single "Only the owner..." 103 message — same envelope as the Python
-// decorator (api/apps/restful_apis/agent_api.py:94-100), which uses
-// UserCanvasService.query(user_id=..., id=...) and conflates those two
-// cases into one OPERATING_ERROR response.
+// orphan version rows. Canvas delete access is decided by the permission
+// policy, including its sharing rules.
 func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string) error {
-	row, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, permission.OperationDelete); err != nil {
+		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return ErrAgentNotOwner
 		}
-		return fmt.Errorf("load agent %s: %w", canvasID, err)
-	}
-	if row.UserID != userID {
-		return ErrAgentNotOwner
+		return fmt.Errorf("check agent deletion permission: %w", err)
 	}
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err = s.versionDAO.DeleteByCanvasIDTx(ctx, tx, canvasID); err != nil {
+		if _, err := s.versionDAO.DeleteByCanvasIDTx(ctx, tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent: cascade versions: %w", err)
 		}
-		if err = s.canvasDAO.DeleteTx(ctx, tx, canvasID); err != nil {
+		if err := s.canvasDAO.DeleteTx(ctx, tx, canvasID); err != nil {
 			return fmt.Errorf("delete agent %s: %w", canvasID, err)
 		}
 		return nil
@@ -1289,23 +1357,22 @@ func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string)
 type PublishAgentRequest struct {
 	Title       *string        `json:"title,omitempty"`
 	Description *string        `json:"description,omitempty"`
+	Alias       *string        `json:"alias,omitempty"`
 	DSL         entity.JSONMap `json:"dsl,omitempty"`
 }
 
 func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string, req *PublishAgentRequest) (*entity.UserCanvasVersion, error) {
-	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	canvasInstance, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationUpdate)
 	if err != nil {
 		return nil, err
 	}
 	dsl := canvasInstance.DSL
 	title := canvasInstance.Title
 	description := canvasInstance.Description
+	var alias *string
 	if req != nil {
 		if req.DSL != nil {
 			if err := component.ValidateIntegerParameters(req.DSL); err != nil {
-				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
-			}
-			if err := component.ValidateDynamicEntries(req.DSL); err != nil {
 				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
 			}
 			dsl = dslpkg.NormalizeForCanvas(req.DSL)
@@ -1317,8 +1384,17 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		if req.Description != nil {
 			description = req.Description
 		}
+		if req.Alias != nil {
+			alias = req.Alias
+		}
 	}
 
+	if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dsl); err != nil {
+		return nil, err
+	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+	}
 	canvasInstance.DSL = dsl
 	canvasInstance.Title = title
 	canvasInstance.Description = description
@@ -1327,7 +1403,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	if title != nil {
 		titleStr = *title
 	}
-	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, true)
+	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, alias, true)
 	var row *entity.UserCanvasVersion
 	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = s.canvasDAO.UpdateTx(ctx, tx, canvasInstance); err != nil {
@@ -1345,20 +1421,20 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	return row, nil
 }
 
-func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
+func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, alias *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
 	nickname, err := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
 	if err != nil || strings.TrimSpace(nickname) == "" {
 		nickname = userID
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:           utility.GenerateUUID(),
-		UserCanvasID:    canvasID,
-		Title:           &versionTitle,
-		Description:     description,
-		DSL:             dsl,
-		Release:         release,
-		KeepUnpublished: 20,
+		NewID:        common.GenerateUUID(),
+		UserCanvasID: canvasID,
+		Title:        &versionTitle,
+		Description:  description,
+		Alias:        alias,
+		DSL:          dsl,
+		Release:      release,
 		SameDSL: func(latestDSL entity.JSONMap) bool {
 			return reflect.DeepEqual(
 				entity.JSONMap(dslpkg.NormalizeForCanvas(latestDSL)),
@@ -1385,7 +1461,7 @@ func buildVersionTitle(userNickname, agentTitle string, ts time.Time) string {
 // version list is loaded so unauthorized users cannot enumerate version
 // ids of canvases they cannot read.
 func (s *AgentService) ListVersions(ctx context.Context, userID, canvasID string) ([]*entity.UserCanvasVersion, error) {
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	if _, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.versionDAO.ListByCanvasID(ctx, dao.DB, canvasID)
@@ -1400,7 +1476,7 @@ func (s *AgentService) GetVersion(ctx context.Context, userID, canvasID, version
 	if versionID == "" {
 		return nil, dao.ErrUserCanvasVersionNotFound
 	}
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	if _, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	row, err := s.versionDAO.GetByID(ctx, dao.DB, versionID)
@@ -1421,7 +1497,46 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 	if versionID == "" {
 		return dao.ErrUserCanvasVersionNotFound
 	}
-	if _, err := s.loadCanvasForUser(ctx, userID, canvasID); err != nil {
+	canvas, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationUpdate)
+	if err != nil {
+		return err
+	}
+	row, err := s.versionDAO.GetByID(ctx, dao.DB, versionID)
+	if err != nil {
+		return err
+	}
+	if row.UserCanvasID != canvasID {
+		return dao.ErrUserCanvasVersionNotFound
+	}
+	// Design B4 / A4: deleting a version is allowed even when bindings
+	// reference it (the B2.1 dialog already confirmed). Referencing bindings
+	// simply fall into the Missing state (design section 6.2). For dataflow
+	// canvases we scan references so the operator gets a warning about the
+	// affected bindings (design section 12 A4, scan scoped to dataflow only).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		if refs, rerr := s.versionDAO.CountPipelineVersionReferences(ctx, dao.DB, versionID); rerr == nil && refs > 0 {
+			common.Warn("delete canvas version still referenced by active bindings; referers will enter Missing state",
+				zap.String("canvas_id", canvasID),
+				zap.String("version_id", versionID),
+				zap.Int64("reference_count", refs))
+		}
+	}
+	return dao.DB.Transaction(func(tx *gorm.DB) error {
+		return s.versionDAO.DeleteTx(ctx, tx, versionID)
+	})
+}
+
+// UpdateVersion patches mutable metadata (alias/title/description) of a single
+// version of a canvas the user can update. It never changes the DSL and never
+// creates a new version (design G2/§4.4). Returns
+// dao.ErrUserCanvasVersionNotFound when the row does not exist or belongs to a
+// different canvas, and dao.ErrUserCanvasNotFound when the parent canvas is not
+// updatable by the requesting user.
+func (s *AgentService) UpdateVersion(ctx context.Context, userID, canvasID, versionID string, patch dao.UserCanvasVersionPatch) error {
+	if versionID == "" {
+		return dao.ErrUserCanvasVersionNotFound
+	}
+	if _, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationUpdate); err != nil {
 		return err
 	}
 	row, err := s.versionDAO.GetByID(ctx, dao.DB, versionID)
@@ -1432,8 +1547,26 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 		return dao.ErrUserCanvasVersionNotFound
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
-		return s.versionDAO.DeleteTx(ctx, tx, versionID)
+		return s.versionDAO.UpdateTx(ctx, tx, versionID, patch)
 	})
+}
+
+// ApplyVersion restores a saved version's DSL through the normal draft-save
+// path, preserving the agent's metadata and version history.
+func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
+	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+			return err
+		}
+		return fmt.Errorf("load agent version: %w: %w", err, ErrAgentStorageError)
+	}
+	if version.DSL == nil {
+		return errors.New("agent version has no DSL to apply")
+	}
+	// The "apply" flag tells UpdateAgent to reuse the latest draft version when
+	// the restored DSL already matches it, instead of minting a duplicate row.
+	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL, "apply": true})
 }
 
 // RunAgent starts a run for the given canvas and returns a channel of
@@ -1455,13 +1588,14 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // error-layering contract).
 func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
-	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
+	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID, permission.OperationRun)
 	if err != nil {
 		return nil, err
 	}
+	agentTenantID := canvasRow.EffectiveTenantID()
 	newSession := sessionID == ""
 	if sessionID == "" {
-		sessionID = utility.GenerateToken()
+		sessionID = common.GenerateToken()
 	}
 	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
 	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
@@ -1473,11 +1607,11 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			if !trustedFirstTouch {
 				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
 			}
-		} else if existingSession.DialogID != canvasID || existingSession.UserID != userID {
-			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		} else if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
 		}
 	}
-	messageID := utility.GenerateToken()
+	messageID := common.GenerateToken()
 	questionSaved := false
 	persistQuestion := func() error {
 		if questionSaved || s.api4ConversationDAO == nil || dao.DB == nil {
@@ -1490,8 +1624,8 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		if session == nil {
 			return nil
 		}
-		if session.UserID != userID {
-			return fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+			return fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
 		}
 		if err := s.persistAgentRunQuestion(ctx, canvasID, userID, sessionID, messageID, userInput, receivedAt); err != nil {
 			return fmt.Errorf("RunAgent: persist question: %w: %w", err, ErrAgentStorageError)
@@ -1503,7 +1637,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		return nil, err
 	}
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
-	lockToken := utility.GenerateToken()
+	lockToken := common.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
 	// Keep workflow cancellation separate from event-consumer cancellation.
 	// An explicit session cancellation should still reach an attached client,
@@ -1722,16 +1856,21 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		if err != nil {
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
-		if existingSession != nil && (existingSession.DialogID != canvasID || existingSession.UserID != userID) {
-			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		if existingSession != nil {
+			if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
+			}
 		}
 		sessionFound = existingSession != nil
 		if existingSession != nil && len(existingSession.DSL) > 0 {
 			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
-	if err := validateAgentChatModels(ctx, userID, dsl); err != nil {
+	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
 		return nil, err
+	}
+	if err := component.ValidateDynamicEntries(dsl); err != nil {
+		return nil, fmt.Errorf("RunAgent: %w", err)
 	}
 	// A trusted boundary may allocate the session id before calling RunAgent so
 	// the effective id is available even when the run emits no events.
@@ -1792,17 +1931,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if payload, ok := ctx.Value(webhookPayloadKey{}).(map[string]any); ok && payload != nil {
 		root["webhook_payload"] = payload
 	}
-	// Match Python's @add_tenant_id_to_kwargs behavior for runtime
-	// components and model credential lookup: the canvas runs under
-	// the current caller's tenant id. Team-agent access was already
-	// authorized by loadCanvasForUser above; do not replace this with
-	// an arbitrary joined team tenant or LLM credential lookup can miss
-	// the caller's configured provider key.
-	root["tenant_id"] = userID
+	// Runtime resources use the canvas tenant; root["user_id"] retains the
+	// authenticated runner for caller-scoped permission checks and conversation data.
+	root["tenant_id"] = agentTenantID
 
-	// Preserve the historical RunTracker tenant dimension separately.
-	// Existing tests and log filters expect the joined tenant id in the
-	// run hash, but runtime state must keep tenant_id=userID.
+	// Preserve the historical RunTracker tenant dimension separately from
+	// the canvas tenant used by runtime components.
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID); terr == nil && len(tenantIDs) > 0 {
 		root["run_tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
@@ -1888,29 +2022,60 @@ func (s *AgentService) runReleasedAgent(ctx context.Context, userID, canvasID, s
 	return s.RunAgent(ctx, userID, canvasID, sessionID, version.ID, userInput, files)
 }
 
-// validateAgentChatModels rejects stale Agent model references before saving or
-// execution. Agent components always invoke a chat model; model-free canvases
-// contain no Agent component and pass through.
-func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]any) error {
+// validateAgentChatModels rejects stale Agent model references before execution.
+// It resolves models in the canvas tenant and checks access for the actual
+// caller. Agent components always invoke a chat model; model-free
+// canvases contain no Agent component and pass through.
+func validateAgentChatModels(ctx context.Context, userID, tenantID string, dsl map[string]any) error {
+	return validateAgentChatModelReferences(ctx, userID, tenantID, dsl, false)
+}
+
+func validateAgentChatModelReferences(ctx context.Context, userID, tenantID string, dsl map[string]any, draft bool) error {
 	c, err := canvas.DecodeFromDSL(dsl)
 	if err != nil {
 		return nil
 	}
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	for _, node := range c.Components {
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
+		}
+		for _, field := range []string{"model_id", "llm_id"} {
+			if value := node.Obj.Params[field]; value != nil {
+				if _, ok := value.(string); !ok {
+					return fmt.Errorf("Agent %s must be a string", field)
+				}
+			}
 		}
 		modelRef, ok := node.Obj.Params["model_id"].(string)
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, modelRef); err != nil {
+			if draft && (errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound)) && !errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrResourceNotFound) {
+				continue
+			}
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}
 			return fmt.Errorf("validate Agent chat model: %w: %w", err, ErrAgentStorageError)
 		}
+	}
+	return nil
+}
+
+func checkAgentSessionRunPermission(ctx context.Context, userID, sessionID string) error {
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindAgentSession, ID: sessionID},
+		permission.OperationRun,
+	)
+	if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) {
+		return dao.ErrUserCanvasNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("check agent session run permission: %w: %w", err, ErrAgentStorageError)
 	}
 	return nil
 }
@@ -1948,6 +2113,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
+		}
+		if err := component.ValidateDynamicEntries(dsl); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
 		}
 
 		// Install a per-run token usage sink so every LLM call inside
@@ -2062,6 +2230,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// DSL → *Canvas.
 		c, err := decodeCanvasFromDSL(dsl)
 		if err != nil {
+			s.markAgentSessionFailed(ctx, canvasID, userID, sessionID, "decode: "+err.Error())
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
@@ -2123,24 +2292,24 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.Sys["query"] = query
 		state.AppendCurrentUser(query)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(query))
-		if uid, ok := root["user_id"].(string); ok && uid != "" {
-			state.Sys["user_id"] = uid
-		}
+		// Trusted caller identity is seeded through the same entry the debug
+		// endpoint uses, so both paths agree on sys.user_id / sys.tenant_id.
+		seedUserID, _ := root["user_id"].(string)
+		seedTenantID, _ := root["tenant_id"].(string)
+		state.SeedIdentity(seedUserID, seedTenantID)
 		if canvasID != "" {
 			state.Sys["canvas_id"] = canvasID
 		}
 		if sessionID != "" {
 			state.Sys["session_id"] = sessionID
 		}
-		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
-			state.Sys["tenant_id"] = tid
-		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
 			// this FileService MUST NOT be used for DeleteFiles.
-			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+			fileSvc := file.NewFileService(nil)
 			files, ferr := fileSvc.ParseAgentUploads(ctx, userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
+				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "parse files: "+ferr.Error())
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
@@ -2198,7 +2367,14 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("run", runID),
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "compile: "+err.Error())
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
+			if _, ok := errors.AsType[*runtime.UserFacingError](err); ok {
+				return nil, err
+			}
+			if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
+				return nil, runtime.NewUserFacingError("ExeSQL configuration is incomplete. Set the database connection details before running the agent.")
+			}
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
 			)
@@ -2230,6 +2406,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if isResume && resumeID != "" {
 			wfInput = map[string]any{"query": ""}
 		}
+		runStartedAt := time.Now()
 		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, wfInput, invokeOpts...)
 		err = invokeErr
 		if errors.Is(err, context.Canceled) || errors.Is(ctx2.Err(), context.Canceled) {
@@ -2243,42 +2420,27 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
 		}
 
-		// Collect answer and references from the state snapshot.
+		// Collect thinking and references from the state snapshot.
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
-		var answer string
 		var thinking string
 		var legacyReference []interface{}
-		var downloads any
-		var attachment map[string]any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
-			if v, ok := bucket["answer"].(string); ok && v != "" {
-				if answer == "" {
-					answer = v
-				}
-			}
-			if v, ok := bucket["content"].(string); ok && v != "" && answer == "" {
-				answer = v
-			}
-			if v, ok := bucket["result"].(string); ok && v != "" && answer == "" {
-				answer = v
-			}
 			if v, ok := bucket["thinking"].(string); ok && v != "" && thinking == "" {
 				thinking = v
 			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
 				legacyReference = append(legacyReference, v...)
 			}
-			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
-				downloads = v
-			}
-			if v, ok := bucket["attachment"].(map[string]any); ok && len(v) > 0 {
-				attachment = v
-			}
 		}
-		referencePayload := agentRunReferencePayload(state, legacyReference)
-		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
+		referencePayload := agentRunReferencePayload(c, state, legacyReference)
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, runStartedAt)
+		// The selected Message owns the answer, including empty text when it
+		// intentionally selected attachments only.
+		answer, _ := assistantOutput["content"].(string)
+		downloads := assistantOutput["downloads"]
+		attachment, _ := assistantOutput["attachment"].(map[string]any)
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
@@ -2321,41 +2483,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				}
 				return state, err
 			}
-			if shouldTreatAsCompletedLoopRun(err, answer) {
-				appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
-					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-					return nil, canvas.NewInternalRunError(
-						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
-					)
-				}
-				if !messageEventsEmitted && shouldEmitMessage {
-					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-				}
-
-				if shouldEmitMessage {
-					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Attachment: attachment,
-						Reference:  referencePayload,
-					})
-					emit("message_end", string(meData))
-				}
-
-				wfPayload := map[string]interface{}{
-					"inputs":       map[string]any{"query": userInput},
-					"outputs":      workflowOutputsFromTerminal(assistantOutput),
-					"elapsed_time": now - startedAt,
-					"created_at":   now,
-				}
-				if u := usagePayload(); u != nil {
-					wfPayload["usage"] = u
-				}
-				wfData, _ := json.Marshal(wfPayload)
-				emit("workflow_finished", string(wfData))
-
-				s.markRunSucceeded(ctx2, runID)
-				return state, nil
-			}
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
 				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
@@ -2363,6 +2490,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					visibleAnswer = failureText
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, canvas.NewInternalRunError(
 						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2375,9 +2503,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					})
 					emit("message_end", string(meData))
 				}
+				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
 		}
@@ -2388,6 +2518,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// reproduce and amplify those literals on later turns.
 		appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2592,7 +2723,10 @@ func (s *AgentService) persistAgentRunSession(
 	if appendAssistantMessage {
 		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now}
 	}
-	updates := map[string]interface{}{"round": gorm.Expr("COALESCE(round, 0) + 1")}
+	updates := map[string]interface{}{
+		"round":  gorm.Expr("COALESCE(round, 0) + 1"),
+		"errors": nil,
+	}
 	if state != nil {
 		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
@@ -2648,20 +2782,39 @@ func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) en
 	return dsl
 }
 
-func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+func agentRunReferencePayload(c *canvas.Canvas, state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	var reference map[string]interface{}
 	if state != nil {
-		if reference := state.GetRetrievalReference(); len(reference) > 0 {
-			return reference
+		reference = state.GetRetrievalReference()
+	}
+	if len(reference) == 0 {
+		if len(legacyChunks) == 0 {
+			return nil
+		}
+		reference = map[string]interface{}{
+			"chunks":   legacyChunks,
+			"doc_aggs": []interface{}{},
+			"total":    len(legacyChunks),
 		}
 	}
-	if len(legacyChunks) == 0 {
-		return nil
+	if c != nil && state != nil {
+		snapshot := state.Snapshot()
+		hasAgent, cite := false, false
+		for cpnID, component := range c.Components {
+			if !strings.EqualFold(component.Obj.ComponentName, "Agent") || len(snapshot[cpnID]) == 0 {
+				continue
+			}
+			hasAgent = true
+			if enabled, _ := component.Obj.Params["cite"].(bool); enabled {
+				cite = true
+				break
+			}
+		}
+		if hasAgent && !cite {
+			delete(reference, "doc_aggs")
+		}
 	}
-	return map[string]interface{}{
-		"chunks":   legacyChunks,
-		"doc_aggs": []interface{}{},
-		"total":    len(legacyChunks),
-	}
+	return reference
 }
 
 func stringifyAgentUserInput(userInput any) string {
@@ -2715,19 +2868,27 @@ func terminalCanvasOutput(
 	c *canvas.Canvas,
 	state *canvas.CanvasState,
 	workflowOutput map[string]any,
-	answer string,
-	downloads any,
-	attachment any,
+	runStartedAt time.Time,
 ) map[string]any {
 	terminalIDs := make([]string, 0)
+	messageIDs := make([]string, 0)
 	if c != nil {
 		for cpnID, component := range c.Components {
-			if len(component.Downstream) == 0 {
+			if strings.EqualFold(component.Obj.ComponentName, "Message") {
+				messageIDs = append(messageIDs, cpnID)
+			}
+			if c.NodeParents[cpnID] != "" || strings.EqualFold(component.Obj.ComponentName, "ExitLoop") {
+				continue
+			}
+			// Successful workflow output names the actual outer terminals,
+			// including macros whose declared downstream belongs to their body.
+			if _, ok := workflowOutput[cpnID]; ok || len(component.Downstream) == 0 {
 				terminalIDs = append(terminalIDs, cpnID)
 			}
 		}
 	}
 	sort.Strings(terminalIDs)
+	sort.Strings(messageIDs)
 	for _, cpnID := range terminalIDs {
 		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
 			return cloneCanvasOutput(output)
@@ -2737,21 +2898,30 @@ func terminalCanvasOutput(
 		snapshot := state.Snapshot()
 		for _, cpnID := range terminalIDs {
 			if output := snapshot[cpnID]; len(output) > 0 {
-				return cloneCanvasOutput(output)
+				created, _ := output["_created_time"].(string)
+				createdAt, err := time.Parse(time.RFC3339Nano, created)
+				if err == nil && !createdAt.Before(runStartedAt) {
+					return cloneCanvasOutput(output)
+				}
 			}
 		}
+		// A Message may have emitted a prompt before the next node paused.
+		// Persist that partial answer, but never replay an earlier turn.
+		var partial map[string]any
+		latest := runStartedAt
+		for _, cpnID := range messageIDs {
+			output := snapshot[cpnID]
+			created, _ := output["_created_time"].(string)
+			createdAt, err := time.Parse(time.RFC3339Nano, created)
+			if err == nil && !createdAt.Before(latest) {
+				partial, latest = output, createdAt
+			}
+		}
+		if partial != nil {
+			return cloneCanvasOutput(partial)
+		}
 	}
-	if len(workflowOutput) > 0 {
-		return cloneCanvasOutput(workflowOutput)
-	}
-	fallback := map[string]any{"content": answer}
-	if !emptyDownloadValue(downloads) {
-		fallback["downloads"] = downloads
-	}
-	if !emptyAttachmentValue(attachment) {
-		fallback["attachment"] = attachment
-	}
-	return fallback
+	return map[string]any{}
 }
 
 func cloneCanvasOutput(input map[string]any) map[string]any {
@@ -2883,10 +3053,10 @@ func pythonOutputKeyPriority(key string) int {
 
 // tenantIDFromRoot returns the optional run-tracker tenant id that
 // RunAgent populated on the root map. Runtime components use
-// root["tenant_id"] / state.Sys["tenant_id"] for the caller tenant;
-// RunTracker keeps the historical joined-tenant dimension separately.
-// Empty when absent — the RunTracker stores "" as the tenant id, which
-// the test suite already exercises.
+// root["tenant_id"] / state.Sys["tenant_id"] for the canvas tenant, while
+// root["user_id"] / state.Sys["user_id"] retain the actual caller. RunTracker
+// keeps its historical joined-tenant dimension separately. Empty when absent
+// — the RunTracker stores "" as the tenant id, which the test suite exercises.
 func tenantIDFromRoot(root map[string]any) string {
 	if s, ok := root["run_tenant_id"].(string); ok {
 		return s
@@ -2914,14 +3084,6 @@ func deferredAgentStreamFailureText(err error) string {
 	return strings.TrimSpace(deferred.FailureText())
 }
 
-func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
-	if err == nil || answer == "" {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
-}
-
 func canvasInvokeError(err error) error {
 	if err == nil {
 		return nil
@@ -2929,9 +3091,9 @@ func canvasInvokeError(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "[GraphRunError] no tasks to execute") &&
 		strings.Contains(msg, "last completed nodes: [Switch:") {
-		return errors.New("canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
+		return errors.New("agent invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
 	}
-	return fmt.Errorf("canvas invoke: %w", err)
+	return fmt.Errorf("agent invoke: %w", err)
 }
 
 // markRunSucceeded records the run as completed successfully via
@@ -2961,6 +3123,20 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 			zap.String("run_id", runID),
 			zap.String("reason", reason),
 			zap.Error(err))
+	}
+}
+
+// markAgentSessionFailed keeps the persisted agent log state aligned with the
+// run tracker. A streamed failure may still return a user-facing message, but
+// it must remain a failed execution in the session history.
+func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, userID, sessionID, reason string) {
+	if s == nil || s.api4ConversationDAO == nil || dao.DB == nil || sessionID == "" {
+		return
+	}
+	if err := s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, canvasID, userID,
+		map[string]interface{}{"errors": reason}, dao.ConversationHistoryUpdate{}); err != nil {
+		common.Warn("agent run: persist failed session status failed",
+			zap.String("session_id", sessionID), zap.Error(err))
 	}
 }
 

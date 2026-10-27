@@ -25,7 +25,6 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -106,34 +105,25 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const isGoBackend = useIsGoBackend();
-  // Resolves the i18n key for the canvas "Run" tooltip describing the Go-side
+  // Resolves the i18n key for the canvas "Run" tooltip describing the
   // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
-  // canvas on the golang backend — an agent canvas runs the agent, not an
-  // ingestion debug preview, so it must never show this tooltip.
-  const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
-  // The golang backend's ingestion (dataflow) canvas hides the Run/test-run
-  // entry entirely; the agent canvas keeps its Run button on both backends.
-  const showRunButton = !(isGoBackend && isPipeline);
+  // canvas — an agent canvas runs the agent, not an ingestion debug preview.
+  const runTooltipKey = debugRunLimitsTooltipKey(isPipeline);
+  // The ingestion (dataflow) canvas hides the Run/test-run entry entirely;
+  // the agent canvas keeps its Run button.
+  const showRunButton = !isPipeline;
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  // Saving is always allowed — the canvas checklist flags issues and gates
-  // only the publish/run/embed/explore entry points.
   const handleSave = useCallback(() => {
     saveGraph();
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { issues, getLatestIssues } = useCanvasChecklist({
-    ownerTenantId: agentDetail?.user_id,
+  // The checklist displays all issues; Run separately checks blocking rules.
+  const { issues } = useCanvasChecklist({
+    ownerTenantId: agentDetail?.tenant_id,
+    canvasID: id,
   });
-  const hasBlockingIssues = useCallback(() => {
-    if (getLatestIssues().length > 0) {
-      message.warning(t('flow.checklistResolveBefore'));
-      return true;
-    }
-    return false;
-  }, [getLatestIssues, t]);
   const { buildDslData } = useBuildDslData();
   const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
@@ -224,9 +214,6 @@ export default function Agent() {
   });
 
   const handleButtonRunClick = useCallback(async () => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     if (isWebhookMode) {
       if ((await saveGraph())?.code === 0) showWebhookTestSheet();
     } else if (isPipeline) {
@@ -235,7 +222,6 @@ export default function Agent() {
       handleRun();
     }
   }, [
-    hasBlockingIssues,
     handleRun,
     handleRunPipeline,
     isPipeline,
@@ -245,18 +231,12 @@ export default function Agent() {
   ]);
 
   const handleExploreClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     navigateToAgentExplore(id as string)();
-  }, [hasBlockingIssues, id, navigateToAgentExplore]);
+  }, [id, navigateToAgentExplore]);
 
   const handleEmbedClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     showEmbedModal();
-  }, [hasBlockingIssues, showEmbedModal]);
+  }, [showEmbedModal]);
 
   // Single source for the Run button so the tooltip gating in the JSX below
   // doesn't duplicate it.
@@ -353,7 +333,6 @@ export default function Agent() {
             agentDetail={agentDetail}
             loading={loading}
             onPublish={() => saveGraph(undefined, undefined, true)}
-            onBeforeOpen={hasBlockingIssues}
           />
           <CanvasChecklist issues={issues} />
           <DropdownMenu>
@@ -405,7 +384,7 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
+      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
         <ReactFlowProvider>
           <DropdownProvider>
             <AgentCanvas

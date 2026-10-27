@@ -28,6 +28,7 @@ import {
   IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
+  IAgentWebhookCredential,
   IPipeLineListRequest,
   ITraceData,
   IWebhookTrace,
@@ -48,8 +49,11 @@ import agentService, {
   fetchSharedTrace,
   fetchTrace,
   fetchWebhookTrace,
+  issueAgentWebhookCredential,
+  revokeAgentWebhookCredential,
   updateAgent,
   updateAgentTags,
+  updateVersion,
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
@@ -89,6 +93,8 @@ export const enum AgentApiAction {
   CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
+  CreateWebhookCredential = 'createWebhookCredential',
+  RevokeWebhookCredential = 'revokeWebhookCredential',
   FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
   FetchSessionById = 'fetchSessionById',
   CreateAgentSession = 'createAgentSession',
@@ -237,6 +243,7 @@ export const useFetchAgentListByPage = () => {
     data: data?.canvas ?? [],
     loading,
     searchString,
+    debouncedSearchString,
     setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total ?? 0 },
@@ -531,6 +538,8 @@ export const useSetAgent = (
       release?: string;
       description?: string | null;
       permission?: string;
+      autosave?: boolean;
+      alias?: string;
     }) => {
       const agentId = params.id ?? id;
       const { data = {} } = agentId
@@ -541,6 +550,8 @@ export const useSetAgent = (
             description: params.description,
             permission: params.permission,
             release: params.release,
+            autosave: params.autosave,
+            alias: params.alias,
           })
         : await agentService.createAgent(params);
       if (data.code === 0) {
@@ -789,7 +800,13 @@ export const useFetchInputForm = (componentId?: string) => {
 export const useFetchVersionList = () => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<
-    Array<{ created_at: string; title: string; id: string; release?: boolean }>
+    Array<{
+      created_at: string;
+      title: string;
+      id: string;
+      release?: boolean;
+      alias?: string;
+    }>
   >({
     queryKey: AgentKeys.versionList(id),
     initialData: [],
@@ -802,6 +819,115 @@ export const useFetchVersionList = () => {
   });
 
   return { data, loading };
+};
+
+// useFetchCanvasVersionList lists the published versions of an arbitrary canvas
+// (dataflow or agent) by id. Unlike useFetchVersionList it takes the canvas id
+// explicitly (not from route params) so the document pipeline dialog can load
+// versions for the currently selected dataflow canvas. The backend returns them
+// newest-first (design section 7/E1) and includes the free-text alias (A2/F1).
+export const useFetchCanvasVersionList = (canvasId?: string) => {
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery<
+    Array<{
+      id: string;
+      title: string;
+      created_at: string;
+      release?: boolean;
+      alias?: string;
+    }>
+  >({
+    queryKey: ['canvasVersionList', canvasId],
+    initialData: [],
+    gcTime: 0,
+    enabled: !!canvasId,
+    queryFn: async () => {
+      if (!canvasId) return [];
+      const { data } = await agentService.fetchVersionList(canvasId);
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, isError };
+};
+
+// useDeleteVersion removes a single canvas version (design section 7/B2). The
+// backend still allows deletion when the version is referenced by a dataset or
+// file; the binding then enters a Missing (unparseable) state, so the UI shows a
+// confirmation that warns about breaking bound files (B2.1).
+export const useDeleteVersion = () => {
+  const queryClient = useQueryClient();
+  const {
+    isPending: loading,
+    isError,
+    mutateAsync,
+  } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+    }: {
+      canvasId: string;
+      versionId: string;
+    }) => {
+      const { data } = await agentService.deleteVersion({
+        agentId: canvasId,
+        versionId,
+      });
+      return data?.code === 0;
+    },
+    onSuccess: (_result, variables) => {
+      // Invalidate both version-list caches so the deleted version disappears
+      // without a manual refresh: the version dialog reads
+      // AgentKeys.versionList (canvas id from route params) and the document
+      // pipeline dialog reads the canvasVersionList key.
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(variables.canvasId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['canvasVersionList', variables.canvasId],
+      });
+    },
+  });
+
+  return { loading, isError, deleteVersion: mutateAsync };
+};
+
+export const useUpdateVersion = () => {
+  const queryClient = useQueryClient();
+  const {
+    isPending: loading,
+    isError,
+    mutateAsync,
+  } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+      alias,
+    }: {
+      canvasId: string;
+      versionId: string;
+      alias: string;
+    }) => {
+      const { data } = await updateVersion(canvasId, versionId, { alias });
+      return data?.code === 0;
+    },
+    onSuccess: (_result, variables) => {
+      // The alias edit does not create a version or change the DSL, but the
+      // version-list cache must reflect the new alias without a manual refresh
+      // (design G2/§4.4).
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(variables.canvasId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['canvasVersionList', variables.canvasId],
+      });
+    },
+  });
+
+  return { loading, isError, updateVersion: mutateAsync };
 };
 
 export const useFetchVersion = (
@@ -1016,15 +1142,14 @@ export const BuiltinPipelineKeys = {
     [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
 };
 
-export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+export const useFetchBuiltinPipelines = () => {
   const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
-    queryKey: BuiltinPipelineKeys.list(type),
+    queryKey: BuiltinPipelineKeys.list('builtin'),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
-    enabled,
     queryFn: async () => {
       const { data } = await agentService.listBuiltinPipelines(
-        { params: { type } },
+        { params: { type: 'builtin' } },
         true,
       );
       return data?.data ?? { canvas: [], total: 0 };
@@ -1194,6 +1319,42 @@ export const useFetchWebhookTrace = (autoStart: boolean = true) => {
     currentNextSinceTs,
   };
 };
+
+export function useCreateAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.CreateWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await issueAgentWebhookCredential(id);
+      if (data?.code !== 0 || !data?.data?.webhook_url) {
+        throw new Error(data?.message || 'Failed to create webhook URL');
+      }
+
+      return data.data as IAgentWebhookCredential;
+    },
+  });
+
+  return { createWebhookCredential: mutateAsync, loading };
+}
+
+export function useRevokeAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.RevokeWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await revokeAgentWebhookCredential(id);
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to revoke webhook URL');
+      }
+    },
+  });
+
+  return { revokeWebhookCredential: mutateAsync, loading };
+}
 
 export function useCreateAgentSession() {
   const queryClient = useQueryClient();

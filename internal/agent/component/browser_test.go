@@ -25,42 +25,40 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/entity"
-
-	"gorm.io/gorm"
+	"ragflow/internal/entity/models"
 )
 
-// mockStagehandInvoker captures RunExtract requests and returns a
-// canned JSON string. Used by every test in this file; the Browser
+// mockStagehandInvoker captures RunTask requests and returns a
+// canned final message. Used by every test in this file; the Browser
 // component depends on `DefaultRuntime` which is swapped via
 // `SetDefaultStagehandInvoker` and restored at test cleanup.
 type mockStagehandInvoker struct {
 	mu       sync.Mutex
-	requests []RunExtractRequest
-	rawJSON  string // canned JSON-string response (e.g. "\"hello\"")
+	requests []RunTaskRequest
+	message  string
 	err      error
 }
 
-func (m *mockStagehandInvoker) RunTask(_ context.Context, _ RunTaskRequest) (string, error) {
-	return "", errors.New("RunTask not used in browser tests")
+func (m *mockStagehandInvoker) RunExtract(_ context.Context, _ RunExtractRequest) (string, error) {
+	return "", errors.New("Browser must execute the task before extracting page content")
 }
 
-func (m *mockStagehandInvoker) RunExtract(_ context.Context, req RunExtractRequest) (string, error) {
+func (m *mockStagehandInvoker) RunTask(_ context.Context, req RunTaskRequest) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.requests = append(m.requests, req)
 	if m.err != nil {
 		return "", m.err
 	}
-	return m.rawJSON, nil
+	return m.message, nil
 }
 
-func (m *mockStagehandInvoker) lastRequest(t *testing.T) RunExtractRequest {
+func (m *mockStagehandInvoker) lastRequest(t *testing.T) RunTaskRequest {
 	t.Helper()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(m.requests) == 0 {
-		t.Fatal("no RunExtract call recorded")
+		t.Fatal("no RunTask call recorded")
 	}
 	return m.requests[len(m.requests)-1]
 }
@@ -140,7 +138,7 @@ func TestBrowser_LLMIDAndPromptsRequired(t *testing.T) {
 // TestBrowser_ResolvesSysQueryTemplate: {sys.query} in prompts is
 // resolved against canvas state before dispatch to the runtime.
 func TestBrowser_ResolvesSysQueryTemplate(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
+	mock := &mockStagehandInvoker{message: "ok"}
 	withMockRuntime(t, mock)
 
 	c, _ := NewBrowserComponent(map[string]any{
@@ -178,102 +176,46 @@ func mustState(t *testing.T, ctx context.Context) *runtime.CanvasState {
 	return state
 }
 
-// TestBrowser_DispatchesToRuntime: when a valid llm_id and tenant
-// are provided, the resolved prompts and llm config are forwarded
-// to the runtime.
-//
-// We override the tenant LLM lookup to return a hard error so the
-// test doesn't need a seeded DB; the assertion is that the error
-// surfaces with the expected wrapper AND the runtime is not called.
+// A model resolution error must stop before the browser runtime is invoked.
 func TestBrowser_DispatchesToRuntime(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"agent result text"`}
+	mock := &mockStagehandInvoker{message: "agent result text"}
 	withMockRuntime(t, mock)
-
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
-		return "", "", "", "", errors.New("fake: tenant LLM not found")
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
-
-	c, _ := NewBrowserComponent(map[string]any{
-		"llm_id":  "deepseek-v4-pro@DeepSeek",
-		"prompts": "do something",
+	factoryErr := errors.New("tenant model unavailable")
+	withBrowserModelFactory(t, func(ctx context.Context, tenantID, modelRef string) (*models.ChatModel, error) {
+		if tenantID != "tenant-1" || modelRef != "selected-model" {
+			t.Errorf("factory scope: tenant=%q model=%q", tenantID, modelRef)
+		}
+		return nil, factoryErr
 	})
-	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
-
-	_, err := c.Invoke(ctx, nil, nil)
-	if err == nil {
-		t.Fatal("expected tenant LLM lookup error, got nil")
-	}
-	if !strings.Contains(err.Error(), "tenant llm lookup") {
-		t.Errorf("error %q should mention tenant llm lookup", err.Error())
-	}
-	if !strings.Contains(err.Error(), "fake: tenant LLM not found") {
-		t.Errorf("error %q should include underlying message", err.Error())
+	c, _ := NewBrowserComponent(map[string]any{"llm_id": "selected-model", "prompts": "do something"})
+	_, err := c.Invoke(stateWith(t, map[string]any{"tenant_id": "tenant-1"}), nil, nil)
+	if !errors.Is(err, factoryErr) {
+		t.Fatalf("expected factory error, got %v", err)
 	}
 	if len(mock.requests) != 0 {
-		t.Errorf("runtime should not be called when tenant lookup fails; got %d calls", len(mock.requests))
+		t.Fatal("runtime called after model factory failed")
 	}
 }
 
-func TestResolveBrowserLLM_ResolvesTenantModelID(t *testing.T) {
-	db := setupComponentTestDB(t)
-	pushComponentDB(t, db)
-	if err := db.Create(&entity.TenantModelProvider{
-		ID:           "provider-1",
-		TenantID:     "tenant-1",
-		ProviderName: "OpenAI",
-	}).Error; err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	if err := db.Create(&entity.TenantModelInstance{
-		ID:           "instance-1",
-		ProviderID:   "provider-1",
-		InstanceName: "default",
-		APIKey:       "sk-instance",
-		Status:       "active",
-		Extra:        `{"base_url":"https://instance.example/v1"}`,
-	}).Error; err != nil {
-		t.Fatalf("create instance: %v", err)
-	}
-	if err := db.Create(&entity.TenantModel{
-		ID:         "tenant-model-1",
-		ProviderID: "provider-1",
-		InstanceID: "instance-1",
-		ModelName:  "gpt-4o",
-		ModelType:  int(entity.ModelTypeChat),
-		Status:     "active",
-	}).Error; err != nil {
-		t.Fatalf("create model: %v", err)
-	}
+func withBrowserModelFactory(t *testing.T, factory func(context.Context, string, string) (*models.ChatModel, error)) {
+	t.Helper()
+	previous := browserModelFactory
+	SetBrowserModelFactory(factory)
+	t.Cleanup(func() { SetBrowserModelFactory(previous) })
+}
 
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = nil
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
-
-	ctx := t.Context()
-	provider, model, apiKey, baseURL, err := resolveBrowserLLM(ctx, db, "tenant-1", "tenant-model-1")
-	if err != nil {
-		t.Fatalf("resolveBrowserLLM: %v", err)
-	}
-	if provider != "OpenAI" {
-		t.Fatalf("provider=%q, want OpenAI", provider)
-	}
-	if model != "gpt-4o" {
-		t.Fatalf("model=%q, want gpt-4o", model)
-	}
-	if apiKey != "sk-instance" {
-		t.Fatalf("apiKey=%q, want sk-instance", apiKey)
-	}
-	if baseURL != "https://instance.example/v1" {
-		t.Fatalf("baseURL=%q, want https://instance.example/v1", baseURL)
-	}
+func withBrowserTestModel(t *testing.T) {
+	t.Helper()
+	model := models.NewChatModel(nil, new("gpt-4o"), &models.APIConfig{
+		ApiKey: new("sk-test"), BaseURL: new("https://api.openai.com/v1"),
+	})
+	withBrowserModelFactory(t, func(context.Context, string, string) (*models.ChatModel, error) { return model, nil })
 }
 
 // TestBrowser_MissingTenant: state.Sys["tenant_id"] is required.
 // Missing tenant_id must error.
 func TestBrowser_MissingTenant(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
+	mock := &mockStagehandInvoker{message: "ok"}
 	withMockRuntime(t, mock)
 
 	c, _ := NewBrowserComponent(map[string]any{
@@ -290,25 +232,12 @@ func TestBrowser_MissingTenant(t *testing.T) {
 	}
 }
 
-// TestBrowser_PropagatesRuntimeError: a runtime error surfaces
-// wrapped with model context.
-//
-// We can't easily seed the tenant DAO in a unit test, so this test
-// verifies the error-wrapping contract by injecting a mock runtime
-// and a no-op DAO bypass via the resolveTenantLLM indirection. For
-// v1 we keep the indirection simple: we expose a package-level
-// override that tests can swap.
+// TestBrowser_PropagatesRuntimeError verifies runtime errors retain model context.
 func TestBrowser_PropagatesRuntimeError(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"x"`, err: errors.New("boom")}
+	mock := &mockStagehandInvoker{message: "x", err: errors.New("boom")}
 	withMockRuntime(t, mock)
 
-	// Override the tenant LLM lookup so the test doesn't need a
-	// real DB.
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
-		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
+	withBrowserTestModel(t)
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "gpt-4o@OpenAI",
@@ -320,10 +249,10 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected runtime error, got nil")
 	}
-	if !strings.Contains(err.Error(), "stagehand extract") {
-		t.Errorf("error should mention stagehand extract; got %v", err)
+	if !strings.Contains(err.Error(), "stagehand task") {
+		t.Errorf("error should mention stagehand task; got %v", err)
 	}
-	if !strings.Contains(err.Error(), `model="openai/gpt-4o"`) {
+	if !strings.Contains(err.Error(), `model="gpt-4o"`) {
 		t.Errorf("error should include model context; got %v", err)
 	}
 	if !strings.Contains(err.Error(), "base_url=https://api.openai.com/v1") {
@@ -354,92 +283,28 @@ func TestBrowserBaseURLForLog(t *testing.T) {
 	}
 }
 
-func TestBrowserOpenAICompatibleBaseURL(t *testing.T) {
-	cases := []struct {
-		name     string
-		baseURL  string
-		provider string
-		want     string
-	}{
-		{
-			name:     "explicit_wins",
-			baseURL:  " https://gateway.example/v1 ",
-			provider: "DeepSeek",
-			want:     "https://gateway.example/v1",
-		},
-		{
-			name:     "deepseek_default",
-			provider: "DeepSeek",
-			want:     "https://api.deepseek.com/v1",
-		},
-		{
-			name:     "siliconflow_default",
-			provider: "SILICONFLOW",
-			want:     "https://api.siliconflow.cn/v1",
-		},
-		{
-			name:     "unknown_provider",
-			provider: "unknown",
-			want:     "",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := browserOpenAICompatibleBaseURL(tc.baseURL, tc.provider); got != tc.want {
-				t.Fatalf("browserOpenAICompatibleBaseURL(%q, %q) = %q, want %q", tc.baseURL, tc.provider, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestStagehandModelName(t *testing.T) {
-	cases := []struct {
-		name     string
-		provider string
-		model    string
-		want     string
-	}{
-		{name: "deepseek_uses_openai_compatible_provider", provider: "DeepSeek", model: "deepseek-v4-pro", want: "openai/deepseek-v4-pro"},
-		{name: "siliconflow_uses_openai_compatible_provider", provider: "SILICONFLOW", model: "Qwen/Qwen3-32B", want: "openai/Qwen/Qwen3-32B"},
-		{name: "openai_native", provider: "OpenAI", model: "gpt-4o", want: "openai/gpt-4o"},
-		{name: "anthropic_native", provider: "Anthropic", model: "claude-sonnet-4-5", want: "anthropic/claude-sonnet-4-5"},
-		{name: "google_native", provider: "Google", model: "gemini-3-flash-preview", want: "google/gemini-3-flash-preview"},
-		{name: "already_prefixed", provider: "DeepSeek", model: "openai/deepseek-v4-pro", want: "openai/deepseek-v4-pro"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := stagehandModelName(tc.provider, tc.model); got != tc.want {
-				t.Fatalf("stagehandModelName(%q, %q) = %q, want %q", tc.provider, tc.model, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestBrowser_RunExtractRequestShape verifies the RunExtractRequest
-// fields forwarded to the runtime: ModelName, TenantID, APIKey,
-// Schema, and the resolved Instruction.
-func TestBrowser_RunExtractRequestShape(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
+// TestBrowser_RunTaskRequestShape verifies model settings, task instructions,
+// and the step limit are forwarded to the navigation-capable runtime.
+func TestBrowser_RunTaskRequestShape(t *testing.T) {
+	mock := &mockStagehandInvoker{message: "ok"}
 	withMockRuntime(t, mock)
 
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
-		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
+	withBrowserTestModel(t)
 
 	c, _ := NewBrowserComponent(map[string]any{
-		"llm_id":  "gpt-4o@OpenAI",
-		"prompts": "extract the page title",
+		"llm_id":    "gpt-4o@OpenAI",
+		"prompts":   "{sys.query}",
+		"max_steps": 17,
 	})
-	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
+	instruction := "extract the title of the pr in https://github.com/infiniflow/ragflow/pull/21460"
+	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1", "query": instruction})
 
 	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	req := mock.lastRequest(t)
-	if req.ModelName != "openai/gpt-4o" {
-		t.Errorf("ModelName: got %q, want openai/gpt-4o", req.ModelName)
+	if req.ModelName != "gpt-4o" {
+		t.Errorf("ModelName: got %q, want gpt-4o", req.ModelName)
 	}
 	if req.TenantID != "tenant-1" {
 		t.Errorf("TenantID: got %q, want tenant-1", req.TenantID)
@@ -447,28 +312,27 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 	if req.APIKey != "sk-test" {
 		t.Errorf("APIKey: got %q, want sk-test", req.APIKey)
 	}
-	if req.Instruction != "extract the page title" {
-		t.Errorf("Instruction: got %q, want 'extract the page title'", req.Instruction)
+	if req.BaseURL != "https://api.openai.com/v1" {
+		t.Errorf("BaseURL: got %q", req.BaseURL)
 	}
-	if req.Schema == nil {
-		t.Fatal("Schema should not be nil")
+	if req.ChatModel == nil {
+		t.Fatal("shared chat model missing from runtime request")
 	}
-	if typ, ok := req.Schema["type"]; !ok || typ != "string" {
-		t.Errorf("Schema.type: got %v, want 'string'", typ)
+	if req.Instruction != instruction {
+		t.Errorf("Instruction: got %q, want %q", req.Instruction, instruction)
+	}
+	if req.MaxSteps != 17 {
+		t.Errorf("MaxSteps: got %d, want 17", req.MaxSteps)
 	}
 }
 
 // TestBrowser_HeadlessPropagates: the param's headless bool is
 // forwarded to the runtime verbatim.
 func TestBrowser_HeadlessPropagates(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
+	mock := &mockStagehandInvoker{message: "ok"}
 	withMockRuntime(t, mock)
 
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
-		return "OpenAI", "gpt-4o", "sk-test", "", nil
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
+	withBrowserTestModel(t)
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":   "gpt-4o@OpenAI",
@@ -489,18 +353,49 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 	}
 }
 
+func TestBrowser_ChromiumSandboxPropagates(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		set  *bool
+		want bool
+	}{
+		{name: "default_disabled"},
+		{name: "disabled", set: new(false)},
+		{name: "enabled", set: new(true), want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockStagehandInvoker{message: "ok"}
+			withMockRuntime(t, mock)
+
+			withBrowserTestModel(t)
+
+			conf := map[string]any{"llm_id": "gpt-4o@OpenAI", "prompts": "x"}
+			if tc.set != nil {
+				conf["chromium_sandbox"] = *tc.set
+			}
+			c, err := NewBrowserComponent(conf)
+			if err != nil {
+				t.Fatalf("NewBrowserComponent: %v", err)
+			}
+			ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
+			if _, err := c.Invoke(ctx, nil, nil); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if got := mock.lastRequest(t).ChromiumSandbox; got != tc.want {
+				t.Errorf("ChromiumSandbox = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestBrowser_OutputsShape: the output map contains the Python keys
 // (content, downloaded_files) and the Go-native compat keys (url,
 // status, size, model_id, prompt).
 func TestBrowser_OutputsShape(t *testing.T) {
-	mock := &mockStagehandInvoker{rawJSON: `"the agent's final message"`}
+	mock := &mockStagehandInvoker{message: "the agent's final message"}
 	withMockRuntime(t, mock)
 
-	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
-		return "OpenAI", "gpt-4o", "sk-test", "", nil
-	}
-	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
+	withBrowserTestModel(t)
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "gpt-4o@OpenAI",
@@ -554,5 +449,46 @@ func TestBrowser_ParamCheck_NegativeMaxSteps(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "max_steps") {
 		t.Errorf("expected max_steps error, got %v", err)
+	}
+}
+
+// Provider catalog coverage verifies delegation, without making provider calls.
+func TestBrowser_ForwardsConfiguredProviderModels(t *testing.T) {
+	if err := models.InitProviderManager("../../../conf/models"); err != nil {
+		t.Fatal(err)
+	}
+	providers := models.GetProviderManager().Providers
+	if len(providers) == 0 {
+		t.Fatal("provider catalog is empty")
+	}
+	t.Logf("verifying Browser delegates %d configured provider drivers", len(providers))
+	for _, provider := range providers {
+		if provider.ModelDriver == nil {
+			t.Fatalf("provider %q has no configured driver", provider.Name)
+		}
+		t.Run(provider.Name, func(t *testing.T) {
+			mock := &mockStagehandInvoker{message: "ok"}
+			withMockRuntime(t, mock)
+			model := models.NewChatModel(provider.ModelDriver, new("configured-browser-model"), nil)
+			withBrowserModelFactory(t, func(context.Context, string, string) (*models.ChatModel, error) { return model, nil })
+			c, _ := NewBrowserComponent(map[string]any{"llm_id": "configured-model", "prompts": "browse"})
+			if _, err := c.Invoke(stateWith(t, map[string]any{"tenant_id": "tenant-1"}), nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			req := mock.lastRequest(t)
+			if req.ChatModel != model || req.ChatModel.ModelDriver != provider.ModelDriver || req.ModelName != *model.ModelName {
+				t.Errorf("configured provider model was replaced: name=%q model=%p", req.ModelName, req.ChatModel)
+			}
+		})
+	}
+}
+
+func TestBrowser_ModelFactoryUnavailable(t *testing.T) {
+	for _, factory := range []func(context.Context, string, string) (*models.ChatModel, error){nil, func(context.Context, string, string) (*models.ChatModel, error) { return nil, nil }} {
+		withBrowserModelFactory(t, factory)
+		c, _ := NewBrowserComponent(map[string]any{"llm_id": "configured-model", "prompts": "browse"})
+		if _, err := c.Invoke(stateWith(t, map[string]any{"tenant_id": "tenant-1"}), nil, nil); err == nil {
+			t.Fatal("expected unavailable model error")
+		}
 	}
 }

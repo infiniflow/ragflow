@@ -4,7 +4,6 @@ import {
   RunningStatusOld,
 } from '@/constants/knowledge';
 import type { IDocumentInfoFilter } from '@/interfaces/database/document';
-import { pickByBackend } from '@/utils/backend-variant';
 
 type DocumentFilterResponse = Omit<IDocumentInfoFilter, 'run_status'> & {
   run_status?: IDocumentInfoFilter['run_status'];
@@ -35,24 +34,18 @@ const goStatusOptions = Object.fromEntries(
 export const adaptDocumentFilter = (
   filter: DocumentFilterResponse,
 ): IDocumentInfoFilter => {
-  const goRunStatus: IDocumentInfoFilter['run_status'] = {};
+  const runStatus: IDocumentInfoFilter['run_status'] = {};
   for (const [status, count] of Object.entries(filter.ingestion_status ?? {})) {
     const option = goStatusOptions[status];
     if (option) {
-      goRunStatus[option] = (goRunStatus[option] ?? 0) + count;
+      runStatus[option] = (runStatus[option] ?? 0) + count;
     }
   }
 
-  return pickByBackend({
-    go: { ...filter, run_status: goRunStatus },
-    python: { ...filter, run_status: filter.run_status ?? {} },
-  });
+  return { ...filter, run_status: runStatus };
 };
 
 export const adaptDocumentRunStatusFilter = (
   statuses?: string[],
 ): string[] | undefined =>
-  pickByBackend({
-    go: statuses?.flatMap((status) => goQueryStatuses[status] ?? [status]),
-    python: statuses,
-  });
+  statuses?.flatMap((status) => goQueryStatuses[status] ?? [status]);

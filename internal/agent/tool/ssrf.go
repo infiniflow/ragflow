@@ -114,7 +114,7 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 
 	// If the host is a literal IP, no DNS lookup is needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return host, ip, nil
@@ -130,7 +130,7 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		if ip == nil {
 			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
 		}
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == nil {
@@ -143,22 +143,18 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 	return host, firstSafe, nil
 }
 
-// isPrivateOrLoopback reports whether ip is in any of the ranges we
-// refuse to fetch from. It is deliberately conservative — link-local
-// (169.254.0.0/16, fe80::/10) is rejected because that is where cloud
-// metadata services live; multicast and the unspecified address are
-// also rejected.
-func isPrivateOrLoopback(ip net.IP) bool {
+// isNonGlobalIP applies the same special-use address policy as the shared
+// host guard without repeating its range list or performing another DNS lookup.
+func isNonGlobalIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-	return false
+	_, err := common.AssertHostSafe(ip.String())
+	return err != nil
 }
 
+// allowAnyHost reports the in-memory test override. ValidateDBHost also
+// honors ALLOW_ANY_HOST; ResolveAndValidate does not.
 func allowAnyHost() bool {
 	return common.AllowAnyHostForTest
 }
@@ -183,19 +179,14 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Mirror ResolveAndValidate's test-only bypass.
+	// Operator opt-in. ResolveAndValidate does not use this path, so
+	// user-controlled URLs stay strict.
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
+	}
+	// In-memory test hook. Still resolve so the SQL dial stays pinned.
 	if allowAnyHost() {
-		if ip := net.ParseIP(host); ip != nil {
-			return ip.String(), nil
-		}
-		addrs, lerr := common.LookupHost(host)
-		if lerr != nil {
-			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
-		}
-		if len(addrs) == 0 {
-			return "", fmt.Errorf("ssrf: %s has no A/AAAA records", host)
-		}
-		return addrs[0], nil
+		return common.ResolveHostPin(host)
 	}
 
 	// Short-circuit the well-known host aliases DNS lookups may also
@@ -210,7 +201,7 @@ func ValidateDBHost(host string) (string, error) {
 
 	// Literal IP — no DNS lookup needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return ip.String(), nil
@@ -232,7 +223,7 @@ func ValidateDBHost(host string) (string, error) {
 		if ip == nil {
 			return "", fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
 		}
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == "" {

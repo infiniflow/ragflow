@@ -17,7 +17,8 @@ import { useChatStreamStore } from './store';
 export type RunChatCompletionStreamParams = {
   conversationId: string;
   chatId?: string;
-  messages: IMessage[];
+  question: string;
+  files?: IMessage['files'];
   enableThinking?: string;
   enableInternet?: boolean;
   llmSetting?: Variable;
@@ -31,7 +32,8 @@ export type RunChatCompletionStreamResult = {
 export async function runChatCompletionStream({
   conversationId,
   chatId,
-  messages,
+  question,
+  files,
   enableThinking,
   enableInternet,
   llmSetting,
@@ -75,7 +77,8 @@ export async function runChatCompletionStream({
       {
         chatId,
         sessionId: conversationId,
-        messages,
+        question,
+        files,
         enableThinking,
         enableInternet,
         llmSetting,

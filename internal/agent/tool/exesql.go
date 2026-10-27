@@ -161,7 +161,7 @@ func NewExeSQLConnParams(params map[string]any) (ExeSQLConnParams, error) {
 		conn.MaxRecords = v
 	}
 	if conn.DBType == "" || conn.Host == "" || conn.Username == "" || conn.Database == "" {
-		return conn, fmt.Errorf("ExeSQL: missing required connection params (db_type/host/database/username)")
+		return conn, fmt.Errorf("%w: missing required connection params (db_type/host/database/username)", ErrExeSQLNoCredentials)
 	}
 	return conn, nil
 }
