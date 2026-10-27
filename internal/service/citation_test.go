@@ -20,11 +20,52 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
 	"ragflow/internal/agentic_rag"
 )
+
+func TestExtractCitationMarkers(t *testing.T) {
+	cases := []struct {
+		name     string
+		answer   string
+		maxIndex int
+		want     []int
+	}{
+		{name: "empty answer", maxIndex: 2},
+		{name: "no markers", answer: "Plain answer.", maxIndex: 2},
+		{name: "zero maximum", answer: "[ID:0]", maxIndex: 0},
+		{name: "negative maximum", answer: "[ID:0]", maxIndex: -1},
+		{name: "zero", answer: "[ID:0]", maxIndex: 2, want: []int{0}},
+		{name: "last valid index", answer: "[ID:1]", maxIndex: 2, want: []int{1}},
+		{name: "bare marker", answer: "[1]", maxIndex: 2, want: []int{1}},
+		{name: "first seen order", answer: "[ID:1] [ID:0] [ID:1]", maxIndex: 2, want: []int{1, 0}},
+		{name: "leading zeros", answer: "[ID:0001]", maxIndex: 2, want: []int{1}},
+		{name: "many leading zeros", answer: "[ID:" + strings.Repeat("0", 100) + "1]", maxIndex: 2, want: []int{1}},
+		{name: "equal to maximum", answer: "[ID:2]", maxIndex: 2},
+		{name: "negative marker", answer: "[ID:-1]", maxIndex: 2},
+		{name: "ordinary bracketed year", answer: "[2024]", maxIndex: 2},
+		{name: "maximum signed 64 bit integer", answer: "[ID:9223372036854775807]", maxIndex: 2},
+		{name: "maximum unsigned 64 bit integer", answer: "[ID:18446744073709551615]", maxIndex: 2},
+		{name: "overflow to zero", answer: "[ID:18446744073709551616]", maxIndex: 2},
+		{name: "overflow to one", answer: "[ID:18446744073709551617]", maxIndex: 2},
+		{name: "very large integer", answer: "[ID:" + strings.Repeat("9", 100) + "]", maxIndex: 2},
+		{name: "Arabic Indic digits", answer: "[ID: ١]", maxIndex: 2, want: []int{1}},
+		{name: "Eastern Arabic Indic digits", answer: "[ID: ۱]", maxIndex: 2, want: []int{1}},
+		{name: "Arabic Indic overflow", answer: "[ID:١٨٤٤٦٧٤٤٠٧٣٧٠٩٥٥١٦١٦]", maxIndex: 2},
+		{name: "Eastern Arabic Indic overflow", answer: "[ID:۱۸۴۴۶۷۴۴۰۷۳۷۰۹۵۵۱۶۱۶]", maxIndex: 2},
+		{name: "valid marker after overflow", answer: "[ID:18446744073709551616] [ID:1]", maxIndex: 2, want: []int{1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ExtractCitationMarkers(tc.answer, tc.maxIndex); !slices.Equal(got, tc.want) {
+				t.Fatalf("ExtractCitationMarkers(%q, %d) = %v, want %v", tc.answer, tc.maxIndex, got, tc.want)
+			}
+		})
+	}
+}
 
 func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
 	for _, answer := range []string{
