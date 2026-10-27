@@ -15,6 +15,7 @@
  */
 
 import {
+  DSL,
   IAgentLogsRequest,
   IPipeLineListRequest,
 } from '@/interfaces/database/agent';
@@ -167,8 +168,8 @@ export const updateAgent = (
   agentId: string,
   params: {
     title?: string;
-    dsl?: Record<string, any>;
-    avatar?: string;
+    dsl?: DSL | Record<string, any>;
+    avatar?: string | null;
     description?: string | null;
     permission?: string;
     release?: string;

@@ -16,6 +16,9 @@
 
 import { isEqual } from 'lodash';
 
+import { AgentQuery } from '@/constants/agent';
+import { CompilationTemplateKind } from '@/constants/compilation';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import {
   ICompilationTemplate,
   ICompilationTemplateBuiltin,
@@ -24,8 +27,7 @@ import {
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
 import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilation-template';
-
-import { CompilationTemplateKind } from '@/constants/compilation';
+import { Routes } from '@/routes';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
 import {
@@ -339,4 +341,16 @@ export const getAvailableTypeOptions = (
   return getTypeOptionsFromBuiltinSection(builtinSection).filter(
     (option) => !usedTypes.has(option.value),
   );
+};
+
+export const resolveAgentsUrl = (source: string | null): string => {
+  // Only the Agents page owns the canvas_category tab param; other entry
+  // points keep the plain Agents route on return.
+  if (source !== 'agents') {
+    return Routes.Agents;
+  }
+  const params = new URLSearchParams({
+    [AgentQuery.CanvasCategory]: AgentListItemType.CompilationTemplateGroup,
+  });
+  return `${Routes.Agents}?${params.toString()}`;
 };

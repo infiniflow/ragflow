@@ -5,7 +5,7 @@ import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
 import {
   GlobalVariableType,
@@ -22,10 +22,10 @@ import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
+  const { saveAgent, loading } = useSaveAgent(showMessage, skipDetailRefresh);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
@@ -59,9 +59,9 @@ export const useSaveGraph = (
         params.autosave = true;
       }
 
-      return setAgent(params);
+      return saveAgent(params);
     },
-    [id, data.title, buildDslData, setAgent],
+    [id, data.title, buildDslData, saveAgent],
   );
 
   return { saveGraph, loading };

@@ -27,7 +27,7 @@ import {
   useDeleteVersion,
   useFetchVersion,
   useFetchVersionList,
-  useSetAgent,
+  useSaveAgent,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
@@ -59,14 +59,10 @@ type PendingAction =
 // keystrokes the way an uncontrolled defaultValue input with a volatile key could.
 const AliasInput = ({
   placeholder,
-  versionId,
-  canvasId,
   initialAlias,
   onCommit,
 }: {
   placeholder: string;
-  versionId: string;
-  canvasId: string;
   initialAlias: string;
   onCommit: (alias: string) => void;
 }) => {
@@ -103,7 +99,7 @@ export function VersionDialog({
   const [pending, setPending] = useState<PendingAction>(null);
 
   const { deleteVersion, loading: deleting } = useDeleteVersion();
-  const { setAgent, loading: restoring } = useSetAgent(false);
+  const { saveAgent, loading: restoring } = useSaveAgent(false);
   const { updateVersion } = useUpdateVersion();
 
   // Backend returns the list newest-first (design section 7/E1); the first
@@ -146,7 +142,7 @@ export function VersionDialog({
       });
       if (ok && selectedId === pending.versionId) setSelectedId('');
     } else if (pending.kind === 'restore') {
-      await setAgent({
+      await saveAgent({
         id: canvasId,
         dsl: agent?.dsl,
         title: agent?.title,
@@ -158,7 +154,7 @@ export function VersionDialog({
     canvasId,
     deleteVersion,
     selectedId,
-    setAgent,
+    saveAgent,
     agent?.dsl,
     agent?.title,
   ]);
@@ -222,8 +218,6 @@ export function VersionDialog({
   so re-renders never wipe in-progress keystrokes. */}
                         <AliasInput
                           placeholder={t('flow.version.alias')}
-                          versionId={x.id}
-                          canvasId={canvasId ?? ''}
                           initialAlias={x.alias ?? ''}
                           onCommit={(alias) =>
                             updateVersion({
