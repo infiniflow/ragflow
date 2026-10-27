@@ -21,12 +21,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -661,11 +663,40 @@ func TestDispatchPDFMinerUStreamHonoursCancellation(t *testing.T) {
 	}
 }
 
+// readSignalBody closes signal once the client has read body bytes, which
+// tells the test the response header was consumed and ReadAll is in progress.
+type readSignalBody struct {
+	io.ReadCloser
+	once   sync.Once
+	signal chan struct{}
+}
+
+func (b *readSignalBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.once.Do(func() { close(b.signal) })
+	}
+	return n, err
+}
+
+type readSignalTransport struct {
+	base   http.RoundTripper
+	signal chan struct{}
+}
+
+func (t readSignalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &readSignalBody{ReadCloser: resp.Body, signal: t.signal}
+	return resp, nil
+}
+
 // A run cancelled while a non-200 error body is still streaming must still
 // report context.Canceled; reporting the bare HTTP status hides the reason the
 // request ended.
 func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
-	started := make(chan struct{})
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -673,7 +704,6 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 		if flusher, ok := w.(http.Flusher); ok {
 			flusher.Flush()
 		}
-		close(started)
 		select {
 		case <-r.Context().Done():
 		case <-release:
@@ -684,6 +714,11 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 		server.Close()
 	}()
 
+	bodyRead := make(chan struct{})
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: readSignalTransport{base: http.DefaultTransport, signal: bodyRead}}
+	t.Cleanup(func() { http.DefaultClient = originalClient })
+
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
@@ -692,13 +727,10 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 	}()
 
 	select {
-	case <-started:
+	case <-bodyRead:
 	case <-time.After(5 * time.Second):
-		t.Fatal("MinerU /file_parse was never reached")
+		t.Fatal("MinerU never started reading the error response body")
 	}
-	// Give the client time to consume the flushed header and start reading the
-	// error body; cancelling earlier aborts Do before the body is touched.
-	time.Sleep(200 * time.Millisecond)
 	cancel()
 	select {
 	case err := <-done:
