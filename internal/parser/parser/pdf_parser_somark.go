@@ -11,11 +11,25 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
+	"time"
 )
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
-func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
+//
+// somarkPollTimeout bounds how long parsePDFWithSoMark waits for an async
+// SoMark task to finish. SoMark parses on a remote service, so the window is
+// generous (matching the other cloud-async parsers); a tighter value would
+// fail large PDFs that simply need more time. Overridable by the caller's ctx
+// deadline when one is already in force.
+const somarkPollTimeout = 600 * time.Second
+
+// somarkPollInterval is the delay between /parse/async_check polls. The
+// endpoint is a remote async status check, so sub-second polling only adds
+// load; a few seconds is the right order for a cloud OCR/layout service.
+const somarkPollInterval = 3 * time.Second
+
+func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -30,11 +44,11 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if strings.TrimSpace(apiKey) == "" && !parser.UseTenantModelConfig {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
-	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
+	taskID, err := soMarkSubmit(ctx, strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	result, err := soMarkPoll(strings.TrimRight(baseURL, "/"), taskID, apiKey)
+	result, err := soMarkPoll(ctx, strings.TrimRight(baseURL, "/"), taskID, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
@@ -47,7 +61,7 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 
 // soMarkSubmit uploads a PDF with the supplied credentials and parser options,
 // applying environment defaults only when no tenant instance was selected.
-func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
+func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("file", filename)
@@ -81,7 +95,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	if err = writer.Close(); err != nil {
 		return "", fmt.Errorf("parser: SoMark finalize form: %w", err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async", &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async", &body)
 	if err != nil {
 		return "", fmt.Errorf("parser: SoMark request: %w", err)
 	}
@@ -114,24 +128,74 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	return payload.Data.TaskID, nil
 }
 
-func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
+// soMarkPoll polls /parse/async_check until the task succeeds, fails, or the
+// deadline expires. SoMark's submit endpoint is async (/parse/async), so a
+// single check almost never sees SUCCESS on a real PDF — the previous
+// implementation polled once and returned an error for any non-SUCCESS
+// status, so every task that needed processing time failed. This mirrors the
+// poll loops the other async parsers already have (pollMinerUTask,
+// PaddleOCRClient.pollJob): derive a deadline (caller ctx deadline or
+// somarkPollTimeout), poll at somarkPollInterval, and stop on SUCCESS, a
+// terminal failure status, the deadline, or ctx cancellation.
+func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
+	deadline := time.Now().Add(somarkPollTimeout)
+	if dl, ok := ctx.Deadline(); ok && dl.Before(deadline) {
+		// Honour a tighter caller deadline when one is already in force.
+		deadline = dl
+	}
+	var lastStatus string
+	for {
+		result, status, err := soMarkPollOnce(ctx, baseURL, taskID, apiKey)
+		if err != nil {
+			return nil, err
+		}
+		if result != nil {
+			// status == SUCCESS with a result.
+			return result, nil
+		}
+		lastStatus = status
+		if isSoMarkTerminalFailure(status) {
+			return nil, fmt.Errorf("parser: SoMark task %s failed status=%s", taskID, status)
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("parser: SoMark task %s cancelled: %w", taskID, err)
+		}
+		// Sleep until the next poll, but wake early if ctx is cancelled so a
+		// user-initiated cancel does not wait out the whole interval.
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("parser: SoMark task %s cancelled: %w", taskID, ctx.Err())
+		case <-time.After(somarkPollInterval):
+		}
+	}
+	return nil, fmt.Errorf("parser: SoMark task %s timed out, last status=%s", taskID, lastStatus)
+}
+
+// soMarkPollOnce performs a single /parse/async_check. It returns the result
+// map when status is SUCCESS, or the raw status string (and a nil result)
+// when the task is still running, so the caller can decide whether to poll
+// again.
+func soMarkPollOnce(ctx context.Context, baseURL, taskID, apiKey string) (result map[string]any, status string, err error) {
 	form := url.Values{"task_id": {taskID}}
 	if apiKey != "" {
 		form.Set("api_key", apiKey)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark poll request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := common.GetSSRFHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark poll: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark read poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark read poll: %w", err)
 	}
 	var payload struct {
 		Code    int            `json:"code"`
@@ -139,20 +203,38 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 		Data    map[string]any `json:"data"`
 	}
 	if err = json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark decode poll: %w", err)
 	}
 	if payload.Code != 0 {
-		return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
+		return nil, "", fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
 	}
-	status, _ := payload.Data["status"].(string)
+	status, _ = payload.Data["status"].(string)
 	if status != "SUCCESS" {
-		return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
+		return nil, status, nil
 	}
-	result, _ := payload.Data["result"].(map[string]any)
+	result, _ = payload.Data["result"].(map[string]any)
 	if result == nil {
-		return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
+		return nil, status, fmt.Errorf("parser: SoMark SUCCESS without result")
 	}
-	return result, nil
+	return result, status, nil
+}
+
+// isSoMarkTerminalFailure reports whether a non-SUCCESS status is a terminal
+// failure (as opposed to an in-progress state like PENDING/RUNNING/PROCESSING
+// that should keep being polled). SoMark is Go-only with no Python reference
+// or published status enum in this repo, so this matches the failure tokens
+// that remote async-task APIs converge on rather than enumerating an exact
+// set. An empty status or an in-progress variant returns false and is polled
+// again until the deadline.
+func isSoMarkTerminalFailure(status string) bool {
+	s := strings.ToLower(strings.TrimSpace(status))
+	switch {
+	case s == "":
+		return false
+	case strings.Contains(s, "fail"), strings.Contains(s, "error"), strings.Contains(s, "cancel"):
+		return true
+	}
+	return false
 }
 
 func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any, int) {
