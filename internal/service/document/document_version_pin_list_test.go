@@ -85,7 +85,7 @@ func TestUpdateDatasetDocumentListReturnsPinnedVersion(t *testing.T) {
 	pid := canvasID
 	pv := "v-pinned"
 	pt := 2
-	_, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:         &pt,
 		PipelineID:        &pid,
 		PipelineVersionID: &pv,
@@ -95,7 +95,7 @@ func TestUpdateDatasetDocumentListReturnsPinnedVersion(t *testing.T) {
 	}
 
 	opts := dao.DocumentListOptions{KbID: "kb-1", OrderBy: "create_time", Desc: true, Offset: 0, Limit: 10}
-	docs, _, lerr := svc.ListDocumentsByDatasetIDWithOptions(t.Context(), opts, 1, 10)
+	docs, _, lerr := svc.ListDocumentsByDatasetIDWithOptions(documentTestContext(t.Context()), opts, 1, 10)
 	if lerr != nil {
 		t.Fatal(lerr)
 	}

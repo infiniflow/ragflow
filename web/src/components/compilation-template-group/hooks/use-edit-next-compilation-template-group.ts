@@ -23,26 +23,32 @@ import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-tem
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
 
 import { formatKindLabel } from '@/utils/compilation-template-util';
 
 import { useCompilationTemplateGroupForm } from './use-compilation-template-group-form';
-import { useCompilationTemplateGroupSubmit } from './use-compilation-template-group-submit';
+import {
+  CompilationTemplateGroupSaveResult,
+  useCompilationTemplateGroupSubmit,
+} from './use-compilation-template-group-submit';
 
 type UseEditNextCompilationTemplateGroupOptions = {
-  onSuccess: () => void;
+  // Explicit group id: the route page passes its :id param, embedded usages
+  // (create dialog) pass undefined — useParams would resolve to the host
+  // page's route params there.
+  id?: string;
+  onSuccess: (result: CompilationTemplateGroupSaveResult) => void;
 };
 
 export const useEditNextCompilationTemplateGroup = ({
+  id,
   onSuccess,
 }: UseEditNextCompilationTemplateGroupOptions) => {
-  const { id } = useParams<{ id: string }>();
   const { t } = useTranslation();
 
   const isCreate = isCreateCompilationTemplateGroup(id);
 
-  const { data: detail } = useFetchCompilationTemplateGroup();
+  const { data: detail } = useFetchCompilationTemplateGroup(id);
   const { data: builtins, kindOptions: builtinKindOptions } =
     useFetchBuiltinCompilationTemplates();
 
@@ -71,12 +77,10 @@ export const useEditNextCompilationTemplateGroup = ({
   });
 
   return {
-    id,
     form,
     kindOptions,
     builtins,
     onSubmit,
-    isCreate,
     isLoading: isCreate ? createLoading : updateLoading,
   };
 };

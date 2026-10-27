@@ -15,6 +15,7 @@
  */
 
 import {
+  DSL,
   IAgentLogsRequest,
   IPipeLineListRequest,
 } from '@/interfaces/database/agent';
@@ -68,13 +69,19 @@ const methods = {
     method: 'get',
   },
   deleteVersion: {
-    url: deleteVersion,
+    url: (config: { agentId: string; versionId: string }) =>
+      deleteVersion(config.agentId, config.versionId),
     method: 'delete',
   },
   updateVersion: {
     url: (config: { agentId: string; versionId: string }) =>
       updateVersionApi(config.agentId, config.versionId),
     method: 'put',
+  },
+  applyVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      api.applyVersion(config.agentId, config.versionId),
+    method: 'post',
   },
   listAgents: {
     url: listAgents,
@@ -167,8 +174,8 @@ export const updateAgent = (
   agentId: string,
   params: {
     title?: string;
-    dsl?: Record<string, any>;
-    avatar?: string;
+    dsl?: DSL | Record<string, any>;
+    avatar?: string | null;
     description?: string | null;
     permission?: string;
     release?: string;

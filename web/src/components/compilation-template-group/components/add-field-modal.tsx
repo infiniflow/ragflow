@@ -141,7 +141,8 @@ export function AddFieldModal({
               rules={{
                 required: getRequiredMessage('type'),
                 validate: (value: string) =>
-                  !isDuplicateType(value) || t('knowledgeCompilation.fieldTypeExists'),
+                  !isDuplicateType(value) ||
+                  t('knowledgeCompilation.fieldTypeExists'),
               }}
             >
               {(field) => (

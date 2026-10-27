@@ -73,11 +73,13 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": pipeText, "table_data": blankRows})
 		}, "text"},
 		{"somark html", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{})
+			return items
 		}, "table"},
 		{"somark markdown", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": markdownTable}, false)}
-		}, "text"},
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": markdownTable}, false, &htmlWalkState{})
+			return items
+		}, "table"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -16,103 +16,44 @@
 
 import BackButton from '@/components/back-button';
 import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
-import { Button } from '@/components/ui/button';
-import { Form } from '@/components/ui/form';
-import { CompilationTemplateKind } from '@/constants/compilation';
-import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { Routes } from '@/routes';
-import { useCallback, useMemo } from 'react';
-import { useWatch } from 'react-hook-form';
-import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
-
-import { BlueprintSection } from './components/blueprint-section';
-import { TemplateConfiguration } from './components/template-configuration';
-import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
 import {
-  draftFromSections,
-  validateDraft,
-  type OntologySection,
-} from './ontology/model';
-import { OntologyInspectSheet } from './ontology/inspect-sheet';
+  CompilationTemplateGroupEditor,
+  CompilationTemplateGroupEditorState,
+} from '@/components/compilation-template-group';
+import { OntologyInspectSheet } from '@/components/compilation-template-group/ontology/inspect-sheet';
+import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
+import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 
-const SelectedTemplateIndex = 0;
-
-const agentsUrl = Routes.Agents;
+import { resolveAgentsUrl } from './utils';
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
+
+  const isCreate = isCreateCompilationTemplateGroup(id);
+  const { data: group } = useFetchCompilationTemplateGroup(id);
 
   const navigateToAgents = useCallback(() => {
     navigate(agentsUrl);
-  }, [navigate]);
+  }, [navigate, agentsUrl]);
 
-  const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
-    useEditNextCompilationTemplateGroup({
-      onSuccess: navigateToAgents,
-    });
-  const { data: group } = useFetchCompilationTemplateGroup();
-
-  const selectedKind = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.kind`,
-  });
-
-  const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
-  const isOntology = selectedKind === CompilationTemplateKind.Ontology;
-
-  // A model that was never saved has produced nothing, so the compiled-output
-  // panel stays disabled until the form carries an id.
-  const templateId = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.id`,
-  });
-
-  // The service rejects an ontology template whose cross-references do not
-  // resolve, and that rejection arrives with nothing on screen (see the schema
-  // refinement). Computing the same findings here is what lets the footer say
-  // WHY the save is blocked instead of leaving a dead button.
-  const entitySection = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.config.entity`,
-  }) as OntologySection | undefined;
-  const relationSection = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.config.relation`,
-  }) as OntologySection | undefined;
-  const ontologyIssues = useMemo(
-    () =>
-      isOntology
-        ? validateDraft(draftFromSections(entitySection, relationSection))
-        : [],
-    [entitySection, relationSection, isOntology],
-  );
-
-  // What the model declares, which is what the compiled-output panel can be
-  // asked about: an instance list is per class, an assertion list per property.
-  const ontologyClasses = useMemo(
-    () =>
-      (entitySection?.fields ?? [])
-        .map((field) => String(field.type ?? ''))
-        .filter(Boolean),
-    [entitySection],
-  );
-  const ontologyProperties = useMemo(
-    () =>
-      (relationSection?.fields ?? [])
-        .map((field) => String(field.type ?? ''))
-        .filter(Boolean),
-    [relationSection],
-  );
-
-  const handleSave = useMemo(
-    () => form.handleSubmit(onSubmit),
-    [form, onSubmit],
-  );
-
-  return (
-    <section className="h-full flex flex-col bg-bg-base">
+  // Three questions about the same model, and they need three places: here what
+  // it says, the panel below what it produced, and the two sheets here what it
+  // produced and whether the version that says it is the one datasets compile
+  // with. They read the form, so the editor hands its state up.
+  const renderHeader = useCallback(
+    ({
+      isOntology,
+      templateId,
+      ontologyClasses,
+      ontologyProperties,
+    }: CompilationTemplateGroupEditorState) => (
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
         <BackButton to={agentsUrl} />
         <h2 className="font-medium text-text-secondary">
@@ -120,10 +61,6 @@ export default function EditNextCompilationTemplate() {
             ? t('knowledgeCompilation.addTemplateGroup')
             : group?.name || t('knowledgeCompilation.editTemplateGroup')}
         </h2>
-        {/* Three questions about the same model, and they need three places:
-            here what it says, the panel below what it produced, and the two
-            sheets here what it produced and whether the version that says it
-            is the one datasets compile with. */}
         <div className="ml-auto flex items-center gap-3">
           {isOntology && (
             <OntologyInspectSheet
@@ -135,47 +72,19 @@ export default function EditNextCompilationTemplate() {
           <CompilationModelsSheet templateId={templateId} />
         </div>
       </header>
+    ),
+    [agentsUrl, group?.name, isCreate, t],
+  );
 
-      <Form {...form}>
-        <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSave}>
-          <TemplateConfiguration
-            form={form}
-            builtins={builtins}
-            kindOptions={kindOptions}
-            selectedTemplateIndex={SelectedTemplateIndex}
-          >
-            {isArtifacts && (
-              <BlueprintSection
-                form={form}
-                selectedTemplateIndex={SelectedTemplateIndex}
-                builtins={builtins}
-              />
-            )}
-          </TemplateConfiguration>
-
-          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
-            {ontologyIssues.length > 0 && (
-              <span className="mr-auto text-xs text-[#F0A020]">
-                {t('knowledgeCompilation.ontologySaveBlocked', {
-                  count: ontologyIssues.length,
-                  defaultValue:
-                    '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
-                })}
-              </span>
-            )}
-            <Button type="button" variant="outline" onClick={navigateToAgents}>
-              {t('common.back')}
-            </Button>
-            <Button
-              type="submit"
-              loading={isLoading}
-              disabled={ontologyIssues.length > 0}
-            >
-              {t('common.save')}
-            </Button>
-          </footer>
-        </form>
-      </Form>
+  return (
+    <section className="h-full flex flex-col bg-bg-base">
+      <CompilationTemplateGroupEditor
+        id={id}
+        onSuccess={navigateToAgents}
+        onCancel={navigateToAgents}
+        cancelText={t('common.back')}
+        renderHeader={renderHeader}
+      />
     </section>
   );
 }

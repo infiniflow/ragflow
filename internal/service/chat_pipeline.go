@@ -240,6 +240,9 @@ func (s *ChatPipelineService) AsyncChat(
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
+	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
+		return nil, err
+	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it
 	// has knowledge bases, and whether web search is enabled.

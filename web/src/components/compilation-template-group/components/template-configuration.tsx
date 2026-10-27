@@ -332,9 +332,8 @@ export function TemplateConfiguration({
               <TreeTemplateFields index={selectedTemplateIndex} />
             ) : (
               <>
-                {kind !== CompilationTemplateKind.Artifacts && !isEmpty(kind) && (
-                  <>{rechunkFields}</>
-                )}
+                {kind !== CompilationTemplateKind.Artifacts &&
+                  !isEmpty(kind) && <>{rechunkFields}</>}
                 {sectionNames.length > 0 && activeSectionTab && (
                   <Tabs
                     value={activeSectionTab}

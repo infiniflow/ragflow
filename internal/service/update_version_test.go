@@ -35,13 +35,14 @@ func TestUpdateVersion_PatchesAliasWithoutNewVersion(t *testing.T) {
 	seedVersionedDataflowCanvas(t, db, userID, canvasID, versionID)
 
 	alias := "release-candidate"
+	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
 	patch := dao.UserCanvasVersionPatch{Alias: &alias}
-	if err := svc.UpdateVersion(t.Context(), userID, canvasID, versionID, patch); err != nil {
+	if err := svc.UpdateVersion(ctx, userID, canvasID, versionID, patch); err != nil {
 		t.Fatalf("UpdateVersion alias: %v", err)
 	}
 
-	updated, err := dao.NewUserCanvasVersionDAO().GetByID(t.Context(), dao.DB, versionID)
+	updated, err := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, versionID)
 	if err != nil {
 		t.Fatalf("reload version: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestUpdateVersion_PatchesAliasWithoutNewVersion(t *testing.T) {
 	if g, _ := updated.DSL["graph"].(string); g != "versioned" {
 		t.Fatalf("DSL changed unexpectedly: %v", updated.DSL)
 	}
-	all, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(t.Context(), dao.DB, canvasID)
+	all, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, canvasID)
 	if err != nil {
 		t.Fatalf("list versions: %v", err)
 	}
@@ -81,9 +82,10 @@ func TestUpdateVersion_CrossCanvasRejected(t *testing.T) {
 	}
 
 	alias := "hijack"
+	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
 	patch := dao.UserCanvasVersionPatch{Alias: &alias}
-	err := svc.UpdateVersion(t.Context(), userID, otherCanvasID, versionID, patch)
+	err := svc.UpdateVersion(ctx, userID, otherCanvasID, versionID, patch)
 	if !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 		t.Fatalf("expected ErrUserCanvasVersionNotFound, got %v", err)
 	}

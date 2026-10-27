@@ -24,10 +24,10 @@ import { Spin } from '@/components/ui/spin';
 import { AntToolTip, RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
 import {
+  useApplyVersion,
   useDeleteVersion,
   useFetchVersion,
   useFetchVersionList,
-  useSetAgent,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
@@ -99,7 +99,7 @@ export function VersionDialog({
   const [pending, setPending] = useState<PendingAction>(null);
 
   const { deleteVersion, loading: deleting } = useDeleteVersion();
-  const { setAgent, loading: restoring } = useSetAgent(false);
+  const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
 
   // Backend returns the list newest-first (design section 7/E1); the first
@@ -142,22 +142,14 @@ export function VersionDialog({
       });
       if (ok && selectedId === pending.versionId) setSelectedId('');
     } else if (pending.kind === 'restore') {
-      await setAgent({
-        id: canvasId,
-        dsl: agent?.dsl,
-        title: agent?.title,
+      const ok = await applyVersion({
+        canvasId,
+        versionId: pending.versionId,
       });
+      if (ok) hideModal?.();
     }
     setPending(null);
-  }, [
-    pending,
-    canvasId,
-    deleteVersion,
-    selectedId,
-    setAgent,
-    agent?.dsl,
-    agent?.title,
-  ]);
+  }, [pending, canvasId, deleteVersion, selectedId, applyVersion, hideModal]);
 
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
@@ -294,7 +286,9 @@ export function VersionDialog({
                         }
                         title={t('flow.version.restore')}
                         disabled={
-                          selectedId === latestId || !selectedId || restoring
+                          selectedId === latestId ||
+                          !selectedId ||
+                          applyRestoring
                         }
                       >
                         <RotateCcw />

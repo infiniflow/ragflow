@@ -18,8 +18,10 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -92,6 +94,111 @@ func TestReferenceRecordingTool_SkipsErrorsAndNonJSON(t *testing.T) {
 	}
 	if chunks := state.GetRetrievalChunks(); len(chunks) != 0 {
 		t.Fatalf("recorded chunks = %d, want 0 for failed/non-JSON results", len(chunks))
+	}
+}
+
+func TestToolInvocationRecordingToolRedactsSensitiveText(t *testing.T) {
+	recorder := &toolInvocationRecorder{}
+	inner := &referenceRecordingFakeTool{err: errors.New("request failed: Authorization: Bearer error-secret")}
+	tool := &toolInvocationRecordingTool{InvokableTool: inner, name: "fake_search", recorder: recorder}
+	_, err := tool.InvokableRun(t.Context(), `{"note":"Authorization: Bearer argument-secret","detail":"access_token=other-secret"}`)
+	if err == nil {
+		t.Fatal("expected inner tool error")
+	}
+
+	entries := recorder.snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("recorded entries = %d, want 1", len(entries))
+	}
+	entry := entries[0]
+	for _, field := range []string{"result", "error"} {
+		got, _ := entry[field].(string)
+		if strings.Contains(got, "error-secret") || strings.Contains(strings.ToLower(got), "bearer") {
+			t.Errorf("%s contains unredacted credential: %q", field, got)
+		}
+	}
+	arguments, ok := entry["arguments"].(map[string]any)
+	if !ok {
+		t.Fatalf("arguments = %T, want map", entry["arguments"])
+	}
+	for key, secret := range map[string]string{"note": "argument-secret", "detail": "other-secret"} {
+		got, _ := arguments[key].(string)
+		if strings.Contains(got, secret) || strings.Contains(strings.ToLower(got), "bearer") {
+			t.Errorf("argument %q contains unredacted credential: %q", key, got)
+		}
+	}
+}
+
+func TestToolInvocationRecordingToolRedactsQuotedAndStructuredCredentials(t *testing.T) {
+	rawError := `{"message":"request failed","refresh_token":"refresh secret with spaces","authToken":"auth secret with spaces","authorization":"Basic basic-secret"}`
+	args := `{"note":"authorization: \"Bearer argument secret with spaces\"","detail":"token=\"quoted token secret\"","auth_note":"auth=\"quoted auth secret with spaces\""}`
+	recorder := &toolInvocationRecorder{}
+	inner := &referenceRecordingFakeTool{out: `{"ok":false}`, err: errors.New(rawError)}
+	tool := &toolInvocationRecordingTool{InvokableTool: inner, name: "fake_search", recorder: recorder}
+	if _, err := tool.InvokableRun(t.Context(), args); err == nil {
+		t.Fatal("expected inner tool error")
+	}
+
+	entries := recorder.snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("recorded entries = %d, want 1", len(entries))
+	}
+	for _, field := range []string{"result", "error"} {
+		got, _ := entries[0][field].(string)
+		for _, secret := range []string{"refresh secret", "auth secret", "basic-secret", "Bearer argument", "argument secret", "quoted token secret", "quoted auth secret", "basic ", "bearer "} {
+			if strings.Contains(got, secret) {
+				t.Errorf("%s contains unredacted %q: %s", field, secret, got)
+			}
+		}
+	}
+	encodedArgs, err := json.Marshal(entries[0]["arguments"])
+	if err != nil {
+		t.Fatalf("marshal redacted arguments: %v", err)
+	}
+	for _, secret := range []string{"Bearer argument", "argument secret", "quoted token secret", "quoted auth secret"} {
+		if strings.Contains(string(encodedArgs), secret) {
+			t.Errorf("arguments contain unredacted %q: %s", secret, encodedArgs)
+		}
+	}
+}
+
+func TestToolInvocationRecordingToolRedactsStructuredResult(t *testing.T) {
+	recorder := &toolInvocationRecorder{}
+	inner := &referenceRecordingFakeTool{out: `{"authorization":"Basic result-secret","refresh_token":"refresh result secret"}`}
+	tool := &toolInvocationRecordingTool{InvokableTool: inner, name: "fake_search", recorder: recorder}
+	if _, err := tool.InvokableRun(t.Context(), `{}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	got, _ := recorder.snapshot()[0]["result"].(string)
+	for _, secret := range []string{"result-secret", "refresh result secret", "Basic"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("result contains unredacted %q: %s", secret, got)
+		}
+	}
+}
+
+func TestRedactToolLogTextCredentials(t *testing.T) {
+	for _, input := range []string{
+		`Authorization: Basic hidden-credential`,
+		`Authorization: Bearer hidden-credential`,
+		`Authorization: hidden-credential`,
+		`Authorization: "Bearer hidden-credential with spaces"`,
+		`authorization='Basic hidden-credential with spaces'`,
+		`token=hidden-credential`,
+		`refresh_token=hidden-credential`,
+		`authToken=hidden-credential`,
+		`"token": "hidden-credential with spaces"`,
+		`"auth": "hidden-credential with spaces"`,
+		`api_key=hidden-credential`,
+		`password='hidden-credential with spaces'`,
+		`secret=hidden-credential`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			got := redactToolLogText(input)
+			if strings.Contains(got, "hidden-credential") || strings.Contains(got, "with spaces") || !strings.Contains(got, "[REDACTED]") {
+				t.Fatalf("redacted text = %q, want complete credential removed", got)
+			}
+		})
 	}
 }
 

@@ -434,9 +434,27 @@ describe('OntologyCanvasEditor', () => {
   it('routes a connector around a class that stands in the way', () => {
     renderEditorWith((values) => {
       values.templates[0].config.entity.fields = [
-        { type: 'agent', label: 'Agent', parent: '', description: 'a', rule: '' },
-        { type: 'person', label: 'Person', parent: '', description: 'p', rule: '' },
-        { type: 'place', label: 'Place', parent: '', description: 'l', rule: '' },
+        {
+          type: 'agent',
+          label: 'Agent',
+          parent: '',
+          description: 'a',
+          rule: '',
+        },
+        {
+          type: 'person',
+          label: 'Person',
+          parent: '',
+          description: 'p',
+          rule: '',
+        },
+        {
+          type: 'place',
+          label: 'Place',
+          parent: '',
+          description: 'l',
+          rule: '',
+        },
       ];
       values.templates[0].config.relation.fields = [
         {
@@ -471,11 +489,41 @@ describe('OntologyCanvasEditor', () => {
   it('clears every class between the ends, not just the first', () => {
     renderEditorWith((values) => {
       values.templates[0].config.entity.fields = [
-        { type: 'first', label: 'First', parent: '', description: 'a', rule: '' },
-        { type: 'second', label: 'Second', parent: '', description: 'b', rule: '' },
-        { type: 'third', label: 'Third', parent: '', description: 'c', rule: '' },
-        { type: 'fourth', label: 'Fourth', parent: '', description: 'd', rule: '' },
-        { type: 'fifth', label: 'Fifth', parent: '', description: 'e', rule: '' },
+        {
+          type: 'first',
+          label: 'First',
+          parent: '',
+          description: 'a',
+          rule: '',
+        },
+        {
+          type: 'second',
+          label: 'Second',
+          parent: '',
+          description: 'b',
+          rule: '',
+        },
+        {
+          type: 'third',
+          label: 'Third',
+          parent: '',
+          description: 'c',
+          rule: '',
+        },
+        {
+          type: 'fourth',
+          label: 'Fourth',
+          parent: '',
+          description: 'd',
+          rule: '',
+        },
+        {
+          type: 'fifth',
+          label: 'Fifth',
+          parent: '',
+          description: 'e',
+          rule: '',
+        },
       ];
       values.templates[0].config.relation.fields = [
         {

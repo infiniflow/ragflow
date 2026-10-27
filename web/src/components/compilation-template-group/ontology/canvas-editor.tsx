@@ -238,7 +238,8 @@ const toPath = (points: { x: number; y: number }[]) =>
 /** Drops repeated vertices, which a collapsed Z produces. */
 const dedupe = (points: { x: number; y: number }[]) =>
   points.filter(
-    (point, at) => at === 0 || point.x !== points[at - 1].x || point.y !== points[at - 1].y,
+    (point, at) =>
+      at === 0 || point.x !== points[at - 1].x || point.y !== points[at - 1].y,
   );
 
 /** The transposed box: swapping x and y turns a vertical pair into a horizontal one. */
@@ -260,7 +261,8 @@ const routeEdge = (from: NodeBox, to: NodeBox, obstacles: NodeBox[]) => {
   // Which side to pass on: whichever side the obstacles are on, measured in the
   // horizontal orientation. A row of boxes centred on the line counts as "below".
   const side =
-    blockers.filter((box) => box.cy >= fromCentre.y).length >= blockers.length / 2
+    blockers.filter((box) => box.cy >= fromCentre.y).length >=
+    blockers.length / 2
       ? 1
       : -1;
   const horizontal =
@@ -294,10 +296,7 @@ export const nodePosition = (index: number, columns: number) => ({
 export const gridColumns = (count: number) =>
   Math.max(
     1,
-    Math.min(
-      Math.max(count, 1),
-      Math.ceil(Math.sqrt(Math.max(count, 1))) + 1,
-    ),
+    Math.min(Math.max(count, 1), Math.ceil(Math.sqrt(Math.max(count, 1))) + 1),
   );
 
 /**
@@ -441,9 +440,7 @@ export function OntologyCanvasEditor({
   };
 
   const nudgePanel = (delta: number) =>
-    setPanelWidth((current) =>
-      Math.max(MinPanelWidth, current + delta),
-    );
+    setPanelWidth((current) => Math.max(MinPanelWidth, current + delta));
 
   useEffect(() => {
     if (!linkingFrom) return;
@@ -516,7 +513,9 @@ export function OntologyCanvasEditor({
     return {
       id,
       label: String(field.label ?? '').trim() || id,
-      parents: splitTypeList(field.parent).filter((parent) => classSet.has(parent)),
+      parents: splitTypeList(field.parent).filter((parent) =>
+        classSet.has(parent),
+      ),
       attributes: properties
         .filter(
           (property) =>
@@ -599,7 +598,9 @@ export function OntologyCanvasEditor({
           ? String(properties[entry.items[0].index]?.type ?? '').trim()
           : `bundle-${entry.key}`,
       text:
-        entry.items.length === 1 ? entry.items[0].label : `×${entry.items.length}`,
+        entry.items.length === 1
+          ? entry.items[0].label
+          : `×${entry.items.length}`,
       mixed:
         entry.items.some((item) => item.forward) &&
         entry.items.some((item) => !item.forward),
@@ -632,9 +633,7 @@ export function OntologyCanvasEditor({
     (issue) =>
       issue.subject !== '' &&
       issue.subject ===
-        String(
-          (selectedClass ?? selectedProperty)?.type ?? '',
-        ).trim(),
+        String((selectedClass ?? selectedProperty)?.type ?? '').trim(),
   );
 
   // Which properties belong to the selected class. A property created with no
@@ -682,7 +681,8 @@ export function OntologyCanvasEditor({
       ? edges.find((edge) => edge.key === selection.key)
       : undefined;
 
-  const selectedPropertyDomain = splitTypeList(selectedProperty?.domain)[0] ?? '';
+  const selectedPropertyDomain =
+    splitTypeList(selectedProperty?.domain)[0] ?? '';
   const selectedPropertyRange = splitTypeList(selectedProperty?.range)[0] ?? '';
 
   // Anchored on creation: the domain is the class the reader is looking at, so the
@@ -896,21 +896,27 @@ export function OntologyCanvasEditor({
               }),
             )}
 
-            {linkingFrom && linkPointer && byId.get(linkingFrom) && (
-              // The provisional edge: this is what makes the handle's click
-              // visible, and it points at whatever the reader is about to choose.
-              <line
-                data-testid="ontology-linking-line"
-                className="text-[#4CACFF]"
-                x1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).x}
-                y1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).y}
-                x2={linkPointer.x}
-                y2={linkPointer.y}
-                stroke="currentColor"
-                strokeDasharray="6 4"
-                pointerEvents="none"
-              />
-            )}
+            {linkingFrom &&
+              linkPointer &&
+              byId.get(linkingFrom) && (
+                // The provisional edge: this is what makes the handle's click
+                // visible, and it points at whatever the reader is about to choose.
+                <line
+                  data-testid="ontology-linking-line"
+                  className="text-[#4CACFF]"
+                  x1={
+                    borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).x
+                  }
+                  y1={
+                    borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).y
+                  }
+                  x2={linkPointer.x}
+                  y2={linkPointer.y}
+                  stroke="currentColor"
+                  strokeDasharray="6 4"
+                  pointerEvents="none"
+                />
+              )}
 
             {edges.map((edge) => {
               const selected =
@@ -1050,7 +1056,8 @@ export function OntologyCanvasEditor({
                     y={node.y}
                     width={NodeWidth}
                     height={
-                      NodeHeaderHeight + node.attributes.length * AttributeRowHeight
+                      NodeHeaderHeight +
+                      node.attributes.length * AttributeRowHeight
                     }
                     rx={8}
                     fill="currentColor"
@@ -1305,7 +1312,8 @@ export function OntologyCanvasEditor({
                 </Button>
                 <span className="text-text-secondary">
                   {t('knowledgeCompilation.ontologyRelationsViaHandle', {
-                    defaultValue: 'Relations start at the + handle on the node.',
+                    defaultValue:
+                      'Relations start at the + handle on the node.',
                   })}
                 </span>
               </div>
@@ -1472,7 +1480,9 @@ export function OntologyCanvasEditor({
                       value={valueListText(selectedProperty.enum)}
                       data-testid="ontology-property-enum"
                       onChange={(event) =>
-                        editProperty(propertyIndex, { enum: event.target.value })
+                        editProperty(propertyIndex, {
+                          enum: event.target.value,
+                        })
                       }
                     />
                   </label>
@@ -1486,9 +1496,7 @@ export function OntologyCanvasEditor({
                     })}
                     <SelectWithSearch
                       value={
-                        valueListTruthy(selectedProperty.required)
-                          ? 'true'
-                          : ''
+                        valueListTruthy(selectedProperty.required) ? 'true' : ''
                       }
                       options={[
                         { label: '—', value: '' },

@@ -153,7 +153,6 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		out.TableData = nil
 		return []schema.ChunkDoc{out}
 	}
-	names := rows[0]
 	// R1: a row chunk must carry only its own tuple. That is only sound when
 	// the item carries spreadsheet identity and its matrix was built
 	// row-aligned (one five-field tuple per row, header included); a
@@ -177,7 +176,14 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	for i, row := range rows[headerCount:] {
 		// Skip empty rows (no cell content); the HTML render of an empty row
 		// would be a header-only table that duplicates the header-only chunk.
-		if tableRowRecordText(names, row) == "" {
+		hasText := false
+		for _, cell := range row {
+			if strings.TrimSpace(cell) != "" {
+				hasText = true
+				break
+			}
+		}
+		if !hasText {
 			continue
 		}
 		doc := item
@@ -229,29 +235,6 @@ func cellGrid(rows [][]string) [][]entity.TableCell {
 // but no TableData, and no HTML fallback is performed (decision §9.1).
 func tableDataOf(item schema.ChunkDoc) *entity.TableData {
 	return item.TableData
-}
-
-// tableRowRecordText renders one row in the Python table chunker's line format:
-// "- {field}: {value}" per non-empty cell, newline joined. A cell whose
-// column has no header name keeps its value alone rather than being dropped.
-func tableRowRecordText(names, cells []string) string {
-	lines := make([]string, 0, len(cells))
-	for j, cell := range cells {
-		value := strings.TrimSpace(cell)
-		if value == "" {
-			continue
-		}
-		name := ""
-		if j < len(names) {
-			name = strings.TrimSpace(names[j])
-		}
-		if name != "" {
-			lines = append(lines, "- "+name+": "+value)
-			continue
-		}
-		lines = append(lines, "- "+value)
-	}
-	return strings.Join(lines, "\n")
 }
 
 func init() {

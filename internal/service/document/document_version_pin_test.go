@@ -95,7 +95,7 @@ func TestUpdateDatasetDocumentUsesPinnedPipelineVersionForParserConfig(t *testin
 	}
 
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{"Parser:Shared": map[string]any{"k": "override_val"}},
 	}, map[string]bool{"parser_config": true})
 	if err != nil || code != common.CodeSuccess {

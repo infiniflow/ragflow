@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func GetEnv(key string) string {
@@ -45,6 +46,22 @@ func GetEnvInt(key string, def int) int {
 
 func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
+}
+
+// getEnvDuration reads a duration setting such as "90s" or "5m", falling back to
+// def when the variable is unset, malformed, or non-positive. A zero or
+// negative value would remove the deadline instead of tightening it, so it is
+// treated as a typo rather than as an instruction to disable the guard.
+func getEnvDuration(key string, def time.Duration) time.Duration {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := time.ParseDuration(raw)
+	if err != nil || v <= 0 {
+		return def
+	}
+	return v
 }
 
 // SandboxArtifactBucket is the object-storage bucket that holds
@@ -89,6 +106,7 @@ const (
 	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
 	EnvMaxJSONContentLength              = "MAX_JSON_CONTENT_LENGTH"
 	EnvMaxMultipartContentLength         = "MAX_MULTIPART_CONTENT_LENGTH"
+	EnvMaxDocumentUploadSize             = "MAX_DOCUMENT_UPLOAD_SIZE"
 	EnvRAGFlowDictPath                   = "RAGFLOW_DICT_PATH"
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"
@@ -434,6 +452,17 @@ const (
 	// touching the body of the distribution.
 	EnvAgenticTokenBudget = "RAGFLOW_AGENTIC_TOKEN_BUDGET"
 )
+
+// EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may
+// wait for response headers. An endpoint that accepts the connection and then
+// never answers otherwise blocks each retry attempt for the full client default
+// (20m on both shared clients), so retries consume wall time instead of
+// retrying. One override covers both shared clients because a hung endpoint is
+// indistinguishable to the caller; each client keeps its own default while the
+// override is unset.
+// The value is a Go duration ("45s", "5m"), read once when a client is first
+// built. Unset, malformed, or non-positive keeps the client default.
+const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
 
 // DeepDocModelFiles is the single source of truth for the weights the
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes

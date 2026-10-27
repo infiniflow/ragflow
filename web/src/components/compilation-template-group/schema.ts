@@ -116,18 +116,18 @@ export const buildTemplateSchema = (t: (key: string) => string) =>
         entity?: { fields?: Record<string, string>[] };
         relation?: { fields?: Record<string, string>[] };
       };
-      validateDraft(draftFromSections(config?.entity, config?.relation)).forEach(
-        (issue) => {
-          context.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [
-              'config',
-              PropertyIssueCodes.includes(issue.code) ? 'relation' : 'entity',
-            ],
-            message: issue.message,
-          });
-        },
-      );
+      validateDraft(
+        draftFromSections(config?.entity, config?.relation),
+      ).forEach((issue) => {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [
+            'config',
+            PropertyIssueCodes.includes(issue.code) ? 'relation' : 'entity',
+          ],
+          message: issue.message,
+        });
+      });
     });
 
 export const buildFormSchema = (t: (key: string) => string) =>

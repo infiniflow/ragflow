@@ -14,7 +14,26 @@
  *  limitations under the License.
  */
 
-import { transformDetailToForm, transformTemplateToPayload } from './utils';
+import {
+  sortSectionNames,
+  transformDetailToForm,
+  transformTemplateToPayload,
+} from './utils';
+
+describe('sortSectionNames', () => {
+  it('prioritizes known sections and preserves remaining order and duplicates', () => {
+    expect(
+      sortSectionNames([
+        'claim',
+        'relation',
+        'claim',
+        'entity',
+        'concept',
+        'claim',
+      ]),
+    ).toEqual(['entity', 'relation', 'claim', 'claim', 'concept', 'claim']);
+  });
+});
 
 /**
  * The builtin ontology template declares more than the editor models:
@@ -38,7 +57,13 @@ const ontologyDetail = (): any => ({
       description: 'The classes.',
       output_fields: [{ name: 'name', shape: 'text', required: true }],
       fields: [
-        { type: 'person', label: 'Person', description: 'A human.', parent: '', rule: '' },
+        {
+          type: 'person',
+          label: 'Person',
+          description: 'A human.',
+          parent: '',
+          rule: '',
+        },
       ],
     },
     relation: {

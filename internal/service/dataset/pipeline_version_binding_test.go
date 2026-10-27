@@ -156,7 +156,7 @@ func TestUpdateDataset_RewritesVersionOnPipelineChange(t *testing.T) {
 	// C5/G3: switching the bound pipeline now requires an explicit version (the
 	// empty version is no longer auto-backfilled to the new canvas latest). Supply
 	// canvas2's version to verify the rewrite still pins the chosen version.
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-change", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-change", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas2,
 		ParseType:         &parseType,
 		PipelineVersionID: &ver2,
@@ -185,7 +185,7 @@ func TestUpdateDataset_PreservesVersionWhenPipelineUnchanged(t *testing.T) {
 
 	parseType := 2
 	name := "kb-preserve-renamed"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
 		Name:       &name,
 		PipelineID: &canvas1,
 		ParseType:  &parseType,
@@ -351,7 +351,7 @@ func TestUpdateDataset_RebindsExplicitVersion(t *testing.T) {
 	seedBoundKB(t, db, "kb-repin", canvas1, verOld)
 
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-repin", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-repin", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verNew,
 		ParseType:         &parseType,
@@ -411,7 +411,7 @@ func TestUpdateDataset_EmptyVersionClearsPin(t *testing.T) {
 
 	parseType := 2
 	empty := ""
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-clear", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-clear", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		ParseType:         &parseType,
 		PipelineVersionID: &empty,
@@ -454,7 +454,7 @@ func TestUpdateDataset_VersionChangeResetsParserConfigToNewVersionDefault(t *tes
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
@@ -526,7 +526,7 @@ func TestUpdateDataset_VersionChangeWithEchoedParserConfigResets(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-echo", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
@@ -586,7 +586,7 @@ func TestUpdateDataset_SameVersionKeepsParserConfig(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-same", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,

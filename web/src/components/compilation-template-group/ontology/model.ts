@@ -134,7 +134,9 @@ export const canonicalField = (
 export const canonicalClasses = (fields?: OntologyField[]): OntologyField[] =>
   (fields ?? []).map((field) => canonicalField(field, OntologyClassKeys));
 
-export const canonicalProperties = (fields?: OntologyField[]): OntologyField[] =>
+export const canonicalProperties = (
+  fields?: OntologyField[],
+): OntologyField[] =>
   (fields ?? []).map((field) => canonicalField(field, OntologyPropertyKeys));
 
 /**
@@ -150,7 +152,10 @@ export const valueListText = (value: unknown): string =>
 
 /** valueListTruthy reads a declared flag that may arrive as a bool or a string. */
 export const valueListTruthy = (value: unknown): boolean =>
-  value === true || String(value ?? '').trim().toLowerCase() === 'true';
+  value === true ||
+  String(value ?? '')
+    .trim()
+    .toLowerCase() === 'true';
 
 /** Reads the two sections the ontology canvas edits. */
 export const draftFromSections = (
@@ -181,7 +186,10 @@ export const sectionsFromDraft = (
   draft: OntologyDraft,
   current?: { entity?: OntologySection; relation?: OntologySection },
 ): { entity: OntologySectionDraft; relation: OntologySectionDraft } => ({
-  entity: { ...(current?.entity ?? {}), fields: canonicalClasses(draft.classes) },
+  entity: {
+    ...(current?.entity ?? {}),
+    fields: canonicalClasses(draft.classes),
+  },
   relation: {
     ...(current?.relation ?? {}),
     fields: canonicalProperties(draft.properties),
@@ -207,7 +215,9 @@ export const effectiveKind = (
   field: OntologyField,
   classes: Set<string>,
 ): string => {
-  const declared = String(field.kind ?? '').trim().toLowerCase();
+  const declared = String(field.kind ?? '')
+    .trim()
+    .toLowerCase();
   if (declared) return declared;
   return splitTypeList(field.range).some((item) => classes.has(item))
     ? OntologyKind.Object
@@ -246,7 +256,9 @@ export const addProperty = (
   kind: string = OntologyKind.Object,
 ): OntologyDraft => {
   const taken = new Set(
-    draft.properties.map((item) => String(item.type ?? '').trim()).filter(Boolean),
+    draft.properties
+      .map((item) => String(item.type ?? '').trim())
+      .filter(Boolean),
   );
   const isDatatype = kind === OntologyKind.Datatype;
   return {
@@ -298,7 +310,10 @@ export const renameClass = (
  * references it clears then show up in the issue list, which is where the
  * decision about those properties belongs.
  */
-export const removeClass = (draft: OntologyDraft, index: number): OntologyDraft => {
+export const removeClass = (
+  draft: OntologyDraft,
+  index: number,
+): OntologyDraft => {
   const removed = String(draft.classes[index]?.type ?? '').trim();
   const classes = draft.classes.filter((_, at) => at !== index);
   if (!removed) return { ...draft, classes };
@@ -433,7 +448,9 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
     const kind = effectiveKind(field, classes);
     const domains = splitTypeList(field.domain);
     const ranges = splitTypeList(field.range);
-    const datatype = String(field.datatype ?? '').trim().toLowerCase();
+    const datatype = String(field.datatype ?? '')
+      .trim()
+      .toLowerCase();
 
     if (kind !== OntologyKind.Object && kind !== OntologyKind.Datatype) {
       issues.push({

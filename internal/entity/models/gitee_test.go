@@ -50,6 +50,61 @@ func newGiteeForChatTest(baseURL string) *GiteeModel {
 	return NewGiteeModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
 }
 
+func TestGiteeBalanceRejectsMalformedBalanceWithoutPanicking(t *testing.T) {
+	withSSRFBypass(t)
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "missing balance", body: `{}`},
+		{name: "null balance", body: `{"balance":null}`},
+		{name: "string balance", body: `{"balance":"10"}`},
+		{name: "object balance", body: `{"balance":{}}`},
+	}
+	apiKey := "test-key"
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+
+			model := NewGiteeModel(map[string]string{"default": server.URL}, URLSuffix{Balance: "balance"})
+			var callErr error
+			var panicValue any
+			func() {
+				defer func() { panicValue = recover() }()
+				_, callErr = model.Balance(t.Context(), &APIConfig{ApiKey: &apiKey})
+			}()
+			if panicValue != nil {
+				t.Fatalf("Balance panicked for malformed response: %v", panicValue)
+			}
+			if callErr == nil {
+				t.Fatal("Balance error = nil, want malformed response error")
+			}
+		})
+	}
+}
+
+func TestGiteeBalanceParsesNumericBalance(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"balance":12.5}`)
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	model := NewGiteeModel(map[string]string{"default": server.URL}, URLSuffix{Balance: "balance"})
+	response, err := model.Balance(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("Balance: %v", err)
+	}
+	if response["balance"] != 12.5 || response["currency"] != "CNY" {
+		t.Fatalf("Balance response = %#v, want balance 12.5 CNY", response)
+	}
+}
+
 func TestGiteeStreamAcceptsTerminalWithoutDelta(t *testing.T) {
 	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

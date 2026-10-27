@@ -143,19 +143,32 @@ describe('ontology editor model', () => {
 
     // A parent that is not a declared class.
     let d = draft();
-    d = { ...d, classes: d.classes.map((c) => (c.type === 'person' ? { ...c, parent: 'nobody' } : c)) };
+    d = {
+      ...d,
+      classes: d.classes.map((c) =>
+        c.type === 'person' ? { ...c, parent: 'nobody' } : c,
+      ),
+    };
     expect(codes(d)).toContain('unknown_parent');
 
     // A cyclic parent chain would never terminate the inherited-attribute walk.
     d = draft();
-    d = { ...d, classes: d.classes.map((c) => ({ ...c, parent: c.type === 'agent' ? 'person' : c.parent })) };
+    d = {
+      ...d,
+      classes: d.classes.map((c) => ({
+        ...c,
+        parent: c.type === 'agent' ? 'person' : c.parent,
+      })),
+    };
     expect(codes(d)).toContain('cyclic_parent');
 
     // A range that is not a class.
     d = draft();
     d = {
       ...d,
-      properties: d.properties.map((p) => (p.type === 'born_in' ? { ...p, range: 'nowhere' } : p)),
+      properties: d.properties.map((p) =>
+        p.type === 'born_in' ? { ...p, range: 'nowhere' } : p,
+      ),
     };
     expect(codes(d)).toContain('unknown_range');
 
@@ -163,7 +176,9 @@ describe('ontology editor model', () => {
     d = draft();
     d = {
       ...d,
-      properties: d.properties.map((p) => (p.type === 'birth_date' ? { ...p, datatype: 'bigint' } : p)),
+      properties: d.properties.map((p) =>
+        p.type === 'birth_date' ? { ...p, datatype: 'bigint' } : p,
+      ),
     };
     expect(codes(d)).toContain('unsupported_datatype');
 
@@ -173,7 +188,12 @@ describe('ontology editor model', () => {
     expect(codes(d)).toContain('duplicate_class');
 
     d = draft();
-    d = { ...d, classes: d.classes.map((c) => (c.type === 'place' ? { ...c, description: '' } : c)) };
+    d = {
+      ...d,
+      classes: d.classes.map((c) =>
+        c.type === 'place' ? { ...c, description: '' } : c,
+      ),
+    };
     expect(codes(d)).toContain('class_without_description');
   });
 
@@ -182,10 +202,12 @@ describe('ontology editor model', () => {
   it('infers the kind the way the service does', () => {
     const classes = new Set(['person', 'place']);
     expect(effectiveKind({ kind: '', range: 'place' }, classes)).toBe('object');
-    expect(effectiveKind({ kind: '', range: '', datatype: 'date' }, classes)).toBe(
-      'datatype',
+    expect(
+      effectiveKind({ kind: '', range: '', datatype: 'date' }, classes),
+    ).toBe('datatype');
+    expect(effectiveKind({ kind: 'OBJECT', range: '' }, classes)).toBe(
+      'object',
     );
-    expect(effectiveKind({ kind: 'OBJECT', range: '' }, classes)).toBe('object');
   });
 
   it('clears references when a class is deleted instead of dropping properties', () => {
@@ -198,7 +220,9 @@ describe('ontology editor model', () => {
 
   it('rewrites references when a class is renamed', () => {
     const d = renameClass(draft(), 2, 'location'); // 'place' -> 'location'
-    expect(d.properties.find((p) => p.type === 'born_in')?.range).toBe('location');
+    expect(d.properties.find((p) => p.type === 'born_in')?.range).toBe(
+      'location',
+    );
     expect(validateDraft(d)).toEqual([]);
   });
 
