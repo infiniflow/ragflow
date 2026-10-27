@@ -43,7 +43,7 @@ func TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected(t *testing.T
 
 	// Switch to canvasB, omitting pipeline_version_id entirely.
 	parseType := 2 // Pipeline mode
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{ParseType: &parseType, PipelineID: sptr(canvasB)},
 		map[string]bool{"pipeline_id": true})
 	if err == nil || code == common.CodeSuccess {
