@@ -31,8 +31,9 @@ import (
 
 	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
+	mdhtml "github.com/gomarkdown/markdown/html"
 	mdparser "github.com/gomarkdown/markdown/parser"
-	"ragflow/internal/parser/tableutil"
+	"golang.org/x/net/html"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -92,30 +93,32 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	decoded, _ := DecodeToUTF8(data, "text/markdown")
-	rawText := string(decoded)
-	// Render any GFM/HTML table inline as an HTML block before parsing. This
-	// keeps the document as one item per top-level block (the table becomes a
-	// normal text item) instead of collapsing the whole document into a single
-	// item. The result mirrors Python's `_markdown` (separate_tables=False),
-	// which also inlines tables into the surrounding text. When no table is
-	// present renderMarkdownTablesInlineText returns the input unchanged.
-	rendered := renderMarkdownTablesInlineText(rawText)
+	return p.parseWithState(ctx, filename, data, &htmlWalkState{})
+}
 
-	doc := markdownNew().Parse([]byte(rendered))
+// parseWithState keeps media identity and budget across fragments of one document.
+func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
+	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	// Preserve over-wide rows before the Markdown library truncates them.
+	// The final blank line also terminates a raw HTML block at EOF.
+	rawText := balanceMarkdownTables(string(decoded)) + "\n\n"
+	doc := markdownNew().Parse([]byte(rawText))
 
 	var items []map[string]any
-	mediaBudget := newEmbeddedMediaBudget()
+	if state.mediaBudget == nil {
+		state.mediaBudget = newEmbeddedMediaBudget()
+	}
+	mediaBudget := state.mediaBudget
 	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, mediaBudget)
+	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
-	warnings := mediaBudget.warnings()
+	warnings := state.warnings()
 	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
@@ -160,10 +163,9 @@ func markdownNew() *mdparser.Parser {
 	return mdparser.NewWithExtensions(extensions)
 }
 
-func renderMarkdownTablesInline(text string) (string, bool) {
+func balanceMarkdownTables(text string) string {
 	lines := strings.SplitAfter(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
 	var buf strings.Builder
-	changed := false
 	inFence := false
 	var fenceChar byte
 	var fenceLen int
@@ -188,24 +190,13 @@ func renderMarkdownTablesInline(text string) (string, bool) {
 			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
 				i++
 			}
-			for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
-				i++
-			}
-			tableHTML := markdownlib.ToHTML([]byte(strings.Join(balanceTableColumns(lines[start:i]), "")), markdownNew(), nil)
-			// Wrap the inlined <table> HTML in blank lines so gomarkdown
-			// keeps it as a single HTML block (one item) instead of
-			// re-parsing it into scattered cell text. See
-			// PARSER_ALIGNMENT_HANDOFF.md §3.1 (Markdown session A, 方案 Y).
-			ensureTrailingBlankLine(&buf)
-			buf.WriteString(strings.TrimRight(string(tableHTML), "\r\n"))
-			buf.WriteString("\n\n")
-			changed = true
+			buf.WriteString(strings.Join(balanceTableColumns(lines[start:i]), ""))
 			continue
 		}
 		buf.WriteString(lines[i])
 		i++
 	}
-	return buf.String(), changed
+	return buf.String()
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell
@@ -226,31 +217,7 @@ func balanceTableColumns(tableLines []string) []string {
 	if len(tableLines) < 2 {
 		return tableLines
 	}
-	cells := func(line string) int {
-		s := strings.TrimRight(line, "\n")
-		pipes, escaped := 0, false
-		for i := 0; i < len(s); i++ {
-			switch {
-			case escaped:
-				escaped = false
-			case s[i] == '\\':
-				escaped = true
-			case s[i] == '|':
-				pipes++
-			}
-		}
-		trimmed := strings.TrimSpace(s)
-		if strings.HasPrefix(trimmed, "|") {
-			pipes--
-		}
-		if strings.HasSuffix(trimmed, "|") {
-			pipes--
-		}
-		if pipes < 0 {
-			return 0
-		}
-		return pipes + 1
-	}
+	cells := func(line string) int { return len(markdownTableCells(line)) }
 
 	head := cells(tableLines[0])
 	widest := head
@@ -286,32 +253,6 @@ func balanceTableColumns(tableLines []string) []string {
 	return out
 }
 
-// renderMarkdownTablesInlineText renders every GFM/HTML table inline as an
-// HTML block and returns the rewritten text. When no table is present the
-// input is returned unchanged. Unlike renderMarkdownTablesInline it always
-// returns the full text (ignoring the changed flag) so callers can parse the
-// result uniformly and emit one item per top-level block.
-func renderMarkdownTablesInlineText(text string) string {
-	out, _ := renderMarkdownTablesInline(text)
-	return out
-}
-
-// ensureTrailingBlankLine makes sure b ends with a blank line (two
-// newlines) so the next block is separated from what precedes it. gomarkdown
-// only treats a <table> as a standalone HTML block (rather than re-parsing it
-// into scattered cell nodes) when it is surrounded by blank lines.
-func ensureTrailingBlankLine(b *strings.Builder) {
-	s := b.String()
-	switch {
-	case strings.HasSuffix(s, "\n\n"):
-		// already separated.
-	case strings.HasSuffix(s, "\n"):
-		b.WriteByte('\n')
-	default:
-		b.WriteString("\n\n")
-	}
-}
-
 func markdownFenceMarker(line string) (byte, int, bool) {
 	trimmed := strings.TrimLeft(line, " \t")
 	if len(line)-len(trimmed) > 3 || len(trimmed) < 3 {
@@ -329,16 +270,7 @@ func markdownFenceMarker(line string) (byte, int, bool) {
 }
 
 func isMarkdownTableRow(line string) bool {
-	cells := markdownTableCells(line)
-	if len(cells) < 2 {
-		return false
-	}
-	for _, cell := range cells {
-		if strings.TrimSpace(cell) != "" {
-			return true
-		}
-	}
-	return false
+	return len(markdownTableCells(line)) >= 2
 }
 
 func isMarkdownTableSeparator(line string) bool {
@@ -359,13 +291,52 @@ func isMarkdownTableSeparator(line string) bool {
 	return true
 }
 
+// markdownTableCells follows the Markdown library's table-row rules: only
+// a code span at the start of a cell can hide its internal pipes.
 func markdownTableCells(line string) []string {
 	line = strings.TrimSpace(line)
-	if !strings.Contains(line, "|") {
+	var cells []string
+	start := 0
+	atCellStart := true
+	for i := 0; i < len(line); i++ {
+		switch line[i] {
+		case ' ':
+			continue
+		case '\\':
+			i++
+			atCellStart = false
+		case '`':
+			if !atCellStart {
+				continue
+			}
+			atCellStart = false
+			end := i + 1
+			for end < len(line) && line[end] == '`' {
+				end++
+			}
+			marker := line[i:end]
+			if close := strings.Index(line[end:], marker); close >= 0 {
+				i = end + close + len(marker) - 1
+			} else {
+				i = end - 1
+			}
+		case '|':
+			if i > 0 || start > 0 {
+				cells = append(cells, line[start:i])
+			}
+			start = i + 1
+			atCellStart = true
+		default:
+			atCellStart = false
+		}
+	}
+	if start == 0 {
 		return nil
 	}
-	line = strings.TrimPrefix(strings.TrimSuffix(line, "|"), "|")
-	return strings.Split(line, "|")
+	if start < len(line) {
+		cells = append(cells, line[start:])
+	}
+	return cells
 }
 
 // walkMarkdownBlocksWithImages emits one normalized item per
@@ -374,31 +345,79 @@ func markdownTableCells(line string) []string {
 // reference (![alt](src)), the image data is resolved via
 // findBlockImage (per-block AST walk) and the item carries
 // `doc_type_kwd: "image"` together with the base64-encoded image
-// payload. When flatten is true, all items are forced to
-// doc_type_kwd="text" (mirrors Python parser.py:1034
-// flatten_media_to_text).
+// payload. When flatten is true, image items use doc_type_kwd="text".
 //
-// Tables: a GFM/HTML table is rendered inline as a single <table> HTML
-// block by renderMarkdownTablesInlineText and kept as one HTML block.
-// It is emitted as ONE structured item (doc_type_kwd:"table")
-// in its original document position — there is no
-// duplicate doc_type_kwd:"text" copy. The downstream chunker consumes
-// doc_type_kwd:"table" to keep the table whole and attach table context
-// to neighbouring chunks (chunker/token.go). Non-table HTML blocks
-// (<div>, <style>, …) are emitted as ordinary text with no layout.
-func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, budget *embeddedMediaBudget) int {
+// Tables are emitted through the HTML walker as structured items in source
+// order, with embedded images linked to their parent table.
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, htmlState *htmlWalkState) int {
+	if htmlState.mediaBudget == nil {
+		htmlState.mediaBudget = newEmbeddedMediaBudget()
+	}
+	budget := htmlState.mediaBudget
+	start := len(*out)
+	defer func() {
+		if flatten {
+			for _, item := range (*out)[start:] {
+				if item["doc_type_kwd"] == "image" {
+					item["doc_type_kwd"] = "text"
+				}
+			}
+		}
+	}()
 	unresolvedImages := 0
+	previousResolver := htmlState.resolveImage
+	htmlState.resolveImage = func(src string) (string, bool) {
+		remote := strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
+		if remote && !fetchRemoteImages {
+			return "", false
+		}
+		encoded, raw, omitted, resolved := resolveImageURL(ctx, src, budget)
+		if !resolved {
+			if !omitted {
+				unresolvedImages++
+			}
+			return "", false
+		}
+		if raw != nil {
+			mime := http.DetectContentType(raw)
+			if !strings.HasPrefix(mime, "image/") {
+				mime = "image/octet-stream"
+			}
+			return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), true
+		}
+		return strings.ToLower(src[:strings.IndexByte(src, ',')+1]) + encoded, true
+	}
+	defer func() { htmlState.resolveImage = previousResolver }()
 	for _, child := range doc.GetChildren() {
 		var layout string
 		var docTypeKwd string
 		var txt string
 
 		switch n := child.(type) {
+		case *ast.Table:
+			markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+			tableDoc, _ := html.Parse(bytes.NewReader(markup))
+			walkHTMLBlocksWithState(tableDoc, out, htmlState)
+			continue
 		case *ast.Heading:
 			txt = headingText(n)
 			layout = "heading"
 			docTypeKwd = "text"
 		case *ast.Paragraph:
+			hasTable := false
+			ast.WalkFunc(n, func(node ast.Node, entering bool) ast.WalkStatus {
+				if span, ok := node.(*ast.HTMLSpan); ok && entering && isTableHTML(string(span.Literal)) {
+					hasTable = true
+					return ast.Terminate
+				}
+				return ast.GoToNext
+			})
+			if hasTable {
+				markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
+				doc, _ := html.Parse(bytes.NewReader(markup))
+				walkHTMLBlocksWithState(doc, out, htmlState)
+				continue
+			}
 			txt = leafText(n)
 			docTypeKwd = "text"
 		case *ast.List:
@@ -422,30 +441,12 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			layout = "code"
 			docTypeKwd = "text"
 		case *ast.HTMLBlock:
-			// An HTML block is either an inlined table (kept as a single
-			// HTML block thanks to the blank lines renderMarkdownTablesInline
-			// wraps around it) or a plain HTML block such as <div>/<style>.
-			// Only a table is emitted as a structured table item; everything
-			// else is treated as ordinary text (no layout). We emit exactly
-			// ONE item (doc_type_kwd:"table") in document
-			// order — no duplicate doc_type_kwd:"text" copy — so the table is
-			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
 			if isTableHTML(txt) {
-				// Emit the structured TableData contract so the chunker reads
-				// rows directly instead of re-parsing markup. ParseTableHTML
-				// mirrors the legacy chunker extraction. html.Parse is
-				// infallible, so the parse always yields a non-nil TableData
-				// and no legacy HTML `text` is kept.
-				td, _ := tableutil.ParseTableHTML(txt)
-				table := map[string]any{
-					"doc_type_kwd": "table",
-					"table":        td,
-				}
-				*out = append(*out, table)
+				tableDoc, _ := html.Parse(strings.NewReader(txt))
+				walkHTMLBlocksWithState(tableDoc, out, htmlState)
 				continue
 			}
-			// Non-table HTML block: ordinary text, no layout.
 			docTypeKwd = "text"
 		default:
 			txt = leafText(n)
@@ -473,29 +474,17 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		if imgURL, ok := findBlockImage(child); ok {
 			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
 			if fetchRemoteImages || !isRemote {
-				switch {
-				case isRemote && ctx.Err() != nil:
+				encoded, raw, omitted, resolved := resolveImageURL(ctx, imgURL, budget)
+				if omitted {
 					item["media_omitted"] = true
-				case !budget.reserveItem():
-					item["media_omitted"] = true
-				default:
-					encoded, raw, size, resolved := resolveImageURL(ctx, imgURL)
-					if !resolved {
-						unresolvedImages++
-						break
-					}
-					if !budget.includeReservedSize(size) {
-						item["media_omitted"] = true
-						break
-					}
+				} else if !resolved {
+					unresolvedImages++
+				} else {
 					if raw != nil {
-						item["image"] = base64.StdEncoding.EncodeToString(raw)
-					} else {
-						item["image"] = encoded
+						encoded = base64.StdEncoding.EncodeToString(raw)
 					}
-					if !flatten {
-						item["doc_type_kwd"] = "image"
-					}
+					item["image"] = encoded
+					item["doc_type_kwd"] = "image"
 				}
 			}
 		}
@@ -505,11 +494,13 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 	return unresolvedImages
 }
 
-// isTableHTML reports whether block text is an outer <table> element (the
-// inlined GFM/HTML table). Only such blocks are emitted as structured table
-// items; other raw HTML (e.g. <div>, <style>) is plain text.
+// isTableHTML reports whether block text starts with a table element.
 func isTableHTML(s string) bool {
-	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
+	s = strings.TrimSpace(strings.ToLower(s))
+	if !strings.HasPrefix(s, "<table") || len(s) <= len("<table") {
+		return false
+	}
+	return strings.ContainsRune("> \t\r\n", rune(s[len("<table")]))
 }
 
 // findBlockImage returns the destination URL of the first image node found
@@ -537,40 +528,39 @@ func findBlockImage(n ast.Node) (string, bool) {
 	return url, found
 }
 
-// resolveImageURL resolves a Markdown image URL to an encoded payload or raw
-// bytes plus the image size in bytes.
-// Supports:
-//   - data:image/... URIs → validated, normalized encoded payload
-//   - http:// / https:// URLs → fetched (with basic SSRF filtering)
-//
-// Local / relative paths are not fetched (security). Returns
-// exactly one of encoded and raw populated on success.
-func resolveImageURL(ctx context.Context, imageURL string) (encoded string, raw []byte, size int, ok bool) {
+// resolveImageURL resolves one bounded Markdown image attempt. It returns
+// either normalized base64 or downloaded bytes, and distinguishes a budget
+// or timeout omission from an unresolved source. Local paths are never fetched.
+func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMediaBudget) (encoded string, raw []byte, omitted, resolved bool) {
+	if ctx.Err() != nil || !budget.reserveItem() {
+		return "", nil, true, false
+	}
+	var size int
 	if strings.HasPrefix(strings.ToLower(imageURL), dataURIPrefix) {
-		// data:image/png;base64,xxxx
-		idx := strings.Index(imageURL, "base64,")
+		idx := strings.Index(strings.ToLower(imageURL), "base64,")
 		if idx < 0 {
-			idx = strings.Index(strings.ToLower(imageURL), "base64,")
-		}
-		if idx < 0 {
-			return "", nil, 0, false
+			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, ok = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
-		if !ok {
-			return "", nil, 0, false
+		encoded, decodedSize, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		if !resolved {
+			return "", nil, false, false
 		}
-		return encoded, nil, int(decodedSize), true
-	}
-	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
-		raw, err := fetchImage(ctx, imageURL)
+		size = int(decodedSize)
+	} else if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
+		var err error
+		raw, err = fetchImage(ctx, imageURL)
 		if err != nil {
-			return "", nil, 0, false
+			return "", nil, false, false
 		}
-		return "", raw, len(raw), true
+		size = len(raw)
+	} else {
+		return "", nil, false, false
 	}
-	// Local / relative paths — not fetched for security.
-	return "", nil, 0, false
+	if !budget.includeReservedSize(size) {
+		return "", nil, true, false
+	}
+	return encoded, raw, false, true
 }
 
 // fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses

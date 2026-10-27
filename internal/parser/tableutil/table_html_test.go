@@ -89,15 +89,6 @@ func TestParseTableHTMLMultipleHeaderRows(t *testing.T) {
 	}
 }
 
-func TestParseTableHTMLNoThTreatsFirstRowAsHeader(t *testing.T) {
-	html := `<table><tr><td>Name</td><td>Age</td></tr>` +
-		`<tr><td>Alice</td><td>30</td></tr></table>`
-	td := mustParse(t, html)
-	if td.HeaderRows != 1 {
-		t.Fatalf("HeaderRows = %d, want 1 (no <th> => first row is header)", td.HeaderRows)
-	}
-}
-
 func TestParseTableHTMLEmpty(t *testing.T) {
 	td := mustParse(t, `<table></table>`)
 	if len(td.CellTexts()) != 0 {

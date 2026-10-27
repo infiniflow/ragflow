@@ -1,0 +1,168 @@
+package parser
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
+)
+
+func TestTableRegressionMarkdownMixedBackticksKeepTrailingCells(t *testing.T) {
+	for _, cell := range []string{"a\\|b", "`a|b`", "``a|`b``", "`a``|b``", "`a\\`|b`", "a\\\\|b", "``a`|b``", "`a``|b`", "[a|b](u)", ""} {
+		for _, prefix := range []string{"", " ", "  ", "   ", "    ", "- "} {
+			p, _ := NewMarkdownParser(GoMarkdown)
+			res := p.ParseWithResult(t.Context(), "table.md", []byte(prefix+"| H1 | H2 |\n"+prefix+"|---|---|\n"+prefix+"| Owner | "+cell+" | TAIL_SENTINEL |\n"))
+			if res.Err != nil {
+				t.Fatal(res.Err)
+			}
+			wire, _ := json.Marshal(res.JSON)
+			if !strings.Contains(string(wire), "TAIL_SENTINEL") {
+				t.Fatalf("trailing cell dropped for cell=%q prefix=%q: %s", cell, prefix, wire)
+			}
+		}
+	}
+}
+
+func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
+
+	after := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"Outer Caption"})
+	if len(after) != 2 {
+		t.Fatalf("expected two tables without duplicate caption text: %#v", after)
+	}
+	for _, item := range after {
+		if td, ok := item["table"].(*entity.TableData); ok {
+			if tableRowsContain(td, "Nested") && td.Caption != "" {
+				t.Error("nested table stole the outer caption")
+			}
+			if tableRowsContain(td, "Outer") && td.Caption != "Outer Caption" {
+				t.Error("outer table lost its caption")
+			}
+		}
+	}
+}
+
+func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
+	source := "![logo](data:image/png;base64,aGVsbG8=) Before <table><tr><td>A</td><td>B</td></tr></table> After"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	p.FlattenMediaToText = true
+	after := p.ParseWithResult(t.Context(), "x.md", []byte(source))
+	if after.Err != nil || len(after.JSON) == 0 {
+		t.Fatalf("result=%+v", after)
+	}
+	payloads := 0
+	for _, item := range after.JSON {
+		if item.ToMap()["image"] != nil {
+			payloads++
+		}
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			t.Error("flatten_media_to_text ignored")
+		}
+	}
+	if payloads != 1 {
+		t.Fatalf("image payloads=%d, want 1", payloads)
+	}
+}
+
+func TestTableRegressionPPTXNestedImageRun(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"paragraph","content":[{"type":"text","text":"before"},{"type":"image","content":[{"type":"text_box","content":[{"type":"image","data":"aGVsbG8="}]}]},{"type":"text","text":"after"}]}]}]}`
+
+	after, err := buildPPTXJSONSections(ir, nil)
+	if err != nil || len(after) != 3 || after[0]["text"] != "before" || after[2]["text"] != "after" {
+		t.Fatalf("text/image order lost: %#v err=%v", after, err)
+	}
+	images := 0
+	for _, item := range after {
+		if item["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != 1 {
+		t.Error("image inside a nested run was dropped")
+	}
+}
+
+func TestTableRegressionSoMarkTableImageIDs(t *testing.T) {
+	markup := "<table><tr><td>Logo</td><td><img src=\"data:image/png;base64,aGVsbG8=\"></td></tr></table>"
+	items, _, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
+		map[string]any{"type": "table", "content": markup}, map[string]any{"type": "table", "content": markup},
+	}}}}}}, false)
+
+	seen := map[string]bool{}
+	for _, item := range items {
+		if id, ok := item["source_table_id"].(string); ok {
+			if seen[id] {
+				t.Errorf("duplicate table image association id: %q", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(items) != 4 || len(seen) != 2 {
+		t.Fatalf("items=%#v", items)
+	}
+}
+
+func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
+	markup := "| Field | Value |\n|---|---|\n| Logo | ![logo](data:image/png;base64,aGVsbG8=) |"
+	blocks := make([]any, maxEmbeddedMediaItems+1)
+	for i := range blocks {
+		blocks[i] = map[string]any{"type": "table", "content": markup}
+	}
+	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": blocks}}}}}, false)
+	images := 0
+	for _, item := range items {
+		if item["doc_type_kwd"] == "image" && item["image"] != nil {
+			images++
+		}
+	}
+	t.Logf("retained images=%d document item limit=%d", images, maxEmbeddedMediaItems)
+	if images != maxEmbeddedMediaItems || !strings.Contains(strings.Join(warnings, "\n"), "256-item") {
+		t.Errorf("retained=%d warnings=%v, want document-wide item limit", images, warnings)
+	}
+}
+
+func TestTableRegressionHTMLExplicitTheadWithTD(t *testing.T) {
+	td, err := tableutil.ParseTableHTML("<table><thead><tr><td>Field</td><td>Value</td></tr></thead><tbody><tr><td>Owner</td><td>RET</td></tr></tbody></table>")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if td.HeaderRows != 1 {
+		t.Errorf("explicit thead lost: header_rows=%d, want 1", td.HeaderRows)
+	}
+}
+
+func TestTableRegressionMarkdownRawHTMLImageBudget(t *testing.T) {
+	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", maxEmbeddedMediaItems+1) + "</td></tr></table>\n\n"
+	doc := markdownNew().Parse([]byte(source))
+	budget := newEmbeddedMediaBudget()
+	var items []map[string]any
+	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
+	images := 0
+	for _, item := range items {
+		if item["doc_type_kwd"] == "image" && item["image"] != nil {
+			images++
+		}
+	}
+	t.Logf("retained images=%d budget attempts=%d document item limit=%d", images, budget.items, maxEmbeddedMediaItems)
+	if images != maxEmbeddedMediaItems || budget.items != maxEmbeddedMediaItems || !budget.countExhausted {
+		t.Errorf("raw HTML budget not enforced: retained=%d budget=%+v", images, budget)
+	}
+}
+
+func TestTableRegressionMarkdownStateResetsForNewDocument(t *testing.T) {
+	p, _ := NewMarkdownParser(GoMarkdown)
+	source := []byte("| Field | Value |\n|---|---|\n| Logo | ![logo](data:image/png;base64,aGVsbG8=) |")
+	for range 2 {
+		result := p.ParseWithResult(t.Context(), "doc.md", source)
+		if result.Err != nil || len(result.JSON) != 2 {
+			t.Fatalf("result=%+v", result)
+		}
+		table, img := result.JSON[0].ToMap(), result.JSON[1].ToMap()
+		if table["source_table_id"] != "html-table-1" || img["parent_table_id"] != table["source_table_id"] {
+			t.Fatalf("document state leaked: %#v", ItemsToMaps(result.JSON))
+		}
+	}
+}

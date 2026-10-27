@@ -168,7 +168,7 @@ func TestEPUBParser_NoReadableChapterIsAnError(t *testing.T) {
 
 func TestEPUBParser_ImageOnlyChapterCountsAsRead(t *testing.T) {
 	// The image-only chapter was read and has no text; the book is not unreadable.
-	// No <title>: stripHTMLTags keeps its text, and the chapter would not be text-free.
+	// The chapter has no body text.
 	imageOnly := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><img src="plate.png" alt=""/></body></html>`
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: imageOnly},
@@ -207,9 +207,7 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 	}
 }
 
-// The head's <title> and block elements outside the old list ended without a
-// break, so their text ran into the next word: "Testchapter text" and
-// "TermDefinition".
+// Metadata stays outside body text, and block boundaries separate words.
 func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: epubTestHTML(
@@ -219,7 +217,7 @@ func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
+	if got, want := strings.Join(strings.Fields(epubTestText(res)), " "), "chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
 }
@@ -235,7 +233,7 @@ func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
+	if text, want := epubTestText(res), "don’t\u00a0stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
 		t.Errorf("text = %q, want it to contain %q", text, want)
 	}
 }

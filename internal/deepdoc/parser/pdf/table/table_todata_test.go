@@ -19,7 +19,7 @@ func cellsFromStrings(rows [][]string) [][]pdf.TSRCell {
 }
 
 // TestToTableData_Simple2x2 verifies a plain 2x2 grid with no span/caption
-// produces the canonical Grid and the default single header row.
+// produces the canonical Grid without inventing a header row.
 func TestToTableData_Simple2x2(t *testing.T) {
 	g := cellsFromStrings([][]string{{"姓名", "年龄"}, {"张三", "25"}})
 	td := ToTableData(g, "", nil, nil, nil)
@@ -35,8 +35,8 @@ func TestToTableData_Simple2x2(t *testing.T) {
 	if td.Grid[0][0].Text != "姓名" || td.Grid[1][1].Text != "25" {
 		t.Errorf("cell text mismatch: %q/%q", td.Grid[0][0].Text, td.Grid[1][1].Text)
 	}
-	if td.HeaderRows != 1 {
-		t.Errorf("HeaderRows=%d want 1 (default)", td.HeaderRows)
+	if td.HeaderRows != 0 {
+		t.Errorf("HeaderRows=%d want 0 without detected headers", td.HeaderRows)
 	}
 	for _, row := range td.Grid {
 		for _, c := range row {

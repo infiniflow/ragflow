@@ -153,7 +153,10 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		out.TableData = nil
 		return []schema.ChunkDoc{out}
 	}
-	names := rows[0]
+	var names []string
+	if headerCount > 0 {
+		names = rows[0]
+	}
 	// R1: a row chunk must carry only its own tuple. That is only sound when
 	// the item carries spreadsheet identity and its matrix was built
 	// row-aligned (one five-field tuple per row, header included); a

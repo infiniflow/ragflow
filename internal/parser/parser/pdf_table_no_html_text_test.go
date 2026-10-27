@@ -33,7 +33,7 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
 		}},
 		{"somark html", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
+			return soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{})
 		}},
 		{"docx table", func() []map[string]any {
 			return buildDOCXJSONSections(docxIR, newEmbeddedMediaBudget())

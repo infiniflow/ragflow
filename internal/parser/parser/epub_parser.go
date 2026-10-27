@@ -20,8 +20,7 @@
 //  1. Opens the EPUB as a ZIP archive.
 //  2. Reads META-INF/container.xml to locate the OPF manifest.
 //  3. Walks the OPF spine to collect content documents in order.
-//  4. Strips HTML tags from each content document to produce plain
-//     text items, emitting one JSON item per spine entry.
+//  4. Emits text, tables and inline images from each chapter in document order.
 //
 // The output format is "json", matching the epub default in
 // ParserParam.Defaults().
@@ -34,12 +33,12 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"html"
 	"io"
 	"net/url"
 	"path"
-	"regexp"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 // EPUBParser extracts text from EPUB archives.
@@ -54,8 +53,7 @@ func (p *EPUBParser) String() string {
 }
 
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
-// content from the EPUB spine and emits one JSON item per spine entry
-// with {text, doc_type_kwd:"text"}.
+// content from the EPUB spine using the shared HTML structure walker.
 func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if len(data) == 0 {
 		return ParseResult{
@@ -189,18 +187,8 @@ func readOPFSpine(r *zip.Reader, opfPath string) ([]string, error) {
 
 // --- text extraction ---
 
-var (
-	epubScriptRe = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	epubStyleRe  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	epubTagRe    = regexp.MustCompile(`<[^>]+>`)
-	epubEntityRe = regexp.MustCompile(`&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);`)
-	epubWSRe     = regexp.MustCompile(`\s+`)
-	// Closing tags of block elements, or a void <hr>, that end a run of text.
-	epubBlockEndRe = regexp.MustCompile(`^(?:</(?:title|main|section|article|header|footer|aside|nav|figure|figcaption|caption|table|pre|address|dl|dt|dd|ul|ol)[\s>]|<hr[\s/>])`)
-)
-
-// extractEPUBTextItems reads every spine item and returns one text item per
-// item that has text. An item that cannot be read is skipped; when items were
+// extractEPUBTextItems reads chapters in spine order and preserves their blocks.
+// An item that cannot be read is skipped; when items were
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
@@ -208,6 +196,7 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 	var items []map[string]any
 	var failures []string
 	read := 0
+	state := &htmlWalkState{}
 	detectedEncoding := "utf-8"
 	for _, href := range spineHrefs {
 		raw, err := readEPUBContentFile(r, opfDir, href)
@@ -223,14 +212,12 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
 			detectedEncoding = enc
 		}
-		text := stripHTMLTags(string(decoded))
-		if strings.TrimSpace(text) == "" {
+		doc, err := html.Parse(bytes.NewReader(decoded))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", href, err))
 			continue
 		}
-		items = append(items, map[string]any{
-			"text":         text,
-			"doc_type_kwd": "text",
-		})
+		walkHTMLBlocksWithState(doc, &items, state)
 	}
 	if len(failures) > 0 && read == 0 {
 		return nil, detectedEncoding, fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
@@ -270,85 +257,4 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
 	}
 	defer f.Close()
 	return io.ReadAll(f)
-}
-
-// stripHTMLTags removes HTML markup and returns normalized plain text.
-func stripHTMLTags(s string) string {
-	// Remove script/style blocks first (including their content).
-	s = epubScriptRe.ReplaceAllString(s, "")
-	s = epubStyleRe.ReplaceAllString(s, "")
-	// Replace <br>, <p>, </p>, </div>, </tr>, </li> etc. with newlines.
-	s = epubTagRe.ReplaceAllStringFunc(s, func(tag string) string {
-		lower := strings.ToLower(tag)
-		switch {
-		case strings.HasPrefix(lower, "<br"),
-			strings.HasPrefix(lower, "</p"),
-			strings.HasPrefix(lower, "</div"),
-			strings.HasPrefix(lower, "</h1"),
-			strings.HasPrefix(lower, "</h2"),
-			strings.HasPrefix(lower, "</h3"),
-			strings.HasPrefix(lower, "</h4"),
-			strings.HasPrefix(lower, "</h5"),
-			strings.HasPrefix(lower, "</h6"),
-			strings.HasPrefix(lower, "</tr"),
-			strings.HasPrefix(lower, "</li"),
-			strings.HasPrefix(lower, "</blockquote"),
-			// Other elements a reader shows as blocks. Without a break, the
-			// head's <title> ran into the first word of the body, and a term
-			// into its definition ("TermDefinition").
-			epubBlockEndRe.MatchString(lower):
-			return "\n"
-		case strings.HasPrefix(lower, "</td"),
-			strings.HasPrefix(lower, "</th"):
-			return " "
-		}
-		return ""
-	})
-	// Decode common XML entities.
-	s = epubEntityRe.ReplaceAllStringFunc(s, xmlEntityValue)
-	// Normalize whitespace.
-	s = epubWSRe.ReplaceAllString(s, " ")
-	return strings.TrimSpace(s)
-}
-
-// xmlEntityValue decodes a few common XML named entities. A full
-// entity table isn't needed for the typical EPUB vocabulary.
-func xmlEntityValue(entity string) string {
-	switch entity {
-	case "&amp;":
-		return "&"
-	case "&lt;":
-		return "<"
-	case "&gt;":
-		return ">"
-	case "&quot;":
-		return "\""
-	case "&apos;":
-		return "'"
-	case "&nbsp;":
-		return " "
-	case "&ndash;":
-		return "–"
-	case "&mdash;":
-		return "—"
-	case "&lsquo;":
-		return "'"
-	case "&rsquo;":
-		return "'"
-	case "&ldquo;":
-		return "\""
-	case "&rdquo;":
-		return "\""
-	case "&hellip;":
-		return "…"
-	default:
-		// Numeric references (&#8217;, &#x2014;, and &#160; for a
-		// non-breaking space, which XHTML has no named entity for) and the
-		// other HTML named entities. One html cannot resolve stays as written.
-		decoded := html.UnescapeString(entity)
-		if decoded == "\u00a0" {
-			return " "
-		}
-		return decoded
-	}
 }

@@ -277,30 +277,6 @@ func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 	}
 }
 
-// TestTableChunker_HeaderlessHTMLFirstRowIsHeader: with no <th> row the
-// first row names the columns, matching splitLargeTable's convention.
-func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
-	table := "<table><tr><td>k</td><td>v</td></tr><tr><td>a</td><td>b</td></tr></table>"
-	chunks := tableChunksOf(t, map[string]any{
-		"name":          "kv.csv",
-		"output_format": "json",
-		"json": []map[string]any{
-			tableItem(t, table),
-		},
-	})
-	if len(chunks) != 1 {
-		t.Fatalf("got %d chunks, want the single data row", len(chunks))
-	}
-	txt, _ := chunks[0]["text"].(string)
-	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") ||
-		!strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
-		t.Errorf("text = %v", chunks[0]["text"])
-	}
-}
-
-// TestTableChunker_HeaderOriginRowspanDoesNotLeak: a vertical merge mastered
-// on the header is a column label, not a value. The table view must leave the
-// data slot empty instead of stamping the header text into the row chunk.
 func TestTableChunker_HeaderOriginRowspanDoesNotLeak(t *testing.T) {
 	table := `<table>` +
 		`<tr><th rowspan="2">H</th><th>Name</th></tr>` +
