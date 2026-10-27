@@ -161,7 +161,8 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 		// without the runtime.Component interface needing to expose Name().
 		// The factory returns the class name as the DSL's `component_name`
 		// field, which is also what ComponentBase.Name() would have returned.
-		return realComponentBodyWithOptions(cpnID, name, displayName, comp, opts), nil
+		body := realComponentBodyWithOptions(cpnID, name, displayName, comp, opts)
+		return withExceptionHandler(cpnID, params, body), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -170,6 +171,55 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 		return nil, fmt.Errorf("agent: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
 	}
 	return placeholderBody(cpnID), nil
+}
+
+func exceptionTargets(params map[string]any) []string {
+	switch targets := params["exception_goto"].(type) {
+	case []string:
+		return targets
+	case []any:
+		return decodeStringSlice(targets)
+	}
+	return nil
+}
+
+func withExceptionHandler(cpnID string, params map[string]any, body nodeBodyFn) nodeBodyFn {
+	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		out, invokeErr := body(ctx, in)
+		err := invokeErr
+		if err == nil {
+			if message, _ := out["_ERROR"].(string); message != "" {
+				err = errors.New(message)
+			}
+		}
+		if err == nil || IsInterruptError(err) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return out, err
+		}
+		switch params["exception_method"] {
+		case "goto":
+			if targets := exceptionTargets(params); len(targets) > 0 {
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["_ERROR"] = err.Error()
+				out["_next"] = targets
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		case "comment":
+			if value, _ := params["exception_default_value"].(string); value != "" {
+				runtime.EmitCanvasMessage(ctx, value)
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["content"] = value
+				out["_ERROR"] = err.Error()
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		}
+		return out, invokeErr
+	}
 }
 
 // legacyNoOpBody returns the body installed for DSL v1 sentinel
