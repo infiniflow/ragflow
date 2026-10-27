@@ -233,12 +233,16 @@ type connectorRequestHop struct {
 // connectorRequestOptions configures connectorRequest. Zero values use safe
 // defaults: Validate falls back to assertConnectorURLSafe and MaxRedirects to 10.
 type connectorRequestOptions struct {
-	Method       string
-	RawURL       string
-	Body         []byte
-	Headers      map[string]string
-	Timeout      time.Duration
-	MaxRedirects int
+	Method  string
+	RawURL  string
+	Body    []byte
+	Headers map[string]string
+	// SensitiveHeaders are additional credential header names to remove when
+	// a redirect crosses to a different origin. This covers auth schemes with
+	// tenant-configured header names.
+	SensitiveHeaders []string
+	Timeout          time.Duration
+	MaxRedirects     int
 	// Base, when non-nil, provides the starting transport so custom TLS/CA
 	// settings are preserved; otherwise a default pinned transport is used.
 	Base *http.Client
@@ -291,7 +295,7 @@ func (e *connectorUnsafeURLError) Unwrap() error { return e.Err }
 //   - The hop is sent through a transport that dials exactly the validated IP,
 //     so a DNS change after validation cannot rebind the connection.
 //   - Sensitive headers (Authorization etc.) are dropped when a redirect
-//     crosses to a different netloc, mirroring http.Client's default.
+//     crosses to a different origin, mirroring http.Client's default.
 //   - 301/302/303 downgrade the next hop to GET with an empty body.
 //
 // Connector-specific behavior is expressed through the Prepare, CheckRedirect,
@@ -304,7 +308,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		opts.MaxRedirects = 10
 	}
 	hop := connectorRequestHop{Method: opts.Method, URL: opts.RawURL, Body: opts.Body, Headers: opts.Headers}
-	previousNetloc := connectorNetloc(hop.URL)
+	previousOrigin := connectorOrigin(hop.URL)
 	var via []*http.Request
 	for redirects := 0; ; redirects++ {
 		hostname, pinIP, err := opts.Validate(hop.URL)
@@ -332,7 +336,24 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				return nil, err
 			}
 		}
-		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout)
+		proxyURL, err := connectorProxyURL(opts.Base, req)
+		if err != nil {
+			return nil, fmt.Errorf("resolve connector proxy: %w", err)
+		}
+		originalURL := *req.URL
+		if req.Host == "" {
+			req.Host = req.URL.Host
+		}
+		requestURI := req.URL.RequestURI()
+		pinnedHost := connectorPinnedHost(req.URL, pinIP)
+		req.URL.Host = pinnedHost
+		if proxyURL != nil && req.URL.Scheme == "http" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
+			// net/http normally builds an HTTP proxy's absolute request target
+			// from Request.Host. Use an opaque absolute URI so the proxy connects
+			// to the validated IP while the Host header retains the origin name.
+			req.URL.Opaque = "//" + pinnedHost + requestURI
+		}
+		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout, proxyURL)
 		client := &http.Client{
 			Transport: transport,
 			Timeout:   opts.Timeout,
@@ -346,6 +367,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		for attempt := 1; ; attempt++ {
 			resp, err = client.Do(req)
 			if err != nil {
+				req.URL = &originalURL
 				transport.CloseIdleConnections()
 				return nil, err
 			}
@@ -362,6 +384,10 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				}
 			}
 			break
+		}
+		req.URL = &originalURL
+		if resp.Request != nil {
+			resp.Request.URL = &originalURL
 		}
 		if !connectorIsRedirect(resp.StatusCode) {
 			resp.Body = &connectorCloseIdleBody{body: resp.Body, transport: transport}
@@ -380,9 +406,9 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		if err != nil {
 			return nil, err
 		}
-		nextNetloc := connectorNetloc(nextURL)
-		if nextNetloc != "" && nextNetloc != previousNetloc {
-			hop.Headers = connectorStripAuthHeaders(hop.Headers)
+		nextOrigin := connectorOrigin(nextURL)
+		if nextOrigin != "" && nextOrigin != previousOrigin {
+			hop.Headers = connectorStripAuthHeaders(hop.Headers, opts.SensitiveHeaders...)
 			// 307/308 preserve the request method and body; never forward a
 			// request body (which may carry credentials, e.g. a Seafile or
 			// Moodle token exchange) to a different origin.
@@ -390,7 +416,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				return nil, fmt.Errorf("redirect to a different origin is not allowed for a request with a body")
 			}
 		}
-		previousNetloc = nextNetloc
+		previousOrigin = nextOrigin
 		if resp.StatusCode == http.StatusMovedPermanently || resp.StatusCode == http.StatusFound || resp.StatusCode == http.StatusSeeOther {
 			hop.Method = http.MethodGet
 			hop.Body = nil
@@ -404,25 +430,57 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 	}
 }
 
-// newConnectorPinnedTransport builds a transport that dials exactly pinIP for
-// every connection, so the hop is connected to the address validated by the
-// SSRF guard regardless of later DNS changes. When base provides an
-// *http.Transport (custom TLS/CA), it is cloned and reused; otherwise a default
-// transport is used. Environment proxies are deliberately ignored: HTTP_PROXY /
-// HTTPS_PROXY would route the connection through a proxy host instead of pinIP.
-func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.IP, timeout time.Duration) *http.Transport {
+// connectorProxyURL resolves the configured proxy before the request target is pinned.
+func connectorProxyURL(base *http.Client, req *http.Request) (*url.URL, error) {
+	proxy := http.ProxyFromEnvironment
+	if base != nil && base.Transport != nil {
+		transport, ok := base.Transport.(*http.Transport)
+		if !ok {
+			return nil, nil
+		}
+		proxy = transport.Proxy
+	}
+	if proxy == nil {
+		return nil, nil
+	}
+	return proxy(req)
+}
+
+// connectorPinnedHost returns the validated IP combined with the origin port.
+func connectorPinnedHost(reqURL *url.URL, pinIP net.IP) string {
+	port := reqURL.Port()
+	if port == "" {
+		if reqURL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(pinIP.String(), port)
+}
+
+// newConnectorPinnedTransport builds a transport that pins direct connections
+// to pinIP or dials the selected proxy while keeping pinIP as the proxy target.
+// When base provides an *http.Transport (custom TLS/CA), it is cloned and
+// reused; otherwise a default transport is used.
+func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.IP, timeout time.Duration, proxyURL *url.URL) *http.Transport {
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if proxyURL != nil {
+			return dialer.DialContext(ctx, network, addr)
+		}
 		_, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			port = "443"
 		}
 		return dialer.DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
 	}
+	proxy := func(*http.Request) (*url.URL, error) { return proxyURL, nil }
 	if base != nil {
 		if t, ok := base.Transport.(*http.Transport); ok {
 			clone := t.Clone()
 			clone.DialContext = dial
+			clone.Proxy = proxy
 			if clone.TLSClientConfig == nil {
 				clone.TLSClientConfig = &tls.Config{ServerName: hostname, MinVersion: tls.VersionTLS12}
 			} else {
@@ -435,7 +493,7 @@ func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.I
 		}
 	}
 	return &http.Transport{
-		Proxy:                 nil,
+		Proxy:                 proxy,
 		DialContext:           dial,
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
@@ -472,10 +530,17 @@ var connectorAuthSensitiveHeaders = map[string]struct{}{
 	"private-token":       {}, // GitLab credential header
 }
 
-func connectorStripAuthHeaders(headers map[string]string) map[string]string {
+func connectorStripAuthHeaders(headers map[string]string, additional ...string) map[string]string {
 	out := make(map[string]string, len(headers))
+	sensitiveHeaders := make(map[string]struct{}, len(connectorAuthSensitiveHeaders)+len(additional))
+	for name := range connectorAuthSensitiveHeaders {
+		sensitiveHeaders[name] = struct{}{}
+	}
+	for _, name := range additional {
+		sensitiveHeaders[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
 	for k, v := range headers {
-		if _, sensitive := connectorAuthSensitiveHeaders[strings.ToLower(k)]; sensitive {
+		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
 			continue
 		}
 		out[k] = v
@@ -483,12 +548,27 @@ func connectorStripAuthHeaders(headers map[string]string) map[string]string {
 	return out
 }
 
-func connectorNetloc(rawURL string) string {
+func connectorOrigin(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	if err != nil || parsed.Scheme == "" || parsed.Hostname() == "" {
 		return ""
 	}
-	return parsed.Host
+
+	scheme := strings.ToLower(parsed.Scheme)
+	host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+	port := parsed.Port()
+	if port == "" {
+		switch scheme {
+		case "http":
+			port = "80"
+		case "https":
+			port = "443"
+		default:
+			return ""
+		}
+	}
+
+	return scheme + "://" + net.JoinHostPort(host, port)
 }
 
 func connectorResolveURL(base, location string) (string, error) {
