@@ -1,6 +1,6 @@
 # Makefile for RAG Tokenizer with CGO bindings
 
-.PHONY: all clean build c_api c_api_debug c_api_asan test_go test_memory valgrind asan
+.PHONY: all clean build c_api c_api_debug c_api_asan test_string_utils test_go test_memory valgrind asan
 
 BUILD_DIR := build
 ASAN_BUILD_DIR := build-asan
@@ -29,6 +29,11 @@ c_api: $(BUILD_DIR)
 c_api_asan: $(ASAN_BUILD_DIR)
 	cd $(ASAN_BUILD_DIR) && cmake .. -DENABLE_ASAN=ON && make rag_tokenizer_c_api -j$$(nproc)
 	@echo "ASan library built: $(C_API_ASAN_LIB)"
+
+test_string_utils:
+	mkdir -p $(BUILD_DIR)
+	$(CXX) -std=c++20 -fsanitize=address -fno-omit-frame-pointer -g -I. string_utils_test.cpp -o $(BUILD_DIR)/string_utils_test
+	ASAN_OPTIONS=detect_leaks=0 ./$(BUILD_DIR)/string_utils_test
 
 # Build debug version of C API library with memory tracking
 c_api_debug: $(BUILD_DIR)

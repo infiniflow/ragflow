@@ -52,9 +52,13 @@ inline void ToLower(char* data, size_t len)
 
 inline void ToLower(const char* data, size_t len, char* out, size_t out_limit)
 {
-    memcpy(out, data, len);
+    if (out_limit == 0)
+        return;
+    const size_t output_len = len < out_limit - 1 ? len : out_limit - 1;
+    if (output_len > 0)
+        memcpy(out, data, output_len);
     char* begin = out;
-    char* end = out + len;
+    char* end = out + output_len;
     char* p = begin;
 #if defined(__SSE2__)
     static constexpr int SSE2_BYTES = sizeof(__m128i);
