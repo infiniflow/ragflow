@@ -85,8 +85,8 @@ func TestCanvasVersionLimit_RejectsAtCap(t *testing.T) {
 	if !errors.Is(err, ErrCanvasVersionLimitExceeded) {
 		t.Fatalf("cap rejection must return ErrCanvasVersionLimitExceeded, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "版本数已达上限") {
-		t.Fatalf("cap error must surface the Chinese hint, got: %v", err)
+	if !strings.Contains(err.Error(), "version limit reached") {
+		t.Fatalf("cap error must surface the English hint, got: %v", err)
 	}
 	after := countVersions(t, db, canvasID)
 	if after != before {
