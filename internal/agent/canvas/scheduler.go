@@ -20,6 +20,7 @@ package canvas
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -602,7 +603,24 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			return result, postErr
 		}
-		lambda := compose.InvokableLambda[map[string]any, map[string]any](body)
+		// Eino skips statePost on errors, so persist failed node outputs here.
+		nodeBody := func(ctx context.Context, in map[string]any) (map[string]any, error) {
+			out, invokeErr := body(ctx, in)
+			if invokeErr == nil || IsInterruptError(invokeErr) {
+				return out, invokeErr
+			}
+			if out == nil {
+				out = make(map[string]any, 2)
+			}
+			out["__cpn_id__"] = cpnID
+			stateErr := compose.ProcessState(ctx, func(ctx context.Context, state *CanvasState) error {
+				_, postErr := statePost(ctx, out, state)
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, invokeErr)
+				return postErr
+			})
+			return out, errors.Join(invokeErr, stateErr)
+		}
+		lambda := compose.InvokableLambda[map[string]any, map[string]any](nodeBody)
 		node := wf.AddLambdaNode(cpnID, lambda,
 			compose.WithStatePreHandler[map[string]any, *CanvasState](nodePre),
 			compose.WithStatePostHandler[map[string]any, *CanvasState](nodePost),
