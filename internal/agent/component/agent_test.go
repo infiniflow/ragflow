@@ -66,6 +66,9 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	if len(toolCalls) != 0 {
 		t.Errorf("tool_calls=%d, want 0", len(toolCalls))
 	}
+	if _, exists := out["tool_invocations"]; exists {
+		t.Errorf("tool_invocations unexpectedly present without tool calls: %#v", out["tool_invocations"])
+	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
 	}
