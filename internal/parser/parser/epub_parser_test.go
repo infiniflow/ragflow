@@ -91,6 +91,29 @@ func parseTestEPUB(t *testing.T, chapters []epubTestChapter) ParseResult {
 	return NewEPUBParser().ParseWithResult(context.Background(), "book.epub", buildTestEPUB(t, chapters))
 }
 
+func TestEPUBParserReportsDocumentImageLimitAcrossChapters(t *testing.T) {
+	image := `<img src="data:image/png;base64,aGVsbG8=">`
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML(strings.Repeat(image, 128))},
+		{name: "two.xhtml", content: epubTestHTML(strings.Repeat(image, 129) + "<p>After images.</p>")},
+	})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	images := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != 256 || !strings.Contains(epubTestText(res), "After images.") {
+		t.Fatalf("images=%d text=%q", images, epubTestText(res))
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	}
+}
+
 func epubTestText(res ParseResult) string {
 	var parts []string
 	for _, item := range ItemsToMaps(res.JSON) {
@@ -168,7 +191,7 @@ func TestEPUBParser_NoReadableChapterIsAnError(t *testing.T) {
 
 func TestEPUBParser_ImageOnlyChapterCountsAsRead(t *testing.T) {
 	// The image-only chapter was read and has no text; the book is not unreadable.
-	// No <title>: stripHTMLTags keeps its text, and the chapter would not be text-free.
+	// The chapter has no body text.
 	imageOnly := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><img src="plate.png" alt=""/></body></html>`
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: imageOnly},
@@ -207,9 +230,7 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 	}
 }
 
-// The head's <title> and block elements outside the old list ended without a
-// break, so their text ran into the next word: "Testchapter text" and
-// "TermDefinition".
+// Chapter title text and block boundaries retain their text representation.
 func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: epubTestHTML(
@@ -221,6 +242,31 @@ func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	}
 	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// A self-closing raw-text element is valid XHTML but an unclosed start tag
+// under HTML5 rules, which would swallow the rest of the chapter.
+func TestEPUBParser_SelfClosingRawTextKeepsFollowingContent(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			`<script src="chapter.js"/><style type="text/css"/><p>After self-closing.</p>` +
+				`<table><tr><td>Owner</td><td>RET</td></tr></table>`)},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text := epubTestText(res); !strings.Contains(text, "After self-closing.") {
+		t.Fatalf("body after self-closing raw-text element lost: %q", text)
+	}
+	tables := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "table" {
+			tables++
+		}
+	}
+	if tables != 1 {
+		t.Fatalf("table after self-closing raw-text element lost: %#v", ItemsToMaps(res.JSON))
 	}
 }
 
@@ -237,5 +283,22 @@ func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
 	}
 	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
 		t.Errorf("text = %q, want it to contain %q", text, want)
+	}
+}
+
+func TestEPUBParserPreservesChapterTextUnits(t *testing.T) {
+	paragraph := strings.Repeat("chapter prose ", 600)
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML("<p>" + paragraph + "</p><p>End one.</p>")},
+		{name: "two.xhtml", content: epubTestHTML("<p>Second &ldquo;chapter&rdquo;.</p><p>\u3000End&#x00A0;two.</p>")},
+	})
+	if res.Err != nil || len(res.JSON) != 2 {
+		t.Fatalf("expected one text item per chapter: items=%d err=%v", len(res.JSON), res.Err)
+	}
+	if got, want := res.JSON[0].ToMap()["text"], "Test "+paragraph+"End one."; got != want {
+		t.Fatal("first chapter text changed")
+	}
+	if got, want := res.JSON[1].ToMap()["text"], "Test Second \"chapter\". \u3000End two."; got != want {
+		t.Fatalf("second chapter text=%q, want %q", got, want)
 	}
 }

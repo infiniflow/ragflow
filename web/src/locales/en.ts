@@ -3455,7 +3455,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         restore: 'Restore as current',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
-          'The current agent DSL will be replaced by this version. Publish again to save it as a new version.',
+          'The current agent DSL will be replaced by this version. Save again to create a new version.',
         missingContent:
           'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
