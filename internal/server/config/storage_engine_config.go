@@ -18,6 +18,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 )
@@ -31,6 +32,19 @@ type StorageConfig struct {
 }
 
 func (c *Config) ParseStorageEngineConfig(v *viper.Viper) error {
+	if envStorage := c.environments.StorageType; envStorage != "" {
+		configuredStorage := strings.ToLower(strings.TrimSpace(c.general.StorageEngine))
+		if configuredStorage == "aws_s3" {
+			configuredStorage = "s3"
+		}
+		if configuredStorage != envStorage {
+			if !c.generalStorageEngineSet {
+				return fmt.Errorf("STORAGE_IMPL selects %q, but general.storage_engine must be set explicitly; changing storage backends does not migrate existing object keys", envStorage)
+			}
+			return fmt.Errorf("STORAGE_IMPL selects %q but general.storage_engine is %q; set both to the same backend after migrating existing object data", envStorage, c.general.StorageEngine)
+		}
+	}
+
 	storageEngine := c.StorageEngineType()
 	switch storageEngine {
 	case "minio":

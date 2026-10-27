@@ -70,6 +70,7 @@ func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 	}
 	if sub.IsSet("storage_engine") {
 		c.general.StorageEngine = sub.GetString("storage_engine")
+		c.generalStorageEngineSet = true
 	}
 	if sub.IsSet("cache_engine") {
 		c.general.CacheEngine = sub.GetString("cache_engine")

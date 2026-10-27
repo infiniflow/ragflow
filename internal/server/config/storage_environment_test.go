@@ -36,6 +36,7 @@ func TestStorageImplEnvironmentSelectsStorageEngine(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv(common.EnvStorageImpl, tc.value)
 			v := viper.New()
+			v.Set("general.storage_engine", tc.want)
 			cfg := &Config{}
 			if err := cfg.ParseGeneralConfig(v); err != nil {
 				t.Fatalf("ParseGeneralConfig: %v", err)
