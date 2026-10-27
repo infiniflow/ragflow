@@ -57,6 +57,29 @@ func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
 	}
 }
 
+// A hard line break (two trailing spaces or a trailing backslash) must keep the words on either side
+// apart, in a paragraph and in a list item.
+func TestMarkdownParser_HardLineBreakKeepsWordBoundary(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	md := "line one  \nline two and three\\\nline four.\n\n- item  \n  continued\n"
+	res := p.ParseWithResult(t.Context(), "breaks.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var texts []string
+	for _, item := range res.JSON {
+		text, _ := item.ToMap()["text"].(string)
+		texts = append(texts, text)
+	}
+	want := []string{"line one\nline two and three\nline four.", "- item\ncontinued"}
+	if strings.Join(texts, "|") != strings.Join(want, "|") {
+		t.Fatalf("texts = %q, want %q", texts, want)
+	}
+}
+
 // TestMarkdownParser_ListItemsKeepWordBoundaries pins the shape of a list in the parsed output:
 // one item per entry, marker included, and no gluing between entries.
 //
