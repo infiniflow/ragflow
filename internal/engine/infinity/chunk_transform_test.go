@@ -839,7 +839,9 @@ func TestTagKwdRoundTripsAsList(t *testing.T) {
 }
 
 // TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys covers #20500: parser
-// keys that are not columns (slide_number, __outline__) failed the whole batch.
+// keys that are not columns (__outline__) failed the whole batch. slide_number
+// is a declared mapping column since the #20500 fix, so it must reach the
+// insert like every other declared key.
 func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 	outline := []map[string]interface{}{{"title": "Intro", "depth": 1}}
 	vector := []float64{0.1, 0.2}
@@ -863,7 +865,7 @@ func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 	}
 
 	want := []map[string]interface{}{
-		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "q_1024_vec": vector, "legacy_col": "kept"},
+		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept"},
 		{
 			"id": "c2", "content": "pdf text", "important_keywords": "a", "important_kwd_empty_count": 0,
 			"memory_id": "m1", "chunk_data": `{"k":"v"}`,
