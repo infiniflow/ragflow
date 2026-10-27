@@ -973,7 +973,7 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
-				content = cleanCitationMarkers(contentStr)
+				content = historyMessageContent(role, contentStr)
 			}
 			llmMessage["content"] = content
 			llmMessages = append(llmMessages, llmMessage)
@@ -1470,7 +1470,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
-				content = cleanCitationMarkers(contentStr)
+				content = historyMessageContent(role, contentStr)
 			}
 			llmMessage["content"] = content
 			msg = append(msg, llmMessage)
@@ -2359,6 +2359,18 @@ func truncateForLog(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// historyMessageContent strips citation markers from a history message before
+// it reaches the model. A previous answer's [ID:n] markers number that turn's
+// reference, so they are removed in every spelling the answer path accepts:
+// left in, the model reuses them in the new answer, where the same numbers
+// open the new turn's passages. Other messages only lose the ##n$$ markers.
+func historyMessageContent(role, content string) string {
+	if role == "assistant" {
+		return stripCitations(content)
+	}
+	return cleanCitationMarkers(content)
 }
 
 // resolveReferenceMetadata mirrors Python's
