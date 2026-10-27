@@ -279,7 +279,7 @@ func TestUpdateDataset_ParseTypePipelineRejectsParserID(t *testing.T) {
 	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 2
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,

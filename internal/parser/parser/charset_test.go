@@ -217,7 +217,7 @@ func TestEPUBParser_GB2312(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("want non-empty JSON items from EPUB")
 	}
-	text, _ := res.JSON[0].ToMap()["text"].(string)
+	text := epubTestText(res)
 	if strings.ContainsRune(text, '\ufffd') {
 		t.Errorf("EPUB text contains replacement runes: %s", text)
 	}

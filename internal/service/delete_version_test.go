@@ -79,18 +79,19 @@ func TestDeleteVersion_ReferencedVersionStillDeleted(t *testing.T) {
 	versionID := "version0000000000000000000000aa"
 	seedVersionedDataflowCanvas(t, db, userID, canvasID, versionID)
 
+	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
-	if err := svc.DeleteVersion(t.Context(), userID, canvasID, versionID); err != nil {
+	if err := svc.DeleteVersion(ctx, userID, canvasID, versionID); err != nil {
 		t.Fatalf("DeleteVersion referenced version: %v", err)
 	}
 
 	// The version row must actually be removed.
-	if _, err := dao.NewUserCanvasVersionDAO().GetByID(t.Context(), dao.DB, versionID); !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+	if _, err := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, versionID); !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 		t.Fatalf("expected version row removed, got err=%v", err)
 	}
 
 	// The referencing binding now resolves to Missing (design section 6.2).
-	if _, err := loadCanvasDSLJSON(t.Context(), canvasID, &versionID); !errors.Is(err, ErrPipelineVersionMissing) {
+	if _, err := loadCanvasDSLJSON(ctx, canvasID, &versionID); !errors.Is(err, ErrPipelineVersionMissing) {
 		t.Fatalf("expected Missing after referenced version delete, got err=%v", err)
 	}
 }
@@ -126,11 +127,12 @@ func TestDeleteVersion_UnreferencedVersionDeleted(t *testing.T) {
 		t.Fatalf("seed version: %v", err)
 	}
 
+	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
-	if err := svc.DeleteVersion(t.Context(), userID, canvasID, versionID); err != nil {
+	if err := svc.DeleteVersion(ctx, userID, canvasID, versionID); err != nil {
 		t.Fatalf("DeleteVersion unreferenced version: %v", err)
 	}
-	if _, err := dao.NewUserCanvasVersionDAO().GetByID(t.Context(), dao.DB, versionID); !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+	if _, err := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, versionID); !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 		t.Fatalf("expected version row removed, got err=%v", err)
 	}
 }
