@@ -212,13 +212,13 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	var users []map[string]interface{}
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
+		users, total, err := h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
 		}
 
-		common.SuccessWithData(c, users, "List users")
+		common.SuccessWithDataAndTotal(c, users, total, "List users")
 		return
 	case common.EnterpriseEdition:
 		users, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
