@@ -1187,7 +1187,7 @@ func (s *Service) ListEnvironments() ([]map[string]interface{}, error) {
 		storageImpl = "minio"
 	}
 	result = append(result, map[string]interface{}{
-		"env":   "STORAGE",
+		"env":   "STORAGE_IMPL",
 		"value": storageImpl,
 	})
 

@@ -186,6 +186,8 @@ func (c *Config) GetEnvironments() error {
 		switch storageType {
 		case "minio", "s3", "oss", "gcs":
 			c.environments.StorageType = storageType
+		case "aws_s3":
+			c.environments.StorageType = "s3"
 		default:
 			return fmt.Errorf("invalid storage type: %s", storageType)
 		}
