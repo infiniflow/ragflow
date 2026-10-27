@@ -62,6 +62,9 @@ export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
   LLMFactory.SystemOne,
   LLMFactory.RAGcon,
   LLMFactory.VolcEngine,
+  LLMFactory.DaoXE,
+  LLMFactory.RadeonCloud,
+  LLMFactory.DemonRoute,
 ];
 
 // ---------------------------------------------------------------------------
