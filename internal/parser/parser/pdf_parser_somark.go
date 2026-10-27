@@ -15,7 +15,7 @@ import (
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
-func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -30,11 +30,11 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if strings.TrimSpace(apiKey) == "" && !parser.UseTenantModelConfig {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
-	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
+	taskID, err := soMarkSubmit(ctx, strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	result, err := soMarkPoll(strings.TrimRight(baseURL, "/"), taskID, apiKey)
+	result, err := soMarkPoll(ctx, strings.TrimRight(baseURL, "/"), taskID, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
@@ -47,7 +47,7 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 
 // soMarkSubmit uploads a PDF with the supplied credentials and parser options,
 // applying environment defaults only when no tenant instance was selected.
-func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
+func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("file", filename)
@@ -81,7 +81,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	if err = writer.Close(); err != nil {
 		return "", fmt.Errorf("parser: SoMark finalize form: %w", err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async", &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async", &body)
 	if err != nil {
 		return "", fmt.Errorf("parser: SoMark request: %w", err)
 	}
@@ -114,12 +114,12 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	return payload.Data.TaskID, nil
 }
 
-func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
+func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
 	form := url.Values{"task_id": {taskID}}
 	if apiKey != "" {
 		form.Set("api_key", apiKey)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
 	}

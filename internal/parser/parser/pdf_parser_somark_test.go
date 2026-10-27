@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -103,7 +104,7 @@ func TestSoMarkSubmitMultipartShape(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-3"}}`))
 	}))
 	defer server.Close()
-	taskID, err := soMarkSubmit(server.URL, "sample.pdf", []byte("%PDF"), NewPDFParser(), "key")
+	taskID, err := soMarkSubmit(context.Background(), server.URL, "sample.pdf", []byte("%PDF"), NewPDFParser(), "key")
 	if err != nil {
 		t.Fatalf("soMarkSubmit: %v", err)
 	}

@@ -91,7 +91,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	var lastErr error
 	for _, candidate := range payloads {
 		url := baseURL + candidate.endpoint
-		resp, err := models.PostJSONRequest(context.Background(), common.GetSSRFHTTPClient(), url, auth, candidate.body())
+		resp, err := models.PostJSONRequest(ctx, common.GetSSRFHTTPClient(), url, auth, candidate.body())
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", candidate.endpoint, err)
 			continue
