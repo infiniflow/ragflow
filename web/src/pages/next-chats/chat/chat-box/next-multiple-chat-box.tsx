@@ -23,12 +23,13 @@ import {
 import {
   useFetchChat,
   useGetChatSearchParams,
-  usePatchChat,
+  useUpdateChat,
 } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
+import { removeUselessFieldsFromValues } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
@@ -104,7 +105,7 @@ const ChatCard = forwardRef(function ChatCard(
   ref,
 ) {
   const { id: dialogId } = useParams();
-  const { patchChat } = usePatchChat();
+  const { updateChat } = useUpdateChat();
 
   const { derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
@@ -140,7 +141,7 @@ const ChatCard = forwardRef(function ChatCard(
   const findLlmByUuid = useFindLlmByUuid();
 
   // Each card must keep its own independently selected model after the initial
-  // sync. Without this guard, clicking "Apply" in one card patches the dialog
+  // sync. Without this guard, clicking "Apply" in one card updates the dialog
   // (which invalidates [FetchChat] and refetches currentDialog), and the
   // changed currentDialog.llm_id would then overwrite every other card's
   // llm_id via this effect. Sync only when dialogId changes (initial load or
@@ -162,26 +163,28 @@ const ChatCard = forwardRef(function ChatCard(
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
     const llmId = values.llm_id;
-    patchChat({
+    const llmSetting = removeUselessFieldsFromValues(values, '');
+    // Replace the full settings object so disabled fields are removed instead
+    // of surviving a PATCH merge with the previously saved values.
+    updateChat({
       chatId: dialogId!,
       params: {
-        ...currentDialog,
         llm_id: llmId,
         tenant_llm_id: llmId,
         llm_setting: {
-          ...omit(values, 'llm_id'),
+          ...omit(llmSetting, 'llm_id'),
           model_type: findLlmByUuid(llmId)?.model_type || 'chat',
         },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
+  }, [dialogId, form, updateChat, findLlmByUuid]);
 
   useImperativeHandle(
     ref,
     (): HandlePressEnterType => (params) => {
       return handlePressEnter({
         ...params,
-        ...form.getValues(),
+        ...removeUselessFieldsFromValues(form.getValues(), ''),
         storeHistoryMessages: false,
         omitSessionId: true,
       });
