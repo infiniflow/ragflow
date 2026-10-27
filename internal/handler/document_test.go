@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
@@ -102,6 +103,7 @@ func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
 		t.Run(tt.method, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, `{"selector":{"document_ids":[123]}}`)
 			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+			setGinContextSubject(c, "user-1", "tenant-owner")
 			tt.handler(c)
 			if w.Code != http.StatusOK {
 				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
@@ -370,9 +372,28 @@ func setupGinContextWithUser(method, path, body string) (*gin.Context, *httptest
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(w)
 	c.Request = req
+	setGinContextSubject(c, "user-1", "user-1")
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	return c, w
+}
+
+func setupGinContextWithUserInTenant(method, path, body, userID, tenantID string) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupGinContextWithUser(method, path, body)
+	setGinContextSubject(c, userID, tenantID)
+	return c, w
+}
+
+func setupHandlerAccessContext(method, path, body string) (*gin.Context, *httptest.ResponseRecorder) {
+	c, w := setupGinContextWithUser(method, path, body)
+	setGinContextSubject(c, "user-1", "tenant-1")
+	return c, w
+}
+
+func setGinContextSubject(c *gin.Context, userID, tenantID string) {
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: userID, TenantID: tenantID,
+	}))
 }
 
 func setupDocumentPermissionDB(t *testing.T, accessible bool) {
@@ -385,6 +406,7 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.Knowledgebase{},
 		&entity.UserTenant{},
 		&entity.Document{},
@@ -427,6 +449,15 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 		}).Error; err != nil {
 			t.Fatalf("insert user_tenant: %v", err)
 		}
+	}
+	members := []string{"owner-user"}
+	if accessible {
+		members = append(members, "user-1")
+	} else if err := db.Create(&entity.User{ID: "user-1", Nickname: "user-1", Email: "user-1@test.local"}).Error; err != nil {
+		t.Fatalf("insert non-member user: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-owner", members...); err != nil {
+		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 
 	orig := dao.DB
@@ -504,6 +535,7 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.DeleteDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -537,6 +569,7 @@ func TestDeleteDocumentHandler_Accessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("DELETE", "/api/v1/documents/doc-1", "")
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.DeleteDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -570,6 +603,7 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"blocked"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -603,6 +637,7 @@ func TestUpdateDocumentHandler_Accessible(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"allowed"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -638,6 +673,7 @@ func TestUpdateDocumentHandler_ValidationError(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"progress":0.5}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusOK {
@@ -670,6 +706,7 @@ func TestUpdateDocumentHandler_ServerError(t *testing.T) {
 
 	c, w := setupGinContextWithUser("PUT", "/api/v1/documents/doc-1", `{"name":"new.pdf"}`)
 	c.Params = gin.Params{{Key: "id", Value: "doc-1"}}
+	setGinContextSubject(c, "user-1", "tenant-owner")
 	h.UpdateDocument(c)
 
 	if w.Code != http.StatusInternalServerError {
@@ -760,6 +797,7 @@ func setupUploadContext(t *testing.T, path string, fields map[string]string, fil
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	c, _ := gin.CreateTestContext(w)
 	c.Request = req
+	setGinContextSubject(c, "user-1", "tenant-1")
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "dataset_id", Value: uploadTestDatasetID}}
@@ -815,6 +853,9 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare upload permission fixture: %v", err)
+	}
 
 	fake := &fakeDocumentService{
 		uploadLocalData: []map[string]interface{}{
@@ -855,6 +896,9 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare upload permission fixture: %v", err)
+	}
 
 	fake := &fakeDocumentService{
 		uploadLocalData: []map[string]interface{}{
@@ -1269,6 +1313,9 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 		ID: "doc-1", KbID: "ds-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
 		CreatedBy: "user-1", Type: "pdf", Suffix: "pdf", Status: sptr(string(entity.StatusValid)),
 	})
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1", "owner-1"); err != nil {
+		t.Fatalf("prepare document handler permission fixture: %v", err)
+	}
 
 	return db
 }
@@ -1297,7 +1344,7 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1349,7 +1396,7 @@ func TestListDocumentsRejectsInvalidRunFilter(t *testing.T) {
 	}
 
 	for _, invalid := range []string{"1", "DONE", "CANCEL", "FAIL", "SCHEDULE"} {
-		c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
+		c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
 		c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 		h.ListDocuments(c)
@@ -1396,7 +1443,7 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1444,7 +1491,7 @@ func TestListDocumentsHandlerReturnsUnstartWhenNoIngestionTask(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1496,7 +1543,7 @@ func TestListDocumentsHandlerReturnsHasActiveTasks(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1543,7 +1590,7 @@ func TestListDocumentsHandlerReturnsHasActiveTasksFalse(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1590,7 +1637,7 @@ func TestListDocumentsHandlerKeepsPollingWhenActiveTaskCheckFails(t *testing.T) 
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1632,7 +1679,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/documents?metadata[author][]=Alice", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1664,7 +1711,7 @@ func TestStopParseDocumentsHandler_Success(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)
@@ -1700,7 +1747,7 @@ func TestStopParseDocumentsHandler_ServiceError(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)
@@ -1843,7 +1890,7 @@ func TestMetadataSummaryByDataset_Success(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")
+	c, w := setupHandlerAccessContext("GET", "/api/v1/datasets/ds-1/metadata/summary?doc_ids=doc-1,doc-2", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.MetadataSummaryByDataset(c)
@@ -2168,6 +2215,7 @@ func downloadContextAs(userID, datasetID, docID string) (*gin.Context, *httptest
 	c.Request = httptest.NewRequest("GET", "/api/v1/datasets/"+datasetID+"/documents/"+docID, nil)
 	c.Set("user", &entity.User{ID: userID})
 	c.Set("user_id", userID)
+	setGinContextSubject(c, userID, "tenant-1")
 	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: docID}}
 	return c, w
 }
@@ -2284,5 +2332,35 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 	}
 	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+// TestMapDocumentListItemIncludesPipelineVersionID guards the document list
+// wire format: the reopened change-parser dialog reads record.pipeline_version_id
+// to show the saved pin, so mapDocumentListItem MUST emit it. An earlier fix added
+// the field to the entity struct and asserted on the service-layer struct, but
+// never on this serialization step, so the field was silently dropped from the
+// HTTP response (file-level pin always reverted to latest). This test covers that
+// exact gap.
+func TestMapDocumentListItemIncludesPipelineVersionID(t *testing.T) {
+	pinned := "v-pinned-123"
+	pipelineID := "canvas-1"
+	doc := &entity.DocumentListItem{
+		ID:                "doc-1",
+		KbID:              "kb-1",
+		PipelineID:        &pipelineID,
+		PipelineVersionID: &pinned,
+	}
+	item := mapDocumentListItem(doc, map[string]interface{}{}, nil)
+
+	got, ok := item["pipeline_version_id"]
+	if !ok {
+		t.Fatalf("mapDocumentListItem must emit pipeline_version_id; got keys without it")
+	}
+	if got != pinned {
+		t.Fatalf("pipeline_version_id value mismatch: got %v want %v", got, pinned)
+	}
+	if item["pipeline_id"] != pipelineID {
+		t.Fatalf("pipeline_id mapping regressed: %v", item["pipeline_id"])
 	}
 }

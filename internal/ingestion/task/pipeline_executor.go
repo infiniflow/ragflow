@@ -842,6 +842,13 @@ type PipelineLogInput struct {
 // outcome without the run row that owns it.
 var ErrMissingRunIdentity = errors.New("pipeline log id is required")
 
+// ErrPipelineVersionMissing is the single multi-version Missing sentinel. It is
+// defined once in the dao package (dao.ErrPipelineVersionMissing) and re-exported
+// here so the service and task layers share one identity (review: merge the
+// duplicate service/task sentinels into one implementation). The wrapped message
+// still carries the user-facing hint "pipeline 版本不存在，请重新选择版本".
+var ErrPipelineVersionMissing = dao.ErrPipelineVersionMissing
+
 // RecordPipelineLog persists a pipeline operation log without requiring
 // executor setup. Callers should pass the status in Status.
 //
@@ -1035,6 +1042,24 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	}
 	common.Info(fmt.Sprintf("load canvas %s, name %s", canvasID, canvasTitle))
 
+	// dataflow canvases are versioned (design section 6.2). An explicit pin
+	// resolves that exact version; an empty pin resolves the latest version.
+	// A missing or mis-owned version maps to ErrPipelineVersionMissing so the
+	// parse task fails and the file enters an unparseable Missing state (C4).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		// Dataflow canvases are versioned (design section 6.2). An explicit pin
+		// resolves that exact version; an empty pin resolves the latest published
+		// version. A missing or mis-owned version returns ErrPipelineVersionMissing
+		// so the parse task fails and the file enters an unparseable Missing state.
+		raw, verr := dao.LoadCanvasVersionDSL(ctx, s.deps.DB, canvasID, s.taskCtx.PipelineVersionID)
+		if verr != nil {
+			return "", "", verr
+		}
+		return string(raw), canvasID, nil
+	}
+
+	// Agent / non-versioned canvases: read the live draft column (out of scope
+	// for multi-version; mirrors the agent read path in the service layer).
 	raw, err := json.Marshal(canvas.DSL)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", canvasID, err)

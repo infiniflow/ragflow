@@ -179,6 +179,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	tools = wrapReferenceRecordingTools(tools)
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -500,7 +501,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
 // response still has answer text after the markers are removed. The ID:
 // prefix is required so bare brackets like [2026] are not treated as markers.
-var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\]]+\]`)
+// The id cannot contain "[", matching citationGroundingMarkerCaptureRe: an
+// unclosed [ID: must not be stripped together with the text up to a later ].
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\[\]]+\]`)
 
 // citationGroundingHasSubstantiveText reports whether s contains any
 // non-whitespace text once citation markers are stripped. Marker-only
@@ -532,7 +535,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
+	systemPrompt, ids := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -548,9 +551,26 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	var resp *ChatInvokeResponse
 	var err error
 	emittedVisible := false
+	var leadingWhitespace strings.Builder
+	emitting := false
+	emitContent := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if !emitting {
+			leadingWhitespace.WriteString(text)
+			if strings.TrimSpace(leadingWhitespace.String()) == "" {
+				return nil
+			}
+			text = leadingWhitespace.String()
+			emitting = true
+		}
+		emittedVisible = true
+		runtime.EmitAgentMessage(ctx, text, "")
+		return nil
+	}
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		var leadingWhitespace strings.Builder
-		emitting := false
+		streamFilter := newCitationMarkerStreamFilter(ids)
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -558,18 +578,13 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			if isThink || delta == "" {
 				return nil
 			}
-			if !emitting {
-				leadingWhitespace.WriteString(delta)
-				if strings.TrimSpace(leadingWhitespace.String()) == "" {
-					return nil
-				}
-				delta = leadingWhitespace.String()
-				emitting = true
-			}
-			emittedVisible = true
-			runtime.EmitAgentMessage(ctx, delta, "")
-			return nil
+			return emitContent(streamFilter.Push(delta))
 		})
+		if err == nil {
+			if flushErr := emitContent(streamFilter.Flush()); flushErr != nil {
+				err = flushErr
+			}
+		}
 	} else {
 		resp, err = inv.Invoke(ctx, db, req)
 	}
@@ -582,20 +597,21 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if resp == nil {
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
-	if strings.TrimSpace(resp.Content) == "" {
+	grounded := filterCitationMarkers(resp.Content, ids)
+	if strings.TrimSpace(grounded) == "" {
 		return content, nil
 	}
 	// Marker-only grounding must not silently replace the first-pass answer
 	// (#20613). Non-stream (or stream that never emitted) can fall back.
 	// Once invalid deltas have already been streamed, surface an error so the
 	// caller does not append the original answer after the bad markers.
-	if !citationGroundingHasSubstantiveText(resp.Content) {
+	if !citationGroundingHasSubstantiveText(grounded) {
 		if emittedVisible {
 			return content, fmt.Errorf("citation grounding returned markers without answer text")
 		}
 		return content, nil
 	}
-	return resp.Content, nil
+	return grounded, nil
 }
 
 // chunksFromState extracts the recorded retrieval chunks from
@@ -1103,7 +1119,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 
 	var groundingStatus string
 	if p.Cite {
-		chunks := chunksFromState(ctx)
+		chunks := limitCitationSources(chunksFromState(ctx), citationGroundingSourceTokenBudget)
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {

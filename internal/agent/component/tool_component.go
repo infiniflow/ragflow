@@ -156,6 +156,7 @@ var toolComponentRegistrations = []struct {
 	{componentName: "WenCai", toolName: "wencai"},
 	{componentName: "Wikipedia", toolName: "wikipedia"},
 	{componentName: "YahooFinance", toolName: "yahoo_finance"},
+	{componentName: "YouComSearch", toolName: "youcom"},
 }
 
 func init() {

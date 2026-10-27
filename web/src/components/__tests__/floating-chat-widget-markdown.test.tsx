@@ -32,7 +32,9 @@ jest.mock('../ui/hover-card', () => {
   const Wrapper = ({ children }: any) => <div>{children}</div>;
   return {
     HoverCard: Wrapper,
-    HoverCardContent: Wrapper,
+    HoverCardContent: ({ children }: any) => (
+      <div data-testid="popover">{children}</div>
+    ),
     HoverCardTrigger: Wrapper,
   };
 });
@@ -170,5 +172,91 @@ describe('floating widget citation resolution', () => {
   it('keeps the loading fallback until sources arrive', () => {
     renderCitation('[ID:0]', [], true);
     expect(screen.getByText('chat.searching')).toBeInTheDocument();
+  });
+});
+
+const buildChunk = (id: string, content: string, documentId: string) => ({
+  id,
+  chunk_id: id,
+  content,
+  content_with_weight: content,
+  document_id: documentId,
+  doc_id: documentId,
+  image_id: '',
+  img_id: '',
+});
+
+const Opaque = buildChunk(
+  '0000123456789012',
+  'OPAQUE_CHUNK_CONTENT',
+  'doc-opaque',
+);
+const Hex = buildChunk('a2d067519c9e0db1', 'HEX_CHUNK_CONTENT', 'doc-hex');
+
+const buildReference = () =>
+  ({
+    chunks: [Opaque, Hex],
+    doc_aggs: {
+      'doc-opaque': {
+        doc_id: 'doc-opaque',
+        doc_name: 'Opaque source.txt',
+        count: 1,
+      },
+      'doc-hex': {
+        doc_id: 'doc-hex',
+        doc_name: 'Hex source.txt',
+        count: 1,
+      },
+    },
+    total: 2,
+  }) as any;
+
+const popoverTexts = () =>
+  screen.getAllByTestId('popover').map((popover) => popover.textContent);
+
+describe('FloatingChatWidgetMarkdown citations', () => {
+  it('keeps an all-digit opaque id as an id, not a positional index', () => {
+    render(
+      <FloatingChatWidgetMarkdown
+        content="see [ID:0000123456789012]"
+        loading={false}
+        reference={buildReference()}
+      />,
+    );
+
+    expect(screen.queryByText('Reference unavailable')).not.toBeInTheDocument();
+    const popovers = popoverTexts();
+    expect(popovers).toHaveLength(1);
+    expect(popovers[0]).toContain('OPAQUE_CHUNK_CONTENT');
+    expect(popovers[0]).toContain('Opaque source.txt');
+  });
+
+  it('resolves a normal hex id by id', () => {
+    render(
+      <FloatingChatWidgetMarkdown
+        content="see [ID:a2d067519c9e0db1]"
+        loading={false}
+        reference={buildReference()}
+      />,
+    );
+
+    const popovers = popoverTexts();
+    expect(popovers).toHaveLength(1);
+    expect(popovers[0]).toContain('HEX_CHUNK_CONTENT');
+    expect(popovers[0]).toContain('Hex source.txt');
+  });
+
+  it('keeps short numeric markers positional', () => {
+    render(
+      <FloatingChatWidgetMarkdown
+        content="see [ID:0]"
+        loading={false}
+        reference={buildReference()}
+      />,
+    );
+
+    const popovers = popoverTexts();
+    expect(popovers).toHaveLength(1);
+    expect(popovers[0]).toContain('OPAQUE_CHUNK_CONTENT');
   });
 });

@@ -773,6 +773,20 @@ export const buildDslComponentsByGraph = (
         case Operator.Begin:
           params = transformBeginParams(params);
           break;
+        case Operator.UserFillUp:
+          if (Array.isArray(params.inputs)) {
+            params = {
+              ...params,
+              inputs: params.inputs.reduce(
+                (inputs, { key, ...value }) => {
+                  inputs[key] = value;
+                  return inputs;
+                },
+                {} as Record<string, Omit<BeginQuery, 'key'>>,
+              ),
+            };
+          }
+          break;
         default:
           break;
       }

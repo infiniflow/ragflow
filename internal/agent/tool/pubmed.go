@@ -18,11 +18,9 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -282,10 +280,9 @@ func buildPubMedReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(pubmedHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(pubmedHashInt(documentID, 500), 10)
 		title := pubmedText(item["title"])
 		resultURL := pubmedText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -330,12 +327,6 @@ func pubmedText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func pubmedHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncatePubMedRunes(value string, limit int) string {

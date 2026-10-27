@@ -1289,6 +1289,7 @@ export default {
         tts: 'تحويل النص إلى كلام',
         image2text: 'التعرف الضوئي على الحروف',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'عرض المحتوى',
       hideToc: 'إخفاء المحتوى',

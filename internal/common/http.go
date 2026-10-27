@@ -38,7 +38,43 @@ import (
 const (
 	redactedLogValue      = "[REDACTED]"
 	maxLoggedVectorFloats = 3
+
+	// DefaultMaxJSONRequestBodyBytes is the default limit for non-multipart requests.
+	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
+	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
+	DefaultMaxMultipartRequestBodyBytes int64 = 1 << 30
+	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
+	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
 )
+
+// GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
+// limit in bytes, defaulting to 1 MiB.
+func GetMaxJSONRequestBodyBytes() int64 {
+	return getMaxRequestBodyBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
+}
+
+// GetMaxMultipartRequestBodyBytes returns the configured multipart upload
+// request-body limit in bytes, defaulting to 1 GiB. MAX_CONTENT_LENGTH remains
+// a fallback for existing deployments when the new variable is unset.
+func GetMaxMultipartRequestBodyBytes() int64 {
+	return getMaxRequestBodyBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
+}
+
+func getMaxRequestBodyBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
+	raw := strings.TrimSpace(GetEnv(envName))
+	if raw == "" && fallbackEnvName != "" {
+		raw = strings.TrimSpace(GetEnv(fallbackEnvName))
+	}
+	if raw == "" {
+		return defaultBytes
+	}
+
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || limit <= 0 {
+		return defaultBytes
+	}
+	return limit
+}
 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
@@ -60,7 +96,7 @@ func GetSSRFHTTPClient() *http.Client {
 
 		var rt http.RoundTripper = t
 		rt = &strictSSRFTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		ssrfHttpClient = &http.Client{Transport: rt}
 	}
 	return ssrfHttpClient
@@ -78,12 +114,12 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 60 * time.Second
+		t.ResponseHeaderTimeout = 20 * time.Minute
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &schemeSafeTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		schemeSafeHttpClient = &http.Client{Transport: rt}
 	}
 	return schemeSafeHttpClient
@@ -97,7 +133,9 @@ const (
 	providerCallLogThreshold   = 30 * time.Second
 )
 
-func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
+// NewProviderLoggingTransport wraps base with provider timing and LLM_DEBUG payload logging.
+// A nil base uses http.DefaultTransport.
+func NewProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}

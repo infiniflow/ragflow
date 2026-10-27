@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -34,7 +35,7 @@ func TestFileService_CreateFolderDedupesDuplicateName(t *testing.T) {
 	}
 
 	svc := testFileService()
-	ctx := context.Background()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
 
 	created, err := svc.CreateFolder(ctx, "tenant-1", "notes", "pf1", FileTypeFolder)
 	if err != nil {
@@ -67,10 +68,10 @@ func TestFileService_CreateFolderDedupesDuplicateName(t *testing.T) {
 	}
 
 	// Folders are not files: a dotted folder name keeps its dot at the end.
-	if got := firstCreatedFolderName(t, svc, "v1.2", FileTypeFolder); got != "v1.2" {
+	if got := firstCreatedFolderName(t, svc, ctx, "v1.2", FileTypeFolder); got != "v1.2" {
 		t.Fatalf("first folder name = %q, want %q", got, "v1.2")
 	}
-	if got := firstCreatedFolderName(t, svc, "v1.2", FileTypeFolder); got != "v1.2(1)" {
+	if got := firstCreatedFolderName(t, svc, ctx, "v1.2", FileTypeFolder); got != "v1.2(1)" {
 		t.Fatalf("duplicate folder name = %q, want %q", got, "v1.2(1)")
 	}
 }
@@ -90,7 +91,7 @@ func TestFileService_CreateFolderRecordsRequesterAsOwner(t *testing.T) {
 		t.Fatalf("create root folder: %v", err)
 	}
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "member", TenantID: "owner"})
+	ctx := fileTestContext(t, "member", "owner", "owner")
 	created, err := testFileService().CreateFolder(ctx, "member", "notes", "root", FileTypeFolder)
 	if err != nil {
 		t.Fatalf("create folder: %v", err)
@@ -106,9 +107,9 @@ func TestFileService_CreateFolderRecordsRequesterAsOwner(t *testing.T) {
 }
 
 // firstCreatedFolderName creates one entry and returns its resulting name.
-func firstCreatedFolderName(t *testing.T, svc *FileService, name, fileType string) string {
+func firstCreatedFolderName(t *testing.T, svc *FileService, ctx context.Context, name, fileType string) string {
 	t.Helper()
-	created, err := svc.CreateFolder(context.Background(), "tenant-1", name, "pf1", fileType)
+	created, err := svc.CreateFolder(ctx, "tenant-1", name, "pf1", fileType)
 	if err != nil {
 		t.Fatalf("CreateFolder(%q) failed: %v", name, err)
 	}
@@ -124,7 +125,7 @@ func TestFileService_MoveFiles_RejectsSlashInNewName(t *testing.T) {
 	}
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant1", []string{"f1"}, "", "a/b")
+	err := svc.MoveFiles(fileTestContext(t, "tenant1", "tenant1"), "tenant1", []string{"f1"}, "", "a/b")
 	if err == nil || !strings.Contains(err.Error(), `cannot contain "/"`) {
 		t.Fatalf("MoveFiles rename error = %v, want slash validation error", err)
 	}
@@ -141,7 +142,7 @@ func TestFileService_MoveFilesRejectsDuplicateName(t *testing.T) {
 	}
 
 	svc := testFileService()
-	ctx := context.Background()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
 
 	err := svc.MoveFiles(ctx, "tenant-1", []string{"s1"}, "", "TARGET")
 	if err == nil || !strings.Contains(err.Error(), "duplicated file name") {
@@ -170,7 +171,7 @@ func TestFileService_MoveFilesRejectsCaseVariantDuplicateInDestinationFolder(t *
 	}
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant-1", []string{"s1"}, "d1", "REPORT.TXT")
+	err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"s1"}, "d1", "REPORT.TXT")
 	if err == nil || !strings.Contains(err.Error(), "duplicated file name") {
 		t.Fatalf("move+case-variant rename error = %v, want duplicate error", err)
 	}
@@ -193,7 +194,7 @@ func TestFileService_MoveFilesRejectsCaseVariantDuplicateWithoutRename(t *testin
 	}
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant-1", []string{"s1"}, "d1", "")
+	err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"s1"}, "d1", "")
 	if err == nil || !strings.Contains(err.Error(), "Duplicated file name") {
 		t.Fatalf("plain move into case-variant duplicate error = %v, want duplicate error", err)
 	}
@@ -228,6 +229,15 @@ func setupFolderTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func fileTestContext(t *testing.T, userID, tenantID string, memberIDs ...string) context.Context {
+	t.Helper()
+	members := append([]string{userID}, memberIDs...)
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, members...); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
+	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
+}
+
 func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 	t.Helper()
 	f := &entity.File{
@@ -253,7 +263,7 @@ func TestFileService_ListFilesMissingParentReturnsNotFound(t *testing.T) {
 	}
 
 	svc := testFileService()
-	_, err := svc.ListFiles(context.Background(), "tenant-1", "missing-folder", 1, 10, nil, "")
+	_, err := svc.ListFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", "missing-folder", 1, 10, nil, "")
 	var coded *common.CodedError
 	if !errors.As(err, &coded) || coded.Code != common.CodeNotFound {
 		t.Fatalf("ListFiles error = %v, want CodeNotFound CodedError", err)
@@ -264,7 +274,7 @@ func TestFileService_AncestryMissingIDReturnsNotFound(t *testing.T) {
 	setupFolderTestDB(t)
 
 	svc := testFileService()
-	ctx := context.Background()
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 	for name, call := range map[string]func() error{
 		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "missing-file"); return err },
 		"GetAllParentFolders": func() error { _, err := svc.GetAllParentFolders(ctx, "user-1", "missing-file"); return err },
@@ -288,7 +298,7 @@ func TestFileService_DatabaseErrorIsNotReportedAsNotFound(t *testing.T) {
 	}
 
 	svc := testFileService()
-	ctx := context.Background()
+	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 	for name, call := range map[string]func() error{
 		"ListFiles":           func() error { _, err := svc.ListFiles(ctx, "tenant-1", "any", 1, 10, nil, ""); return err },
 		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "any"); return err },
@@ -307,9 +317,10 @@ func TestFileService_AncestryRejectsUnauthorized(t *testing.T) {
 	setupFolderTestDB(t)
 	insertFolderTestFile(t, "file-1", "folder-1", "file.pdf")
 	svc := testFileService()
+	ctx := fileTestContext(t, "user-2", "tenant-1", "tenant-1")
 	for _, call := range []func() error{
-		func() error { _, err := svc.GetParentFolder(t.Context(), "user-2", "file-1"); return err },
-		func() error { _, err := svc.GetAllParentFolders(t.Context(), "user-2", "file-1"); return err },
+		func() error { _, err := svc.GetParentFolder(ctx, "user-2", "file-1"); return err },
+		func() error { _, err := svc.GetAllParentFolders(ctx, "user-2", "file-1"); return err },
 	} {
 		if err := call(); !errors.Is(err, permission.ErrPermissionDenied) {
 			t.Fatalf("error = %v, want permission denied", err)
@@ -321,7 +332,7 @@ func TestFileService_GetFileContentRejectsInaccessibleFile(t *testing.T) {
 	setupFolderTestDB(t)
 	insertFolderTestFile(t, "file-1", "folder-1", "private.pdf")
 
-	_, err := testFileService().GetFileContent(t.Context(), "user-2", "file-1")
+	_, err := testFileService().GetFileContent(fileTestContext(t, "user-2", "tenant-1", "tenant-1"), "user-2", "file-1")
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("GetFileContent error = %v, want permission denied", err)
 	}
@@ -334,7 +345,7 @@ func TestFileService_ListFilesRejectsInaccessibleParent(t *testing.T) {
 		t.Fatalf("seed foreign folder: %v", err)
 	}
 
-	_, err := testFileService().ListFiles(t.Context(), "user-1", foreignFolder.ID, 1, 15, nil, "")
+	_, err := testFileService().ListFiles(fileTestContext(t, "user-1", "user-1"), "user-1", foreignFolder.ID, 1, 15, nil, "")
 	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("ListFiles error = %v, want resource not found", err)
 	}
@@ -347,7 +358,7 @@ func TestFileService_CreateFolderRejectsInaccessibleParent(t *testing.T) {
 		t.Fatalf("seed foreign folder: %v", err)
 	}
 
-	_, err := testFileService().CreateFolder(t.Context(), "user-1", "child", foreignFolder.ID, FileTypeFolder)
+	_, err := testFileService().CreateFolder(fileTestContext(t, "user-1", "user-1"), "user-1", "child", foreignFolder.ID, FileTypeFolder)
 	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("CreateFolder error = %v, want resource not found", err)
 	}
@@ -367,7 +378,7 @@ func TestFileService_MoveFilesRejectsInaccessibleSource(t *testing.T) {
 		t.Fatalf("seed foreign file: %v", err)
 	}
 
-	err := testFileService().MoveFiles(t.Context(), "user-1", []string{foreignFile.ID}, "", "renamed.pdf")
+	err := testFileService().MoveFiles(fileTestContext(t, "user-1", "user-1"), "user-1", []string{foreignFile.ID}, "", "renamed.pdf")
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("MoveFiles error = %v, want permission denied", err)
 	}
@@ -388,7 +399,7 @@ func TestFileService_MoveFilesRejectsInaccessibleDestination(t *testing.T) {
 		t.Fatalf("seed foreign folder: %v", err)
 	}
 
-	err := testFileService().MoveFiles(t.Context(), "user-1", []string{"file-1"}, foreignFolder.ID, "")
+	err := testFileService().MoveFiles(fileTestContext(t, "user-1", "tenant-1"), "user-1", []string{"file-1"}, foreignFolder.ID, "")
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("MoveFiles error = %v, want permission denied", err)
 	}
@@ -408,7 +419,7 @@ func TestFileService_UploadRejectsInaccessibleParent(t *testing.T) {
 		t.Fatalf("seed foreign folder: %v", err)
 	}
 
-	_, err := testFileService().UploadFile(t.Context(), "user-1", foreignFolder.ID, nil, 1024)
+	_, err := testFileService().UploadFile(fileTestContext(t, "user-1", "user-1"), "user-1", foreignFolder.ID, nil, 1024)
 	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("UploadFile error = %v, want resource not found", err)
 	}
@@ -455,7 +466,7 @@ func TestMoveFilesRenameUpdatesAllLinkedDocuments(t *testing.T) {
 	insertFolderTestFile2Document(t, "f2d-2", "file-1", "doc-2")
 
 	svc := testFileService()
-	ctx := t.Context()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
 	if err := svc.MoveFiles(ctx, "tenant-1", []string{"file-1"}, "", "new.pdf"); err != nil {
 		t.Fatalf("MoveFiles failed: %v", err)
 	}
@@ -497,11 +508,12 @@ func TestRenameLinkedDocumentsLookupErrorPropagates(t *testing.T) {
 	}
 
 	svc := testFileService()
-	if err := svc.renameLinkedDocuments(t.Context(), "file-1", "new.pdf"); err == nil {
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
+	if err := svc.renameLinkedDocuments(ctx, "file-1", "new.pdf"); err == nil {
 		t.Fatal("renameLinkedDocuments returned nil error on update failure")
 	}
 
-	err := svc.MoveFiles(t.Context(), "tenant-1", []string{"file-1"}, "", "new.pdf")
+	err := svc.MoveFiles(ctx, "tenant-1", []string{"file-1"}, "", "new.pdf")
 	if err == nil {
 		t.Fatal("MoveFiles succeeded despite file2document lookup failure")
 	}
@@ -604,7 +616,7 @@ func TestMoveFilesRejectsFolderAndSubfolder(t *testing.T) {
 	seedMoveHierarchyDB(t)
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant-1", []string{"A", "B"}, "D", "")
+	err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"A", "B"}, "D", "")
 	if err == nil || !strings.Contains(err.Error(), "descendant") {
 		t.Fatalf("move folder+subfolder error = %v, want descendant rejection", err)
 	}
@@ -621,7 +633,7 @@ func TestMoveFilesRejectsFolderAndGrandchild(t *testing.T) {
 	seedMoveHierarchyDB(t)
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant-1", []string{"A", "C"}, "D", "")
+	err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"A", "C"}, "D", "")
 	if err == nil || !strings.Contains(err.Error(), "descendant") {
 		t.Fatalf("move folder+grandchild error = %v, want descendant rejection", err)
 	}
@@ -639,7 +651,7 @@ func TestMoveFilesRejectsFolderAndContainedFile(t *testing.T) {
 	insertFolderTestFile(t, "f1", "A", "inside.pdf")
 
 	svc := testFileService()
-	err := svc.MoveFiles(context.Background(), "tenant-1", []string{"A", "f1"}, "D", "")
+	err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"A", "f1"}, "D", "")
 	if err == nil || !strings.Contains(err.Error(), "descendant") {
 		t.Fatalf("move folder+contained file error = %v, want descendant rejection", err)
 	}
@@ -657,7 +669,7 @@ func TestMoveFilesRejectsNestedSourcesInEitherOrder(t *testing.T) {
 
 	svc := testFileService()
 	for _, src := range [][]string{{"A", "B"}, {"B", "A"}} {
-		err := svc.MoveFiles(context.Background(), "tenant-1", src, "D", "")
+		err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", src, "D", "")
 		if err == nil || !strings.Contains(err.Error(), "descendant") {
 			t.Fatalf("move %v error = %v, want descendant rejection", src, err)
 		}
@@ -685,7 +697,7 @@ func TestMoveFilesAllowsUnrelatedEntries(t *testing.T) {
 	}
 
 	svc := testFileService()
-	if err := svc.MoveFiles(context.Background(), "tenant-1", []string{"A", "X"}, "D", ""); err != nil {
+	if err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"A", "X"}, "D", ""); err != nil {
 		t.Fatalf("move unrelated entries failed: %v", err)
 	}
 	if got := countChildren(t, "D"); got != 2 {
@@ -701,7 +713,7 @@ func TestMoveFilesSingleFolderWithSubtreeStillMoves(t *testing.T) {
 	seedMoveHierarchyDB(t)
 
 	svc := testFileService()
-	if err := svc.MoveFiles(context.Background(), "tenant-1", []string{"A"}, "D", ""); err != nil {
+	if err := svc.MoveFiles(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", []string{"A"}, "D", ""); err != nil {
 		t.Fatalf("move single folder failed: %v", err)
 	}
 
