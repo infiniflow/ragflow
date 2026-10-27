@@ -1305,6 +1305,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       search1apiApiKeyTip:
         'When Search1API is selected, its web search results supplement dataset retrieval.',
       search1apiApiKeyMessage: 'Please enter your Search1API API Key',
+      searchapiApiKeyTip:
+        'When SearchApi is selected, its Google web search results supplement dataset retrieval.',
+      searchapiApiKeyMessage: 'Please enter your SearchApi API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
