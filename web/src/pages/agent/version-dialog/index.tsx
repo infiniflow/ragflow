@@ -146,13 +146,14 @@ export function VersionDialog({
       });
       if (ok && selectedId === pending.versionId) setSelectedId('');
     } else if (pending.kind === 'restore') {
-      await applyVersion({
+      const ok = await applyVersion({
         canvasId,
         versionId: pending.versionId,
       });
+      if (ok) hideModal?.();
     }
     setPending(null);
-  }, [pending, canvasId, deleteVersion, selectedId, applyVersion]);
+  }, [pending, canvasId, deleteVersion, selectedId, applyVersion, hideModal]);
 
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
