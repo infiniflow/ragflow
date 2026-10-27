@@ -2074,12 +2074,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       apiKeyTip:
         'API anahtarı, ilgili LLM sağlayıcısına kaydolarak elde edilebilir.',
       aimlapiGetKey: 'API anahtarı al',
-      aimlapiCheckStatus: 'Durumu denetle',
-      aimlapiAwaitingConsent: 'AI/ML API penceresinde onay bekleniyor…',
-      aimlapiKeyAdded: 'AI/ML API anahtarınız oluşturuldu ve yukarıya eklendi.',
-      aimlapiAuthDenied: 'Yetkilendirme reddedildi. Lütfen yeniden deneyin.',
-      aimlapiAuthExpired: 'İsteğin süresi doldu. Lütfen yeniden deneyin.',
-      aimlapiAuthFailed: 'Oturum açma başarısız oldu. Lütfen yeniden deneyin.',
       showMoreModels: 'Modelleri görüntüle',
       hideModels: 'Modelleri gizle',
       baseUrl: 'Temel URL',
