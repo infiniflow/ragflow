@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -159,7 +160,7 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
+		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "source_doc_ids": []string{"doc-1", "doc-2"}, "_score": 0.9},
 		{"id": "ordinary", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
@@ -182,6 +183,9 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 		if !slices.Contains(fields, "compile_kwd") {
 			t.Fatalf("search fields = %v, want compile_kwd", fields)
 		}
+		if !slices.Contains(fields, "source_doc_ids") {
+			t.Fatalf("search fields = %v, want source_doc_ids", fields)
+		}
 	}
 	if len(result.Chunks) != 2 {
 		t.Fatalf("chunks = %#v, want compiled and ordinary chunks", result.Chunks)
@@ -189,8 +193,66 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 	if got := result.Chunks[0]["compile_kwd"]; got != "page_index" {
 		t.Fatalf("compiled chunk compile_kwd = %v, want page_index", got)
 	}
+	if got, ok := result.Chunks[0]["source_doc_ids"].([]string); !ok || !reflect.DeepEqual(got, []string{"doc-1", "doc-2"}) {
+		t.Fatalf("compiled chunk source_doc_ids = %v, want [doc-1 doc-2]", result.Chunks[0]["source_doc_ids"])
+	}
 	if _, ok := result.Chunks[1]["compile_kwd"]; ok {
 		t.Fatalf("ordinary chunk unexpectedly has compile_kwd: %#v", result.Chunks[1])
+	}
+	if _, ok := result.Chunks[1]["source_doc_ids"]; ok {
+		t.Fatalf("ordinary chunk unexpectedly has source_doc_ids: %#v", result.Chunks[1])
+	}
+}
+
+func TestRetrievalPreservesSourceDocIDsShapes(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	shapes := []struct {
+		name string
+		raw  interface{}
+		want []string
+	}{
+		{name: "string slice", raw: []string{"doc-1", "doc-2"}, want: []string{"doc-1", "doc-2"}},
+		{name: "any slice", raw: []interface{}{"doc-1", "doc-2"}, want: []string{"doc-1", "doc-2"}},
+		{name: "csv string", raw: "doc-1, doc-2", want: []string{"doc-1", "doc-2"}},
+		{name: "json array string", raw: `["doc-1", "doc-2"]`, want: []string{"doc-1", "doc-2"}},
+		{name: "single string", raw: "doc-1", want: []string{"doc-1"}},
+	}
+
+	for _, tt := range shapes {
+		t.Run(tt.name, func(t *testing.T) {
+			docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+				{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "source_doc_ids": tt.raw, "_score": 0.9},
+			}}
+			service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+			threshold := 0.0
+			vectorWeight := 1.0
+			aggs := false
+			result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+				Question:               "alpha",
+				TenantIDs:              []string{"tenant-1"},
+				Page:                   1,
+				PageSize:               1,
+				SimilarityThreshold:    &threshold,
+				VectorSimilarityWeight: &vectorWeight,
+				Aggs:                   &aggs,
+			})
+			if err != nil {
+				t.Fatalf("Retrieval failed: %v", err)
+			}
+			if len(result.Chunks) != 1 {
+				t.Fatalf("chunks count = %d, want 1", len(result.Chunks))
+			}
+			got, ok := result.Chunks[0]["source_doc_ids"].([]string)
+			if !ok {
+				t.Fatalf("source_doc_ids type = %T, want []string", result.Chunks[0]["source_doc_ids"])
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("source_doc_ids = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

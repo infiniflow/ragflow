@@ -359,6 +359,7 @@ func formatDatasetSearchChunks(filteredChunks []map[string]interface{}, includeC
 	for i := range filteredChunks {
 		if includeCompiledChunks != nil && !*includeCompiledChunks {
 			delete(filteredChunks[i], "compile_kwd")
+			delete(filteredChunks[i], "source_doc_ids")
 		}
 		delete(filteredChunks[i], "vector")
 		for oldKey, newKey := range keyMapping {
