@@ -9,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -519,5 +520,32 @@ func TestChannelAgentSessionIDIsStablePerChat(t *testing.T) {
 	}
 	if sessionID == channelAgentSessionID("agent-2", "channel-1", "chat-1") {
 		t.Fatal("rebinding another agent must not reuse the previous session")
+	}
+}
+
+func TestCollectChannelAgentAnswerAccumulatesAndStripsReasoning(t *testing.T) {
+	events := make(chan canvas.RunEvent, 3)
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"weighing options","start_to_think":true}`}
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"done","end_to_think":true}`}
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"final answer"}`}
+	close(events)
+
+	if got := collectChannelAgentAnswer(events); got != "final answer" {
+		t.Fatalf("collectChannelAgentAnswer() = %q, want %q", got, "final answer")
+	}
+}
+
+func TestCollectChannelAgentAnswerReturnsFallbackOnTerminalEvents(t *testing.T) {
+	for _, eventType := range []string{"error", "cancelled"} {
+		t.Run(eventType, func(t *testing.T) {
+			events := make(chan canvas.RunEvent, 2)
+			events <- canvas.RunEvent{Type: "message", Data: `{"content":"partial answer"}`}
+			events <- canvas.RunEvent{Type: eventType, Data: `{"message":"boom"}`}
+			close(events)
+
+			if got := collectChannelAgentAnswer(events); got != agentChannelFailureReply {
+				t.Fatalf("collectChannelAgentAnswer() = %q, want the fallback reply", got)
+			}
+		})
 	}
 }

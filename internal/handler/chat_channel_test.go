@@ -16,7 +16,7 @@ import (
 )
 
 type fakeChatChannelService struct {
-	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error)
 	listFn    func(tenantID string) ([]*entity.ChatChannelListResponse, error)
 	getFn     func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	updateFn  func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
@@ -28,7 +28,7 @@ func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID,
 	if f.createFn == nil {
 		return nil, errors.New("unexpected CreateChatChannel call")
 	}
-	return f.createFn(tenantID, name, channelType, config, chatID)
+	return f.createFn(tenantID, name, channelType, config, chatID, agentID)
 }
 
 func (f fakeChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
@@ -72,15 +72,17 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 	var gotTenantID, gotName, gotChannel string
 	var gotConfig entity.JSONMap
 	var gotChatID *string
+	var gotAgentID *string
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 				gotTenantID = tenantID
 				gotName = name
 				gotChannel = channelType
 				gotConfig = config
 				gotChatID = chatID
+				gotAgentID = agentID
 				return &entity.ChatChannel{
 					ID:       "cc-1",
 					TenantID: tenantID,
@@ -88,6 +90,7 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 					Channel:  channelType,
 					Config:   config,
 					ChatID:   chatID,
+					AgentID:  agentID,
 					Status:   1,
 				}, nil
 			},
@@ -100,7 +103,7 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 		h.CreateChatChannel(c)
 	})
 
-	body := `{"name":"bot-a","channel":"dingtalk","config":{"token":"abc"},"chat_id":"dialog-1"}`
+	body := `{"name":"bot-a","channel":"dingtalk","config":{"token":"abc"},"agent_id":"agent-1"}`
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/chat-channels", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -116,7 +119,10 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 	if gotConfig["token"] != "abc" {
 		t.Fatalf("config=%v", gotConfig)
 	}
-	if gotChatID == nil || *gotChatID != "dialog-1" {
+	if gotAgentID == nil || *gotAgentID != "agent-1" {
+		t.Fatalf("agentID=%v", gotAgentID)
+	}
+	if gotChatID != nil {
 		t.Fatalf("chatID=%v", gotChatID)
 	}
 
@@ -135,7 +141,7 @@ func TestChatChannelHandlerCreateInvalidRequestStopsEarly(t *testing.T) {
 	called := false
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 				called = true
 				return nil, nil
 			},

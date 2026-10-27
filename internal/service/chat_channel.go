@@ -27,6 +27,8 @@ import (
 	"go.uber.org/zap"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -427,12 +429,28 @@ func (s *ChatChannelService) runChannelAgent(ctx context.Context, channel *entit
 	events, err := agentService.RunAgent(WithAgentSessionID(ctx, sessionID), channel.TenantID, agentID, sessionID, "", msg.Text, nil)
 	if err != nil {
 		common.Error("chat channel agent run failed", err, zap.String("channel_id", channel.ID), zap.String("agent_id", agentID))
-		return "Sorry, I couldn't process your message right now.", nil
+		return agentChannelFailureReply, nil
 	}
+	return collectChannelAgentAnswer(events), nil
+}
 
+// agentChannelFailureReply is sent when an Agent run fails before producing a
+// complete answer.
+const agentChannelFailureReply = "Sorry, I couldn't process your message right now."
+
+// collectChannelAgentAnswer aggregates a canvas run into the final channel
+// reply. A terminal error or cancellation discards any partial message content:
+// the user must get the fallback answer instead of a truncated answer (or only
+// the "thinking" placeholder).
+func collectChannelAgentAnswer(events <-chan canvas.RunEvent) string {
 	var answer strings.Builder
 	for event := range events {
-		if event.Type != "message" {
+		switch event.Type {
+		case "error", "cancelled":
+			common.Warn("chat channel agent run terminated", zap.String("event", event.Type), zap.String("data", event.Data))
+			return agentChannelFailureReply
+		case "message":
+		default:
 			continue
 		}
 		var data map[string]any
@@ -450,7 +468,7 @@ func (s *ChatChannelService) runChannelAgent(ctx context.Context, channel *entit
 			answer.WriteString("</think>")
 		}
 	}
-	return stripReasoningContent(answer.String()), nil
+	return stripReasoningContent(answer.String())
 }
 
 // notifyThinkingMessage posts the interim "thinking" message when the channel supplied one.

@@ -62,3 +62,41 @@ func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 		t.Fatal("a message id older than the dedupe window must be handled again")
 	}
 }
+
+func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
+	weComSeenMessagesMu.Lock()
+	weComSeenMessages = map[string]time.Time{}
+	weComSeenMessagesMu.Unlock()
+	t.Cleanup(func() {
+		weComSeenMessagesMu.Lock()
+		weComSeenMessages = map[string]time.Time{}
+		weComSeenMessagesMu.Unlock()
+	})
+
+	if weComMessageSeen("account-1", "msg-1") {
+		t.Fatal("first delivery must not be treated as a duplicate")
+	}
+	weComForgetMessage("account-1", "msg-1")
+	if weComMessageSeen("account-1", "msg-1") {
+		t.Fatal("a message cleared after a retryable failure must be handled again")
+	}
+}
+
+func TestWeComWorkSlotsAreBounded(t *testing.T) {
+	slots := make(chan struct{}, weComMaxConcurrentHandlers)
+	for i := 0; i < weComMaxConcurrentHandlers; i++ {
+		if !tryAcquireSlot(slots) {
+			t.Fatalf("acquire %d of %d failed", i+1, weComMaxConcurrentHandlers)
+		}
+	}
+	if tryAcquireSlot(slots) {
+		t.Fatal("acquire beyond the concurrency limit must fail")
+	}
+	for i := 0; i < weComMaxConcurrentHandlers; i++ {
+		releaseSlot(slots)
+	}
+	if !tryAcquireSlot(slots) {
+		t.Fatal("releasing the work slots must allow a new handler")
+	}
+	releaseSlot(slots)
+}
