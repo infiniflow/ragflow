@@ -1318,7 +1318,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			"k":              k,
 			"num_candidates": numCandidates,
 			"similarity":     similarity,
-			"filter":         boolQuery,
+			"filter":         cloneFilterSnapshot(boolQuery),
 		}
 
 		queryBody["knn"] = knnQuery
@@ -1497,15 +1497,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// back empty here, which flattened every hybrid chunk's score to 0.
 		scoreColumn := "_score"
 
-		pagerankField := common.PAGERANK_FLD
-		if isSkillIndex {
-			pagerankField = ""
-		}
-		if isMemoryIndex {
-			pagerankField = ""
-		}
-
-		allResults = calculateScores(allResults, scoreColumn, pagerankField)
+		// pagerank reaches the ES hit score only through the rank_feature query
+		// built above, and reaches the final similarity in the reranker. Adding
+		// it to _score here as well would count it twice.
+		allResults = calculateScores(allResults, scoreColumn, "")
 		allResults = sortByScore(allResults, limit)
 	}
 
@@ -2145,6 +2140,35 @@ func memoryMessageStatusBool(value interface{}) bool {
 	}
 }
 
+// cloneFilterSnapshot freezes the bool query's shape at the point the kNN clause
+// is built. The reference does the same by passing bool_query.to_dict() as the
+// kNN filter; the rank_feature clauses are appended to the same bool afterwards
+// and belong to the scored query only.
+func cloneFilterSnapshot(q map[string]interface{}) map[string]interface{} {
+	if q == nil {
+		return nil
+	}
+	clone := make(map[string]interface{}, len(q))
+	for k, v := range q {
+		clone[k] = v
+	}
+	inner, ok := q["bool"].(map[string]interface{})
+	if !ok {
+		return clone
+	}
+	innerClone := make(map[string]interface{}, len(inner))
+	for k, v := range inner {
+		innerClone[k] = v
+	}
+	for _, key := range []string{"must", "should", "filter", "must_not"} {
+		if clauses, ok := inner[key].([]interface{}); ok {
+			innerClone[key] = slices.Clone(clauses)
+		}
+	}
+	clone["bool"] = innerClone
+	return clone
+}
+
 // buildBoolQueryFromCondition builds an ES bool query from condition map.
 // Skill indexes use status, regular chunk indexes use kb_id, and memory
 // message indexes use memory_id plus message-specific storage fields.
@@ -2470,14 +2494,16 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 	var queries []map[string]interface{}
 	for _, fld := range keys {
-		if fld == common.PAGERANK_FLD {
-			continue
-		}
 		sc := rankFeature[fld]
-		tagField := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		field := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		if fld == common.PAGERANK_FLD {
+			// pagerank_fea is a top-level rank_feature field (the "*_fea" dynamic
+			// template), not one key inside the tag_feas map.
+			field = common.PAGERANK_FLD
+		}
 		queries = append(queries, map[string]interface{}{
 			"rank_feature": map[string]interface{}{
-				"field":  tagField,
+				"field":  field,
 				"linear": map[string]interface{}{},
 				"boost":  sc,
 			},
@@ -2640,6 +2666,17 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 
 			if val == nil {
 				continue
+			}
+
+			if mapVal, ok := val.(map[string]interface{}); ok {
+				// Nested objects (tag_feas is a "rank_features" object) cannot
+				// take the string conversion below: "%v" renders map[k:v], which
+				// no rank-feature parser accepts. JSON is the string form the
+				// reranker parses.
+				if raw, err := json.Marshal(mapVal); err == nil {
+					m[field] = string(raw)
+					continue
+				}
 			}
 
 			if listVal, ok := val.([]interface{}); ok {
