@@ -71,6 +71,10 @@ func TestPollMinerUTask_ReportsTimeoutWithLastError(t *testing.T) {
 	if !strings.Contains(err.Error(), "missing results field") {
 		t.Fatalf("error = %q, want the last status error as the cause", err)
 	}
+	cause := errors.Unwrap(err)
+	if cause == nil || !strings.Contains(cause.Error(), "missing results field") {
+		t.Fatalf("cause = %v, want the last status error wrapped with %%w", cause)
+	}
 }
 
 func TestPollMinerUTask_StopsBeforeStatusCallWhenAlreadyCancelled(t *testing.T) {
