@@ -675,13 +675,13 @@ export const useFetchMessageTrace = (canvasId?: string, isShare?: boolean) => {
     queryFn: async () => {
       const { data } = isShare
         ? await fetchSharedTrace({
-          shared_id: queryId as string,
-          message_id: messageId,
-        })
+            shared_id: queryId as string,
+            message_id: messageId,
+          })
         : await fetchTrace({
-          canvas_id: queryId as string,
-          message_id: messageId,
-        });
+            canvas_id: queryId as string,
+            message_id: messageId,
+          });
 
       return Array.isArray(data?.data) ? data?.data : [];
     },
