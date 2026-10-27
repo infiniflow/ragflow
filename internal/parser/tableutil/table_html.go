@@ -57,7 +57,9 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	// last; read in source order, a "Total" row came before the data it sums.
 	var footRows [][]CellInput
 	var footFlags []bool
+	inHead := false
 	inFoot := false
+	hasThead := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -76,6 +78,15 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			rows = append(rows, footRows...)
 			headerFlags = append(headerFlags, footFlags...)
 			footRows, footFlags = nil, nil
+			return
+		}
+		if isHTMLElement(n, "thead") && !inFoot {
+			hasThead = true
+			inHead = true
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			inHead = false
 			return
 		}
 		if isHTMLElement(n, "tfoot") && !inFoot {
@@ -107,7 +118,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 				return
 			}
 			rows = append(rows, cells)
-			headerFlags = append(headerFlags, anyTh)
+			headerFlags = append(headerFlags, anyTh || inHead)
 			// Do not recurse into the row's cells: a nested <table> inside a
 			// cell is folded into that cell's text by cellText, not parsed as
 			// a separate row.
@@ -120,26 +131,51 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	walk(doc)
 	rows = append(rows, footRows...)
 	headerFlags = append(headerFlags, footFlags...)
-	return BuildTableData(rows, headerFlags, caption), nil
+	mode := HeaderUnknown
+	if hasThead {
+		mode = HeaderExplicit
+	}
+	return BuildTableDataWithMode(rows, headerFlags, caption, mode), nil
 }
 
+// HeaderMode describes how a table producer determined header rows.
+type HeaderMode int
+
+const (
+	// HeaderUnknown means the producer did not emit an explicit headerless
+	// signal; when no leading header rows are flagged, row 0 defaults to a
+	// header row unless the leading row has no non-empty cells.
+	HeaderUnknown HeaderMode = iota
+	// HeaderExplicit means headerFlags reflects an authoritative producer
+	// signal (including zero header rows when headerFlags[0] is false).
+	HeaderExplicit
+)
+
 // BuildTableData assembles the canonical TableData from collected cell rows,
-// per-row header flags and a caption. It owns the header-row count (leading
-// consecutive run, defaulting to 1 when the table has any rows) and the shared
-// grid normalization (buildGrid). Both ParseTableHTML and the deepdoc direct
-// converter (ToTableData) route through it, so the two produce identical grids
-// by construction rather than by a runtime comparison.
-//
-// ColSpan/RowSpan inputs are clamped to [1, max] to match ParseTableHTML's
-// attribute parser and to keep a hostile or malformed span from driving a
-// multi-gigabyte allocation inside buildGrid's width pre-pass.
+// per-row header flags and a caption using HeaderUnknown fallback semantics.
 func BuildTableData(rows [][]CellInput, headerFlags []bool, caption string) *entity.TableData {
+	return BuildTableDataWithMode(rows, headerFlags, caption, HeaderUnknown)
+}
+
+// BuildTableDataWithMode assembles the canonical TableData from collected cell
+// rows, per-row header flags, a caption, and a producer HeaderMode.
+//
+// Leading header rows whose cells are all empty after trimming whitespace are
+// demoted to HeaderRows = 0 so empty GFM/HTML header placeholders (e.g.
+// "| | |") neither emit empty <th> cells nor promote the first data row.
+func BuildTableDataWithMode(rows [][]CellInput, headerFlags []bool, caption string, mode HeaderMode) *entity.TableData {
 	headerCount := 0
 	for headerCount < len(headerFlags) && headerFlags[headerCount] {
 		headerCount++
 	}
-	if len(rows) > 0 && headerCount == 0 {
+	if mode == HeaderUnknown && len(rows) > 0 && headerCount == 0 {
 		headerCount = 1
+	}
+	if headerCount > len(rows) {
+		headerCount = len(rows)
+	}
+	if headerCount > 0 && !rowsHaveText(rows[:headerCount]) {
+		headerCount = 0
 	}
 	for r := range rows {
 		for i := range rows[r] {
@@ -147,11 +183,26 @@ func BuildTableData(rows [][]CellInput, headerFlags []bool, caption string) *ent
 			rows[r][i].RowSpan = clampSpan(rows[r][i].RowSpan, maxRowSpan)
 		}
 	}
+	grid := buildGrid(rows)
+	if headerCount > len(grid) {
+		headerCount = len(grid)
+	}
 	return &entity.TableData{
-		Grid:       buildGrid(rows),
+		Grid:       grid,
 		HeaderRows: headerCount,
 		Caption:    caption,
 	}
+}
+
+func rowsHaveText(rows [][]CellInput) bool {
+	for _, row := range rows {
+		for _, cell := range row {
+			if strings.TrimSpace(cell.Text) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // clampSpan bounds a span extent to [1, max].

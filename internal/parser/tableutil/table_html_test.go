@@ -98,6 +98,22 @@ func TestParseTableHTMLNoThTreatsFirstRowAsHeader(t *testing.T) {
 	}
 }
 
+func TestParseTableHTMLEmptyLeadingHeaderDemotedToZero(t *testing.T) {
+	for _, html := range []string{
+		`<table><thead><tr><th></th><th> </th></tr></thead><tbody><tr><td>Document ID</td><td>demo</td></tr></tbody></table>`,
+		`<table><tr><td></td><td></td></tr><tr><td>Document ID</td><td>demo</td></tr></table>`,
+	} {
+		td := mustParse(t, html)
+		if td.HeaderRows != 0 {
+			t.Fatalf("ParseTableHTML(%q) HeaderRows = %d, want 0", html, td.HeaderRows)
+		}
+		assertRowsEqual(t, td.CellTexts(), [][]string{
+			{"", ""},
+			{"Document ID", "demo"},
+		})
+	}
+}
+
 func TestParseTableHTMLEmpty(t *testing.T) {
 	td := mustParse(t, `<table></table>`)
 	if len(td.CellTexts()) != 0 {

@@ -28,7 +28,7 @@ func TestTableRegressionMarkdownMixedBackticksKeepTrailingCells(t *testing.T) {
 func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
 	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
 
-	after := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"Outer Caption"})
+	after := buildDOCXJSONSectionsWithTableMeta(ir, nil, []docxTableMeta{{caption: "Outer Caption"}})
 	if len(after) != 2 {
 		t.Fatalf("expected two tables without duplicate caption text: %#v", after)
 	}
@@ -123,14 +123,14 @@ func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
 	}
 }
 
-func TestTableRegressionHTMLTheadWithTDRetainsDefaultHeader(t *testing.T) {
+func TestTableRegressionHTMLTheadWithTDPreservesMultiRowHeader(t *testing.T) {
 	td, err := tableutil.ParseTableHTML("<table><thead><tr><td>Field</td><td>Value</td></tr><tr><td>Subfield</td><td>Subvalue</td></tr></thead><tbody><tr><td>Owner</td><td>RET</td></tr></tbody></table>")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if td.HeaderRows != 1 {
-		t.Errorf("header_rows=%d, want the default 1", td.HeaderRows)
+	if td.HeaderRows != 2 {
+		t.Errorf("header_rows=%d, want 2 for two-row thead", td.HeaderRows)
 	}
 }
 

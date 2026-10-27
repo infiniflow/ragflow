@@ -86,26 +86,26 @@ func TestExtractDOCXTableCaptions_CaptionBeforeTable(t *testing.T) {
 			docxScanPara("Caption", "设备流转明细")+
 			docxScanTable()+
 			plainPara("普通正文"))
-	caps, err := extractDOCXTableCaptions(doc)
+	caps, err := extractDOCXTableMeta(doc)
 	if err != nil {
-		t.Fatalf("extractDOCXTableCaptions: %v", err)
+		t.Fatalf("extractDOCXTableMeta: %v", err)
 	}
 	if len(caps) != 1 {
 		t.Fatalf("want 1 table caption, got %d: %v", len(caps), caps)
 	}
-	if caps[0] != "设备流转明细" {
-		t.Errorf("caption = %q, want %q", caps[0], "设备流转明细")
+	if caps[0].caption != "设备流转明细" {
+		t.Errorf("caption = %q, want %q", caps[0].caption, "设备流转明细")
 	}
 }
 
 // The Chinese caption style "题注" is detected the same way.
 func TestExtractDOCXTableCaptions_ChineseCaption(t *testing.T) {
 	doc := buildSampleDOCX(t, docxScanPara("题注", "设备明细表")+docxScanTable())
-	caps, err := extractDOCXTableCaptions(doc)
+	caps, err := extractDOCXTableMeta(doc)
 	if err != nil {
-		t.Fatalf("extractDOCXTableCaptions: %v", err)
+		t.Fatalf("extractDOCXTableMeta: %v", err)
 	}
-	if len(caps) != 1 || caps[0] != "设备明细表" {
+	if len(caps) != 1 || caps[0].caption != "设备明细表" {
 		t.Fatalf("caption = %v, want [设备明细表]", caps)
 	}
 }
@@ -116,11 +116,11 @@ func TestExtractDOCXTableCaptions_CaptionNotImmediate(t *testing.T) {
 		docxScanPara("Caption", "设备流转明细")+
 			plainPara("中间说明文字")+
 			docxScanTable())
-	caps, err := extractDOCXTableCaptions(doc)
+	caps, err := extractDOCXTableMeta(doc)
 	if err != nil {
-		t.Fatalf("extractDOCXTableCaptions: %v", err)
+		t.Fatalf("extractDOCXTableMeta: %v", err)
 	}
-	if len(caps) != 1 || caps[0] != "" {
+	if len(caps) != 1 || caps[0].caption != "" {
 		t.Fatalf("caption = %v, want [\"\"]", caps)
 	}
 }
@@ -131,11 +131,11 @@ func TestExtractDOCXTableCaptions_MultipleTables(t *testing.T) {
 		docxScanPara("Caption", "第一表")+docxScanTable()+
 			plainPara("分隔")+
 			docxScanPara("Caption", "第二表")+docxScanTable())
-	caps, err := extractDOCXTableCaptions(doc)
+	caps, err := extractDOCXTableMeta(doc)
 	if err != nil {
-		t.Fatalf("extractDOCXTableCaptions: %v", err)
+		t.Fatalf("extractDOCXTableMeta: %v", err)
 	}
-	if len(caps) != 2 || caps[0] != "第一表" || caps[1] != "第二表" {
+	if len(caps) != 2 || caps[0].caption != "第一表" || caps[1].caption != "第二表" {
 		t.Fatalf("captions = %v, want [第一表 第二表]", caps)
 	}
 }

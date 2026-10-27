@@ -3,6 +3,8 @@
 package parser
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -60,6 +62,9 @@ func TestDOCParser_TableEmittedAsStructuredItem(t *testing.T) {
 	td, ok := tableItem["table"].(*entity.TableData)
 	if !ok || td == nil {
 		t.Fatalf("table item has no structured TableData; item=%#v", tableItem)
+	}
+	if td.HeaderRows != 1 {
+		t.Fatalf("table.doc HeaderRows = %d, want 1", td.HeaderRows)
 	}
 	cells := td.CellTexts()
 	if len(cells) == 0 {
@@ -137,5 +142,95 @@ func TestDOCParserTextOutputRemoved(t *testing.T) {
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("DOC json output must contain items, got empty")
+	}
+}
+
+func buildMinimalDOCXWithDocumentXML(t *testing.T, documentXML string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	files := map[string]string{
+		"[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+			`<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+			`<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+			`<Default Extension="xml" ContentType="application/xml"/>` +
+			`<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
+			`</Types>`,
+		"_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+			`<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+			`<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>` +
+			`</Relationships>`,
+		"word/document.xml": documentXML,
+	}
+	for name, content := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestDOCXParser_EndToEndTableHeaderSemantics(t *testing.T) {
+	// 1. Real checked-in DOCX fixture (w:tblLook w:firstRow="1").
+	fixtureData, err := os.ReadFile(filepath.Join("testdata", "docx_table_image.docx"))
+	if err != nil {
+		t.Fatalf("read docx_table_image.docx: %v", err)
+	}
+	res := NewDOCXParser().ParseWithResult(context.Background(), "docx_table_image.docx", fixtureData)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult error: %v", res.Err)
+	}
+	foundTable := false
+	for _, item := range res.JSON {
+		if td, ok := item.ToMap()["table"].(*entity.TableData); ok && td != nil {
+			foundTable = true
+			if td.HeaderRows != 1 {
+				t.Fatalf("docx_table_image.docx HeaderRows = %d, want 1", td.HeaderRows)
+			}
+		}
+	}
+	if !foundTable {
+		t.Fatal("docx_table_image.docx emitted no structured table")
+	}
+
+	// 2. Synthetic real DOCX archives exercising tblLook firstRow=1, firstRow=0, and multi-row tblHeader.
+	docXML := `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+		`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` +
+		`<w:tbl><w:tblPr><w:tblLook w:firstRow="1" w:val="04A0"/></w:tblPr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>H1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>H2</w:t></w:r></w:p></w:tc></w:tr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>V1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>V2</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+		`<w:tbl><w:tblPr><w:tblLook w:firstRow="0" w:val="0000"/></w:tblPr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>Key</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Val</w:t></w:r></w:p></w:tc></w:tr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>RET</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+		`<w:tbl><w:tblPr><w:tblLook w:firstRow="1" w:val="04A0"/></w:tblPr>` +
+		`<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>Group</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Metric</w:t></w:r></w:p></w:tc></w:tr>` +
+		`<w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>Subgroup</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Unit</w:t></w:r></w:p></w:tc></w:tr>` +
+		`<w:tr><w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>ms</w:t></w:r></w:p></w:tc></w:tr></w:tbl>` +
+		`</w:body></w:document>`
+	parsed := NewDOCXParser().ParseWithResult(context.Background(), "tables.docx", buildMinimalDOCXWithDocumentXML(t, docXML))
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult(tables.docx) error: %v", parsed.Err)
+	}
+	var gotHeaders []int
+	for _, item := range parsed.JSON {
+		if td, ok := item.ToMap()["table"].(*entity.TableData); ok && td != nil {
+			gotHeaders = append(gotHeaders, td.HeaderRows)
+		}
+	}
+	wantHeaders := []int{1, 0, 2}
+	if len(gotHeaders) != len(wantHeaders) {
+		t.Fatalf("got %d tables (%v), want %v", len(gotHeaders), gotHeaders, wantHeaders)
+	}
+	for i, want := range wantHeaders {
+		if gotHeaders[i] != want {
+			t.Fatalf("table[%d].HeaderRows = %d, want %d", i, gotHeaders[i], want)
+		}
 	}
 }

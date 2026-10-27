@@ -324,3 +324,26 @@ func TestTableChunker_HeaderOriginRowspanDoesNotLeak(t *testing.T) {
 		t.Fatalf("data row lost its real value or column alignment: %v", txt)
 	}
 }
+
+func TestTableChunker_EmptyLeadingHeaderRowEmitsHeaderlessDataRows(t *testing.T) {
+	table := "<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td>Document ID</td><td>demo</td></tr><tr><td>Owner</td><td>RET</td></tr></tbody></table>"
+	chunks := tableChunksOf(t, map[string]any{
+		"name":          "metadata.md",
+		"output_format": "json",
+		"json": []map[string]any{
+			tableItem(t, table),
+		},
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2 data-row chunks: %#v", len(chunks), chunks)
+	}
+	want := []string{
+		"<table>\n<tr><td>Document ID</td><td>demo</td></tr>\n</table>\n",
+		"<table>\n<tr><td>Owner</td><td>RET</td></tr>\n</table>\n",
+	}
+	for i := range want {
+		if got, _ := chunks[i]["text"].(string); got != want[i] {
+			t.Fatalf("chunk[%d] = %q, want %q", i, got, want[i])
+		}
+	}
+}

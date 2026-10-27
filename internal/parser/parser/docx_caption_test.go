@@ -161,7 +161,7 @@ func TestBuildDOCXJSONSections_TableCaption_ExplicitPreferredOverLocation(t *tes
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	sections := buildDOCXJSONSectionsWithTableMeta(ir, newEmbeddedMediaBudget(), []docxTableMeta{{caption: "设备流转明细"}})
 	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
 		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
 	}
@@ -170,7 +170,7 @@ func TestBuildDOCXJSONSections_TableCaption_ExplicitPreferredOverLocation(t *tes
 // An explicit caption is attached even when the table sits under no heading.
 func TestBuildDOCXJSONSections_TableCaption_ExplicitWithNoHeading(t *testing.T) {
 	ir := docxCaptionTableIR(docxCaptionTableBody)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	sections := buildDOCXJSONSectionsWithTableMeta(ir, newEmbeddedMediaBudget(), []docxTableMeta{{caption: "设备流转明细"}})
 	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
 		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
 	}
@@ -182,7 +182,7 @@ func TestBuildDOCXJSONSections_TableCaption_BlankDoesNotOverrideLocation(t *test
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{""})
+	sections := buildDOCXJSONSectionsWithTableMeta(ir, newEmbeddedMediaBudget(), []docxTableMeta{{caption: ""}})
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: 设备台账" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: 设备台账")
 	}

@@ -57,7 +57,7 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 					}
 					flushText()
 					tableSequence++
-					items = appendOfficeTableSections(items, el, "", fmt.Sprintf("pptx-slide-%d-table-%d", i+1, tableSequence), budget)
+					items = appendOfficeTableSections(items, el, "", fmt.Sprintf("pptx-slide-%d-table-%d", i+1, tableSequence), budget, nil)
 					continue
 				case "text_box":
 					emitElements(el.contentBlocks())

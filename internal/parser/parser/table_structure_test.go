@@ -33,13 +33,20 @@ func TestMarkdownParserPreservesEmptyTableCells(t *testing.T) {
 		if res.Err != nil || len(res.JSON) != 1 {
 			t.Fatalf("result = %+v", res)
 		}
-		requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"", ""}, {"Document ID", "demo"}, {"Owner", "RET"}})
+		m := res.JSON[0].ToMap()
+		requireTableRows(t, m, [][]string{{"", ""}, {"Document ID", "demo"}, {"Owner", "RET"}})
+		if td := m["table"].(*entity.TableData); td.HeaderRows != 0 {
+			t.Fatalf("HeaderRows = %d, want 0 for empty GFM header row", td.HeaderRows)
+		}
 	}
 	res := p.ParseWithResult(t.Context(), "blank-row.md", []byte("| A | B |\n|---|---|\n| | |\n| x | y |"))
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want 1", len(res.JSON))
 	}
 	requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"A", "B"}, {"", ""}, {"x", "y"}})
+	if td := res.JSON[0].ToMap()["table"].(*entity.TableData); td.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
+	}
 }
 
 func TestMarkdownParserPreservesHTMLTableAtEOF(t *testing.T) {
@@ -254,21 +261,45 @@ func TestPPTXTableOnlySlideIsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
+func TestOfficePreservesExplicitHeaderRows(t *testing.T) {
 	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
 	items := buildDOCXJSONSections(ir, nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}
 	td := items[0]["table"].(*entity.TableData)
-	if td.HeaderRows != 1 || len(td.Grid) != 2 {
-		t.Fatalf("table=%+v, want two rows and one default header", td)
+	if td.HeaderRows != 2 || len(td.Grid) != 2 {
+		t.Fatalf("table=%+v, want two explicit header rows", td)
+	}
+}
+
+func TestDOCXTableMetaFirstRowControlsHeaderCount(t *testing.T) {
+	ir := `{"sections":[{"elements":[` +
+		`{"type":"table","rows":[{"is_header":false,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Col1"}]}]}]},{"is_header":false,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Val1"}]}]}]}]},` +
+		`{"type":"table","rows":[{"is_header":false,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Key"}]}]}]},{"is_header":false,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Val"}]}]}]}]},` +
+		`{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]},{"is_header":false,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Body"}]}]}]}]}` +
+		`]}]}`
+	meta := []docxTableMeta{
+		{firstRow: boolPtr(true)},
+		{firstRow: boolPtr(false)},
+		{firstRow: boolPtr(true)},
+	}
+	items := buildDOCXJSONSectionsWithTableMeta(ir, nil, meta)
+	if len(items) != 3 {
+		t.Fatalf("items=%#v, want 3 tables", items)
+	}
+	wantHeaders := []int{1, 0, 2}
+	for i, want := range wantHeaders {
+		td := items[i]["table"].(*entity.TableData)
+		if td.HeaderRows != want {
+			t.Fatalf("table[%d].HeaderRows = %d, want %d", i, td.HeaderRows, want)
+		}
 	}
 }
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
-	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget())
+	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget(), nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}

@@ -54,6 +54,9 @@ func TestGeneralChunkerPreservesRetrievalHandbookTables(t *testing.T) {
 			if chunk["doc_type_kwd"] != "table" {
 				t.Fatalf("metadata flattened: %#v", chunk)
 			}
+			if strings.Contains(text, "<th") {
+				t.Errorf("metadata table with empty GFM header should not emit <th>: %s", text)
+			}
 			for _, row := range []string{
 				"<td>Document ID</td><td>retrieval_md_20_ret.md</td>",
 				"<td>Component code</td><td>RET</td>",

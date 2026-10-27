@@ -117,11 +117,11 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// TEMPORARY Caption-styled-paragraph detection (office_oxide does
 	// not yet expose paragraph styles; yfedoseev/office_oxide#455).
 	// Remove once office_oxide is upgraded to emit them.
-	tableCaptions, capErr := extractDOCXTableCaptions(data)
+	tableMeta, capErr := extractDOCXTableMeta(data)
 	if capErr != nil {
-		tableCaptions = nil
+		tableMeta = nil
 	}
-	sections := buildDOCXJSONSectionsWithCaptions(irJSON, budget, tableCaptions)
+	sections := buildDOCXJSONSectionsWithTableMeta(irJSON, budget, tableMeta)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}

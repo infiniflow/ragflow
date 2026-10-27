@@ -29,8 +29,21 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
+
+// docxTableMeta holds per-table metadata recovered from word/document.xml
+// that office_oxide does not yet emit in its IR JSON: the preceding caption
+// paragraph text and the w:tblLook firstRow conditional formatting flag.
+type docxTableMeta struct {
+	caption  string
+	firstRow *bool
+}
+
+func boolPtr(v bool) *bool {
+	return &v
+}
 
 // docxCaptionStyleNames are the Word paragraph style identifiers that mark a
 // paragraph as a table caption for the temporary detection above. The built-in
@@ -45,18 +58,43 @@ func isDOCXCaptionStyle(styleID string) bool {
 	return docxCaptionStyleNames[strings.ToLower(strings.TrimSpace(styleID))]
 }
 
-// extractDOCXTableCaptions re-parses word/document.xml to recover table
-// captions. It returns one entry per table in document-body reading order: the
+// parseDOCXTblLookFirstRow extracts the first-row header conditional formatting
+// flag from <w:tblLook>. Explicit w:firstRow ("1"/"0"/"true"/"false"/"on"/"off")
+// takes precedence over the legacy w:val bitmask (bit 0x0020).
+func parseDOCXTblLookFirstRow(attrs []xml.Attr) *bool {
+	for _, a := range attrs {
+		if a.Name.Local == "firstRow" {
+			switch strings.ToLower(strings.TrimSpace(a.Value)) {
+			case "1", "true", "on":
+				return boolPtr(true)
+			case "0", "false", "off":
+				return boolPtr(false)
+			}
+		}
+	}
+	for _, a := range attrs {
+		if a.Name.Local == "val" {
+			if mask, err := strconv.ParseUint(strings.TrimSpace(a.Value), 16, 16); err == nil {
+				return boolPtr((mask & 0x0020) != 0)
+			}
+		}
+	}
+	return nil
+}
+
+// extractDOCXTableMeta re-parses word/document.xml to recover per-table
+// caption and w:tblLook firstRow metadata in document-body reading order: the
 // trimmed text of the paragraph immediately above the table when that
-// paragraph carries a caption style, otherwise "".
+// paragraph carries a caption style (otherwise ""), and the table's w:tblLook
+// firstRow flag when present.
 //
 // It is intentionally limited to the common case: paragraphs and tables that
 // are direct children of w:body, in order. Nested tables (e.g. inside a text
 // box) are ignored, matching how office_oxide flattens the typical document.
-// Errors are returned to the caller, which falls back to no captions.
+// Errors are returned to the caller, which falls back to no metadata.
 //
 // TEMPORARY: see the package note at the top of this file.
-func extractDOCXTableCaptions(docx []byte) ([]string, error) {
+func extractDOCXTableMeta(docx []byte) ([]docxTableMeta, error) {
 	zr, err := zip.NewReader(bytes.NewReader(docx), int64(len(docx)))
 	if err != nil {
 		return nil, fmt.Errorf("docx caption scan: open zip: %w", err)
@@ -81,7 +119,7 @@ func extractDOCXTableCaptions(docx []byte) ([]string, error) {
 	}
 
 	dec := xml.NewDecoder(bytes.NewReader(bodyXML))
-	var captions []string
+	var tables []docxTableMeta
 	var pendingCaption string
 
 	var inBody bool
@@ -90,6 +128,7 @@ func extractDOCXTableCaptions(docx []byte) ([]string, error) {
 	var paraIsCaption bool
 	var inText bool
 	var paraText strings.Builder
+	var inTblPr bool
 
 	flushPara := func() {
 		if paraIsCaption {
@@ -132,8 +171,13 @@ func extractDOCXTableCaptions(docx []byte) ([]string, error) {
 				inText = false
 				paraText.Reset()
 			case bodyDepth == 1 && local == "tbl":
-				captions = append(captions, pendingCaption)
+				tables = append(tables, docxTableMeta{caption: pendingCaption})
 				pendingCaption = ""
+				inTblPr = false
+			case bodyDepth == 2 && local == "tblPr" && len(tables) > 0:
+				inTblPr = true
+			case inTblPr && bodyDepth == 3 && local == "tblLook" && len(tables) > 0:
+				tables[len(tables)-1].firstRow = parseDOCXTblLookFirstRow(t.Attr)
 			case inPara && local == "pStyle":
 				for _, a := range t.Attr {
 					if a.Name.Local == "val" {
@@ -155,6 +199,8 @@ func extractDOCXTableCaptions(docx []byte) ([]string, error) {
 			switch {
 			case bodyDepth == 1 && local == "p" && inPara:
 				flushPara()
+			case bodyDepth == 2 && local == "tblPr":
+				inTblPr = false
 			case inPara && local == "t":
 				inText = false
 			case inPara && local == "pStyle":
@@ -167,5 +213,5 @@ func extractDOCXTableCaptions(docx []byte) ([]string, error) {
 		}
 	}
 	// A trailing caption paragraph with no following table is discarded.
-	return captions, nil
+	return tables, nil
 }
