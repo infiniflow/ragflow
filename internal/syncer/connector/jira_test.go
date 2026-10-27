@@ -350,7 +350,14 @@ func TestJiraConnectorDownloadKeepsAuthorizationOnSameOriginRedirect(t *testing.
 	}
 }
 
+const jiraFixtureUpdatedAt = "2026-01-03T10:00:00.000+0000"
+
 func jiraFixtureServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return jiraFixtureServerWithUpdated(t, jiraFixtureUpdatedAt)
+}
+
+func jiraFixtureServerWithUpdated(t *testing.T, updated string) *httptest.Server {
 	t.Helper()
 	withConnectorLoopbackTestHook(t)
 	mux := http.NewServeMux()
@@ -368,7 +375,7 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 	})
 	var server *httptest.Server
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
-		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL)}})
+		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL, updated)}})
 	})
 	mux.HandleFunc("/attachment/10001", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("attachment body"))
@@ -391,7 +398,7 @@ func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Serv
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
 		issues := make([]map[string]any, 0, len(keys))
 		for _, meta := range keys {
-			issue := jiraFixtureIssue(server.URL)
+			issue := jiraFixtureIssue(server.URL, jiraFixtureUpdatedAt)
 			issue["id"] = meta["id"]
 			issue["key"] = meta["key"]
 			issues = append(issues, issue)
@@ -402,9 +409,9 @@ func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Serv
 	return server
 }
 
-func mustJiraResumeConnector(t *testing.T, baseURL string) *JiraConnector {
+func mustJiraResumeConnector(t *testing.T, baseURL string, overrides ...map[string]any) *JiraConnector {
 	t.Helper()
-	connector, err := NewJiraConnector(map[string]any{
+	config := map[string]any{
 		"base_url":        baseURL,
 		"project_key":     "RAG",
 		"batch_size":      10,
@@ -413,21 +420,27 @@ func mustJiraResumeConnector(t *testing.T, baseURL string) *JiraConnector {
 			"jira_api_token":   "token",
 			"rest_api_version": "3",
 		},
-	})
+	}
+	for _, override := range overrides {
+		for key, value := range override {
+			config[key] = value
+		}
+	}
+	connector, err := NewJiraConnector(config)
 	if err != nil {
 		t.Fatalf("NewJiraConnector failed: %v", err)
 	}
 	return connector
 }
 
-func jiraFixtureIssue(baseURL string) map[string]any {
+func jiraFixtureIssue(baseURL, updated string) map[string]any {
 	return map[string]any{
 		"id":  "10000",
 		"key": "RAG-7",
 		"fields": map[string]any{
 			"summary":     "Implement Jira sync",
 			"description": "Implement Jira sync in Go",
-			"updated":     "2026-01-03T10:00:00.000+0000",
+			"updated":     updated,
 			"created":     "2026-01-02T10:00:00.000+0000",
 			"status":      map[string]any{"name": "Open"},
 			"priority":    map[string]any{"name": "High"},
@@ -494,5 +507,30 @@ func TestJiraSyncKeepsIssuesInsideTheWatermarkMinute(t *testing.T) {
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
 		t.Fatalf("documents = %#v, want the issue updated at 10:00:00Z", batch.Documents)
+	}
+}
+
+func TestJiraSyncHonoursConfiguredTimeBuffer(t *testing.T) {
+	// The issue was updated at 09:59:10Z, before the unbuffered 10:00:20Z
+	// watermark. With an explicitly configured 60s buffer the JQL lower bound
+	// is 09:59:20 floored to 09:59, so the page filter must keep the row.
+	server := jiraFixtureServerWithUpdated(t, "2026-01-03T09:59:10.000+0000")
+	defer server.Close()
+
+	connector := mustJiraResumeConnector(t, server.URL, map[string]any{"time_buffer_seconds": 60})
+	start := mustTime(t, "2026-01-03T10:00:20Z")
+	end := mustTime(t, "2026-01-03T11:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
+		t.Fatalf("documents = %#v, want the issue updated at 09:59:10Z", batch.Documents)
 	}
 }
