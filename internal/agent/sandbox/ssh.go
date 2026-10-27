@@ -306,7 +306,7 @@ func (p *SSHProvider) ExecuteCode(
 		return nil, fmt.Errorf("ssh: unknown instance id %q", inst.InstanceID)
 	}
 
-	// Wrap the code + write to remote via heredoc.
+	// Wrap the code and write it to the remote file through SSH stdin.
 	argsJSON, err := argsToJSON(args)
 	if err != nil {
 		return nil, err
