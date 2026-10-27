@@ -827,7 +827,10 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		raw, _ := io.ReadAll(resp.Body)
+		raw, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("HTTP %d: read error response: %w", resp.StatusCode, readErr)
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(raw))
 	}
 

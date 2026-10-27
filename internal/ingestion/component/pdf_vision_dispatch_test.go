@@ -660,3 +660,55 @@ func TestDispatchPDFMinerUStreamHonoursCancellation(t *testing.T) {
 		t.Fatal("dispatch kept the /file_parse request open after cancellation")
 	}
 }
+
+// A run cancelled while a non-200 error body is still streaming must still
+// report context.Canceled; reporting the bare HTTP status hides the reason the
+// request ended.
+func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"detail":"upstream`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU /file_parse was never reached")
+	}
+	// Give the client time to consume the flushed header and start reading the
+	// error body; cancelling earlier aborts Do before the body is touched.
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if !strings.Contains(err.Error(), "HTTP 502") {
+			t.Fatalf("stream error = %v, want the HTTP 502 error response path", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stream error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream kept reading the error response after cancellation")
+	}
+}
