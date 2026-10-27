@@ -267,10 +267,6 @@ type valueInfo struct {
 // that holds per-dataset subfolders, mirroring Python KNOWLEDGEBASE_FOLDER_NAME.
 const knowledgebaseFolderName = ".knowledgebase"
 
-// maxUploadDocSize bounds a single uploaded file held in memory, mirroring the
-// Python DOC_MAXIMUM_SIZE default (128 MiB; overridable there via MAX_CONTENT_LENGTH).
-const maxUploadDocSize = 128 * 1024 * 1024
-
 // MetadataUpdate is one update item: set key to value.
 type MetadataUpdate struct {
 	Key       string      `json:"key"`
