@@ -65,7 +65,7 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	}
 	if payload.JSONDoc != nil {
 		sizes, pageCount, geometryErr := openDataLoaderPageGeometry(ctx, data, openDataLoaderPageIndexes(payload.JSONDoc))
-		items := openDataLoaderItemsWithGeometry(payload.JSONDoc, sizes)
+		items, boxWarnings := openDataLoaderItemsWithGeometry(payload.JSONDoc, sizes)
 		if len(items) > 0 {
 			if pageCount <= 0 {
 				// No pdfium geometry (nocgo, or a document it cannot load):
@@ -76,6 +76,7 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 			if geometryErr != nil {
 				res.Warnings = append(res.Warnings, "OpenDataLoader PDF geometry unavailable: "+geometryErr.Error())
 			}
+			res.Warnings = append(res.Warnings, boxWarnings...)
 			return res
 		}
 	}
@@ -117,15 +118,24 @@ func openDataLoaderMultipart(filename string, data []byte, parser *PDFParser) (i
 // openDataLoaderItemsWithGeometry flattens every typed element into a parse
 // item. pageSizes maps a 0-based page index to the PDF's page size in points;
 // when it is nil (nocgo, or a document pdfium cannot load) the items keep
-// their text and the reported page number, but carry no positions.
-func openDataLoaderItemsWithGeometry(root any, pageSizes map[int][2]float64) []map[string]any {
+// their text and the reported page number, but carry no positions. The second
+// return value reports the pages whose boxes did not fit that page size.
+func openDataLoaderItemsWithGeometry(root any, pageSizes map[int][2]float64) ([]map[string]any, []string) {
 	items := []map[string]any{}
+	// One warning per page: a page whose boxes disagree with the point space
+	// is a coordinate-space mismatch worth surfacing, but repeating it per
+	// element would bury the rest of the parse result in noise.
+	reported := map[int]string{}
 	var walk func(any)
 	walk = func(node any) {
 		switch v := node.(type) {
 		case map[string]any:
-			if item := openDataLoaderNodeToItem(v, pageSizes); item != nil {
+			item, page, warning := openDataLoaderNodeToItem(v, pageSizes)
+			if item != nil {
 				items = append(items, item)
+			}
+			if warning != "" && reported[page] == "" {
+				reported[page] = warning
 			}
 			for _, child := range v {
 				walk(child)
@@ -137,14 +147,23 @@ func openDataLoaderItemsWithGeometry(root any, pageSizes map[int][2]float64) []m
 		}
 	}
 	walk(root)
-	return items
+	pages := make([]int, 0, len(reported))
+	for page := range reported {
+		pages = append(pages, page)
+	}
+	sort.Ints(pages)
+	warnings := make([]string, 0, len(pages))
+	for _, page := range pages {
+		warnings = append(warnings, reported[page])
+	}
+	return items, warnings
 }
 
-func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) map[string]any {
+func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) (map[string]any, int, string) {
 	rawType, _ := el["type"].(string)
 	t := strings.ToLower(strings.TrimSpace(rawType))
 	if t == "" {
-		return nil
+		return nil, 0, ""
 	}
 	text := strings.TrimSpace(stringValue(el["content"]))
 	if text == "" {
@@ -165,7 +184,7 @@ func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) m
 			text = html
 		}
 		if text == "" {
-			return nil
+			return nil, 0, ""
 		}
 		item := map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
 		projectPDFTable(item)
@@ -177,12 +196,12 @@ func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) m
 		return openDataLoaderWithPositions(map[string]any{"text": text, "doc_type_kwd": "image", "layout": "figure"}, el, pageSizes)
 	case "formula", "equation":
 		if text == "" {
-			return nil
+			return nil, 0, ""
 		}
 		return openDataLoaderWithPositions(map[string]any{"text": text, "doc_type_kwd": "text", "layout": "equation"}, el, pageSizes)
 	default:
 		if text == "" {
-			return nil
+			return nil, 0, ""
 		}
 		layout := "text"
 		if t == "title" || t == "heading" {
@@ -192,20 +211,27 @@ func openDataLoaderNodeToItem(el map[string]any, pageSizes map[int][2]float64) m
 	}
 }
 
-func openDataLoaderWithPositions(item map[string]any, el map[string]any, pageSizes map[int][2]float64) map[string]any {
+func openDataLoaderWithPositions(item map[string]any, el map[string]any, pageSizes map[int][2]float64) (map[string]any, int, string) {
 	page, ok := openDataLoaderPageNumber(el)
 	if !ok {
-		return item
+		return item, 0, ""
 	}
 	// The page identity survives without geometry (nocgo, or a missing box),
 	// matching the PaddleOCR adapter: downstream chunking and croppers can
 	// still attribute the item to its page.
 	item["page_number"] = page
-	if positions := openDataLoaderPositions(page, el, pageSizes); len(positions) > 0 {
+	positions, warning := openDataLoaderPositions(page, el, pageSizes)
+	if len(positions) > 0 {
 		item["positions"], item["_pdf_positions"] = positions, positions
 	}
-	return item
+	return item, page, warning
 }
+
+// openDataLoaderBleedTolerance is how far past the page edge a box may reach,
+// as a fraction of that page dimension. Printed content bleeds slightly; a box
+// further out than this is not a bleed but a disagreement about the coordinate
+// space, so its positions are dropped and reported rather than clamped.
+const openDataLoaderBleedTolerance = 0.1
 
 // openDataLoaderPositions converts one element's geometry into RAGFlow's
 // canonical [page, left, right, top, bottom] row. OpenDataLoader reports
@@ -214,30 +240,35 @@ func openDataLoaderWithPositions(item map[string]any, el map[string]any, pageSiz
 // so the vertical edges are flipped against the page height. Without the page
 // size the flip cannot be computed, and a wrong-y highlight is worse than none.
 // The flip assumes both sides describe the same (post-rotation) page box, which
-// holds for the page sizes pdfium reports.
-func openDataLoaderPositions(page int, el map[string]any, pageSizes map[int][2]float64) [][]any {
+// holds for the page sizes pdfium reports; the point space itself is a service
+// contract this adapter cannot read, so a box that cannot belong to the page is
+// treated as evidence of a different space and reported through the second
+// return value.
+func openDataLoaderPositions(page int, el map[string]any, pageSizes map[int][2]float64) ([][]any, string) {
 	size, ok := pageSizes[page-1]
 	if !ok || size[0] <= 0 || size[1] <= 0 {
-		return nil
+		return nil, ""
 	}
 	box, ok := openDataLoaderBox(el)
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	left, bottom, right, top := box[0], box[1], box[2], box[3]
 	if right <= left || top <= bottom {
-		return nil
+		return nil, ""
 	}
-	// The service is an external boundary: clamp the box to the page so a
-	// malformed or bleed-extended box cannot produce an off-page highlight.
+	overflowRight, overflowBottom := math.Max(0, math.Max(-left, right-size[0])), math.Max(0, math.Max(-bottom, top-size[1]))
+	if overflowRight > size[0]*openDataLoaderBleedTolerance || overflowBottom > size[1]*openDataLoaderBleedTolerance {
+		return nil, fmt.Sprintf("OpenDataLoader page %d: element box [%g %g %g %g] does not fit page size %gx%g; positions omitted because the service coordinates do not match the PDF point space", page, left, bottom, right, top, size[0], size[1])
+	}
 	left = math.Max(0, math.Min(size[0], left))
 	right = math.Max(0, math.Min(size[0], right))
 	screenTop := math.Max(0, math.Min(size[1], size[1]-top))
 	screenBottom := math.Max(0, math.Min(size[1], size[1]-bottom))
 	if right <= left || screenBottom <= screenTop {
-		return nil
+		return nil, ""
 	}
-	return [][]any{{float64(page), left, right, screenTop, screenBottom}}
+	return [][]any{{float64(page), left, right, screenTop, screenBottom}}, ""
 }
 
 // openDataLoaderReportedPageCount is the page-count fallback when pdfium is

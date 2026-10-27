@@ -2,6 +2,7 @@ package parser
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestOpenDataLoaderItems_ScreenSpacePositions(t *testing.T) {
 		},
 	}
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items := openDataLoaderItemsWithGeometry(root, sizes)
+	items, _ := openDataLoaderItemsWithGeometry(root, sizes)
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want 1 (unknown type without text is skipped): %v", len(items), items)
 	}
@@ -60,7 +61,7 @@ func TestOpenDataLoaderItems_AllElementTypesCarryPositions(t *testing.T) {
 		},
 	}
 	sizes := map[int][2]float64{0: {612, 792}}
-	items := openDataLoaderItemsWithGeometry(root, sizes)
+	items, _ := openDataLoaderItemsWithGeometry(root, sizes)
 	if len(items) != 4 {
 		t.Fatalf("items = %d, want 4: %v", len(items), items)
 	}
@@ -74,14 +75,14 @@ func TestOpenDataLoaderItems_AllElementTypesCarryPositions(t *testing.T) {
 
 func TestOpenDataLoaderItems_NoGeometryNoPositions(t *testing.T) {
 	root := map[string]any{"type": "paragraph", "content": "body", "page number": 1.0, "bounding box": []any{72.0, 650.5, 540.0, 700.2}}
-	if items := openDataLoaderItemsWithGeometry(root, nil); len(items) != 1 || items[0]["_pdf_positions"] != nil {
+	if items, _ := openDataLoaderItemsWithGeometry(root, nil); len(items) != 1 || items[0]["_pdf_positions"] != nil {
 		t.Fatalf("items = %v, want one item without positions when page geometry is unavailable", items)
 	} else if items[0]["page_number"] != 1 {
 		t.Errorf("page_number = %#v, want 1 (page identity survives without geometry)", items[0]["page_number"])
 	}
 	// A page the geometry map does not cover behaves the same way.
 	sizes := map[int][2]float64{2: {612, 792}}
-	if items := openDataLoaderItemsWithGeometry(root, sizes); len(items) != 1 || items[0]["_pdf_positions"] != nil {
+	if items, _ := openDataLoaderItemsWithGeometry(root, sizes); len(items) != 1 || items[0]["_pdf_positions"] != nil {
 		t.Fatalf("items = %v, want no positions for an uncovered page", items)
 	}
 }
@@ -95,7 +96,7 @@ func TestOpenDataLoaderItems_BadBoxesAreDropped(t *testing.T) {
 		{"type": "paragraph", "content": "inverted", "page number": 1.0, "bounding box": []any{200.0, 300.0, 100.0, 100.0}},
 		{"type": "paragraph", "content": "page zero", "page number": 0.0, "bounding box": []any{1.0, 2.0, 3.0, 4.0}},
 	} {
-		items := openDataLoaderItemsWithGeometry(el, map[int][2]float64{0: {612, 792}})
+		items, _ := openDataLoaderItemsWithGeometry(el, map[int][2]float64{0: {612, 792}})
 		if len(items) != 1 {
 			t.Fatalf("%v: items = %d, want 1", el["content"], len(items))
 		}
@@ -105,23 +106,76 @@ func TestOpenDataLoaderItems_BadBoxesAreDropped(t *testing.T) {
 	}
 }
 
-// TestOpenDataLoaderItems_BoxClampedToPage keeps an off-page box from
+// TestOpenDataLoaderItems_BoxClampedToPage keeps a slightly bleeding box from
 // producing a highlight outside the page rectangle.
 func TestOpenDataLoaderItems_BoxClampedToPage(t *testing.T) {
 	el := map[string]any{
 		"type": "paragraph", "content": "bleed", "page number": 1.0,
-		"bounding box": []any{-10.0, -10.0, 700.0, 900.0},
+		"bounding box": []any{-20.0, 700.0, 620.0, 780.0},
 	}
-	items := openDataLoaderItemsWithGeometry(el, map[int][2]float64{0: {612, 792}})
+	items, warnings := openDataLoaderItemsWithGeometry(el, map[int][2]float64{0: {612, 792}})
+	if len(warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for a bleed inside the tolerance", warnings)
+	}
 	rows, ok := items[0]["_pdf_positions"].([][]any)
 	if !ok || len(rows) != 1 {
 		t.Fatalf("positions = %#v, want one row", items[0]["_pdf_positions"])
 	}
-	want := []float64{0, 612, 0, 792}
+	want := []float64{0, 612, 12, 92}
 	for i, v := range want {
 		if got, _ := numericAny(rows[0][i+1]); math.Abs(got-v) > 1e-6 {
-			t.Fatalf("positions = %#v, want the page rectangle %v", rows, want)
+			t.Fatalf("positions = %#v, want the clamped page box %v", rows, want)
 		}
+	}
+}
+
+// TestOpenDataLoaderItems_ForeignCoordinateSpaceIsReported covers the failure
+// the clamp used to hide: boxes in another space (image pixels, for example)
+// land outside the page, and clamping them produced a full-page highlight that
+// looked valid. The positions are dropped and the mismatch is surfaced instead.
+func TestOpenDataLoaderItems_ForeignCoordinateSpaceIsReported(t *testing.T) {
+	root := []any{
+		// 150 DPI pixels on a 612x792 point page.
+		map[string]any{"type": "paragraph", "content": "a", "page number": 1.0, "bounding box": []any{150.0, 1351.0, 550.0, 1400.0}},
+		map[string]any{"type": "paragraph", "content": "b", "page number": 1.0, "bounding box": []any{0.0, 0.0, 1275.0, 1650.0}},
+	}
+	items, warnings := openDataLoaderItemsWithGeometry(root, map[int][2]float64{0: {612, 792}})
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2 (text survives without positions)", len(items))
+	}
+	for i, item := range items {
+		if item["_pdf_positions"] != nil {
+			t.Errorf("item %d positions = %#v, want none", i, item["_pdf_positions"])
+		}
+		if item["page_number"] != 1 {
+			t.Errorf("item %d page_number = %#v, want 1", i, item["page_number"])
+		}
+	}
+	// One warning per page, naming the offending box and the page size.
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %q, want one per page", warnings)
+	}
+	for _, want := range []string{"page 1", "612x792", "coordinate"} {
+		if !strings.Contains(warnings[0], want) {
+			t.Fatalf("warning = %q, want it to mention %q", warnings[0], want)
+		}
+	}
+}
+
+// TestOpenDataLoaderItems_MixedPagesWarnPerPage checks that a second page with
+// its own mismatch gets its own warning rather than being folded away.
+func TestOpenDataLoaderItems_MixedPagesWarnPerPage(t *testing.T) {
+	root := []any{
+		map[string]any{"type": "paragraph", "content": "ok", "page number": 1.0, "bounding box": []any{72.0, 100.0, 540.0, 140.0}},
+		map[string]any{"type": "paragraph", "content": "bad", "page number": 3.0, "bounding box": []any{0.0, 0.0, 2000.0, 2000.0}},
+	}
+	sizes := map[int][2]float64{0: {612, 792}, 2: {612, 792}}
+	items, warnings := openDataLoaderItemsWithGeometry(root, sizes)
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "page 3") {
+		t.Fatalf("warnings = %q, want one warning for page 3", warnings)
+	}
+	if items[0]["_pdf_positions"] == nil {
+		t.Errorf("page 1 positions = nil, want the valid box kept")
 	}
 }
 

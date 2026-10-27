@@ -136,7 +136,7 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 			map[string]any{"row": 0, "content": "b"},
 		},
 	}
-	items := openDataLoaderItemsWithGeometry(root, nil)
+	items, _ := openDataLoaderItemsWithGeometry(root, nil)
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
@@ -164,7 +164,7 @@ func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
 			map[string]any{"row": 5, "content": "z"},
 		},
 	}
-	items := openDataLoaderItemsWithGeometry(root, nil)
+	items, _ := openDataLoaderItemsWithGeometry(root, nil)
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
