@@ -93,10 +93,14 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	return p.parseWithState(ctx, filename, data, &htmlWalkState{})
+	state := &htmlWalkState{}
+	result := p.parseWithState(ctx, filename, data, state)
+	result.Warnings = append(state.warnings(), result.Warnings...)
+	return result
 }
 
 // parseWithState keeps media identity and budget across fragments of one document.
+// Its warnings describe this fragment; the caller adds state.warnings once.
 func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
 	decoded, _ := DecodeToUTF8(data, "text/markdown")
 	// Preserve over-wide rows before the Markdown library truncates them.
@@ -118,7 +122,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
-	warnings := state.warnings()
+	var warnings []string
 	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
@@ -189,6 +193,10 @@ func balanceMarkdownTables(text string) string {
 			i += 2
 			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
 				i++
+			}
+			// A table must not become a lazy continuation of a list or quote.
+			if buf.Len() > 0 && !strings.HasSuffix(buf.String(), "\n\n") {
+				buf.WriteByte('\n')
 			}
 			buf.WriteString(strings.Join(balanceTableColumns(lines[start:i]), ""))
 			continue

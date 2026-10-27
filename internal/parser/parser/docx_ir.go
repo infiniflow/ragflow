@@ -420,6 +420,11 @@ func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, table
 	var headings []docxHeading
 	var emitElements func([]docxIRElement, bool)
 	emitElements = func(elements []docxIRElement, topLevel bool) {
+		if !topLevel {
+			parentHeadings := headings
+			headings = append([]docxHeading(nil), headings...)
+			defer func() { headings = parentHeadings }()
+		}
 		for ei := 0; ei < len(elements); ei++ {
 			el := elements[ei]
 			// TEMPORARY: this merge is a stopgap. Revisit it once office_oxide

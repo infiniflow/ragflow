@@ -166,6 +166,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 	pages, _ := jsonPayload["pages"].([]any)
 	items := make([]map[string]any, 0)
 	state := &htmlWalkState{}
+	var warnings []string
 	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
@@ -181,23 +182,25 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 			if !ok {
 				continue
 			}
-			for _, item := range soMarkBlockToItems(ctx, block, keepHeaderFooter, state) {
+			blockItems, blockWarnings := soMarkBlockToItems(ctx, block, keepHeaderFooter, state)
+			warnings = append(warnings, blockWarnings...)
+			for _, item := range blockItems {
 				item["page_number"] = pageNumber
 				items = append(items, item)
 			}
 		}
 	}
-	return items, len(pages), state.warnings()
+	return items, len(pages), append(state.warnings(), warnings...)
 }
 
-func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) []map[string]any {
+func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) ([]map[string]any, []string) {
 	blockType := strings.ToLower(strings.TrimSpace(stringValue(block["type"])))
 	switch blockType {
 	case "cate", "cate_item", "blank":
-		return nil
+		return nil, nil
 	case "header", "footer":
 		if !keepHeaderFooter {
-			return nil
+			return nil, nil
 		}
 	}
 	content := strings.TrimSpace(stringValue(block["content"]))
@@ -206,33 +209,33 @@ func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFoo
 		if content == "" {
 			content = "[Image]"
 		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "image", "layout": "figure"}}
+		return []map[string]any{{"text": content, "doc_type_kwd": "image", "layout": "figure"}}, nil
 	case "table":
 		if content == "" {
-			return nil
+			return nil, nil
 		}
 		markdown := &MarkdownParser{libType: GoMarkdown}
 		parsed := markdown.parseWithState(ctx, "", []byte(content), state)
-		return ItemsToMaps(parsed.JSON)
+		return ItemsToMaps(parsed.JSON), parsed.Warnings
 	case "equation":
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "equation"}}
+		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "equation"}}, nil
 	case "title":
 		level := int(numberValue(block["title_level"]))
 		if level < 1 || level > 6 {
 			level = 1
 		}
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return []map[string]any{{"text": strings.Repeat("#", level) + " " + content, "doc_type_kwd": "text", "layout": "title"}}
+		return []map[string]any{{"text": strings.Repeat("#", level) + " " + content, "doc_type_kwd": "text", "layout": "title"}}, nil
 	default:
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "text"}}
+		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "text"}}, nil
 	}
 }
 

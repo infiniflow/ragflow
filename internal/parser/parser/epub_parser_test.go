@@ -91,6 +91,29 @@ func parseTestEPUB(t *testing.T, chapters []epubTestChapter) ParseResult {
 	return NewEPUBParser().ParseWithResult(context.Background(), "book.epub", buildTestEPUB(t, chapters))
 }
 
+func TestEPUBParserReportsDocumentImageLimitAcrossChapters(t *testing.T) {
+	image := `<img src="data:image/png;base64,aGVsbG8=">`
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML(strings.Repeat(image, 128))},
+		{name: "two.xhtml", content: epubTestHTML(strings.Repeat(image, 129) + "<p>After images.</p>")},
+	})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	images := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != 256 || !strings.Contains(epubTestText(res), "After images.") {
+		t.Fatalf("images=%d text=%q", images, epubTestText(res))
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	}
+}
+
 func epubTestText(res ParseResult) string {
 	var parts []string
 	for _, item := range ItemsToMaps(res.JSON) {

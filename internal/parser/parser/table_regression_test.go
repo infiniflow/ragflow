@@ -166,3 +166,62 @@ func TestTableRegressionMarkdownStateResetsForNewDocument(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkdownTableAfterContainerKeepsBlockBoundary(t *testing.T) {
+	for _, prefix := range []string{"- Item\n", "> Quote\n"} {
+		t.Run(strings.TrimSpace(prefix), func(t *testing.T) {
+			p, _ := NewMarkdownParser(GoMarkdown)
+			result := p.ParseWithResult(t.Context(), "table.md", []byte(prefix+"| H | V |\n|---|---|\n| OWNER | TAIL |\n\nAfter."))
+			if result.Err != nil || len(result.JSON) != 3 {
+				t.Fatalf("result=%+v", result)
+			}
+			wantPrefix := strings.TrimSpace(prefix)
+			if strings.HasPrefix(wantPrefix, "> ") {
+				wantPrefix = strings.TrimPrefix(wantPrefix, "> ")
+			}
+			if result.JSON[0].ToMap()["text"] != wantPrefix || result.JSON[2].ToMap()["text"] != "After." {
+				t.Fatalf("surrounding text changed: %#v", ItemsToMaps(result.JSON))
+			}
+			requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V"}, {"OWNER", "TAIL"}})
+		})
+	}
+}
+
+func TestDOCXContainerHeadingDoesNotReplaceBodyHeading(t *testing.T) {
+	table := `{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"value"}]}]}]}]}`
+	for _, container := range []string{"text_box", "list"} {
+		t.Run(container, func(t *testing.T) {
+			content := `{"type":"heading","level":1,"content":[{"type":"text","text":"Sidebar"}]},` + table
+			wrapped := `{"type":"text_box","content":[` + content + `]}`
+			if container == "list" {
+				wrapped = `{"type":"list","items":[{"content":[` + content + `]}]}`
+			}
+			ir := `{"sections":[{"elements":[{"type":"heading","level":1,"content":[{"type":"text","text":"Chapter"}]},` + wrapped + `,` + table + `]}]}`
+			items := buildDOCXJSONSections(ir, nil)
+			var captions []string
+			for _, item := range items {
+				if td, ok := item["table"].(*entity.TableData); ok {
+					captions = append(captions, td.Caption)
+				}
+			}
+			if len(captions) != 2 || captions[0] != "Table Location: Sidebar" || captions[1] != "Table Location: Chapter" {
+				t.Fatalf("table captions=%q", captions)
+			}
+		})
+	}
+}
+
+func TestSoMarkPreservesImageResolutionWarnings(t *testing.T) {
+	source := `<table><tr><td><img alt="logo" src="data:image/png;base64,!!!"></td></tr></table>`
+	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
+		map[string]any{"type": "table", "content": source},
+		map[string]any{"type": "table", "content": "| A | B |\n|---|---|\n| x | y |"},
+	}}}}}}, false)
+	if len(items) != 2 {
+		t.Fatalf("items=%#v", items)
+	}
+	requireTableRows(t, items[0], [][]string{{"logo"}})
+	if !strings.Contains(strings.Join(warnings, "\n"), "could not resolve 1 image source") {
+		t.Fatalf("missing image resolution warning: %v", warnings)
+	}
+}

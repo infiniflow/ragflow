@@ -81,7 +81,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, err := extractEPUBTextItems(reader, opfPath, spineItems)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(reader, opfPath, spineItems)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
 	}
@@ -94,7 +94,8 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 			"size":     len(data),
 			"encoding": detectedEnc,
 		},
-		JSON: MapsToItems(items),
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }
 
@@ -192,7 +193,7 @@ func readOPFSpine(r *zip.Reader, opfPath string) ([]string, error) {
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string, error) {
+func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string, []string, error) {
 	var items []map[string]any
 	var failures []string
 	read := 0
@@ -220,9 +221,9 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 		walkHTMLBlocksWithState(doc, &items, state)
 	}
 	if len(failures) > 0 && read == 0 {
-		return nil, detectedEncoding, fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
+		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
 	}
-	return items, detectedEncoding, nil
+	return items, detectedEncoding, state.warnings(), nil
 }
 
 // readEPUBContentFile resolves a spine href (relative to the OPF
