@@ -91,7 +91,7 @@ func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
 		{"data_after_padding_long", "aMRFPqfZALtY6rw50P==Pn5d", 16, "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, size, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
+			got, size, _, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
 			if got != tc.want || ok != (tc.want != "") || size != tc.wantSize {
 				t.Errorf("normalizeBase64ImagePayload(%q, %d) = (%q, %d, %v), want (%q, %d, %v)",
 					tc.payload, tc.limit, got, size, ok, tc.want, tc.wantSize, tc.want != "")

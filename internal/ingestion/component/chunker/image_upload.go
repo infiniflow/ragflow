@@ -30,8 +30,13 @@ import (
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/media"
 )
 
 // imageUploadSem caps concurrent object-storage uploads process-wide. Default
@@ -53,25 +58,43 @@ func imageUploadConcurrency() int {
 	return 10
 }
 
-// uploadChunkImages is the caller-side image-upload pass for a chunker's
-// output. For each chunk it mirrors Python's upload_to_minio + image2id,
-// running at the chunker stage (not in the Tokenizer) so the bytes are
-// dropped as soon as they are produced:
-//   - img_id already set  → keep it, skip upload (Python bypass).
-//   - no image            → img_id="", nothing to upload.
-//   - otherwise           → decode the image, upload the bytes via
+// uploadChunkMedia is the caller-side image pass for a chunker's output. For
+// each chunk it mirrors Python's upload_to_minio + image2id, running at the
+// chunker stage (not in the Tokenizer) so bytes are dropped as soon as they
+// are produced:
+//   - img_id already set → keep it, skip upload (Python bypass).
+//   - no image or ref    → img_id="", nothing to upload.
+//   - media_ref only     → resolve one image from the source document.
+//   - otherwise          → decode the image, upload the bytes via
 //     uploadOneImage at key=ck["id"], set img_id="<kb_id>-<chunk_id>", and
 //     delete the raw image field (用完即弃).
 //
+// Resolving inside the loop keeps peak memory at one image instead of the
+// whole document. A chunk whose only payload was a reference that failed to
+// resolve is dropped: keeping it would index an empty chunk.
+//
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
-// function. uploadChunkImage errors when a chunk arrives without id.
-func uploadChunkImages(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string) error {
+// function.
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string, resolver media.Resolver, src media.Source) ([]map[string]any, error) {
+	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
-		if err := uploadChunkImage(ctx, ck, up, kbID); err != nil {
-			return err
+		if err := media.Materialize(ctx, ck, resolver, src); err != nil {
+			common.Warn("chunker: deferred media resolution failed", zap.Error(err))
+			if entity.MediaRefFromAny(ck["media_ref"]) != nil {
+				text, _ := requireChunkText(ck)
+				imgID, _ := ck["img_id"].(string)
+				if strings.TrimSpace(text) == "" && imgID == "" {
+					continue
+				}
+			}
 		}
+		if err := uploadChunkImage(ctx, ck, up, kbID); err != nil {
+			return nil, err
+		}
+		delete(ck, "media_ref")
+		kept = append(kept, ck)
 	}
-	return nil
+	return kept, nil
 }
 
 // uploadChunkImage handles a single chunk map: reads ck["id"] (required),

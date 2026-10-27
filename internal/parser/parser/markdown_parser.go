@@ -643,7 +643,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		encoded, decodedSize, _, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
 		if !resolved {
 			return "", nil, false, false
 		}

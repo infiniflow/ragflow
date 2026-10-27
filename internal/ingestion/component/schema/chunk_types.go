@@ -137,8 +137,12 @@ type ChunkDoc struct {
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
 	// deletion list in UnmarshalJSON).
-	TableData *entity.TableData          `json:"table,omitempty"`
-	Extra     map[string]json.RawMessage `json:"-"`
+	TableData *entity.TableData `json:"table,omitempty"`
+	// MediaRef points at the image in the source document. It is set
+	// whenever the parser emitted a reference; Image still carries bytes in
+	// both mode. The chunker materializes the reference before upload.
+	MediaRef *entity.MediaRef           `json:"media_ref,omitempty"`
+	Extra    map[string]json.RawMessage `json:"-"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -157,7 +161,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	// cannot fall through to Extra and be re-emitted by MarshalJSON.
 	for _, key := range []string{
 		"text", "doc_type_kwd", "mom", "img_id",
-		"tk_nums", "layout", "layout_type", "layoutno", "image",
+		"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",

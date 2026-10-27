@@ -2,9 +2,14 @@ package parser
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 const htmlMediaDataURI = "data:image/png;base64,aGVsbG8="
@@ -98,5 +103,156 @@ func TestHTMLParser_DocumentImageLimit(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "256-item document limit") {
 		t.Fatalf("missing document image limit warning: %v", result.Warnings)
+	}
+}
+
+func TestHTMLParser_EmitsMediaRef(t *testing.T) {
+	p := NewHTMLParser()
+	p.MediaMode = MediaBoth
+	result := p.ParseWithResult(context.Background(), "ref.html", []byte(`<p><img alt="figure" src="`+htmlMediaDataURI+`"></p>`))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	if item["image"] != htmlMediaDataURI {
+		t.Fatalf("image = %v, want inline payload in both mode", item["image"])
+	}
+	ref := entity.MediaRefFromAny(item["media_ref"])
+	if ref == nil {
+		t.Fatalf("missing media_ref: %+v", item)
+	}
+	if ref.Format != "html" || ref.Kind != entity.MediaKindDataURI || ref.MIME != "image/png" || ref.Size != int64(len("hello")) {
+		t.Fatalf("media_ref = %+v", ref)
+	}
+	sum := sha256.Sum256([]byte("hello"))
+	if want := hex.EncodeToString(sum[:]); ref.SHA256 != want {
+		t.Fatalf("sha256 = %s, want %s", ref.SHA256, want)
+	}
+}
+
+func TestHTMLParser_RefModeOmitsImageBytes(t *testing.T) {
+	p := NewHTMLParser()
+	p.MediaMode = MediaRef
+	result := p.ParseWithResult(context.Background(), "ref-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	if _, ok := item["image"]; ok {
+		t.Fatalf("ref mode retained image bytes: %+v", item)
+	}
+	if entity.MediaRefFromAny(item["media_ref"]) == nil {
+		t.Fatalf("ref mode dropped media_ref: %+v", item)
+	}
+}
+
+func TestHTMLParser_InlineModeOmitsMediaRef(t *testing.T) {
+	p := NewHTMLParser()
+	p.MediaMode = MediaInline
+	result := p.ParseWithResult(context.Background(), "inline-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	item := result.JSON[0].ToMap()
+	if item["image"] != htmlMediaDataURI {
+		t.Fatalf("image = %v, want inline payload", item["image"])
+	}
+	if _, ok := item["media_ref"]; ok {
+		t.Fatalf("inline mode emitted media_ref: %+v", item)
+	}
+}
+
+func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
+	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
+		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
+	p := NewHTMLParser()
+	p.MediaMode = MediaRef
+	result := p.ParseWithResult(context.Background(), "match.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	var want []string
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] != "image" {
+			continue
+		}
+		ref := entity.MediaRefFromAny(m["media_ref"])
+		if ref == nil {
+			t.Fatalf("image item without ref: %+v", m)
+		}
+		want = append(want, ref.SHA256)
+	}
+	spans := ScanHTMLMediaSpans([]byte(input))
+	if len(spans) != len(want) {
+		t.Fatalf("scanned %d images, parser emitted %d", len(spans), len(want))
+	}
+	for i := range want {
+		if spans[i].Ref.SHA256 != want[i] {
+			t.Fatalf("image %d digest = %s, want %s", i, spans[i].Ref.SHA256, want[i])
+		}
+		data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[i].PayloadStart:spans[i].PayloadEnd])
+		if err != nil {
+			t.Fatalf("image %d decode: %v", i, err)
+		}
+		if string(data) != "hello" {
+			t.Fatalf("image %d = %q, want hello", i, data)
+		}
+		if hex.EncodeToString(sum[:]) != want[i] {
+			t.Fatalf("image %d decoded digest = %x", i, sum)
+		}
+	}
+}
+
+func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
+	input := `<img src='DATA:IMAGE/PNG;BASE64,aGVsbG8'>`
+	spans := ScanHTMLMediaSpans([]byte(input))
+	if len(spans) != 1 {
+		t.Fatalf("spans = %d, want 1", len(spans))
+	}
+	if spans[0].Ref.MIME != "image/png" {
+		t.Errorf("mime = %q, want image/png", spans[0].Ref.MIME)
+	}
+	data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[0].PayloadStart:spans[0].PayloadEnd])
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Errorf("data = %q, want hello", data)
+	}
+	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
+		t.Errorf("scan digest and decode digest differ")
+	}
+}
+
+// TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes pins the core
+// goal: in ref mode the parse result no longer scales with image payloads.
+func TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes(t *testing.T) {
+	const imageCount = 64
+	payload := base64.StdEncoding.EncodeToString(make([]byte, 64<<10))
+	input := strings.Repeat(`<img src="data:image/png;base64,`+payload+`">`, imageCount)
+
+	p := NewHTMLParser()
+	p.MediaMode = MediaRef
+	result := p.ParseWithResult(context.Background(), "large.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	items := 0
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			items++
+		}
+	}
+	if items != imageCount {
+		t.Fatalf("image items = %d, want %d", items, imageCount)
+	}
+	encoded, err := json.Marshal(result.JSON)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	// 64 refs are a few KB; the inline form would be over 4 MB.
+	if len(encoded) > 256<<10 {
+		t.Fatalf("ref-mode result is %d bytes; it must not scale with image payloads", len(encoded))
 	}
 }

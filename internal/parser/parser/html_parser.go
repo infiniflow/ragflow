@@ -19,20 +19,26 @@ package parser
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"golang.org/x/net/html"
+	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
 
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
+	// MediaMode selects whether inline images carry bytes, a media_ref, or
+	// both. It defaults to the deployment configuration.
+	MediaMode MediaMode
 }
 
 func NewHTMLParser() *HTMLParser {
-	return &HTMLParser{}
+	return &HTMLParser{MediaMode: MediaModeFromEnv()}
 }
 
 func (p *HTMLParser) String() string {
@@ -77,7 +83,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{mediaMode: p.MediaMode}
 	walkHTMLBlocksWithState(doc, &items, state)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -111,6 +117,7 @@ type htmlWalkState struct {
 	mediaOrder          int
 	skippedInlineImages int
 	mediaBudget         *embeddedMediaBudget
+	mediaMode           MediaMode
 	resolveImage        func(string) (string, bool)
 }
 
@@ -122,24 +129,29 @@ func (s *htmlWalkState) warnings() []string {
 	return warnings
 }
 
-func (s *htmlWalkState) imageSource(src string) (string, bool) {
+func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
 	if s.resolveImage != nil {
-		return s.resolveImage(src)
+		normalized, ok := s.resolveImage(src)
+		return normalized, nil, ok
 	}
 	if !isHTMLDataImageSource(src) {
-		return "", false
+		return "", nil, false
 	}
 	if s.mediaBudget == nil {
 		s.mediaBudget = newEmbeddedMediaBudget()
 	}
 	if !s.mediaBudget.reserveItem() {
-		return "", false
+		return "", nil, false
 	}
-	normalized, size, ok := normalizeHTMLImageSource(src)
-	if !ok || !s.mediaBudget.includeReservedSize(size) {
-		return "", false
+	normalized, size, digest, ok := normalizeHTMLImageSource(src)
+	if !ok || !s.mediaBudget.includeReservedSize(int(size)) {
+		return "", nil, false
 	}
-	return normalized, true
+	var ref *entity.MediaRef
+	if s.mediaMode.EmitsRefs() {
+		ref = newHTMLMediaRef(dataURIMediaType(normalized), size, digest)
+	}
+	return normalized, ref, true
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
@@ -392,7 +404,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			normalized, ok := state.imageSource(src)
+			normalized, ref, ok := state.imageSource(src)
 			if !ok {
 				if state.resolveImage != nil {
 					w.writeText(htmlAttribute(n, "alt"))
@@ -402,7 +414,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 				return
 			}
 			flushLeafText(w, out, layout, trim)
-			appendHTMLImageItem(out, state, normalized, htmlAttribute(n, "alt"), "", 0, 0)
+			appendHTMLImageItem(out, state, normalized, ref, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
@@ -445,6 +457,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 
 type htmlTableImage struct {
 	src    string
+	ref    *entity.MediaRef
 	alt    string
 	row    int
 	column int
@@ -476,7 +489,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 	*out = append(*out, table)
 	for _, media := range images {
-		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
+		appendHTMLImageItem(out, state, media.src, media.ref, media.alt, tableID, media.row, media.column)
 	}
 }
 
@@ -498,7 +511,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				normalized, ok := state.imageSource(src)
+				normalized, ref, ok := state.imageSource(src)
 				if !ok {
 					if state.resolveImage != nil {
 						alt := htmlAttribute(node, "alt")
@@ -510,6 +523,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 				} else {
 					images = append(images, htmlTableImage{
 						src:    normalized,
+						ref:    ref,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -539,14 +553,19 @@ func removeHTMLImageSource(n *html.Node) {
 	n.Attr = attrs
 }
 
-func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string, ref *entity.MediaRef, alt, parentTableID string, row, column int) {
 	state.mediaOrder++
 	item := map[string]any{
 		"text":         strings.TrimSpace(alt),
 		"doc_type_kwd": "image",
 		"media_order":  state.mediaOrder,
 	}
-	item["image"] = src
+	if state.mediaMode.EmitsBytes() {
+		item["image"] = src
+	}
+	if state.mediaMode.EmitsRefs() && ref != nil {
+		item["media_ref"] = ref
+	}
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
 		item["row_index"] = row
@@ -555,20 +574,45 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 	*out = append(*out, item)
 }
 
-func normalizeHTMLImageSource(src string) (string, int, bool) {
+func normalizeHTMLImageSource(src string) (string, int64, [sha256.Size]byte, bool) {
+	var sum [sha256.Size]byte
 	src = strings.TrimSpace(src)
 	if !isHTMLDataImageSource(src) {
-		return "", 0, false
+		return "", 0, sum, false
 	}
 	separator := strings.IndexByte(src, ',')
 	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return "", 0, false
+		return "", 0, sum, false
 	}
-	payload, size, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+	payload, size, sum, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
 	if !ok {
-		return "", 0, false
+		return "", 0, sum, false
 	}
-	return strings.ToLower(src[:separator+1]) + payload, int(size), true
+	return strings.ToLower(src[:separator+1]) + payload, size, sum, true
+}
+
+// newHTMLMediaRef content-addresses one inline HTML image. The digest is the
+// lookup key the chunker uses to re-extract the image from the source
+// document, so a later walker change cannot shift the reference.
+func newHTMLMediaRef(mime string, size int64, digest [sha256.Size]byte) *entity.MediaRef {
+	return &entity.MediaRef{
+		Format: "html",
+		Kind:   entity.MediaKindDataURI,
+		SHA256: hex.EncodeToString(digest[:]),
+		MIME:   mime,
+		Size:   size,
+	}
+}
+
+// dataURIMediaType returns the media type of a normalized "data:<mime>;base64,"
+// URI.
+func dataURIMediaType(uri string) string {
+	colon := strings.IndexByte(uri, ':')
+	semi := strings.IndexByte(uri, ';')
+	if colon < 0 || semi <= colon+1 {
+		return ""
+	}
+	return strings.ToLower(uri[colon+1 : semi])
 }
 
 func isHTMLDataImageSource(src string) bool {

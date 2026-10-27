@@ -30,8 +30,10 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/media"
 
 	"gorm.io/gorm"
 )
@@ -59,7 +61,7 @@ func MustRegisterChunker(name string) {
 
 // imageUploadDecorator wraps a chunker component. Before upload it writes
 // ck["id"] (the single source of chunk identity) for every chunk; then it runs
-// uploadChunkImages which reads ck["id"] and uploads any raw image bytes.
+// uploadChunkMedia which reads ck["id"] and uploads raw or deferred images.
 type imageUploadDecorator struct {
 	inner runtime.Component
 }
@@ -131,7 +133,7 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		if text == "" {
 			image, _ := ck["image"].(string)
 			imgID, _ := ck["img_id"].(string)
-			text = mediaChunkIdentity(image, imgID)
+			text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
 		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
@@ -142,12 +144,23 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// persist run); in debug we drop the raw bytes so they are not held in
 	// memory until a persist stage that will never run.
 	if kbID != "" {
-		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+		resolver := media.NewResolver()
+		source := ChunkMediaSource(db, inputs)
+		if mediaRefShadowEnabled() {
+			verifyChunkMedia(ctx, chunks, resolver, source)
+		}
+		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, resolver, source)
+		if err != nil {
 			return nil, err
+		}
+		if len(kept) != len(chunks) {
+			chunks = kept
+			out["chunks"] = kept
 		}
 	} else {
 		for _, ck := range chunks {
 			delete(ck, "image")
+			delete(ck, "media_ref")
 		}
 	}
 	return out, nil

@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
@@ -174,6 +175,19 @@ type visionImage struct {
 	VLMDataValidated bool
 }
 
+// parserSourceBytes returns the source document bytes this Parser invocation
+// read. The text path forwards a string, so both forms are accepted.
+func parserSourceBytes(inputs map[string]any) []byte {
+	switch v := inputs["binary"].(type) {
+	case []byte:
+		return v
+	case string:
+		return []byte(v)
+	default:
+		return nil
+	}
+}
+
 // maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
 // resources and table regions. PDF OCR remains in the PDF parser; non-PDF
 // image text comes from this optional enhancement.
@@ -213,6 +227,10 @@ func maybeDispatchVisionEnhancement(
 			continue
 		}
 		if img, _ := m["image"].(string); img != "" {
+			items = append(items, i)
+			continue
+		}
+		if entity.MediaRefFromAny(m["media_ref"]) != nil {
 			items = append(items, i)
 			continue
 		}
@@ -279,6 +297,15 @@ func maybeDispatchVisionEnhancement(
 	// a deferred Close as a panic/early-return safety net: Close is idempotent
 	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
+	// A parser in ref mode leaves the bytes out of the result. Materialize
+	// each referenced image from the bytes this invocation parsed, so the VLM
+	// path neither re-reads storage nor loses descriptions on those formats.
+	var resolver media.Resolver
+	var mediaSource media.Source
+	if source := parserSourceBytes(inputs); len(source) > 0 {
+		resolver = media.NewResolver()
+		mediaSource = media.SourceFunc(func(context.Context) ([]byte, error) { return source, nil })
+	}
 	modified := false
 	descriptions := make([]string, len(items))
 	failures := make([]string, len(items))
@@ -306,7 +333,12 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
-			item := dispatched.JSON[itemIdx].ToMap()
+			// Clone before materializing: RawItem.ToMap returns the shared
+			// map, and filling in image bytes must not mutate the parse result.
+			item := maps.Clone(dispatched.JSON[itemIdx].ToMap())
+			if err := media.Materialize(ctx, item, resolver, mediaSource); err != nil {
+				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
+			}
 			if err := cropper.Prepare(ctx, item); err != nil {
 				if ctx.Err() == nil {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {

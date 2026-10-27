@@ -17,22 +17,25 @@
 package parser
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"io"
 	"strings"
 )
 
 // normalizeBase64ImagePayload validates an external image payload within its
-// decoded byte limit and returns standard base64 with padding, no CR/LF, and
-// the decoded byte count. Validation streams into io.Discard instead of
-// allocating decoded image buffers.
-func normalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, bool) {
+// decoded byte limit and returns standard base64 with padding, no CR/LF, the
+// decoded byte count, and the digest of the decoded bytes. Validation streams
+// the payload instead of retaining a decoded image buffer; the digest is
+// computed from the same stream so callers do not decode twice.
+func normalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, [sha256.Size]byte, bool) {
+	var sum [sha256.Size]byte
 	if maxDecodedBytes < 0 {
-		return "", 0, false
+		return "", 0, sum, false
 	}
 	encodedBytes, ok := scanBase64ImagePayload(payload, base64.StdEncoding.EncodedLen(maxDecodedBytes))
 	if !ok {
-		return "", 0, false
+		return "", 0, sum, false
 	}
 	payload = strings.ReplaceAll(payload, "\r", "")
 	payload = strings.ReplaceAll(payload, "\n", "")
@@ -40,11 +43,13 @@ func normalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, i
 		payload += strings.Repeat("=", 4-remainder)
 	}
 	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(payload))
-	decodedBytes, err := io.CopyN(io.Discard, decoder, int64(maxDecodedBytes)+1)
+	hasher := sha256.New()
+	decodedBytes, err := io.CopyN(io.MultiWriter(io.Discard, hasher), decoder, int64(maxDecodedBytes)+1)
 	if err != io.EOF || decodedBytes == 0 || decodedBytes > int64(maxDecodedBytes) {
-		return "", 0, false
+		return "", 0, sum, false
 	}
-	return payload, decodedBytes, true
+	copy(sum[:], hasher.Sum(nil))
+	return payload, decodedBytes, sum, true
 }
 
 // scanBase64ImagePayload counts the base64 characters of an image payload
