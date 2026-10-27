@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/parser/parser"
 )
 
@@ -86,11 +87,15 @@ func TestTitleChunkerUploadsDOCXParserImage(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = original })
 
-	comp, err := newChunkerByName(ComponentNameGroupTitleChunker, map[string]any{"levels": [][]string{{`^intro$`}}})
-	if err != nil {
-		t.Fatalf("newChunkerByName: %v", err)
+	factory, _, _, ok := runtime.DefaultRegistry.Lookup(ComponentNameGroupTitleChunker)
+	if !ok || factory == nil {
+		t.Fatalf("%s is not registered", ComponentNameGroupTitleChunker)
 	}
-	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+	comp, err := factory(ComponentNameGroupTitleChunker, map[string]any{"levels": [][]string{{`^intro$`}}})
+	if err != nil {
+		t.Fatalf("construct %s: %v", ComponentNameGroupTitleChunker, err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name": docxParserImageFixture, "kb_id": "kb-1",
 		"output_format": "json", "json": items,
 	})
