@@ -103,7 +103,7 @@ func TestUpdateDataset_ParserConfigRebuildUsesPinnedVersionDSL(t *testing.T) {
 	seedBoundKBWithVersion(t, db, "kb-1", canvasID, "v-old")
 
 	// Request omits pipeline_id AND pipeline_version_id; only parser_config changes.
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1",
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1",
 		service.UpdateDatasetRequest{
 			ParserConfig: map[string]interface{}{"Parser:Shared": map[string]interface{}{"k": "override"}},
 		})
@@ -144,7 +144,7 @@ func TestUpdateDataset_SingleFieldVersionPatchDoesNotClearPin(t *testing.T) {
 	seedBoundKBWithVersion(t, db, "kb-1", canvasID, "v-old")
 
 	// Single-field PATCH: only pipeline_version_id, pipeline_id omitted.
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1",
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1",
 		service.UpdateDatasetRequest{
 			PipelineVersionID: sptr("v-new"),
 		})
