@@ -180,7 +180,7 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	svc.activeSessions["session-think"] = &activeAgentRun{sessionID: "session-think"}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(serviceTestContext(t, "user-1", "user-1"), 5*time.Second)
 	defer cancel()
 	results := make(chan error, 2)
 	for _, question := range []string{"concurrent question 1", "concurrent question 2"} {

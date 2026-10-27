@@ -1775,6 +1775,7 @@ Esempio: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Mostra contenuto',
       hideToc: 'Nascondi contenuto',
@@ -2839,7 +2840,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       failed: 'Fallito',
       logTitle: 'Titolo',
       tags: 'Tag',
-      canvasCategory: 'Categoria canvas',
+      agentCategory: 'Categoria canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3151,7 +3152,6 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       permission: 'Permesso',
 
       agentTitle: 'Titolo agente',
-      canvasCategory: 'Categoria canvas',
 
       newRole: 'Nuovo ruolo',
       addNewRole: 'Aggiungi nuovo ruolo',
@@ -3170,18 +3170,14 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
     },
     explore: {
       title: 'Avvia',
-      canvasList: 'Lista Canvas',
       sessions: 'Sessioni',
       newSession: 'Nuova sessione',
       newSessionLabel: 'Avvia una nuova conversazione',
       deleteSession: 'Elimina sessione',
-      searchCanvas: 'Cerca canvas...',
       searchSessions: 'Cerca sessioni...',
-      noCanvasSelected: 'Seleziona un canvas',
       noSessionSelected: 'Seleziona una sessione o creane una nuova',
       noSessionsFound: 'Nessuna sessione trovata',
       createFirstSession: 'Crea la tua prima sessione',
-      noCanvasFound: 'Nessun canvas trovato',
       deleteSelectedConfirm:
         'Sei sicuro di voler eliminare {{count}} sessioni?',
       batchDeleteSessions: 'Elimina sessioni',

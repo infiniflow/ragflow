@@ -910,87 +910,6 @@ func (c *CLI) APISetAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf, e
 	return &successResult, nil
 }
 
-// APISetVariableCommand sets variable value
-func (c *CLI) APISetVariableCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	httpClient, err := c.apiModeClient()
-	if err != nil {
-		return nil, err
-	}
-
-	varName, ok := cmd.Params["var_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("var_name not provided")
-	}
-	varValue, ok := cmd.Params["var_value"].(string)
-	if !ok {
-		return nil, fmt.Errorf("var_value not provided")
-	}
-
-	payload := map[string]interface{}{
-		"var_name":  varName,
-		"var_value": varValue,
-	}
-	resp, err := httpClient.Request(commandCount, "PUT", "/system/variables", httpClient.AuthKind(), nil, payload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to set variable: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to set variable: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result MessageResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("set variable failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
-// APIShowVariableCommand displays variable value
-func (c *CLI) APIShowVariableCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	httpClient, err := c.apiModeClient()
-	if err != nil {
-		return nil, err
-	}
-
-	varName, ok := cmd.Params["var_name"].(string)
-	if !ok {
-		return nil, fmt.Errorf("var_name not provided")
-	}
-
-	EncodedVarName := common.EncodeToBase64(varName)
-
-	endPoint := fmt.Sprintf("/system/variables/%s", EncodedVarName)
-
-	resp, err := httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get variable: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to get variable: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("show variable failed: invalid JSON (%w)", err)
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	normalizeVariableRows(result.Data)
-	result.Duration = resp.Duration
-	return &result, nil
-}
-
 // APIShowAPIKeyCommand displays the current API key
 func (c *CLI) APIShowAPIKeyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != APIMode {
@@ -3278,21 +3197,6 @@ func (c *CLI) APIListEnvironmentsCommand(commandCount int, cmd *Command) (Respon
 	}
 
 	return HandleCommonResponse(resp, "list environments")
-}
-
-// APIListVariablesCommand lists all system variables (api mode only).
-func (c *CLI) APIListVariablesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	httpClient, err := c.apiModeClient()
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := httpClient.Request(commandCount, "GET", "/system/variables", httpClient.AuthKind(), nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list variables: %w", err)
-	}
-
-	return HandleCommonResponse(resp, "list variables")
 }
 
 func (c *CLI) APIStartIngestionCommand(commandCount int, cmd *Command) (ResponseIf, error) {

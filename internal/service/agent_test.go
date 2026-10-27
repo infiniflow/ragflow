@@ -2133,9 +2133,12 @@ func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
-	ctx := t.Context()
-	if err := dao.DB.WithContext(ctx).Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	if err := dao.DB.WithContext(ctx).Where("id = ?", "user-1").FirstOrCreate(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
 		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", "user-1").Update("nickname", "owner").Error; err != nil {
+		t.Fatalf("failed to set user nickname: %v", err)
 	}
 	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
 		ID:             "canvas-version-draft",
@@ -2176,14 +2179,27 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list versions: %v", err)
 	}
-	if len(versions) != 1 {
-		t.Fatalf("expected same DSL to replace latest draft, got %d versions", len(versions))
+	// v5.2 §5.1: a manual Save always INSERTs a new version, even when the DSL
+	// is identical to the previous one (no same-DSL in-place refresh dedup).
+	if len(versions) != 2 {
+		t.Fatalf("expected every manual save to mint a new version, got %d versions", len(versions))
 	}
-	if versions[0].Title == nil || !strings.HasPrefix(*versions[0].Title, "owner_Renamed Agent_") {
-		t.Fatalf("unexpected version title: %v", versions[0].Title)
+	// create_time may tie within the same second, so select the version from the
+	// second ("Renamed Agent") save by its title instead of relying on list order.
+	var latest *entity.UserCanvasVersion
+	for _, v := range versions {
+		if v.Title != nil && strings.HasPrefix(*v.Title, "owner_Renamed Agent_") {
+			latest = v
+		}
+	}
+	if latest == nil {
+		t.Fatalf("could not find the renamed-agent version among %d versions", len(versions))
+	}
+	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "owner_Renamed Agent_") {
+		t.Fatalf("unexpected version title: %v", latest.Title)
 	}
 	var release bool
-	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Select("release").Where("id = ?", versions[0].ID).Scan(&release).Error; err != nil {
+	if err = dao.DB.WithContext(ctx).Table("user_canvas_version").Select("release").Where("id = ?", latest.ID).Scan(&release).Error; err != nil {
 		t.Fatalf("failed to read release flag: %v", err)
 	}
 	if release {
@@ -2541,9 +2557,12 @@ func createAgentSessionTestCompilationGroup(t *testing.T, id, tenantID string, n
 func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
-	ctx := t.Context()
-	if err := dao.DB.WithContext(ctx).Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	if err := dao.DB.WithContext(ctx).Where("id = ?", "user-1").FirstOrCreate(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
 		t.Fatalf("failed to seed user: %v", err)
+	}
+	if err := dao.DB.WithContext(ctx).Model(&entity.User{}).Where("id = ?", "user-1").Update("nickname", "owner").Error; err != nil {
+		t.Fatalf("failed to set user nickname: %v", err)
 	}
 	initialDSL := entity.JSONMap{
 		"components": map[string]any{},

@@ -1830,6 +1830,7 @@ Exemple : Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Afficher le contenu',
       hideToc: 'Masquer le contenu',
@@ -2933,7 +2934,7 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       text: 'Texte',
       userId: 'ID utilisateur',
       tags: 'Étiquettes',
-      canvasCategory: 'Catégorie de canvas',
+      agentCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3262,7 +3263,6 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       permission: 'Permission',
 
       agentTitle: "Titre de l'agent",
-      canvasCategory: 'Catégorie du canvas',
 
       newRole: 'Nouveau rôle',
       addNewRole: 'Ajouter un rôle',
@@ -3281,19 +3281,15 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
     },
     explore: {
       title: 'Lancer',
-      canvasList: 'Liste des canvas',
       sessions: 'Sessions',
       newSession: 'Nouvelle session',
       newSessionLabel: 'Démarrer une nouvelle conversation',
       deleteSession: 'Supprimer la session',
-      searchCanvas: 'Rechercher un canvas...',
       searchSessions: 'Rechercher des sessions...',
-      noCanvasSelected: 'Veuillez sélectionner un canvas',
       noSessionSelected:
         'Veuillez sélectionner une session ou en créer une nouvelle',
       noSessionsFound: 'Aucune session trouvée',
       createFirstSession: 'Créez votre première session',
-      noCanvasFound: 'Aucun canvas trouvé',
       deleteSelectedConfirm:
         'Êtes-vous sûr de vouloir supprimer {{count}} session(s) ?',
       batchDeleteSessions: 'Supprimer les sessions',

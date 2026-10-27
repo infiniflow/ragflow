@@ -49,6 +49,7 @@ func dialForTest(llmid string) *entity.Chat {
 			"refine_multiturn": false,
 			"keyword":          false,
 			"use_kg":           false,
+			"toc_enhance":      false,
 		},
 		KBIDs:                  []interface{}{},
 		VectorSimilarityWeight: 0.3,
@@ -1825,7 +1826,7 @@ func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// seedChatPipelineToolSupportTenant sets the owner membership's default chat model, which
 // the no-explicit-LLM branch of the probe resolves.
 func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
 	t.Helper()

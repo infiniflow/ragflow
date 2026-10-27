@@ -945,7 +945,7 @@ export default {
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
       tags: 'Etiquetas',
-      canvasCategory: 'Categoría de canvas',
+      agentCategory: 'Categoría de canvas',
       created: 'Creado',
       id: 'ID',
       logTitle: 'Título',

@@ -1473,6 +1473,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Показать содержание',
       hideToc: 'Скрыть содержание',
@@ -2484,7 +2485,7 @@ export default {
       failed: 'Ошибка',
       logTitle: 'Заголовок',
       tags: 'Теги',
-      canvasCategory: 'Категория канваса',
+      agentCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2796,7 +2797,6 @@ export default {
       permission: 'Права доступа',
 
       agentTitle: 'Название агента',
-      canvasCategory: 'Категория канваса',
 
       newRole: 'Новая роль',
       addNewRole: 'Добавить новую роль',
@@ -2815,18 +2815,14 @@ export default {
     },
     explore: {
       title: 'Запуск',
-      canvasList: 'Список канвасов',
       sessions: 'Сессии',
       newSession: 'Новая сессия',
       newSessionLabel: 'Начать новый разговор',
       deleteSession: 'Удалить сессию',
-      searchCanvas: 'Поиск по канвасу...',
       searchSessions: 'Поиск по сессиям...',
-      noCanvasSelected: 'Выберите канвас',
       noSessionSelected: 'Выберите сессию или создайте новую',
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
-      noCanvasFound: 'Канвасы не найдены',
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },

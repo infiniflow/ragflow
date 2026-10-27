@@ -1768,6 +1768,7 @@ export default {
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
 
       showToc: 'コンテンツを表示',
@@ -2393,7 +2394,7 @@ export default {
       promptMessage: 'プロンプトは必須です',
       runningHintText: '動作中です...🕞 ',
       tags: 'タグ',
-      canvasCategory: 'キャンバスカテゴリ',
+      agentCategory: 'キャンバスカテゴリ',
       created: '作成日',
       id: 'ID',
       logTitle: 'タイトル',
@@ -3142,7 +3143,6 @@ export default {
       updateDate: '更新日',
       permission: '権限',
       agentTitle: 'エージェントタイトル',
-      canvasCategory: 'キャンバスカテゴリー',
       newRole: '新規ロール',
       addNewRole: '新規ロールを追加',
       roleName: 'ロール名',
@@ -3494,18 +3494,14 @@ export default {
 
     explore: {
       title: '起動',
-      canvasList: 'キャンバス一覧',
       sessions: 'セッション',
       newSession: '新しいセッション',
       newSessionLabel: '新しい会話を開始',
       deleteSession: 'セッションを削除',
-      searchCanvas: 'キャンバスを検索...',
       searchSessions: 'セッションを検索...',
-      noCanvasSelected: 'キャンバスを選択してください',
       noSessionSelected: 'セッションを選択するか、新規作成してください',
       noSessionsFound: 'セッションが見つかりません',
       createFirstSession: '最初のセッションを作成',
-      noCanvasFound: 'キャンバスが見つかりません',
       deleteSelectedConfirm:
         '{{count}} 件のセッションを削除してもよろしいですか？',
       batchDeleteSessions: 'セッションを削除',

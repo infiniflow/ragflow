@@ -708,6 +708,8 @@ export default {
       parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      parserSettingsChangeWarning:
+        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -1100,7 +1102,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
-        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
+        '在将检索到的文本块传递给大语言模型（LLM）之前，评估其与用户问题的相关性。要启用此功能，请先在“设置 → 模型供应商”中配置决策模型，然后在此处选择。默认情况下不使用决策模型。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
@@ -2094,6 +2096,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       modelFeatures: '模型特性',
       modelNameRequired: '请输入模型名称',
@@ -2618,7 +2621,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         author: '作者',
         sectionTitle: '章节标题',
       },
-      canvasCategory: '画布分类',
+      agentCategory: '智能体分类',
       created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
@@ -2836,6 +2839,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         download: '下载',
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
+        label: '流水线版本',
+        latest: '最新版本',
+        filterByAlias: '按别名筛选',
+        alias: '别名',
+        pinnedTooltip:
+          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
+        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        delete: '删除版本',
+        deleteConfirmTitle: '删除该版本？',
+        deleteConfirmContent:
+          '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        restore: '恢复为当前版本',
+        restoreConfirmTitle: '恢复此版本为当前智能体？',
+        restoreConfirmContent:
+          '当前智能体 DSL 将被此版本替换。再次发布会将其保存为新版本。',
+        missingContent:
+          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -2871,7 +2891,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
-      categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
+      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
@@ -2977,7 +2997,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       news: '新闻',
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
-        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
+        '控制所选模型可以参考的近期对话历史范围。窗口越大，使用的 Token 越多，也可能引入无关上下文。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
@@ -3364,7 +3384,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       userPrompt: '用户提示词',
       tagFile: '标签文件',
       tagFileTip:
-        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签文件支持 XLSX、XLS、CSV、TXT 格式，每行包含文本和标签两列，多个标签用英文逗号分隔，无需表头。标签提取可能产生额外的 Token 消耗。提取失败时，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3497,9 +3517,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalDatasetRequired: '请先选择知识库',
       retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
@@ -3665,6 +3685,20 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
+        endpoint: '接口地址',
+        testEndpoint: '测试接口地址',
+        personalUrl: '个人 Webhook URL',
+        credentialDescription:
+          '持有此链接即可按你的权限运行 Agent，请妥善保管；重新生成会使旧链接失效。',
+        createCredential: '生成或轮换 URL',
+        revokeCredential: '撤销我的 URL',
+        credentialCreated:
+          'Webhook URL 已生成，请立即复制保存；离开页面后将无法再次查看。',
+        credentialRevoked: 'Webhook URL 已撤销。',
+        credentialRequestFailed: '更新 Webhook URL 失败。',
+        revokeCredentialTitle: '撤销 Webhook URL？',
+        revokeCredentialDescription:
+          '使用此 URL 的请求将立即失效。你可以随时重新生成 URL。',
         methods: '方法',
         contentTypes: '内容类型',
         security: '安全配置',
@@ -3872,18 +3906,14 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 
     explore: {
       title: '探索',
-      canvasList: '画布列表',
       sessions: '会话列表',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',
       deleteSession: '删除会话',
-      searchCanvas: '搜索画布...',
       searchSessions: '搜索会话...',
-      noCanvasSelected: '请选择一个画布',
       noSessionSelected: '请选择一个会话或创建新会话',
       noSessionsFound: '未找到会话',
       createFirstSession: '创建您的第一个会话',
-      noCanvasFound: '未找到画布',
       deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
       batchDeleteSessions: '删除会话',
     },

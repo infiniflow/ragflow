@@ -126,6 +126,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
+	component.SetBrowserModelFactory(func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
+		return modelFactory.NewChatModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+	})
 	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
 
 	// Wire the real MemorySaver so the Message component can persist
@@ -276,7 +279,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	searchHandler.SetCompletionDependencies(modelFactory, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
-	modelGroupHandler := handler.NewModelGroupHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
 
 	// Dify retrieval handler
@@ -345,7 +347,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		difyRetrievalHandler,
 		pluginHandler,
 		modelHandler,
-		modelGroupHandler,
 		fileCommitHandler,
 		openaiChatHandler,
 		botHandler,

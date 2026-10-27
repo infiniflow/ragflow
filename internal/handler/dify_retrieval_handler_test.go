@@ -495,3 +495,65 @@ func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
 		t.Errorf("expected 404 for not_found, got %d", w.Code)
 	}
 }
+
+func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
+	cases := []struct {
+		name, method, url, body  string
+		wantPageSize, wantWindow int
+	}{
+		{"default top_k", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test"}`, 1024, 1024},
+		{"top_k above 64", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 100}}`, 100, 100},
+		{"GET top_k", "GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test&top_k=200", "", 200, 200},
+		{"top_k below 64 keeps the default window", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 10}}`, 10, 64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			var got *nlp.RetrievalRequest
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					got = req
+					return &nlp.RetrievalResult{}, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(tc.method, tc.url, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			if got.PageSize != tc.wantPageSize {
+				t.Errorf("PageSize = %d, want %d", got.PageSize, tc.wantPageSize)
+			}
+			if got.RerankCandidatesCount == nil {
+				t.Fatal("RerankCandidatesCount is nil")
+			}
+			if *got.RerankCandidatesCount != tc.wantWindow {
+				t.Errorf("RerankCandidatesCount = %d, want %d", *got.RerankCandidatesCount, tc.wantWindow)
+			}
+		})
+	}
+}
+
+func TestDifyRetrieval_TopKOutOfRange(t *testing.T) {
+	for _, topK := range []string{"0", "-1", "1025"} {
+		t.Run(topK, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					t.Fatal("retrieval must not run for an out-of-range top_k")
+					return nil, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			body := `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": ` + topK + `}}`
+			req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}

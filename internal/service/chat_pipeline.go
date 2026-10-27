@@ -2509,8 +2509,13 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
 		if meta, ok := ck["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 		cnt += "\n└── Content:\n"

@@ -170,7 +170,7 @@ func GetConfig() *config.Config {
 }
 
 // MCPAllowPrivateHosts reports whether self-hosted MCP servers on private
-// networks are permitted (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS). It is nil-safe:
+// networks are permitted (ALLOW_ANY_HOST). It is nil-safe:
 // an uninitialized global config yields false so callers fail closed instead
 // of panicking on a nil *config.Config.
 func MCPAllowPrivateHosts() bool {

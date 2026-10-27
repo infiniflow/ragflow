@@ -136,6 +136,29 @@ describe('LLMLabelCard', () => {
       'owner-tenant',
     );
   });
+
+  it('accepts decision models when Categorize includes them', () => {
+    mockUseModelValidIds.mockImplementation((types: string[]) => ({
+      validIds: new Set(types.includes('decision') ? ['decision-model'] : []),
+      isFetched: true,
+    }));
+
+    const { container } = render(
+      <OwnerTenantIdContext.Provider value="owner-tenant">
+        <LLMLabelCard
+          llmId="decision-model"
+          modelTypes={['chat', 'vision', 'decision']}
+        />
+      </OwnerTenantIdContext.Provider>,
+    );
+
+    expect(mockUseModelValidIds).toHaveBeenCalledWith(
+      ['chat', 'vision', 'decision'],
+      'owner-tenant',
+    );
+    expect(screen.queryByTitle('common.modelUnavailable')).toBeNull();
+    expect(container.querySelector('.border-state-error')).toBeNull();
+  });
 });
 
 describe('CompilationTemplateLabelCard', () => {

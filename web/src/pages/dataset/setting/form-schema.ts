@@ -8,6 +8,9 @@ export const formSchema = z
   .object({
     parse_type: z.nativeEnum(ParseType).optional(),
     pipeline_id: z.string().optional(),
+    // Pinned dataflow canvas version (design section 5/C2). Empty means
+    // track the canvas latest version.
+    pipeline_version_id: z.string().optional(),
     name: z.string().min(1, {
       message: 'Username must be at least 2 characters.',
     }),

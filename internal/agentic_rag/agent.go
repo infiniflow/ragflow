@@ -70,9 +70,10 @@ type Input struct {
 	// the session created in the UI). It is injected into the retrieval tools so
 	// they search the right index without a canvas runtime.
 	TenantID string
-	// UserID is the caller, used for the knowledge-layer access check. The
-	// knowledge scope is a separate set of datasets from the conversation's, so
-	// it gets its own authorization: a caller who may use the conversation's
+	// UserID is the caller. It identifies whose per-Tenant default models apply
+	// to this run, and it is the subject of the knowledge-layer access check:
+	// the knowledge scope is a separate set of datasets from the conversation's,
+	// so it gets its own authorization — a caller who may use the conversation's
 	// documents is not thereby allowed to read another library's compiled rows.
 	UserID string
 	// Ontology binds the knowledge layer for this turn: which published model
@@ -381,7 +382,7 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	// serving. The generated key above is a per-turn placeholder and must not be
 	// used here — a run with no real chat id falls back to the tenant default,
 	// exactly as a chat that never overrode it does.
-	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey)
+	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey, in.UserID)
 	if generatedKey {
 		// The generated key belongs to this turn alone: no later run reuses it,
 		// so release its availability marks on the way out instead of leaking

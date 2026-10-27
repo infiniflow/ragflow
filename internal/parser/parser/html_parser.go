@@ -91,7 +91,6 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"encoding": encName,

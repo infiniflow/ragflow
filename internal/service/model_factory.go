@@ -59,7 +59,7 @@ type ModelAccess struct {
 // ModelFactory resolves model references, checks access, and constructs typed
 // model instances. Provider and instance details stay inside this boundary.
 type ModelFactory struct {
-	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
 	modelProviderDAO *dao.TenantModelProviderDAO
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
@@ -68,7 +68,7 @@ type ModelFactory struct {
 // NewModelFactory creates a factory backed by the standard model DAOs.
 func NewModelFactory() *ModelFactory {
 	return &ModelFactory{
-		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
 		modelProviderDAO: dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
@@ -259,43 +259,12 @@ func decodeModelInstanceExtra(raw string) (modelInstanceExtra, error) {
 	return extra, nil
 }
 
-// parseModelName parses a composite model name in format "model@instance@provider" or "model@provider"
-// Returns modelName, instanceName, providerName separately.
-//
-// The composite key is right-anchored: providerName is always the *last*
-// '@'-separated field, instanceName is the second-to-last (when present),
-// and everything to the left is the bare model name. Some model names
-// legitimately contain '@' characters themselves (e.g. LM Studio embedding
-// model IDs such as `text-embedding-nomic-embed-text-v1.5@q8_0`), which
-// produces composite keys like
-// `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`. When the
-// split yields more than 3 fields we rejoin the leading fields back into the
-// modelName so any embedded '@' characters are preserved verbatim.
-func parseModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		// Format: model@instance@provider
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		// Format: model@provider -> instance defaults to "default"
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	}
-	// len(parts) > 3: any '@' characters embedded in the leftmost modelName
-	// component must be preserved in that component instead of being dropped
-	// or assigned to the instance/provider fields.
-	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
-}
-
 // splitRightAnchoredModelName is a bare-name-tolerant variant of
-// parseModelName used by the Builtin / TEI short-circuit branches in
+// common.ParseCompositeModelName used by the Builtin / TEI short-circuit branches in
 // model resolution.
 //
 // Those branches must accept a bare model name (no provider suffix) where
-// parseModelName would return an error, while still preserving any '@'
+// common.ParseCompositeModelName would return an error, while still preserving any '@'
 // characters embedded in the modelName portion of a multi-segment key.
 // Returns the modelName, instanceName ("default" for the 2-segment form),
 // and providerName ("" for the 1-segment form).
@@ -491,24 +460,19 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 	if modelType == entity.ModelTypeOCR {
 		return nil, fmt.Errorf("OCR model name is required")
 	}
-	if f.tenantDAO == nil {
-		return nil, fmt.Errorf("%w: tenant DAO is not initialized", errModelConfigUnavailable)
+	if f.userTenantDAO == nil {
+		return nil, fmt.Errorf("%w: user Tenant DAO is not initialized", errModelConfigUnavailable)
 	}
-
-	if _, err := f.tenantDAO.GetByID(ctx, dao.DB, access.TenantID); err != nil {
-		return nil, fmt.Errorf("failed to get tenant: %s type %s: %w", access.TenantID, modelType, err)
-	}
-	membershipDAO := dao.NewUserTenantDAO()
 	var membership *entity.UserTenant
 	var err error
 	if access.UserID != "" {
-		membership, err = membershipDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
+		membership, err = f.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
 		if err != nil && (access.UserID != access.TenantID || !errors.Is(err, gorm.ErrRecordNotFound)) {
 			return nil, fmt.Errorf("failed to get user tenant model settings: %s type %s: %w", access.TenantID, modelType, err)
 		}
 	}
 	if membership == nil {
-		membership, err = membershipDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
+		membership, err = f.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get tenant owner model settings: %s type %s: %w", access.TenantID, modelType, err)
 		}
@@ -652,9 +616,6 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if modelEntity == nil {
 		return nil, fmt.Errorf("%w: tenant model %q not found", errModelConfigUnavailable, modelRef)
 	}
-	if !strings.EqualFold(modelEntity.Status, "active") {
-		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
-	}
 
 	modelType := entity.ModelType(modelEntity.ModelType)
 	if modelType == 0 {
@@ -703,6 +664,9 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instanceEntity.InstanceName, err)
 		}
+	}
+	if !strings.EqualFold(modelEntity.Status, "active") {
+		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
 	if !strings.EqualFold(instanceEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceEntity.InstanceName)
@@ -816,7 +780,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
-	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}
@@ -864,13 +828,13 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 	if instance == nil {
 		return nil, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
-	if !strings.EqualFold(instance.Status, "active") {
-		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
-	}
 	if access.UserID != "" {
 		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
+	}
+	if !strings.EqualFold(instance.Status, "active") {
+		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
 	}
 	extra, err := decodeModelInstanceExtra(instance.Extra)
 	if err != nil {
@@ -1009,7 +973,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 			return entity.ModelTypeEmbedding, nil
 		}
 	}
-	pureModelName, instanceName, providerName, err := parseModelName(modelRef)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", errModelConfigUnavailable, err)
 	}

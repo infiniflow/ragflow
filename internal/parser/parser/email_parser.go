@@ -134,9 +134,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	}
 	items = append(items, extraItems...)
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename},
-		JSON:         MapsToItems(items),
+		File: map[string]any{"name": filename},
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -699,7 +698,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		}
 
 		var texts []string
-		if res.OutputFormat == "json" && len(res.JSON) > 0 {
+		if len(res.JSON) > 0 {
 			for _, it := range res.JSON {
 				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {

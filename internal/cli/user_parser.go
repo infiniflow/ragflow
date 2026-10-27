@@ -161,8 +161,6 @@ func (p *Parser) parseAPIListCommands() (*Command, error) {
 		return p.parseAPIListAPIServers()
 	case TokenEnvs:
 		return p.parseAPIListEnvironments()
-	case TokenVars:
-		return p.parseAPIListVariables()
 	case TokenGroups:
 		return p.parseAPIListModelGroups()
 	default:
@@ -607,19 +605,6 @@ func (p *Parser) parseAPIListEnvironments() (*Command, error) {
 	return cmd, nil
 }
 
-func (p *Parser) parseAPIListVariables() (*Command, error) {
-	p.nextToken() // consume Variables
-
-	cmd := NewCommand("api_list_variables")
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
 // endregion LIST commands
 
 // region SHOW commands
@@ -633,8 +618,6 @@ func (p *Parser) parseAPIShowCommands() (*Command, error) {
 		return p.parseAPIShowKey()
 	case TokenCurrent:
 		return p.parseAPIShowCurrent()
-	case TokenVar:
-		return p.parseAPIShowVariable()
 	case TokenProvider:
 		return p.parseAPIShowProviderCommands()
 	case TokenModel:
@@ -690,24 +673,6 @@ func (p *Parser) parseAPIShowCurrent() (*Command, error) {
 		p.nextToken()
 	}
 	return NewCommand("api_show_current"), nil
-}
-
-func (p *Parser) parseAPIShowVariable() (*Command, error) {
-	p.nextToken() // consume VAR
-	varName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	cmd := NewCommand("api_show_variable")
-	cmd.Params["var_name"] = varName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 // SHOW PROVIDER <name>;
@@ -2357,8 +2322,6 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 	p.nextToken() // consume SET
 
 	switch p.curToken.Type {
-	case TokenVar:
-		return p.parseAPISetVariable()
 	case TokenDefault:
 		return p.parseAPISetDefault()
 	case TokenKey:
@@ -2376,32 +2339,6 @@ func (p *Parser) parseAPISetCommands() (*Command, error) {
 	default:
 		return nil, fmt.Errorf("unknown SET target: %s", p.curToken.Value)
 	}
-}
-
-func (p *Parser) parseAPISetVariable() (*Command, error) {
-	p.nextToken() // consume VAR
-
-	varName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	varValue, err := p.parseVariableValue()
-	if err != nil {
-		return nil, err
-	}
-	p.nextToken()
-
-	cmd := NewCommand("api_set_variable")
-	cmd.Params["var_name"] = varName
-	cmd.Params["var_value"] = varValue
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-	return cmd, nil
 }
 
 func (p *Parser) parseAPISetDefault() (*Command, error) {
