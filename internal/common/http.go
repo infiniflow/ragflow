@@ -78,6 +78,8 @@ func getMaxRequestBodyBytes(envName, fallbackEnvName string, defaultBytes int64)
 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
+var schemeSafeLongHttpClient *http.Client
+var schemeSafeLongHttpClientOnce sync.Once
 
 func GetSSRFHTTPClient() *http.Client {
 	if ssrfHttpClient == nil {
@@ -123,6 +125,33 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		schemeSafeHttpClient = &http.Client{Transport: rt}
 	}
 	return schemeSafeHttpClient
+}
+
+// GetSchemeSafeLongHTTPClient is the scheme-only client for self-hosted
+// services that answer one synchronous request after the whole job is done,
+// such as Docling Serve converting a PDF. It keeps the response-header wait of
+// GetSSRFHTTPClient instead of the 60 seconds of GetSchemeSafeHTTPClient.
+func GetSchemeSafeLongHTTPClient() *http.Client {
+	schemeSafeLongHttpClientOnce.Do(func() {
+		var t *http.Transport
+		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+			t = dt.Clone()
+		} else {
+			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
+		}
+		t.MaxIdleConns = 100
+		t.MaxIdleConnsPerHost = 10
+		t.IdleConnTimeout = 90 * time.Second
+		t.DisableCompression = false
+		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.TLSHandshakeTimeout = 30 * time.Second
+
+		var rt http.RoundTripper = t
+		rt = &schemeSafeTransport{base: rt}
+		rt = newProviderLoggingTransport(rt)
+		schemeSafeLongHttpClient = &http.Client{Transport: rt}
+	})
+	return schemeSafeLongHttpClient
 }
 
 // providerStreamLogThreshold / providerCallLogThreshold are the durations past

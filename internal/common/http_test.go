@@ -263,3 +263,37 @@ func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
 		t.Errorf("timing log must not carry payloads while LLM_DEBUG is disabled: %v", fields)
 	}
 }
+
+func TestSchemeSafeLongHTTPClientReachesPrivateHostsAndWaitsForSlowResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client := GetSchemeSafeLongHTTPClient()
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatalf("Get(%s) error = %v, want a private host to be reachable", server.URL, err)
+	}
+	resp.Body.Close()
+
+	if _, err := client.Get("ftp://127.0.0.1/file"); err == nil || !strings.Contains(err.Error(), "disallowed URL scheme") {
+		t.Fatalf("Get(ftp://...) error = %v, want the scheme guard", err)
+	}
+
+	logging, ok := client.Transport.(*providerLoggingTransport)
+	if !ok {
+		t.Fatalf("transport = %T, want *providerLoggingTransport", client.Transport)
+	}
+	guard, ok := logging.base.(*schemeSafeTransport)
+	if !ok {
+		t.Fatalf("guard = %T, want *schemeSafeTransport", logging.base)
+	}
+	transport, ok := guard.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("base = %T, want *http.Transport", guard.base)
+	}
+	if got, want := transport.ResponseHeaderTimeout, 20*time.Minute; got != want {
+		t.Fatalf("ResponseHeaderTimeout = %v, want %v", got, want)
+	}
+}

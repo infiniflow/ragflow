@@ -571,6 +571,8 @@ DOCLING_API_KEY=your-api-key
 
 The Go parser sends PDFs to Docling Serve using `/v1/convert/source` and also tries `/v1alpha/convert/source` for older servers. It sends `DOCLING_API_KEY` as a Bearer token. If neither the parser configuration nor the environment variable supplies a URL, Docling parsing fails with a configuration error. Leave the API key unset when the service does not require authentication.
 
+`DOCLING_SERVER_URL` may name a private host, such as a Docling Serve container on the same Docker network (`http://docling:5001`). A `docling_server_url` set in the parser configuration must resolve to a public address, because anyone who can edit an ingestion pipeline can set it.
+
 To skip OCR on PDFs that already contain text, set `docling_do_ocr` to `false` in the parser configuration or provide `DOCLING_DO_OCR=false`. Choose the PDF backend with `docling_pdf_backend` or `DOCLING_PDF_BACKEND`. RAGFlow passes these to Docling Serve as `do_ocr` and `pdf_backend` in every convert request. Leave them unset to keep Docling Serve's defaults.
 
 ```bash
