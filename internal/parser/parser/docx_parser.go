@@ -95,15 +95,20 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		"format": format,
 	}
 
-	// The budget bounds the image payloads one document may carry. The
-	// sections are its authoritative consumer — they are what gets chunked,
-	// indexed and previewed — so they draw on it first. The figure walk
-	// revisits the same images for `file.figures` metadata and takes only the
-	// remaining allowance; drawing on it first charged every image twice, so a
-	// document with more than half the item cap (or twice the byte budget) in
-	// images lost every image past that point, and the lost ones never became
-	// chunks at all.
+	// Extract IR JSON for section building and embedded-image extraction.
+	// Each walk of the document's images gets its own allowance. They revisit
+	// the same embedded payloads, so one shared budget charged every image
+	// twice: a document with more than half the item cap (or twice the byte
+	// budget) in images made the section walk stop at the document limit, and
+	// every image past that point never became a chunk at all — the chunk
+	// editor showed an image with nothing to preview (#21230).
 	budget := newEmbeddedMediaBudget()
+	figureBudget := newEmbeddedMediaBudget()
+	if irJSON != "" {
+		if figures := extractDOCXFiguresFromIR(irJSON, figureBudget); len(figures) > 0 {
+			fileMeta["figures"] = buildFiguresMap(figures)
+		}
+	}
 
 	// The result is built entirely from the structured IR, so an empty IR
 	// is a fatal parse error. The OpenAndExtract contract swallows per-view
@@ -121,9 +126,6 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		tableCaptions = nil
 	}
 	sections := buildDOCXJSONSectionsWithCaptions(irJSON, budget, tableCaptions)
-	if figures := extractDOCXFiguresFromIR(irJSON, budget); len(figures) > 0 {
-		fileMeta["figures"] = buildFiguresMap(figures)
-	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}

@@ -27,14 +27,13 @@ func docxIRWithImages(count int) string {
 }
 
 // TestDOCXParseImageHeavyDocumentKeepsEveryImage pins that the document image
-// budget bounds the chunk payloads, not the same images twice.
+// budget bounds one walk over the images, not the same images twice.
 //
-// The budget caps a document at maxEmbeddedMediaItems image payloads. The
-// figure metadata walk used to draw on the very same allowance for the very
-// same images, so a document with more than half the cap in images lost every
-// image past that point: the section walk stops when the budget reports the
-// document limit, so those images never reached a chunk and the UI showed an
-// image chunk with no picture to upload.
+// The budget caps a document at maxEmbeddedMediaItems image payloads. Both
+// walks used to draw on the very same allowance, so every image was charged
+// twice: a document with more than half the cap in images made the section
+// walk stop at the document limit, and those images never reached a chunk —
+// the chunk editor showed an image chunk with no picture to preview.
 func TestDOCXParseImageHeavyDocumentKeepsEveryImage(t *testing.T) {
 	const images = maxEmbeddedMediaItems/2 + 10
 	irJSON := docxIRWithImages(images)
@@ -64,5 +63,17 @@ func TestDOCXParseImageHeavyDocumentKeepsEveryImage(t *testing.T) {
 	}
 	if withPayload != images {
 		t.Fatalf("image items with a payload = %d, want %d (payload-less: %d)", withPayload, images, omitted)
+	}
+
+	// The figure metadata walk keeps its own allowance: bounding the chunk
+	// payloads must not silently truncate it.
+	figures, _ := res.File["figures"].([]map[string]any)
+	if len(figures) != images {
+		t.Fatalf("file.figures = %d entries, want %d", len(figures), images)
+	}
+	for i, fig := range figures {
+		if img, _ := fig["image"].(string); img == "" {
+			t.Fatalf("file.figures[%d] has no payload", i)
+		}
 	}
 }
