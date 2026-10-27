@@ -305,3 +305,31 @@ func TestBegin_EmptyWebhookPayload(t *testing.T) {
 		t.Errorf("state.Sys[webhook_payload] should not be set for empty payload; got %v", state.Sys["webhook_payload"])
 	}
 }
+
+// TestBegin_PreservesSeededUserID asserts that when runtime identity has
+// already been seeded into state.Sys["user_id"] (e.g. via SeedIdentity),
+// a business input named "user_id" does NOT overwrite the trusted identity,
+// while remaining available in the returned outputs for downstream references.
+func TestBegin_PreservesSeededUserID(t *testing.T) {
+	c, _ := NewBeginComponent(nil)
+	state := canvas.NewCanvasState("run-auth-preserve", "task-auth-preserve")
+	state.SeedIdentity("authenticated-user-123", "tenant-1")
+	ctx := canvas.WithState(t.Context(), state)
+
+	inputs := map[string]any{
+		"query":   "test query",
+		"user_id": "business-emp-456",
+	}
+	out, err := c.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// Downstream output passthrough must have the business user_id.
+	if out["user_id"] != "business-emp-456" {
+		t.Errorf("out[user_id] = %v, want business-emp-456", out["user_id"])
+	}
+	// Trusted caller identity in state.Sys must NOT be overwritten.
+	if got, _ := state.Sys["user_id"].(string); got != "authenticated-user-123" {
+		t.Errorf("state.Sys[user_id] = %q, want authenticated-user-123", got)
+	}
+}

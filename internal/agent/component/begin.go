@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 
@@ -86,8 +87,12 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// Optional user_id — present in interactive chat flows, absent in
 	// background jobs. Always a string when set; cast failure silently
 	// drops the value (mirrors Python's getattr fallback).
+	// When runtime identity was already seeded in Sys (e.g. authenticated caller),
+	// preserve it so request-supplied business user_id does not overwrite auth identity.
 	if uid, ok := inputs["user_id"].(string); ok && uid != "" {
-		state.Sys["user_id"] = uid
+		if existing, ok := state.Sys["user_id"].(string); !ok || strings.TrimSpace(existing) == "" {
+			state.Sys["user_id"] = uid
+		}
 	}
 
 	// Webhook payload injection. The webhook HTTP handler sets
