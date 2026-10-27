@@ -881,6 +881,76 @@ func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
 	}
 }
 
+// TestSearchKeepsEveryRankFeatureClause covers the multi-feature case: appending
+// to the pre-loop should header used to keep only the last clause.
+func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	_, err = engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      10,
+		Filter:     map[string]interface{}{"available_int": 1},
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{MatchingText: "alpha", Fields: []string{"content_ltks"}, TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, TopN: 128},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 10, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+		},
+		RankFeature: map[string]float64{"tag_1": 0.8, "tag_2": 0.5},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	query, ok := searchQuery["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query missing from %#v", searchQuery)
+	}
+	boolMap, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("bool query missing from %#v", query)
+	}
+	should, _ := boolMap["should"].([]interface{})
+	var fields []string
+	for _, clause := range should {
+		clauseMap, ok := clause.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rankFeature, ok := clauseMap["rank_feature"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if field, ok := rankFeature["field"].(string); ok {
+			fields = append(fields, field)
+		}
+	}
+	if len(fields) != 2 {
+		t.Fatalf("rank_feature clauses = %v, want both tag fields", fields)
+	}
+	joined := strings.Join(fields, ",")
+	if !strings.Contains(joined, "tag_feas.tag_1") || !strings.Contains(joined, "tag_feas.tag_2") {
+		t.Fatalf("rank_feature fields = %v, want tag_feas.tag_1 and tag_feas.tag_2", fields)
+	}
+}
+
 // TestSearchDoesNotAddPageRankToHitScore pins the hybrid score contract: _score is
 // the ES hit score and nothing else. pagerank already reaches the hit score
 // through the rank_feature clause and the final similarity through the reranker;

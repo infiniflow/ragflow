@@ -1345,17 +1345,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if rankFeatureQuery != nil {
 			if boolQuery, ok := queryBody["query"].(map[string]interface{}); ok {
 				if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
-					if should, ok := boolMap["should"].([]interface{}); ok {
-						for _, q := range rankFeatureQuery {
-							boolMap["should"] = append(should, q)
-						}
-					} else {
-						interfaceSlice := make([]interface{}, len(rankFeatureQuery))
-						for i, q := range rankFeatureQuery {
-							interfaceSlice[i] = q
-						}
-						boolMap["should"] = interfaceSlice
+					// Accumulate into a local slice first: re-appending to the
+					// pre-loop header keeps only the last rank_feature clause.
+					should, _ := boolMap["should"].([]interface{})
+					for _, q := range rankFeatureQuery {
+						should = append(should, q)
 					}
+					boolMap["should"] = should
 				}
 			}
 		}

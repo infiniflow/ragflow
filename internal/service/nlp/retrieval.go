@@ -559,8 +559,10 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		// A dense-only request has no scored bool query, so the engine never
 		// applies its rank_feature clauses; the rank features have to be added
 		// here to reach the similarity at all.
+		// The boost mutates sim, so vector_similarity is sampled first.
+		rawSim := slices.Clone(sim)
 		sim = applyRankFeatureScoresForIDs(searchResult.IDs, searchResult.Field, sim, *req.RankFeature)
-		return sim, make([]float64, len(sim)), sim, nil
+		return sim, make([]float64, len(sim)), rawSim, nil
 	}
 
 	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))

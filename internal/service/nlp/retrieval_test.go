@@ -312,6 +312,7 @@ func TestRetrievalPagerankBoostsRanking(t *testing.T) {
 // TestRetrievalVectorOnlyKeepsPagerank covers the dense-only path: the engine
 // issues no scored bool query there, so the engine can never apply its
 // rank_feature clause and the similarity must pick pagerank up locally.
+// vector_similarity keeps the engine's raw kNN score (asserted below).
 func TestRetrievalVectorOnlyKeepsPagerank(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
@@ -342,6 +343,12 @@ func TestRetrievalVectorOnlyKeepsPagerank(t *testing.T) {
 	}
 	if got, _ := result.Chunks[0]["similarity"].(float64); got != 3.5 {
 		t.Fatalf("similarity = %v, want engine score 0.5 + pagerank 3", got)
+	}
+	if got, _ := result.Chunks[0]["vector_similarity"].(float64); got != 0.5 {
+		t.Fatalf("vector_similarity = %v, want the raw kNN score 0.5 (rank features belong to similarity only)", got)
+	}
+	if got, _ := result.Chunks[0]["term_similarity"].(float64); got != 0 {
+		t.Fatalf("term_similarity = %v, want 0 for a dense-only request", got)
 	}
 }
 
