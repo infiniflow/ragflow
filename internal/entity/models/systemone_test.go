@@ -94,60 +94,14 @@ func TestSystemOneListModelsProbesBaseURL(t *testing.T) {
 	}
 }
 
-// Decide must probe the decision endpoint, not the models list: the list is what
-// offering the model already proved, and it answers even when the deployment
-// serves no decision endpoint at all.
-func TestSystemOneDecideProbesDecisionEndpoint(t *testing.T) {
-	withSSRFBypass(t)
-
-	var gotBody map[string]any
-	probed := false
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		probed = true
-		if r.URL.Path != "/v1/systemone" {
-			t.Errorf("path=%s, want /v1/systemone", r.URL.Path)
-		}
-		if r.Method != http.MethodPost {
-			t.Errorf("method=%s, want POST", r.Method)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
-			t.Errorf("Authorization=%q", got)
-		}
-		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
-			t.Errorf("undecodable request body: %v", err)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"answers": map[string]any{"reachability": map[string]any{"noul": 1}},
-		})
-	}))
-	defer srv.Close()
-
-	apiKey := "sk-test"
-	modelName := "decision-model-preview"
-	resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
-		context.Background(), &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil,
-	)
-	if err != nil {
-		t.Fatalf("Decide: %v", err)
-	}
-	if !probed {
-		t.Fatal("Decide did not probe the decision endpoint")
-	}
-	if resp == nil {
-		t.Fatal("Decide returned no response")
-	}
-	if got := gotBody["model"]; got != "decision-model-preview" {
-		t.Errorf("body model=%v", got)
-	}
-	questions, ok := gotBody["questions"].(map[string]any)
-	if !ok || len(questions) != 1 {
-		t.Fatalf("body questions=%v, want exactly one probe question", gotBody["questions"])
-	}
-}
-
 // A decision model that cannot answer must not be addable: verification is the
 // last check before the model is saved, and it is the only one that speaks the
 // decision endpoint.
+//
+// The request is a well-formed one on purpose. A malformed request is rejected
+// before the transport call, so a test that sent one would pass here without the
+// server ever being asked — and would stay green if verification's status
+// handling broke. The "asked" counter below makes that impossible.
 func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
 	withSSRFBypass(t)
 
@@ -160,7 +114,9 @@ func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
 		{"server error", http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			asked := false
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				asked = true
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(`{"error":"no"}`))
 			}))
@@ -169,13 +125,19 @@ func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
 			apiKey := "sk-test"
 			modelName := "decision-model-preview"
 			resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
-				context.Background(), &modelName, nil, &APIConfig{ApiKey: &apiKey}, nil,
+				context.Background(), &modelName, &DecideRequest{
+					State:     map[string]string{"passage": ""},
+					Questions: map[string]Question{"probe": Noul{Instructions: "Is this relevant?"}},
+				}, &APIConfig{ApiKey: &apiKey}, nil,
 			)
 			if err == nil {
 				t.Fatalf("Decide accepted status %d", tc.status)
 			}
 			if resp != nil {
 				t.Errorf("Decide returned a response alongside the error")
+			}
+			if !asked {
+				t.Fatal("the endpoint was never asked, so this proves nothing about its answer")
 			}
 		})
 	}

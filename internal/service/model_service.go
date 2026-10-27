@@ -1348,14 +1348,31 @@ func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	return nil
 }
 
-// verifyDecisionModel asks the decision endpoint the probe question.
+// decisionProbeQuestionID names the single question verification sends, whose
+// answer is discarded: Decide requires at least one question, and verification
+// asks nothing else.
+const decisionProbeQuestionID = "verification"
+
+// verifyDecisionModel asks the decision endpoint the verification question.
 //
 // It goes through Decide rather than CheckConnection: CheckConnection is the
 // models list, which the picker already called to offer this model, so reusing
 // it here would verify nothing that has not been verified. Decide exercises the
 // endpoint the product will call.
+//
+// The request mirrors what the judge sends (decision_judge.go — same state key,
+// same question type) so verification exercises the shape the product sends, and
+// so a deployment that answers verification answers the real thing too. Only the
+// instructions are synthetic, and deliberately so: no calibration depends on
+// them, which keeps the request cheap and independent of the judge's phrasing.
 func verifyDecisionModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
-	if _, err := driver.Decide(ctx, &modelName, nil, apiConfig, nil); err != nil {
+	request := &modelModule.DecideRequest{
+		State: map[string]string{"passage": ""},
+		Questions: map[string]modelModule.Question{
+			decisionProbeQuestionID: modelModule.Noul{Instructions: "Is this passage relevant to the query?"},
+		},
+	}
+	if _, err := driver.Decide(ctx, &modelName, request, apiConfig, nil); err != nil {
 		return err
 	}
 	return nil
