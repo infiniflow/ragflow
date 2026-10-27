@@ -82,6 +82,9 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
 		task, err := driver.ShowTask(ctx, taskID, apiConfig)
 		if err == nil {
 			for _, segment := range task.Segments {
@@ -93,12 +96,22 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 		} else {
 			lastErr = err
 		}
-		if time.Now().After(deadline) {
-			if lastErr == nil {
-				lastErr = fmt.Errorf("timed out waiting for MinerU task %s", taskID)
-			}
-			return "", lastErr
+		// A cancelled run has to leave the poll at once. Sleeping the scan
+		// interval, let alone the remaining timeout, keeps an ingestion worker
+		// polling a server it will never accept a result from.
+		wait := time.Until(deadline)
+		if wait <= 0 {
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, lastErr)
 		}
-		time.Sleep(minerUPollInterval)
+		if wait > minerUPollInterval {
+			wait = minerUPollInterval
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
