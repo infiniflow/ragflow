@@ -23,35 +23,35 @@ import (
 type MediaMode int
 
 const (
-	// MediaInline keeps the historical representation: image bytes only.
-	MediaInline MediaMode = iota
-	// MediaBoth emits the bytes and a media_ref. Rollout default: consumers
+	// MediaModeInline keeps the historical representation: image bytes only.
+	MediaModeInline MediaMode = iota
+	// MediaModeBoth emits the bytes and a media_ref. Rollout default: consumers
 	// keep working, and the reference can be validated against real traffic.
-	MediaBoth
-	// MediaRef emits only the reference. The chunker materializes each image
+	MediaModeBoth
+	// MediaModeRef emits only the reference. The chunker materializes each image
 	// from the source document on demand.
-	MediaRef
+	MediaModeRef
 )
 
 // EmitsBytes reports whether the parse result carries image payloads.
-func (m MediaMode) EmitsBytes() bool { return m != MediaRef }
+func (m MediaMode) EmitsBytes() bool { return m != MediaModeRef }
 
 // EmitsRefs reports whether the parser attaches media_ref to image items.
-func (m MediaMode) EmitsRefs() bool { return m != MediaInline }
+func (m MediaMode) EmitsRefs() bool { return m != MediaModeInline }
 
 // EnvMediaRefMode names the environment variable that selects the media mode.
 const EnvMediaRefMode = "RAGFLOW_MEDIA_REF_MODE"
 
-// MediaModeFromEnv resolves the configured media mode. Unknown and empty
-// values fall back to MediaBoth so a typo never silently drops image bytes
+// mediaModeFromEnv resolves the configured media mode. Unknown and empty
+// values fall back to MediaModeBoth so a typo never silently drops image bytes
 // from persisted parse results.
-func MediaModeFromEnv() MediaMode {
+func mediaModeFromEnv() MediaMode {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvMediaRefMode))) {
 	case "inline":
-		return MediaInline
+		return MediaModeInline
 	case "ref":
-		return MediaRef
+		return MediaModeRef
 	default:
-		return MediaBoth
+		return MediaModeBoth
 	}
 }

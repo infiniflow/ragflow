@@ -108,7 +108,7 @@ func TestHTMLParser_DocumentImageLimit(t *testing.T) {
 
 func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	p := NewHTMLParser()
-	p.MediaMode = MediaBoth
+	p.MediaMode = MediaModeBoth
 	result := p.ParseWithResult(context.Background(), "ref.html", []byte(`<p><img alt="figure" src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -132,7 +132,7 @@ func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 
 func TestHTMLParser_RefModeOmitsImageBytes(t *testing.T) {
 	p := NewHTMLParser()
-	p.MediaMode = MediaRef
+	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "ref-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -148,7 +148,7 @@ func TestHTMLParser_RefModeOmitsImageBytes(t *testing.T) {
 
 func TestHTMLParser_InlineModeOmitsMediaRef(t *testing.T) {
 	p := NewHTMLParser()
-	p.MediaMode = MediaInline
+	p.MediaMode = MediaModeInline
 	result := p.ParseWithResult(context.Background(), "inline-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -166,7 +166,7 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
 		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
 	p := NewHTMLParser()
-	p.MediaMode = MediaRef
+	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "match.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -183,7 +183,7 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 		}
 		want = append(want, ref.SHA256)
 	}
-	spans := ScanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans([]byte(input))
 	if len(spans) != len(want) {
 		t.Fatalf("scanned %d images, parser emitted %d", len(spans), len(want))
 	}
@@ -191,7 +191,7 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 		if spans[i].Ref.SHA256 != want[i] {
 			t.Fatalf("image %d digest = %s, want %s", i, spans[i].Ref.SHA256, want[i])
 		}
-		data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[i].PayloadStart:spans[i].PayloadEnd])
+		data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[i].TagStart:spans[i].TagEnd])
 		if err != nil {
 			t.Fatalf("image %d decode: %v", i, err)
 		}
@@ -206,14 +206,14 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 
 func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
 	input := `<img src='DATA:IMAGE/PNG;BASE64,aGVsbG8'>`
-	spans := ScanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans([]byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want 1", len(spans))
 	}
 	if spans[0].Ref.MIME != "image/png" {
 		t.Errorf("mime = %q, want image/png", spans[0].Ref.MIME)
 	}
-	data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[0].PayloadStart:spans[0].PayloadEnd])
+	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes(t *testing.T) {
 	input := strings.Repeat(`<img src="data:image/png;base64,`+payload+`">`, imageCount)
 
 	p := NewHTMLParser()
-	p.MediaMode = MediaRef
+	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "large.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -260,11 +260,11 @@ func TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes(t *testing.T) {
 func TestScanHTMLMediaSpansDecodesCharacterReferences(t *testing.T) {
 	// aGVsbG8+ decodes to "hello>"; &#43; is the HTML-escaped '+'.
 	input := `<img src="data:image/png;base64,aGVsbG8&#43;">`
-	spans := ScanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans([]byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want 1", len(spans))
 	}
-	data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[0].PayloadStart:spans[0].PayloadEnd])
+	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestScanHTMLMediaSpansSkipsHeadersBeyondTheParserLimit(t *testing.T) {
 	// look past that window for a comma, and must still find the next image.
 	input := `<img src="data:image/png;` + strings.Repeat("x", 200) + `">` +
 		`<img src="data:image/png;base64,aGVsbG8=">`
-	spans := ScanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans([]byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want the valid image only", len(spans))
 	}

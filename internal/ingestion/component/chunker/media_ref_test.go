@@ -23,8 +23,10 @@ import (
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
 	parserlib "ragflow/internal/parser/parser"
+	"ragflow/internal/storage"
 )
 
 // TestTokenChunkerResolvesMediaRef covers the default chunker variant: the
@@ -34,7 +36,7 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	html := `<p>before</p><p><img alt="figure" src="` + uri + `"></p><p>after</p>`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaRef
+	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "deck.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -46,11 +48,11 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := ChunkMediaSourceFactory
+	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSource = prevSource })
+	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
 
 	comp, err := NewTokenChunker(map[string]any{})
 	if err != nil {
@@ -104,7 +106,7 @@ func TestMediaRefShadowDoesNotChangeOutput(t *testing.T) {
 	html := `<img alt="figure" src="` + uri + `">`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaBoth
+	p.MediaMode = parserlib.MediaModeBoth
 	parsed := p.ParseWithResult(t.Context(), "shadow.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -118,13 +120,13 @@ func TestMediaRefShadowDoesNotChangeOutput(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := ChunkMediaSourceFactory
+	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return nil, errors.New("source unavailable")
 		})
 	}
-	t.Cleanup(func() { ChunkMediaSource = prevSource })
+	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {
@@ -141,7 +143,7 @@ func TestMediaRefShadowDoesNotChangeOutput(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %d, want 1", len(chunks))
 	}
-	if chunks[0]["img_id"] == "" {
+	if imgID, ok := chunks[0]["img_id"].(string); !ok || imgID == "" {
 		t.Fatal("shadow failure blocked the inline upload")
 	}
 	if !bytes.Equal(uploaded, want) {
@@ -156,7 +158,7 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	html := `<h1>Heading</h1><p>body</p><img alt="figure" src="` + uri + `">`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaRef
+	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "title.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -168,11 +170,11 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := ChunkMediaSourceFactory
+	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSource = prevSource })
+	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
 
 	comp, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {
@@ -192,7 +194,7 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 			continue
 		}
 		images++
-		if ck["img_id"] == "" {
+		if imgID, ok := ck["img_id"].(string); !ok || imgID == "" {
 			t.Errorf("image chunk not uploaded: %#v", ck)
 		}
 		if _, ok := ck["media_ref"]; ok {
@@ -211,7 +213,7 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	html := `<p>before</p><img alt="figure" src="` + uri + `"><p>after</p>`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaRef
+	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "general.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -223,11 +225,11 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := ChunkMediaSourceFactory
+	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSource = prevSource })
+	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
 
 	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 128})
 	if err != nil {
@@ -247,7 +249,7 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 			continue
 		}
 		images++
-		if ck["img_id"] == "" {
+		if imgID, ok := ck["img_id"].(string); !ok || imgID == "" {
 			t.Errorf("image chunk not uploaded: %#v", ck)
 		}
 		if _, ok := ck["media_ref"]; ok {
@@ -287,7 +289,39 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 		t.Fatal("resolver must not run for an invalid reference")
 		return nil, nil
 	})
-	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, parserlib.NewMediaResolver(), src); err == nil {
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, parserlib.NewMediaResolver(), src); err == nil {
 		t.Fatal("invalid media_ref was treated as absent")
+	}
+}
+
+// TestChunkMediaSourceFactoryResolvesStorage covers both source locations the
+// chunker accepts: the forwarded bucket/path pair and doc_id-driven lookup.
+func TestChunkMediaSourceFactoryResolvesStorage(t *testing.T) {
+	ctx := t.Context()
+	payload := []byte("<p>source</p>")
+	mem := storage.NewMemoryStorage()
+	if err := mem.Put(ctx, "kb-1", "docs/a.html", payload); err != nil {
+		t.Fatal(err)
+	}
+	prevStorage := component.SetStorageFactoryOverride
+	component.SetStorageFactoryOverride = func() storage.Storage { return mem }
+	t.Cleanup(func() { component.SetStorageFactoryOverride = prevStorage })
+
+	src := ChunkMediaSourceFactory(nil, map[string]any{"bucket": "kb-1", "path": "docs/a.html"})
+	data, err := src.Bytes(ctx)
+	if err != nil || string(data) != string(payload) {
+		t.Fatalf("bucket/path source = %q, %v", data, err)
+	}
+
+	prevResolve := component.ResolveDocumentStorageOverride
+	component.ResolveDocumentStorageOverride = func(string) (*component.DocumentStorageRef, error) {
+		return &component.DocumentStorageRef{Bucket: "kb-1", Path: "docs/a.html"}, nil
+	}
+	t.Cleanup(func() { component.ResolveDocumentStorageOverride = prevResolve })
+
+	src = ChunkMediaSourceFactory(&gorm.DB{}, map[string]any{"doc_id": "doc-1"})
+	data, err = src.Bytes(ctx)
+	if err != nil || string(data) != string(payload) {
+		t.Fatalf("doc_id source = %q, %v", data, err)
 	}
 }

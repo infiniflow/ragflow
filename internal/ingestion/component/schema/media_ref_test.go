@@ -48,3 +48,32 @@ func TestChunkDocMediaRefRoundTrip(t *testing.T) {
 		t.Fatalf("media_ref lost in encode: %+v", doc.ToMap()["media_ref"])
 	}
 }
+
+func TestChunkDocEmptyMediaRefNormalizesToNil(t *testing.T) {
+	doc, err := ChunkDocFromMap(map[string]any{
+		"text":      "x",
+		"media_ref": map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("ChunkDocFromMap: %v", err)
+	}
+	if doc.MediaRef != nil {
+		t.Fatalf("empty media_ref survived as %+v", doc.MediaRef)
+	}
+	if _, ok := doc.ToMap()["media_ref"]; ok {
+		t.Fatal("empty media_ref reappeared on the wire")
+	}
+}
+
+func TestChunkDocPartialMediaRefSurvives(t *testing.T) {
+	doc, err := ChunkDocFromMap(map[string]any{
+		"text":      "x",
+		"media_ref": map[string]any{"format": "html"},
+	})
+	if err != nil {
+		t.Fatalf("ChunkDocFromMap: %v", err)
+	}
+	if doc.MediaRef == nil {
+		t.Fatal("partially filled media_ref was normalized away")
+	}
+}

@@ -38,7 +38,7 @@ type HTMLParser struct {
 }
 
 func NewHTMLParser() *HTMLParser {
-	return &HTMLParser{MediaMode: MediaModeFromEnv()}
+	return &HTMLParser{MediaMode: mediaModeFromEnv()}
 }
 
 func (p *HTMLParser) String() string {

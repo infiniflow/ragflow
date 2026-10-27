@@ -215,6 +215,41 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 	}
 }
 
+func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	uri := "data:image/png;base64," + visionTestPNGBase64(t)
+	html := `<p><img alt="figure" src="` + uri + `"></p>`
+	p := parser.NewHTMLParser()
+	p.MediaMode = parser.MediaModeRef
+	parsed := p.ParseWithResult(t.Context(), "ref.html", []byte(html))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	if _, ok := parsed.JSON[0].ToMap()["image"]; ok {
+		t.Fatal("parser retained image bytes in ref mode")
+	}
+
+	res, handled, err := maybeDispatchVisionEnhancement(
+		t.Context(), dao.DB, utility.FileTypeHTML, parsed,
+		map[string]any{"tenant_id": "t1", "binary": []byte(html)},
+		visionSettings{}, progress.Window{})
+	if err != nil {
+		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
+	}
+	if !handled {
+		t.Fatal("handled = false, want true")
+	}
+	if len(invoker.images) != 1 {
+		t.Fatalf("VLM calls = %d, want 1", len(invoker.images))
+	}
+	text, _ := res.JSON[0].ToMap()["text"].(string)
+	if !strings.Contains(text, "a diagram of a pipeline") {
+		t.Fatalf("enhanced text = %q, missing the VLM description", text)
+	}
+}
+
 func TestVisionEnhancement_AppendsVLMToExistingText(t *testing.T) {
 	invoker := &visionEnhanceCaptureInvoker{}
 	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)

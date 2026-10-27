@@ -21,15 +21,15 @@ func TestMediaModeFromEnv(t *testing.T) {
 		value string
 		want  MediaMode
 	}{
-		{"", MediaBoth},
-		{"inline", MediaInline},
-		{"both", MediaBoth},
-		{"REF", MediaRef},
-		{"unknown", MediaBoth},
+		{"", MediaModeBoth},
+		{"inline", MediaModeInline},
+		{"both", MediaModeBoth},
+		{"REF", MediaModeRef},
+		{"unknown", MediaModeBoth},
 	} {
 		t.Setenv(EnvMediaRefMode, tc.value)
-		if got := MediaModeFromEnv(); got != tc.want {
-			t.Errorf("MediaModeFromEnv(%q) = %v, want %v", tc.value, got, tc.want)
+		if got := mediaModeFromEnv(); got != tc.want {
+			t.Errorf("mediaModeFromEnv(%q) = %v, want %v", tc.value, got, tc.want)
 		}
 	}
 }

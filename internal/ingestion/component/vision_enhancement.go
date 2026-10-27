@@ -365,7 +365,7 @@ func maybeDispatchVisionEnhancement(
 			// Materialize under the same admission as the crop: the decode
 			// and re-encode of a deferred image must not bypass the shared
 			// image memory limit.
-			if err := parser.MaterializeMedia(itemCtx, item, resolver, mediaSource); err != nil {
+			if err := MaterializeMediaItem(itemCtx, item, resolver, mediaSource); err != nil {
 				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
 			}
 			resource, err = cropper.Crop(itemCtx, item)

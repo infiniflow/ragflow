@@ -48,9 +48,9 @@ func mediaRefShadowEnabled() bool {
 	}
 }
 
-// ChunkMediaSource resolves the source document for deferred media_refs.
+// ChunkMediaSourceFactory resolves the source document for deferred media_refs.
 // Tests override it with an in-memory source.
-var ChunkMediaSource = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+var ChunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
 	return chunkMediaSource(db, inputs)
 }
 

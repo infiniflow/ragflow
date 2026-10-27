@@ -17,8 +17,8 @@ package parser
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,7 +29,7 @@ import (
 func mediaRefFixture(t *testing.T) (string, entity.MediaRef) {
 	t.Helper()
 	html := `<p>before</p><p><img alt="figure" src="data:image/png;base64,aGVsbG8="></p>`
-	spans := ScanHTMLMediaSpans([]byte(html))
+	spans, _ := scanHTMLMediaSpans([]byte(html))
 	if len(spans) != 1 {
 		t.Fatalf("fixture images = %d, want 1", len(spans))
 	}
@@ -89,22 +89,6 @@ func TestMediaResolverReportsSourceFailure(t *testing.T) {
 	}
 }
 
-func TestEncodeMediaDataURIRoundTrip(t *testing.T) {
-	data := []byte("hello world")
-	uri := encodeMediaDataURI("image/png", data)
-	if !strings.HasPrefix(uri, "data:image/png;base64,") {
-		t.Fatalf("uri = %q", uri)
-	}
-	const prefix = "data:image/png;base64,"
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(uri, prefix))
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if string(decoded) != string(data) {
-		t.Fatalf("decoded = %q, want %q", decoded, data)
-	}
-}
-
 func TestMediaRefDigestIsStable(t *testing.T) {
 	_, ref := mediaRefFixture(t)
 	sum := sha256.Sum256([]byte("hello"))
@@ -135,21 +119,131 @@ func TestMediaResolverRejectsSizeMismatch(t *testing.T) {
 	}
 }
 
-func TestMaterializeMediaRejectsInvalidMediaRef(t *testing.T) {
-	m := map[string]any{"media_ref": map[string]any{"format": "html"}}
-	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-	if err := MaterializeMedia(context.Background(), m, NewMediaResolver(), src); err == nil {
-		t.Fatal("a present but unusable media_ref was treated as absent")
+// TestMediaResolverMatchesParserAttributeSemantics pins the cases where a
+// byte-level scanner used to disagree with the HTML parser: entities in the
+// media type, an encoded comma, a semicolon-less numeric reference, and an
+// unquoted value ending in "/>".
+func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
+	cases := map[string]string{
+		"entity in header":        `<img src="data:image&#47;png;base64,aGVsbG8=">`,
+		"entity comma":            `<img src="data:image/png;base64&#44;aGVsbG8=">`,
+		"semicolonless entity":    `<img src="data:image/png;base64,aGVsbG8&#43">`,
+		"unquoted trailing slash": `<img src=data:image/png;base64,aGVsbG8/>`,
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := NewHTMLParser()
+			p.MediaMode = MediaModeRef
+			result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			var ref *entity.MediaRef
+			for _, item := range result.JSON {
+				m := item.ToMap()
+				if m["doc_type_kwd"] != DocTypeImage {
+					continue
+				}
+				ref = entity.MediaRefFromAny(m["media_ref"])
+			}
+			if ref == nil {
+				t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
+			}
+			data, err := NewMediaResolver().Resolve(context.Background(), *ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+				return []byte(input), nil
+			}))
+			if err != nil {
+				t.Fatalf("resolver lost the parser's image: %v", err)
+			}
+			sum := sha256.Sum256(data)
+			if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
+				t.Fatalf("digest = %s, want %s", got, ref.SHA256)
+			}
+		})
 	}
 }
 
-func TestMaterializeMediaTreatsAbsentMediaRefAsNoop(t *testing.T) {
-	var nilRef *entity.MediaRef
-	for _, value := range []any{nil, "", map[string]any{}, nilRef} {
-		m := map[string]any{"media_ref": value}
-		src := MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-		if err := MaterializeMedia(context.Background(), m, NewMediaResolver(), src); err != nil {
-			t.Errorf("media_ref %#v: %v", value, err)
+// TestMediaResolverIgnoresScriptDataURIs pins that image-like text inside a
+// script cannot exhaust the span index and hide a real image.
+func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
+	img := `<img src="data:image/png;base64,aGVsbG8=">`
+	input := "<script>" + strings.Repeat(img, 5000) + "</script>" + img
+
+	spans, truncated := scanHTMLMediaSpans([]byte(input))
+	if truncated {
+		t.Fatal("script text consumed the span cap")
+	}
+	if len(spans) != 1 {
+		t.Fatalf("spans = %d, want the single real image", len(spans))
+	}
+
+	p := NewHTMLParser()
+	p.MediaMode = MediaModeRef
+	result := p.ParseWithResult(context.Background(), "script.html", []byte(input))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var ref *entity.MediaRef
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] == DocTypeImage {
+			ref = entity.MediaRefFromAny(m["media_ref"])
 		}
+	}
+	if ref == nil {
+		t.Fatal("parser emitted no media_ref")
+	}
+	if _, err := NewMediaResolver().Resolve(context.Background(), *ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	})); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+}
+
+// TestScanHTMLMediaSpansTruncationFindsTargetedImage pins the fallback used
+// when the capped index stops before a real image.
+func TestScanHTMLMediaSpansTruncationFindsTargetedImage(t *testing.T) {
+	img := `<img src="data:image/png;base64,aGVsbG8=">`
+	last := `<img src="data:image/png;base64,aGVsbG8+">`
+	input := []byte(strings.Repeat(img, 4096) + last)
+
+	spans, truncated := scanHTMLMediaSpans(input)
+	if !truncated {
+		t.Fatal("scan did not report truncation")
+	}
+	if len(spans) != 4096 {
+		t.Fatalf("spans = %d, want the cap", len(spans))
+	}
+	want, ok := htmlDataURIRef([]byte("data:image/png;base64,aGVsbG8+"))
+	if !ok {
+		t.Fatal("fixture ref was rejected")
+	}
+	span, found := findHTMLMediaSpan(input, want.SHA256)
+	if !found {
+		t.Fatal("targeted pass did not find the image after the cap")
+	}
+	data, _, err := decodeHTMLImagePayload(input[span.TagStart:span.TagEnd])
+	if err != nil || string(data) != "hello>" {
+		t.Fatalf("targeted decode = %q, %v", data, err)
+	}
+}
+
+// TestMediaResolverReportsTruncatedMissingImage pins the error split: a
+// truncated scan that still has no match is not ErrMediaNotFound.
+func TestMediaResolverReportsTruncatedMissingImage(t *testing.T) {
+	img := `<img src="data:image/png;base64,aGVsbG8=">`
+	input := strings.Repeat(img, 4097)
+	ref, ok := htmlDataURIRef([]byte("data:image/png;base64,aGVsbG8+"))
+	if !ok {
+		t.Fatal("fixture ref was rejected")
+	}
+	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	}))
+	if err == nil || !strings.Contains(err.Error(), "truncated") {
+		t.Fatalf("err = %v, want a truncation error", err)
+	}
+	if errors.Is(err, ErrMediaNotFound) {
+		t.Fatal("truncated scan was reported as a confirmed absent image")
 	}
 }

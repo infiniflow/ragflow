@@ -170,6 +170,12 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		delete(raw, key)
 	}
 	*d = ChunkDoc(decoded)
+	// A JSON `media_ref: {}` decodes into a non-nil zero value. Normalize it
+	// back to nil so an empty object keeps meaning "no reference"; partially
+	// filled references stay and are rejected by the materializer.
+	if d.MediaRef.IsZero() {
+		d.MediaRef = nil
+	}
 	if len(raw) > 0 {
 		d.Extra = raw
 	}

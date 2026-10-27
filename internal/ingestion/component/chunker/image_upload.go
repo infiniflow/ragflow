@@ -79,7 +79,7 @@ func imageUploadConcurrency() int {
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
-func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string, resolver parser.MediaResolver, src parser.MediaSource) ([]map[string]any, error) {
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver parser.MediaResolver, src parser.MediaSource) ([]map[string]any, error) {
 	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
 		imgID, _ := ck["img_id"].(string)
@@ -87,14 +87,16 @@ func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component
 			// The image was already uploaded. A materialized copy would not
 			// be uploaded again, so it must not survive into the index.
 			delete(ck, "image")
-		} else if err := parser.MaterializeMedia(ctx, ck, resolver, src); err != nil {
+		} else if err := component.MaterializeMediaItem(ctx, ck, resolver, src); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
 			if !errors.Is(err, parser.ErrMediaNotFound) {
 				return nil, err
 			}
-			common.Warn("chunker: media reference not found", zap.Error(err))
+			chunkID, _ := ck["id"].(string)
+			common.Warn("chunker: media reference not found",
+				zap.String("doc_id", docID), zap.String("chunk_id", chunkID), zap.Error(err))
 			if text, _ := requireChunkText(ck); strings.TrimSpace(text) == "" {
 				continue
 			}

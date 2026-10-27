@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Media-ref materialization: a parser that emits MediaRef keeps image bytes
-// out of its result. Whoever needs an actual image (the chunker's upload pass,
-// the vision enhancement path) hands the reference and a MediaSource to a
-// MediaResolver, which reads the source once per invocation and returns
-// exactly one image.
+// Package parser: this file materializes MediaRefs emitted by parsers. A
+// parser that emits MediaRef keeps image bytes out of its result. Whoever
+// needs an actual image (the chunker's upload pass, the vision enhancement
+// path) hands the reference and a MediaSource to a MediaResolver, which reads
+// the source once per invocation and returns exactly one image.
 package parser
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -64,9 +63,10 @@ type MediaResolver interface {
 func NewMediaResolver() MediaResolver { return &mediaResolver{} }
 
 type mediaResolver struct {
-	once      sync.Once
-	htmlSpans map[string]HTMLMediaSpan
-	htmlData  []byte
+	once          sync.Once
+	htmlSpans     map[string]htmlMediaSpan
+	htmlData      []byte
+	htmlTruncated bool
 
 	err error
 }
@@ -97,10 +97,18 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 		return nil, err
 	}
 	span, ok := r.htmlSpans[ref.SHA256]
+	if !ok && r.htmlTruncated {
+		// The capped index stopped early. Do a targeted uncapped pass so a
+		// real image after the cap is not mistaken for an absent one.
+		span, ok = findHTMLMediaSpan(r.htmlData, ref.SHA256)
+		if !ok {
+			return nil, fmt.Errorf("media: html media index was truncated before image %s", shortMediaDigest(ref.SHA256))
+		}
+	}
 	if !ok {
 		return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortMediaDigest(ref.SHA256))
 	}
-	data, sum, err := DecodeHTMLImagePayload(r.htmlData[span.PayloadStart:span.PayloadEnd])
+	data, sum, err := decodeHTMLImagePayload(r.htmlData[span.TagStart:span.TagEnd])
 	if err != nil {
 		return nil, err
 	}
@@ -129,67 +137,16 @@ func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
 		}
 		// Scan the same UTF-8 form the parser walked; the raw bytes of a
 		// UTF-16 document would not contain the ASCII data-URI marker.
-		data = DecodeHTMLSource(data)
+		data = decodeHTMLSource(data)
 		r.htmlData = data
-		r.htmlSpans = make(map[string]HTMLMediaSpan)
-		for _, span := range ScanHTMLMediaSpans(data) {
+		spans, truncated := scanHTMLMediaSpans(data)
+		r.htmlTruncated = truncated
+		r.htmlSpans = make(map[string]htmlMediaSpan, len(spans))
+		for _, span := range spans {
 			r.htmlSpans[span.Ref.SHA256] = span
 		}
 	})
 	return r.err
-}
-
-// MaterializeMedia fills m["image"] from m["media_ref"] when the item carries
-// a reference and no inline bytes. The item map is the parser/chunker wire
-// shape, so every consumer uses the same seam.
-func MaterializeMedia(ctx context.Context, m map[string]any, resolver MediaResolver, src MediaSource) error {
-	if m == nil || resolver == nil || src == nil {
-		return nil
-	}
-	if img, _ := m["image"].(string); img != "" {
-		return nil
-	}
-	ref := entity.MediaRefFromAny(m["media_ref"])
-	if ref == nil {
-		if mediaRefPresent(m["media_ref"]) {
-			return errors.New("media: media_ref is present but has no usable format/kind/digest")
-		}
-		return nil
-	}
-	data, err := resolver.Resolve(ctx, *ref, src)
-	if err != nil {
-		return err
-	}
-	m["image"] = encodeMediaDataURI(ref.MIME, data)
-	return nil
-}
-
-// mediaRefPresent reports whether a media_ref value claims to be a reference.
-// A nil pointer, empty string, or empty map is treated as absent; anything
-// else that did not decode into a usable MediaRef is a malformed reference.
-func mediaRefPresent(v any) bool {
-	switch ref := v.(type) {
-	case nil:
-		return false
-	case *entity.MediaRef:
-		return ref != nil
-	case string:
-		return ref != ""
-	case map[string]any:
-		return len(ref) > 0
-	default:
-		return true
-	}
-}
-
-// encodeMediaDataURI renders image bytes in the form the chunker expects for
-// upload and vision materialization. An empty MIME falls back to
-// application/octet-stream; image references always carry a concrete type.
-func encodeMediaDataURI(mime string, data []byte) string {
-	if mime == "" {
-		mime = "application/octet-stream"
-	}
-	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
 func shortMediaDigest(digest string) string {

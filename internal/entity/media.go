@@ -54,6 +54,13 @@ func (r *MediaRef) Valid() bool {
 	return r != nil && r.Format != "" && r.Kind != "" && r.SHA256 != ""
 }
 
+// IsZero reports whether the reference carries no field at all. JSON `{}`
+// decodes into a non-nil zero value; consumers normalize it back to nil so an
+// empty object keeps meaning "no reference".
+func (r *MediaRef) IsZero() bool {
+	return r == nil || (r.Format == "" && r.Kind == "" && r.SHA256 == "" && r.MIME == "" && r.Size == 0)
+}
+
 // MediaRefFromAny decodes a media_ref value from either its typed form or a
 // JSON-round-tripped map. It returns nil for absent or unusable values so
 // callers can treat "no reference" and "bad reference" the same way.
