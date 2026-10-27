@@ -168,15 +168,66 @@ func markdownNew() *mdparser.Parser {
 }
 
 func balanceMarkdownTables(text string) string {
-	lines := strings.SplitAfter(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	lines := strings.SplitAfter(text, "\n")
+	lowerText := strings.ToLower(text)
 	var buf strings.Builder
 	inFence := false
 	var fenceChar byte
 	var fenceLen int
+	htmlEndOffset := 0
+	listIndent := 0
+	offset := 0
+	lastHTMLEnd := make(map[string]int)
 
 	for i := 0; i < len(lines); {
 		line := strings.TrimRight(lines[i], "\n")
-		if ch, n, ok := markdownFenceMarker(line); ok {
+		if offset < htmlEndOffset {
+			buf.WriteString(lines[i])
+			offset += len(lines[i])
+			i++
+			continue
+		}
+		trimmed := strings.TrimLeft(line, " \t")
+		indent := 0
+		for _, ch := range line[:len(line)-len(trimmed)] {
+			if ch == '\t' {
+				indent += 4 - indent%4
+			} else {
+				indent++
+			}
+		}
+		if !inFence {
+			if width := markdownListMarkerWidth(trimmed); indent < 4 && width > 0 {
+				listIndent = indent + width
+			} else if indent == 0 && trimmed != "" {
+				listIndent = 0
+			}
+		}
+		indentedCode := indent >= 4 && (listIndent == 0 || indent >= listIndent+4)
+		if !inFence && !indentedCode && (indent < 4 || listIndent > 0) {
+			if end := markdownHTMLBlockEnd(trimmed); end != "" {
+				last, ok := lastHTMLEnd[end]
+				if !ok {
+					last = strings.LastIndex(lowerText, end)
+					lastHTMLEnd[end] = last
+				}
+				if last >= offset && !markdownHTMLAllowsBlocks(lines, i, lowerText, offset, end) {
+					if length := markdownHTMLBlockLength(text[offset:], end); length > 0 {
+						htmlEndOffset = offset + length
+						buf.WriteString(lines[i])
+						offset += len(lines[i])
+						i++
+						continue
+					}
+				}
+			}
+		}
+		fenceLine := line
+		if listIndent > 0 && !indentedCode && indent >= listIndent {
+			fenceLine = trimmed
+		}
+		if ch, n, ok := markdownFenceMarker(fenceLine); ok {
 			if inFence && ch == fenceChar && n >= fenceLen {
 				inFence = false
 			} else if !inFence {
@@ -185,10 +236,11 @@ func balanceMarkdownTables(text string) string {
 				fenceLen = n
 			}
 			buf.WriteString(lines[i])
+			offset += len(lines[i])
 			i++
 			continue
 		}
-		if !inFence && i+1 < len(lines) && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
+		if !inFence && !indentedCode && i+1 < len(lines) && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
 			start := i
 			i += 2
 			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
@@ -199,12 +251,111 @@ func balanceMarkdownTables(text string) string {
 				buf.WriteByte('\n')
 			}
 			buf.WriteString(strings.Join(balanceTableColumns(lines[start:i]), ""))
+			for _, consumed := range lines[start:i] {
+				offset += len(consumed)
+			}
 			continue
 		}
 		buf.WriteString(lines[i])
+		offset += len(lines[i])
 		i++
 	}
 	return buf.String()
+}
+
+func markdownListMarkerWidth(line string) int {
+	if len(line) >= 2 && strings.ContainsRune("-*+", rune(line[0])) && (line[1] == ' ' || line[1] == '\t') {
+		return 2
+	}
+	i := 0
+	for i < len(line) && line[i] >= '0' && line[i] <= '9' && i < 9 {
+		i++
+	}
+	if i > 0 && i+1 < len(line) && (line[i] == '.' || line[i] == ')') && (line[i+1] == ' ' || line[i+1] == '\t') {
+		return i + 2
+	}
+	return 0
+}
+
+// markdownHTMLBlockEnd recognizes raw HTML blocks that must not be rewritten.
+func markdownHTMLBlockEnd(line string) string {
+	lower := strings.ToLower(line)
+	if strings.HasPrefix(lower, "<!--") {
+		return "-->"
+	}
+	if !strings.HasPrefix(lower, "<") {
+		return ""
+	}
+	end := strings.IndexAny(lower, " \t>/")
+	if end < 2 {
+		return ""
+	}
+	tag := lower[1:end]
+	switch tag {
+	case "blockquote", "dd", "div", "dl", "dt", "fieldset", "form", "h1", "h2", "h3", "h4", "h5", "h6", "iframe", "li", "math", "noscript", "ol", "p", "pre", "script", "style", "table", "textarea", "ul", "address", "article", "aside", "canvas", "details", "dialog", "figcaption", "figure", "footer", "header", "hgroup", "main", "nav", "output", "progress", "section", "svg", "video":
+		return "</" + tag + ">"
+	}
+	return ""
+}
+
+// Use the HTML tokenizer to match nested tags without treating comments or
+// attribute values as markup. A malformed unclosed block is left to Markdown.
+func markdownHTMLBlockLength(text, end string) int {
+	tokenizer := html.NewTokenizer(strings.NewReader(text))
+	tag := strings.TrimSuffix(strings.TrimPrefix(end, "</"), ">")
+	depth, consumed := 0, 0
+	for {
+		kind := tokenizer.Next()
+		consumed += len(tokenizer.Raw())
+		switch kind {
+		case html.ErrorToken:
+			return 0
+		case html.CommentToken:
+			if end == "-->" {
+				return consumed
+			}
+		case html.StartTagToken, html.SelfClosingTagToken:
+			if tokenizer.Token().Data == tag {
+				if kind == html.SelfClosingTagToken && depth == 0 {
+					return consumed
+				}
+				if kind == html.StartTagToken {
+					depth++
+				}
+			}
+		case html.EndTagToken:
+			if tokenizer.Token().Data == tag && depth > 0 {
+				depth--
+				if depth == 0 {
+					return consumed
+				}
+			}
+		}
+	}
+}
+
+// The Markdown library parses block content inside div/details when blank
+// lines separate the opening and closing tags from their contents.
+func markdownHTMLAllowsBlocks(lines []string, index int, lowerText string, offset int, end string) bool {
+	if end != "</div>" && end != "</details>" || index+1 >= len(lines) || strings.TrimSpace(lines[index+1]) != "" {
+		return false
+	}
+	line := strings.TrimRight(lines[index], "\n")
+	openingEnd := strings.IndexByte(line, '>')
+	if openingEnd < 0 || strings.TrimSpace(line[openingEnd+1:]) != "" {
+		return false
+	}
+	closeOffset := strings.Index(lowerText[offset+len(lines[index]):], end)
+	if closeOffset < 0 {
+		return false
+	}
+	before := lowerText[:offset+len(lines[index])+closeOffset]
+	if !strings.HasSuffix(before, "\n") {
+		return false
+	}
+	before = before[:len(before)-1]
+	lastNewline := strings.LastIndexByte(before, '\n')
+	return strings.TrimSpace(before[lastNewline+1:]) == ""
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell

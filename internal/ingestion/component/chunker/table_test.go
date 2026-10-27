@@ -277,6 +277,20 @@ func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 	}
 }
 
+func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
+	table := "<table><tr><td>k</td><td>v</td></tr><tr><td>a</td><td>b</td></tr></table>"
+	chunks := tableChunksOf(t, map[string]any{
+		"name": "kv.csv", "output_format": "json", "json": []map[string]any{tableItem(t, table)},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want one data row", len(chunks))
+	}
+	txt, _ := chunks[0]["text"].(string)
+	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") || !strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
+		t.Fatalf("text = %q", txt)
+	}
+}
+
 func TestTableChunker_HeaderOriginRowspanDoesNotLeak(t *testing.T) {
 	table := `<table>` +
 		`<tr><th rowspan="2">H</th><th>Name</th></tr>` +

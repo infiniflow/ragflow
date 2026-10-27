@@ -37,8 +37,8 @@ type TableData struct {
 	// no text; its content lives at the origin slot named by OriginRow/
 	// OriginCol.
 	Grid [][]TableCell `json:"grid"`
-	// HeaderRows is the number of leading header rows identified by the
-	// producer. Zero means every row is data.
+	// HeaderRows is the number of leading header rows. When no header is
+	// identified, a nonempty table defaults to one header row.
 	HeaderRows int `json:"header_rows"`
 	// Caption is the table caption (pdf emits it; office uses the sheet name).
 	Caption string `json:"caption,omitempty"`

@@ -1,6 +1,8 @@
 package chunker
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"os"
 	"strings"
@@ -67,5 +69,47 @@ func TestGeneralChunkerPreservesRetrievalHandbookTables(t *testing.T) {
 	}
 	if tables != 4 || metadataCopies != 1 {
 		t.Fatalf("tables=%d metadata copies=%d, want 4 and 1", tables, metadataCopies)
+	}
+}
+
+func TestGeneralChunkerPreservesEPUBParagraphBoundaries(t *testing.T) {
+	var data bytes.Buffer
+	writer := zip.NewWriter(&data)
+	for name, content := range map[string]string{
+		"META-INF/container.xml": `<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`,
+		"OEBPS/content.opf":      `<package><manifest><item id="a" href="chapter.xhtml"/></manifest><spine><itemref idref="a"/></spine></package>`,
+		"OEBPS/chapter.xhtml":    `<html><body><p>Alpha</p><p>Beta</p><table><tr><td>Item</td><td>Value</td></tr></table><p>Gamma</p><p>Delta</p></body></html>`,
+	} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	parsed := parser.NewEPUBParser().ParseWithResult(t.Context(), "book.epub", data.Bytes())
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{"name": "book.epub", "output_format": "json", "json": parsed.JSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks=%#v", chunks)
+	}
+	before, _ := chunks[0]["text"].(string)
+	after, _ := chunks[2]["text"].(string)
+	if !strings.Contains(before, "Alpha\nBeta") || chunks[1]["doc_type_kwd"] != "table" || !strings.Contains(after, "Gamma\nDelta") {
+		t.Fatalf("paragraph or table boundaries lost: %#v", chunks)
 	}
 }

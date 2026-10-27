@@ -58,7 +58,6 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	var footRows [][]CellInput
 	var footFlags []bool
 	inFoot := false
-	inHead := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -66,15 +65,6 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 		if isHTMLElement(n, "caption") {
 			caption = cellText(n)
-			return
-		}
-		if isHTMLElement(n, "thead") {
-			previous := inHead
-			inHead = true
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				walk(c)
-			}
-			inHead = previous
 			return
 		}
 		// A table's footer goes below that table's own body, not below every table
@@ -117,7 +107,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 				return
 			}
 			rows = append(rows, cells)
-			headerFlags = append(headerFlags, anyTh || inHead)
+			headerFlags = append(headerFlags, anyTh)
 			// Do not recurse into the row's cells: a nested <table> inside a
 			// cell is folded into that cell's text by cellText, not parsed as
 			// a separate row.
@@ -135,7 +125,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 
 // BuildTableData assembles the canonical TableData from collected cell rows,
 // per-row header flags and a caption. It owns the header-row count (leading
-// consecutive run, zero when no headers are present) and the shared
+// consecutive run, defaulting to one when the table has rows) and the shared
 // grid normalization (buildGrid). Both ParseTableHTML and the deepdoc direct
 // converter (ToTableData) route through it, so the two produce identical grids
 // by construction rather than by a runtime comparison.
@@ -147,6 +137,9 @@ func BuildTableData(rows [][]CellInput, headerFlags []bool, caption string) *ent
 	headerCount := 0
 	for headerCount < len(headerFlags) && headerFlags[headerCount] {
 		headerCount++
+	}
+	if len(rows) > 0 && headerCount == 0 {
+		headerCount = 1
 	}
 	for r := range rows {
 		for i := range rows[r] {

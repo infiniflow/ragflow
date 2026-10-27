@@ -123,14 +123,14 @@ func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
 	}
 }
 
-func TestTableRegressionHTMLExplicitTheadWithTD(t *testing.T) {
-	td, err := tableutil.ParseTableHTML("<table><thead><tr><td>Field</td><td>Value</td></tr></thead><tbody><tr><td>Owner</td><td>RET</td></tr></tbody></table>")
+func TestTableRegressionHTMLTheadWithTDRetainsDefaultHeader(t *testing.T) {
+	td, err := tableutil.ParseTableHTML("<table><thead><tr><td>Field</td><td>Value</td></tr><tr><td>Subfield</td><td>Subvalue</td></tr></thead><tbody><tr><td>Owner</td><td>RET</td></tr></tbody></table>")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if td.HeaderRows != 1 {
-		t.Errorf("explicit thead lost: header_rows=%d, want 1", td.HeaderRows)
+		t.Errorf("header_rows=%d, want the default 1", td.HeaderRows)
 	}
 }
 
@@ -185,6 +185,66 @@ func TestMarkdownTableAfterContainerKeepsBlockBoundary(t *testing.T) {
 			requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V"}, {"OWNER", "TAIL"}})
 		})
 	}
+}
+
+func TestMarkdownTablePreprocessingPreservesCodeAndHTMLBlocks(t *testing.T) {
+	for _, source := range []string{
+		"    intro\n    | H | V |\n    |---|---|\n    | x | y | extra |\n",
+		"\tintro\n\t| H | V |\n\t|---|---|\n\t| x | y | extra |\n",
+		"```\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n```\n",
+		"<pre>\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n</pre>\n",
+		"<div>\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n</div>\n",
+		"<div>\n<div>inner</div>\n| H | V |\n|---|---|\n| x | y | extra |\n</div>\n",
+		"<!--\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n-->\n",
+		"- Item\n\n    ```\n    | H | V |\n    |---|---|\n    | x | y | extra |\n    ```\n",
+	} {
+		if got := balanceMarkdownTables(source); got != source {
+			t.Errorf("protected block changed:\nsource=%q\ngot=%q", source, got)
+		}
+	}
+}
+
+func TestMarkdownTablePreprocessingBalancesIndentedListTable(t *testing.T) {
+	source := "- Item\n\n    | H | V |\n    |---|---|\n    | x | y | TAIL |\n"
+	if got := balanceMarkdownTables(source); !strings.Contains(got, "    | H | V | |\n    |---|---|---|\n") {
+		t.Fatalf("nested list table was not balanced: %q", got)
+	}
+}
+
+func TestMarkdownTablePreprocessingBalancesMarkdownInsideHTMLContainer(t *testing.T) {
+	source := "<div>\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n\n</div>\n"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "table" {
+			requireTableRows(t, item.ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
+			return
+		}
+	}
+	t.Fatalf("missing table in Markdown-enabled HTML container: %+v", result)
+}
+
+func TestMarkdownTablePreprocessingResumesAfterProtectedBlock(t *testing.T) {
+	source := "    code\n    | H | V |\n    |---|---|\n    | x | y |\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))
+	if result.Err != nil || len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != "code\n| H | V |\n|---|---|\n| x | y |" {
+		t.Fatalf("code block changed: %+v", result)
+	}
+	requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
+}
+
+func TestMarkdownTablePreprocessingResumesAfterHTMLComments(t *testing.T) {
+	source := "<div>\n<!-- <div> is an example -->\n</div>\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "table" {
+			requireTableRows(t, item.ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
+			return
+		}
+	}
+	t.Fatalf("table after HTML block lost: %+v", result)
 }
 
 func TestDOCXContainerHeadingDoesNotReplaceBodyHeading(t *testing.T) {

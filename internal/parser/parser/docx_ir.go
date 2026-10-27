@@ -110,8 +110,7 @@ type docxIRRun struct {
 }
 
 type docxIRRow struct {
-	Cells    []docxIRCell `json:"cells"`
-	IsHeader bool         `json:"is_header"`
+	Cells []docxIRCell `json:"cells"`
 }
 
 type docxIRCell struct {
@@ -194,16 +193,14 @@ func joinCellText(cell docxIRCell) string {
 // officeIRTableData projects native Office rows directly onto the table contract.
 func officeIRTableData(el docxIRElement, caption string) *entity.TableData {
 	rows := make([][]tableutil.CellInput, 0, len(el.Rows))
-	headers := make([]bool, 0, len(el.Rows))
 	for _, row := range el.Rows {
 		cells := make([]tableutil.CellInput, 0, len(row.Cells))
 		for _, cell := range row.Cells {
 			cells = append(cells, tableutil.CellInput{Text: joinCellText(cell)})
 		}
 		rows = append(rows, cells)
-		headers = append(headers, row.IsHeader)
 	}
-	return tableutil.BuildTableData(rows, headers, strings.TrimSpace(caption))
+	return tableutil.BuildTableData(rows, nil, strings.TrimSpace(caption))
 }
 
 type docxTableImage struct {

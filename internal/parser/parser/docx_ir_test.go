@@ -34,7 +34,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		// The table sits under heading "Title", so it carries the
 		// heading-location caption (mirrors Python __get_nearest_title).
-		{"doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 0, Caption: "Table Location: Title"}},
+		{"doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {

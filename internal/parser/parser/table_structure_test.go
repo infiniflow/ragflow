@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -232,26 +231,20 @@ func TestPPTXTableOnlySlideIsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestOfficePreservesExplicitHeaderRows(t *testing.T) {
-	for _, header := range []bool{false, true} {
-		ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":` + strconv.FormatBool(header) + `,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Owner"}]}]}]},{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"RET"}]}]}]}]}]}]}`
-		items := buildDOCXJSONSections(ir, nil)
-		if len(items) != 1 {
-			t.Fatalf("items=%#v", items)
-		}
-		td := items[0]["table"].(*entity.TableData)
-		want := 0
-		if header {
-			want = 1
-		}
-		if td.HeaderRows != want {
-			t.Fatalf("header=%t header_rows=%d, want %d", header, td.HeaderRows, want)
-		}
+func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
+	items := buildDOCXJSONSections(ir, nil)
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	td := items[0]["table"].(*entity.TableData)
+	if td.HeaderRows != 1 || len(td.Grid) != 2 {
+		t.Fatalf("table=%+v, want two rows and one default header", td)
 	}
 }
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
-	el := docxIRElement{Type: "table", Rows: []docxIRRow{{IsHeader: true, Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
+	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
 	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget())
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)

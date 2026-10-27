@@ -21,15 +21,14 @@
 //
 // Unlike TokenChunker (which merges slides into a single chunk) or
 // OneChunker (which collapses many slides into one), PageChunker
-// keeps each slide as the unit of chunking. The upstream parser produces
-// one record per slide with text and slide_number; this chunker passes
-// each through unchanged. Note that the PPTX/PPT path does not emit image
-// or position information (unlike the PDF path), so slide chunks carry no
-// image and no bbox-based preview positioning.
+// keeps each slide as the unit of chunking. Text and tables from the same
+// slide are combined in order; images remain separate media chunks.
 package chunker
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
@@ -73,7 +72,7 @@ func (c *PageChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	return c.invoke(ctx, inputs)
 }
 
-// invoke emits one chunk per decoded upstream item (slide or page).
+// invoke groups slide content and preserves other upstream items.
 func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
@@ -83,9 +82,6 @@ func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) 
 		return inputErrorOutput(err), nil
 	}
 
-	// The Page chunker preserves one incoming JSON item per output chunk.
-	// It has no file-family restriction: item granularity is determined by
-	// the upstream parser backend.
 	items := slideItems(upstream.JSONResult, upstream.Chunks)
 	if len(items) == 0 {
 		return emptyOutputs(), nil
@@ -93,13 +89,71 @@ func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) 
 	return chunkOutputs(items), nil
 }
 
-// slideItems returns the per-slide records, preferring JSONResult and
-// falling back to Chunks. Each record (slide/page) becomes one chunk.
+// slideItems combines consecutive items with the same slide number, while
+// preserving unnumbered items and slide images as independent chunks.
 func slideItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
-	if len(items) > 0 {
-		return items
+	if len(items) == 0 {
+		items = chunks
 	}
-	return chunks
+	var result []schema.ChunkDoc
+	for i := 0; i < len(items); {
+		var slide int
+		if json.Unmarshal(items[i].Extra["slide_number"], &slide) != nil || slide <= 0 {
+			result = append(result, items[i])
+			i++
+			continue
+		}
+		end := i + 1
+		for end < len(items) {
+			var next int
+			if json.Unmarshal(items[end].Extra["slide_number"], &next) != nil || next != slide {
+				break
+			}
+			end++
+		}
+		var page *schema.ChunkDoc
+		merged := false
+		var images []schema.ChunkDoc
+		var tableIDs []string
+		for _, item := range items[i:end] {
+			if itemDocType(item) == "image" || item.Image != "" || item.ImgID != "" {
+				images = append(images, item)
+				continue
+			}
+			if item.TableData != nil {
+				var id string
+				if json.Unmarshal(item.Extra["source_table_id"], &id) == nil && id != "" {
+					tableIDs = append(tableIDs, id)
+				}
+			}
+			if page == nil {
+				first := cloneChunkDoc(item)
+				page = &first
+			} else {
+				merged = true
+				if page.Text != "" && item.Text != "" && !strings.HasSuffix(page.Text, "\n") && !strings.HasPrefix(item.Text, "\n") {
+					page.Text += "\n"
+				}
+				page.Text += item.Text
+				mergeGeneralMetadata(page, item)
+			}
+		}
+		if page != nil {
+			if merged {
+				page.DocType = "text"
+				page.TableData = nil
+				page.TKNums = nil
+			}
+			if len(tableIDs) > 1 {
+				encoded, _ := json.Marshal(tableIDs)
+				page.Extra["source_table_ids"] = encoded
+			}
+			result = append(result, *page)
+		}
+		result = append(result, images...)
+		i = end
+	}
+	return result
 }
 
 func init() {

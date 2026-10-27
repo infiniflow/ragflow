@@ -60,9 +60,9 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 	if len(td.Grid) != 2 {
 		t.Fatalf("rows=%d want 2", len(td.Grid))
 	}
-	// No cell carries a header block type, so every row remains data.
-	if td.HeaderRows != 0 {
-		t.Errorf("HeaderRows=%d want 0 without detected headers", td.HeaderRows)
+	// Without detected headers, the first row is the default header.
+	if td.HeaderRows != 1 {
+		t.Errorf("HeaderRows=%d want 1 without detected headers", td.HeaderRows)
 	}
 	for _, w := range []struct {
 		r, c int
