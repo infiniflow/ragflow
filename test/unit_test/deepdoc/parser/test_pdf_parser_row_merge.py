@@ -246,3 +246,27 @@ def test_score_kept_as_max_when_merging(pdf_parser_module):
     # Wrapped label (133 follows 115 by one pitch) plus tight content gap: merge.
     assert len(merged) == 1
     assert merged[0]["score"] == 0.8
+
+
+def test_gridline_keeps_compact_single_line_rows(pdf_parser_module):
+    """Compact one-line rows (label + single-line cell) are geometrically
+    indistinguishable from a wrapped paragraph; a visible separator between
+    the components keeps them apart while unruled wrapped lines merge."""
+    rows = [_row(100, 120), _row(120, 140), _row(140, 160)]
+    boxes = [
+        _text(103, 112, 60, 110), _text(103, 112, 130, 280),
+        _text(123, 132, 60, 110), _text(123, 132, 130, 280),
+        _text(143, 152, 60, 110), _text(143, 152, 130, 280),
+    ]
+    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(
+        rows + COLS, boxes, has_separator=lambda _a, _b: True
+    )
+    assert [(c["top"], c["bottom"]) for c in _rows_only(out)] == [(100, 120), (120, 140), (140, 160)]
+    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(
+        [dict(r) for r in rows] + COLS, boxes, has_separator=lambda _a, _b: False
+    )
+    assert len(_rows_only(out)) == 1
+
+
+def _rows_only(comps):
+    return sorted((c for c in comps if c["label"] == "table row"), key=lambda c: c["top"])

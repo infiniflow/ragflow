@@ -596,7 +596,26 @@ class RAGFlowPdfParser:
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
-        self.tb_cpns = self._merge_continuation_row_components(self.tb_cpns, self.boxes)
+        def _has_gridline(prev_comp, comp):
+            try:
+                page = prev_comp["pn"]
+                cum = self.page_cum_height[page]
+                y = int(round((prev_comp["bottom"] + comp["top"]) / 2 * ZM - cum * ZM))
+                img = self.page_images[page]
+                x0 = int(max(0, prev_comp["x0"] * ZM))
+                x1 = int(min(img.width, prev_comp["x1"] * ZM))
+                if x1 - x0 < 20 or y < 1 or y >= img.height - 1:
+                    return False
+                # TSR boxes snap to text, not to the rule itself, so scan a
+                # small vertical window around the shared edge.
+                w = max(2, int(ZM))
+                strip = np.asarray(img.convert("L"), dtype=np.uint8)[max(0, y - w) : y + w + 1, x0:x1]
+                dark_frac = (strip < 160).mean(axis=1)
+                return bool((dark_frac > 0.6).any())
+            except Exception:
+                return False
+
+        self.tb_cpns = self._merge_continuation_row_components(self.tb_cpns, self.boxes, _has_gridline)
 
         def gather(kwd, fzy=10, ption=0.6):
             eles = Recognizer.sort_Y_firstly([r for r in self.tb_cpns if re.match(kwd, r["label"])], fzy)
@@ -647,7 +666,7 @@ class RAGFlowPdfParser:
     _CONTINUATION_GAP_FACTOR = 1.5
 
     @staticmethod
-    def _merge_continuation_row_components(tb_cpns, boxes):
+    def _merge_continuation_row_components(tb_cpns, boxes, has_separator=None):
         """Merge phantom ``table row`` components from cross-page continuations.
 
         On a cross-page table continuation whose column holds a long wrapped
@@ -659,15 +678,22 @@ class RAGFlowPdfParser:
 
         * a row component that covers no text merges into the next one
           (split-line and padding artifacts);
+        * a visible horizontal separator (gridline) between two components
+          always keeps them apart;
         * a boundary is kept when a new label-column text run starts below
           it: a real row starts with a new label, while a wrapped label
           continues at the regular line pitch;
-        * otherwise the boundary is a phantom split only when text continues
-          across it in at least one content column at the regular line pitch.
+        * otherwise the boundary is kept when every content column with text
+          below it starts a fresh run there (real rows start new cells), and
+          is merged when at least one content column keeps flowing at the
+          regular line pitch or when only the label column wraps.
 
-        When in doubt the boundary is kept, so ordinary tables are returned
-        unchanged. Components of non-row labels and tables without column
-        components are passed through as-is.
+        ``has_separator`` is an optional ``(prev_comp, comp) -> bool``
+        predicate reporting a visible horizontal rule between the two
+        components; when it is not provided, only the text evidence above is
+        used. When in doubt the boundary is kept, so ordinary tables are
+        returned unchanged. Components of non-row labels and tables without
+        column components are passed through as-is.
         """
         row_pat = re.compile(r".* (row|header)$")
         col_pat = re.compile(r"table column$")
@@ -724,11 +750,11 @@ class RAGFlowPdfParser:
                 return None
 
             label_boxes = [b for b in tbl_boxes if col_of(b) == 0]
-            content_boxes = {}
+            column_boxes = {}
             for b in tbl_boxes:
                 ci = col_of(b)
-                if ci:
-                    content_boxes.setdefault(ci, []).append(b)
+                if ci is not None:
+                    column_boxes.setdefault(ci, []).append(b)
 
             merged = []
             for comp in row_comps:
@@ -742,6 +768,9 @@ class RAGFlowPdfParser:
                     # Component covering no text: split-line or padding strip.
                     acc["bottom"] = max(acc["bottom"], comp["bottom"])
                     acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
+                    continue
+                if has_separator is not None and has_separator(acc, comp):
+                    merged.append(dict(comp))
                     continue
 
                 b_texts = [b for b in tbl_boxes if boundary - 1 <= b["top"] < comp["bottom"] + 1]
@@ -758,16 +787,25 @@ class RAGFlowPdfParser:
                     merged.append(dict(comp))
                     continue
 
-                continuation = False
-                for cbs in content_boxes.values():
-                    above = [b for b in cbs if boundary - 4 * gap_limit < b["bottom"] <= boundary + med_h / 2]
-                    below = [b for b in cbs if b["top"] >= boundary - 1]
-                    if not above or not below:
+                fresh_starts = 0
+                tight_continuations = 0
+                for ci, cbs in column_boxes.items():
+                    if ci == 0:
                         continue
-                    gap = min(b["top"] for b in below) - max(b["bottom"] for b in above)
-                    if gap <= gap_limit:
-                        continuation = True
-                        break
+                    below = [b["top"] for b in cbs if boundary - 1 <= b["top"] < comp["bottom"] + 1]
+                    if not below:
+                        continue
+                    above = [b["bottom"] for b in cbs if boundary - 4 * gap_limit < b["bottom"] <= boundary + med_h / 2]
+                    if above and min(below) - max(above) <= gap_limit:
+                        tight_continuations += 1
+                    else:
+                        fresh_starts += 1
+                # A fresh text run starting in every content column means the
+                # boundary is a real row line (new cells). Wrapped paragraphs
+                # keep at least one column flowing at the regular line pitch;
+                # when only the label column wraps (new label runs were
+                # already excluded above), the split is still a phantom one.
+                continuation = tight_continuations > 0 or (fresh_starts == 0 and b_texts)
                 if continuation:
                     acc["bottom"] = max(acc["bottom"], comp["bottom"])
                     acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
