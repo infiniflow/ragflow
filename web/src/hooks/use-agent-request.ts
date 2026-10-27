@@ -137,6 +137,8 @@ export const AgentKeys = {
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  inputForm: (agentId?: string, componentId?: string) =>
+    [AgentApiAction.FetchInputForm, agentId, componentId] as const,
   versionList: (agentId?: string) =>
     [AgentApiAction.FetchVersionList, agentId] as const,
   version: (agentId?: string, versionId?: string) =>
@@ -757,7 +759,7 @@ export const useFetchInputForm = (componentId?: string) => {
   const { id } = useParams();
 
   const { data } = useQuery<Record<string, any>>({
-    queryKey: [AgentApiAction.FetchInputForm],
+    queryKey: AgentKeys.inputForm(id, componentId),
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {

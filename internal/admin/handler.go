@@ -210,28 +210,21 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	var users []map[string]interface{}
+	var total int64
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 	default:
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithDataAndTotal(c, users, total, "List users")
 }
 
 // CreateUserHTTPRequest create user request
