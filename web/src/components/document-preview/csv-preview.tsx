@@ -19,50 +19,34 @@ import { Spin } from '@/components/ui/spin';
 import request from '@/utils/request';
 import { decodeBlobText } from '@/utils/file-util';
 import classNames from 'classnames';
-import Papa from 'papaparse';
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
-
-interface CSVData {
-  rows: string[][];
-  headers: string[];
-}
+import { resolveCsvHighlight, highlightedColumns } from './csv-highlight';
+import { CSVData, maxColumnCount, parseCSV } from './csv-parse';
 
 interface FileViewerProps {
   className?: string;
   url: string;
+  /** Chunk cell ranges: [sheet, rowStart, rowEnd, colStart, colEnd]. */
+  positions?: number[][];
 }
 
-const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
+const CSVFileViewer: React.FC<FileViewerProps> = ({
+  className,
+  url,
+  positions,
+}) => {
   const [data, setData] = useState<CSVData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
   const [naturalWidth, setNaturalWidth] = useState(0);
-
-  /**
-   * Parse CSV text into headers and data rows using PapaParse.
-   * @param csvText - Raw CSV string to parse
-   * @returns Parsed CSVData with headers array and rows 2D array
-   */
-  const parseCSV = (csvText: string): CSVData => {
-    const result = Papa.parse<string[]>(csvText, {
-      header: false,
-      skipEmptyLines: false,
-    });
-
-    const rows = result.data as string[][];
-
-    const headers = rows[0];
-    const dataRows = rows.slice(1);
-
-    return { headers, rows: dataRows };
-  };
 
   useEffect(() => {
     const loadCSV = async () => {
@@ -99,15 +83,18 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
   const [containerHeight, setContainerHeight] = useState(0);
   const rowHeight = 36;
 
-  // The true column count of the table: ragged rows may have more or fewer
-  // cells than the header, so the "last column" is data-driven, not the
-  // header length.
-  const maxCols = useMemo(
-    () =>
-      data
-        ? Math.max(data.headers.length, ...data.rows.map((row) => row.length))
-        : 0,
-    [data],
+  const maxCols = useMemo(() => (data ? maxColumnCount(data) : 0), [data]);
+
+  // Chunk coordinates are only applied when the whole set passes validation;
+  // otherwise the table renders unhighlighted at the top.
+  const highlight = useMemo(
+    () => (data ? resolveCsvHighlight(data, positions) : null),
+    [data, positions],
+  );
+  // Record 1 is the header row.
+  const headerColumns = useMemo(
+    () => highlightedColumns(highlight, 1),
+    [highlight],
   );
 
   // Approximate rendered text width per glyph: fullwidth glyphs (CJK, kana,
@@ -177,6 +164,31 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
 
+  // Bring the chunk's first row into view once the table is rendered.
+  //
+  // Callers build `positions` inline on every render, so the array identity
+  // changes even when the coordinates do not. Locating only when the
+  // coordinates actually change keeps a parent re-render from dragging the
+  // user back to the chunk's first row after they scrolled away.
+  //
+  // scrollTop is read back from the element rather than from the assignment:
+  // the browser clamps it to the scrollable range, and the virtual window must
+  // follow the position that actually took effect. It is copied into state
+  // here as well as through onScroll because assigning scrollTop from script
+  // does not always dispatch a scroll event.
+  const locateKey = JSON.stringify(positions ?? []);
+  const locatedRef = useRef<{ data: CSVData; key: string } | null>(null);
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || !data) return;
+    const located = locatedRef.current;
+    if (located?.data === data && located.key === locateKey) return;
+    locatedRef.current = { data, key: locateKey };
+    if (!highlight) return;
+    el.scrollTop = highlight.targetRowIndex * rowHeight;
+    setScrollTop(el.scrollTop);
+  }, [data, highlight, locateKey, rowHeight]);
+
   // Calculate visible row range with overscan
   const { startIdx, endIdx } = useMemo(() => {
     const overscan = 10;
@@ -220,12 +232,14 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
               <div className="table-row sticky top-0 z-10 bg-bg-canvas">
                 {Array.from({ length: maxCols }, (_, index) => {
                   const isPadded = index >= data.headers.length;
+                  const isHighlighted = headerColumns?.has(index + 1) ?? false;
                   return (
                     <div
                       key={`header-${index}`}
                       className={classNames(
                         'table-cell px-6 py-3 text-left text-sm whitespace-nowrap border-b border-border-normal',
                         !isPadded && 'font-medium text-text-primary',
+                        isHighlighted && 'bg-state-warning/20',
                         index === maxCols - 1 && 'w-full',
                       )}
                     >
@@ -243,11 +257,19 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                   className="table-row"
                   style={{ height: startIdx * rowHeight }}
                 >
-                  <div className="table-cell border-b border-border-normal" style={{ width: naturalWidth || undefined }} />
+                  <div
+                    className="table-cell border-b border-border-normal"
+                    style={{ width: naturalWidth || undefined }}
+                  />
                 </div>
               )}
               {data.rows.slice(startIdx, endIdx).map((row, i) => {
                 const actualIndex = startIdx + i;
+                // Header is record 1, so data row i is record i + 2.
+                const rowColumns = highlightedColumns(
+                  highlight,
+                  actualIndex + 2,
+                );
                 return (
                   <div
                     key={`row-${actualIndex}`}
@@ -258,6 +280,8 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                         key={`cell-${actualIndex}-${cellIndex}`}
                         className={classNames(
                           'table-cell px-6 py-2 whitespace-nowrap text-sm text-text-secondary overflow-hidden text-ellipsis border-b border-border-normal',
+                          rowColumns?.has(cellIndex + 1) &&
+                            'bg-state-warning/20',
                           cellIndex === maxCols - 1 && 'w-full',
                         )}
                         style={{ height: rowHeight }}
@@ -268,18 +292,23 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                     {/* Empty cells to complete ragged rows so the row's full-width
                         bottom border is drawn by the last padding cell instead
                         of disappearing through gaps between shorter rows. */}
-                    {Array.from({ length: maxCols - row.length }, (_, padIdx) => (
-                      <div
-                        key={`pad-${actualIndex}-${padIdx}`}
-                        className={classNames(
-                          'table-cell border-b border-border-normal',
-                          padIdx === maxCols - row.length - 1 && 'w-full',
-                        )}
-                        style={{ height: rowHeight }}
-                      >
-                        {''}
-                      </div>
-                    ))}
+                    {Array.from(
+                      { length: maxCols - row.length },
+                      (_, padIdx) => (
+                        <div
+                          key={`pad-${actualIndex}-${padIdx}`}
+                          className={classNames(
+                            'table-cell border-b border-border-normal',
+                            rowColumns?.has(row.length + padIdx + 1) &&
+                              'bg-state-warning/20',
+                            padIdx === maxCols - row.length - 1 && 'w-full',
+                          )}
+                          style={{ height: rowHeight }}
+                        >
+                          {''}
+                        </div>
+                      ),
+                    )}
                   </div>
                 );
               })}
@@ -289,7 +318,10 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({ className, url }) => {
                   className="table-row"
                   style={{ height: (data.rows.length - endIdx) * rowHeight }}
                 >
-                  <div className="table-cell border-b border-border-normal" style={{ width: naturalWidth || undefined }} />
+                  <div
+                    className="table-cell border-b border-border-normal"
+                    style={{ width: naturalWidth || undefined }}
+                  />
                 </div>
               )}
             </div>

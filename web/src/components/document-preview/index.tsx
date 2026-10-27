@@ -110,7 +110,11 @@ const DocumentPreview = function ({
       )}
       {['csv'].indexOf(fileType) > -1 && (
         <section className="h-full">
-          <CSVFileViewer className={className} url={url} />
+          <CSVFileViewer
+            className={className}
+            url={url}
+            positions={positions}
+          />
         </section>
       )}
       {['md', 'mdx'].indexOf(fileType) > -1 && (
