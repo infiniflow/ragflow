@@ -72,6 +72,27 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+func TestGetMaxDocumentUploadBytes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  int64
+	}{
+		{name: "default", want: DefaultMaxDocumentUploadBytes},
+		{name: "configured", value: "4096", want: 4096},
+		{name: "invalid uses default", value: "invalid", want: DefaultMaxDocumentUploadBytes},
+		{name: "nonpositive uses default", value: "0", want: DefaultMaxDocumentUploadBytes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvMaxDocumentUploadSize, tt.value)
+			if got := GetMaxDocumentUploadBytes(); got != tt.want {
+				t.Fatalf("GetMaxDocumentUploadBytes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderLoggingRecordsTimingsAndTruncatesVectors(t *testing.T) {
 	core, logs := observer.New(zapcore.InfoLevel)
 	previousLogger := Logger

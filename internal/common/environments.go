@@ -89,6 +89,7 @@ const (
 	EnvMaxContentLength                  = "MAX_CONTENT_LENGTH"
 	EnvMaxJSONContentLength              = "MAX_JSON_CONTENT_LENGTH"
 	EnvMaxMultipartContentLength         = "MAX_MULTIPART_CONTENT_LENGTH"
+	EnvMaxDocumentUploadSize             = "MAX_DOCUMENT_UPLOAD_SIZE"
 	EnvRAGFlowDictPath                   = "RAGFLOW_DICT_PATH"
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"
