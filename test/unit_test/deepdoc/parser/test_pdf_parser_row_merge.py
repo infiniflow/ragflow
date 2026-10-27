@@ -146,11 +146,11 @@ def test_issue_18569_reproduction_merges_wrapped_continuation(pdf_parser_module)
     around it (header pair, 美國, 加拿大) stay separate."""
     rows = [
         _row(204, 217, score=0.22),  # padding strip over the header
-        _row(219, 246),              # header line 1
-        _row(247, 277),              # header line 2
-        _row(277, 308),              # 美國
-        _row(306, 357),              # 加拿大
-        _row(357, 381),              # 拉丁美洲, one component per wrapped line
+        _row(219, 246),  # header line 1
+        _row(247, 277),  # header line 2
+        _row(277, 308),  # 美國
+        _row(306, 357),  # 加拿大
+        _row(357, 381),  # 拉丁美洲, one component per wrapped line
         _row(380, 401),
         _row(399, 421),
         _row(437, 456),
@@ -162,19 +162,32 @@ def test_issue_18569_reproduction_merges_wrapped_continuation(pdf_parser_module)
         _row(550, 568),
     ]
     boxes = [
-        _text(229, 238, 271, 408), _text(234, 244, 68, 108),      # header 1
-        _text(252, 264, 77, 99), _text(260, 269, 173, 251), _text(260, 269, 366, 494),  # header 2
-        _text(287, 297, 128, 189), _text(287, 297, 308, 369),      # 美國
-        _text(321, 333, 58, 89), _text(321, 332, 128, 215), _text(322, 332, 368, 395),  # 加拿大
-        _text(341, 350, 127, 206), _text(341, 350, 307, 386),
+        _text(229, 238, 271, 408),
+        _text(234, 244, 68, 108),  # header 1
+        _text(252, 264, 77, 99),
+        _text(260, 269, 173, 251),
+        _text(260, 269, 366, 494),  # header 2
+        _text(287, 297, 128, 189),
+        _text(287, 297, 308, 369),  # 美國
+        _text(321, 333, 58, 89),
+        _text(321, 332, 128, 215),
+        _text(322, 332, 368, 395),  # 加拿大
+        _text(341, 350, 127, 206),
+        _text(341, 350, 307, 386),
         _text(371, 382, 59, 109),  # 拉丁美洲與 (wrapped label, line 1)
-        _text(391, 400, 59, 98),   # 比海 (wrapped label, line 2)
-        _text(368, 378, 128, 294), _text(368, 377, 313, 552),
-        _text(387, 396, 127, 254), _text(387, 396, 308, 552),
-        _text(406, 414, 308, 546), _text(425, 434, 308, 547),
-        _text(444, 452, 308, 552), _text(463, 471, 308, 549),
-        _text(481, 490, 308, 553), _text(501, 509, 309, 552),
-        _text(519, 528, 308, 552), _text(538, 546, 308, 552),
+        _text(391, 400, 59, 98),  # 比海 (wrapped label, line 2)
+        _text(368, 378, 128, 294),
+        _text(368, 377, 313, 552),
+        _text(387, 396, 127, 254),
+        _text(387, 396, 308, 552),
+        _text(406, 414, 308, 546),
+        _text(425, 434, 308, 547),
+        _text(444, 452, 308, 552),
+        _text(463, 471, 308, 549),
+        _text(481, 490, 308, 553),
+        _text(501, 509, 309, 552),
+        _text(519, 528, 308, 552),
+        _text(538, 546, 308, 552),
         _text(557, 565, 309, 525),
     ]
     merged = _merge(pdf_parser_module, rows + COLS, boxes)
@@ -189,9 +202,12 @@ def test_real_adjacent_rows_kept_apart(pdf_parser_module):
     # about 2x the intra-cell line pitch, as in the issue fixture.
     rows = [_row(100, 130), _row(130, 160), _row(160, 190)]
     boxes = [
-        _text(103, 112, 60, 110), _text(103, 112, 130, 280),   # row 1
-        _text(133, 142, 60, 110), _text(133, 142, 130, 280),   # row 2
-        _text(163, 172, 60, 110), _text(163, 172, 130, 280),   # row 3
+        _text(103, 112, 60, 110),
+        _text(103, 112, 130, 280),  # row 1
+        _text(133, 142, 60, 110),
+        _text(133, 142, 130, 280),  # row 2
+        _text(163, 172, 60, 110),
+        _text(163, 172, 130, 280),  # row 3
     ]
     merged = _merge(pdf_parser_module, rows + COLS, boxes)
     assert [(c["top"], c["bottom"]) for c in merged] == [(100, 130), (130, 160), (160, 190)]
@@ -228,8 +244,10 @@ def test_tables_do_not_merge_across_layouts(pdf_parser_module):
     cols_b = [_col(57, 118, layoutno="table-1"), _col(118, 294, layoutno="table-1")]
     rows_b = [_row(300, 330, layoutno="table-1"), _row(330, 360, layoutno="table-1")]
     boxes = [
-        _text(303, 312, 60, 110), _text(303, 312, 130, 280),
-        _text(333, 342, 60, 110), _text(333, 342, 130, 280),
+        _text(303, 312, 60, 110),
+        _text(303, 312, 130, 280),
+        _text(333, 342, 60, 110),
+        _text(333, 342, 130, 280),
     ]
     out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(rows_a + rows_b + cols_b, boxes)
     bands = sorted((c["top"], c["bottom"]) for c in out if c["label"] == "table row")
@@ -239,8 +257,10 @@ def test_tables_do_not_merge_across_layouts(pdf_parser_module):
 def test_score_kept_as_max_when_merging(pdf_parser_module):
     rows = [_row(100, 120, score=0.3), _row(120, 150, score=0.8)]
     boxes = [
-        _text(105, 115, 60, 110), _text(105, 115, 130, 280),
-        _text(124, 134, 60, 110), _text(124, 134, 130, 280),
+        _text(105, 115, 60, 110),
+        _text(105, 115, 130, 280),
+        _text(124, 134, 60, 110),
+        _text(124, 134, 130, 280),
     ]
     merged = _merge(pdf_parser_module, rows + COLS, boxes)
     # Wrapped label (133 follows 115 by one pitch) plus tight content gap: merge.
@@ -254,17 +274,16 @@ def test_gridline_keeps_compact_single_line_rows(pdf_parser_module):
     the components keeps them apart while unruled wrapped lines merge."""
     rows = [_row(100, 120), _row(120, 140), _row(140, 160)]
     boxes = [
-        _text(103, 112, 60, 110), _text(103, 112, 130, 280),
-        _text(123, 132, 60, 110), _text(123, 132, 130, 280),
-        _text(143, 152, 60, 110), _text(143, 152, 130, 280),
+        _text(103, 112, 60, 110),
+        _text(103, 112, 130, 280),
+        _text(123, 132, 60, 110),
+        _text(123, 132, 130, 280),
+        _text(143, 152, 60, 110),
+        _text(143, 152, 130, 280),
     ]
-    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(
-        rows + COLS, boxes, has_separator=lambda _a, _b: True
-    )
+    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(rows + COLS, boxes, has_separator=lambda _a, _b: True)
     assert [(c["top"], c["bottom"]) for c in _rows_only(out)] == [(100, 120), (120, 140), (140, 160)]
-    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components(
-        [dict(r) for r in rows] + COLS, boxes, has_separator=lambda _a, _b: False
-    )
+    out = pdf_parser_module.RAGFlowPdfParser._merge_continuation_row_components([dict(r) for r in rows] + COLS, boxes, has_separator=lambda _a, _b: False)
     assert len(_rows_only(out)) == 1
 
 

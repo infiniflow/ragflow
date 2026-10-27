@@ -600,7 +600,7 @@ class RAGFlowPdfParser:
             try:
                 page = prev_comp["pn"]
                 cum = self.page_cum_height[page]
-                y = int(round((prev_comp["bottom"] + comp["top"]) / 2 * ZM - cum * ZM))
+                y = round((prev_comp["bottom"] + comp["top"]) / 2 * ZM - cum * ZM)
                 img = self.page_images[page]
                 x0 = int(max(0, prev_comp["x0"] * ZM))
                 x1 = int(min(img.width, prev_comp["x1"] * ZM))
@@ -612,7 +612,7 @@ class RAGFlowPdfParser:
                 strip = np.asarray(img.convert("L"), dtype=np.uint8)[max(0, y - w) : y + w + 1, x0:x1]
                 dark_frac = (strip < 160).mean(axis=1)
                 return bool((dark_frac > 0.6).any())
-            except Exception:
+            except (KeyError, IndexError, TypeError, AttributeError, ValueError):
                 return False
 
         self.tb_cpns = self._merge_continuation_row_components(self.tb_cpns, self.boxes, _has_gridline)
@@ -724,12 +724,9 @@ class RAGFlowPdfParser:
             y0 = min(c["top"] for c in row_comps) - 5
             y1 = max(c["bottom"] for c in row_comps) + 5
             tbl_boxes = [
-                b for b in boxes
-                if b.get("page_number") == pn + 1
-                and b.get("layout_type", "") == "table"
-                and b.get("text", "").strip()
-                and b["x1"] > x0 and b["x0"] < x1
-                and b["bottom"] > y0 and b["top"] < y1
+                b
+                for b in boxes
+                if b.get("page_number") == pn + 1 and b.get("layout_type", "") == "table" and b.get("text", "").strip() and b["x1"] > x0 and b["x0"] < x1 and b["bottom"] > y0 and b["top"] < y1
             ]
             if len(tbl_boxes) < 3:
                 result.extend(comps)
@@ -740,7 +737,7 @@ class RAGFlowPdfParser:
             gap_limit = RAGFlowPdfParser._CONTINUATION_GAP_FACTOR * med_h
             label_x1 = cols[0]["x1"]
 
-            def col_of(b):
+            def col_of(b, label_x1=label_x1, cols=cols):
                 cx = (b["x0"] + b["x1"]) / 2
                 if cx < label_x1:
                     return 0
