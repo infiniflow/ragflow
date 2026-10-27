@@ -2176,7 +2176,6 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	var mustClauses []interface{}
 	var mustNotClauses []interface{}
 	var filterClauses []interface{}
-	var shouldClauses []interface{}
 
 	// Memory message indexes use memory_id, regular chunk indexes use kb_id.
 	if kbIDs != nil && len(kbIDs) > 0 {
@@ -2299,36 +2298,26 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 			continue
 		}
 		if k == "id" {
-			if v == nil || v == "" {
-				continue
-			}
-			if listVal, ok := v.([]interface{}); ok && len(listVal) > 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
-				)
-			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
-				// A typed []string MUST be handled here: the generic loop
-				// below skips the "id" key, so without this branch a caller
-				// passing map[string]interface{}{"id": []string{...}} builds a
-				// query with NO id filter and the scoped read silently
-				// degenerates into "fetch up to Limit chunks of the document"
-				// (observed via list_chunks: an 11-chunk window returned 3.8MB
-				// because the whole 4171-chunk document was fetched instead).
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
-				)
-			} else if strVal, ok := v.(string); ok && strVal != "" {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": strVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": strVal}},
-				)
-			} else if intVal, ok := v.(int); ok && intVal != 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": intVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": intVal}},
-				)
+			// id is a scope restriction, never a scoring hint. It has to be a
+			// mandatory clause: encoding it in bool.should relied on
+			// minimum_should_match to make it binding, and Search() appends
+			// rank_feature clauses to that same top-level should list — every
+			// document carrying the rank feature then satisfied the id scope,
+			// so a chunk-id-scoped read silently returned unrelated chunks.
+			//
+			// The generic loop below skips the "id" key, so a value shape this
+			// helper does not understand leaves the query without any id
+			// filter: list_chunks then degenerates into "fetch up to Limit
+			// chunks of the document" (an 11-chunk window returned 3.8MB
+			// instead of ~17KB). idTermClauses therefore accepts every list
+			// flavour, not only []interface{}.
+			if idClauses := idTermClauses(v); len(idClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"bool": map[string]interface{}{
+						"should":               idClauses,
+						"minimum_should_match": 1,
+					},
+				})
 			}
 			continue
 		}
@@ -2381,16 +2370,49 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
 	}
-	if len(shouldClauses) > 0 {
-		boolQuery["should"] = shouldClauses
-		boolQuery["minimum_should_match"] = 1
-	}
 
 	if len(boolQuery) == 0 {
 		return nil
 	}
 
 	return map[string]interface{}{"bool": boolQuery}
+}
+
+// idTermClauses renders one id condition as id/_id alternatives, so a caller
+// matches whichever field it addressed: the stored id field or the
+// Elasticsearch _id. The caller makes the result mandatory.
+//
+// The query shapes mirror the Python reference (rag/utils/es_conn.py): a
+// scalar id is a term, a list of ids is a terms query.
+func idTermClauses(value interface{}) []interface{} {
+	switch val := value.(type) {
+	case nil:
+		return nil
+	case string:
+		if val == "" {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	case int:
+		if val == 0 {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	}
+	items, ok := conditionTermsList(value)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	return []interface{}{
+		map[string]interface{}{"terms": map[string]interface{}{"id": items}},
+		map[string]interface{}{"terms": map[string]interface{}{"_id": items}},
+	}
 }
 
 // buildQueryStringQuery builds a query_string query from MatchTextExpr
