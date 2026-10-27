@@ -18,8 +18,10 @@ package chunker
 
 import (
 	"context"
-	"ragflow/internal/ingestion/component/schema"
+	"fmt"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // slideChunksOf drives PageChunker.Invoke and returns the emitted maps.
@@ -138,6 +140,11 @@ func TestPageChunkerPreservesSlideTableItems(t *testing.T) {
 	for _, index := range []int{1, 3} {
 		if chunks[index]["doc_type_kwd"] != "table" || chunks[index]["table"] == nil || chunks[index+1]["parent_table_id"] != chunks[index]["source_table_id"] {
 			t.Fatalf("table structure or image association lost: %#v", chunks)
+		}
+	}
+	for _, chunk := range chunks {
+		if got := fmt.Sprint(chunk["slide_number"]); got != "1" {
+			t.Fatalf("slide_number lost: %#v", chunk)
 		}
 	}
 }
