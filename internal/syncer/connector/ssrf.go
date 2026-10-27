@@ -295,7 +295,7 @@ func (e *connectorUnsafeURLError) Unwrap() error { return e.Err }
 //   - The hop is sent through a transport that dials exactly the validated IP,
 //     so a DNS change after validation cannot rebind the connection.
 //   - Sensitive headers (Authorization etc.) are dropped when a redirect
-//     crosses to a different netloc, mirroring http.Client's default.
+//     crosses to a different origin, mirroring http.Client's default.
 //   - 301/302/303 downgrade the next hop to GET with an empty body.
 //
 // Connector-specific behavior is expressed through the Prepare, CheckRedirect,
@@ -336,7 +336,24 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				return nil, err
 			}
 		}
-		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout)
+		proxyURL, err := connectorProxyURL(opts.Base, req)
+		if err != nil {
+			return nil, fmt.Errorf("resolve connector proxy: %w", err)
+		}
+		originalURL := *req.URL
+		if req.Host == "" {
+			req.Host = req.URL.Host
+		}
+		requestURI := req.URL.RequestURI()
+		pinnedHost := connectorPinnedHost(req.URL, pinIP)
+		req.URL.Host = pinnedHost
+		if proxyURL != nil && req.URL.Scheme == "http" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
+			// net/http normally builds an HTTP proxy's absolute request target
+			// from Request.Host. Use an opaque absolute URI so the proxy connects
+			// to the validated IP while the Host header retains the origin name.
+			req.URL.Opaque = "//" + pinnedHost + requestURI
+		}
+		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout, proxyURL)
 		client := &http.Client{
 			Transport: transport,
 			Timeout:   opts.Timeout,
@@ -350,6 +367,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		for attempt := 1; ; attempt++ {
 			resp, err = client.Do(req)
 			if err != nil {
+				req.URL = &originalURL
 				transport.CloseIdleConnections()
 				return nil, err
 			}
@@ -366,6 +384,10 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				}
 			}
 			break
+		}
+		req.URL = &originalURL
+		if resp.Request != nil {
+			resp.Request.URL = &originalURL
 		}
 		if !connectorIsRedirect(resp.StatusCode) {
 			resp.Body = &connectorCloseIdleBody{body: resp.Body, transport: transport}
@@ -408,25 +430,57 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 	}
 }
 
-// newConnectorPinnedTransport builds a transport that dials exactly pinIP for
-// every connection, so the hop is connected to the address validated by the
-// SSRF guard regardless of later DNS changes. When base provides an
-// *http.Transport (custom TLS/CA), it is cloned and reused; otherwise a default
-// transport is used. Environment proxies are deliberately ignored: HTTP_PROXY /
-// HTTPS_PROXY would route the connection through a proxy host instead of pinIP.
-func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.IP, timeout time.Duration) *http.Transport {
+// connectorProxyURL resolves the configured proxy before the request target is pinned.
+func connectorProxyURL(base *http.Client, req *http.Request) (*url.URL, error) {
+	proxy := http.ProxyFromEnvironment
+	if base != nil && base.Transport != nil {
+		transport, ok := base.Transport.(*http.Transport)
+		if !ok {
+			return nil, nil
+		}
+		proxy = transport.Proxy
+	}
+	if proxy == nil {
+		return nil, nil
+	}
+	return proxy(req)
+}
+
+// connectorPinnedHost returns the validated IP combined with the origin port.
+func connectorPinnedHost(reqURL *url.URL, pinIP net.IP) string {
+	port := reqURL.Port()
+	if port == "" {
+		if reqURL.Scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(pinIP.String(), port)
+}
+
+// newConnectorPinnedTransport builds a transport that pins direct connections
+// to pinIP or dials the selected proxy while keeping pinIP as the proxy target.
+// When base provides an *http.Transport (custom TLS/CA), it is cloned and
+// reused; otherwise a default transport is used.
+func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.IP, timeout time.Duration, proxyURL *url.URL) *http.Transport {
 	dialer := &net.Dialer{Timeout: timeout, KeepAlive: 30 * time.Second}
 	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if proxyURL != nil {
+			return dialer.DialContext(ctx, network, addr)
+		}
 		_, port, err := net.SplitHostPort(addr)
 		if err != nil {
 			port = "443"
 		}
 		return dialer.DialContext(ctx, network, net.JoinHostPort(pinIP.String(), port))
 	}
+	proxy := func(*http.Request) (*url.URL, error) { return proxyURL, nil }
 	if base != nil {
 		if t, ok := base.Transport.(*http.Transport); ok {
 			clone := t.Clone()
 			clone.DialContext = dial
+			clone.Proxy = proxy
 			if clone.TLSClientConfig == nil {
 				clone.TLSClientConfig = &tls.Config{ServerName: hostname, MinVersion: tls.VersionTLS12}
 			} else {
@@ -439,7 +493,7 @@ func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.I
 		}
 	}
 	return &http.Transport{
-		Proxy:                 nil,
+		Proxy:                 proxy,
 		DialContext:           dial,
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
