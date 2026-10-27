@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -96,7 +97,6 @@ func newProviderHandlerRequest(t *testing.T, body map[string]interface{}, params
 	}
 	req := httptest.NewRequest(http.MethodPatch, "/providers/OpenAI/instances/default/models/gpt-test", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(permission.WithSubject(req.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-1"}))
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = req

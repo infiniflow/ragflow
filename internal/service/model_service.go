@@ -299,6 +299,9 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 
 	instance, err := m.resolveInstance(ctx, provider, instanceName)
 	if err != nil {
+		if errors.Is(err, errInstanceProviderMismatch) {
+			return nil, instanceLookupError(provider, instanceName, err)
+		}
 		return nil, err
 	}
 	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
