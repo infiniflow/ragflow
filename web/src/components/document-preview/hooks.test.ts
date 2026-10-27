@@ -35,7 +35,9 @@ function mockPreviewer(sheetCount = 2) {
       setCell: jest.fn(),
       getCellOrNew: jest.fn(),
       getHeight: jest.fn(() => 20),
+      len: 100,
     },
+    cols: { len: 10 },
     scroll: { x: 0, y: 0 },
   });
   const datas = Array.from({ length: sheetCount }, makeData);
@@ -65,9 +67,55 @@ describe('applyExcelSourceLocate', () => {
     jest.restoreAllMocks();
   });
 
+  it('paints every range while scrolling to the first position', () => {
+    const previewer = mockPreviewer();
+    applyExcelSourceLocate(previewer as never, [
+      [1, 20, 20, 1, 1],
+      [1, 1, 1, 1, 1],
+    ]);
+    expect(previewer.xs.datas[0].rows.setCell).toHaveBeenCalledWith(
+      19,
+      0,
+      { style: 7 },
+      'format',
+    );
+    expect(previewer.xs.datas[0].rows.setCell).toHaveBeenCalledWith(
+      0,
+      0,
+      { style: 7 },
+      'format',
+    );
+    expect(previewer.xs.sheet.verticalScrollbar.move).toHaveBeenCalledWith({
+      top: 379,
+    });
+  });
+
+  it('paints ranges on multiple sheets and opens the target sheet', () => {
+    const previewer = mockPreviewer();
+    applyExcelSourceLocate(previewer as never, [
+      [2, 4, 4, 1, 1],
+      [1, 2, 2, 1, 1],
+    ]);
+    expect(previewer.xs.datas[1].rows.setCell).toHaveBeenCalledWith(
+      3,
+      0,
+      { style: 7 },
+      'format',
+    );
+    expect(previewer.xs.datas[0].rows.setCell).toHaveBeenCalledWith(
+      1,
+      0,
+      { style: 7 },
+      'format',
+    );
+    expect(previewer.xs.bottombar.clickSwap2).toHaveBeenCalledWith(
+      previewer.xs.bottombar.items[1],
+    );
+  });
+
   it('selects the 1-based sheet, paints the range, and scrolls via the scrollbar', () => {
     const previewer = mockPreviewer();
-    applyExcelSourceLocate(previewer as never, [2, 3, 4, 1, 2]);
+    applyExcelSourceLocate(previewer as never, [[2, 3, 4, 1, 2]]);
 
     expect(previewer.xs.bottombar.clickSwap2).toHaveBeenCalledWith(
       previewer.xs.bottombar.items[1],
@@ -100,14 +148,29 @@ describe('applyExcelSourceLocate', () => {
 
   it('is a no-op when the position tuple is short', () => {
     const previewer = mockPreviewer();
-    applyExcelSourceLocate(previewer as never, [1, 2]);
+    applyExcelSourceLocate(previewer as never, [[1, 2]]);
     expect(previewer.xs.datas[0].addStyle).not.toHaveBeenCalled();
+  });
+
+  it('skips a range outside the sheet when choosing the scroll target', () => {
+    const previewer = mockPreviewer();
+    applyExcelSourceLocate(previewer as never, [
+      [1, 101, 101, 1, 1],
+      [2, 3, 3, 1, 1],
+    ]);
+    expect(previewer.xs.datas[0].rows.setCell).not.toHaveBeenCalled();
+    expect(previewer.xs.bottombar.clickSwap2).toHaveBeenCalledWith(
+      previewer.xs.bottombar.items[1],
+    );
+    expect(previewer.xs.sheet.verticalScrollbar.move).toHaveBeenCalledWith({
+      top: 39,
+    });
   });
 
   it('falls back to resetData when clickSwap2 is missing', () => {
     const previewer = mockPreviewer();
     (previewer.xs.bottombar as { clickSwap2?: unknown }).clickSwap2 = undefined;
-    applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
+    applyExcelSourceLocate(previewer as never, [[1, 2, 2, 1, 1]]);
     expect(previewer.xs.sheet.resetData).toHaveBeenCalledWith(
       previewer.xs.datas[0],
     );
@@ -118,7 +181,7 @@ describe('applyExcelSourceLocate', () => {
     const sheet = previewer.xs.sheet as Record<string, unknown>;
     sheet.verticalScrollbar = undefined;
     sheet.horizontalScrollbar = undefined;
-    applyExcelSourceLocate(previewer as never, [1, 3, 3, 1, 1]);
+    applyExcelSourceLocate(previewer as never, [[1, 3, 3, 1, 1]]);
 
     // r1 = 2 rows above, each 20px high
     expect(previewer.xs.datas[0].scroll).toEqual({ x: 0, y: 40 });
