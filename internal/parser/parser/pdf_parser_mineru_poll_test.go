@@ -102,3 +102,37 @@ func TestPollMinerUTask_StopsBeforeStatusCallWhenAlreadyCancelled(t *testing.T) 
 		t.Fatalf("status requests = %d, want 0 for an already cancelled run", hits.Load())
 	}
 }
+
+// A status call can outlive the poll budget on its own request timeout. Its
+// late content must not be returned as an in-time success.
+func TestPollMinerUTask_ReportsTimeoutWhenStatusReturnsLate(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Late"}}}`))
+	}))
+	defer server.Close()
+	driver := models.NewMinerLocalUModel(
+		map[string]string{"default": server.URL},
+		models.URLSuffix{Task: "tasks"},
+	)
+
+	start := time.Now()
+	_, err := pollMinerUTask(t.Context(), driver, "task-late", &models.APIConfig{}, 100*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("poll returned a late result after the budget elapsed")
+	}
+	if !strings.Contains(err.Error(), "timed out after") {
+		t.Fatalf("error = %v, want it to name the timeout", err)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("poll returned after %s, want it bounded by the 100ms budget", elapsed)
+	}
+}

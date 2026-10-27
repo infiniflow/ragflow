@@ -80,12 +80,31 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 		timeout = minerUPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
+	// Each status call can wait up to its own request timeout, which is longer
+	// than a short poll budget can be. Bound the call by the poll deadline too,
+	// otherwise a slow status response outlives the budget and its content is
+	// returned as if the poll had succeeded in time.
+	pollCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	var lastErr error
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		task, err := driver.ShowTask(pollCtx, taskID, apiConfig)
+		if pollCtx.Err() != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			cause := lastErr
+			if cause == nil {
+				cause = err
+			}
+			if cause == nil {
+				cause = context.DeadlineExceeded
+			}
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, cause)
+		}
 		if err == nil {
 			for _, segment := range task.Segments {
 				if strings.TrimSpace(segment.Content) != "" {
