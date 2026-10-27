@@ -1043,7 +1043,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
-        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
+        '在将检索到的文本块传递给大语言模型（LLM）之前，评估其与用户问题的相关性。要启用此功能，请先在“设置 → 模型供应商”中配置决策模型，然后在此处选择。默认情况下不使用决策模型。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:

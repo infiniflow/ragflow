@@ -1150,7 +1150,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
-        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
+        'Evaluates whether retrieved chunks are relevant to the user\'s query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.',
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
