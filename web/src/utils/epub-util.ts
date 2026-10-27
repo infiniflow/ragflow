@@ -49,11 +49,16 @@ export const normalizeEpubEncoding = async (
             '$1encoding="UTF-8"',
           )
         : text;
-    if (normalized === text) {
+    const utf8 = new TextEncoder().encode(normalized);
+    const original = new Uint8Array(buffer);
+    if (
+      utf8.length === original.length &&
+      utf8.every((byte, index) => byte === original[index])
+    ) {
       continue;
     }
     changed = true;
-    zip.file(entry.name, normalized);
+    zip.file(entry.name, utf8);
   }
 
   if (!changed) {
