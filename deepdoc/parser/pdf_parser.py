@@ -596,6 +596,8 @@ class RAGFlowPdfParser:
                     pg.append(it)
             self.tb_cpns.extend(pg)
 
+        self.tb_cpns = self._merge_continuation_row_components(self.tb_cpns, self.boxes)
+
         def gather(kwd, fzy=10, ption=0.6):
             eles = Recognizer.sort_Y_firstly([r for r in self.tb_cpns if re.match(kwd, r["label"])], fzy)
             eles = Recognizer.layouts_cleanup(self.boxes, eles, 5, ption)
@@ -638,6 +640,143 @@ class RAGFlowPdfParser:
                 b["H_left"] = spans[ii]["x0"]
                 b["H_right"] = spans[ii]["x1"]
                 b["SP"] = ii
+
+    # A row boundary with a text gap above this multiple of the table's
+    # median OCR line height is treated as a real row boundary; tighter gaps
+    # are wrapped-text continuation inside one cell.
+    _CONTINUATION_GAP_FACTOR = 1.5
+
+    @staticmethod
+    def _merge_continuation_row_components(tb_cpns, boxes):
+        """Merge phantom ``table row`` components from cross-page continuations.
+
+        On a cross-page table continuation whose column holds a long wrapped
+        paragraph, the TSR model emits one ``table row`` component per wrapped
+        text line instead of one per physical row (issue #18569). Geometry
+        alone cannot separate those phantom splits from real adjacent rows,
+        because both abut or overlap vertically, so this pass uses the OCR
+        text lines inside the table to decide each boundary:
+
+        * a row component that covers no text merges into the next one
+          (split-line and padding artifacts);
+        * a boundary is kept when a new label-column text run starts below
+          it: a real row starts with a new label, while a wrapped label
+          continues at the regular line pitch;
+        * otherwise the boundary is a phantom split only when text continues
+          across it in at least one content column at the regular line pitch.
+
+        When in doubt the boundary is kept, so ordinary tables are returned
+        unchanged. Components of non-row labels and tables without column
+        components are passed through as-is.
+        """
+        row_pat = re.compile(r".* (row|header)$")
+        col_pat = re.compile(r"table column$")
+
+        groups = {}
+        for idx, c in enumerate(tb_cpns):
+            groups.setdefault((c.get("pn"), c.get("layoutno")), []).append(idx)
+
+        result = []
+        for key in sorted(groups, key=lambda k: (k[0] is None, k[0], str(k[1]))):
+            comps = [tb_cpns[i] for i in groups[key]]
+            row_comps = sorted(
+                (c for c in comps if row_pat.match(c["label"])),
+                key=lambda c: (c["top"], c["x0"]),
+            )
+            other_comps = [c for c in comps if not row_pat.match(c["label"])]
+            cols = sorted(
+                (c for c in comps if col_pat.match(c["label"])),
+                key=lambda c: c["x0"],
+            )
+            if len(row_comps) < 2 or not cols:
+                result.extend(comps)
+                continue
+
+            pn = key[0]
+            x0 = min(c["x0"] for c in row_comps) - 5
+            x1 = max(c["x1"] for c in row_comps) + 5
+            y0 = min(c["top"] for c in row_comps) - 5
+            y1 = max(c["bottom"] for c in row_comps) + 5
+            tbl_boxes = [
+                b for b in boxes
+                if b.get("page_number") == pn + 1
+                and b.get("layout_type", "") == "table"
+                and b.get("text", "").strip()
+                and b["x1"] > x0 and b["x0"] < x1
+                and b["bottom"] > y0 and b["top"] < y1
+            ]
+            if len(tbl_boxes) < 3:
+                result.extend(comps)
+                continue
+
+            heights = sorted(b["bottom"] - b["top"] for b in tbl_boxes)
+            med_h = heights[len(heights) // 2]
+            gap_limit = RAGFlowPdfParser._CONTINUATION_GAP_FACTOR * med_h
+            label_x1 = cols[0]["x1"]
+
+            def col_of(b):
+                cx = (b["x0"] + b["x1"]) / 2
+                if cx < label_x1:
+                    return 0
+                for ci, c in enumerate(cols[1:], start=1):
+                    if c["x0"] - 3 <= cx <= c["x1"] + 3:
+                        return ci
+                return None
+
+            label_boxes = [b for b in tbl_boxes if col_of(b) == 0]
+            content_boxes = {}
+            for b in tbl_boxes:
+                ci = col_of(b)
+                if ci:
+                    content_boxes.setdefault(ci, []).append(b)
+
+            merged = []
+            for comp in row_comps:
+                if not merged:
+                    merged.append(dict(comp))
+                    continue
+                acc = merged[-1]
+                boundary = acc["bottom"]
+                a_texts = [b for b in tbl_boxes if b["top"] < boundary and b["bottom"] > acc["top"]]
+                if not a_texts:
+                    # Component covering no text: split-line or padding strip.
+                    acc["bottom"] = max(acc["bottom"], comp["bottom"])
+                    acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
+                    continue
+
+                b_texts = [b for b in tbl_boxes if boundary - 1 <= b["top"] < comp["bottom"] + 1]
+
+                new_label = False
+                for tb in b_texts:
+                    if col_of(tb) != 0:
+                        continue
+                    prev = [ta for ta in label_boxes if tb["top"] - gap_limit <= ta["bottom"] <= tb["top"] + 1]
+                    if not prev:
+                        new_label = True
+                        break
+                if new_label:
+                    merged.append(dict(comp))
+                    continue
+
+                continuation = False
+                for cbs in content_boxes.values():
+                    above = [b for b in cbs if boundary - 4 * gap_limit < b["bottom"] <= boundary + med_h / 2]
+                    below = [b for b in cbs if b["top"] >= boundary - 1]
+                    if not above or not below:
+                        continue
+                    gap = min(b["top"] for b in below) - max(b["bottom"] for b in above)
+                    if gap <= gap_limit:
+                        continuation = True
+                        break
+                if continuation:
+                    acc["bottom"] = max(acc["bottom"], comp["bottom"])
+                    acc["score"] = max(acc.get("score", 0), comp.get("score", 0))
+                else:
+                    merged.append(dict(comp))
+
+            result.extend(other_comps)
+            result.extend(merged)
+        return result
 
     def _ocr_rotated_tables(self, ZM, table_layouts, tsr_results, tbcnt):
         """
