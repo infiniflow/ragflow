@@ -8,6 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/encoding/korean"
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -339,5 +340,39 @@ func TestDecodeToUTF8_KeepsNonLeadingZeroWidthNoBreakSpace(t *testing.T) {
 	out, _ := DecodeToUTF8([]byte(src), "text/plain")
 	if string(out) != src {
 		t.Errorf("got %q, want %q", out, src)
+	}
+}
+
+// Windows-1252 text is what a Western Windows editor writes as "ANSI". Read
+// as ISO-8859-1, its curly quotes, dashes and euro sign became C1 control
+// characters; the text and CSV parsers reach that reading when nothing in
+// the file names a charset.
+func TestDecodeToUTF8_ReadsWindows1252Punctuation(t *testing.T) {
+	text := "“Quoted” text – costs 5 €. Grüße aus Köln.\n"
+	raw, err := charmap.Windows1252.NewEncoder().Bytes([]byte(text))
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	for _, hint := range []string{"text/plain", "text/csv", "iso-8859-1"} {
+		decoded, label := DecodeToUTF8(raw, hint)
+		if string(decoded) != text || label != "windows-1252" {
+			t.Errorf("hint %q: got %q (%s), want %q (windows-1252)", hint, decoded, label, text)
+		}
+	}
+}
+
+// Bytes outside 0x80-0x9F mean the same in both charsets, so such text keeps
+// its ISO-8859-1 label; a byte Windows-1252 leaves undefined keeps the
+// ISO-8859-1 reading.
+func TestDecodeToUTF8_KeepsISO88591WhereWindows1252CannotHelp(t *testing.T) {
+	for _, raw := range [][]byte{
+		[]byte("Caf\xe9 r\xe9sum\xe9, na\xefve fa\xe7ade\n"),
+		[]byte("Caf\xe9 \x81 menu\n"),
+	} {
+		decoded, label := DecodeToUTF8(raw, "text/plain")
+		want, _ := charmap.ISO8859_1.NewDecoder().Bytes(raw)
+		if string(decoded) != string(want) || label != "iso-8859-1" {
+			t.Errorf("%q: got %q (%s), want %q (iso-8859-1)", raw, decoded, label, want)
+		}
 	}
 }
