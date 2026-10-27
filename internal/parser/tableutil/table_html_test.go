@@ -70,8 +70,11 @@ func TestParseTableHTMLFooterRowsComeLast(t *testing.T) {
 func TestParseTableHTMLFooterRowsStayWithTheirTable(t *testing.T) {
 	html := `<table><tfoot><tr><td>Total</td><td>1</td></tr></tfoot>` +
 		`<tbody><tr><td>A</td><td>1</td></tr></tbody></table>` +
-		`<table><tr><td>B</td><td>2</td></tr></table>`
+		`<table><thead><tr><th>B</th><th>2</th></tr></thead></table>`
 	td := mustParse(t, html)
+	if td.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
+	}
 	want := [][]string{
 		{"A", "1"},
 		{"Total", "1"},

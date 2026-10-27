@@ -81,7 +81,9 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			return
 		}
 		if isHTMLElement(n, "thead") && !inFoot {
-			hasThead = true
+			if len(rows) == 0 {
+				hasThead = true
+			}
 			inHead = true
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				walk(c)

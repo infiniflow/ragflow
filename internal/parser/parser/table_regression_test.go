@@ -44,6 +44,32 @@ func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
 	}
 }
 
+func TestTableRegressionDOCXFoldedTableKeepsLaterTableMetaAligned(t *testing.T) {
+	ir := `{"sections":[{"elements":[` +
+		`{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"FragHeader"}]}]}]}]},` +
+		`{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"FragBody"}]}]}]}]},` +
+		`{"type":"paragraph","content":[{"type":"text","text":"Later Caption"}]},` +
+		`{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Key"}]}]}]},{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Val"}]}]}]}]}` +
+		`]}]}`
+	meta := []docxTableMeta{
+		{caption: "Merged Caption", firstRow: boolPtr(true)},
+		{caption: "", firstRow: boolPtr(true)},
+		{caption: "Later Caption", firstRow: boolPtr(false)},
+	}
+	items := buildDOCXJSONSectionsWithTableMeta(ir, nil, meta)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 tables (merged + later), got %#v", items)
+	}
+	firstTD := items[0]["table"].(*entity.TableData)
+	secondTD := items[1]["table"].(*entity.TableData)
+	if firstTD.Caption != "Merged Caption" || firstTD.HeaderRows != 1 {
+		t.Fatalf("merged table = %+v, want caption=%q HeaderRows=1", firstTD, "Merged Caption")
+	}
+	if secondTD.Caption != "Later Caption" || secondTD.HeaderRows != 0 {
+		t.Fatalf("later table = %+v, want caption=%q HeaderRows=0", secondTD, "Later Caption")
+	}
+}
+
 func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
 	source := "![logo](data:image/png;base64,aGVsbG8=) Before <table><tr><td>A</td><td>B</td></tr></table> After"
 	p, _ := NewMarkdownParser(GoMarkdown)

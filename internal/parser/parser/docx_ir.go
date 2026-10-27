@@ -442,18 +442,23 @@ func buildDOCXJSONSectionsWithTableMeta(irJSON string, budget *embeddedMediaBudg
 			// first rows carry the same column count, so one logical table is
 			// emitted as a single item instead of a header chunk + body chunk
 			// (each would otherwise carry the same caption).
+			foldedTable := false
 			if topLevel && el.Type == "table" && len(el.Rows) == 1 && ei+1 < len(elements) {
 				if nxt := elements[ei+1]; nxt.Type == "table" &&
 					docxIRTableCols(el) > 0 && docxIRTableCols(el) == docxIRTableCols(nxt) {
 					merged := nxt
 					headerRow := el.Rows[0]
-					headerRow.IsHeader = true
+					if idx := captionSequence; idx >= len(tableMeta) ||
+						tableMeta[idx].firstRow == nil || *tableMeta[idx].firstRow {
+						headerRow.IsHeader = true
+					}
 					rows := make([]docxIRRow, 0, len(nxt.Rows)+1)
 					rows = append(rows, headerRow)
 					rows = append(rows, nxt.Rows...)
 					merged.Rows = rows
 					el = merged
 					ei++ // fold the following table into this one; skip it
+					foldedTable = true
 				}
 			}
 			switch el.Type {
@@ -484,8 +489,13 @@ func buildDOCXJSONSectionsWithTableMeta(irJSON string, budget *embeddedMediaBudg
 
 			case "table":
 				tableSequence++
+				metaIdx := -1
 				if topLevel {
+					metaIdx = captionSequence
 					captionSequence++
+					if foldedTable {
+						captionSequence++
+					}
 				}
 				if len(el.Rows) == 0 {
 					continue
@@ -495,11 +505,11 @@ func buildDOCXJSONSectionsWithTableMeta(irJSON string, budget *embeddedMediaBudg
 				// heading-location caption.
 				caption := docxHeadingLocationCaption(headings)
 				var firstRow *bool
-				if idx := captionSequence - 1; topLevel && idx >= 0 && idx < len(tableMeta) {
-					if explicit := strings.TrimSpace(tableMeta[idx].caption); explicit != "" {
+				if metaIdx >= 0 && metaIdx < len(tableMeta) {
+					if explicit := strings.TrimSpace(tableMeta[metaIdx].caption); explicit != "" {
 						caption = explicit
 					}
-					firstRow = tableMeta[idx].firstRow
+					firstRow = tableMeta[metaIdx].firstRow
 				}
 				sections = appendOfficeTableSections(sections, el, caption, fmt.Sprintf("docx-table-%d", tableSequence), budget, firstRow)
 
