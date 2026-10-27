@@ -16,6 +16,7 @@
 
 import { useCallback } from 'react';
 
+import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import {
   ICreateCompilationTemplateGroupRequestBody,
   IUpdateCompilationTemplateGroupRequestBody,
@@ -24,17 +25,22 @@ import {
 import { FormSchemaType } from '../schema';
 import { transformFormToPayload } from '../utils';
 
+export type CompilationTemplateGroupSaveResult = {
+  code: number;
+  data?: ICompilationTemplateGroup;
+};
+
 type UseCompilationTemplateGroupSubmitOptions = {
   isCreate: boolean;
   id?: string;
   createGroup: (
     params: ICreateCompilationTemplateGroupRequestBody,
-  ) => Promise<{ code: number } & Record<string, unknown>>;
+  ) => Promise<CompilationTemplateGroupSaveResult>;
   updateGroup: (
     id: string,
     params: IUpdateCompilationTemplateGroupRequestBody,
-  ) => Promise<{ code: number } & Record<string, unknown>>;
-  onSuccess: () => void;
+  ) => Promise<CompilationTemplateGroupSaveResult>;
+  onSuccess: (result: CompilationTemplateGroupSaveResult) => void;
 };
 
 export const useCompilationTemplateGroupSubmit = ({
@@ -54,7 +60,7 @@ export const useCompilationTemplateGroupSubmit = ({
         result = await updateGroup(id, payload);
       }
       if (result?.code === 0) {
-        onSuccess();
+        onSuccess(result);
       }
     },
     [createGroup, id, isCreate, onSuccess, updateGroup],

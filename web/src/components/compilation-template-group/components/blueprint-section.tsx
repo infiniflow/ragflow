@@ -52,7 +52,9 @@ export function BlueprintSection({
       <Collapse
         defaultOpen
         title={
-          <h3 className="text-base font-medium">{t('knowledgeCompilation.blueprints')}</h3>
+          <h3 className="text-base font-medium">
+            {t('knowledgeCompilation.blueprints')}
+          </h3>
         }
       >
         <div className="space-y-4">

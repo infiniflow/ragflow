@@ -163,6 +163,8 @@ export function VersionDialog({
     deleteVersion,
     selectedId,
     saveAgent,
+    applyVersion,
+    hideModal,
     agent?.dsl,
     agent?.title,
   ]);
