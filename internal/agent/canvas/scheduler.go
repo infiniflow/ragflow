@@ -904,6 +904,12 @@ func hasStructuredOutput(params map[string]any) bool {
 
 func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
 	deferToMessage := directMessageDownstream(c, cpnID)
+	if c != nil {
+		// Exception routing needs the producer's actual result before choosing a path.
+		if method, _ := c.Components[cpnID].Obj.Params["exception_method"].(string); method != "" {
+			deferToMessage = false
+		}
+	}
 	isAgent := strings.EqualFold(name, "Agent")
 	isLLM := strings.EqualFold(name, "LLM") || strings.EqualFold(name, "Generate")
 	deferLLM := false
