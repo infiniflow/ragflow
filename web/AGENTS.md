@@ -25,6 +25,16 @@ npm run test       # Jest tests
 
 ## Development Conventions
 
+### Pre-commit Format Validation (Mandatory)
+
+Frontend code changes **must pass the lefthook format checks before every commit**. Do not rely on CI (`web-oxfmt` / `web-oxlint` jobs) to catch formatting after pushing.
+
+- Before staging or committing changed `.ts`/`.tsx`/`.js`/etc. files, run the formatter and linter locally:
+  - `npx oxfmt <changed files>` (or `npm run format`) to auto-fix formatting
+  - `npx oxlint` (or `npm run lint`) for lint issues
+- Verify with `npx oxfmt --check <changed files>` before `git commit`.
+- Let the lefthook pre-commit hook run to completion and fix everything it reports; never bypass hooks with `--no-verify`.
+
 ### Test File Placement
 
 When tests are grouped in a dedicated directory, that directory is always named `__tests__/` — never `tests/`. Example: `src/pages/agent/utils/__tests__/extractor-transform.test.ts` for `src/pages/agent/utils/extractor-transform.ts`. Co-located `foo.test.ts(x)` files next to the source file are also fine. When you find an existing test under a `tests/` directory, move it into `__tests__/` (keep git history via `git mv`) rather than adding new tests there.
@@ -114,6 +124,14 @@ Interface types are split between two folders:
 - Request params/body → `src/interfaces/request/xx.ts`
 
 Model-related endpoints (LLM provider / factory / my LLM, etc.) are consolidated in `src/services/llm-service.ts` rather than scattered across hooks. For GET endpoints, register with `method: 'get'` in the service, and on the call site pass `true` as the second argument to use the native axios config (e.g., `service.listProviders({ params: { available: true } }, true)`).
+
+### Module Dependency Direction
+
+`src/components/`, `src/hooks/`, `src/services/`, and `src/utils/` are shared layers: **they must not import from `src/pages/`**. A page may import from shared layers, never the reverse. (Legacy exceptions exist, e.g. `src/components/pipeline-operator-tabs/`; do not add new ones, and prefer lifting when you touch such code.)
+
+When page code gains a second consumer (e.g. a page form reused inside a dialog), lift the **whole self-contained subtree** — its `components/`, `hooks/`, `schema.ts`, `constant.ts`, `utils.ts` — into a feature folder under `src/components/` (precedent: `compilation-template-group/`, `pipeline-operator-tabs/`) using `git mv` to preserve history. Keep the subtree's internal structure and relative imports unchanged, and slim the route page down to a thin wrapper (route params, navigation, header). Never lift a single file out of a subtree — that multiplies cross-layer imports instead of removing them. Page-only logic (route params, return-navigation helpers) stays in the page directory.
+
+`src/utils/` is for pure functions only — shared React components and hooks live in `src/components/` and `src/hooks/`, never in `src/utils/`.
 
 ### Shared UI Component Lock
 

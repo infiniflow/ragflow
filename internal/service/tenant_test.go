@@ -38,7 +38,7 @@ func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.PermissionChangeLog{}); err != nil {
 		t.Fatalf("migrate tenant permission table: %v", err)
 	}
 	originalDB := dao.DB
@@ -132,22 +132,33 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("self-removal failed: %v", err)
 	}
-	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, db, "user-abc", "tenant-xyz"); !dao.IsNotFoundErr(err) {
-		t.Fatalf("self-membership remains after removal: %v", err)
+	var membership entity.UserTenant
+	if err := db.Where("user_id = ? AND tenant_id = ?", "user-abc", "tenant-xyz").Take(&membership).Error; err != nil {
+		t.Fatalf("read self-membership after leaving: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusLeft || membership.Role != "" {
+		t.Fatalf("self-membership after leaving = %+v, want left status and empty role", membership)
 	}
 }
 
 func TestDeclineOwnTenantInviteAllowed(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
-	seedTenantMembership(t, db, "invite", "invitee-user", "tenant-xyz", TenantRoleInvite)
+	status := entity.TenantMembershipStatusInvited
+	if err := db.Create(&entity.UserTenant{ID: "invite", UserID: "invitee-user", TenantID: "tenant-xyz", Status: &status}).Error; err != nil {
+		t.Fatalf("seed pending invitation: %v", err)
+	}
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 
 	code, err := s.RemoveMember(t.Context(), "invitee-user", "tenant-xyz", "invitee-user")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("RemoveMember(invitation self-decline) = (%v, %v), want success", code, err)
 	}
-	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(t.Context(), db, "invitee-user", "tenant-xyz"); !dao.IsNotFoundErr(err) {
-		t.Fatalf("pending invitation remains after decline: %v", err)
+	var membership entity.UserTenant
+	if err := db.Where("user_id = ? AND tenant_id = ?", "invitee-user", "tenant-xyz").Take(&membership).Error; err != nil {
+		t.Fatalf("read declined invitation: %v", err)
+	}
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusRejected || membership.Role != "" {
+		t.Fatalf("declined invitation = %+v, want rejected status and empty role", membership)
 	}
 }
 
@@ -181,7 +192,6 @@ func TestTenantRoleConstants(t *testing.T) {
 	cases := map[string]string{
 		TenantRoleOwner:  "owner",
 		TenantRoleNormal: "normal",
-		TenantRoleInvite: "invite",
 		TenantRoleAdmin:  "admin",
 	}
 	for got, want := range cases {
@@ -243,13 +253,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	}
 
 	// Insert Tenant
-	err = db.Create(&entity.Tenant{
-		ID:     tenantID,
-		LLMID:  "",
-		EmbdID: "",
-		ASRID:  "",
-		Status: &statusVal,
-	}).Error
+	err = db.Create(&entity.Tenant{ID: tenantID, Status: &statusVal}).Error
 	if err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
@@ -302,24 +306,24 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	// 4. Run SetTenantDefaultModels
 	s := NewTenantService()
 	// Set chat model using modelID, explicitly passing "default" as instance name to bypass pre-existing checkModelAvailable panic
-	ctx := t.Context()
+	ctx := serviceTestContext(t, userID, tenantID)
 	err = s.SetTenantDefaultModels(ctx, userID, "", "default", "", "chat", modelID)
 	if err != nil {
 		t.Fatalf("SetTenantDefaultModels failed: %v", err)
 	}
 
-	// Verify Tenant default model is updated to composite name
-	tenant := &entity.Tenant{}
-	err = db.Where("id = ?", tenantID).First(tenant).Error
+	// Verify the default is stored on the user's owner membership.
+	var membership entity.UserTenant
+	err = db.Where("id = ?", "ut-1").First(&membership).Error
 	if err != nil {
-		t.Fatalf("failed to retrieve tenant: %v", err)
+		t.Fatalf("failed to retrieve owner membership: %v", err)
 	}
 
 	expectedDefaultModel := "gpt-4o@dummy@OpenAI"
-	if tenant.LLMID != expectedDefaultModel {
-		t.Errorf("expected tenant default LLM to be %q, got %q", expectedDefaultModel, tenant.LLMID)
+	if membership.LLMID != expectedDefaultModel {
+		t.Errorf("expected owner default LLM to be %q, got %q", expectedDefaultModel, membership.LLMID)
 	}
-	if tenant.TenantLLMID == nil || *tenant.TenantLLMID != modelID {
-		t.Errorf("expected tenant_llm_id to be %q, got %v", modelID, tenant.TenantLLMID)
+	if membership.TenantLLMID == nil || *membership.TenantLLMID != modelID {
+		t.Errorf("expected owner tenant_llm_id to be %q, got %v", modelID, membership.TenantLLMID)
 	}
 }

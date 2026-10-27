@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -11,8 +12,17 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/server"
 	"ragflow/internal/service"
 )
+
+func TestMain(m *testing.M) {
+	if err := server.InitLocalVariables(); err != nil {
+		panic(err)
+	}
+	server.SetServerName("test")
+	os.Exit(m.Run())
+}
 
 func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -44,6 +54,34 @@ func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 				t.Fatalf("status=%d body=%s; want 404", resp.Code, resp.Body.String())
 			}
 		})
+	}
+}
+
+func TestSystemVariableRoutesAreNotRegisteredOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/system/variables"},
+		{http.MethodPut, "/api/v1/system/variables"},
+		{http.MethodGet, "/api/v1/system/variables/register_enabled"},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Errorf("%s %s status=%d body=%s; want system variable route to be unavailable on the API service", tt.method, tt.path, resp.Code, resp.Body.String())
+		}
 	}
 }
 

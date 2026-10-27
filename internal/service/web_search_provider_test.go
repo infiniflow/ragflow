@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"ragflow/internal/service/youcom"
 )
 
 func TestWebSearchFuncGatedByProvider(t *testing.T) {
@@ -386,7 +388,7 @@ func TestDecodeSerplyWebSearchResultsAcceptsMissingResults(t *testing.T) {
 }
 
 func TestResolveWebSearchProviderSelectsYouComWithoutAKey(t *testing.T) {
-	// You.com is the only provider usable with no credentials at all.
+	// You.com stays usable when no key is saved.
 	provider := resolveWebSearchProvider(map[string]interface{}{
 		"web_search_provider": "youcom",
 	})
@@ -404,7 +406,7 @@ func TestResolveWebSearchProviderSelectsYouComWithoutAKey(t *testing.T) {
 
 // Exa has a free tier of 1,000 requests/month, but it is NOT keyless: every
 // REST call must carry a key, so selecting Exa without one leaves web search
-// unconfigured. (Only You.com is keyless — see the carve-out below.)
+// unconfigured. AnySearch and You.com are the providers that allow a blank key.
 func TestResolveWebSearchProviderRequiresExaKeyForFreeTier(t *testing.T) {
 	if got := resolveWebSearchProvider(map[string]interface{}{
 		"web_search_provider": "exa",
@@ -455,58 +457,6 @@ func TestResolveWebSearchProviderStillRequiresKeysForKeyedProviders(t *testing.T
 	}
 }
 
-func TestYouComEndpointForPicksKeylessWithoutAKey(t *testing.T) {
-	cases := []struct {
-		name   string
-		apiKey string
-		want   string
-	}{
-		{name: "no key", apiKey: "", want: youComKeylessWebSearchEndpoint},
-		{name: "whitespace key", apiKey: "   ", want: youComKeylessWebSearchEndpoint},
-		{name: "key set", apiKey: "ydc-test", want: youComWebSearchEndpoint},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := youComEndpointFor(tc.apiKey); got != tc.want {
-				t.Fatalf("endpoint = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestYouComContentDiscardsBlankSnippetsAndDescriptions(t *testing.T) {
-	cases := []struct {
-		name   string
-		result youComWebSearchResult
-		want   string
-	}{
-		{
-			name:   "joins non-blank passages",
-			result: youComWebSearchResult{Snippets: []string{"a", "   ", "b"}, Description: "ignored"},
-			want:   "a\nb",
-		},
-		{
-			name:   "falls back to the description",
-			result: youComWebSearchResult{Snippets: []string{"  "}, Description: " desc "},
-			want:   "desc",
-		},
-		{
-			name:   "whitespace-only description yields nothing",
-			result: youComWebSearchResult{Description: "   "},
-			want:   "",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := youComContent(tc.result); got != tc.want {
-				t.Fatalf("content = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestRetrieveYouComWebSearchSendsNoAuthHeaderWhenKeyless(t *testing.T) {
 	var gotAuth string
 	var gotUserAgent string
@@ -535,8 +485,8 @@ func TestRetrieveYouComWebSearchSendsNoAuthHeaderWhenKeyless(t *testing.T) {
 	if gotAuth != "" {
 		t.Fatalf("X-API-Key = %q, want empty", gotAuth)
 	}
-	if gotUserAgent != youComWebSearchUserAgent {
-		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, youComWebSearchUserAgent)
+	if gotUserAgent != youcom.UserAgent {
+		t.Fatalf("User-Agent = %q, want %q", gotUserAgent, youcom.UserAgent)
 	}
 	if gotQuery != "What is RAGFlow?" {
 		t.Fatalf("query = %q, want %q", gotQuery, "What is RAGFlow?")

@@ -56,26 +56,54 @@ class RAGFlow:
     def create_dataset(
         self,
         name: str,
-        avatar: Optional[str] = None,
-        description: Optional[str] = None,
+        parse_type: int = 1,
+        parser_id: str | None = None,
+        pipeline_id: str | None = None,
         embedding_model: Optional[str] = None,
         permission: str = "me",
-        chunk_method: str = "naive",
         parser_config: Optional[DataSet.ParserConfig] = None,
-        auto_metadata_config: Optional[dict[str, Any]] = None,
+        language: Optional[str] = None,
     ) -> DataSet:
-        payload = {
+        """Create a dataset with a builtin parser or an ingestion pipeline.
+
+        ``parse_type=1`` selects a builtin parser and defaults ``parser_id`` to
+        ``"general"``. ``parse_type=2`` selects an ingestion pipeline and requires
+        ``pipeline_id``.
+        """
+        if parser_id is not None and not isinstance(parser_id, str):
+            raise ValueError("parser_id must be a string")
+        if pipeline_id is not None and not isinstance(pipeline_id, str):
+            raise ValueError("pipeline_id must be a string")
+        parser_id = parser_id.strip() if parser_id is not None else None
+        pipeline_id = pipeline_id.strip() if pipeline_id is not None else None
+
+        if parse_type == 1:
+            if pipeline_id:
+                raise ValueError("pipeline_id must not be set when parse_type is 1 (BuiltIn)")
+            if parser_id == "":
+                raise ValueError("parser_id must not be empty when parse_type is 1 (BuiltIn)")
+            selection = {"parser_id": parser_id or "general"}
+        elif parse_type == 2:
+            if parser_id:
+                raise ValueError("parser_id must not be set when parse_type is 2 (Pipeline)")
+            if not pipeline_id:
+                raise ValueError("pipeline_id is required when parse_type is 2 (Pipeline)")
+            selection = {"pipeline_id": pipeline_id}
+        else:
+            raise ValueError("parse_type must be 1 (BuiltIn) or 2 (Pipeline)")
+
+        payload: dict[str, Any] = {
             "name": name,
-            "avatar": avatar,
-            "description": description,
-            "embedding_model": embedding_model,
+            "parse_type": parse_type,
             "permission": permission,
-            "chunk_method": chunk_method,
+            **selection,
         }
+        if embedding_model is not None:
+            payload["embedding_model"] = embedding_model
         if parser_config is not None:
             payload["parser_config"] = parser_config.to_json()
-        if auto_metadata_config is not None:
-            payload["auto_metadata_config"] = auto_metadata_config
+        if language is not None:
+            payload["language"] = language
 
         res = self.post("/datasets", payload)
         res = res.json()
@@ -205,7 +233,6 @@ class RAGFlow:
         cross_languages: list[str] | None = None,
         metadata_condition: dict | None = None,
         use_kg: bool = False,
-        toc_enhance: bool = False,
     ):
         if document_ids is None:
             document_ids = []
@@ -223,7 +250,6 @@ class RAGFlow:
             "cross_languages": cross_languages,
             "metadata_condition": metadata_condition,
             "use_kg": use_kg,
-            "toc_enhance": toc_enhance,
         }
         # Send a POST request to the backend service (using requests library as an example, actual implementation may vary)
         res = self.post("/retrieval", json=data_json)

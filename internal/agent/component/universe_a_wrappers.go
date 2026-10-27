@@ -80,7 +80,6 @@ type retrievalParams struct {
 	RerankID                 string
 	EmptyResponse            string
 	CrossLanguages           []string
-	TOCEnhance               bool
 	UseKG                    bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
@@ -137,9 +136,6 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.EmptyResponse = v
 	}
 	out.CrossLanguages = toStringSlice(params["cross_languages"])
-	if v, ok := params["toc_enhance"].(bool); ok {
-		out.TOCEnhance = v
-	}
 	if v, ok := params["use_kg"].(bool); ok {
 		out.UseKG = v
 	}
@@ -365,9 +361,6 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	}
 	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
 		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)
-	}
-	if _, ok := out["toc_enhance"]; !ok && c.params.TOCEnhance {
-		out["toc_enhance"] = true
 	}
 	if _, ok := out["use_kg"]; !ok && c.params.UseKG {
 		out["use_kg"] = true
@@ -833,8 +826,11 @@ var (
 // attachCodeExecArtifacts uploads the `_ARTIFACTS` produced by the
 // CodeExec tool to object storage and populates the message-facing
 // `attachments` / `_ATTACHMENT_CONTENT` outputs plus a content
-// appendix. It is a no-op when the tool returned no artifacts.
+// appendix. The attachments output remains an empty list when no files exist.
 func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
+	if _, ok := decoded["attachments"]; !ok {
+		decoded["attachments"] = []string{}
+	}
 	raw, ok := decoded["_ARTIFACTS"].([]any)
 	if !ok || len(raw) == 0 {
 		return

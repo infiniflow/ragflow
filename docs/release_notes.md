@@ -9,7 +9,24 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v1.0.0-rc2
+
+Released on Oct 16, 2026.
+
+1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1 and introduces new features and expanded support.
+
+### Highlights
+1. Introduced Agentic mode for chat, replacing the Low, Medium, High, and Ultra thinking levels.
+2. Preserved compatibility with existing v1.0.0-rc1 data, allowing direct upgrades.
+3. Added support for Team/Me sharing.
+4. Added support for model providers DemonRoute and Opper, web search tools Firecrawl and Search1API, and the MinerU 4 model.
+5. Added retrieval support for Czech and Slovak.
+6. Unified the 12 built-in document parsers with the Pipeline parsers.
+7. Added Docker images for the arm64 architecture.
+
 ## v1.0.0-rc1
+
+Released on Sep 29, 2026.
 
 RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. This release marks a comprehensive rewrite of RAGFlow in Go, delivering a substantial reduction in system resource consumption and replacing the previous heavyweight deployment model with a lightweight architecture.
 
@@ -1250,7 +1267,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_and_migration/upgrading.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
 :::
 
 ### API changes
@@ -1328,13 +1345,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
+- [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx)
 
 ## v0.11.0
 

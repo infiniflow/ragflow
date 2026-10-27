@@ -3,14 +3,19 @@ import { countBy } from 'lodash';
 import { z } from 'zod';
 import { isValidIpOrCidr } from './utils';
 
+/** Rejects duplicate field names, ignoring case only for HTTP headers. */
 function validateUniqueKeys(
   items: Array<{ key: string }>,
   ctx: z.RefinementCtx,
+  ignoreCase = false,
 ) {
-  const keyCounts = countBy(items, 'key');
+  const keyCounts = countBy(items, (item) =>
+    ignoreCase ? item.key.toLowerCase() : item.key,
+  );
 
   items.forEach((item, index) => {
-    if (item.key && keyCounts[item.key] > 1) {
+    const key = ignoreCase ? item.key.toLowerCase() : item.key;
+    if (key && keyCounts[key] > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [index, 'key'],
@@ -20,15 +25,31 @@ function validateUniqueKeys(
   });
 }
 
+const WebhookParameterSchema = z.object({
+  key: z.string().trim().min(1, 'The key is required!'),
+  type: z.string(),
+  required: z.boolean(),
+});
+
 const WebhookParametersSchema = z
+  .array(WebhookParameterSchema)
+  .superRefine(validateUniqueKeys)
+  .optional();
+
+const WebhookHeadersSchema = z
   .array(
-    z.object({
-      key: z.string().trim().min(1, 'The key is required!'),
-      type: z.string(),
-      required: z.boolean(),
+    WebhookParameterSchema.extend({
+      key: z
+        .string()
+        .trim()
+        .min(1, 'The key is required!')
+        .regex(
+          /^[0-9a-zA-Z_-]+$/,
+          'Header names may contain only letters, digits, underscores, and hyphens.',
+        ),
     }),
   )
-  .superRefine(validateUniqueKeys)
+  .superRefine((items, ctx) => validateUniqueKeys(items, ctx, true))
   .optional();
 
 export const BeginFormSchema = z.object({
@@ -83,7 +104,7 @@ export const BeginFormSchema = z.object({
   schema: z
     .object({
       query: WebhookParametersSchema,
-      headers: WebhookParametersSchema,
+      headers: WebhookHeadersSchema,
       body: WebhookParametersSchema,
     })
     .optional(),

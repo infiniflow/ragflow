@@ -63,28 +63,24 @@ func (e *TaskStatusConflictError) Error() string {
 }
 
 type IngestionTaskService struct {
-	documentDAO         *dao.DocumentDAO
-	userDAO             *dao.UserDAO
-	ingestionTaskDAO    *dao.IngestionTaskDAO
-	ingestionTaskLogDAO *dao.IngestionTaskLogDAO
-	pipelineLogDAO      *dao.PipelineOperationLogDAO
-	kbDAO               *dao.KnowledgebaseDAO
-	userCanvasDAO       *dao.UserCanvasDAO
-	taskPublisher       TaskPublisher
-	logSettings         IngestionLogSettings
+	documentDAO      *dao.DocumentDAO
+	ingestionTaskDAO *dao.IngestionTaskDAO
+	pipelineLogDAO   *dao.PipelineOperationLogDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	userCanvasDAO    *dao.UserCanvasDAO
+	taskPublisher    TaskPublisher
+	logSettings      IngestionLogSettings
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
 	return &IngestionTaskService{
-		documentDAO:         dao.NewDocumentDAO(),
-		userDAO:             dao.NewUserDAO(),
-		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
-		ingestionTaskLogDAO: dao.NewIngestionTaskLogDAO(),
-		pipelineLogDAO:      dao.NewPipelineOperationLogDAO(),
-		kbDAO:               dao.NewKnowledgebaseDAO(),
-		userCanvasDAO:       dao.NewUserCanvasDAO(),
-		taskPublisher:       NewMessageQueueTaskPublisher(),
-		logSettings:         DefaultIngestionLogSettings(),
+		documentDAO:      dao.NewDocumentDAO(),
+		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
+		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		userCanvasDAO:    dao.NewUserCanvasDAO(),
+		taskPublisher:    NewMessageQueueTaskPublisher(),
+		logSettings:      DefaultIngestionLogSettings(),
 	}
 }
 
@@ -179,56 +175,6 @@ func (s *IngestionTaskService) RemoveMany(ctx context.Context, tasks []string, o
 		deletedTasks = append(deletedTasks, taskRecord)
 	}
 	return deletedTasks, nil
-}
-
-func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[string]interface{}, error) {
-	ingestionTasks, err := s.ingestionTaskDAO.GetAllTasks(ctx, dao.DB, 0, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	showTasks := make([]map[string]interface{}, 0, len(ingestionTasks))
-	for _, task := range ingestionTasks {
-		var user *entity.User
-		user, err = s.userDAO.GetByTenantID(ctx, dao.DB, task.UserID)
-		if err != nil {
-			return nil, err
-		}
-
-		showTask := map[string]interface{}{
-			"id":          task.ID,
-			"user_id":     task.UserID,
-			"user":        user.Email,
-			"document_id": task.DocumentID,
-			"status":      task.Status,
-		}
-
-		if task.PipelineLogID != nil && *task.PipelineLogID != "" {
-			if run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID); runErr == nil && run.RunCount != nil && *run.RunCount > 0 {
-				showTask["run_count"] = *run.RunCount
-			}
-		}
-
-		showTask["component_total"] = task.ComponentTotal
-		if task.ComponentTotal > 0 {
-			progress := (*dao.TaskProgress)(nil)
-			if task.PipelineLogID != nil && *task.PipelineLogID != "" {
-				progress, err = s.ingestionTaskLogDAO.AggregateProgressByPipelineLogID(ctx, dao.DB, *task.PipelineLogID, task.ComponentTotal)
-			} else {
-				err = errors.New("task has no pipeline log identity")
-			}
-			if err == nil {
-				showTask["component_done"] = progress.Done
-			} else {
-				showTask["component_done"] = 0
-			}
-		} else {
-			showTask["component_done"] = 0
-		}
-
-		showTasks = append(showTasks, showTask)
-	}
-	return showTasks, nil
 }
 
 // TransitionTaskToRunning performs only the task-state transition required

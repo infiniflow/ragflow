@@ -399,10 +399,37 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"update_date":                chat.UpdateDate,
 		"tenant_llm_id":              chat.TenantLLMID,
 		"tenant_rerank_id":           chat.TenantRerankID,
+		// The per-chat decision model override. Without it the settings form
+		// resets to empty after saving and the field looks unset.
+		"decision_id":        chat.DecisionID,
+		"tenant_decision_id": chat.TenantDecisionID,
 	}
 
 	// Return success response
 	common.SuccessWithData(c, result, "success")
+}
+
+// GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
+func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)
+	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, settings, "success")
 }
 
 // UpdateChat updates a chat by ID using REST PUT semantics.

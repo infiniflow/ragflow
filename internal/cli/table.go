@@ -180,13 +180,6 @@ func PrintTableSimpleByFormat(data []map[string]interface{}, format OutputFormat
 			rowParts := make([]string, 0, len(columns))
 			for _, col := range columns {
 				value := formatValue(item[col])
-				valueWidth := getStringWidth(value)
-				// Truncate if too long
-				if valueWidth > colWidths[col] {
-					runes := []rune(value)
-					value = truncateStringByWidth(runes, colWidths[col])
-					valueWidth = getStringWidth(value)
-				}
 				// Pad to column width
 				rowParts = append(rowParts, fmt.Sprintf(" %s ", padCell(value, colWidths[col], false)))
 			}

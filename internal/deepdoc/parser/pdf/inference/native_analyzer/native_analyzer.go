@@ -136,16 +136,11 @@ func (a *NativeAnalyzer) DLA(ctx context.Context, img image.Image) ([]deepdoctyp
 	return out, nil
 }
 
-// TSR recognises table structure from a cropped image.
-func (a *NativeAnalyzer) TSR(ctx context.Context, img image.Image) ([]deepdoctype.TSRCell, error) {
-	ni, err := native.FromImage(img)
-	if err != nil {
-		return nil, err
-	}
-	res, err := native.RunTSR(ctx, a.modelDir, ni)
-	if err != nil {
-		return nil, err
-	}
+// tsrCellsFn maps a native TSR result to the DeepDoc TSR cells. Override seam:
+// a downstream build variant assigns this at init/startup, before any inference
+// runs. Defaults to the inlined clamp-and-convert mapping; set once, never
+// mutated during serving.
+var tsrCellsFn = func(res native.TSRResult) []deepdoctype.TSRCell {
 	out := make([]deepdoctype.TSRCell, 0, len(res.Boxes))
 	// Clamp into the source image bounds (mirrors tsr_adapter.py): this
 	// backend replaced the HTTP service whose adapter clamped every
@@ -157,7 +152,20 @@ func (a *NativeAnalyzer) TSR(ctx context.Context, img image.Image) ([]deepdoctyp
 			Label: b.Label,
 		})
 	}
-	return out, nil
+	return out
+}
+
+// TSR recognises table structure from a cropped image.
+func (a *NativeAnalyzer) TSR(ctx context.Context, img image.Image) ([]deepdoctype.TSRCell, error) {
+	ni, err := native.FromImage(img)
+	if err != nil {
+		return nil, err
+	}
+	res, err := native.RunTSR(ctx, a.modelDir, ni)
+	if err != nil {
+		return nil, err
+	}
+	return tsrCellsFn(res), nil
 }
 
 // OCRDetect detects text regions (quad boxes) in a cropped image.

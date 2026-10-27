@@ -33,14 +33,18 @@ import (
 
 // APIStatusError is a provider HTTP failure with its status code preserved, so
 // callers can act on the status (failover cooldown, retry) instead of matching
-// the error text. The shared request helpers return it; the message is byte-for-
-// byte what plain fmt.Errorf produced before, so existing assertions still hold.
+// the error text. hideBody prevents untrusted MWS responses from echoing
+// credentials through user-visible error messages.
 type APIStatusError struct {
-	Status int
-	Body   string
+	Status   int
+	Body     string
+	hideBody bool
 }
 
 func (e *APIStatusError) Error() string {
+	if e.hideBody {
+		return fmt.Sprintf("API request failed with status %d", e.Status)
+	}
 	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
 }
 
@@ -49,6 +53,7 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+	hideAPIErrorBody bool
 	// authHeader, when non-nil, supplies the (name, value) pair used for
 	// authentication instead of the default "Authorization: Bearer <key>".
 	// Drivers with non-standard auth (e.g. Xiaomi's api-key header, Xunfei's
@@ -136,7 +141,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
-	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+	driver := clickhouse.GetDriver()
+	if driver == nil {
+		return nil
+	}
+	return driver.CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
@@ -231,7 +240,7 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	body, err = readModelResponseBody(resp.Body)
@@ -266,7 +275,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -299,7 +308,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	return handler(resp.Body)
@@ -342,6 +351,64 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return baseURL, nil
+}
+
+// EndpointURL resolves the request URL for an API path suffix, joining it onto
+// the base URL configured for this request. Drivers use it instead of
+// fmt.Sprintf("%s/%s", baseURL, suffix) so a version segment pasted into the
+// user-supplied base URL is not duplicated onto the suffix.
+func (b *BaseModel) EndpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	baseURL, err := b.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return joinURL(baseURL, suffix), nil
+}
+
+// joinURL concatenates a resolved base URL with an API path suffix.
+// Some providers keep the API version in url_suffix (MiniMax's
+// "v1/text/chatcompletion_v2", Anthropic's "v1/messages", Xinference's
+// "v1/chat/completions") and expect a versionless base URL, while
+// OpenAI-compatible ones expect "/v1" to sit in the base URL. Users paste
+// whichever habit they learned, so drop the duplicated segment rather than
+// emitting "/v1/v1/text/chatcompletion_v2", which the provider answers 404.
+func joinURL(baseURL, suffix string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	path := strings.TrimLeft(strings.TrimSpace(suffix), "/")
+	if base == "" {
+		return path
+	}
+	if path == "" {
+		return base
+	}
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		if version := apiVersionSegment(base[idx+1:]); version != "" && version == firstPathSegment(path) {
+			base = base[:idx]
+		}
+	}
+	return base + "/" + path
+}
+
+// apiVersionSegment reports whether the path segment is an API version marker
+// such as "v1" or "v2". Only version segments are deduplicated — they are what
+// users habitually paste into the base URL.
+func apiVersionSegment(segment string) string {
+	if len(segment) < 2 || (segment[0] != 'v' && segment[0] != 'V') {
+		return ""
+	}
+	for _, c := range []byte(segment[1:]) {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return segment
+}
+
+func firstPathSegment(path string) string {
+	if idx := strings.Index(path, "/"); idx >= 0 {
+		return path[:idx]
+	}
+	return path
 }
 
 // ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events

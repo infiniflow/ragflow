@@ -5,11 +5,44 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
 )
+
+func assertModifyColumnTypesTablesAbsent(t *testing.T, db *gorm.DB, allowedTable string) {
+	t.Helper()
+	tables := append([]string{
+		"dialog",
+		"tenant_llm",
+		"api_token",
+		"canvas_template",
+		"system_settings",
+		"knowledgebase",
+		"knowledge_compile_docs",
+	}, tenantModelIDFieldTables()...)
+	for _, table := range tables {
+		if table == allowedTable {
+			continue
+		}
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("%s already exists in this database; refusing to run modifyColumnTypes against a populated schema", table)
+		}
+	}
+}
+
+func knowledgeCompileBacklogFixture(count int) string {
+	entries := make([]string, count)
+	for i := range entries {
+		entries[i] = fmt.Sprintf(`{"doc_id":"%032d","event_type":"doc_completed","variants":["structure"],"task_types":["Graph"]}`, i)
+	}
+	return "[" + strings.Join(entries, ",") + "]"
+}
 
 // TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration reproduces
 // the schema that blocks startup: tenant model id columns created while the Go
@@ -36,13 +69,18 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 	if err != nil {
 		t.Fatalf("failed to connect: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
 
 	ctx := context.Background()
-	for _, table := range tenantModelIDFieldTables() {
-		if db.WithContext(ctx).Migrator().HasTable(table) {
-			t.Fatalf("%s already exists in this database; refusing to run against a live schema", table)
-		}
-	}
+	assertModifyColumnTypesTablesAbsent(t, db.WithContext(ctx), "dialog")
 
 	create := `CREATE TABLE dialog (
 		id varchar(32) NOT NULL,
@@ -56,7 +94,9 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 		t.Fatalf("failed to create legacy dialog: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = db.WithContext(context.Background()).Exec("DROP TABLE IF EXISTS dialog").Error
+		if err := db.WithContext(context.Background()).Exec("DROP TABLE IF EXISTS dialog").Error; err != nil {
+			t.Errorf("failed to drop dialog test table: %v", err)
+		}
 	})
 
 	// llm_id is empty on purpose: this row would not be backfilled even if the
@@ -93,5 +133,94 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 	}
 	if remaining != 0 {
 		t.Errorf("%d rows still carry an orphaned integer model id", remaining)
+	}
+}
+
+func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
+	}
+
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+	ctx := context.Background()
+	assertModifyColumnTypesTablesAbsent(t, db.WithContext(ctx), "knowledge_compile_docs")
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		if db.Migrator().HasTable(model) {
+			t.Fatalf("%T already exists; this test requires an empty database", model)
+		}
+	}
+	if err = db.WithContext(ctx).Exec(`CREATE TABLE knowledge_compile_docs (
+		dataset_id varchar(64) NOT NULL PRIMARY KEY,
+		backlog_doc_ids longtext NOT NULL,
+		inflight_doc_ids longtext NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("failed to create legacy knowledge_compile_docs: %v", err)
+	}
+	t.Cleanup(func() {
+		for _, table := range []string{"knowledge_compile_docs", "knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight", "system_settings"} {
+			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
+				t.Errorf("failed to drop %s test table: %v", table, err)
+			}
+		}
+	})
+
+	legacyBacklog := knowledgeCompileBacklogFixture(600)
+	if len(legacyBacklog) <= 65535 {
+		t.Fatalf("fixture is %d bytes, want more than TEXT's 65,535-byte limit", len(legacyBacklog))
+	}
+	if err = db.WithContext(ctx).Exec(
+		"INSERT INTO knowledge_compile_docs (dataset_id, backlog_doc_ids, inflight_doc_ids) VALUES (?, ?, '[]')",
+		"kb1", legacyBacklog,
+	).Error; err != nil {
+		t.Fatalf("failed to seed legacy backlog: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}, &entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setDatabaseMigrationVersion(ctx, db, tenantDefaultModelsTargetVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err = migrateKnowledgeCompileQueues(ctx, db); err != nil {
+		t.Fatalf("migrateKnowledgeCompileQueues failed: %v", err)
+	}
+	if version, err := GetDatabaseMigrationVersion(ctx, db); err != nil || version != knowledgeCompileQueueTargetVersion {
+		t.Fatalf("migration version=%q want=%q err=%v", version, knowledgeCompileQueueTargetVersion, err)
+	}
+
+	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
+		if db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
+			t.Errorf("source column %s still exists", column)
+		}
+	}
+	var entries []entity.KnowledgeCompileEntry
+	if err := db.Table((entity.KnowledgeCompileBacklog{}).TableName()).Order("queue_position").Find(&entries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 600 {
+		t.Fatalf("migrated %d events, want 600", len(entries))
+	}
+	for i, entry := range entries {
+		if entry.DocID != fmt.Sprintf("%032d", i) || entry.QueuePosition != int64(i+1) || entry.EventType != "doc_completed" || len(entry.TaskTypes) != 1 || entry.TaskTypes[0] != "Graph" {
+			t.Fatalf("unexpected event %d: %+v", i, entry)
+		}
+	}
+	for _, table := range []string{"knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight"} {
+		var count int64
+		if err := db.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND non_unique = 0", table).Scan(&count).Error; err != nil || count != 0 {
+			t.Fatalf("%s must have no primary key or unique indexes: count=%d err=%v", table, count, err)
+		}
 	}
 }

@@ -8,7 +8,6 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
-	"unicode/utf8"
 )
 
 // maxUploadFilenameBytes is the longest name checkUploadInfoHealth accepts.
@@ -67,7 +66,7 @@ func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) stri
 	}
 	// The appended ".pdf" can push a name that sanitizeFilename already
 	// shortened back over the limit.
-	return truncateFilename(filename, maxUploadFilenameBytes)
+	return utility.TruncateFilename(filename, maxUploadFilenameBytes)
 }
 
 func sanitizeFilename(name string) string {
@@ -93,23 +92,5 @@ func sanitizeFilename(name string) string {
 	if stem := strings.SplitN(strings.ToUpper(name), ".", 2)[0]; reservedDeviceNames[stem] {
 		return "download"
 	}
-	return truncateFilename(name, maxUploadFilenameBytes)
-}
-
-// truncateFilename shortens name to at most maxBytes bytes. It keeps the
-// extension when it fits and cuts on a rune boundary, so the result stays
-// valid UTF-8 and keeps the file type the extension implies.
-func truncateFilename(name string, maxBytes int) string {
-	if len(name) <= maxBytes {
-		return name
-	}
-	ext := filepath.Ext(name)
-	if len(ext) >= maxBytes {
-		ext = ""
-	}
-	end := maxBytes - len(ext)
-	for end > 0 && !utf8.RuneStart(name[end]) {
-		end--
-	}
-	return name[:end] + ext
+	return utility.TruncateFilename(name, maxUploadFilenameBytes)
 }

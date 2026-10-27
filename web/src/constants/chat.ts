@@ -74,6 +74,9 @@ export enum WebSearchProvider {
  * Providers usable with no credentials at all — the key field is optional for
  * these, and the Internet switch stays available when it is left blank.
  *
+ * AnySearch accepts anonymous requests on the same search endpoint. A saved
+ * key is sent as Authorization: Bearer and is not retried anonymously.
+ *
  * You.com serves a dedicated keyless ENDPOINT: a different path from the keyed
  * one, the same response shape, rate-limited per source IP. Adding a key
  * switches to the keyed endpoint and lifts that limit.

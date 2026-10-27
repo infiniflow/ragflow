@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -74,6 +77,123 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	}
 }
 
+func TestRetrievalRejectsPaginationWithRerankModel(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   2,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Pagination is not supported") {
+		t.Fatalf("error = %v, want pagination rejection when a rerank model is set", err)
+	}
+}
+
+func TestRetrievalRerankCandidatesGuardPrecedesPaginationGuard(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   7,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "rerank_candidates_count") {
+		t.Fatalf("error = %v, want the candidates-window guard to reject before the pagination guard", err)
+	}
+}
+
+func TestRetrievalFirstPageWithRerankModelCallsReranker(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	driver := &captureDriver{}
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.0
+	vectorWeight := 0.3
+	aggs := false
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		RerankModel:            modelModule.NewRerankModel(driver, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed on page 1 with a rerank model: %v", err)
+	}
+	if len(driver.documents) != 1 {
+		t.Fatalf("reranker received %d documents, want 1", len(driver.documents))
+	}
+}
+
+func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
+		{"id": "ordinary", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	for _, fields := range docEngine.selectedFields {
+		if !slices.Contains(fields, "compile_kwd") {
+			t.Fatalf("search fields = %v, want compile_kwd", fields)
+		}
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("chunks = %#v, want compiled and ordinary chunks", result.Chunks)
+	}
+	if got := result.Chunks[0]["compile_kwd"]; got != "page_index" {
+		t.Fatalf("compiled chunk compile_kwd = %v, want page_index", got)
+	}
+	if _, ok := result.Chunks[1]["compile_kwd"]; ok {
+		t.Fatalf("ordinary chunk unexpectedly has compile_kwd: %#v", result.Chunks[1])
+	}
+}
+
 func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
@@ -117,10 +237,90 @@ func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	}
 }
 
+func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB, oldQueryBuilder := dao.DB, globalQueryBuilder
+	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
+	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
+
+	artifact := map[string]interface{}{"id": "artifact", "doc_id": "kb-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "available_int": 1, "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9}
+	for _, tt := range []struct {
+		name string
+		rows []map[string]interface{}
+		want []string
+	}{
+		{name: "dataset only", rows: []map[string]interface{}{artifact}, want: []string{"artifact"}},
+		{name: "mixed with deleted documents", rows: []map[string]interface{}{
+			artifact,
+			{"id": "document", "doc_id": "doc-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.8},
+			{"id": "deleted", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.7},
+			{"id": "wrong identity", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "content_ltks": "alpha", "_score": 0.6},
+		}, want: []string{"artifact", "document"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: tt.rows}}
+			result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+				Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+				VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(true),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, chunk := range result.Chunks {
+				got = append(got, chunk["chunk_id"].(string))
+				if _, ok := chunk["available_int"]; ok {
+					t.Fatal("available_int should not be returned in retrieval results")
+				}
+			}
+			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
+				t.Fatalf("chunks=%v total=%d want %v", got, result.Total, tt.want)
+			}
+			if len(result.DocAggs) != len(tt.want)-1 {
+				t.Fatalf("doc_aggs=%v, want only source documents", result.DocAggs)
+			}
+			if len(result.DocAggs) > 0 && (result.DocAggs[0]["doc_id"] != "doc-1" || result.DocAggs[0]["count"] != 1) {
+				t.Fatalf("doc_aggs=%v, want doc-1 with count 1", result.DocAggs)
+			}
+		})
+	}
+}
+
+type projectedRetrievalEngine struct{ retrievalCountEngine }
+
+func (e *projectedRetrievalEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{}, len(chunks))
+	for _, chunk := range chunks {
+		projected := make(map[string]interface{}, len(fields))
+		for _, field := range fields {
+			if value, ok := chunk[field]; ok {
+				projected[field] = value
+			}
+		}
+		result[chunk["id"].(string)] = projected
+	}
+	return result
+}
+
 type retrievalCountEngine struct {
 	rows           []map[string]interface{}
 	searchLimits   []int
 	searchFilters  []map[string]interface{}
+	selectedFields [][]string
 	highlights     map[string]string
 	highlightCalls int
 }
@@ -128,6 +328,7 @@ type retrievalCountEngine struct {
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchLimits = append(e.searchLimits, req.Limit)
 	e.searchFilters = append(e.searchFilters, req.Filter)
+	e.selectedFields = append(e.selectedFields, slices.Clone(req.SelectFields))
 	offset := req.Offset
 	if offset > len(e.rows) {
 		offset = len(e.rows)
@@ -136,7 +337,21 @@ func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchReques
 	if req.Limit <= 0 || end > len(e.rows) {
 		end = len(e.rows)
 	}
-	return &types.SearchResult{Chunks: e.rows[offset:end], Total: int64(len(e.rows))}, nil
+	chunks := make([]map[string]interface{}, 0, end-offset)
+	for _, row := range e.rows[offset:end] {
+		if len(req.SelectFields) == 0 {
+			chunks = append(chunks, maps.Clone(row))
+			continue
+		}
+		projected := map[string]interface{}{"id": row["id"]}
+		for _, field := range req.SelectFields {
+			if value, ok := row[field]; ok {
+				projected[field] = value
+			}
+		}
+		chunks = append(chunks, projected)
+	}
+	return &types.SearchResult{Chunks: chunks, Total: int64(len(e.rows))}, nil
 }
 
 func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
@@ -149,11 +364,17 @@ func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []st
 	return ids
 }
 
-func (e *retrievalCountEngine) GetFields(chunks []map[string]interface{}, _ []string) map[string]map[string]interface{} {
+func (e *retrievalCountEngine) GetFields(chunks []map[string]interface{}, selected []string) map[string]map[string]interface{} {
 	fields := make(map[string]map[string]interface{}, len(chunks))
 	for _, chunk := range chunks {
 		if id, ok := chunk["id"].(string); ok {
-			fields[id] = chunk
+			projected := make(map[string]interface{}, len(selected))
+			for _, field := range selected {
+				if value, ok := chunk[field]; ok {
+					projected[field] = value
+				}
+			}
+			fields[id] = projected
 		}
 	}
 	return fields
@@ -187,10 +408,10 @@ func (e *retrievalCountEngine) Close() error               { return nil }
 func (e *retrievalCountEngine) Ping(context.Context) error { return nil }
 func (e *retrievalCountEngine) GetType() string            { return "elasticsearch" }
 func (e *retrievalCountEngine) SupportsPageRank() bool     { return false }
-func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (e *retrievalCountEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (e *retrievalCountEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (e *retrievalCountEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
@@ -252,10 +473,14 @@ func (parentChunkMissingEngine) Search(context.Context, *types.SearchRequest) (*
 type parentChunkScopeEngine struct {
 	engine.DocEngine
 	parentSearch *types.SearchRequest
+	parentChunk  map[string]interface{}
 }
 
 func (e *parentChunkScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.parentSearch = req
+	if e.parentChunk != nil {
+		return &types.SearchResult{Chunks: []map[string]interface{}{e.parentChunk}}, nil
+	}
 	return &types.SearchResult{}, nil
 }
 
@@ -289,6 +514,20 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 	}
 	if !engine.parentSearch.IncludeUnavailable {
 		t.Fatal("parent lookup must include hidden parent chunks")
+	}
+	engine.parentChunk = map[string]interface{}{
+		"id": "legacy-shared-parent-id", "doc_id": "doc-a", "kb_id": "kb-1",
+		"available_int": 0, "content_with_weight": "parent text",
+	}
+	got = RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1", "tenant-2"}, engine, t.Context())
+	if len(got) != 1 || got[0]["chunk_id"] != "legacy-shared-parent-id" || got[0]["content_with_weight"] != "parent text" {
+		t.Fatalf("retrieval result = %#v, want aggregated parent", got)
+	}
+	if _, ok := got[0]["available_int"]; ok {
+		t.Fatal("available_int should not be returned in aggregated retrieval results")
+	}
+	if engine.parentChunk["available_int"] != 0 {
+		t.Fatal("stored parent availability should remain unchanged")
 	}
 }
 
@@ -698,4 +937,239 @@ func TestRetrievalSearchesEachTenantIndexOnce(t *testing.T) {
 	if !slices.Equal(docEngine.indexNames, []string{"ragflow_tenant-1"}) {
 		t.Fatalf("index names = %v, want [ragflow_tenant-1]", docEngine.indexNames)
 	}
+}
+
+// TestSearchDocumentScopeRetriesWithRelaxedHybrid pins the first leg of the
+// fix for infiniflow/infinity#3523: a document-scoped query whose first hybrid
+// pass comes back empty retries with relaxed conditions instead of dropping
+// every MATCH expression. A query with none cannot carry a score on Infinity
+// (3013), which is what collapsed every similarity to 0.0.
+func TestSearchDocumentScopeRetriesWithRelaxedHybrid(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineInfinity), totals: []int64{0, 3}}
+	service := NewRetrievalService(docEngine, nil)
+	result, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+		KNNTopK: 7, KNNNumCandidates: 19, DocIDs: []string{"doc-1"},
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 2 {
+		t.Fatalf("search calls = %d, want the empty hybrid pass plus one scored retry", len(docEngine.requests))
+	}
+	retry := docEngine.requests[1]
+	if len(retry.MatchExprs) != 3 {
+		t.Fatalf("retry expressions = %d, want the relaxed hybrid's 3", len(retry.MatchExprs))
+	}
+	if got := fmt.Sprint(retry.Filter["doc_id"]); got != "[doc-1]" {
+		t.Fatalf("retry document scope = %s, want [doc-1]", got)
+	}
+	if result.Total != 3 {
+		t.Fatalf("total = %d, want the relaxed retry's 3 rows", result.Total)
+	}
+}
+
+// TestSearchDocumentScopeNeverResortsToFilterOnly pins the removal of the
+// document-scope filter-only fallback: it returned the document's chunks with
+// no score at all (infinity#3523), which carries no relevance and is
+// indistinguishable from a real failure. Callers that want a document's chunks
+// ask ChunkService.List.
+func TestSearchDocumentScopeNeverResortsToFilterOnly(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	// hybrid, relaxed hybrid, dense-only — and then nothing. The 4th total is
+	// what a filter-only scan would have returned; it must stay unconsumed.
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineInfinity), totals: []int64{0, 0, 0, 3}}
+	service := NewRetrievalService(docEngine, nil)
+	result, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+		KNNTopK: 7, KNNNumCandidates: 19, DocIDs: []string{"doc-1"},
+		RankFeature:    map[string]float64{"pagerank_fea": 10},
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 3 {
+		t.Fatalf("search calls = %d, want 3: hybrid, relaxed hybrid and dense-only, with no filter-only scan after them", len(docEngine.requests))
+	}
+	for i, want := range []int{3, 3, 1} {
+		if got := len(docEngine.requests[i].MatchExprs); got != want {
+			t.Fatalf("call %d expressions = %d, want %d", i+1, got, want)
+		}
+	}
+	// The invariant behind the removal: no leg may issue a query that cannot
+	// carry a score, whatever else it tries.
+	for i, request := range docEngine.requests {
+		if len(request.MatchExprs) == 0 {
+			t.Fatalf("call %d issued a query with no MATCH expression, which cannot carry a score", i+1)
+		}
+	}
+	if result.Total != 0 {
+		t.Fatalf("total = %d, want 0: nothing in the scope is relevant, so nothing comes back", result.Total)
+	}
+}
+
+// TestSearchDefaultsDenseFallbackOn pins the human half of the agentic/human
+// split: a caller that says nothing keeps the dense-only rescue, because only
+// the agentic tools opt out. Flipping this default would silently change every
+// human-facing retrieval path, so it needs its own guard rather than relying on
+// the agentic tests staying green.
+func TestSearchDefaultsDenseFallbackOn(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	// hybrid empty, relaxed hybrid empty, dense-only rescues 3.
+	docEngine := &retryCaptureEngine{engineType: string(engine.EngineInfinity), totals: []int64{0, 0, 3}}
+	service := NewRetrievalService(docEngine, nil)
+	// AllowDenseFallback left nil on purpose: the default is the contract.
+	result, err := service.Search(t.Context(), &RetrievalSearchRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+		KNNTopK: 7, KNNNumCandidates: 19,
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docEngine.requests) != 3 {
+		t.Fatalf("search calls = %d, want 3: the dense-only rescue must run when the caller leaves the flag unset", len(docEngine.requests))
+	}
+	if got := len(docEngine.requests[2].MatchExprs); got != 1 {
+		t.Fatalf("rescue expressions = %d, want the dense leg's 1", got)
+	}
+	if result.Total != 3 {
+		t.Fatalf("total = %d, want the dense rescue's 3 rows", result.Total)
+	}
+}
+
+// TestPruneDeletedChunksPreservesIndexNames guards the one rewrite path that
+// rebuilds the result. PruneDeletedChunks returns the caller's struct untouched
+// when there is nothing to prune, so only the rebuild branch can drop a field.
+func TestPruneDeletedChunksPreservesIndexNames(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB := dao.DB
+	dao.DB = db
+	defer func() { dao.DB = oldDB }()
+
+	result := &RetrievalSearchResult{
+		Field: map[string]map[string]interface{}{
+			"kept": {"id": "kept", "doc_id": "doc-1"},
+			"gone": {"id": "gone", "doc_id": "deleted-doc"},
+		},
+		IDs:        []string{"kept", "gone"},
+		IndexNames: []string{"ragflow_tenant-1"},
+	}
+	pruned, err := NewRetrievalService(nil, &dao.DocumentDAO{}).PruneDeletedChunks(t.Context(), result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(pruned.IDs, []string{"kept"}) {
+		t.Fatalf("pruned IDs = %v, want [kept] (did the rebuild branch run?)", pruned.IDs)
+	}
+	if !slices.Equal(pruned.IndexNames, []string{"ragflow_tenant-1"}) {
+		t.Fatalf("IndexNames = %v, want [ragflow_tenant-1]", pruned.IndexNames)
+	}
+}
+
+// TestRetrievalReturnsNothingWhenDocumentScopeHasNoRelevantContent pins what
+// replaces the filter-only fallback: chunks that exist but are not relevant
+// yield nothing, rather than a whole document of 0.0 rows (infinity#3523).
+func TestRetrievalReturnsNothingWhenDocumentScopeHasNoRelevantContent(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB, oldQueryBuilder := dao.DB, globalQueryBuilder
+	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
+	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
+
+	// Chunks that are inside the scope but match "alpha" on neither leg.
+	irrelevantRows := []map[string]interface{}{
+		{"id": "chunk-1", "doc_id": "doc-1", "kb_id": "kb-1"},
+		{"id": "chunk-2", "doc_id": "doc-1", "kb_id": "kb-1"},
+	}
+	// Every scored pass misses, so Retrieval would once have gone on to scan
+	// the document without a match expression and hand these rows back.
+	docEngine := &unscoredDocScopeEngine{unscoredRows: irrelevantRows}
+	result, err := NewRetrievalService(docEngine, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+		Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, DocIDs: []string{"doc-1"},
+		Page: 1, PageSize: 10, VectorSimilarityWeight: new(0.3),
+		EmbeddingModel: &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if docEngine.reachedFilterOnly != 0 {
+		t.Fatalf("filter-only calls = %d, want 0 — no leg may issue a query without a MATCH expression", docEngine.reachedFilterOnly)
+	}
+	if len(result.Chunks) != 0 || result.Total != 0 {
+		t.Fatalf("chunks = %d total = %d, want nothing: the rows are there, they are just not relevant", len(result.Chunks), result.Total)
+	}
+}
+
+// unscoredDocScopeEngine answers every scored pass with nothing and a
+// scoreless pass with unscored rows, so a test can tell "Retrieval declined to
+// return them" apart from "the engine had nothing".
+type unscoredDocScopeEngine struct {
+	retrievalCountEngine
+	unscoredRows      []map[string]interface{}
+	scoredCalls       int
+	reachedFilterOnly int
+}
+
+func (e *unscoredDocScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	// A scored pass: hybrid, relaxed hybrid or dense-only. Report nothing so
+	// the ladder keeps descending.
+	if len(req.MatchExprs) > 0 {
+		e.scoredCalls++
+		return &types.SearchResult{Total: 0}, nil
+	}
+	// No match expressions means the filter-only scan: the last resort, and
+	// the only pass that has rows here.
+	e.reachedFilterOnly++
+	e.searchFilters = append(e.searchFilters, req.Filter)
+	rows := make([]map[string]interface{}, 0, len(e.unscoredRows))
+	for _, row := range e.unscoredRows {
+		rows = append(rows, maps.Clone(row))
+	}
+	return &types.SearchResult{Chunks: rows, Total: int64(len(rows))}, nil
 }

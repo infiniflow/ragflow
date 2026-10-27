@@ -22,7 +22,8 @@ jest.mock('./use-run-document', () => ({
 }));
 
 import { IngestionTaskStatus } from './constant';
-import { ParsingStatusCell } from './parsing-status-cell';
+import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const baseRecord = {
   id: 'doc-1',
@@ -181,12 +182,78 @@ describe('ParsingStatusCell', () => {
     renderCell({
       ingestion_status: IngestionTaskStatus.COMPLETED,
       chunk_count: 0,
-      parser_config: { enable_metadata: true },
+      parser_config: {},
     });
 
     fireEvent.click(screen.getByTestId('document-parse-toggle'));
 
     expect(mockRunDocumentByIds).toHaveBeenCalledTimes(1);
     expect(mockShowReparseDialog).not.toHaveBeenCalled();
+  });
+
+  it('asks for confirmation on a chunkless document when auto-metadata can be applied', () => {
+    renderCell({
+      ingestion_status: IngestionTaskStatus.COMPLETED,
+      chunk_count: 0,
+      parser_config: { enable_metadata: true },
+    });
+
+    fireEvent.click(screen.getByTestId('document-parse-toggle'));
+
+    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
+    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
+  });
+
+  it('detects auto-metadata in the pipeline parser config shape', () => {
+    renderCell({
+      ingestion_status: IngestionTaskStatus.COMPLETED,
+      chunk_count: 0,
+      parser_config: {
+        'Extractor:AutoExtractDefault': { metadata: { enabled: true } },
+      },
+    });
+
+    fireEvent.click(screen.getByTestId('document-parse-toggle'));
+
+    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
+    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
+  });
+
+  // The outdated bang (design D1/D2/D3) lives in the parser dropdown button,
+  // so it is covered here against ParseDropdownButton.
+  function renderDropdown(overrides: Record<string, any> = {}) {
+    const record = { ...baseRecord, ...overrides } as any;
+    return render(
+      React.createElement(
+        TooltipProvider,
+        null,
+        React.createElement(ParseDropdownButton, {
+          record,
+          showChangeParserModal: jest.fn(),
+        }),
+      ),
+      { wrapper: StrictMode },
+    );
+  }
+
+  it('shows the outdated bang when the pinned pipeline version is not the latest', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_version_outdated: true,
+    });
+    const bang = screen.getByText('!');
+    expect(bang).toBeInTheDocument();
+    expect(bang).toHaveClass('text-destructive');
+  });
+
+  it('hides the outdated bang for up-to-date or unpinned documents', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_version_outdated: false,
+    });
+    expect(screen.queryByText('!')).not.toBeInTheDocument();
+
+    renderDropdown({ pipeline_id: '', pipeline_version_outdated: false });
+    expect(screen.queryByText('!')).not.toBeInTheDocument();
   });
 });

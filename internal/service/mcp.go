@@ -27,12 +27,14 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
-	"ragflow/internal/utility"
+	"ragflow/internal/server"
 )
 
 const (
@@ -41,6 +43,7 @@ const (
 	mcpServerNameLimit          = 255
 	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
+	mcpPermissionBatchSize      = 256
 	mcpServerDateFormat         = "2006-01-02T15:04:05"
 	maskedMCPSecret             = "********"
 )
@@ -85,14 +88,15 @@ type UpdateMCPServerRequest map[string]json.RawMessage
 
 // MCPServerListItem is an MCP server item in the list response.
 type MCPServerListItem struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	ServerType  string         `json:"server_type"`
-	URL         string         `json:"url"`
-	Description *string        `json:"description"`
-	Variables   entity.JSONMap `json:"variables"`
-	CreateDate  *string        `json:"create_date"`
-	UpdateDate  *string        `json:"update_date"`
+	ID                 string         `json:"id"`
+	Name               string         `json:"name"`
+	ServerType         string         `json:"server_type"`
+	URL                string         `json:"url"`
+	Description        *string        `json:"description"`
+	Variables          entity.JSONMap `json:"variables"`
+	CreateDate         *string        `json:"create_date"`
+	UpdateDate         *string        `json:"update_date"`
+	OperatorPermission int32          `json:"operator_permission,omitempty"`
 }
 
 // ListMCPServersResponse is the response payload for listing MCP servers.
@@ -119,8 +123,12 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "mcp", permission.ActionWrite); err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
@@ -154,7 +162,12 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		Headers:     headers,
 	}
 
-	if err = s.mcpServerDAO.CreateMCPServer(ctx, dao.DB, server); err != nil {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMCPServer, server.ID)
+	}); err != nil {
 		return nil, common.CodeDataError, errors.New("failed to create MCP server")
 	}
 
@@ -198,12 +211,13 @@ func fetchMCPTools(ctx context.Context, url, serverType string, headers, variabl
 	}
 	timeout := time.Duration(timeoutSeconds * float64(time.Second))
 
-	tools, err := utility.FetchTools(ctx, utility.FetchOptions{
-		URL:        url,
-		ServerType: serverType,
-		Headers:    jsonMapHeaderValues(headers),
-		Variables:  jsonMapStringValues(variables),
-		Timeout:    timeout,
+	tools, err := mcpclient.FetchTools(ctx, mcpclient.FetchOptions{
+		URL:               url,
+		ServerType:        serverType,
+		Headers:           jsonMapHeaderValues(headers),
+		Variables:         jsonMapStringValues(variables),
+		Timeout:           timeout,
+		AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 	})
 	if err != nil {
 		return nil, err
@@ -531,7 +545,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireOwnedTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx, userID)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
 		}
@@ -544,7 +558,17 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 		return nil, code, normalized
 	}
 
-	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	subject := permission.Subject{UserID: userID, TenantID: tenantID}
+	queryScope, err := checker.QueryScope(ctx, subject, permission.ScopeQuery{
+		Kind:      permission.ResourceKindMCPServer,
+		Operation: permission.OperationRead,
+	})
+	if err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return nil, code, normalized
+	}
+	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc, page, pageSize, queryScope.Apply)
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
 		if errors.As(err, &orderbyErr) {
@@ -552,26 +576,47 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 		}
 		return nil, common.CodeServerError, err
 	}
-	if servers == nil {
-		servers = []*entity.MCPServer{}
-	}
-	servers = paginateMCPServers(servers, page, pageSize)
 
+	permissionMasks := make(map[string]int32)
+	for offset := 0; offset < len(servers); offset += mcpPermissionBatchSize {
+		end := min(offset+mcpPermissionBatchSize, len(servers))
+		refs := make([]permission.ResourceRef, 0, end-offset)
+		for _, server := range servers[offset:end] {
+			refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
+		}
+		accesses, err := checker.ResolveAccesses(ctx, subject, refs)
+		if err != nil {
+			code, normalized := normalizeMCPServerPermissionError(err)
+			return nil, code, normalized
+		}
+		for _, ref := range refs {
+			access, ok := accesses[ref]
+			if !ok || !access.Allows(permission.OperationRead) {
+				continue
+			}
+			permissionMasks[ref.ID] = access.PermissionMask
+		}
+	}
 	items := make([]*MCPServerListItem, 0, len(servers))
 	for _, server := range servers {
+		permissionMask, ok := permissionMasks[server.ID]
+		if !ok {
+			continue
+		}
 		variables := server.Variables
 		if variables == nil {
 			variables = entity.JSONMap{}
 		}
 		items = append(items, &MCPServerListItem{
-			ID:          server.ID,
-			Name:        server.Name,
-			ServerType:  server.ServerType,
-			URL:         server.URL,
-			Description: server.Description,
-			Variables:   MCPVariablesForResponse(variables),
-			CreateDate:  formatMCPServerDate(server.CreateDate),
-			UpdateDate:  formatMCPServerDate(server.UpdateDate),
+			ID:                 server.ID,
+			Name:               server.Name,
+			ServerType:         server.ServerType,
+			URL:                server.URL,
+			Description:        server.Description,
+			Variables:          MCPVariablesForResponse(variables),
+			CreateDate:         formatMCPServerDate(server.CreateDate),
+			UpdateDate:         formatMCPServerDate(server.UpdateDate),
+			OperatorPermission: permissionMask,
 		})
 	}
 
@@ -682,8 +727,12 @@ type ImportResult struct {
 
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
 func (s *MCPService) ImportServers(ctx context.Context, userID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
+		_, normalized := permissionresponse.Normalize(err)
+		return nil, normalized
+	}
+	if err := checkFeatureAction(ctx, userID, "mcp", permission.ActionWrite); err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
 	}
@@ -760,12 +809,13 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 		stringVars := jsonMapStringValues(entity.JSONMap(variables))
 
 		mcpCtx, cancel := context.WithTimeout(ctx, timeout)
-		tools, fetchErr := utility.FetchTools(mcpCtx, utility.FetchOptions{
-			URL:        url,
-			ServerType: stype,
-			Headers:    headers,
-			Variables:  stringVars,
-			Timeout:    timeout,
+		tools, fetchErr := mcpclient.FetchTools(mcpCtx, mcpclient.FetchOptions{
+			URL:               url,
+			ServerType:        stype,
+			Headers:           headers,
+			Variables:         stringVars,
+			Timeout:           timeout,
+			AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 		})
 		cancel()
 		if fetchErr != nil {
@@ -783,7 +833,12 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 			Variables:  entity.JSONMap(variables),
 			Headers:    entity.JSONMap(headerVals),
 		}
-		if err = s.mcpServerDAO.CreateMCPServer(ctx, dao.DB, server); err != nil {
+		if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
+				return err
+			}
+			return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMCPServer, server.ID)
+		}); err != nil {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Failed to create MCP server."})
 			continue
 		}
@@ -853,7 +908,7 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 	// ErrMCPInvalidURL data errors instead of being swallowed inside the
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
-	if _, _, err := utility.AssertMCPURLSafe(req.URL); err != nil {
+	if _, _, err := mcpclient.AssertMCPURLSafe(req.URL, server.MCPAllowPrivateHosts()); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 
@@ -873,12 +928,13 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 
 	mcpCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	tools, err := utility.FetchTools(mcpCtx, utility.FetchOptions{
-		URL:        req.URL,
-		ServerType: req.ServerType,
-		Headers:    headers,
-		Variables:  vars,
-		Timeout:    timeout,
+	tools, err := mcpclient.FetchTools(mcpCtx, mcpclient.FetchOptions{
+		URL:               req.URL,
+		ServerType:        req.ServerType,
+		Headers:           headers,
+		Variables:         vars,
+		Timeout:           timeout,
+		AllowPrivateHosts: server.MCPAllowPrivateHosts(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: Test MCP error (id=%s): %w", ErrMCPTestFailed, mcpID, err)
@@ -902,7 +958,7 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 	return out, nil
 }
 
-func toolsAsMap(tools []utility.Tool) map[string]interface{} {
+func toolsAsMap(tools []mcpclient.Tool) map[string]interface{} {
 	m := map[string]interface{}{}
 	for _, t := range tools {
 		if t.Raw != nil {
@@ -927,37 +983,4 @@ func formatMCPServerDate(date *time.Time) *string {
 	}
 	formatted := date.Format(mcpServerDateFormat)
 	return &formatted
-}
-
-func paginateMCPServers(servers []*entity.MCPServer, page, pageSize int) []*entity.MCPServer {
-	if page == 0 || pageSize == 0 {
-		return servers
-	}
-
-	start := (page - 1) * pageSize
-	stop := page * pageSize
-	return sliceMCPServers(servers, start, stop)
-}
-
-func sliceMCPServers(servers []*entity.MCPServer, start, stop int) []*entity.MCPServer {
-	length := len(servers)
-	start = normalizeMCPServerSliceIndex(start, length)
-	stop = normalizeMCPServerSliceIndex(stop, length)
-	if stop < start {
-		return []*entity.MCPServer{}
-	}
-	return servers[start:stop]
-}
-
-func normalizeMCPServerSliceIndex(index, length int) int {
-	if index < 0 {
-		index += length
-	}
-	if index < 0 {
-		return 0
-	}
-	if index > length {
-		return length
-	}
-	return index
 }

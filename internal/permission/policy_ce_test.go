@@ -64,6 +64,9 @@ func TestCommunityPolicyResolvesResourceTenant(t *testing.T) {
 	if access.Source != AccessSourceTenant || !access.Allows(OperationRead) {
 		t.Fatalf("ResolveAccess() = %#v, want tenant read access", access)
 	}
+	if access.PermissionMask != ResourcePermissionRead {
+		t.Fatalf("ResolveAccess() permission mask = %d, want read mask %d", access.PermissionMask, ResourcePermissionRead)
+	}
 }
 
 func TestCommunityPolicyUsesResourceTenantInsteadOfSubjectTenant(t *testing.T) {

@@ -144,19 +144,19 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 }
 
 // pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
-// consumed inside the pipeline (ck_type drives chunk merging and the image-crop
-// decision, tk_nums carries the chunker's token count into the Tokenizer,
-// layout*/image/context_* describe the media block, and page_number/table_id/
-// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
-// is a chunk-store column.
+// consumed inside the pipeline (layout drives block-kind decisions, tk_nums
+// carries the chunker's token count into the Tokenizer, layout*/image/context_*
+// describe the media block, and page_number/table_id/sheet/headers/cells
+// describe the table or spreadsheet block) and NONE of them is a chunk-store
+// column.
 //
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
 // where they stop: Elasticsearch and Vastbase would add a field for each key,
 // and Infinity would drop each key at insert with a warning.
 var pipelineOnlyFields = []string{
-	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
-	"context_above", "context_below", "page_number",
+	"tk_nums", "layout", "layout_type", "layoutno", "image",
+	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
 }
@@ -229,6 +229,23 @@ func processChunkPositions(ck map[string]any, spreadsheet bool) {
 			flat = append(flat, group...)
 		}
 		storePositions(ck, flat, spreadsheet)
+	case [][]any:
+		if flat, ok := flattenMixedPositions(v); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+		}
+	case []any:
+		rows, ok := positionRowsFromAny(v)
+		if !ok {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+			break
+		}
+		if flat, ok := flattenMixedPositions(rows); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn("chunk positions contained no usable rows; discarding")
+		}
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}

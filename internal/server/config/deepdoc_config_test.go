@@ -57,7 +57,7 @@ func TestParseIngestorConfigReadsDeepDocYAML(t *testing.T) {
 // TestParseIngestorConfigDeepDocIgnoresEnvVar pins the provenance of the env
 // override: ParseIngestorConfig reads ONLY the ingestor.inference_concurrency
 // YAML key and does not apply RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY. The env
-// override is resolved separately by Config.ResolveDeepDocInferenceConcurrency.
+// override is resolved separately by Config.GetDeepDocInferenceConcurrency.
 func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 	t.Setenv(common.EnvDeepDocInferenceConcurrency, "9")
 
@@ -76,7 +76,7 @@ func TestParseIngestorConfigDeepDocIgnoresEnvVar(t *testing.T) {
 // override the YAML ingestor.inference_concurrency. viper's Sub() inherits
 // AutomaticEnv, so a plain GetInt would consult that variable before the file
 // value. The config parse must be file-only; env precedence is applied later by
-// ResolveDeepDocInferenceConcurrency via os.Getenv. This test uses the
+// GetDeepDocInferenceConcurrency via os.Getenv. This test uses the
 // production Viper settings (env prefix + replacer + AutomaticEnv) to reproduce
 // the real precedence resolution path.
 func TestParseIngestorConfigDeepDocIgnoresAutoEnvVar(t *testing.T) {
@@ -99,12 +99,12 @@ func TestParseIngestorConfigDeepDocIgnoresAutoEnvVar(t *testing.T) {
 	}
 }
 
-// TestResolveDeepDocInferenceConcurrency pins the precedence
+// TestGetDeepDocInferenceConcurrency pins the precedence
 // CLI > environment > config file > default(1) and the fail-fast contract: any
 // non-integer, non-positive, or otherwise invalid value is an error, never a
 // silent fallback. The second return reports whether K was explicitly set by any
 // layer (as opposed to the built-in default of 1).
-func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
+func TestGetDeepDocInferenceConcurrency(t *testing.T) {
 	const envKey = common.EnvDeepDocInferenceConcurrency
 
 	cases := []struct {
@@ -112,7 +112,7 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 		configured    int
 		configuredSet bool
 		env           string // "" means leave unset
-		cli           *int
+		argValue      *int
 		want          int
 		wantExplicit  bool
 		wantErr       bool
@@ -138,7 +138,7 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 			}
 			c.ingestor.deepDocInferenceConcurrency = tc.configured
 			c.ingestor.deepDocInferenceConcurrencySet = tc.configuredSet
-			got, explicit, err := c.ResolveDeepDocInferenceConcurrency(tc.cli)
+			got, explicit, err := c.GetDeepDocInferenceConcurrency(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %d (explicit=%v)", got, explicit)
@@ -149,8 +149,8 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.cli)
+				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.argValue)
 			}
 			if explicit != tc.wantExplicit {
 				t.Fatalf("explicit = %v, want %v", explicit, tc.wantExplicit)
@@ -159,13 +159,13 @@ func TestResolveDeepDocInferenceConcurrency(t *testing.T) {
 	}
 }
 
-// TestResolveDeepDocInferenceCPUCores pins the precedence
+// TestGetDeepDocInferenceCPUCores pins the precedence
 // CLI > environment > config file > default(0, "derive from K") for the CPU-core
 // budget N, and that the second return reports whether N was explicitly set by
 // any layer. An explicit 0 means "use all cores" and is returned as 0 (resolved
 // against runtime.NumCPU() by the caller); only non-integer or negative values
 // error.
-func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
+func TestGetDeepDocInferenceCPUCores(t *testing.T) {
 	const envKey = common.EnvDeepDocInferenceCPUCores
 
 	cases := []struct {
@@ -173,7 +173,7 @@ func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
 		configured    int
 		configuredSet bool
 		env           string
-		cli           *int
+		argValue      *int
 		want          int
 		wantExplicit  bool
 		wantErr       bool
@@ -200,7 +200,7 @@ func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
 			}
 			c.ingestor.deepDocInferenceCPUCores = tc.configured
 			c.ingestor.deepDocInferenceCPUCoresSet = tc.configuredSet
-			got, explicit, err := c.ResolveDeepDocInferenceCPUCores(tc.cli)
+			got, explicit, err := c.GetDeepDocInferenceCPUCores(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got %d (explicit=%v)", got, explicit)
@@ -211,8 +211,8 @@ func TestResolveDeepDocInferenceCPUCores(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.cli)
+				t.Fatalf("got %d, want %d (configured=%d configuredSet=%v env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.configuredSet, tc.env, tc.argValue)
 			}
 			if explicit != tc.wantExplicit {
 				t.Fatalf("explicit = %v, want %v", explicit, tc.wantExplicit)
@@ -265,3 +265,5 @@ func TestParseIngestorConfigReadsDeepDocCPUCoresYAML(t *testing.T) {
 }
 
 func intPtr(n int) *int { return &n }
+
+func strPtr(s string) *string { return &s }

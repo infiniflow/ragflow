@@ -27,6 +27,10 @@ import (
 // Search filter/SelectFields and the DeleteChunks condition so tests can assert
 // the structural scope of a reader/writer call, and returns a canned chunk set.
 type fakeEngine struct {
+	// engineType overrides GetType; defaults to "fake" (unsupported for
+	// dataset-structure writes). Tests of structure write/delete paths set
+	// this to "infinity" so the guard permits the operation.
+	engineType string
 	// searchChunks is the result returned by Search.
 	searchChunks []map[string]interface{}
 	// lastSearchReq captures the most recent SearchRequest for assertions.
@@ -55,10 +59,10 @@ func (f *fakeEngine) DeleteChunks(_ context.Context, condition map[string]interf
 
 // --- stubs: the reader/writer path under test never exercises these. ---
 
-func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (f *fakeEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (f *fakeEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _, _ string) ([]string, error) {
+func (f *fakeEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _, _, _ string) ([]string, error) {
 	f.insertedChunks = append(f.insertedChunks, chunks...)
 	return nil, nil
 }
@@ -114,8 +118,13 @@ func (f *fakeEngine) KNNScores(context.Context, []map[string]interface{}, []floa
 func (f *fakeEngine) GetScores(map[string]interface{}) map[string]float64 { return nil }
 func (f *fakeEngine) Ping(context.Context) error                          { return nil }
 func (f *fakeEngine) Close() error                                        { return nil }
-func (f *fakeEngine) GetType() string                                     { return "fake" }
-func (f *fakeEngine) SupportsPageRank() bool                              { return false }
+
+// GetType reports the engine type. It defaults to "fake"; tests that exercise
+// dataset-structure write/delete paths override engineType to "infinity" so
+// the datasetStructureSupported guard (which mirrors the production engine
+// type) lets the operation proceed.
+func (f *fakeEngine) GetType() string        { return f.engineType }
+func (f *fakeEngine) SupportsPageRank() bool { return false }
 func (f *fakeEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }

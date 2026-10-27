@@ -31,7 +31,7 @@
 // <script_path>`. The `__RAGFLOW_RESULT__:` marker extraction
 // works identically across all providers.
 //
-// File ops use SSH exec (cat heredoc / find / cat | base64) rather
+// File ops use SSH exec (cat / find / cat | base64) rather
 // than the SFTP subsystem. This avoids the
 // `github.com/pkg/sftp` dependency and keeps the import surface
 // at just `golang.org/x/crypto/ssh` (already a transitive dep).
@@ -46,6 +46,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net"
 	"os"
@@ -305,7 +306,7 @@ func (p *SSHProvider) ExecuteCode(
 		return nil, fmt.Errorf("ssh: unknown instance id %q", inst.InstanceID)
 	}
 
-	// Wrap the code + write to remote via heredoc.
+	// Wrap the code and write it to the remote file through SSH stdin.
 	argsJSON, err := argsToJSON(args)
 	if err != nil {
 		return nil, err
@@ -536,11 +537,22 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 // tricked into re-interpreting it (see remoteMkdirAll,
 // remoteRemoveAll, remoteReadFile, remoteWriteFile, etc).
 func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec int) (string, string, int, error) {
+	return p.runRemoteCommandWithInput(ctx, client, command, timeoutSec, nil)
+}
+
+func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader) (string, string, int, error) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
 	}
 	defer sess.Close()
+	var stdin io.WriteCloser
+	if input != nil {
+		stdin, err = sess.StdinPipe()
+		if err != nil {
+			return "", "", -1, fmt.Errorf("ssh: open stdin: %w", err)
+		}
+	}
 	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
 	sess.Stdout = stdoutBuf
 	sess.Stderr = stderrBuf
@@ -556,29 +568,57 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 		runCtx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	}
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- sess.Wait() }()
-
-	select {
-	case err = <-done:
-	case <-runCtx.Done():
-		// Closing the SSH session interrupts Wait and asks the remote server to
-		// terminate the associated command channel. Wait for the goroutine so
-		// the output builders are no longer being written before returning.
-		_ = sess.Signal(ssh.SIGKILL)
-		_ = sess.Close()
-		<-done
-		return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- sess.Wait() }()
+	var writeDone chan error
+	if stdin != nil {
+		writeDone = make(chan error, 1)
+		go func() {
+			_, writeErr := io.Copy(stdin, input)
+			closeErr := stdin.Close()
+			if writeErr == nil {
+				writeErr = closeErr
+			}
+			writeDone <- writeErr
+		}()
 	}
-	if err != nil {
+
+	var waitErr, writeErr error
+	waitComplete, writeComplete := false, stdin == nil
+	for !waitComplete || !writeComplete {
+		select {
+		case waitErr = <-waitDone:
+			waitComplete = true
+			waitDone = nil
+		case writeErr = <-writeDone:
+			writeComplete = true
+			writeDone = nil
+		case <-runCtx.Done():
+			// Closing the SSH session interrupts Wait and the stdin writer.
+			// Wait for both goroutines before reading their output buffers.
+			_ = sess.Signal(ssh.SIGKILL)
+			_ = sess.Close()
+			if !waitComplete {
+				<-waitDone
+			}
+			if !writeComplete {
+				<-writeDone
+			}
+			return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+		}
+	}
+	if waitErr != nil {
 		// ssh.ExitError carries the remote exit code; we surface
 		// it as a normal non-zero exit (the caller can branch on
 		// the ExitCode field).
 		var exitErr *ssh.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(waitErr, &exitErr) {
 			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
 		}
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdoutBuf.String(), stderrBuf.String(), -1, waitErr
+	}
+	if writeErr != nil {
+		return stdoutBuf.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
 	}
 	return stdoutBuf.String(), stderrBuf.String(), 0, nil
 }
@@ -600,20 +640,11 @@ func (p *SSHProvider) remoteMkdirAll(ctx context.Context, client *ssh.Client, re
 	return nil
 }
 
-// remoteWriteFile writes content to remotePath via a
-// `cat > file <<'__RAGFLOW_SSH_EOF__' ... EOF` heredoc. The
-// heredoc tag is unique enough to never collide with user
-// code (it includes the package name). For very large scripts
-// (>1 MiB) this is inefficient vs. SFTP; the threshold is
-// intentionally not implemented here — Python's paramiko
-// also writes via SFTP for the same reason.
+// remoteWriteFile writes content to remotePath through the SSH
+// session's stdin so file contents are never interpreted by the shell.
 func (p *SSHProvider) remoteWriteFile(ctx context.Context, client *ssh.Client, remotePath, content string) error {
-	const tag = "__RAGFLOW_SSH_EOF__"
-	cmd := fmt.Sprintf(
-		"cat > %s <<'%s'\n%s\n%s",
-		shq(remotePath), tag, content, tag,
-	)
-	_, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	cmd := fmt.Sprintf("cat > %s", shq(remotePath))
+	_, stderr, exitCode, err := p.runRemoteCommandWithInput(ctx, client, cmd, p.timeout, strings.NewReader(content))
 	if err != nil {
 		return err
 	}
@@ -738,13 +769,11 @@ func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, 
 	return out, nil
 }
 
-// shq single-quotes a string for shell-safe inclusion. Matches
-// the Python `shlex.quote` behavior the SSH provider uses for
-// building `cd <work_dir> && <bin> <script>` commands. The
-// escape sequence for an embedded single quote is `\'` (a
-// backslash followed by a single quote).
+// shq single-quotes a string for POSIX shell inclusion. Embedded
+// single quotes are represented by ending the quoted string,
+// emitting a quoted single quote, then starting a new quoted string.
 func shq(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `\'`) + "'"
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // minTimeout returns the smaller of a and b, with a floor of 1.

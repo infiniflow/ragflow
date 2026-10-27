@@ -117,8 +117,10 @@ type TextBox struct {
 	Pages      []int
 	LayoutType string
 	LayoutNo   string
-	ColID      int
-	R          int
+	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
+	FigureBounds *Position
+	ColID        int
+	R            int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
