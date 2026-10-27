@@ -141,6 +141,61 @@ func TestWithStateBracket_PersistsToolInvocationsOnComponentError(t *testing.T) 
 	}
 }
 
+func TestBuildWorkflow_PersistsOutputsAndFinishesNodeOnComponentError(t *testing.T) {
+	previousFactory := runtime.DefaultFactory()
+	runtime.SetDefaultFactory(func(string, map[string]any) (runtime.Component, error) {
+		return &failingComponent{output: map[string]any{
+			"tool_invocations": []map[string]any{{"tool_name": "search"}},
+		}}, nil
+	})
+	t.Cleanup(func() { runtime.SetDefaultFactory(previousFactory) })
+
+	compiled, err := Compile(t.Context(), &Canvas{Components: map[string]CanvasComponent{
+		"agent_0": {Obj: CanvasComponentObj{ComponentName: "Agent", Params: map[string]any{}}},
+	}})
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	state := runtime.NewCanvasState("run-agent-error", "session-agent-error")
+	events := make(chan RunEvent, 4)
+	ctx := WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
+	if _, err := compiled.Workflow.Invoke(ctx, map[string]any{}); err == nil {
+		t.Fatal("expected workflow error")
+	}
+
+	got, stateErr := state.GetVar("agent_0@tool_invocations")
+	invocations, ok := got.([]map[string]any)
+	if stateErr != nil || !ok || len(invocations) != 1 {
+		t.Fatalf("tool_invocations = %#v, state error = %v; want one recorded invocation", got, stateErr)
+	}
+	finishedCount := 0
+	persisted := false
+	for len(events) > 0 {
+		event := <-events
+		if event.Type != "node_finished" {
+			continue
+		}
+		finishedCount++
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(event.Data), &payload); err != nil {
+			t.Fatalf("unmarshal node_finished: %v", err)
+		}
+		outputs, _ := payload["outputs"].(map[string]any)
+		if invocations, ok := outputs["tool_invocations"].([]any); ok && len(invocations) == 1 {
+			persisted = true
+			if nodeErr, ok := payload["error"].(string); !ok || !strings.Contains(nodeErr, "boom") {
+				t.Errorf("node_finished error = %v, want component failure", payload["error"])
+			}
+		}
+	}
+	if finishedCount != 1 {
+		t.Errorf("node_finished events = %d, want 1", finishedCount)
+	}
+	if !persisted {
+		t.Fatal("node_finished event did not include tool_invocations")
+	}
+}
+
 // TestRealComponentBody_NoTimeoutWhenFast verifies that a component returning
 // immediately does not incur any timeout-induced latency or error wrapping.
 func TestRealComponentBody_NoTimeoutWhenFast(t *testing.T) {
