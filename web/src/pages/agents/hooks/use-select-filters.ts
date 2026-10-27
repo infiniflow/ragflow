@@ -59,7 +59,7 @@ export function useSelectFilters() {
               )?.count ?? 0,
           },
         ],
-        label: t('flow.canvasCategory'),
+        label: t('flow.agentCategory'),
       },
       {
         field: 'tags',
