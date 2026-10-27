@@ -902,6 +902,35 @@ export const useDeleteVersion = () => {
   return { loading, isError, deleteVersion: mutateAsync };
 };
 
+export const useApplyVersion = () => {
+  const queryClient = useQueryClient();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+    }: {
+      canvasId: string;
+      versionId: string;
+    }) => {
+      const { data } = await agentService.applyVersion({
+        agentId: canvasId,
+        versionId,
+      });
+      return data?.code === 0;
+    },
+    onSuccess: (ok, { canvasId }) => {
+      if (!ok) return;
+      queryClient.invalidateQueries({ queryKey: AgentKeys.list() });
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(canvasId),
+      });
+      queryClient.invalidateQueries({ queryKey: AgentKeys.detail(canvasId) });
+    },
+  });
+
+  return { loading, applyVersion: mutateAsync };
+};
+
 export const useUpdateVersion = () => {
   const queryClient = useQueryClient();
   const {
