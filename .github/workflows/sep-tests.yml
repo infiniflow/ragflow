@@ -52,6 +52,7 @@ jobs:
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
       has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
+      has_oceanbase_seekdb_changes: ${{ steps.detect_changes.outputs.has_oceanbase_seekdb_changes }}
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -152,11 +153,13 @@ jobs:
           has_go=false
           has_web=false
           has_native_deepdoc=false
+          has_oceanbase_seekdb=false
 
           if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             has_go=true
             has_web=true
             has_native_deepdoc=true
+            has_oceanbase_seekdb=true
           else
             if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
               CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
@@ -170,6 +173,28 @@ jobs:
             fi
 
             while IFS= read -r file; do
+              # Independently detect OceanBase/SeekDB changes.
+              # This must run before the case statement because an earlier
+              # case branch may already match the same file.
+              if [[ "$file" == internal/engine/oceanbase/* ||
+              "$file" == internal/engine/engine.go ||
+              "$file" == internal/engine/global.go ||
+              "$file" == internal/server/config/database_config.go ||
+              "$file" == internal/server/config/doc_engine_config.go ||
+              "$file" == internal/server/config/oceanbase_config_test.go ||
+              "$file" == tools/es-to-oceanbase-migration/* ||
+              "$file" == docker/oceanbase/* ||
+              "$file" == docker/oceanbase-entrypoint.sh ||
+              "$file" == docker/docker-compose-base.yml ||
+              "$file" == docker/docker-compose.yml ||
+              "$file" == docker/.env ||
+              "$file" == docker/service_conf.yaml.template ||
+              "$file" == conf/service_conf.yaml ||
+              "$file" == .github/workflows/sep-tests.yml ||
+              "$file" == go.mod ||
+              "$file" == go.sum ]]; then
+                has_oceanbase_seekdb=true
+              fi
               case "$file" in
                 # Docker, test, SDK, and workflow changes can alter either server path.
                 # build.sh also controls the C++/native build, so it must trigger native backend.
@@ -202,7 +227,222 @@ jobs:
           echo "has_go_changes=${has_go}"        >> $GITHUB_OUTPUT
           echo "has_web_changes=${has_web}"       >> $GITHUB_OUTPUT
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
-          echo "Go: ${has_go}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}"
+          echo "has_oceanbase_seekdb_changes=${has_oceanbase_seekdb}" >> $GITHUB_OUTPUT
+          echo "Go: ${has_go}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}, OceanBase/SeekDB: ${has_oceanbase_seekdb}"
+
+  oceanbase_migration_tests:
+    name: oceanbase_migration_tests
+    needs: ragflow_preflight
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_oceanbase_seekdb_changes == 'true' }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    timeout-minutes: 15
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          sudo chown -R "${USER}" "${GITHUB_WORKSPACE}"
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+
+      - name: Run OceanBase migration tests
+        working-directory: tools/es-to-oceanbase-migration
+        run: |
+          set -euo pipefail
+          uv run --python 3.13 --extra dev pytest -q
+
+  oceanbase_go_integration:
+    name: ${{ matrix.name }}
+    needs: ragflow_preflight
+    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_oceanbase_seekdb_changes == 'true' }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: oceanbase_go_integration (OceanBase CE 4.4.1.0)
+            backend: oceanbase
+            profile: oceanbase
+            service: oceanbase
+            port_variable: OCEANBASE_PORT
+            user: root@ragflow
+            dbname: ragflow_doc
+          - name: oceanbase_go_integration (SeekDB latest)
+            backend: seekdb
+            profile: seekdb
+            service: seekdb
+            port_variable: SEEKDB_PORT
+            user: root
+            dbname: ragflow_doc
+    steps:
+      - name: Ensure workspace ownership
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          sudo chown -R "${USER}" "${GITHUB_WORKSPACE}"
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+
+      - name: Build C++ static library
+        run: |
+          set -euo pipefail
+          BUILDER_CONTAINER="ragflow_build_${GITHUB_RUN_ID}_oceanbase_go_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')"
+          cleanup_builder() {
+            sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+          }
+          trap cleanup_builder EXIT
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+
+      - name: Prepare OceanBase service and reserve host port
+        working-directory: docker
+        run: |
+          set -euo pipefail
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${{ matrix.backend }}-go"
+          echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> "${GITHUB_ENV}"
+          PORT_RESERVATION=""
+          release_port_guard() {
+            if [[ -n "${PORT_RESERVATION:-}" ]]; then
+              sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap release_port_guard EXIT
+          command -v ss >/dev/null 2>&1 || {
+            echo "::error::ss is required to check host ports on the shared runner"
+            exit 1
+          }
+
+          # Keep this job out of the Infinity/Elasticsearch partitions used by
+          # the other compose jobs. The Docker network is a shared-daemon mutex
+          # for the published port, so concurrent self-hosted jobs cannot claim
+          # the same candidate between checking and compose up.
+          for attempt in $(seq 0 2999); do
+            PORT_OFFSET=$((7000 + ((GITHUB_RUN_ID + attempt * 97) % 3000)))
+            OCEANBASE_PORT=$((2881 + PORT_OFFSET))
+            used=$(sudo docker ps --format '{{.Ports}}' 2>/dev/null \
+              | grep -oE '[0-9]+->' | tr -d '>-' | sort -u || true)
+            if grep -qx "${OCEANBASE_PORT}" <<< "${used}"; then
+              continue
+            fi
+            if sudo ss -H -ltn "sport = :${OCEANBASE_PORT}" | grep -q .; then
+              continue
+            fi
+
+            PORT_GUARD="ragflow-ci-port-${OCEANBASE_PORT}"
+            GUARD_SUBNET="10.$((OCEANBASE_PORT / 256)).$((OCEANBASE_PORT % 256)).0/24"
+            if sudo docker network create --subnet "${GUARD_SUBNET}" \
+                --label ragflow-ci-created="$(date -u +%s)" "${PORT_GUARD}" >/dev/null 2>&1; then
+              PORT_RESERVATION="${PORT_GUARD}"
+              # Publish the guard immediately so the always-run teardown step
+              # can release it even if a later setup command fails.
+              echo "PORT_RESERVATION=${PORT_RESERVATION}" >> "${GITHUB_ENV}"
+              echo "${{ matrix.port_variable }}=${OCEANBASE_PORT}" >> "${GITHUB_ENV}"
+              break
+            fi
+          done
+          if [[ -z "${PORT_RESERVATION}" ]]; then
+            echo "::error::Could not reserve a free OceanBase host port on the shared Docker daemon"
+            exit 1
+          fi
+
+          # These values match docker-compose-base.yml and the OceanBase
+          # integration test's environment variables exactly.
+          {
+            echo "RAGFLOW_TEST_OCEANBASE_HOST=host.docker.internal"
+            echo "RAGFLOW_TEST_OCEANBASE_PORT=${OCEANBASE_PORT}"
+            echo "RAGFLOW_TEST_OCEANBASE_DBNAME=${{ matrix.dbname }}"
+            echo "RAGFLOW_TEST_OCEANBASE_USER=${{ matrix.user }}"
+            echo "RAGFLOW_TEST_OCEANBASE_PASSWORD=infini_rag_flow"
+            echo "RAGFLOW_TEST_OCEANBASE_ENGINE_TYPE=${{ matrix.backend }}"
+          } >> "${GITHUB_ENV}"
+          trap - EXIT
+          echo "Reserved ${{ matrix.backend }} host port ${OCEANBASE_PORT}"
+
+      - name: Start ${{ matrix.name }} service
+        run: |
+          set -euo pipefail
+          sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
+            --profile "${{ matrix.profile }}" up -d "${{ matrix.service }}"
+
+      - name: Wait for ${{ matrix.name }} to become ready
+        run: |
+          set -euo pipefail
+          container=$(sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
+            --profile "${{ matrix.profile }}" ps -q "${{ matrix.service }}")
+          if [[ -z "${container}" ]]; then
+            echo "::error::${{ matrix.backend }} container was not created"
+            exit 1
+          fi
+          status="starting"
+          for i in $(seq 1 180); do
+            status=$(sudo docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${container}")
+            if [[ "${status}" == "healthy" ]]; then
+              echo "${{ matrix.backend }} is healthy after ${i} checks"
+              exit 0
+            fi
+            if [[ "${status}" == "unhealthy" || "${status}" == "no-healthcheck" ]]; then
+              echo "::error::${{ matrix.backend }} did not become ready (status: ${status})"
+              sudo docker logs --tail 100 "${container}" || true
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::${{ matrix.backend }} did not become healthy within 15 minutes (last status: ${status})"
+          sudo docker logs --tail 100 "${container}" || true
+          exit 1
+
+      - name: Run ${{ matrix.name }} Go integration test
+        env:
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          if [[ -z "${RAGFLOW_TEST_OCEANBASE_HOST:-}" ||
+                -z "${RAGFLOW_TEST_OCEANBASE_PORT:-}" ||
+                -z "${RAGFLOW_TEST_OCEANBASE_DBNAME:-}" ||
+                -z "${RAGFLOW_TEST_OCEANBASE_USER:-}" ||
+                -z "${RAGFLOW_TEST_OCEANBASE_PASSWORD:-}" ]]; then
+            echo "::error::OceanBase integration-test configuration is incomplete"
+            exit 1
+          fi
+          ./build.sh --test-integration-go -v \
+            -run '^TestLegacyStorageRoundTrip$' ./internal/engine/oceanbase \
+            | tee "${RUNNER_TEMP}/oceanbase-go-integration.log"
+          if ! grep -q -- '^--- PASS: TestLegacyStorageRoundTrip' \
+              "${RUNNER_TEMP}/oceanbase-go-integration.log"; then
+            echo "::error::TestLegacyStorageRoundTrip did not execute and pass (a skipped test is not sufficient)"
+            exit 1
+          fi
+
+      - name: Tear down ${{ matrix.name }} service
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
+              --profile "${{ matrix.profile }}" down -v --remove-orphans || true
+            sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q \
+              | xargs -r sudo docker rm -f
+          fi
+          if [[ -n "${PORT_RESERVATION:-}" ]]; then
+            sudo docker network rm "${PORT_RESERVATION}" >/dev/null 2>&1 || true
+          fi
 
   ragflow_python_sdk_unit:
     name: ragflow_python_sdk_unit
@@ -1911,5 +2151,3 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.
           for g in ${PORT_RESERVATION}; do sudo docker network rm "$g" >/dev/null 2>&1 || true; done
-
-
