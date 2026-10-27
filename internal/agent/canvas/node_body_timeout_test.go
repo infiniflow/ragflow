@@ -25,6 +25,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -38,12 +39,14 @@ import (
 // cancelled.
 type blockingComponent struct{}
 
-type failingComponent struct{}
+type failingComponent struct {
+	output map[string]any
+}
 
 func (f *failingComponent) Name() string { return "failing" }
 
 func (f *failingComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	return nil, errors.New("boom")
+	return f.output, errors.New("boom")
 }
 
 func (f *failingComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
@@ -102,6 +105,39 @@ func TestRealComponentBody_UsesDisplayNameInError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "CodeExec:SweetMooseTalk") {
 		t.Errorf("error = %q, should not contain component ID when display name is set", err)
+	}
+}
+
+func TestWithStateBracket_PersistsToolInvocationsOnComponentError(t *testing.T) {
+	invocations := []map[string]any{{"tool_name": "search"}}
+	state := runtime.NewCanvasState("run-agent", "session-agent")
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
+	component := &failingComponent{output: map[string]any{"tool_invocations": invocations}}
+	body := withStateBracket("agent_0", "Agent", realComponentBody("agent_0", "Agent", "Agent", component))
+
+	if _, err := body(ctx, nil); err == nil {
+		t.Fatal("expected component error")
+	}
+	<-events // node_started
+	finished := <-events
+	if finished.Type != "node_finished" {
+		t.Fatalf("event type = %q, want node_finished", finished.Type)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(finished.Data), &payload); err != nil {
+		t.Fatalf("unmarshal node_finished: %v", err)
+	}
+	outputs, ok := payload["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("node_finished outputs = %T, want map", payload["outputs"])
+	}
+	got, ok := outputs["tool_invocations"].([]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("node_finished tool_invocations = %#v, want one invocation", outputs["tool_invocations"])
+	}
+	if got[0].(map[string]any)["tool_name"] != "search" {
+		t.Fatalf("node_finished invocation = %#v, want search", got[0])
 	}
 }
 

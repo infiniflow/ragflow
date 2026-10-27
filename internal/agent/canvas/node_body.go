@@ -254,11 +254,16 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
+		var componentOut map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				componentOut, e = comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				return componentOut, e
 			})
+			if out == nil {
+				out = componentOut
+			}
 			return e
 		})
 		if invokeErr != nil {
@@ -270,12 +275,12 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 				common.Debug("agent: component invoke cancelled",
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
 			case errors.Is(invokeErr, context.DeadlineExceeded):
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
 			default:
 				// Surface the failure as a structured log line. The wrapped error
 				// already carries the full cause chain (e.g. deepseek DNS/timeout),
@@ -284,7 +289,7 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
 			}
 		}
 		if out == nil {

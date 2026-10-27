@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -92,6 +93,38 @@ func TestReferenceRecordingTool_SkipsErrorsAndNonJSON(t *testing.T) {
 	}
 	if chunks := state.GetRetrievalChunks(); len(chunks) != 0 {
 		t.Fatalf("recorded chunks = %d, want 0 for failed/non-JSON results", len(chunks))
+	}
+}
+
+func TestToolInvocationRecordingToolRedactsSensitiveText(t *testing.T) {
+	recorder := &toolInvocationRecorder{}
+	inner := &referenceRecordingFakeTool{err: errors.New("request failed: Authorization: Bearer error-secret")}
+	tool := &toolInvocationRecordingTool{InvokableTool: inner, name: "fake_search", recorder: recorder}
+	_, err := tool.InvokableRun(t.Context(), `{"note":"Authorization: Bearer argument-secret","detail":"access_token=other-secret"}`)
+	if err == nil {
+		t.Fatal("expected inner tool error")
+	}
+
+	entries := recorder.snapshot()
+	if len(entries) != 1 {
+		t.Fatalf("recorded entries = %d, want 1", len(entries))
+	}
+	entry := entries[0]
+	for _, field := range []string{"result", "error"} {
+		got, _ := entry[field].(string)
+		if strings.Contains(got, "error-secret") || strings.Contains(strings.ToLower(got), "bearer") {
+			t.Errorf("%s contains unredacted credential: %q", field, got)
+		}
+	}
+	arguments, ok := entry["arguments"].(map[string]any)
+	if !ok {
+		t.Fatalf("arguments = %T, want map", entry["arguments"])
+	}
+	for key, secret := range map[string]string{"note": "argument-secret", "detail": "other-secret"} {
+		got, _ := arguments[key].(string)
+		if strings.Contains(got, secret) || strings.Contains(strings.ToLower(got), "bearer") {
+			t.Errorf("argument %q contains unredacted credential: %q", key, got)
+		}
 	}
 }
 

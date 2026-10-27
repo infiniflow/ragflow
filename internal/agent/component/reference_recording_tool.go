@@ -35,7 +35,8 @@ const maxToolLogResultRunes = 4096
 const maxToolLogInputRunes = 8192
 const maxToolLogInvocations = 64
 
-var sensitiveToolLogText = regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|authorization|password|secret)(["']?\s*[:=]\s*["']?)([^"'\s,}]+)`)
+var sensitiveToolLogText = regexp.MustCompile(`(?i)(api[_-]?key|access[_-]?token|authorization|password|secret)(["']?\s*[:=]\s*["']?)(?:bearer\s+)?([^"'\s,}]+)`)
+var bearerToolLogText = regexp.MustCompile(`(?i)\bbearer\s+[^\s"',}]+`)
 
 type toolInvocationRecorder struct {
 	mu      sync.Mutex
@@ -85,7 +86,7 @@ func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON
 			logResult = string(redacted)
 		}
 	}
-	logResult = sensitiveToolLogText.ReplaceAllString(logResult, "$1$2[REDACTED]")
+	logResult = redactToolLogText(logResult)
 	redactedArgs := redactToolLogValue(args)
 	if encoded, marshalErr := json.Marshal(redactedArgs); marshalErr == nil && len(encoded) > maxToolLogInputRunes {
 		redactedArgs = map[string]any{"_truncated": true, "preview": utility.TruncateRunes(string(encoded), maxToolLogInputRunes)}
@@ -99,7 +100,7 @@ func (t *toolInvocationRecordingTool) InvokableRun(ctx context.Context, argsJSON
 		"status":       status,
 	}
 	if err != nil {
-		entry["error"] = utility.TruncateRunes(err.Error(), maxToolLogResultRunes)
+		entry["error"] = utility.TruncateRunes(redactToolLogText(err.Error()), maxToolLogResultRunes)
 	}
 	t.recorder.mu.Lock()
 	if len(t.recorder.entries) < maxToolLogInvocations {
@@ -127,6 +128,8 @@ func wrapToolInvocationRecording(tools []einotool.BaseTool, recorder *toolInvoca
 
 func redactToolLogValue(value any) any {
 	switch v := value.(type) {
+	case string:
+		return redactToolLogText(v)
 	case map[string]any:
 		out := make(map[string]any, len(v))
 		for key, child := range v {
@@ -148,6 +151,11 @@ func redactToolLogValue(value any) any {
 	default:
 		return value
 	}
+}
+
+func redactToolLogText(value string) string {
+	value = sensitiveToolLogText.ReplaceAllString(value, "$1$2[REDACTED]")
+	return bearerToolLogText.ReplaceAllString(value, "[REDACTED]")
 }
 
 // referenceRecordingTool decorates an Agent tool so each invocation records
