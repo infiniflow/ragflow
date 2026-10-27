@@ -362,7 +362,7 @@ func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
 func TestIsPDFParseMethod(t *testing.T) {
 	named := []string{
 		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
-		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
+		"monkeyocr", "monkeyocrv2", "docling", "opendataloader", "tcadp parser",
 		"paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -411,7 +411,7 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 // dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
 	const unsetSentinel = ""
-	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
+	dispatcherHandled := map[string]bool{"monkeyocr": true, "monkeyocrv2": true, "paddleocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {

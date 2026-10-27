@@ -172,8 +172,20 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		return res, true, nil
 	}
 
-	// MonkeyOCR dispatch: parse_method "monkeyocr" or layout_recognizer "@MonkeyOCR".
-	if isMonkeyOCRPDFSelector(method, layoutLower) {
+	// MonkeyOCR dispatch: parse_method "monkeyocr", a layout_recognizer or
+	// parse_method naming MonkeyOCR (including model@instance@provider), or a
+	// bare tenant model UUID that resolves to a MonkeyOCR OCR model.
+	monkeyOCRSelector := layout
+	if strings.TrimSpace(monkeyOCRSelector) == "" {
+		monkeyOCRSelector = method
+	}
+	isMonkeyOCRMatch := isMonkeyOCRPDFSelector(method, layoutLower)
+	isMonkeyOCRByUUID := false
+	if !isMonkeyOCRMatch && strings.TrimSpace(monkeyOCRSelector) != "" &&
+		!parser.IsPDFParseMethod(monkeyOCRSelector) {
+		isMonkeyOCRByUUID = isMonkeyOCRLayoutModelID(ctx, db, tenantID, monkeyOCRSelector)
+	}
+	if isMonkeyOCRMatch || isMonkeyOCRByUUID {
 		common.Info("pdf vision dispatch: MonkeyOCR branch matched",
 			zap.String("parse_method", method),
 			zap.String("layout_recognizer", layout),
@@ -181,7 +193,11 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		if tenantID == "" {
 			return parser.ParseResult{}, true, fmt.Errorf("parser: MonkeyOCR requires tenant_id")
 		}
-		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup)
+		dispatchModelID := ""
+		if isMonkeyOCRByUUID || strings.Contains(monkeyOCRSelector, "@") {
+			dispatchModelID = monkeyOCRSelector
+		}
+		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
 		return res, true, err
 	}
 
@@ -629,13 +645,50 @@ func dispatchMinerUPDF(
 }
 
 func isMonkeyOCRPDFSelector(method, layoutLower string) bool {
-	if strings.EqualFold(strings.TrimSpace(method), "monkeyocr") {
-		return true
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+	if strings.Contains(methodLower, "@monkeyocrv2") || strings.HasPrefix(methodLower, "monkeyocrv2") {
+		return false
 	}
 	if strings.Contains(layoutLower, "@monkeyocrv2") || strings.HasPrefix(layoutLower, "monkeyocrv2") {
 		return false
 	}
+	if methodLower == "monkeyocr" || strings.HasSuffix(methodLower, "@monkeyocr") {
+		return true
+	}
 	return strings.HasPrefix(layoutLower, "monkeyocr") || strings.Contains(layoutLower, "@monkeyocr")
+}
+
+var resolveMonkeyOCRModelForDispatch = defaultResolveMonkeyOCRModelForDispatch
+
+func defaultResolveMonkeyOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
+		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	return driver, modelName, apiConfig, err
+}
+
+var isMonkeyOCRLayoutModelID = defaultIsMonkeyOCRLayoutModelID
+
+func defaultIsMonkeyOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if db == nil {
+		return false
+	}
+	if selector == "" || strings.Contains(selector, "@") {
+		return false
+	}
+	driver, _, _, err := defaultResolveMonkeyOCRModelForDispatch(ctx, db, tenantID, selector)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(driver.Name(), "monkeyocr")
 }
 
 // dispatchMonkeyOCRPDF submits a PDF to the tenant's MonkeyOCR adapter
@@ -643,12 +696,13 @@ func isMonkeyOCRPDFSelector(method, layoutLower string) bool {
 func dispatchMonkeyOCRPDF(
 	ctx context.Context,
 	db *gorm.DB,
-	_ string,
+	filename string,
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
+	modelID string,
 ) (parser.ParseResult, error) {
-	driver, _, apiConfig, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	driver, _, apiConfig, err := resolveMonkeyOCRModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR model: %w", err)
 	}
@@ -676,10 +730,9 @@ func dispatchMonkeyOCRPDF(
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
-	parseMethod := getStringOr(setup, "parse_method", "raw")
-	if strings.EqualFold(parseMethod, "monkeyocr") {
-		parseMethod = "raw"
-	}
+	// parse_method in setup selects the dispatch path; the /file_parse API mode
+	// is monkeyocr_parse_method (auto, txt, ocr), mirroring mineru_parse_method.
+	parseMethod := mineruAPIParseMethod(getStringOr(setup, "monkeyocr_parse_method", ""))
 	lang := getStringOr(setup, "lang", "")
 	if lang == "" {
 		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
@@ -697,7 +750,8 @@ func dispatchMonkeyOCRPDF(
 		return parser.ParseResult{}, err
 	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
+	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
@@ -712,7 +766,8 @@ func dispatchMonkeyOCRPDF(
 			parts = append(parts, s)
 		}
 	}
-	return buildMarkdownOCRDispatchResult(strings.Join(parts, "\n")), nil
+	md := strings.Join(parts, "\n")
+	return normalizePDFMarkdown(ctx, filename, md, setup), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
