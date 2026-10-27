@@ -35,6 +35,8 @@ import (
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/task"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -118,6 +120,10 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -148,6 +154,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+		c.Request = c.Request.WithContext(ctx)
 		c.Set("user", &entity.User{ID: "u1"})
 		c.Set("user_id", "u1")
 		c.Params = gin.Params{
@@ -231,6 +238,10 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -272,6 +283,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+		c.Request = c.Request.WithContext(ctx)
 		c.Set("user", &entity.User{ID: "u1"})
 		c.Set("user_id", "u1")
 		c.Params = gin.Params{
@@ -597,6 +609,10 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
 	mr, err := miniredis.Run()
@@ -641,6 +657,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+	c.Request = c.Request.WithContext(ctx)
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 	c.Params = gin.Params{

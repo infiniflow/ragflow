@@ -35,6 +35,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
@@ -73,11 +75,17 @@ func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Conte
 	c.Request = httptest.NewRequest(method, path, nil)
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "user-1",
+	}))
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
 
 	return c, w, db
 }
@@ -157,12 +165,17 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/canvas-b/versions", nil)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-a", "user-a"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-a", TenantID: "user-a"}))
 	c.Set("user", &entity.User{ID: "user-a"})
 	c.Set("user_id", "user-a")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-b"}}
 
 	// Canvas owned by user-b
-	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
+	tenantID := "user-a"
+	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", TenantID: &tenantID, Title: sptr("Not Yours")})
 
 	ctx := t.Context()
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
@@ -191,6 +204,10 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/non-existent/versions", nil)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare agent permission fixture: %v", err)
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "non-existent"}}
@@ -317,6 +334,7 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 		"title":"Agent",
 		"dsl":{}
 	}`))
+	seedAgentCreationContext(t, c, db)
 
 	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
 	h.CreateAgent(c)
@@ -331,6 +349,51 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 	if created.UserID != "user-1" {
 		t.Fatalf("created agent owner = %q, want authenticated user user-1", created.UserID)
 	}
+	if created.EffectiveTenantID() == "" {
+		t.Fatal("created agent has no tenant_id")
+	}
+}
+
+func seedAgentCreationContext(t *testing.T, c *gin.Context, db *gorm.DB) {
+	t.Helper()
+	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
+		t.Fatalf("migrate tenant table: %v", err)
+	}
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{ID: "tenant-1", Status: &active}).Error; err != nil {
+		t.Fatalf("create active tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "membership-1", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleOwner), Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create active tenant membership: %v", err)
+	}
+	for table, statement := range map[string]string{
+		"permission": `CREATE TABLE permission (
+			id TEXT PRIMARY KEY, member_id TEXT, group_id TEXT, tenant_id TEXT NOT NULL,
+			resource_type TEXT NOT NULL, resource_id TEXT, permission INTEGER NOT NULL DEFAULT 0,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+		"permission_change_log": `CREATE TABLE permission_change_log (
+			id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, operator_id TEXT NOT NULL,
+			target_type TEXT NOT NULL, target_id TEXT NOT NULL, resource_type TEXT NOT NULL,
+			resource_id TEXT NOT NULL, old_permission INTEGER NOT NULL DEFAULT 0,
+			new_permission INTEGER NOT NULL DEFAULT 0, action_type TEXT NOT NULL, reason TEXT,
+			event_type TEXT NOT NULL DEFAULT '', actor_user_id TEXT,
+			scope_type TEXT NOT NULL DEFAULT 'tenant', before_data TEXT, after_data TEXT,
+			status TEXT, create_time INTEGER, create_date DATETIME, update_time INTEGER, update_date DATETIME
+		)`,
+	} {
+		if db.Migrator().HasTable(table) {
+			continue
+		}
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("create Agent permission test table: %v", err)
+		}
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
 }
 
 // sptr returns a pointer to the given string.

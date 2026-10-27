@@ -239,6 +239,7 @@ func (s *ChatPipelineService) agenticRag(
 			TemplateID:      mode,
 			Template:        &tmpl,
 			TenantID:        chat.TenantID,
+			UserID:          userID,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,

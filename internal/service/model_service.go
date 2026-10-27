@@ -17,6 +17,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -29,6 +30,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -70,6 +72,8 @@ func NewModelProviderService() *ModelProviderService {
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
 		tenantDAO:        dao.NewTenantDAO(),
+		modelGroupDAO:    dao.NewTenantModelGroupDAO(),
+		modelGroupMapDAO: dao.NewTenantModelGroupMapDAO(),
 	}
 }
 
@@ -78,6 +82,8 @@ type ModelProviderService struct {
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
 	tenantDAO        *dao.TenantDAO
+	modelGroupDAO    *dao.TenantModelGroupDAO
+	modelGroupMapDAO *dao.TenantModelGroupMapDAO
 }
 
 // CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
@@ -99,7 +105,11 @@ type CheckConnectionRequest struct {
 
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	tenantID, err := requireOwnedTenantID(ctx, userID)
+	if err := checkFeatureAction(ctx, userID, "model_provider", permission.ActionEnable); err != nil {
+		code, normalizedErr := normalizeModelPermissionError(err)
+		return code, normalizedErr
+	}
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		code, normalizedErr := normalizeModelPermissionError(err)
 		return code, normalizedErr
@@ -129,7 +139,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 }
 
 func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
-	ownedTenantID, err := requireOwnedTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -278,7 +288,7 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 func (m *ModelProviderService) ListSupportedModels(ctx context.Context, providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 	providerName = strings.TrimSpace(providerName)
 
-	ownedTenantID, err := requireOwnedTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			_, normalizedErr := normalizeModelPermissionError(err)
@@ -360,6 +370,67 @@ type CreateInstanceModelInfo struct {
 	ModelTypes []string               `json:"model_type"`
 	MaxTokens  int                    `json:"max_tokens"`
 	Extra      map[string]interface{} `json:"extra"`
+}
+
+var providerInstanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
+
+// ValidateProviderInstanceName checks the name accepted by provider APIs.
+func ValidateProviderInstanceName(instanceName string) error {
+	if strings.TrimSpace(instanceName) == "" {
+		return errors.New("instance name is required")
+	}
+	if !providerInstanceNamePattern.MatchString(instanceName) {
+		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
+	}
+	return nil
+}
+
+type CreateProviderInstanceRequest struct {
+	InstanceName string                    `json:"instance_name" binding:"required"`
+	APIKey       json.RawMessage           `json:"api_key"`
+	BaseURL      string                    `json:"base_url"`
+	Region       string                    `json:"region"`
+	ModelInfo    []CreateInstanceModelInfo `json:"model_info"`
+}
+
+type AlterProviderInstanceRequest struct {
+	InstanceName string                     `json:"instance_name"`
+	APIKey       json.RawMessage            `json:"api_key"`
+	BaseURL      string                     `json:"base_url"`
+	Region       string                     `json:"region"`
+	ModelInfo    *[]CreateInstanceModelInfo `json:"model_info" binding:"required"`
+}
+
+type DropProviderInstanceRequest struct {
+	Instances []string `json:"instances" binding:"required,min=1,dive,required"`
+}
+
+type AlterModelRequest struct {
+	ModelID   string      `json:"model_id"`
+	Status    string      `json:"status"`
+	MaxTokens int         `json:"max_tokens"`
+	ModelType interface{} `json:"model_type"`
+	Extra     interface{} `json:"extra"`
+}
+
+type DropInstanceModelRequest struct {
+	ModelNames []string `json:"model_name"`
+}
+
+func NormalizeAPIKey(raw json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return ""
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err == nil {
+		return value
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, raw); err != nil {
+		return trimmed
+	}
+	return compact.String()
 }
 
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, userID, providerIDOrName string, operation permission.Operation) (*entity.TenantModelProvider, error) {
@@ -450,7 +521,14 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		Status:       "active",
 		Extra:        extraStr,
 	}
-	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := m.modelInstanceDAO.Create(ctx, tx, tenantModelInstance); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
+			Kind: permission.ResourceKindModelInstance, ID: tenantModelInstance.ID,
+		})
+	})
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
@@ -551,7 +629,14 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 		Status:       "active",
 		Extra:        "{}",
 	}
-	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := m.modelInstanceDAO.Create(ctx, tx, tenantModelInstance); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: provider.TenantID}, permission.ResourceRef{
+			Kind: permission.ResourceKindModelInstance, ID: tenantModelInstance.ID,
+		})
+	})
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
@@ -623,7 +708,7 @@ func (m *ModelProviderService) createModelRecord(ctx context.Context, db *gorm.D
 func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
-	ownedTenantID, err := requireOwnedTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -665,9 +750,18 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	// web/src/pages/user-setting/setting-model/...) and would otherwise
 	// crash on a freshly created tenant.
 	result := make([]map[string]interface{}, 0, len(instances))
+	checker := permission.NewDatabaseChecker(dao.DB)
 	for _, instance := range instances {
 		if _, ok := accessibleInstances[instance.ID]; !ok {
 			continue
+		}
+		access, accessErr := checker.ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: permission.ResourceKindModelInstance,
+			ID:   instance.ID,
+		})
+		if accessErr != nil {
+			code, normalizedErr := normalizeModelPermissionError(accessErr)
+			return nil, code, normalizedErr
 		}
 		// Parse extra to extract region
 		var extraFields map[string]string
@@ -684,11 +778,12 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		// list_provider_instances response shape
 		// (provider_api_service.py:563).
 		result = append(result, map[string]interface{}{
-			"id":            instance.ID,
-			"instance_name": instance.InstanceName,
-			"provider_id":   instance.ProviderID,
-			"region":        extraFields["region"],
-			"status":        instance.Status,
+			"id":                  instance.ID,
+			"instance_name":       instance.InstanceName,
+			"provider_id":         instance.ProviderID,
+			"region":              extraFields["region"],
+			"status":              instance.Status,
+			"operator_permission": access.PermissionMask,
 		})
 	}
 
@@ -698,7 +793,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 
-	ownedTenantID, err := requireOwnedTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, normalizedErr := normalizeModelPermissionError(err)
@@ -709,7 +804,8 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 	provider, err := m.findProviderByIDOrNameInTenant(ctx, ownedTenantID, providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", providerName)
+			code, normalizedErr := normalizeModelPermissionError(permission.ErrResourceNotFound)
+			return nil, code, normalizedErr
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -727,7 +823,14 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationRead); err != nil {
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindModelInstance,
+		ID:   instance.ID,
+	})
+	if err != nil || !access.Allows(permission.OperationRead) {
+		if err == nil {
+			err = permission.ErrPermissionDenied
+		}
 		code, normalizedErr := normalizeModelPermissionError(err)
 		return nil, code, normalizedErr
 	}
@@ -750,8 +853,10 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"provider_id":   provider.ID,
 		"region":        extraFields["region"],
 		"base_url":      extraFields["base_url"],
-		"api_key":       instance.APIKey,
 		"status":        instance.Status,
+	}
+	if access.Source == permission.AccessSourceOwner {
+		result["api_key"] = instance.APIKey
 	}
 
 	return result, common.CodeSuccess, nil
@@ -1026,6 +1131,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	var errs []error
 	errSet := make(map[string]bool)
 	passedTypes := make(map[string]bool)
+	unverifiableTypes := make(map[string]bool)
 
 	for _, model := range modelsToVerify {
 		modelName := model.Name
@@ -1082,7 +1188,10 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
 			case "doc_parse":
 				err = driver.CheckConnection(ctx, apiConfig)
+			case "decision":
+				err = verifyDecisionModel(ctx, driver, modelName, apiConfig)
 			default:
+				unverifiableTypes[mtLower] = true
 				continue
 			}
 
@@ -1107,6 +1216,22 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(passedTypes) == 0 {
+		// An empty errs must not reach %w: errors.Join over no arguments returns
+		// nil, and %w renders a nil error as "%!w(<nil>)". Nothing was attempted
+		// in that case, so there is no provider error to report — name the type
+		// that has no verifier instead, which is what the form reports to whoever
+		// is trying to add the model.
+		if len(errs) == 0 {
+			unverifiable := make([]string, 0, len(unverifiableTypes))
+			for modelType := range unverifiableTypes {
+				unverifiable = append(unverifiable, modelType)
+			}
+			sort.Strings(unverifiable)
+			if len(unverifiable) == 0 {
+				return modelVerifyResult, fmt.Errorf("model verification did not run: the requested models declare no model type")
+			}
+			return modelVerifyResult, fmt.Errorf("model verification did not run: %s has no verification in this build", strings.Join(unverifiable, ", "))
+		}
 		return modelVerifyResult, fmt.Errorf("model verification attempts failed: %w", errors.Join(errs...))
 	}
 
@@ -1218,6 +1343,36 @@ func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	// rather than performing full document parsing.
 	_, err := driver.OCRFile(ctx, &modelName, minimalPNG(), nil, apiConfig, nil, nil)
 	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// decisionProbeQuestionID names the single question verification sends, whose
+// answer is discarded: Decide requires at least one question, and verification
+// asks nothing else.
+const decisionProbeQuestionID = "verification"
+
+// verifyDecisionModel asks the decision endpoint the verification question.
+//
+// It goes through Decide rather than CheckConnection: CheckConnection is the
+// models list, which the picker already called to offer this model, so reusing
+// it here would verify nothing that has not been verified. Decide exercises the
+// endpoint the product will call.
+//
+// The request mirrors what the judge sends (decision_judge.go — same state key,
+// same question type) so verification exercises the shape the product sends, and
+// so a deployment that answers verification answers the real thing too. Only the
+// instructions are synthetic, and deliberately so: no calibration depends on
+// them, which keeps the request cheap and independent of the judge's phrasing.
+func verifyDecisionModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+	request := &modelModule.DecideRequest{
+		State: map[string]string{"passage": ""},
+		Questions: map[string]modelModule.Question{
+			decisionProbeQuestionID: modelModule.Noul{Instructions: "Is this passage relevant to the query?"},
+		},
+	}
+	if _, err := driver.Decide(ctx, &modelName, request, apiConfig, nil); err != nil {
 		return err
 	}
 	return nil
@@ -1547,16 +1702,18 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 			rank = 500
 		}
 		added = append(added, map[string]interface{}{
-			"model_id":      modelRecord.ID,
-			"tenant_id":     provInfo.TenantID,
-			"tenant_name":   tenantName,
-			"model_type":    entity.ModelType(modelRecord.ModelType).HumanReadable(),
-			"name":          modelRecord.ModelName,
-			"provider_id":   modelRecord.ProviderID,
-			"provider_name": provInfo.ProviderName,
-			"instance_id":   modelRecord.InstanceID,
-			"instance_name": instInfo.InstanceName,
-			"rank":          rank,
+			"model_id":        modelRecord.ID,
+			"status":          modelRecord.Status,
+			"instance_status": instInfo.Status,
+			"tenant_id":       provInfo.TenantID,
+			"tenant_name":     tenantName,
+			"model_type":      entity.ModelType(modelRecord.ModelType).HumanReadable(),
+			"name":            modelRecord.ModelName,
+			"provider_id":     modelRecord.ProviderID,
+			"provider_name":   provInfo.ProviderName,
+			"instance_id":     modelRecord.InstanceID,
+			"instance_name":   instInfo.InstanceName,
+			"rank":            rank,
 		})
 	}
 
@@ -1629,7 +1786,7 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userI
 	tenantID := requestedTenantID
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireOwnedTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx, userID)
 		if err != nil {
 			if errors.Is(err, permission.ErrMembershipNotFound) {
 				return nil, common.CodeSuccess, nil
@@ -2188,7 +2345,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 }
 
 func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerName, instanceName, userID string) ([]map[string]interface{}, error) {
-	ownedTenantID, err := requireOwnedTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			_, normalizedErr := normalizeModelPermissionError(err)
@@ -2262,6 +2419,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		}
 
 		modelList = append(modelList, map[string]interface{}{
+			"id":         model.ID,
 			"name":       model.ModelName,
 			"model_type": entity.ModelType(model.ModelType).HumanReadable(),
 			"max_tokens": maxTokens,

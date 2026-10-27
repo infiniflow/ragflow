@@ -56,7 +56,7 @@ func createSearchServiceTestSearch(t *testing.T, id, tenantID, name string) {
 func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	_, err := NewSearchService().CreateSearch(ctx, "tenant-1", "   ", nil)
 	if err == nil {
 		t.Fatal("expected empty name validation error")
@@ -69,7 +69,7 @@ func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-2", "user-2")
 	req := &UpdateSearchRequest{
 		Name:         "New Name",
 		SearchConfig: map[string]interface{}{},
@@ -85,7 +85,7 @@ func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 
 func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	setupSearchServiceTestDB(t)
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1", "user-2")
 	created, err := NewSearchService().CreateSearch(ctx, "tenant-1", "My Search", nil)
 	if err != nil {
 		t.Fatalf("CreateSearch failed: %v", err)
@@ -99,7 +99,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		Name:         "Hijacked Name",
 		SearchConfig: map[string]interface{}{},
 	}
-	_, err = NewSearchService().UpdateSearch(ctx, "user-2", created.SearchID, req)
+	_, err = NewSearchService().UpdateSearch(serviceTestContext(t, "user-2", "tenant-1", "tenant-1"), "user-2", created.SearchID, req)
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("expected permission denied, got %v", err)
 	}
@@ -164,7 +164,7 @@ func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	}
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
@@ -182,7 +182,7 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
@@ -200,7 +200,7 @@ func TestSearchServiceListSearchesUsesPermissionScope(t *testing.T) {
 	valid := string(entity.StatusValid)
 	for _, row := range []entity.Search{
 		{ID: "team-search", TenantID: "team-tenant", CreatedBy: "team-owner", Name: "Team Search", SearchConfig: entity.JSONMap{}, Status: &valid},
-		{ID: "member-search", TenantID: "member-1", CreatedBy: "member-1", Name: "Member Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+		{ID: "member-search", TenantID: "team-tenant", CreatedBy: "member-1", Name: "Member Search", SearchConfig: entity.JSONMap{}, Status: &valid},
 		{ID: "unshared-search", TenantID: "other-tenant", CreatedBy: "other-owner", Name: "Unshared Search", SearchConfig: entity.JSONMap{}, Status: &valid},
 	} {
 		search := row
@@ -218,7 +218,8 @@ func TestSearchServiceListSearchesUsesPermissionScope(t *testing.T) {
 		}
 	}
 
-	result, err := NewSearchService().ListSearches(t.Context(), "member-1", "", 0, 0, nil, nil)
+	ctx := serviceTestContext(t, "member-1", "team-tenant", "team-owner")
+	result, err := NewSearchService().ListSearches(ctx, "member-1", "", 0, 0, nil, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
@@ -260,10 +261,11 @@ func TestSearchServiceSeparatesSearchReadFromRunPermission(t *testing.T) {
 	}
 
 	service := NewSearchService()
-	if _, err := service.GetSearchDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+	ctx := serviceTestContext(t, "member-1", "team-tenant", "team-owner")
+	if _, err := service.GetSearchDetail(ctx, "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("tenant member should not be able to read another user's Search App metadata, got %v", err)
 	}
-	if _, err := service.GetDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := service.GetDetail(ctx, "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("tenant member should not be able to run another user's Search App, got %v", err)
 	}
 }
@@ -272,7 +274,7 @@ func TestSearchServiceSeparatesSearchReadFromRunPermission(t *testing.T) {
 // filtering and pagination happen in SQL while total counts all matching rows.
 func TestSearchServiceListSearchesPaginatesOwnerFilter(t *testing.T) {
 	setupSearchServiceTestDB(t)
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 
 	for i := 1; i <= 5; i++ {
 		createTime := int64(i * 100)

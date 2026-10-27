@@ -1,3 +1,7 @@
+import message from '@/components/ui/message';
+import { ModelTypeMap } from '@/components/model-tree-select';
+import { useModelValidIds } from '@/hooks/use-llm-request';
+import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
@@ -8,10 +12,12 @@ import {
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
+import i18n from '@/locales/config';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import useGraphStore from '../store';
+import { collectCanvasIssues } from '../utils/canvas-checklist';
 import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
@@ -23,8 +29,7 @@ export const useSaveGraph = (
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
-  // Saving is always allowed, even with unresolved canvas issues — those are
-  // only surfaced to the user by the canvas checklist (useCanvasChecklist).
+  // Draft saving is independent of run-readiness checks.
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
@@ -32,6 +37,7 @@ export const useSaveGraph = (
         globalVariables: Record<string, GlobalVariableType>;
       },
       release?: boolean,
+      autosave?: boolean,
     ) => {
       if (!id) {
         return;
@@ -46,6 +52,12 @@ export const useSaveGraph = (
       if (release) {
         params.release = 'true';
       }
+      // Design §5.1: the debounced auto-save path passes autosave:true so the
+      // backend refreshes only the live draft and never mints a new version.
+      // An explicit (manual) Save omits this flag.
+      if (autosave) {
+        params.autosave = true;
+      }
 
       return setAgent(params);
     },
@@ -58,9 +70,41 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
+  const { data: agent } = useFetchAgent();
+  const { resolveValidIds } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    agent?.tenant_id,
+  );
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
+      const { nodes, edges, editedNodeFormIds } = useGraphStore.getState();
+      const inputs = { nodes: nextNodes ?? nodes, edges, editedNodeFormIds };
+      let issue = collectCanvasIssues({
+        nodes: nextNodes ?? nodes,
+        edges,
+        editedNodeFormIds,
+      }).find((issue) => issue.blocksRun);
+      if (
+        !issue &&
+        inputs.nodes.some((node) => node.data?.label === Operator.Agent)
+      ) {
+        try {
+          const modelValidIds = await resolveValidIds();
+          issue = collectCanvasIssues({ ...inputs, modelValidIds }).find(
+            (issue) => issue.blocksRun,
+          );
+        } catch {
+          message.error(i18n.t('common.modelUnavailable'));
+          return;
+        }
+      }
+      if (issue) {
+        message.error(
+          `${issue.nodeName}: ${i18n.t(issue.messageKey, issue.messageParams)}`,
+        );
+        return;
+      }
       const saveRet = await saveGraph(nextNodes);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
@@ -71,7 +115,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [saveGraph, resetAgent, show],
+    [saveGraph, resetAgent, show, resolveValidIds],
   );
 
   return { handleRun, loading };
@@ -133,7 +177,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     ) {
       return;
     }
-    const ret = await saveGraph();
+    const ret = await saveGraph(undefined, undefined, undefined, true);
     if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }

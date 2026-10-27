@@ -174,7 +174,7 @@ func TestBotService_AgentbotInputs_CrossTenantDenied(t *testing.T) {
 	svc := NewBotService(nil)
 
 	// Attacker (tenant-B) asks for victim (tenant-A's canvas).
-	title, _, _, _, _, code, err := svc.AgentbotInputs(t.Context(),
+	title, _, _, _, _, code, err := svc.AgentbotInputs(serviceTestContext(t, "tenant-B", "tenant-B"),
 		"tenant-B", "agent-victim")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("cross-tenant: want ErrUserCanvasNotFound, got %v", err)
@@ -213,6 +213,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 	if err := db.Create(&entity.UserCanvas{
 		ID:             "agent-1",
 		UserID:         "owner-1",
+		TenantID:       sptr("tenant-1"),
 		Title:          &title,
 		Avatar:         &avatar,
 		CanvasCategory: "agent_canvas",
@@ -238,7 +239,7 @@ func TestBotService_AgentbotInputsReadsBeginParams(t *testing.T) {
 
 	svc := NewBotService(nil)
 	gotTitle, gotAvatar, prologue, mode, inputs, code, err := svc.AgentbotInputs(
-		t.Context(), "owner-1", "agent-1")
+		serviceTestContext(t, "owner-1", "tenant-1"), "owner-1", "agent-1")
 	if err != nil {
 		t.Fatalf("AgentbotInputs: %v", err)
 	}
@@ -408,7 +409,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// llmService is nil — any attempt to reach the LLM path would
 	// fail loudly, so a successful run proves the LLM was skipped.
 	svc := NewBotService(nil)
-	frames, code, err := svc.ChatbotCompletion(t.Context(),
+	frames, code, err := svc.ChatbotCompletion(serviceTestContext(t, "tenant-1", "tenant-1"),
 		"tenant-1", "dlg-1", ChatbotCompletionRequest{Question: ""})
 	if err != nil {
 		t.Fatalf("ChatbotCompletion: %v", err)

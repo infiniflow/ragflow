@@ -306,7 +306,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		tenantSvc := service.NewTenantService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
+		llmModelName, err = tenantSvc.GetDefaultModelNameForTenant(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {

@@ -123,7 +123,6 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 		warnings = append(warnings, fmt.Sprintf("Markdown parser could not resolve %d image source(s)", unresolvedImages))
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name": filename,
 		},

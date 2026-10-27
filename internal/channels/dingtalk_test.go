@@ -97,7 +97,10 @@ func TestDingTalkBotDedupKey(t *testing.T) {
 }
 
 func TestDingTalkNormalizeBotMessage(t *testing.T) {
-	ch := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	ch, err := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	incoming, dedupKey, ok := ch.normalizeBotMessage(&chatbot.BotCallbackDataModel{
 		ConversationId:   "chat-1",
@@ -131,11 +134,15 @@ func TestDingTalkSendUsesCachedSessionWebhook(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
-	ch := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	ch, err := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	ch.sessionWebhooks["chat-1"] = server.URL
 
-	err := ch.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "hello"})
+	err = ch.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "hello"})
 	if err != nil {
 		t.Fatalf("Send returned error: %v", err)
 	}
@@ -145,7 +152,10 @@ func TestDingTalkSendUsesCachedSessionWebhook(t *testing.T) {
 }
 
 func TestDingTalkEnqueueFailureCancelsInflight(t *testing.T) {
-	ch := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	ch, err := newDingTalkChannel(dingTalkAccount{AccountID: "account-1", ClientID: "client-1", ClientSecret: "secret-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	worker := &dingTalkWorker{queue: make(chan dingTalkQueuedMessage, 1)}
 	worker.queue <- dingTalkQueuedMessage{incoming: core.IncomingMessage{MessageID: "queued"}}
 	ch.workers["chat-1"] = worker

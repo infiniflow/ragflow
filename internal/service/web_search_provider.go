@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/service/youcom"
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
@@ -57,15 +58,6 @@ const (
 	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
 	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
 	serplyWebSearchEndpoint     = "https://api.serply.io/v1/search/"
-	// You.com serves the same response shape from two endpoints. The keyless
-	// one is rate-limited but needs no credentials; the keyed one lifts those
-	// limits. The keyless endpoint rejects an X-API-Key header, so the endpoint
-	// and the headers are always chosen together.
-	youComWebSearchEndpoint        = "https://api.you.com/v1/search"
-	youComKeylessWebSearchEndpoint = "https://api.you.com/v1/agents/search"
-	// Identifies RAGFlow to You.com. On the keyless endpoint there is no key to
-	// attribute traffic to, so this is the only signal available.
-	youComWebSearchUserAgent = "RAGFlow youdotcom-integration/infiniflow-ragflow"
 	// webSearchResultCount is how many hits every provider is asked for. Six
 	// keeps the web block in a prompt the size of one corpus chunk set — the
 	// point is to give the model something to cite, not to mirror a full SERP.
@@ -120,7 +112,7 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 	// keyOptional marks providers usable with no key. Only You.com: it serves a
 	// dedicated keyless endpoint (a different path, same response shape, rate
 	// limited per source IP, and it rejects an X-API-Key header — see
-	// youComEndpointFor). A key moves to the keyed endpoint and lifts the limit.
+	// youcom.EndpointFor). A key moves to the keyed endpoint and lifts the limit.
 	//
 	// Free tier != keyless: Exa's free 1,000 requests/month still requires a key
 	// on every call, so it does not get this carve-out.
@@ -267,7 +259,7 @@ func retrieveWebSearchWithTavily(
 		return retrieveYouComWebSearch(
 			ctx,
 			youComWebSearchHTTPClient,
-			youComEndpointFor(provider.APIKey),
+			youcom.EndpointFor(provider.APIKey),
 			provider.APIKey,
 			question,
 		)
@@ -974,43 +966,13 @@ func decodeSerplyWebSearchResults(responseBody []byte) ([]serplyWebSearchResult,
 	return results, nil
 }
 
-type youComWebSearchResult struct {
-	URL         string   `json:"url"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Snippets    []string `json:"snippets"`
-}
-
-type youComWebSearchResponse struct {
-	Results struct {
-		Web  []youComWebSearchResult `json:"web"`
-		News []youComWebSearchResult `json:"news"`
-	} `json:"results"`
-}
-
-// youComEndpointFor picks the keyless endpoint when no key is configured. The
-// keyless endpoint rejects an X-API-Key header, so callers must never send a
-// key to it.
-func youComEndpointFor(apiKey string) string {
-	if strings.TrimSpace(apiKey) == "" {
-		return youComKeylessWebSearchEndpoint
+// youComFetcher adapts the service's shared web-search request helper to the
+// youcom leaf package's transport seam, so the You.com request/response logic
+// lives in one place and this package only owns the HTTP client.
+func youComFetcher(client *http.Client) youcom.Fetcher {
+	return func(ctx context.Context, endpoint string, headers map[string]string) ([]byte, error) {
+		return webSearchRequest(ctx, client, http.MethodGet, endpoint, headers, nil)
 	}
-	return youComWebSearchEndpoint
-}
-
-// youComContent prefers the extracted page passages. News hits carry only a
-// description.
-func youComContent(result youComWebSearchResult) string {
-	passages := make([]string, 0, len(result.Snippets))
-	for _, snippet := range result.Snippets {
-		if strings.TrimSpace(snippet) != "" {
-			passages = append(passages, snippet)
-		}
-	}
-	if len(passages) > 0 {
-		return strings.Join(passages, "\n")
-	}
-	return strings.TrimSpace(result.Description)
 }
 
 func retrieveYouComWebSearch(
@@ -1020,45 +982,26 @@ func retrieveYouComWebSearch(
 	apiKey string,
 	query string,
 ) (map[string]interface{}, error) {
-	queryParams := url.Values{}
-	queryParams.Set("query", query)
-	queryParams.Set("count", strconv.Itoa(webSearchResultCount))
-
-	headers := map[string]string{
-		"Accept":     "application/json",
-		"User-Agent": youComWebSearchUserAgent,
-	}
-	// The keyless endpoint rejects an X-API-Key header, so the key rides only
-	// when one is configured.
-	if trimmedKey := strings.TrimSpace(apiKey); trimmedKey != "" {
-		headers["X-API-Key"] = trimmedKey
-	}
-	responseBody, err := webSearchRequest(ctx, client, http.MethodGet,
-		endpoint+"?"+queryParams.Encode(), headers, nil)
+	hits, err := youcom.Search(ctx, youComFetcher(client), youcom.Request{
+		Endpoint:  endpoint,
+		APIKey:    apiKey,
+		Query:     query,
+		Freshness: "",
+		Count:     webSearchResultCount,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("youcom: %w", err)
+		return nil, err
 	}
 
-	var decoded youComWebSearchResponse
-	if err := json.Unmarshal(responseBody, &decoded); err != nil {
-		return nil, fmt.Errorf("youcom: decode response: %w", err)
-	}
-
-	// `count` applies per response section, so web and news together can exceed
-	// it. Web results lead; the merged list is trimmed back afterwards.
-	merged := make([]youComWebSearchResult, 0, len(decoded.Results.Web)+len(decoded.Results.News))
-	merged = append(merged, decoded.Results.Web...)
-	merged = append(merged, decoded.Results.News...)
-
-	hits := make([]webSearchHit, 0, len(merged))
-	for _, result := range merged {
-		hits = append(hits, webSearchHit{
-			Title:   result.Title,
-			URL:     result.URL,
-			Content: youComContent(result),
+	webHits := make([]webSearchHit, 0, len(hits))
+	for _, hit := range hits {
+		webHits = append(webHits, webSearchHit{
+			Title:   hit.Title,
+			URL:     hit.URL,
+			Content: hit.Content,
 		})
 	}
-	return webSearchPayload("youcom", hits), nil
+	return webSearchPayload("youcom", webHits), nil
 }
 
 // webSearchFunc adapts the pipeline's configured provider to the agent's

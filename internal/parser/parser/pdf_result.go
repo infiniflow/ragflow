@@ -27,36 +27,6 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 		result.File = ensurePDFResultFile(result.File, filename)
 		return result
 	}
-	if len(result.JSON) == 0 {
-		switch {
-		case result.Markdown != "":
-			parsed := parsePDFMarkdown(ctx, filename, result.Markdown)
-			if parsed.Err != nil {
-				if ctx.Err() != nil {
-					// Cancellation is fatal; preserve file metadata for callers.
-					parsed.File = ensurePDFResultFile(result.File, filename)
-					return parsed
-				}
-				// Mirror the historical markdown→JSON fallback: a backend
-				// markdown payload that cannot be structured is still indexed
-				// as raw text instead of failing the task.
-				common.Warn("parser normalization fell back to text",
-					zap.String("filename", filename),
-					zap.String("normalized_from", "markdown"),
-					zap.Error(parsed.Err))
-				result.Warnings = append(result.Warnings, parsed.Warnings...)
-				result.Warnings = append(result.Warnings, "markdown normalization fell back to text: "+parsed.Err.Error())
-				result.JSON = []DocItem{NewTextJSONItem(result.Markdown)}
-			} else {
-				result.Warnings = append(result.Warnings, parsed.Warnings...)
-				if len(parsed.JSON) == 0 {
-					result.JSON = []DocItem{NewTextJSONItem(result.Markdown)}
-				} else {
-					result.JSON = parsed.JSON
-				}
-			}
-		}
-	}
 	items := make([]DocItem, 0, len(result.JSON))
 	droppedPositions := 0
 	for _, item := range result.JSON {
@@ -137,9 +107,59 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 			zap.Int("dropped_rows", droppedPositions))
 	}
 	result.JSON = items
-	result.OutputFormat, result.Markdown = "json", ""
 	result.File = ensurePDFResultFile(result.File, filename)
 	return result
+}
+
+// NormalizeMarkdown converts a PDF backend Markdown response into the
+// structured JSON contract and applies the same item policies as
+// NormalizeResult. PDF markdown engines (MonkeyOCRv2, MinerU V1 fallback)
+// emit Markdown rather than JSON; the owning component routes them through
+// this method before vision enhancement so markdown→JSON conversion stays
+// entirely inside the parser package. On parse failure (or a result that
+// yields no structured items) the raw Markdown is indexed as a single text
+// item, mirroring the historical markdown→JSON fallback. A cancelled context
+// is fatal and preserves the file metadata for callers.
+func (p *PDFParser) NormalizeMarkdown(ctx context.Context, filename, markdown string) ParseResult {
+	return p.normalizePDFMarkdown(ctx, filename, markdown, ensurePDFResultFile(nil, filename))
+}
+
+// normalizePDFMarkdown converts a PDF backend Markdown response into the
+// structured JSON contract and applies the same item policies as
+// NormalizeResult. fileMeta seeds the result File: remote-backed producers
+// (mineru/docling/opendataloader) carry page_count, while the local Markdown
+// path only needs the filename. The cancellation and empty/error fallback
+// paths preserve fileMeta so callers can still report which document failed.
+// NormalizeMarkdown and pdfMarkdownToResult share this implementation so the
+// two markdown entry points can never diverge in conversion or item policy.
+func (p *PDFParser) normalizePDFMarkdown(ctx context.Context, filename, markdown string, fileMeta map[string]any) ParseResult {
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err, File: fileMeta}
+	}
+	converted := parsePDFMarkdown(ctx, filename, markdown)
+	if converted.Err != nil {
+		if ctx.Err() != nil {
+			// Cancellation is fatal; preserve file metadata for callers.
+			converted.File = fileMeta
+			return converted
+		}
+		// Mirror the historical markdown→JSON fallback: a backend
+		// markdown payload that cannot be structured is still indexed
+		// as raw text instead of failing the task.
+		common.Warn("parser normalization fell back to text",
+			zap.String("filename", filename),
+			zap.String("normalized_from", "markdown"),
+			zap.Error(converted.Err))
+		converted.Warnings = append(converted.Warnings, "markdown normalization fell back to text: "+converted.Err.Error())
+		converted.JSON = []DocItem{NewTextJSONItem(markdown)}
+		converted.Err = nil
+	} else if len(converted.JSON) == 0 {
+		converted.JSON = []DocItem{NewTextJSONItem(markdown)}
+	}
+	if converted.File == nil {
+		converted.File = fileMeta
+	}
+	return p.NormalizeResult(ctx, filename, converted)
 }
 
 // ensurePDFResultFile preserves backend file metadata while guaranteeing the

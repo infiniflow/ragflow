@@ -61,6 +61,11 @@ func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (
 		return nil, fmt.Errorf("agent: buildParallelExpansion: unknown cpn %q", parallelID)
 	}
 
+	// Parallel expansion bypasses normal node construction; validate its params here.
+	if _, err := buildNodeBody(ctx, parallelID, "Parallel", "", comp.Obj.Params); err != nil {
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
+	}
+
 	members := collectGroupedMembers(c, parallelID)
 	if len(members) == 0 {
 		members = collectDescendants(c, parallelID)

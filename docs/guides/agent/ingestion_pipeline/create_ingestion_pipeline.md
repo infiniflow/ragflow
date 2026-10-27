@@ -10,8 +10,13 @@ sidebar_custom_props: {
 
 # Create an Ingestion Pipeline
 
-1. Go to the **Agent** page.
-2. Click **Create Agent** and start from a blank canvas or a prebuilt template. Templates are recommended for beginners.
+1. Open **Agent > Create agent > Create from blank**.
+2. Select **Ingestion pipeline**, enter a name, and click **Confirm**.
+3. Open the created card. The canvas starts with **Begin → Parser**.
+4. Configure Parser, then use its outgoing connection point to add **Token Chunker** or **Title Chunker**.
+5. From Token Chunker, add **Transformer** if enrichment is needed, then add **Indexer**. A basic flow is **Begin → Parser → Token Chunker → Transformer → Indexer**.
+6. Configure each component, review **Checklist**, and click **Save**.
 
-![Create an Ingestion Pipeline](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_ingestion_pipeline.jpg)
-3. On the canvas, drag, drop and connect components from the right panel to design your flow, for example: Parser → Chunker → Transformer → Indexer.
+Use each component's outgoing connection point to add the next step. After Transformer, choose Indexer or Compiler.
+
+See [Validate the pipeline](./test_run.md) before processing a collection of documents.

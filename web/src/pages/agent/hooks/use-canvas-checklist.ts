@@ -60,7 +60,7 @@ function collectAllDatasetIds(nodes: RAGFlowNodeType[]): string[] {
 /**
  * Real-time canvas issues for the checklist panel, debounced so dragging a
  * node does not recompute every frame. The checklist only reports issues to
- * the user; it does not gate any entry points.
+ * the user. Run checks blocking rules synchronously, without this debounce.
  */
 export function useCanvasChecklist({
   ownerTenantId,
@@ -81,6 +81,10 @@ export function useCanvasChecklist({
   // owner and current user can use the resource.
   const { validIds: modelValidIds, isFetched: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
+  const {
+    validIds: categorizeModelValidIds,
+    isFetched: categorizeModelsFetched,
+  } = useModelValidIds(['chat', 'vision', 'decision'], ownerTenantId);
   const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
@@ -105,6 +109,9 @@ export function useCanvasChecklist({
           ? new Set(memoryList?.map((x) => x.id))
           : undefined,
       modelValidIds: modelsFetched ? modelValidIds : undefined,
+      categorizeModelValidIds: categorizeModelsFetched
+        ? categorizeModelValidIds
+        : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
       // full page means some groups live beyond it, so hold off instead of
@@ -127,6 +134,8 @@ export function useCanvasChecklist({
       memoryList,
       modelsFetched,
       modelValidIds,
+      categorizeModelsFetched,
+      categorizeModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,
