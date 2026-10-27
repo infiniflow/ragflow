@@ -708,7 +708,14 @@ export const useTestDbConnect = () => {
     mutationFn: async (params: any) => {
       const ret = await agentService.testDbConnect(params);
       if (ret?.data?.code === 0) {
-        message.success(ret?.data?.data);
+        const successMessage = ret?.data?.message;
+        message.success(
+          typeof successMessage === 'string' &&
+            successMessage.trim() &&
+            successMessage.trim().toLowerCase() !== 'success'
+            ? successMessage
+            : i18n.t('setting.dataSourceTestSuccess'),
+        );
       }
       return ret;
     },

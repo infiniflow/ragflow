@@ -1150,7 +1150,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
-        'Evaluates whether retrieved chunks are relevant to the user\'s query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.',
+        "Evaluates whether retrieved chunks are relevant to the user's query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.",
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -2682,6 +2682,7 @@ Example: Virtual Hosted Style`,
         sectionTitle: 'Section title',
       },
       tags: 'Tags',
+      agentCategory: 'Agent category',
       editTags: 'Edit tags',
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
@@ -3444,7 +3445,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         filterByAlias: 'Filter by alias',
         alias: 'Alias',
         pinnedTooltip:
-          'This dataset is pinned to a specific version. New versions published on the canvas will not affect it.',
+          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
           'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
         delete: 'Delete version',
@@ -3452,9 +3453,9 @@ This delimiter is used to split the input text into several text pieces echo of 
         deleteConfirmContent:
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
         restore: 'Restore as current',
-        restoreConfirmTitle: 'Restore this version as the current canvas?',
+        restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
-          'The current canvas DSL will be replaced by this version. Publish again to save it as a new version.',
+          'The current agent DSL will be replaced by this version. Publish again to save it as a new version.',
         missingContent:
           'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
@@ -3642,9 +3643,9 @@ This process aggregates variables from multiple branches into a single variable 
       memoryUnavailable:
         'The selected memory is unavailable (deleted), please re-select',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalTemplateMemoryHint:
-        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
@@ -4215,7 +4216,6 @@ Important structured information may include: names, dates, locations, events, k
       permission: 'Permission',
 
       agentTitle: 'Agent title',
-      canvasCategory: 'Canvas category',
 
       newRole: 'New role',
       addNewRole: 'Add new role',
@@ -4234,18 +4234,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: 'Launch',
-      canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',
       newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
-      searchCanvas: 'Search canvas...',
       searchSessions: 'Search sessions...',
-      noCanvasSelected: 'Please select a canvas',
       noSessionSelected: 'Please select a session or create a new one',
       noSessionsFound: 'No sessions found',
       createFirstSession: 'Create your first session',
-      noCanvasFound: 'No canvas found',
       deleteSelectedConfirm:
         'Are you sure you want to delete {{count}} session(s)?',
       batchDeleteSessions: 'Delete Sessions',

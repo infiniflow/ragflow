@@ -346,6 +346,9 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 		out, err := body(ctx, in)
 		if err != nil {
 			if state != nil {
+				if invocations, ok := out["tool_invocations"]; ok {
+					state.SetVar(cpnID, "tool_invocations", invocations)
+				}
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
 			}
 			return nil, err
