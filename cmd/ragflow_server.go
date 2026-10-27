@@ -583,12 +583,6 @@ func main() {
 		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
-	// Initialize server variables (runtime variables that can change during operation)
-	// This must be done after Cache is initialized
-	if err = server.InitVariables(kvrocks.Get()); err != nil {
-		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
-	}
-
 	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
