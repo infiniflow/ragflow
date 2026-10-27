@@ -636,14 +636,19 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 	}
 	currentAuth := c.basicAuth
 	previousNetloc := connectorNetloc(currentURL)
+	sensitiveHeaders := make([]string, 0, len(c.authHeaders))
+	for name := range c.authHeaders {
+		sensitiveHeaders = append(sensitiveHeaders, name)
+	}
 
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:       currentMethod,
-		RawURL:       currentURL,
-		Body:         bodyBytes,
-		Headers:      currentHeaders,
-		Timeout:      restAPIRequestTimeout,
-		MaxRedirects: restAPIMaxRedirects,
+		Method:           currentMethod,
+		RawURL:           currentURL,
+		Body:             bodyBytes,
+		Headers:          currentHeaders,
+		SensitiveHeaders: sensitiveHeaders,
+		Timeout:          restAPIRequestTimeout,
+		MaxRedirects:     restAPIMaxRedirects,
 		Prepare: func(req *http.Request, hop connectorRequestHop) error {
 			if hop.Method == http.MethodPost && req.Header.Get("Content-Type") == "" {
 				req.Header.Set("Content-Type", "application/json")

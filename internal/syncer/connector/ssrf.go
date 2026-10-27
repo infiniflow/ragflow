@@ -233,12 +233,16 @@ type connectorRequestHop struct {
 // connectorRequestOptions configures connectorRequest. Zero values use safe
 // defaults: Validate falls back to assertConnectorURLSafe and MaxRedirects to 10.
 type connectorRequestOptions struct {
-	Method       string
-	RawURL       string
-	Body         []byte
-	Headers      map[string]string
-	Timeout      time.Duration
-	MaxRedirects int
+	Method  string
+	RawURL  string
+	Body    []byte
+	Headers map[string]string
+	// SensitiveHeaders are additional credential header names to remove when
+	// a redirect crosses to a different origin. This covers auth schemes with
+	// tenant-configured header names.
+	SensitiveHeaders []string
+	Timeout          time.Duration
+	MaxRedirects     int
 	// Base, when non-nil, provides the starting transport so custom TLS/CA
 	// settings are preserved; otherwise a default pinned transport is used.
 	Base *http.Client
@@ -382,7 +386,7 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		}
 		nextNetloc := connectorNetloc(nextURL)
 		if nextNetloc != "" && nextNetloc != previousNetloc {
-			hop.Headers = connectorStripAuthHeaders(hop.Headers)
+			hop.Headers = connectorStripAuthHeaders(hop.Headers, opts.SensitiveHeaders...)
 			// 307/308 preserve the request method and body; never forward a
 			// request body (which may carry credentials, e.g. a Seafile or
 			// Moodle token exchange) to a different origin.
@@ -472,10 +476,17 @@ var connectorAuthSensitiveHeaders = map[string]struct{}{
 	"private-token":       {}, // GitLab credential header
 }
 
-func connectorStripAuthHeaders(headers map[string]string) map[string]string {
+func connectorStripAuthHeaders(headers map[string]string, additional ...string) map[string]string {
 	out := make(map[string]string, len(headers))
+	sensitiveHeaders := make(map[string]struct{}, len(connectorAuthSensitiveHeaders)+len(additional))
+	for name := range connectorAuthSensitiveHeaders {
+		sensitiveHeaders[name] = struct{}{}
+	}
+	for _, name := range additional {
+		sensitiveHeaders[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
 	for k, v := range headers {
-		if _, sensitive := connectorAuthSensitiveHeaders[strings.ToLower(k)]; sensitive {
+		if _, sensitive := sensitiveHeaders[strings.ToLower(k)]; sensitive {
 			continue
 		}
 		out[k] = v
