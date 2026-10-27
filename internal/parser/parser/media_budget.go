@@ -38,6 +38,21 @@ type embeddedMediaBudget struct {
 	countExhausted    bool
 }
 
+// EmbeddedMediaBudget exports the shared embedded-media budget so ingestion
+// components outside this package (for example the MonkeyOCRv2 PDF dispatch)
+// apply the same per-image, per-document and item-count limits instead of
+// private caps.
+type EmbeddedMediaBudget = embeddedMediaBudget
+
+// NewEmbeddedMediaBudget returns a budget with the shared limits.
+func NewEmbeddedMediaBudget() *EmbeddedMediaBudget { return newEmbeddedMediaBudget() }
+
+// Include reserves budget for one image payload; see include.
+func (b *embeddedMediaBudget) Include(data []byte) (bool, bool) { return b.include(data) }
+
+// Warnings describes the omissions the budget caused; see warnings.
+func (b *embeddedMediaBudget) Warnings() []string { return b.warnings() }
+
 func newEmbeddedMediaBudget() *embeddedMediaBudget {
 	return &embeddedMediaBudget{
 		maxImageBytes: maxEmbeddedImageBytes,
