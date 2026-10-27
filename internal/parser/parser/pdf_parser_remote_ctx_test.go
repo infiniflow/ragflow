@@ -181,18 +181,44 @@ func TestParsePDFWithDocling_CancelledContextStopsBeforeFirstEndpoint(t *testing
 }
 
 // Cancelling during the first Docling attempt must abort that request and keep
-// the remaining endpoint attempts from reaching the server.
+// the remaining endpoint attempts from reaching the server. The parser has to
+// return before the held request is released: releasing on cancel would let a
+// call that ignored ctx read the released response, and its later endpoint
+// attempts would then supply the context.Canceled error the assertion looks
+// for.
 func TestParsePDFWithDocling_CancelDuringRequestAbortsItAndSkipsRetries(t *testing.T) {
 	withSSRFBypass(t)
 	server, hits, entered, release := holdRequest(t)
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandler()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	go cancelInFlight(cancel, entered, release)
 	defer cancel()
 
-	p := NewPDFParser()
-	p.DoclingServerURL = server.URL
-	res := parsePDFWithDocling(ctx, "sample.pdf", []byte("%PDF-1.4"), p)
+	done := make(chan ParseResult, 1)
+	go func() {
+		p := NewPDFParser()
+		p.DoclingServerURL = server.URL
+		done <- parsePDFWithDocling(ctx, "sample.pdf", []byte("%PDF-1.4"), p)
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first Docling request never reached the server")
+	}
+	cancel()
+
+	var res ParseResult
+	select {
+	case res = <-done:
+	case <-time.After(2 * time.Second):
+		releaseHandler()
+		t.Fatal("parsePDFWithDocling returned nothing after cancellation: the in-flight request kept running")
+	}
+	releaseHandler()
+
 	if res.Err == nil {
 		t.Fatal("error = nil, want the cancelled request to fail the conversion")
 	}
