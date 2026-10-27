@@ -470,3 +470,29 @@ func TestJiraTimeParsesOffset(t *testing.T) {
 		t.Fatalf("time = %s, want %s", got, want)
 	}
 }
+
+func TestJiraSyncKeepsIssuesInsideTheWatermarkMinute(t *testing.T) {
+	// The fixture issue was updated at 2026-01-03T10:00:00Z. A waterline at
+	// 10:00:20Z asks JQL for `updated >= "2026-01-03 09:59"` (time buffer plus
+	// minute precision); the page filter must accept that same span, or the
+	// buffer only widens the response and the issue is dropped by both runs.
+	server := jiraFixtureServer(t)
+	defer server.Close()
+
+	connector := mustJiraResumeConnector(t, server.URL)
+	start := mustTime(t, "2026-01-03T10:00:20Z")
+	end := mustTime(t, "2026-01-03T11:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
+		t.Fatalf("documents = %#v, want the issue updated at 10:00:00Z", batch.Documents)
+	}
+}
