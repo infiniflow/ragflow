@@ -3608,8 +3608,11 @@ func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
 
 // idSortFieldCache memoizes the sortable form of the `id` field per index.
 // Mappings are static for the life of an index (the keyword dynamic template
-// lands at creation), so entries never need invalidation; failed lookups are
-// not cached so a transient cluster blip cannot pin the wrong field.
+// lands at creation), so an entry stays valid until the index is dropped:
+// dropIndex deletes the entry, because an index reusing the name later can map
+// `id` differently. Other server processes keep their own entries until they
+// restart. Failed lookups are not cached so a transient cluster blip cannot pin
+// the wrong field.
 var idSortFieldCache sync.Map
 
 // Sort field values returned by the id-mapping resolvers below.

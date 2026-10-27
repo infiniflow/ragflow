@@ -1032,3 +1032,111 @@ func TestSearchMissingIndexKeepsDirectIDSort(t *testing.T) {
 		t.Error("a failed mapping lookup must not be cached")
 	}
 }
+
+// TestDropIndexClearsIDSortFieldCache pins that dropping an index drops the
+// memoized sort field with it: the cache is keyed by index name, so a later
+// index reusing the name can map `id` differently and a stale entry would
+// sort on a field the new index does not have.
+func TestDropIndexClearsIDSortFieldCache(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_dropped"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	// A legacy index resolved to the keyword sub-field.
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err != nil {
+		t.Fatalf("dropIndex: %v", err)
+	}
+	if _, cached := idSortFieldCache.Load(index); cached {
+		t.Error("dropping an index must drop its memoized id sort field")
+	}
+}
+
+// TestDropIndexKeepsIDSortFieldCacheOnFailure pins that a failed delete keeps
+// the memoized sort field: the index is still there, so its mapping has not
+// changed either.
+func TestDropIndexKeepsIDSortFieldCacheOnFailure(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_drop_failed"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"type":"illegal_state_exception","reason":"boom"},"status":500}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err == nil {
+		t.Fatal("a failed delete must report the error")
+	}
+	if _, cached := idSortFieldCache.Load(index); !cached {
+		t.Error("a failed delete must keep the memoized id sort field")
+	}
+}
+
+// TestDropIndexClearsIDSortFieldCacheWhenIndexIsGone pins that an index
+// dropped elsewhere still drops the memoized sort field: the cache is keyed
+// by index name, so an entry left behind would outlive the index it was
+// resolved for.
+func TestDropIndexClearsIDSortFieldCacheWhenIndexIsGone(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_already_gone"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodHead {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err != nil {
+		t.Fatalf("dropIndex: %v", err)
+	}
+	if _, cached := idSortFieldCache.Load(index); cached {
+		t.Error("an index that is already gone must not keep its memoized id sort field")
+	}
+}

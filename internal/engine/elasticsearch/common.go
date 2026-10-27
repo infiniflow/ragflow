@@ -37,7 +37,9 @@ func (e *Engine) dropIndex(ctx context.Context, indexName string) error {
 	}
 	if !exists {
 		// Tolerate missing index (mirrors Python's docStoreConn which
-		// silently returns False on a non-existent index).
+		// silently returns False on a non-existent index). The index is gone
+		// either way, so its memoized sort field must go with it.
+		idSortFieldCache.Delete(indexName)
 		return nil
 	}
 
@@ -60,6 +62,10 @@ func (e *Engine) dropIndex(ctx context.Context, indexName string) error {
 		}
 		return fmt.Errorf("elasticsearch returned error: %s", res.Status())
 	}
+
+	// The index is gone: a name reused by a new index can map `id`
+	// differently, so the memoized sort field must not survive the drop.
+	idSortFieldCache.Delete(indexName)
 
 	return nil
 }
