@@ -430,6 +430,7 @@ func TestWebDAVConnectorOpenSyncExcludesFilesOlderThanMtimeTolerance(t *testing.
 	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
 		"/":          {isDir: true},
 		"/old.txt":   {content: "old", size: 3, hasSize: true, modified: "Tue, 30 Dec 2025 00:00:00 GMT"},
+		"/edge.txt":  {content: "edge", size: 4, hasSize: true, modified: "Thu, 01 Jan 2026 00:00:00 GMT"},
 		"/near.txt":  {content: "near", size: 4, hasSize: true, modified: "Thu, 01 Jan 2026 12:00:00 GMT"},
 		"/fresh.txt": {content: "fresh", size: 5, hasSize: true, modified: "Fri, 02 Jan 2026 06:00:00 GMT"},
 	})
@@ -449,11 +450,16 @@ func TestWebDAVConnectorOpenSyncExcludesFilesOlderThanMtimeTolerance(t *testing.
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 {
-		t.Fatalf("batch len = %d, want 2: %+v", len(batch.Documents), batch.Documents)
+	if len(batch.Documents) != 3 {
+		t.Fatalf("batch len = %d, want 3: %+v", len(batch.Documents), batch.Documents)
 	}
-	if batch.Documents[0].SemanticIdentifier != "fresh.txt" || batch.Documents[1].SemanticIdentifier != "near.txt" {
-		t.Fatalf("documents = %q, %q; want fresh.txt, near.txt", batch.Documents[0].SemanticIdentifier, batch.Documents[1].SemanticIdentifier)
+	// edge.txt sits exactly on the widened lower bound (watermark minus the
+	// tolerance), which the bound includes; old.txt sits below it.
+	want := []string{"edge.txt", "fresh.txt", "near.txt"}
+	for i, identifier := range want {
+		if batch.Documents[i].SemanticIdentifier != identifier {
+			t.Fatalf("documents[%d] = %q, want %q", i, batch.Documents[i].SemanticIdentifier, identifier)
+		}
 	}
 }
 
