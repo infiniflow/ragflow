@@ -242,7 +242,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, maxUploadDocSize)
+	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, common.GetMaxDocumentUploadBytes())
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -385,20 +385,21 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 }
 
 func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {
-	if fh.Size > maxUploadDocSize {
-		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	maxBytes := common.GetMaxDocumentUploadBytes()
+	if fh.Size > maxBytes {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxBytes)
 	}
 	src, err := fh.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer src.Close()
-	blob, err := io.ReadAll(io.LimitReader(src, maxUploadDocSize+1))
+	blob, err := io.ReadAll(io.LimitReader(src, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(blob) > maxUploadDocSize {
-		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	if int64(len(blob)) > maxBytes {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxBytes)
 	}
 	return blob, nil
 }

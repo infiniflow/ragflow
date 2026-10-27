@@ -43,6 +43,8 @@ const (
 	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
 	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
 	DefaultMaxMultipartRequestBodyBytes int64 = 1 << 30
+	// DefaultMaxDocumentUploadBytes is the default per-file limit for dataset document uploads.
+	DefaultMaxDocumentUploadBytes int64 = 128 << 20
 	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
 	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
 )
@@ -50,17 +52,23 @@ const (
 // GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
 // limit in bytes, defaulting to 1 MiB.
 func GetMaxJSONRequestBodyBytes() int64 {
-	return getMaxRequestBodyBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
+	return getMaxConfiguredBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
 }
 
 // GetMaxMultipartRequestBodyBytes returns the configured multipart upload
 // request-body limit in bytes, defaulting to 1 GiB. MAX_CONTENT_LENGTH remains
 // a fallback for existing deployments when the new variable is unset.
 func GetMaxMultipartRequestBodyBytes() int64 {
-	return getMaxRequestBodyBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
+	return getMaxConfiguredBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
 }
 
-func getMaxRequestBodyBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
+// GetMaxDocumentUploadBytes returns the configured per-file limit for dataset document uploads,
+// defaulting to 128 MiB.
+func GetMaxDocumentUploadBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxDocumentUploadSize, "", DefaultMaxDocumentUploadBytes)
+}
+
+func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
 	raw := strings.TrimSpace(GetEnv(envName))
 	if raw == "" && fallbackEnvName != "" {
 		raw = strings.TrimSpace(GetEnv(fallbackEnvName))
