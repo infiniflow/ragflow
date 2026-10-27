@@ -94,12 +94,6 @@ type UpdateSettingsRequest struct {
 	NewPassword *string `json:"new_password,omitempty"`
 }
 
-// ChangePasswordRequest change password request
-type ChangePasswordRequest struct {
-	Password    *string `json:"password,omitempty"`
-	NewPassword *string `json:"new_password,omitempty"`
-}
-
 // UserResponse user response
 type UserResponse struct {
 	ID        string  `json:"id"`
@@ -702,33 +696,6 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 	if req.Timezone != nil {
 		// Store timezone preference
 		user.Timezone = req.Timezone
-	}
-
-	// Save updated user
-	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return common.CodeServerError, err
-	}
-	return common.CodeSuccess, nil
-}
-
-// ChangePassword changes user password
-func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
-	// If password is provided, verify current password
-	if req.Password != nil {
-		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
-			return common.CodeBadRequest, fmt.Errorf("current password is incorrect")
-		}
-	}
-
-	// If new password is provided, update password
-	if req.NewPassword != nil {
-		hashedPassword, err := common.GenerateWerkzeugPasswordHash(*req.NewPassword)
-		if err != nil {
-			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
-		}
-		user.Password = &hashedPassword
-		invalidToken := "INVALID_" + common.GenerateToken()
-		user.AccessToken = &invalidToken
 	}
 
 	// Save updated user
