@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -33,6 +34,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -103,6 +105,30 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	insertForeignPrivateDatasetForChatTest(t, db)
+
+	chat := dialForTest("")
+	chat.KBIDs = []interface{}{"kb-private"}
+	results, err := (&ChatPipelineService{}).AsyncChat(
+		serviceTestContext(t, "user-1", "user-1"),
+		"user-1",
+		chat,
+		[]map[string]interface{}{{"role": "user", "content": "show me the private dataset"}},
+		false,
+		nil,
+	)
+	if err == nil {
+		for range results {
+		}
+		t.Fatal("AsyncChat accepted another user's private dataset")
+	}
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("AsyncChat error = %v, want permission denied", err)
 	}
 }
 

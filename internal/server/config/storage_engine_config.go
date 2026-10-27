@@ -31,7 +31,8 @@ type StorageConfig struct {
 }
 
 func (c *Config) ParseStorageEngineConfig(v *viper.Viper) error {
-	switch c.general.StorageEngine {
+	storageEngine := c.StorageEngineType()
+	switch storageEngine {
 	case "minio":
 		c.parseMinioConfig(v)
 	case "s3":
@@ -41,7 +42,7 @@ func (c *Config) ParseStorageEngineConfig(v *viper.Viper) error {
 	case "gcs":
 		c.parseGCSConfig(v)
 	default:
-		return fmt.Errorf("invalid storage type: %s", c.general.StorageEngine)
+		return fmt.Errorf("invalid storage type: %s", storageEngine)
 	}
 
 	return nil

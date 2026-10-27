@@ -109,6 +109,9 @@ func (c *Config) DocEngineType() string {
 }
 
 func (c *Config) StorageEngineType() string {
+	if c.environments.StorageType != "" {
+		return c.environments.StorageType
+	}
 	return c.general.StorageEngine
 }
 

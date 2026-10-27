@@ -86,11 +86,6 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	err = globalConfig.ParseStorageEngineConfig(v)
-	if err != nil {
-		return fmt.Errorf("parse storage engine config error: %w", err)
-	}
-
 	err = globalConfig.ParseCacheEngineConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse cache engine config error: %w", err)
@@ -144,6 +139,11 @@ func Init(configPath string) error {
 	err = globalConfig.GetEnvironments()
 	if err != nil {
 		return fmt.Errorf("get environments error: %w", err)
+	}
+
+	err = globalConfig.ParseStorageEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse storage engine config error: %w", err)
 	}
 
 	err = globalConfig.ParseBillingConfig(v)
