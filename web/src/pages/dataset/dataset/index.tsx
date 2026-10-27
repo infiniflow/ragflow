@@ -58,7 +58,12 @@ export default function Dataset() {
 
   useGoToPreviousPageOnEmpty(documents?.length, loading);
 
-  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
+  const {
+    filters,
+    loading: filtersLoading,
+    onOpenChange,
+    filterGroup,
+  } = useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -150,6 +155,7 @@ export default function Dataset() {
           onChange={handleFilterSubmit}
           onOpenChange={onOpenChange}
           filters={filters}
+          filtersLoading={filtersLoading}
           className="items-end"
           leftPanel={
             <div>

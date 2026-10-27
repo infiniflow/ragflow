@@ -58,6 +58,7 @@ import {
   keepPreviousData,
   useMutation,
   useQuery,
+  QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -128,6 +129,21 @@ export const DocumentStructureKeys = {
     ] as const,
 };
 
+// A change to the dataset's documents moves the filter counts, but those are
+// fetched only when the filter popover opens, so they are marked stale rather
+// than refetched: the next open loads them again.
+const invalidateDocumentFilters = (queryClient: QueryClient) =>
+  queryClient.invalidateQueries({
+    queryKey: DocumentKeys.allFilters(),
+    refetchType: 'none',
+  });
+
+// Refreshes the document list after a change to the dataset's documents.
+const invalidateDocumentQueries = (queryClient: QueryClient) => {
+  invalidateDocumentFilters(queryClient);
+  return queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+};
+
 export const useUploadDocument = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
@@ -163,9 +179,7 @@ export const useUploadDocument = () => {
           // documents) reaches the cache before callers optimistically mark
           // them RUNNING. Otherwise the late refetch lands after the
           // optimistic update, overwrites it, and polling never starts.
-          await queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
+          await invalidateDocumentQueries(queryClient);
         }
         return ret;
       } catch (error) {
@@ -255,9 +269,6 @@ export const useFetchDocumentList = (loop = true) => {
         },
       );
       if (ret.data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.allFilters(),
-        });
         return ret.data.data;
       }
 
@@ -305,7 +316,7 @@ export const useFetchDocumentList = (loop = true) => {
       { force: true },
     ).then(
       () => {
-        queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+        invalidateDocumentQueries(queryClient);
       },
       () => {},
     );
@@ -368,18 +379,42 @@ export const useFetchDocumentsByIds = (
 };
 
 // get document filter
+const EmptyDocumentFilter: IDocumentInfoFilter = {
+  run_status: {},
+  suffix: {},
+  metadata: {},
+};
+
+const DocumentFilterStaleTimeMs = 30_000;
+
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  loading: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
-  const { searchString } = useHandleSearchChange();
   const { id } = useParams();
-  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const [open, setOpen] = useState<number>(0);
+  // The counts are only rendered inside the filter popover, and building them
+  // is the most expensive request the file list makes. Fetch them when the
+  // popover is first opened and refresh them on later opens, instead of on
+  // every visit to the file list.
+  //
+  // Which dataset was opened, not merely that one was: the page rerenders for
+  // a new dataset id without unmounting this hook, and a boolean would carry
+  // the previous dataset's open state over and fetch the new one's counts
+  // before its popover is ever opened.
+  const [openedDatasetId, setOpenedDatasetId] = useState<string>();
   const datasetId = knowledgeId || id;
-  const { data } = useQuery({
-    queryKey: DocumentKeys.filter(debouncedSearchString, knowledgeId),
+  const filterOpened = !!datasetId && openedDatasetId === datasetId;
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(() => DocumentKeys.filter(datasetId), [datasetId]);
+  const { data, dataUpdatedAt, isLoading, isFetching, refetch } = useQuery({
+    queryKey,
+    enabled: filterOpened,
+    staleTime: DocumentFilterStaleTimeMs,
+    // Fetched on open only (handleOpenChange), never in the background while
+    // the popover is closed.
+    refetchOnReconnect: false,
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -390,20 +425,49 @@ export const useGetDocumentFilter = (): {
       }
     },
   });
-  const handleOpenChange = (e: boolean) => {
-    if (e) {
-      const currentOpen = open + 1;
-      setOpen(currentOpen);
-    }
-  };
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open || !datasetId) {
+        return;
+      }
+      if (filterOpened) {
+        // Refresh once older than the freshness window, or once a change to
+        // the documents marked them stale (invalidateDocumentQueries).
+        const invalidated =
+          queryClient.getQueryState(queryKey)?.isInvalidated ?? false;
+        if (
+          !isFetching &&
+          (invalidated ||
+            Date.now() - dataUpdatedAt >= DocumentFilterStaleTimeMs)
+        ) {
+          refetch();
+        }
+        return;
+      }
+      setOpenedDatasetId(datasetId);
+    },
+    [
+      dataUpdatedAt,
+      datasetId,
+      filterOpened,
+      isFetching,
+      queryClient,
+      queryKey,
+      refetch,
+    ],
+  );
+  // Memoized so the empty and the adapted filter keep one identity across
+  // renders instead of churning the memos that read them.
+  const filter = useMemo(
+    () =>
+      data?.filter ? adaptDocumentFilter(data.filter) : EmptyDocumentFilter,
+    [data?.filter],
+  );
   return {
-    filter: data?.filter
-      ? adaptDocumentFilter(data.filter)
-      : {
-          run_status: {},
-          suffix: {},
-          metadata: {},
-        },
+    filter,
+    // Only the very first fetch has nothing to render; later refreshes keep
+    // showing the cached counts.
+    loading: isLoading,
     onOpenChange: handleOpenChange,
   };
 };
@@ -435,9 +499,7 @@ export const useSetDocumentStatus = () => {
 
       if (data.code === 0) {
         message.success(i18n.t('message.modified'));
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
       }
       return data;
     },
@@ -531,9 +593,7 @@ export const useRunDocument = () => {
         });
       }
       if (run !== 1 && run !== 2) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
       }
       const ret = await kbService.documentIngest(
         buildDocumentIngestPayload({ documentIds, run, option }),
@@ -543,25 +603,21 @@ export const useRunDocument = () => {
         // For a start request, keep the optimistic running state until the
         // polling query observes the worker's state. Invalidating here can
         // immediately fetch the pre-worker "not started" row and disable
-        // polling again.
-        if (run !== 1) {
-          queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
+        // polling again. The status counts still moved.
+        if (run === 1) {
+          invalidateDocumentFilters(queryClient);
+        } else {
+          invalidateDocumentQueries(queryClient);
         }
         message.success(i18n.t('message.operated'));
       } else {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
       }
 
       return code;
     },
     onError: () => {
-      queryClient.invalidateQueries({
-        queryKey: DocumentKeys.all(),
-      });
+      invalidateDocumentQueries(queryClient);
     },
   });
 
@@ -591,9 +647,7 @@ export const useRemoveDocument = () => {
       const { data } = await deleteDocument(datasetId!, ids);
       if (data.code === 0) {
         message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
       }
       return data.code;
     },
@@ -625,9 +679,7 @@ export const useSaveDocumentName = () => {
       });
       if (data.code === 0) {
         message.success(i18n.t('message.renamed'));
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
       }
       return data.code;
     },
@@ -697,9 +749,7 @@ export const useSetDocumentPipelineParser = () => {
         updateData,
       );
       if (data.code === 0) {
-        queryClient.invalidateQueries({
-          queryKey: DocumentKeys.all(),
-        });
+        invalidateDocumentQueries(queryClient);
 
         message.success(i18n.t('message.modified'));
       }
@@ -728,10 +778,9 @@ export const useCreateDocument = () => {
       const data = await createDocument(id, name);
       if (data.code === 0) {
         if (page === 1) {
-          queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
+          invalidateDocumentQueries(queryClient);
         } else {
+          invalidateDocumentFilters(queryClient);
           setPaginationParams(); // fetch document list
         }
 
