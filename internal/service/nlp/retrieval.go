@@ -820,7 +820,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if s.docEngine.GetType() == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType()) {
+			driverType := s.docEngine.GetType()
+			if driverType == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 
