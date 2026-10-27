@@ -217,7 +217,7 @@ async function sanitizeSheetNames(data: ArrayBuffer): Promise<ArrayBuffer> {
 
 /** x-spreadsheet Data instance used by @js-preview/excel (not a plain object). */
 type XsData = {
-  addStyle: (style: Record<string, unknown>) => number;
+  styles: Record<string, unknown>[];
   rows: {
     setCell: (
       ri: number,
@@ -263,13 +263,14 @@ export function applyExcelSourceLocate(
   if (!xs?.datas?.length) return;
   const ranges = positions.flatMap((pos) => {
     if (
+      !Array.isArray(pos) ||
       pos.length < 5 ||
       !pos.slice(0, 5).every((v) => Number.isInteger(v) && v > 0)
     )
       return [];
     const sheetIdx = pos[0] - 1;
     const data = xs.datas[sheetIdx];
-    if (!data?.addStyle || !data.rows?.setCell) return [];
+    if (!data?.styles || !data.rows?.setCell) return [];
     const r1 = pos[1] - 1;
     const r2 = Math.min(pos[2] - 1, (data.rows.len ?? Infinity) - 1);
     const c1 = pos[3] - 1;
@@ -285,13 +286,26 @@ export function applyExcelSourceLocate(
   // regardless of app theme, so the locate highlight must use fixed light
   // colors rather than theme tokens (which resolve to near-white text in dark
   // mode and become invisible). Matches the yellow used by the PDF highlighter.
+  const stylesBySheet = new Map<XsData, Map<string, number>>();
   for (const range of ranges) {
-    const styleIdx = range.data.addStyle({
-      bgcolor: '#ffe58f',
-      color: '#1a1a1a',
-    });
+    let styles = stylesBySheet.get(range.data);
+    if (!styles) {
+      styles = new Map();
+      stylesBySheet.set(range.data, styles);
+    }
     for (let r = range.r1; r <= range.r2; r++) {
       for (let c = range.c1; c <= range.c2; c++) {
+        const cell = range.data.rows.getCellOrNew(r, c);
+        const original = range.data.styles[cell.style ?? -1] ?? {};
+        if (original.bgcolor === '#ffe58f' && original.color === '#1a1a1a')
+          continue;
+        const highlight = { ...original, bgcolor: '#ffe58f', color: '#1a1a1a' };
+        const key = JSON.stringify(highlight);
+        let styleIdx = styles.get(key);
+        if (styleIdx === undefined) {
+          styleIdx = range.data.styles.push(highlight) - 1;
+          styles.set(key, styleIdx);
+        }
         range.data.rows.setCell(r, c, { style: styleIdx }, 'format');
       }
     }
