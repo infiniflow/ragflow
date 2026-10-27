@@ -37,6 +37,16 @@ class TableStructureRecognizer(Recognizer):
         "table spanning cell",
     ]
 
+    # Minimum height (pixels in the TSR input) of a row component to be
+    # considered a real row. Anything below this is treated as a split line
+    # or a degenerate detection and dropped.
+    _PHANTOM_ROW_MIN_HEIGHT = 10.0
+    # Maximum vertical gap (pixels) between two consecutive row components
+    # to merge them into one. Cross-page table continuations that emit one
+    # row per wrapped text line produce components with gap near 0; a real
+    # table's row spacing is comfortably larger than this.
+    _PHANTOM_ROW_MERGE_GAP = 10.0
+
     def __init__(self):
         try:
             super().__init__(self.labels, "tsr", os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
@@ -106,8 +116,55 @@ class TableStructureRecognizer(Recognizer):
                     if b["bottom"] < bottom:
                         b["bottom"] = bottom
 
+            lts = self._merge_phantom_row_components(lts)
             res.append(lts)
         return res
+
+    @staticmethod
+    def _merge_phantom_row_components(lts):
+        """Collapse ``table row`` components that the TSR model over-emits.
+
+        On cross-page table continuations with a wrapped paragraph in one of
+        the columns, the TSR model can emit one ``table row`` component per
+        wrapped text line instead of one per physical row. The resulting
+        components sit directly on top of each other (vertical gap near 0)
+        and produce 2x or more phantom rows that propagate into the final
+        HTML/Markdown table.
+
+        Heuristic:
+
+        * drop any row component with ``bottom - top`` below
+          ``_PHANTOM_ROW_MIN_HEIGHT`` (catches split-line and degenerate
+          components);
+        * sort the surviving row components by ``top``;
+        * merge two consecutive components whose vertical gap is below
+          ``_PHANTOM_ROW_MERGE_GAP`` into a single component whose
+          ``bottom`` is the larger of the two and whose ``score`` is the
+          max of the two.
+
+        Non-row components (``table column``, ``table``, ``table spanning
+        cell``) are passed through unchanged.
+        """
+        row_labels = {
+            "table row",
+            "table column header",
+            "table projected row header",
+        }
+        non_rows = [b for b in lts if b["label"] not in row_labels]
+        row_components = sorted(
+            (b for b in lts if b["label"] in row_labels),
+            key=lambda b: (b["top"], b["x0"]),
+        )
+        merged = []
+        for b in row_components:
+            if b["bottom"] - b["top"] < TableStructureRecognizer._PHANTOM_ROW_MIN_HEIGHT:
+                continue
+            if merged and (b["top"] - merged[-1]["bottom"]) < TableStructureRecognizer._PHANTOM_ROW_MERGE_GAP:
+                merged[-1]["bottom"] = b["bottom"]
+                merged[-1]["score"] = max(merged[-1]["score"], b["score"])
+                continue
+            merged.append(dict(b))
+        return non_rows + merged
 
     @staticmethod
     def is_caption(bx):
