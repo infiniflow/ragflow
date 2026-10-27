@@ -77,3 +77,43 @@ func TestDOCXParseImageHeavyDocumentKeepsEveryImage(t *testing.T) {
 		}
 	}
 }
+
+// TestDOCXParseFigureWalkSurfacesItsWarnings pins that a figure walk that ran
+// out of allowance is reported separately from the chunk walk. Both walks see
+// the same images, so an over-cap document exhausts each one on its own
+// allowance; without the label the two limit messages are indistinguishable
+// and the reader cannot tell whether chunks, figure metadata, or both lost
+// images.
+func TestDOCXParseFigureWalkSurfacesItsWarnings(t *testing.T) {
+	const images = maxEmbeddedMediaItems + 10
+	irJSON := docxIRWithImages(images)
+
+	orig := docxExtract
+	t.Cleanup(func() { docxExtract = orig })
+	docxExtract = func([]byte, string) (string, string, string, error, error) {
+		return irJSON, "", "", nil, nil
+	}
+
+	res := NewDOCXParser().ParseWithResult(t.Context(), "over-cap.docx", []byte("not a real docx"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var labeled, plain int
+	for _, w := range res.Warnings {
+		if !strings.Contains(w, "document limit") {
+			continue
+		}
+		if strings.HasPrefix(w, "figure metadata: ") {
+			labeled++
+			continue
+		}
+		plain++
+	}
+	if labeled != 1 {
+		t.Fatalf("figure-labelled limit warnings = %d, want 1 from the figure walk's own budget; warnings = %v", labeled, res.Warnings)
+	}
+	if plain != 1 {
+		t.Fatalf("unlabelled limit warnings = %d, want 1 from the chunk walk; warnings = %v", plain, res.Warnings)
+	}
+}

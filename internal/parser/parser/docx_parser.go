@@ -146,10 +146,18 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if len(sections) == 0 {
 		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	// The figure walk draws on its own allowance, so its truncation is a
+	// separate condition from the chunk walk's. Label it, or a reader seeing
+	// one limit message cannot tell whether chunks, figure metadata, or both
+	// lost images.
+	warnings := budget.warnings()
+	for _, w := range figureBudget.warnings() {
+		warnings = append(warnings, "figure metadata: "+w)
+	}
 	return ParseResult{
 		File:     fileMeta,
 		JSON:     MapsToItems(sections),
-		Warnings: budget.warnings(),
+		Warnings: warnings,
 	}
 }
 
