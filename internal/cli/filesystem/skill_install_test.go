@@ -47,6 +47,29 @@ func TestInstallSkillRejectsUnsafeNameBeforeCreatingFiles(t *testing.T) {
 	}
 }
 
+func TestStageSkillBundleRejectsInvalidMetadataBeforeReturning(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("TMPDIR", tmpDir)
+
+	bundle := &source.SkillBundle{
+		Name:     "sample-skill",
+		Metadata: &source.SkillMetadata{Version: "banana"},
+		Files: map[string][]byte{
+			"SKILL.md": []byte("---\nname: sample-skill\ndescription: test skill\n---\ncontent\n"),
+		},
+	}
+	if _, _, err := stageSkillBundle(bundle); err == nil {
+		t.Fatal("stageSkillBundle accepted an invalid skill version")
+	}
+	entries, err := os.ReadDir(tmpDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("invalid skill left staged files behind: %v", entries)
+	}
+}
+
 func TestResolveSkillFilePathRejectsTraversal(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "skill")
 	for _, relPath := range []string{"../outside", "../../tmp/outside", "/tmp/outside", `..\outside`, ""} {
@@ -61,6 +84,17 @@ func TestResolveSkillFilePathRejectsTraversal(t *testing.T) {
 func TestResolveSkillFilePathAllowsNestedFiles(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "skill")
 	got, err := resolveSkillFilePath(root, "references/guide.md")
+	if err != nil {
+		t.Fatalf("resolveSkillFilePath: %v", err)
+	}
+	if want := filepath.Join(root, "references", "guide.md"); got != want {
+		t.Fatalf("resolveSkillFilePath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveSkillFilePathNormalizesWindowsSeparators(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "skill")
+	got, err := resolveSkillFilePath(root, `references\guide.md`)
 	if err != nil {
 		t.Fatalf("resolveSkillFilePath: %v", err)
 	}

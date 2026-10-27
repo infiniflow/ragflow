@@ -328,8 +328,26 @@ func stageSkillBundle(bundle *source.SkillBundle) (string, string, error) {
 			return fail(fmt.Errorf("failed to write skill file: %w", err))
 		}
 	}
+	if err := validateStagedSkill(skillDir, bundle); err != nil {
+		return fail(err)
+	}
 
 	return tempDir, skillDir, nil
+}
+
+func validateStagedSkill(skillDir string, bundle *source.SkillBundle) error {
+	version := ""
+	if bundle.Metadata != nil {
+		version = bundle.Metadata.Version
+	}
+	result, _, err := ValidateSkillDirectory(skillDir, version, bundle.Name)
+	if err != nil {
+		return fmt.Errorf("failed to validate staged skill: %w", err)
+	}
+	if !result.Valid {
+		return fmt.Errorf("failed to validate staged skill: %s", GetValidationErrorMessage(result))
+	}
+	return nil
 }
 
 func (c *SkillInstallCommand) installStagedSkill(ctx stdctx.Context, spaceID string, bundle *source.SkillBundle, skillDir string, force bool) error {
@@ -337,7 +355,10 @@ func (c *SkillInstallCommand) installStagedSkill(ctx stdctx.Context, spaceID str
 	uploader.SetSkillProvider(c.skillProvider)
 	uploader.SetForce(force)
 
-	version := bundle.Metadata.Version
+	version := ""
+	if bundle.Metadata != nil {
+		version = bundle.Metadata.Version
+	}
 	if version == "" {
 		version = "1.0.0"
 	}
