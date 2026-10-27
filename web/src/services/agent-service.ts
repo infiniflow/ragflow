@@ -68,7 +68,8 @@ const methods = {
     method: 'get',
   },
   deleteVersion: {
-    url: deleteVersion,
+    url: (config: { agentId: string; versionId: string }) =>
+      deleteVersion(config.agentId, config.versionId),
     method: 'delete',
   },
   updateVersion: {
