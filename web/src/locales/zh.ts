@@ -2474,6 +2474,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         download: '下载',
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
+        label: '流水线版本',
+        latest: '最新版本',
+        filterByAlias: '按别名筛选',
+        alias: '别名',
+        pinnedTooltip: '该数据集已固定到特定版本。画布新发布的版本不会影响它。',
+        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        delete: '删除版本',
+        deleteConfirmTitle: '删除该版本？',
+        deleteConfirmContent:
+          '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        restore: '恢复为当前版本',
+        restoreConfirmTitle: '恢复此版本为当前画布？',
+        restoreConfirmContent:
+          '当前画布 DSL 将被此版本替换。再次发布会将其保存为新版本。',
+        missingContent:
+          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',

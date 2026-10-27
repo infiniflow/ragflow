@@ -695,7 +695,7 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
 	t.Helper()
 	tenantID := "tenant-1"
-	dslJSON, err := service.LoadPipelineDSL(t.Context(), false, "general", nil)
+	dslJSON, err := service.LoadPipelineDSL(t.Context(), false, "general", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3198,11 +3198,14 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 		present      map[string]bool
 		wantParser   string
 		wantPipeline string
+		// reset marks a pipeline switch, which (by design A3 整体重置) must reset
+		// parser_config to the canvas DSL defaults, discarding the submitted config.
+		reset bool
 	}{
 		{name: "config only", wantParser: "naive"},
 		{name: "same builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("naive")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "naive"},
 		{name: "different builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("manual")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "manual"},
-		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID}, present: map[string]bool{"parse_type": true, "pipeline_id": true}, wantParser: "naive", wantPipeline: pipelineID},
+		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID, reset: true},
 		{name: "chunk method", request: UpdateDatasetDocumentRequest{ChunkMethod: sptr("manual")}, present: map[string]bool{"chunk_method": true}, wantParser: "manual"},
 	}
 	for _, tc := range cases {
@@ -3212,6 +3215,7 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 			insertTestCanvas(t, pipelineID, "user-1")
+			seedDocVersion(t, db, pipelineID, "v-doc-pipe-0001", 0)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_duration", 42).Error; err != nil {
 				t.Fatalf("prepare document: %v", err)
@@ -3247,13 +3251,28 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			if doc.TokenNum != 10 || doc.ChunkNum != 5 || doc.Progress != 0.75 || doc.ProcessDuration != 42 {
 				t.Fatalf("persisted parse results changed: %+v", doc)
 			}
-			extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
-			}
-			keywords, ok := extractor["keywords"].(map[string]interface{})
-			if !ok || keywords["top_n"] != float64(5) {
-				t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
+			if tc.reset {
+				// A pipeline switch resets parser_config to the canvas DSL
+				// defaults (design A3 整体重置). The submitted
+				// Extractor keywords.top_n=5 must be discarded and replaced by the
+				// DSL default (0), proving the reset took effect.
+				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("canvas DSL default parser_config missing Extractor after pipeline switch: %#v", doc.ParserConfig)
+				}
+				keywords, ok := extractor["keywords"].(map[string]interface{})
+				if !ok || keywords["top_n"] != float64(0) {
+					t.Fatalf("submitted keywords.top_n should be reset to DSL default (0), got %#v (config=%#v)", keywords["top_n"], doc.ParserConfig)
+				}
+			} else {
+				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
+				}
+				keywords, ok := extractor["keywords"].(map[string]interface{})
+				if !ok || keywords["top_n"] != float64(5) {
+					t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
+				}
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 			if err != nil {
@@ -4136,13 +4155,15 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	insertTestCanvas(t, pipelineID, "user-1")
+	seedDocVersion(t, db, pipelineID, "v-pre-0001", 0)
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		PipelineID: &pipelineID,
-		ParseType:  &parseType,
-	}, map[string]bool{"pipeline_id": true, "parse_type": true})
+		PipelineID:        &pipelineID,
+		PipelineVersionID: sptr("v-pre-0001"),
+		ParseType:         &parseType,
+	}, map[string]bool{"pipeline_id": true, "pipeline_version_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -4210,10 +4231,12 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	insertTestCanvas(t, pipelineID, "user-1")
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
+	seedDocVersion(t, db, pipelineID, "v-ptp-0001", 0)
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParseType:  &parseType,
-		PipelineID: &pipelineID,
-	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
+		ParseType:         &parseType,
+		PipelineID:        &pipelineID,
+		PipelineVersionID: sptr("v-ptp-0001"),
+	}, map[string]bool{"parser_id": false, "pipeline_id": true, "pipeline_version_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -4261,12 +4284,16 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
-	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	insertTestCanvas(t, pipelineID, "user-1")
+	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
+	// Bind the document to the pipeline first, so the update below is a plain
+	// parser_config patch on an already-canvas document. A pipeline switch must
+	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// submitted parent_child would be dropped on a switch; this test verifies the
+	// config reaches the canvas chunker when no switch occurs.
+	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
 	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParseType:  &parseType,
-		PipelineID: &pipelineID,
 		ParserConfig: map[string]any{
 			"GeneralChunker:SixApplesFall": map[string]any{
 				"parent_child": map[string]any{
@@ -4275,7 +4302,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 				},
 			},
 		},
-	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	}, map[string]bool{"parser_config": true})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
 	}
