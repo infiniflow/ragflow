@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -541,9 +542,9 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	}
 }
 
-// TestImageUploadDecoratorDropsUnresolvedCaptionlessImage pins the failure
-// path: a chunk whose only payload is an unresolvable reference must not be
-// indexed as an empty chunk.
+// TestImageUploadDecoratorDropsUnresolvedCaptionlessImage pins the not-found
+// path: a readable source that does not contain the reference must not leave
+// an empty chunk in the index.
 func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 	uri := "data:image/png;base64," + pngBase64
 
@@ -556,7 +557,10 @@ func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 
 	prevSource := ChunkMediaSource
 	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
-		return media.SourceFunc(func(context.Context) ([]byte, error) { return nil, context.DeadlineExceeded })
+		// Readable source, but the referenced image is absent.
+		return media.SourceFunc(func(context.Context) ([]byte, error) {
+			return []byte("<p>no image here</p>"), nil
+		})
 	}
 	t.Cleanup(func() { ChunkMediaSource = prevSource })
 
@@ -574,5 +578,83 @@ func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Fatalf("unresolved captionless image kept %d chunk(s): %#v", len(chunks), chunks)
+	}
+}
+
+// TestImageUploadDecoratorFailsOnSourceError pins the distinction between a
+// missing image and an unreadable source: a transient source failure must
+// abort the invocation instead of silently dropping every deferred image.
+func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
+	uri := "data:image/png;base64," + pngBase64
+
+	p := parserlib.NewHTMLParser()
+	p.MediaMode = parserlib.MediaRef
+	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(`<img src="`+uri+`">`))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+
+	prevSource := ChunkMediaSource
+	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
+		return media.SourceFunc(func(context.Context) ([]byte, error) {
+			return nil, context.DeadlineExceeded
+		})
+	}
+	t.Cleanup(func() { ChunkMediaSource = prevSource })
+
+	comp, err := NewOneChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+		"name": "image.html", "kb_id": testKBID,
+		"output_format": "json", "json": parsed.JSON,
+	}); err == nil {
+		t.Fatal("source read failure was turned into a silent image drop")
+	}
+}
+
+// TestUploadChunkMediaSkipsMaterializationWhenImgIDExists pins the bypass:
+// an already-uploaded image must not be reconstructed, and the redundant
+// inline copy must not survive into the index.
+func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
+	ref := entity.MediaRef{
+		Format: "html",
+		Kind:   entity.MediaKindDataURI,
+		SHA256: strings.Repeat("a", 64),
+		MIME:   "image/png",
+		Size:   5,
+	}
+	ck := map[string]any{
+		"id":           "chunk-1",
+		"text":         "",
+		"doc_type_kwd": "image",
+		"img_id":       testKBID + "-chunk-1",
+		"image":        "data:image/png;base64," + pngBase64,
+		"media_ref":    ref,
+	}
+	src := media.SourceFunc(func(context.Context) ([]byte, error) {
+		t.Fatal("materialization must not read the source when img_id exists")
+		return nil, nil
+	})
+	up := func(context.Context, string, string, []byte) (string, error) {
+		t.Fatal("upload must not run when img_id exists")
+		return "", nil
+	}
+	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, media.NewResolver(), src)
+	if err != nil {
+		t.Fatalf("uploadChunkMedia: %v", err)
+	}
+	if len(kept) != 1 {
+		t.Fatalf("kept = %d, want 1", len(kept))
+	}
+	if _, ok := ck["image"]; ok {
+		t.Error("redundant image survived the img_id bypass")
+	}
+	if _, ok := ck["media_ref"]; ok {
+		t.Error("media_ref survived the img_id bypass")
+	}
+	if ck["img_id"] != testKBID+"-chunk-1" {
+		t.Errorf("img_id = %v", ck["img_id"])
 	}
 }

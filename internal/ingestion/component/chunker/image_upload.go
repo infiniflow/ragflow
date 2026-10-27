@@ -25,6 +25,7 @@ package chunker
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -33,7 +34,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/media"
@@ -70,22 +70,33 @@ func imageUploadConcurrency() int {
 //     delete the raw image field (用完即弃).
 //
 // Resolving inside the loop keeps peak memory at one image instead of the
-// whole document. A chunk whose only payload was a reference that failed to
-// resolve is dropped: keeping it would index an empty chunk.
+// whole document. A captionless chunk whose reference is confirmed absent
+// from a readable source is dropped; a source read failure or a corrupt
+// reference aborts the invocation instead of silently losing images.
+//
+// A chunk that already carries img_id skips resolution entirely: the image is
+// already stored, so a reconstructed copy would only leak into the index.
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
 func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string, resolver media.Resolver, src media.Source) ([]map[string]any, error) {
 	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
-		if err := media.Materialize(ctx, ck, resolver, src); err != nil {
-			common.Warn("chunker: deferred media resolution failed", zap.Error(err))
-			if entity.MediaRefFromAny(ck["media_ref"]) != nil {
-				text, _ := requireChunkText(ck)
-				imgID, _ := ck["img_id"].(string)
-				if strings.TrimSpace(text) == "" && imgID == "" {
-					continue
-				}
+		imgID, _ := ck["img_id"].(string)
+		if imgID != "" {
+			// The image was already uploaded. A materialized copy would not
+			// be uploaded again, so it must not survive into the index.
+			delete(ck, "image")
+		} else if err := media.Materialize(ctx, ck, resolver, src); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
+			if !errors.Is(err, media.ErrMediaNotFound) {
+				return nil, err
+			}
+			common.Warn("chunker: media reference not found", zap.Error(err))
+			if text, _ := requireChunkText(ck); strings.TrimSpace(text) == "" {
+				continue
 			}
 		}
 		if err := uploadChunkImage(ctx, ck, up, kbID); err != nil {

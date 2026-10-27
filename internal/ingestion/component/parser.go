@@ -462,6 +462,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if err != nil {
 		return nil, err
 	}
+	// readParserBinary may have loaded the document from storage. Publish the
+	// bytes under "binary" so vision enhancement resolves media references
+	// from the same source this invocation parsed instead of finding nothing.
+	if len(binary) > 0 {
+		inputs["binary"] = binary
+	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
 	setups := c.setups

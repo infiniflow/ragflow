@@ -50,6 +50,12 @@ type SourceFunc func(context.Context) ([]byte, error)
 // Bytes implements Source.
 func (f SourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(ctx) }
 
+// ErrMediaNotFound reports that a readable source document does not contain
+// the referenced image. Callers may skip the image; every other resolver
+// error (source read, digest or size mismatch, unsupported reference) is a
+// failure that must not be turned into a silent image drop.
+var ErrMediaNotFound = errors.New("media: reference not found")
+
 // Resolver materializes image bytes for a MediaRef.
 type Resolver interface {
 	Resolve(ctx context.Context, ref entity.MediaRef, src Source) ([]byte, error)
@@ -94,7 +100,7 @@ func (r *resolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src 
 	}
 	span, ok := r.htmlSpans[ref.SHA256]
 	if !ok {
-		return nil, fmt.Errorf("media: image %s not found in html source", shortDigest(ref.SHA256))
+		return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortDigest(ref.SHA256))
 	}
 	data, sum, err := parser.DecodeHTMLImagePayload(r.htmlData[span.PayloadStart:span.PayloadEnd])
 	if err != nil {

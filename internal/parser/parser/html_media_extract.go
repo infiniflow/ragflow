@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/net/html"
+
 	"ragflow/internal/entity"
 )
 
@@ -71,10 +73,17 @@ func ScanHTMLMediaSpans(data []byte) []HTMLMediaSpan {
 			break
 		}
 		start := offset + rel
-		comma := indexByteFrom(data, start, ',')
-		if comma < 0 {
-			break
+		// normalizeHTMLImageSource rejects headers longer than 128 bytes.
+		// Searching past that window would let a crafted document contain many
+		// data:image/ markers and one far-away comma, making the scan
+		// quadratic. A missing comma only skips this marker.
+		window := data[start:min(len(data), start+129)]
+		rel = bytes.IndexByte(window, ',')
+		if rel < 0 {
+			offset = start + len(prefix)
+			continue
 		}
+		comma := start + rel
 		header := data[start:comma]
 		if len(header) < len(prefix)+len(base64Suffix) ||
 			!strings.EqualFold(string(header[len(header)-len(base64Suffix):]), base64Suffix) {
@@ -90,10 +99,24 @@ func ScanHTMLMediaSpans(data []byte) []HTMLMediaSpan {
 			if c == '/' && payloadEnd+1 < len(data) && data[payloadEnd+1] == '>' {
 				break
 			}
-			if !isBase64PayloadByte(c) {
-				break
+			if isBase64PayloadByte(c) {
+				payloadEnd++
+				continue
 			}
-			payloadEnd++
+			// The HTML parser sees the decoded attribute value, so a
+			// character reference such as &#43; is a valid '+' in the
+			// payload. Keep it in the span and decode it with the rest of
+			// the payload.
+			if c == '&' {
+				if n := htmlCharacterReferenceLength(data[payloadEnd:]); n > 0 {
+					raw := string(data[payloadEnd : payloadEnd+n])
+					if decoded := html.UnescapeString(raw); decoded != raw && isBase64PayloadText(decoded) {
+						payloadEnd += n
+						continue
+					}
+				}
+			}
+			break
 		}
 		offset = payloadEnd
 		payload := data[payloadStart:payloadEnd]
@@ -108,7 +131,8 @@ func ScanHTMLMediaSpans(data []byte) []HTMLMediaSpan {
 			continue
 		}
 		spanEnd := payloadStart + len(payload)
-		_, size, sum, ok := normalizeBase64ImagePayload(string(payload), maxEmbeddedImageBytes)
+		decodedPayload := html.UnescapeString(string(payload))
+		_, size, sum, ok := normalizeBase64ImagePayload(decodedPayload, maxEmbeddedImageBytes)
 		if !ok {
 			continue
 		}
@@ -129,7 +153,8 @@ func ScanHTMLMediaSpans(data []byte) []HTMLMediaSpan {
 // against the reference without hashing them twice.
 func DecodeHTMLImagePayload(payload []byte) ([]byte, [sha256.Size]byte, error) {
 	var sum [sha256.Size]byte
-	normalized, _, sum, ok := normalizeBase64ImagePayload(string(payload), maxEmbeddedImageBytes)
+	decoded := html.UnescapeString(string(payload))
+	normalized, _, sum, ok := normalizeBase64ImagePayload(decoded, maxEmbeddedImageBytes)
 	if !ok {
 		return nil, sum, errors.New("html media: invalid image payload")
 	}
@@ -138,17 +163,6 @@ func DecodeHTMLImagePayload(payload []byte) ([]byte, [sha256.Size]byte, error) {
 		return nil, sum, fmt.Errorf("html media: decode payload: %w", err)
 	}
 	return data, sum, nil
-}
-
-func indexByteFrom(data []byte, from int, target byte) int {
-	if from >= len(data) {
-		return -1
-	}
-	rel := bytes.IndexByte(data[from:], target)
-	if rel < 0 {
-		return -1
-	}
-	return from + rel
 }
 
 // indexFoldASCII returns the first index of an ASCII prefix, ignoring case.
@@ -186,4 +200,39 @@ func isBase64PayloadByte(c byte) bool {
 	default:
 		return false
 	}
+}
+
+// htmlCharacterReferenceLength returns the length of a complete character
+// reference at the start of b, or 0 when b does not start with one. The scan
+// is bounded so a stray '&' cannot walk the rest of the document.
+func htmlCharacterReferenceLength(b []byte) int {
+	if len(b) < 3 || b[0] != '&' {
+		return 0
+	}
+	limit := min(len(b), 32)
+	for i := 1; i < limit; i++ {
+		switch c := b[i]; {
+		case c == ';':
+			return i + 1
+		case c == '#', 'A' <= c && c <= 'Z', 'a' <= c && c <= 'z', '0' <= c && c <= '9':
+		default:
+			return 0
+		}
+	}
+	return 0
+}
+
+// isBase64PayloadText reports whether the decoded payload consists only of
+// bytes that can appear in a data-URI payload. Non-ASCII runes fail because
+// their bytes are outside the base64 alphabet.
+func isBase64PayloadText(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !isBase64PayloadByte(s[i]) {
+			return false
+		}
+	}
+	return true
 }

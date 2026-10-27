@@ -256,3 +256,33 @@ func TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes(t *testing.T) {
 		t.Fatalf("ref-mode result is %d bytes; it must not scale with image payloads", len(encoded))
 	}
 }
+
+func TestScanHTMLMediaSpansDecodesCharacterReferences(t *testing.T) {
+	// aGVsbG8+ decodes to "hello>"; &#43; is the HTML-escaped '+'.
+	input := `<img src="data:image/png;base64,aGVsbG8&#43;">`
+	spans := ScanHTMLMediaSpans([]byte(input))
+	if len(spans) != 1 {
+		t.Fatalf("spans = %d, want 1", len(spans))
+	}
+	data, sum, err := DecodeHTMLImagePayload([]byte(input)[spans[0].PayloadStart:spans[0].PayloadEnd])
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if string(data) != "hello>" {
+		t.Fatalf("data = %q, want hello>", data)
+	}
+	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
+		t.Fatal("scan and decode digests differ")
+	}
+}
+
+func TestScanHTMLMediaSpansSkipsHeadersBeyondTheParserLimit(t *testing.T) {
+	// The parser rejects headers longer than 128 bytes; the scan must not
+	// look past that window for a comma, and must still find the next image.
+	input := `<img src="data:image/png;` + strings.Repeat("x", 200) + `">` +
+		`<img src="data:image/png;base64,aGVsbG8=">`
+	spans := ScanHTMLMediaSpans([]byte(input))
+	if len(spans) != 1 {
+		t.Fatalf("spans = %d, want the valid image only", len(spans))
+	}
+}

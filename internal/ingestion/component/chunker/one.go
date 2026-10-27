@@ -146,6 +146,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			Text:         removeTag(text),
 			DocType:      docType,
 			Image:        it.Image,
+			ImgID:        it.ImgID,
 			MediaRef:     it.MediaRef,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,

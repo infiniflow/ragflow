@@ -336,9 +336,6 @@ func maybeDispatchVisionEnhancement(
 			// Clone before materializing: RawItem.ToMap returns the shared
 			// map, and filling in image bytes must not mutate the parse result.
 			item := maps.Clone(dispatched.JSON[itemIdx].ToMap())
-			if err := media.Materialize(ctx, item, resolver, mediaSource); err != nil {
-				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
-			}
 			if err := cropper.Prepare(ctx, item); err != nil {
 				if ctx.Err() == nil {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
@@ -366,6 +363,12 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
+			// Materialize under the same admission as the crop: the decode
+			// and re-encode of a deferred image must not bypass the shared
+			// image memory limit.
+			if err := media.Materialize(itemCtx, item, resolver, mediaSource); err != nil {
+				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
+			}
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				cropErr := err
