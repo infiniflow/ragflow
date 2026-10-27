@@ -794,6 +794,68 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
 // as an HTMLBlock, producing a single doc_type_kwd:"table" item in document
 // order. There must be NO redundant inlined doc_type_kwd:"text" copy.
+// TestMarkdownParser_IndentedTables covers pipe tables that do not start in column 0. A table
+// indented by up to three spaces, as inside a list item, is still a table and must become one
+// table item. Four or more spaces make an indented code block, which must stay code.
+func TestMarkdownParser_IndentedTables(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	for _, md := range []string{
+		"- item\n\n  | a | b |\n  |---|---|\n  | one | two |\n",
+		"1. Step\n   | a | b |\n   |---|---|\n   | one | two |\n",
+		"  | a | b |\n  |---|---|\n  | one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		tables := 0
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if strings.Contains(text, "&mdash;") || strings.Contains(text, "<p>") {
+				t.Fatalf("ParseWithResult(%q): rendered HTML leaked into text: %q", md, text)
+			}
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				tables++
+				td, ok := item["table"].(*entity.TableData)
+				if !ok || td == nil || !tableRowsContain(td, "one") {
+					t.Fatalf("ParseWithResult(%q): table item without its rows: %#v", md, item)
+				}
+			}
+		}
+		if tables != 1 {
+			t.Fatalf("ParseWithResult(%q): table items = %d, want 1", md, tables)
+		}
+	}
+
+	for _, md := range []string{
+		"Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"Code:\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+		"Code:\n\n  | a | b |\n      |---|---|\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		sawCode := false
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				t.Fatalf("ParseWithResult(%q): code emitted as a table item: %q", md, text)
+			}
+			if strings.Contains(text, "| a | b |") {
+				sawCode = true
+				if strings.Contains(text, "<pre>") || strings.Contains(text, "<table") {
+					t.Fatalf("ParseWithResult(%q): code text was rewritten into HTML: %q", md, text)
+				}
+			}
+		}
+		if !sawCode {
+			t.Fatalf("ParseWithResult(%q): the pipe rows are missing from the output", md)
+		}
+	}
+}
+
 func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
