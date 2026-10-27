@@ -59,14 +59,10 @@ type PendingAction =
 // keystrokes the way an uncontrolled defaultValue input with a volatile key could.
 const AliasInput = ({
   placeholder,
-  versionId,
-  canvasId,
   initialAlias,
   onCommit,
 }: {
   placeholder: string;
-  versionId: string;
-  canvasId: string;
   initialAlias: string;
   onCommit: (alias: string) => void;
 }) => {
@@ -222,8 +218,6 @@ export function VersionDialog({
   so re-renders never wipe in-progress keystrokes. */}
                         <AliasInput
                           placeholder={t('flow.version.alias')}
-                          versionId={x.id}
-                          canvasId={canvasId ?? ''}
                           initialAlias={x.alias ?? ''}
                           onCommit={(alias) =>
                             updateVersion({

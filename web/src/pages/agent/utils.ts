@@ -777,7 +777,7 @@ export const buildDslComponentsByGraph = (
           if (Array.isArray(params.inputs)) {
             params = {
               ...params,
-              inputs: params.inputs.reduce(
+              inputs: (params.inputs as BeginQuery[]).reduce(
                 (inputs, { key, ...value }) => {
                   inputs[key] = value;
                   return inputs;

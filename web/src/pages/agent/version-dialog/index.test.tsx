@@ -15,7 +15,6 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import React from 'react';
 
 jest.mock('react-i18next', () => {
   const actual = jest.requireActual('react-i18next');

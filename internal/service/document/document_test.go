@@ -551,6 +551,10 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.UserTenant{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
+		// UpdateMetadataConfig rewrites the dataset's compilation-model
+		// references in the same transaction as the kb row, so any test that
+		// drives that real entry point needs the table to exist.
+		&entity.DatasetModelRef{},
 	}
 	models = append(models, documentTestExtraModels()...)
 	if err = db.AutoMigrate(models...); err != nil {
