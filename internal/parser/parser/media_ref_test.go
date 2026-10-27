@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package media
+package parser
 
 import (
 	"context"
@@ -24,28 +24,27 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/parser"
 )
 
-func htmlWithImage(t *testing.T) (string, entity.MediaRef) {
+func mediaRefFixture(t *testing.T) (string, entity.MediaRef) {
 	t.Helper()
 	html := `<p>before</p><p><img alt="figure" src="data:image/png;base64,aGVsbG8="></p>`
-	spans := parser.ScanHTMLMediaSpans([]byte(html))
+	spans := ScanHTMLMediaSpans([]byte(html))
 	if len(spans) != 1 {
 		t.Fatalf("fixture images = %d, want 1", len(spans))
 	}
 	return html, spans[0].Ref
 }
 
-func TestResolverResolvesHTMLDataURI(t *testing.T) {
-	html, ref := htmlWithImage(t)
+func TestMediaResolverResolvesHTMLDataURI(t *testing.T) {
+	html, ref := mediaRefFixture(t)
 	var calls atomic.Int32
-	src := SourceFunc(func(context.Context) ([]byte, error) {
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) {
 		calls.Add(1)
 		return []byte(html), nil
 	})
 
-	resolver := NewResolver()
+	resolver := NewMediaResolver()
 	for i := 0; i < 2; i++ {
 		data, err := resolver.Resolve(context.Background(), ref, src)
 		if err != nil {
@@ -60,10 +59,10 @@ func TestResolverResolvesHTMLDataURI(t *testing.T) {
 	}
 }
 
-func TestResolverRejectsUnknownDigest(t *testing.T) {
-	html, ref := htmlWithImage(t)
+func TestMediaResolverRejectsUnknownDigest(t *testing.T) {
+	html, ref := mediaRefFixture(t)
 	ref.SHA256 = strings.Repeat("0", 64)
-	_, err := NewResolver().Resolve(context.Background(), ref, SourceFunc(func(context.Context) ([]byte, error) {
+	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(html), nil
 	}))
 	if err == nil || !strings.Contains(err.Error(), "not found") {
@@ -71,28 +70,28 @@ func TestResolverRejectsUnknownDigest(t *testing.T) {
 	}
 }
 
-func TestResolverRejectsUnsupportedReference(t *testing.T) {
-	html, ref := htmlWithImage(t)
-	src := SourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+func TestMediaResolverRejectsUnsupportedReference(t *testing.T) {
+	html, ref := mediaRefFixture(t)
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	ref.Kind = "zip-entry"
-	if _, err := NewResolver().Resolve(context.Background(), ref, src); err == nil {
+	if _, err := NewMediaResolver().Resolve(context.Background(), ref, src); err == nil {
 		t.Fatal("unsupported kind resolved without an error")
 	}
 }
 
-func TestResolverReportsSourceFailure(t *testing.T) {
-	_, ref := htmlWithImage(t)
-	src := SourceFunc(func(context.Context) ([]byte, error) {
+func TestMediaResolverReportsSourceFailure(t *testing.T) {
+	_, ref := mediaRefFixture(t)
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return nil, context.DeadlineExceeded
 	})
-	if _, err := NewResolver().Resolve(context.Background(), ref, src); err == nil {
+	if _, err := NewMediaResolver().Resolve(context.Background(), ref, src); err == nil {
 		t.Fatal("source failure was ignored")
 	}
 }
 
-func TestEncodeDataURIRoundTrip(t *testing.T) {
+func TestEncodeMediaDataURIRoundTrip(t *testing.T) {
 	data := []byte("hello world")
-	uri := EncodeDataURI("image/png", data)
+	uri := encodeMediaDataURI("image/png", data)
 	if !strings.HasPrefix(uri, "data:image/png;base64,") {
 		t.Fatalf("uri = %q", uri)
 	}
@@ -107,17 +106,17 @@ func TestEncodeDataURIRoundTrip(t *testing.T) {
 }
 
 func TestMediaRefDigestIsStable(t *testing.T) {
-	_, ref := htmlWithImage(t)
+	_, ref := mediaRefFixture(t)
 	sum := sha256.Sum256([]byte("hello"))
 	if ref.SHA256 != hex.EncodeToString(sum[:]) {
 		t.Fatalf("digest = %s", ref.SHA256)
 	}
 }
 
-func TestResolverRejectsOversizedReference(t *testing.T) {
-	_, ref := htmlWithImage(t)
-	ref.Size = MaxImageBytes + 1
-	_, err := NewResolver().Resolve(context.Background(), ref, SourceFunc(func(context.Context) ([]byte, error) {
+func TestMediaResolverRejectsOversizedReference(t *testing.T) {
+	_, ref := mediaRefFixture(t)
+	ref.Size = maxMediaImageBytes + 1
+	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte("<p>no image needed before the size check</p>"), nil
 	}))
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
@@ -125,10 +124,10 @@ func TestResolverRejectsOversizedReference(t *testing.T) {
 	}
 }
 
-func TestResolverRejectsSizeMismatch(t *testing.T) {
-	html, ref := htmlWithImage(t)
+func TestMediaResolverRejectsSizeMismatch(t *testing.T) {
+	html, ref := mediaRefFixture(t)
 	ref.Size = 4
-	_, err := NewResolver().Resolve(context.Background(), ref, SourceFunc(func(context.Context) ([]byte, error) {
+	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(html), nil
 	}))
 	if err == nil || !strings.Contains(err.Error(), "size mismatch") {
@@ -136,20 +135,20 @@ func TestResolverRejectsSizeMismatch(t *testing.T) {
 	}
 }
 
-func TestMaterializeRejectsInvalidMediaRef(t *testing.T) {
+func TestMaterializeMediaRejectsInvalidMediaRef(t *testing.T) {
 	m := map[string]any{"media_ref": map[string]any{"format": "html"}}
-	src := SourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-	if err := Materialize(context.Background(), m, NewResolver(), src); err == nil {
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+	if err := MaterializeMedia(context.Background(), m, NewMediaResolver(), src); err == nil {
 		t.Fatal("a present but unusable media_ref was treated as absent")
 	}
 }
 
-func TestMaterializeTreatsAbsentMediaRefAsNoop(t *testing.T) {
+func TestMaterializeMediaTreatsAbsentMediaRefAsNoop(t *testing.T) {
 	var nilRef *entity.MediaRef
 	for _, value := range []any{nil, "", map[string]any{}, nilRef} {
 		m := map[string]any{"media_ref": value}
-		src := SourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-		if err := Materialize(context.Background(), m, NewResolver(), src); err != nil {
+		src := MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+		if err := MaterializeMedia(context.Background(), m, NewMediaResolver(), src); err != nil {
 			t.Errorf("media_ref %#v: %v", value, err)
 		}
 	}

@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package media re-materializes parser MediaRefs from their source documents.
-//
-// A parser that emits MediaRef keeps image bytes out of its result. Whoever
-// needs an actual image (the chunker's upload pass, the vision enhancement
-// path) hands the reference and a Source to a Resolver, which reads the
-// source once per invocation and returns exactly one image.
-package media
+// Media-ref materialization: a parser that emits MediaRef keeps image bytes
+// out of its result. Whoever needs an actual image (the chunker's upload pass,
+// the vision enhancement path) hands the reference and a MediaSource to a
+// MediaResolver, which reads the source once per invocation and returns
+// exactly one image.
+package parser
 
 import (
 	"context"
@@ -29,26 +28,25 @@ import (
 	"sync"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/parser"
 )
 
-// MaxImageBytes bounds one materialized image. It is the same ceiling the
-// parser applies to inline payloads, so a reference can never resolve to
-// something the inline path would have rejected.
-const MaxImageBytes = int64(parser.MaxImagePayloadBytes)
+// maxMediaImageBytes bounds one materialized image. It reuses the inline
+// payload ceiling so a reference can never resolve to something the inline
+// path would have rejected.
+const maxMediaImageBytes = int64(MaxImagePayloadBytes)
 
-// Source supplies the raw bytes of the document a MediaRef points into. It
-// is called at most once per Resolver, so implementations may fetch from
-// object storage without adding a per-image round trip.
-type Source interface {
+// MediaSource supplies the raw bytes of the document a MediaRef points into.
+// It is called at most once per MediaResolver, so implementations may fetch
+// from object storage without adding a per-image round trip.
+type MediaSource interface {
 	Bytes(ctx context.Context) ([]byte, error)
 }
 
-// SourceFunc adapts a function to Source.
-type SourceFunc func(context.Context) ([]byte, error)
+// MediaSourceFunc adapts a function to MediaSource.
+type MediaSourceFunc func(context.Context) ([]byte, error)
 
-// Bytes implements Source.
-func (f SourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(ctx) }
+// Bytes implements MediaSource.
+func (f MediaSourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(ctx) }
 
 // ErrMediaNotFound reports that a readable source document does not contain
 // the referenced image. Callers may skip the image; every other resolver
@@ -56,32 +54,32 @@ func (f SourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(ctx) }
 // failure that must not be turned into a silent image drop.
 var ErrMediaNotFound = errors.New("media: reference not found")
 
-// Resolver materializes image bytes for a MediaRef.
-type Resolver interface {
-	Resolve(ctx context.Context, ref entity.MediaRef, src Source) ([]byte, error)
+// MediaResolver materializes image bytes for a MediaRef.
+type MediaResolver interface {
+	Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error)
 }
 
-// NewResolver returns a resolver that caches the extracted media index for
-// the first source it sees. Create one per document/invocation.
-func NewResolver() Resolver { return &resolver{} }
+// NewMediaResolver returns a resolver that caches the extracted media index
+// for the first source it sees. Create one per document/invocation.
+func NewMediaResolver() MediaResolver { return &mediaResolver{} }
 
-type resolver struct {
+type mediaResolver struct {
 	once      sync.Once
-	htmlSpans map[string]parser.HTMLMediaSpan
+	htmlSpans map[string]HTMLMediaSpan
 	htmlData  []byte
 
 	err error
 }
 
-func (r *resolver) Resolve(ctx context.Context, ref entity.MediaRef, src Source) ([]byte, error) {
+func (r *mediaResolver) Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
 	if !ref.Valid() {
 		return nil, errors.New("media: invalid reference")
 	}
 	if src == nil {
 		return nil, errors.New("media: no source document")
 	}
-	if ref.Size > MaxImageBytes {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortDigest(ref.SHA256), MaxImageBytes)
+	if ref.Size > maxMediaImageBytes {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), maxMediaImageBytes)
 	}
 	switch ref.Kind {
 	case entity.MediaKindDataURI:
@@ -91,7 +89,7 @@ func (r *resolver) Resolve(ctx context.Context, ref entity.MediaRef, src Source)
 	}
 }
 
-func (r *resolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src Source) ([]byte, error) {
+func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
 	if ref.Format != "html" {
 		return nil, fmt.Errorf("media: unsupported data-uri format %q", ref.Format)
 	}
@@ -100,17 +98,17 @@ func (r *resolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src 
 	}
 	span, ok := r.htmlSpans[ref.SHA256]
 	if !ok {
-		return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortDigest(ref.SHA256))
+		return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortMediaDigest(ref.SHA256))
 	}
-	data, sum, err := parser.DecodeHTMLImagePayload(r.htmlData[span.PayloadStart:span.PayloadEnd])
+	data, sum, err := DecodeHTMLImagePayload(r.htmlData[span.PayloadStart:span.PayloadEnd])
 	if err != nil {
 		return nil, err
 	}
 	if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
-		return nil, fmt.Errorf("media: image digest mismatch: reference %s, source %s", shortDigest(ref.SHA256), shortDigest(got))
+		return nil, fmt.Errorf("media: image digest mismatch: reference %s, source %s", shortMediaDigest(ref.SHA256), shortMediaDigest(got))
 	}
-	if int64(len(data)) > MaxImageBytes {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortDigest(ref.SHA256), MaxImageBytes)
+	if int64(len(data)) > maxMediaImageBytes {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), maxMediaImageBytes)
 	}
 	if ref.Size > 0 && int64(len(data)) != ref.Size {
 		return nil, fmt.Errorf("media: image size mismatch: reference %d bytes, source %d bytes", ref.Size, len(data))
@@ -122,7 +120,7 @@ func (r *resolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src 
 // because a payload is returned by offset; the index itself holds only the
 // spans, never the image bytes. Concurrent Resolve calls share both after the
 // first call completes.
-func (r *resolver) loadHTML(ctx context.Context, src Source) error {
+func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
 	r.once.Do(func() {
 		data, err := src.Bytes(ctx)
 		if err != nil {
@@ -131,20 +129,20 @@ func (r *resolver) loadHTML(ctx context.Context, src Source) error {
 		}
 		// Scan the same UTF-8 form the parser walked; the raw bytes of a
 		// UTF-16 document would not contain the ASCII data-URI marker.
-		data = parser.DecodeHTMLSource(data)
+		data = DecodeHTMLSource(data)
 		r.htmlData = data
-		r.htmlSpans = make(map[string]parser.HTMLMediaSpan)
-		for _, span := range parser.ScanHTMLMediaSpans(data) {
+		r.htmlSpans = make(map[string]HTMLMediaSpan)
+		for _, span := range ScanHTMLMediaSpans(data) {
 			r.htmlSpans[span.Ref.SHA256] = span
 		}
 	})
 	return r.err
 }
 
-// Materialize fills m["image"] from m["media_ref"] when the item carries a
-// reference and no inline bytes. The item map is the parser/chunker wire
-// shape, so both components use the same seam.
-func Materialize(ctx context.Context, m map[string]any, resolver Resolver, src Source) error {
+// MaterializeMedia fills m["image"] from m["media_ref"] when the item carries
+// a reference and no inline bytes. The item map is the parser/chunker wire
+// shape, so every consumer uses the same seam.
+func MaterializeMedia(ctx context.Context, m map[string]any, resolver MediaResolver, src MediaSource) error {
 	if m == nil || resolver == nil || src == nil {
 		return nil
 	}
@@ -162,7 +160,7 @@ func Materialize(ctx context.Context, m map[string]any, resolver Resolver, src S
 	if err != nil {
 		return err
 	}
-	m["image"] = EncodeDataURI(ref.MIME, data)
+	m["image"] = encodeMediaDataURI(ref.MIME, data)
 	return nil
 }
 
@@ -184,17 +182,17 @@ func mediaRefPresent(v any) bool {
 	}
 }
 
-// EncodeDataURI renders image bytes in the form the chunker expects for
+// encodeMediaDataURI renders image bytes in the form the chunker expects for
 // upload and vision materialization. An empty MIME falls back to
 // application/octet-stream; image references always carry a concrete type.
-func EncodeDataURI(mime string, data []byte) string {
+func encodeMediaDataURI(mime string, data []byte) string {
 	if mime == "" {
 		mime = "application/octet-stream"
 	}
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data)
 }
 
-func shortDigest(digest string) string {
+func shortMediaDigest(digest string) string {
 	if len(digest) <= 12 {
 		return digest
 	}

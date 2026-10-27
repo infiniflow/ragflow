@@ -29,7 +29,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	"ragflow/internal/media"
+	"ragflow/internal/parser/parser"
 )
 
 // EnvMediaRefShadow enables the both-mode shadow check. With the flag on, the
@@ -50,15 +50,15 @@ func mediaRefShadowEnabled() bool {
 
 // ChunkMediaSource resolves the source document for deferred media_refs.
 // Tests override it with an in-memory source.
-var ChunkMediaSource = func(db *gorm.DB, inputs map[string]any) media.Source {
+var ChunkMediaSource = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
 	return chunkMediaSource(db, inputs)
 }
 
 // chunkMediaSource re-acquires the source document for a deferred media_ref.
 // It prefers the explicit bucket/path pair the Parser forwards and falls back
 // to resolving the same reference from doc_id.
-func chunkMediaSource(db *gorm.DB, inputs map[string]any) media.Source {
-	return media.SourceFunc(func(ctx context.Context) ([]byte, error) {
+func chunkMediaSource(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+	return parser.MediaSourceFunc(func(ctx context.Context) ([]byte, error) {
 		bucket := globals.GlobalOrInput(ctx, inputs, "bucket", "")
 		path := globals.GlobalOrInput(ctx, inputs, "path", "")
 		if bucket != "" && path != "" {
@@ -83,7 +83,7 @@ func chunkMediaSource(db *gorm.DB, inputs map[string]any) media.Source {
 // bytes the parser inlined. Mismatches mean the source changed after parsing
 // or the reference locator is wrong; both are worth a warning, neither
 // changes the chunk.
-func verifyChunkMedia(ctx context.Context, chunks []map[string]any, resolver media.Resolver, src media.Source) {
+func verifyChunkMedia(ctx context.Context, chunks []map[string]any, resolver parser.MediaResolver, src parser.MediaSource) {
 	for _, ck := range chunks {
 		ref := entity.MediaRefFromAny(ck["media_ref"])
 		if ref == nil {

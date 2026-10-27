@@ -36,7 +36,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	"ragflow/internal/media"
+	"ragflow/internal/parser/parser"
 )
 
 // imageUploadSem caps concurrent object-storage uploads process-wide. Default
@@ -79,7 +79,7 @@ func imageUploadConcurrency() int {
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
-func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string, resolver media.Resolver, src media.Source) ([]map[string]any, error) {
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string, resolver parser.MediaResolver, src parser.MediaSource) ([]map[string]any, error) {
 	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
 		imgID, _ := ck["img_id"].(string)
@@ -87,11 +87,11 @@ func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component
 			// The image was already uploaded. A materialized copy would not
 			// be uploaded again, so it must not survive into the index.
 			delete(ck, "image")
-		} else if err := media.Materialize(ctx, ck, resolver, src); err != nil {
+		} else if err := parser.MaterializeMedia(ctx, ck, resolver, src); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			if !errors.Is(err, media.ErrMediaNotFound) {
+			if !errors.Is(err, parser.ErrMediaNotFound) {
 				return nil, err
 			}
 			common.Warn("chunker: media reference not found", zap.Error(err))

@@ -24,7 +24,6 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/media"
 	parserlib "ragflow/internal/parser/parser"
 )
 
@@ -48,8 +47,8 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
-		return media.SourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { ChunkMediaSource = prevSource })
 
@@ -120,8 +119,8 @@ func TestMediaRefShadowDoesNotChangeOutput(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
-		return media.SourceFunc(func(context.Context) ([]byte, error) {
+	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return nil, errors.New("source unavailable")
 		})
 	}
@@ -170,8 +169,8 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
-		return media.SourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { ChunkMediaSource = prevSource })
 
@@ -225,8 +224,8 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := ChunkMediaSource
-	ChunkMediaSource = func(*gorm.DB, map[string]any) media.Source {
-		return media.SourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	ChunkMediaSource = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { ChunkMediaSource = prevSource })
 
@@ -284,11 +283,11 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 		"media_ref":    map[string]any{"format": "html"},
 	}
 	up := func(context.Context, string, string, []byte) (string, error) { return "", nil }
-	src := media.SourceFunc(func(context.Context) ([]byte, error) {
+	src := parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 		t.Fatal("resolver must not run for an invalid reference")
 		return nil, nil
 	})
-	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, media.NewResolver(), src); err == nil {
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, parserlib.NewMediaResolver(), src); err == nil {
 		t.Fatal("invalid media_ref was treated as absent")
 	}
 }
