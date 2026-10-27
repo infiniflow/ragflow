@@ -395,7 +395,7 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
-	connector := webDAVTestConnector(t, server.URL, false, 2)
+	connector := webDAVTestConnector(t, server.URL, false, 10)
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	session, err := connector.OpenSync(t.Context(), SyncRequest{
@@ -411,11 +411,49 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 {
-		t.Fatalf("incremental batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	// The lower bound reaches a day below the watermark, so files stamped
+	// exactly at the watermark are rechecked; nothing older than the tolerance
+	// and nothing past the window end may appear.
+	want := []string{"docs / alpha.txt", "notes / alpha.txt", "beta.md"}
+	if len(batch.Documents) != len(want) {
+		t.Fatalf("incremental batch len = %d, want %d: %+v", len(batch.Documents), len(want), batch.Documents)
 	}
-	if batch.Documents[0].SemanticIdentifier != "beta.md" {
-		t.Fatalf("incremental document = %q", batch.Documents[0].SemanticIdentifier)
+	for i, identifier := range want {
+		if batch.Documents[i].SemanticIdentifier != identifier {
+			t.Fatalf("incremental document[%d] = %q, want %q", i, batch.Documents[i].SemanticIdentifier, identifier)
+		}
+	}
+}
+
+func TestWebDAVConnectorOpenSyncExcludesFilesOlderThanMtimeTolerance(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":          {isDir: true},
+		"/old.txt":   {content: "old", size: 3, hasSize: true, modified: "Tue, 30 Dec 2025 00:00:00 GMT"},
+		"/near.txt":  {content: "near", size: 4, hasSize: true, modified: "Thu, 01 Jan 2026 12:00:00 GMT"},
+		"/fresh.txt": {content: "fresh", size: 5, hasSize: true, modified: "Fri, 02 Jan 2026 06:00:00 GMT"},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	start := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 2 {
+		t.Fatalf("batch len = %d, want 2: %+v", len(batch.Documents), batch.Documents)
+	}
+	if batch.Documents[0].SemanticIdentifier != "fresh.txt" || batch.Documents[1].SemanticIdentifier != "near.txt" {
+		t.Fatalf("documents = %q, %q; want fresh.txt, near.txt", batch.Documents[0].SemanticIdentifier, batch.Documents[1].SemanticIdentifier)
 	}
 }
 

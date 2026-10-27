@@ -39,6 +39,7 @@ const (
 	defaultWebDAVSizeThreshold = 20 * 1024 * 1024
 	webdavRequestTimeout       = 60 * time.Second
 	maxWebDAVResponseSize      = 32 * 1024 * 1024
+	webdavMtimeTolerance       = 24 * time.Hour
 	webdavPropfindBody         = `<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><allprop/></propfind>`
 )
 
@@ -186,9 +187,19 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	if err != nil {
 		return nil, err
 	}
-	start := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	// A WebDAV server's Last-Modified clock can lag ours, typically from a
+	// timezone misconfiguration. The previous cycle's end is the lower bound,
+	// so a skewed mtime sits permanently below the watermark and the file is
+	// skipped on every poll. Widen the bound by a day so such files are
+	// rechecked; the content fingerprint keeps the recheck from duplicating
+	// documents.
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	start := epoch
 	if request.WindowStart != nil {
-		start = *request.WindowStart
+		start = request.WindowStart.Add(-webdavMtimeTolerance)
+		if start.Before(epoch) {
+			start = epoch
+		}
 	}
 	end := request.WindowEnd
 	if end.IsZero() {
@@ -201,7 +212,7 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		if !file.hasModified {
 			file.modified = end
 		}
-		if !start.Before(file.modified) || file.modified.After(end) {
+		if file.modified.Before(start) || file.modified.After(end) {
 			continue
 		}
 		if !c.isAcceptedExtension(file) || !file.hasSize || file.size > c.sizeThreshold {
