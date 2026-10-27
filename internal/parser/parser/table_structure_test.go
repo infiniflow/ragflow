@@ -72,6 +72,17 @@ func TestMarkdownParserPreservesWideTableWithInlineHeaderAndReference(t *testing
 	requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"Field", "Value", ""}, {"Owner", "team", "TAIL"}})
 }
 
+func TestMarkdownParserPreservesEscapedPipesInHTMLAttributes(t *testing.T) {
+	for _, destination := range []string{`x\|y`, `x&#124;y`} {
+		p, _ := NewMarkdownParser(GoMarkdown)
+		res := p.ParseWithResult(t.Context(), "table.md", []byte("| A | B |\n|---|---|\n| <a href=\""+destination+"\">link</a> | TAIL |\n"))
+		if res.Err != nil || len(res.JSON) != 1 {
+			t.Fatalf("result=%+v", res)
+		}
+		requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"A", "B"}, {"link", "TAIL"}})
+	}
+}
+
 func TestMarkdownParserDoesNotTreatTablePrefixAsTable(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	source := "Before <tableau>value</tableau> after."
@@ -169,6 +180,9 @@ func TestSoMarkPreservesMarkdownTableAndNotes(t *testing.T) {
 		t.Fatalf("notes = %#v", items)
 	}
 	requireTableRows(t, items[1], [][]string{{"", ""}, {"Owner", "RET"}})
+	if items[1]["layout"] != "table" || items[0]["layout"] == "table" || items[2]["layout"] == "table" {
+		t.Fatalf("table layout misplaced: %#v", items)
+	}
 }
 
 func TestSoMarkPreservesPageOnSplitTableItems(t *testing.T) {

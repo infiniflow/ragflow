@@ -216,7 +216,13 @@ func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFoo
 		}
 		markdown := &MarkdownParser{libType: GoMarkdown}
 		parsed := markdown.parseWithState(ctx, "", []byte(content), state)
-		return ItemsToMaps(parsed.JSON), parsed.Warnings
+		items := ItemsToMaps(parsed.JSON)
+		for _, item := range items {
+			if item["doc_type_kwd"] == "table" {
+				item["layout"] = "table"
+			}
+		}
+		return items, parsed.Warnings
 	case "equation":
 		if content == "" {
 			return nil, nil

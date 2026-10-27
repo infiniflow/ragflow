@@ -187,7 +187,7 @@ func TestMarkdownTableAfterContainerKeepsBlockBoundary(t *testing.T) {
 	}
 }
 
-func TestMarkdownTablePreprocessingPreservesCodeAndHTMLBlocks(t *testing.T) {
+func TestMarkdownTableHookPreservesCodeAndHTMLBlocks(t *testing.T) {
 	for _, source := range []string{
 		"    intro\n    | H | V |\n    |---|---|\n    | x | y | extra |\n",
 		"\tintro\n\t| H | V |\n\t|---|---|\n\t| x | y | extra |\n",
@@ -198,6 +198,9 @@ func TestMarkdownTablePreprocessingPreservesCodeAndHTMLBlocks(t *testing.T) {
 		"<div>\n<div>inner</div>\n| H | V |\n|---|---|\n| x | y | extra |\n</div>\n",
 		"<!--\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n-->\n",
 		"- Item\n\n    ```\n    | H | V |\n    |---|---|\n    | x | y | extra |\n    ```\n",
+		"- Item\n\n      | H | V |\n      |---|---|\n      | x | y | extra |\n",
+		"1. Item\n\n       | H | V |\n       |---|---|\n       | x | y | extra |\n",
+		"| H | V |\n    |---|---|\n    | x | y | extra |\n",
 	} {
 		p, _ := NewMarkdownParser(GoMarkdown)
 		result := p.ParseWithResult(t.Context(), "blocks.md", []byte(source))
@@ -219,17 +222,58 @@ func TestMarkdownTablePreprocessingPreservesCodeAndHTMLBlocks(t *testing.T) {
 	}
 }
 
-func TestMarkdownTablePreprocessingBalancesIndentedListTable(t *testing.T) {
-	source := "- Item\n\n    | H | V |\n    |---|---|\n    | x | y | TAIL |\n"
-	p, _ := NewMarkdownParser(GoMarkdown)
-	result := p.ParseWithResult(t.Context(), "list.md", []byte(source))
-	if result.Err != nil || len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != "- Item" {
-		t.Fatalf("nested list content lost: %#v err=%v", ItemsToMaps(result.JSON), result.Err)
+func TestMarkdownTableHookBalancesIndentedListTable(t *testing.T) {
+	for _, tc := range []struct{ marker, indent string }{
+		{"- ", "  "}, {"1. ", "   "}, {"10. ", "    "}, {"- ", "    "}, {"- ", "\t"},
+	} {
+		t.Run(tc.marker+tc.indent, func(t *testing.T) {
+			for _, wide := range []bool{false, true} {
+				row := "| x | y |"
+				want := [][]string{{"H", "V"}, {"x", "y"}}
+				if wide {
+					row = "| x | y | TAIL |"
+					want = [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}}
+				}
+				source := tc.marker + "Item\n\n" + tc.indent + "| H | V |\n" + tc.indent + "|---|---|\n" + tc.indent + row + "\n"
+				p, _ := NewMarkdownParser(GoMarkdown)
+				result := p.ParseWithResult(t.Context(), "list.md", []byte(source))
+				if result.Err != nil || len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != tc.marker+"Item" {
+					t.Fatalf("list content lost: %#v err=%v", ItemsToMaps(result.JSON), result.Err)
+				}
+				if result.JSON[0].ToMap()["layout"] != "list" {
+					t.Fatalf("list layout lost: %#v", result.JSON[0].ToMap())
+				}
+				requireTableRows(t, result.JSON[1].ToMap(), want)
+			}
+		})
 	}
-	requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
 }
 
-func TestMarkdownTablePreprocessingBalancesMarkdownInsideHTMLContainer(t *testing.T) {
+func TestMarkdownWideTableAtQuoteDepthLimit(t *testing.T) {
+	prefix := strings.Repeat("> ", 63)
+	source := prefix + "| H | V |\n" + prefix + "|---|---|\n" + prefix + "| x | y | TAIL |\n"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "nested.md", []byte(source))
+	if result.Err != nil || len(result.JSON) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	requireTableRows(t, result.JSON[0].ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
+}
+
+func TestMarkdownTableInNestedListPreservesReferences(t *testing.T) {
+	source := "- Outer\n\n    - Inner\n\n      | A | B |\n      |---|---|\n      | [team][ref] | y | TAIL |\n\n[ref]: https://example.org\n"
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "nested-list.md", []byte(source))
+	if result.Err != nil || len(result.JSON) != 3 {
+		t.Fatalf("result=%#v err=%v", ItemsToMaps(result.JSON), result.Err)
+	}
+	if result.JSON[0].ToMap()["text"] != "- Outer" || result.JSON[1].ToMap()["text"] != "- Inner" {
+		t.Fatalf("list text lost: %#v", ItemsToMaps(result.JSON))
+	}
+	requireTableRows(t, result.JSON[2].ToMap(), [][]string{{"A", "B", ""}, {"team", "y", "TAIL"}})
+}
+
+func TestMarkdownTableHookBalancesMarkdownInsideHTMLContainer(t *testing.T) {
 	source := "<div>\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n\n</div>\n"
 	p, _ := NewMarkdownParser(GoMarkdown)
 	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))
@@ -242,7 +286,7 @@ func TestMarkdownTablePreprocessingBalancesMarkdownInsideHTMLContainer(t *testin
 	t.Fatalf("missing table in Markdown-enabled HTML container: %+v", result)
 }
 
-func TestMarkdownTablePreprocessingResumesAfterProtectedBlock(t *testing.T) {
+func TestMarkdownTableHookResumesAfterProtectedBlock(t *testing.T) {
 	source := "    code\n    | H | V |\n    |---|---|\n    | x | y |\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n"
 	p, _ := NewMarkdownParser(GoMarkdown)
 	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))
@@ -252,7 +296,7 @@ func TestMarkdownTablePreprocessingResumesAfterProtectedBlock(t *testing.T) {
 	requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
 }
 
-func TestMarkdownTablePreprocessingResumesAfterHTMLComments(t *testing.T) {
+func TestMarkdownTableHookResumesAfterHTMLComments(t *testing.T) {
 	source := "<div>\n<!-- <div> is an example -->\n</div>\n\n| H | V |\n|---|---|\n| x | y | TAIL |\n"
 	p, _ := NewMarkdownParser(GoMarkdown)
 	result := p.ParseWithResult(t.Context(), "table.md", []byte(source))

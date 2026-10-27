@@ -107,30 +107,46 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	rawText := string(decoded) + "\n\n"
 	blockParser := markdownNew()
 	blockParser.Block(mdparser.NormalizeNewlines([]byte(rawText)))
-	// Tight list paragraphs are parsed inline by gomarkdown. Expand only
-	// those containing a table before the final inline pass, retaining the
-	// document parser's reference definitions for their cells.
+	// Expand tight-list tables before the inline pass. gomarkdown can also
+	// end a list before its indented table, leaving uneven paragraph lines.
 	ast.WalkFunc(blockParser.Doc, func(node ast.Node, entering bool) ast.WalkStatus {
-		entry, ok := node.(*ast.ListItem)
-		if !entering || !ok {
+		if !entering || node.AsContainer() == nil {
 			return ast.GoToNext
 		}
 		var children []ast.Node
-		for _, child := range entry.GetChildren() {
+		changed := false
+		for index, child := range node.GetChildren() {
 			if paragraph, ok := child.(*ast.Paragraph); ok && bytes.Contains(paragraph.Content, []byte("|")) {
+				_, inList := node.(*ast.ListItem)
+				afterList := false
+				if index > 0 {
+					_, afterList = node.GetChildren()[index-1].(*ast.List)
+				}
+				content := paragraph.Content
+				if afterList {
+					content = dedentMarkdownTable(content)
+				}
+				if !inList && bytes.Equal(content, paragraph.Content) {
+					children = append(children, child)
+					continue
+				}
 				blocks := markdownNew()
-				blocks.Block(paragraph.Content)
+				blocks.Block(content)
 				if containsMarkdownTable(blocks.Doc) {
 					children = append(children, blocks.Doc.GetChildren()...)
+					changed = true
 					continue
 				}
 			}
 			children = append(children, child)
 		}
-		entry.SetChildren(nil)
+		if !changed {
+			return ast.GoToNext
+		}
+		node.SetChildren(nil)
 		for _, child := range children {
 			child.SetParent(nil)
-			ast.AppendChild(entry, child)
+			ast.AppendChild(node, child)
 		}
 		return ast.GoToNext
 	})
@@ -193,29 +209,29 @@ func markdownNew() *mdparser.Parser {
 	// which markdownListMarker turns back into 1).
 	extensions := mdparser.CommonExtensions&^mdparser.MathJax | mdparser.AutoHeadingIDs | mdparser.NoEmptyLineBeforeBlock | mdparser.OrderedListStart
 	p := mdparser.NewWithExtensions(extensions)
-	p.Opts.ParserHook = func(data []byte) (ast.Node, []byte, int) { return nil, nil, balanceMarkdownTable(p, data) }
+	p.Opts.ParserHook = parseWideMarkdownTable
 	return p
 }
 
 // Pad over-wide tables only when the Markdown parser reaches a real block.
 // Fences, raw HTML, lists and indentation remain the parser's responsibility.
-func balanceMarkdownTable(p *mdparser.Parser, data []byte) int {
+func parseWideMarkdownTable(data []byte) (ast.Node, []byte, int) {
 	end := bytes.IndexByte(data, '\n')
 	if end < 0 || bytes.HasPrefix(data, []byte("\t")) || bytes.HasPrefix(data, []byte("    ")) {
-		return 0
+		return nil, nil, 0
 	}
 	header := string(data[:end+1])
 	if !isMarkdownTableRow(header) {
-		return 0
+		return nil, nil, 0
 	}
 	next := bytes.IndexByte(data[end+1:], '\n')
 	if next < 0 {
-		return 0
+		return nil, nil, 0
 	}
 	consumed := end + next + 2
 	separator := string(data[end+1 : consumed])
 	if !isMarkdownTableSeparator(separator) {
-		return 0
+		return nil, nil, 0
 	}
 	lines := []string{header, separator}
 	for consumed < len(data) {
@@ -232,22 +248,65 @@ func balanceMarkdownTable(p *mdparser.Parser, data []byte) int {
 	}
 	balanced := strings.Join(balanceTableColumns(lines), "")
 	if balanced == string(data[:consumed]) {
-		return 0
+		return nil, nil, 0
 	}
 	if strings.HasPrefix(strings.TrimSpace(header), "<") {
 		// The hook runs before HTML recognition. Let the library distinguish
 		// raw HTML from a table whose first cell contains inline markup.
 		probe := markdownNew()
-		probe.Opts.ParserHook = nil
+		first := true
+		probe.Opts.ParserHook = func(rest []byte) (ast.Node, []byte, int) {
+			if first {
+				first = false
+				return nil, nil, 0
+			}
+			// The first block determines HTML priority; do not parse the suffix.
+			return nil, nil, len(rest)
+		}
 		probe.Block(data)
 		if children := probe.Doc.GetChildren(); len(children) > 0 {
 			if _, table := children[0].(*ast.Table); !table {
-				return 0
+				return nil, nil, 0
 			}
 		}
 	}
-	p.Block([]byte(balanced))
-	return consumed
+	tableParser := markdownNew()
+	tableParser.Opts.ParserHook = nil
+	tableParser.Block([]byte(balanced))
+	children := tableParser.Doc.GetChildren()
+	if len(children) == 0 {
+		return nil, nil, 0
+	}
+	table, ok := children[0].(*ast.Table)
+	if !ok {
+		return nil, nil, 0
+	}
+	// Keep cell Content for the document parser's inline pass and references.
+	// Detach before AddBlock so ast.AppendChild does not clear the subtree.
+	table.SetParent(nil)
+	return table, nil, consumed
+}
+
+// List paragraphs can have a dedented first line but indented continuation
+// lines. Normalize only a table paragraph with a shared continuation prefix.
+func dedentMarkdownTable(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	if len(lines) < 2 || !isMarkdownTableRow(lines[0]) || !isMarkdownTableSeparator(lines[1]) {
+		return data
+	}
+	prefix := lines[1][:len(lines[1])-len(strings.TrimLeft(lines[1], " \t"))]
+	if prefix == "" {
+		return data
+	}
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, prefix) {
+			return data
+		}
+	}
+	for i := 1; i < len(lines); i++ {
+		lines[i] = strings.TrimPrefix(lines[i], prefix)
+	}
+	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell
@@ -454,6 +513,11 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				if containsMarkdownTable(entry) {
 					start := len(*out)
 					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, flatten, fetchRemoteImages, htmlState)
+					for _, item := range (*out)[start:] {
+						if item["doc_type_kwd"] == "text" && item["layout"] == nil {
+							item["layout"] = "list"
+						}
+					}
 					if len(*out) > start && (*out)[start]["doc_type_kwd"] == "text" {
 						(*out)[start]["text"] = markdownListMarker(n, i, entry) + stringValue((*out)[start]["text"])
 					}
