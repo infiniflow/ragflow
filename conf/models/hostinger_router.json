@@ -73,6 +73,8 @@
     {
       "name": "text-embedding-3-small",
       "max_tokens": 8191,
+      "max_dimension": 1536,
+      "max_batch_size": 2048,
       "model_types": [
         "embedding"
       ]
