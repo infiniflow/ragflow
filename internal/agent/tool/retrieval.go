@@ -506,10 +506,10 @@ func retrievalTenantID(ctx context.Context) string {
 	if err != nil || state == nil {
 		return ""
 	}
-	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 		return tenantID
 	}
-	userID, _ := state.Sys["user_id"].(string)
+	userID, _ := state.GetSysString("user_id")
 	return userID
 }
 

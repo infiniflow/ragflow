@@ -222,7 +222,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	for key, value := range inputs {
 		switch {
 		case strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" && key != "sys.user_id":
-			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
+			debugState.SetSys(strings.TrimPrefix(key, "sys."), value)
 		case strings.Contains(key, "@"):
 			if idx := strings.Index(key, "@"); idx > 0 && idx < len(key)-1 {
 				debugState.SetVar(key[:idx], key[idx+1:], value)
@@ -232,8 +232,8 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// Permission checks in Retrieval use the authenticated caller and the
 	// canvas whose component is being debugged. Set these after copying inputs
 	// so request parameters cannot impersonate another user or canvas.
-	debugState.Sys["canvas_id"] = cv.ID
-	debugState.Sys["user_id"] = user.ID
+	debugState.SetSys("canvas_id", cv.ID)
+	debugState.SetSys("user_id", user.ID)
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
 	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {

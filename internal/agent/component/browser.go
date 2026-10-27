@@ -203,7 +203,7 @@ func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		return nil, errors.New("browser: nil canvas state")
 	}
 
-	tenantID, _ := state.Sys["tenant_id"].(string)
+	tenantID, _ := state.GetSysString("tenant_id")
 	if tenantID == "" {
 		return nil, errors.New("browser: tenant_id missing from canvas state (state.Sys[\"tenant_id\"])")
 	}
