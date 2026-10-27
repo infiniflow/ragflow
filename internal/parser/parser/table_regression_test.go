@@ -194,21 +194,39 @@ func TestMarkdownTablePreprocessingPreservesCodeAndHTMLBlocks(t *testing.T) {
 		"```\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n```\n",
 		"<pre>\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n</pre>\n",
 		"<div>\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n</div>\n",
+		"<div>| H |\n|---|---|\n| x | y | extra |\n</div>\n",
 		"<div>\n<div>inner</div>\n| H | V |\n|---|---|\n| x | y | extra |\n</div>\n",
 		"<!--\nintro\n| H | V |\n|---|---|\n| x | y | extra |\n-->\n",
 		"- Item\n\n    ```\n    | H | V |\n    |---|---|\n    | x | y | extra |\n    ```\n",
 	} {
-		if got := balanceMarkdownTables(source); got != source {
-			t.Errorf("protected block changed:\nsource=%q\ngot=%q", source, got)
+		p, _ := NewMarkdownParser(GoMarkdown)
+		result := p.ParseWithResult(t.Context(), "blocks.md", []byte(source))
+		if result.Err != nil {
+			t.Fatal(result.Err)
+		}
+		for _, item := range result.JSON {
+			if item.ToMap()["doc_type_kwd"] == "table" {
+				t.Fatalf("code or HTML content became a table: %q", source)
+			}
+		}
+		wire, _ := json.Marshal(result.JSON)
+		if !strings.HasPrefix(source, "<!--") && !strings.Contains(string(wire), "| x | y | extra |") {
+			t.Fatalf("protected content lost: %s", wire)
+		}
+		if strings.HasPrefix(source, "<") && !strings.HasPrefix(source, "<!--") && (len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != strings.TrimSpace(source)) {
+			t.Fatalf("raw HTML changed: %s", wire)
 		}
 	}
 }
 
 func TestMarkdownTablePreprocessingBalancesIndentedListTable(t *testing.T) {
 	source := "- Item\n\n    | H | V |\n    |---|---|\n    | x | y | TAIL |\n"
-	if got := balanceMarkdownTables(source); !strings.Contains(got, "    | H | V | |\n    |---|---|---|\n") {
-		t.Fatalf("nested list table was not balanced: %q", got)
+	p, _ := NewMarkdownParser(GoMarkdown)
+	result := p.ParseWithResult(t.Context(), "list.md", []byte(source))
+	if result.Err != nil || len(result.JSON) != 2 || result.JSON[0].ToMap()["text"] != "- Item" {
+		t.Fatalf("nested list content lost: %#v err=%v", ItemsToMaps(result.JSON), result.Err)
 	}
+	requireTableRows(t, result.JSON[1].ToMap(), [][]string{{"H", "V", ""}, {"x", "y", "TAIL"}})
 }
 
 func TestMarkdownTablePreprocessingBalancesMarkdownInsideHTMLContainer(t *testing.T) {

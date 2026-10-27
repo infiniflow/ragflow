@@ -103,10 +103,38 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 // Its warnings describe this fragment; the caller adds state.warnings once.
 func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
 	decoded, _ := DecodeToUTF8(data, "text/markdown")
-	// Preserve over-wide rows before the Markdown library truncates them.
 	// The final blank line also terminates a raw HTML block at EOF.
-	rawText := balanceMarkdownTables(string(decoded)) + "\n\n"
-	doc := markdownNew().Parse([]byte(rawText))
+	rawText := string(decoded) + "\n\n"
+	blockParser := markdownNew()
+	blockParser.Block(mdparser.NormalizeNewlines([]byte(rawText)))
+	// Tight list paragraphs are parsed inline by gomarkdown. Expand only
+	// those containing a table before the final inline pass, retaining the
+	// document parser's reference definitions for their cells.
+	ast.WalkFunc(blockParser.Doc, func(node ast.Node, entering bool) ast.WalkStatus {
+		entry, ok := node.(*ast.ListItem)
+		if !entering || !ok {
+			return ast.GoToNext
+		}
+		var children []ast.Node
+		for _, child := range entry.GetChildren() {
+			if paragraph, ok := child.(*ast.Paragraph); ok && bytes.Contains(paragraph.Content, []byte("|")) {
+				blocks := markdownNew()
+				blocks.Block(paragraph.Content)
+				if containsMarkdownTable(blocks.Doc) {
+					children = append(children, blocks.Doc.GetChildren()...)
+					continue
+				}
+			}
+			children = append(children, child)
+		}
+		entry.SetChildren(nil)
+		for _, child := range children {
+			child.SetParent(nil)
+			ast.AppendChild(entry, child)
+		}
+		return ast.GoToNext
+	})
+	doc := blockParser.Parse(nil)
 
 	var items []map[string]any
 	if state.mediaBudget == nil {
@@ -156,206 +184,70 @@ func markdownNew() *mdparser.Parser {
 	// ast.MathBlock defensively so that turning the extension back on
 	// cannot lose text again.
 	// OrderedListStart is not part of CommonExtensions, and without it the parser leaves
-	// ast.List.Start at zero for every ordered list: listEntries then falls back to 1 and
+	// ast.List.Start at zero for every ordered list: markdownListMarker then falls back to 1 and
 	// renumbers the entries 1..N, so a list that the source spells "996. graphql: ..." is
 	// indexed as "1. graphql: ...". The numbers are then gone from the index (a query for
 	// "996" cannot match anything, and the gap counts against coverage), while Python's
 	// _extract_list_block keeps the raw lines - markers included - verbatim. Enabling it
 	// makes Start carry the number the source wrote (gomarkdown normalises a literal 1 to 0,
-	// which the fallback in listEntries turns back into 1).
+	// which markdownListMarker turns back into 1).
 	extensions := mdparser.CommonExtensions&^mdparser.MathJax | mdparser.AutoHeadingIDs | mdparser.NoEmptyLineBeforeBlock | mdparser.OrderedListStart
-	return mdparser.NewWithExtensions(extensions)
+	p := mdparser.NewWithExtensions(extensions)
+	p.Opts.ParserHook = func(data []byte) (ast.Node, []byte, int) { return nil, nil, balanceMarkdownTable(p, data) }
+	return p
 }
 
-func balanceMarkdownTables(text string) string {
-	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
-	lines := strings.SplitAfter(text, "\n")
-	lowerText := strings.ToLower(text)
-	var buf strings.Builder
-	inFence := false
-	var fenceChar byte
-	var fenceLen int
-	htmlEndOffset := 0
-	listIndent := 0
-	offset := 0
-	lastHTMLEnd := make(map[string]int)
-
-	for i := 0; i < len(lines); {
-		line := strings.TrimRight(lines[i], "\n")
-		if offset < htmlEndOffset {
-			buf.WriteString(lines[i])
-			offset += len(lines[i])
-			i++
-			continue
+// Pad over-wide tables only when the Markdown parser reaches a real block.
+// Fences, raw HTML, lists and indentation remain the parser's responsibility.
+func balanceMarkdownTable(p *mdparser.Parser, data []byte) int {
+	end := bytes.IndexByte(data, '\n')
+	if end < 0 || bytes.HasPrefix(data, []byte("\t")) || bytes.HasPrefix(data, []byte("    ")) {
+		return 0
+	}
+	header := string(data[:end+1])
+	if !isMarkdownTableRow(header) {
+		return 0
+	}
+	next := bytes.IndexByte(data[end+1:], '\n')
+	if next < 0 {
+		return 0
+	}
+	consumed := end + next + 2
+	separator := string(data[end+1 : consumed])
+	if !isMarkdownTableSeparator(separator) {
+		return 0
+	}
+	lines := []string{header, separator}
+	for consumed < len(data) {
+		next = bytes.IndexByte(data[consumed:], '\n')
+		if next < 0 {
+			next = len(data) - consumed - 1
 		}
-		trimmed := strings.TrimLeft(line, " \t")
-		indent := 0
-		for _, ch := range line[:len(line)-len(trimmed)] {
-			if ch == '\t' {
-				indent += 4 - indent%4
-			} else {
-				indent++
-			}
+		line := string(data[consumed : consumed+next+1])
+		if !isMarkdownTableRow(line) {
+			break
 		}
-		if !inFence {
-			if width := markdownListMarkerWidth(trimmed); indent < 4 && width > 0 {
-				listIndent = indent + width
-			} else if indent == 0 && trimmed != "" {
-				listIndent = 0
-			}
-		}
-		indentedCode := indent >= 4 && (listIndent == 0 || indent >= listIndent+4)
-		if !inFence && !indentedCode && (indent < 4 || listIndent > 0) {
-			if end := markdownHTMLBlockEnd(trimmed); end != "" {
-				last, ok := lastHTMLEnd[end]
-				if !ok {
-					last = strings.LastIndex(lowerText, end)
-					lastHTMLEnd[end] = last
-				}
-				if last >= offset && !markdownHTMLAllowsBlocks(lines, i, lowerText, offset, end) {
-					if length := markdownHTMLBlockLength(text[offset:], end); length > 0 {
-						htmlEndOffset = offset + length
-						buf.WriteString(lines[i])
-						offset += len(lines[i])
-						i++
-						continue
-					}
-				}
-			}
-		}
-		fenceLine := line
-		if listIndent > 0 && !indentedCode && indent >= listIndent {
-			fenceLine = trimmed
-		}
-		if ch, n, ok := markdownFenceMarker(fenceLine); ok {
-			if inFence && ch == fenceChar && n >= fenceLen {
-				inFence = false
-			} else if !inFence {
-				inFence = true
-				fenceChar = ch
-				fenceLen = n
-			}
-			buf.WriteString(lines[i])
-			offset += len(lines[i])
-			i++
-			continue
-		}
-		if !inFence && !indentedCode && i+1 < len(lines) && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
-			start := i
-			i += 2
-			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
-				i++
-			}
-			// A table must not become a lazy continuation of a list or quote.
-			if buf.Len() > 0 && !strings.HasSuffix(buf.String(), "\n\n") {
-				buf.WriteByte('\n')
-			}
-			buf.WriteString(strings.Join(balanceTableColumns(lines[start:i]), ""))
-			for _, consumed := range lines[start:i] {
-				offset += len(consumed)
-			}
-			continue
-		}
-		buf.WriteString(lines[i])
-		offset += len(lines[i])
-		i++
+		lines = append(lines, line)
+		consumed += next + 1
 	}
-	return buf.String()
-}
-
-func markdownListMarkerWidth(line string) int {
-	if len(line) >= 2 && strings.ContainsRune("-*+", rune(line[0])) && (line[1] == ' ' || line[1] == '\t') {
-		return 2
+	balanced := strings.Join(balanceTableColumns(lines), "")
+	if balanced == string(data[:consumed]) {
+		return 0
 	}
-	i := 0
-	for i < len(line) && line[i] >= '0' && line[i] <= '9' && i < 9 {
-		i++
-	}
-	if i > 0 && i+1 < len(line) && (line[i] == '.' || line[i] == ')') && (line[i+1] == ' ' || line[i+1] == '\t') {
-		return i + 2
-	}
-	return 0
-}
-
-// markdownHTMLBlockEnd recognizes raw HTML blocks that must not be rewritten.
-func markdownHTMLBlockEnd(line string) string {
-	lower := strings.ToLower(line)
-	if strings.HasPrefix(lower, "<!--") {
-		return "-->"
-	}
-	if !strings.HasPrefix(lower, "<") {
-		return ""
-	}
-	end := strings.IndexAny(lower, " \t>/")
-	if end < 2 {
-		return ""
-	}
-	tag := lower[1:end]
-	switch tag {
-	case "blockquote", "dd", "div", "dl", "dt", "fieldset", "form", "h1", "h2", "h3", "h4", "h5", "h6", "iframe", "li", "math", "noscript", "ol", "p", "pre", "script", "style", "table", "textarea", "ul", "address", "article", "aside", "canvas", "details", "dialog", "figcaption", "figure", "footer", "header", "hgroup", "main", "nav", "output", "progress", "section", "svg", "video":
-		return "</" + tag + ">"
-	}
-	return ""
-}
-
-// Use the HTML tokenizer to match nested tags without treating comments or
-// attribute values as markup. A malformed unclosed block is left to Markdown.
-func markdownHTMLBlockLength(text, end string) int {
-	tokenizer := html.NewTokenizer(strings.NewReader(text))
-	tag := strings.TrimSuffix(strings.TrimPrefix(end, "</"), ">")
-	depth, consumed := 0, 0
-	for {
-		kind := tokenizer.Next()
-		consumed += len(tokenizer.Raw())
-		switch kind {
-		case html.ErrorToken:
-			return 0
-		case html.CommentToken:
-			if end == "-->" {
-				return consumed
-			}
-		case html.StartTagToken, html.SelfClosingTagToken:
-			if tokenizer.Token().Data == tag {
-				if kind == html.SelfClosingTagToken && depth == 0 {
-					return consumed
-				}
-				if kind == html.StartTagToken {
-					depth++
-				}
-			}
-		case html.EndTagToken:
-			if tokenizer.Token().Data == tag && depth > 0 {
-				depth--
-				if depth == 0 {
-					return consumed
-				}
+	if strings.HasPrefix(strings.TrimSpace(header), "<") {
+		// The hook runs before HTML recognition. Let the library distinguish
+		// raw HTML from a table whose first cell contains inline markup.
+		probe := markdownNew()
+		probe.Opts.ParserHook = nil
+		probe.Block(data)
+		if children := probe.Doc.GetChildren(); len(children) > 0 {
+			if _, table := children[0].(*ast.Table); !table {
+				return 0
 			}
 		}
 	}
-}
-
-// The Markdown library parses block content inside div/details when blank
-// lines separate the opening and closing tags from their contents.
-func markdownHTMLAllowsBlocks(lines []string, index int, lowerText string, offset int, end string) bool {
-	if end != "</div>" && end != "</details>" || index+1 >= len(lines) || strings.TrimSpace(lines[index+1]) != "" {
-		return false
-	}
-	line := strings.TrimRight(lines[index], "\n")
-	openingEnd := strings.IndexByte(line, '>')
-	if openingEnd < 0 || strings.TrimSpace(line[openingEnd+1:]) != "" {
-		return false
-	}
-	closeOffset := strings.Index(lowerText[offset+len(lines[index]):], end)
-	if closeOffset < 0 {
-		return false
-	}
-	before := lowerText[:offset+len(lines[index])+closeOffset]
-	if !strings.HasSuffix(before, "\n") {
-		return false
-	}
-	before = before[:len(before)-1]
-	lastNewline := strings.LastIndexByte(before, '\n')
-	return strings.TrimSpace(before[lastNewline+1:]) == ""
+	p.Block([]byte(balanced))
+	return consumed
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell
@@ -410,22 +302,6 @@ func balanceTableColumns(tableLines []string) []string {
 	out[0] = pad(out[0], false)
 	out[1] = pad(out[1], true)
 	return out
-}
-
-func markdownFenceMarker(line string) (byte, int, bool) {
-	trimmed := strings.TrimLeft(line, " \t")
-	if len(line)-len(trimmed) > 3 || len(trimmed) < 3 {
-		return 0, 0, false
-	}
-	ch := trimmed[0]
-	if ch != '`' && ch != '~' {
-		return 0, 0, false
-	}
-	n := 0
-	for n < len(trimmed) && trimmed[n] == ch {
-		n++
-	}
-	return ch, n, n >= 3
 }
 
 func isMarkdownTableRow(line string) bool {
@@ -563,15 +439,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			layout = "heading"
 			docTypeKwd = "text"
 		case *ast.Paragraph:
-			hasTable := false
-			ast.WalkFunc(n, func(node ast.Node, entering bool) ast.WalkStatus {
-				if span, ok := node.(*ast.HTMLSpan); ok && entering && isTableHTML(string(span.Literal)) {
-					hasTable = true
-					return ast.Terminate
-				}
-				return ast.GoToNext
-			})
-			if hasTable {
+			if containsMarkdownTable(n) {
 				markup := markdownlib.Render(n, mdhtml.NewRenderer(mdhtml.RendererOptions{}))
 				doc, _ := html.Parse(bytes.NewReader(markup))
 				walkHTMLBlocksWithState(doc, out, htmlState)
@@ -580,21 +448,31 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			txt = leafText(n)
 			docTypeKwd = "text"
 		case *ast.List:
-			// Python's _markdown keeps one item per list entry, marker included
-			// ("- Eat a light diet before the exam?"), so a list never collapses into one blob.
-			// Emit the same shape: the reconstructed marker plus the entry's own text, one item
-			// each. The boundaries matter beyond alignment - the marker lives in the list node
-			// rather than in any leaf literal, and concatenating entries glued their words
-			// ("ChinaChina"), which destroys the word boundaries the tokenizer and the retrieval
-			// index depend on.
-			for _, entry := range listEntries(n) {
-				*out = append(*out, map[string]any{
-					"text":         entry,
-					"doc_type_kwd": "text",
-					"layout":       "list",
-				})
+			// Keep ordinary entries whole, and visit entries containing tables
+			// as blocks so their cells are not flattened into the list text.
+			for i, entry := range n.GetChildren() {
+				if containsMarkdownTable(entry) {
+					start := len(*out)
+					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, flatten, fetchRemoteImages, htmlState)
+					if len(*out) > start && (*out)[start]["doc_type_kwd"] == "text" {
+						(*out)[start]["text"] = markdownListMarker(n, i, entry) + stringValue((*out)[start]["text"])
+					}
+					continue
+				}
+				text := strings.TrimSpace(leafText(entry))
+				if text != "" {
+					*out = append(*out, map[string]any{"text": markdownListMarker(n, i, entry) + text, "doc_type_kwd": "text", "layout": "list"})
+				}
 			}
+
 			continue
+		case *ast.BlockQuote:
+			if containsMarkdownTable(n) {
+				unresolvedImages += walkMarkdownBlocksWithImages(ctx, n, out, flatten, fetchRemoteImages, htmlState)
+				continue
+			}
+			txt = leafText(n)
+			docTypeKwd = "text"
 		case *ast.CodeBlock:
 			txt = leafText(n)
 			layout = "code"
@@ -877,44 +755,49 @@ func leafText(n ast.Node) string {
 	return strings.TrimSpace(buf.String())
 }
 
-// listEntries renders a list's entries the way the source spells them: the marker first, then the
-// entry text, one string per entry (Python's _markdown shape, see the en golden). The marker has to
-// be reconstructed because the AST keeps it on the list node - BulletChar for bullet lists,
-// Start/Delimiter for ordered ones - rather than in any leaf literal.
-func listEntries(list *ast.List) []string {
-	entries := make([]string, 0, len(list.GetChildren()))
-	ordered := list.ListFlags&ast.ListTypeOrdered != 0
-	for i, item := range list.GetChildren() {
-		text := strings.TrimSpace(leafText(item))
-		if text == "" {
-			continue
+// markdownListMarker reconstructs the marker stored on the list and item nodes.
+func markdownListMarker(list *ast.List, index int, item ast.Node) string {
+	if list.ListFlags&ast.ListTypeOrdered != 0 {
+		start := list.Start
+		if start == 0 {
+			start = 1
 		}
-		var marker string
-		switch {
-		case ordered:
-			start := list.Start
-			if start == 0 {
-				start = 1
-			}
-			delim := list.Delimiter
-			if delim == 0 {
-				delim = '.'
-			}
-			marker = fmt.Sprintf("%d%c ", start+i, delim)
-		default:
-			// The markdown parser records the bullet on the ITEM (parser/block.go sets
-			// ListItem.BulletChar), not on the list, so read it there first.
-			bullet := list.BulletChar
-			if li, ok := item.(*ast.ListItem); ok && li.BulletChar != 0 {
-				bullet = li.BulletChar
-			}
-			if bullet != 0 {
-				marker = string(bullet) + " "
-			}
+		delimiter := list.Delimiter
+		if delimiter == 0 {
+			delimiter = '.'
 		}
-		entries = append(entries, marker+text)
+		return fmt.Sprintf("%d%c ", start+index, delimiter)
 	}
-	return entries
+	bullet := list.BulletChar
+	if entry, ok := item.(*ast.ListItem); ok && entry.BulletChar != 0 {
+		bullet = entry.BulletChar
+	}
+	if bullet != 0 {
+		return string(bullet) + " "
+	}
+	return ""
+}
+
+func containsMarkdownTable(node ast.Node) bool {
+	found := false
+	ast.WalkFunc(node, func(node ast.Node, entering bool) ast.WalkStatus {
+		if !entering {
+			return ast.GoToNext
+		}
+		switch n := node.(type) {
+		case *ast.Table:
+			found = true
+		case *ast.HTMLSpan:
+			found = isTableHTML(string(n.Literal))
+		case *ast.HTMLBlock:
+			found = isTableHTML(string(n.Literal)) || isTableHTML(string(n.Content))
+		}
+		if found {
+			return ast.Terminate
+		}
+		return ast.GoToNext
+	})
+	return found
 }
 
 // writeListItems emits a list's items separated by a newline. Without the separator the item texts

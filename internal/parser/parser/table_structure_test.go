@@ -63,6 +63,15 @@ func TestMarkdownParserPreservesInlineHTMLTable(t *testing.T) {
 	requireTableRows(t, res.JSON[1].ToMap(), [][]string{{"Owner", "RET"}})
 }
 
+func TestMarkdownParserPreservesWideTableWithInlineHeaderAndReference(t *testing.T) {
+	p, _ := NewMarkdownParser(GoMarkdown)
+	res := p.ParseWithResult(t.Context(), "table.md", []byte("<b>Field</b> | Value\n---|---\nOwner | [team][ref] | TAIL\n\n[ref]: https://example.org\n"))
+	if res.Err != nil || len(res.JSON) != 1 {
+		t.Fatalf("result=%+v", res)
+	}
+	requireTableRows(t, res.JSON[0].ToMap(), [][]string{{"Field", "Value", ""}, {"Owner", "team", "TAIL"}})
+}
+
 func TestMarkdownParserDoesNotTreatTablePrefixAsTable(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	source := "Before <tableau>value</tableau> after."
@@ -258,8 +267,8 @@ func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 
 func TestEPUBPreservesTablesInChapterOrder(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{
-		{name: "one.xhtml", content: epubTestHTML("<p>Before.</p><table><tr><td>Owner</td><td>RET</td></tr></table><p>After.</p>")},
-		{name: "two.xhtml", content: epubTestHTML("<p>Next chapter.</p>")},
+		{name: "one.xhtml", content: "<p>Before.</p><table><tr><td>Owner</td><td>RET</td></tr></table><p>After.</p>"},
+		{name: "two.xhtml", content: "<p>Next chapter.</p>"},
 	})
 	if res.Err != nil || len(res.JSON) != 4 {
 		t.Fatalf("result = %+v", res)
@@ -277,12 +286,12 @@ func TestEPUBPreservesTablesInChapterOrder(t *testing.T) {
 	}
 }
 
-func TestEPUBPreservesVerbatimText(t *testing.T) {
+func TestEPUBNormalizesChapterWhitespace(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{{name: "one.xhtml", content: epubTestHTML("<textarea>  first\n    second</textarea>")}})
 	if res.Err != nil || len(res.JSON) != 1 {
 		t.Fatalf("result=%+v", res)
 	}
-	if got := res.JSON[0].ToMap()["text"]; got != "  first\n    second" {
-		t.Fatalf("verbatim text=%q", got)
+	if got := res.JSON[0].ToMap()["text"]; got != "Test first second" {
+		t.Fatalf("chapter text=%q", got)
 	}
 }

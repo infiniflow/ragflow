@@ -125,7 +125,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 
 // BuildTableData assembles the canonical TableData from collected cell rows,
 // per-row header flags and a caption. It owns the header-row count (leading
-// consecutive run, defaulting to one when the table has rows) and the shared
+// consecutive run, defaulting to 1 when the table has any rows) and the shared
 // grid normalization (buildGrid). Both ParseTableHTML and the deepdoc direct
 // converter (ToTableData) route through it, so the two produce identical grids
 // by construction rather than by a runtime comparison.

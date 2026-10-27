@@ -230,7 +230,7 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 	}
 }
 
-// Metadata stays outside body text, and block boundaries separate words.
+// Chapter title text and block boundaries retain their text representation.
 func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: epubTestHTML(
@@ -240,7 +240,7 @@ func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := strings.Join(strings.Fields(epubTestText(res)), " "), "chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
+	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
 	}
 }
@@ -256,7 +256,24 @@ func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if text, want := epubTestText(res), "don’t\u00a0stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
+	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
 		t.Errorf("text = %q, want it to contain %q", text, want)
+	}
+}
+
+func TestEPUBParserPreservesChapterTextUnits(t *testing.T) {
+	paragraph := strings.Repeat("chapter prose ", 600)
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML("<p>" + paragraph + "</p><p>End one.</p>")},
+		{name: "two.xhtml", content: epubTestHTML("<p>Second &ldquo;chapter&rdquo;.</p><p>\u3000End&#x00A0;two.</p>")},
+	})
+	if res.Err != nil || len(res.JSON) != 2 {
+		t.Fatalf("expected one text item per chapter: items=%d err=%v", len(res.JSON), res.Err)
+	}
+	if got, want := res.JSON[0].ToMap()["text"], "Test "+paragraph+"End one."; got != want {
+		t.Fatal("first chapter text changed")
+	}
+	if got, want := res.JSON[1].ToMap()["text"], "Test Second \"chapter\". \u3000End two."; got != want {
+		t.Fatalf("second chapter text=%q, want %q", got, want)
 	}
 }

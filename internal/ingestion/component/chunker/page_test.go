@@ -18,9 +18,7 @@ package chunker
 
 import (
 	"context"
-	"encoding/json"
 	"ragflow/internal/ingestion/component/schema"
-	"strings"
 	"testing"
 )
 
@@ -121,54 +119,25 @@ func TestPageChunker_NilInput(t *testing.T) {
 	}
 }
 
-func TestPageChunkerKeepsSlideTextAndTablesTogether(t *testing.T) {
-	chunks := slideChunksOf(t, map[string]any{
-		"name": "deck.pptx", "file_type": "pptx", "output_format": "json",
-		"json": []map[string]any{
-			{"text": "Revenue 2026", "doc_type_kwd": "text", "slide_number": 1},
-			{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "table": map[string]any{"grid": []any{[]any{map[string]any{"text": "Q1"}, map[string]any{"text": "100"}}}, "header_rows": 0}},
-			{"text": "Revenue rose", "doc_type_kwd": "text", "slide_number": 1},
-			{"doc_type_kwd": "image", "slide_number": 1, "image": "image1", "parent_table_id": "table-1"},
-			{"text": "Next slide", "doc_type_kwd": "text", "slide_number": 2},
-		},
-	})
-	if len(chunks) != 3 {
-		t.Fatalf("chunks=%#v, want one text chunk per slide and an image", chunks)
-	}
-	text, _ := chunks[0]["text"].(string)
-	if !strings.Contains(text, "Revenue 2026\n<table>") || !strings.Contains(text, "<td>Q1</td><td>100</td>") || !strings.Contains(text, "Revenue rose") {
-		t.Errorf("slide text or table lost: %q", text)
-	}
-	if chunks[0]["doc_type_kwd"] != "text" || chunks[0]["source_table_id"] != "table-1" || chunks[1]["parent_table_id"] != "table-1" || chunks[1]["image"] != "image1" || chunks[2]["text"] != "Next slide" {
-		t.Fatalf("slide or image metadata lost: %#v", chunks)
-	}
-}
-
-func TestPageChunkerKeepsAllSlideTableImageAssociations(t *testing.T) {
-	table := map[string]any{"grid": []any{[]any{map[string]any{"text": "cell"}}}, "header_rows": 0}
+func TestPageChunkerPreservesSlideTableItems(t *testing.T) {
+	table := map[string]any{"grid": []any{[]any{map[string]any{"text": "cell"}}}, "header_rows": 1}
 	chunks := slideChunksOf(t, map[string]any{"name": "deck.pptx", "output_format": "json", "json": []map[string]any{
+		{"text": "Before", "doc_type_kwd": "text", "slide_number": 1},
 		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "table": table},
 		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-1", "image": "one"},
 		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-2", "table": table},
 		{"doc_type_kwd": "image", "slide_number": 1, "parent_table_id": "table-2", "image": "two"},
+		{"text": "After", "doc_type_kwd": "text", "slide_number": 1},
 	}})
-	if len(chunks) != 3 {
-		t.Fatalf("chunks=%#v, want page and two images", chunks)
+	if len(chunks) != 6 {
+		t.Fatalf("expected ordered text, tables and images: %#v", chunks)
 	}
-	ids, _ := json.Marshal(chunks[0]["source_table_ids"])
-	if string(ids) != `["table-1","table-2"]` || chunks[1]["parent_table_id"] != "table-1" || chunks[2]["parent_table_id"] != "table-2" {
-		t.Fatalf("table image associations lost: %#v", chunks)
+	if chunks[0]["text"] != "Before" || chunks[5]["text"] != "After" {
+		t.Fatalf("text order lost: %#v", chunks)
 	}
-}
-
-func TestPageChunkerPreservesSingleTableSlide(t *testing.T) {
-	chunks := slideChunksOf(t, map[string]any{"name": "deck.pptx", "output_format": "json", "json": []map[string]any{
-		{"doc_type_kwd": "table", "slide_number": 1, "source_table_id": "table-1", "tk_nums": 7, "table": map[string]any{"grid": []any{[]any{map[string]any{"text": "cell"}}}, "header_rows": 0}},
-	}})
-	if len(chunks) != 1 || chunks[0]["doc_type_kwd"] != "table" || chunks[0]["table"] == nil || chunks[0]["source_table_id"] != "table-1" {
-		t.Fatalf("single-table slide lost table structure or metadata: %#v", chunks)
-	}
-	if count, ok := schema.NumericFromAny(chunks[0]["tk_nums"]); !ok || count != 7 {
-		t.Fatalf("single-table slide lost token count: %#v", chunks)
+	for _, index := range []int{1, 3} {
+		if chunks[index]["doc_type_kwd"] != "table" || chunks[index]["table"] == nil || chunks[index+1]["parent_table_id"] != chunks[index]["source_table_id"] {
+			t.Fatalf("table structure or image association lost: %#v", chunks)
+		}
 	}
 }

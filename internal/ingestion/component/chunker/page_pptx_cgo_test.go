@@ -63,11 +63,11 @@ func TestPageChunkerPPTXTableEndToEnd(t *testing.T) {
 		t.Fatal(parsed.Err)
 	}
 	chunks := slideChunksOf(t, map[string]any{"name": "deck.pptx", "file_type": "pptx", "output_format": "json", "json": parsed.JSON})
-	if len(chunks) != 1 {
+	if len(chunks) != 3 {
 		t.Fatalf("items=%#v chunks=%#v", parser.ItemsToMaps(parsed.JSON), chunks)
 	}
-	text, _ := chunks[0]["text"].(string)
-	if !strings.Contains(text, "Revenue 2026") || !strings.Contains(text, "<th>Q1</th><th>100</th>") || !strings.Contains(text, "Revenue rose") {
+	text, _ := chunks[1]["text"].(string)
+	if chunks[0]["text"] != "Revenue 2026" || chunks[1]["doc_type_kwd"] != "table" || chunks[1]["table"] == nil || !strings.Contains(text, "<th>Q1</th><th>100</th>") || chunks[2]["text"] != "Revenue rose" {
 		t.Fatalf("PPTX slide contents lost: items=%#v chunks=%#v", parser.ItemsToMaps(parsed.JSON), chunks)
 	}
 }

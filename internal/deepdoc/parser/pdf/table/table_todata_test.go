@@ -36,7 +36,7 @@ func TestToTableData_Simple2x2(t *testing.T) {
 		t.Errorf("cell text mismatch: %q/%q", td.Grid[0][0].Text, td.Grid[1][1].Text)
 	}
 	if td.HeaderRows != 1 {
-		t.Errorf("HeaderRows=%d want 1 without detected headers", td.HeaderRows)
+		t.Errorf("HeaderRows=%d want 1 (default)", td.HeaderRows)
 	}
 	for _, row := range td.Grid {
 		for _, c := range row {

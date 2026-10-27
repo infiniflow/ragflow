@@ -170,7 +170,7 @@ func (c *GeneralChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, input
 	case generalStrategySpreadsheet:
 		return c.chunkSpreadsheet(ctx, upstream)
 	default:
-		return c.chunkGeneral(ctx, upstream, fileType)
+		return c.chunkGeneral(ctx, upstream)
 	}
 }
 
@@ -1141,7 +1141,7 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, do
 	return out
 }
 
-func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream schema.ChunkerFromUpstream, fileType string) (map[string]any, error) {
+func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -1155,9 +1155,6 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
-	if fileType == "epub" && !customDelimiter {
-		units = separateGeneralTextBlocks(units)
-	}
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	if !customDelimiter {

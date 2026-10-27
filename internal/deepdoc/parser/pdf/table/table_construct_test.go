@@ -60,9 +60,11 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 	if len(td.Grid) != 2 {
 		t.Fatalf("rows=%d want 2", len(td.Grid))
 	}
-	// Without detected headers, the first row is the default header.
+	// No cell carries a header block type, so the canonical render/parse round
+	// trip must still default HeaderRows to 1 (leading row assumed header) —
+	// the same default the removed RowsToHTML path produced.
 	if td.HeaderRows != 1 {
-		t.Errorf("HeaderRows=%d want 1 without detected headers", td.HeaderRows)
+		t.Errorf("HeaderRows=%d want 1 (default when no header detected)", td.HeaderRows)
 	}
 	for _, w := range []struct {
 		r, c int

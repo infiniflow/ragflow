@@ -36,6 +36,7 @@ import (
 	"io"
 	"net/url"
 	"path"
+	"regexp"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -188,6 +189,8 @@ func readOPFSpine(r *zip.Reader, opfPath string) ([]string, error) {
 
 // --- text extraction ---
 
+var epubSpaceEntity = regexp.MustCompile(`&(?:nbsp|#0*160|#[xX]0*[aA]0);`)
+
 // extractEPUBTextItems reads chapters in spine order and preserves their blocks.
 // An item that cannot be read is skipped; when items were
 // skipped and no other item could be read, it returns an error instead of an
@@ -213,17 +216,51 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
 			detectedEncoding = enc
 		}
-		doc, err := html.Parse(bytes.NewReader(decoded))
+		// Retain chapter text normalization for named quotes and spaces.
+		source := epubSpaceEntity.ReplaceAllString(string(decoded), " ")
+		source = strings.NewReplacer("&lsquo;", "'", "&rsquo;", "'", "&ldquo;", "\"", "&rdquo;", "\"").Replace(source)
+		doc, err := html.Parse(strings.NewReader(source))
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", href, err))
 			continue
 		}
-		walkHTMLBlocksWithState(doc, &items, state)
+		items = appendEPUBChapter(items, doc, state)
 	}
 	if len(failures) > 0 && read == 0 {
 		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
 	}
 	return items, detectedEncoding, state.warnings(), nil
+}
+
+// appendEPUBChapter keeps continuous chapter prose together, splitting only
+// at tables and images. The shared leaf walker preserves their source order.
+func appendEPUBChapter(items []map[string]any, doc *html.Node, state *htmlWalkState) []map[string]any {
+	var chapter []map[string]any
+	for root := doc.FirstChild; root != nil; root = root.NextSibling {
+		if root.Type != html.ElementNode {
+			continue
+		}
+		for part := root.FirstChild; part != nil; part = part.NextSibling {
+			htmlLeafTextWithState(part, &chapter, "text", true, state)
+		}
+	}
+	start := len(items)
+	for _, item := range chapter {
+		if item["doc_type_kwd"] != "text" {
+			items = append(items, item)
+			continue
+		}
+		text := strings.Join(strings.FieldsFunc(stringValue(item["text"]), isCollapsibleWS), " ")
+		if text == "" {
+			continue
+		}
+		if len(items) > start && items[len(items)-1]["doc_type_kwd"] == "text" {
+			items[len(items)-1]["text"] = stringValue(items[len(items)-1]["text"]) + " " + text
+		} else {
+			items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
+		}
+	}
+	return items
 }
 
 // readEPUBContentFile resolves a spine href (relative to the OPF

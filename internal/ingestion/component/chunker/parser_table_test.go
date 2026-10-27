@@ -109,7 +109,7 @@ func TestGeneralChunkerPreservesEPUBParagraphBoundaries(t *testing.T) {
 	}
 	before, _ := chunks[0]["text"].(string)
 	after, _ := chunks[2]["text"].(string)
-	if !strings.Contains(before, "Alpha\nBeta") || chunks[1]["doc_type_kwd"] != "table" || !strings.Contains(after, "Gamma\nDelta") {
+	if before != "Alpha Beta" || chunks[1]["doc_type_kwd"] != "table" || after != "Gamma Delta" {
 		t.Fatalf("paragraph or table boundaries lost: %#v", chunks)
 	}
 }
