@@ -176,7 +176,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// GET /api/v1/agents?type=filter and expects
 	// {filter: {owner, canvas_category}, total} instead of a canvas list.
 	if c.Query("type") == "filter" {
-		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID)
+		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID, strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return

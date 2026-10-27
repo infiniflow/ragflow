@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -73,6 +74,82 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	}
 	if engine.highlightCalls != 0 {
 		t.Fatalf("GetHighlight calls = %d with highlighting disabled, want 0", engine.highlightCalls)
+	}
+}
+
+func TestRetrievalRejectsPaginationWithRerankModel(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   2,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Pagination is not supported") {
+		t.Fatalf("error = %v, want pagination rejection when a rerank model is set", err)
+	}
+}
+
+func TestRetrievalRerankCandidatesGuardPrecedesPaginationGuard(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   7,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "rerank_candidates_count") {
+		t.Fatalf("error = %v, want the candidates-window guard to reject before the pagination guard", err)
+	}
+}
+
+func TestRetrievalFirstPageWithRerankModelCallsReranker(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	driver := &captureDriver{}
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.0
+	vectorWeight := 0.3
+	aggs := false
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		RerankModel:            modelModule.NewRerankModel(driver, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed on page 1 with a rerank model: %v", err)
+	}
+	if len(driver.documents) != 1 {
+		t.Fatalf("reranker received %d documents, want 1", len(driver.documents))
 	}
 }
 

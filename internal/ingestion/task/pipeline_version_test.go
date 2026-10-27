@@ -160,7 +160,7 @@ func TestLoadDSLFromCanvas_PinnedMissingVersionFails(t *testing.T) {
 			if !errors.Is(err, ErrPipelineVersionMissing) {
 				t.Fatalf("err = %v, want ErrPipelineVersionMissing", err)
 			}
-			if !strings.Contains(err.Error(), "pipeline 版本不存在，请重新选择版本") {
+			if !strings.Contains(err.Error(), "pipeline version does not exist. Please select a version again") {
 				t.Fatalf("err message missing user hint: %v", err)
 			}
 		})

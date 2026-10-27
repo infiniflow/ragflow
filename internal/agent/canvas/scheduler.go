@@ -742,7 +742,15 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// (a downstream that's also a sub-graph member doesn't count — that
 	// node is part of the loop's body, not the outer graph's edge).
 	terminals := make([]string, 0, len(c.Components))
+	roots := make(map[string]bool)
+	entries := make(map[string]bool)
 	for cpnID, comp := range c.Components {
+		if !macroMembers[cpnID] && len(comp.Upstream) == 0 && !first[cpnID] {
+			roots[cpnID] = true
+			if strings.EqualFold(comp.Obj.ComponentName, "Begin") || strings.EqualFold(comp.Obj.ComponentName, "File") {
+				entries[cpnID] = true
+			}
+		}
 		if node, isMacro := macroNodes[cpnID]; isMacro {
 			// Macro parents with no upstream are START nodes. Parents
 			// with upstream had their AddInput wired in Pass 2 already.
@@ -771,6 +779,14 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		if len(comp.Downstream) == 0 {
 			terminals = append(terminals, cpnID)
 		}
+	}
+
+	if len(entries) > 0 && len(entries) < len(roots) {
+		// Branch pruning skips disconnected roots and their terminal dependencies.
+		wf.AddBranch(compose.START, compose.NewGraphMultiBranch(
+			func(context.Context, map[string]any) (map[string]bool, error) {
+				return entries, nil
+			}, roots))
 	}
 
 	if err := wireWorkflowTerminals(wf, terminals, "", true); err != nil {
@@ -888,6 +904,12 @@ func hasStructuredOutput(params map[string]any) bool {
 
 func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
 	deferToMessage := directMessageDownstream(c, cpnID)
+	if c != nil {
+		// Exception routing needs the producer's actual result before choosing a path.
+		if method, _ := c.Components[cpnID].Obj.Params["exception_method"].(string); method != "" {
+			deferToMessage = false
+		}
+	}
 	isAgent := strings.EqualFold(name, "Agent")
 	isLLM := strings.EqualFold(name, "LLM") || strings.EqualFold(name, "Generate")
 	deferLLM := false

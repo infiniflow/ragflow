@@ -15,7 +15,6 @@
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
-import React from 'react';
 
 jest.mock('react-i18next', () => {
   const actual = jest.requireActual('react-i18next');
@@ -68,7 +67,8 @@ jest.mock('@/hooks/use-agent-request', () => ({
     loading: false,
     isError: false,
   }),
-  useSetAgent: () => ({ setAgent: jest.fn(), loading: false }),
+  useSaveAgent: () => ({ saveAgent: jest.fn(), loading: false }),
+  useApplyVersion: () => ({ applyVersion: jest.fn(), loading: false }),
   useUpdateVersion: () => ({
     updateVersion: mockUpdateVersion,
     loading: false,

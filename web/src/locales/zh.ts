@@ -2488,7 +2488,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         restore: '恢复为当前版本',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
-          '当前智能体 DSL 将被此版本替换。再次发布会将其保存为新版本。',
+          '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
         missingContent:
           '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
@@ -2983,6 +2983,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      jsonUploadCategoryMismatch:
+        'JSON 文件类型与当前分类不符，请切换到对应分类后再导入',
       nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
@@ -3115,12 +3117,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
-      duplicate: '复制',
       copyOfAgentName: '{{name}} (副本)',
-      chooseAgentType: '选择智能体类型',
       createPipeline: '数据管道',
       createIngestionPipeline: '创建数据管道',
       createWorkflow: '创建工作流',
+      createCompilationOperator: '创建编译算子',
       tabList: {
         ingestionPipeline: '数据管道',
         compilationOperator: '编译算子',

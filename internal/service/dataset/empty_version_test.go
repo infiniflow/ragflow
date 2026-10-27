@@ -114,7 +114,7 @@ func TestUpdateDataset_ExplicitEmptyVersionRejected(t *testing.T) {
 
 	parseType := 2
 	empty := ""
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-empty-upd", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-empty-upd", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		ParseType:         &parseType,
 		PipelineVersionID: &empty,
@@ -145,7 +145,7 @@ func TestUpdateDataset_PipelineChangeWithoutVersionRejected(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-switch", "tenant-1", "Original") // builtin, no pipeline bound
 
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-switch", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-switch", "tenant-1", service.UpdateDatasetRequest{
 		PipelineID: &canvas1,
 		ParseType:  &parseType,
 	})
@@ -170,7 +170,7 @@ func TestUpdateDataset_PreservePinnedVersionOnPartialUpdate(t *testing.T) {
 	seedBoundKB(t, db, "kb-preserve", canvas1, ver1)
 
 	name := "renamed-partial"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
 		Name: &name,
 	})
 	if err != nil || code != common.CodeSuccess {

@@ -59,7 +59,7 @@ func TestUpdateAgent_AutosaveUpdatesDraftOnly(t *testing.T) {
 	canvasID := "canvas-autosave"
 	seedSaveCanvas(t, db, userID, canvasID)
 	svc := NewAgentService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, userID, userID)
 
 	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
 		t.Fatalf("manual save: %v", err)
@@ -102,7 +102,7 @@ func TestUpdateAgent_ManualSaveInsertsNewVersion(t *testing.T) {
 	canvasID := "canvas-manual"
 	seedSaveCanvas(t, db, userID, canvasID)
 	svc := NewAgentService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, userID, userID)
 
 	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
 		t.Fatalf("first save: %v", err)
@@ -128,7 +128,7 @@ func TestUpdateAgent_ManualSaveCarriesAlias(t *testing.T) {
 	canvasID := "canvas-alias-carry"
 	seedSaveCanvas(t, db, userID, canvasID)
 	svc := NewAgentService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, userID, userID)
 
 	alias := "carried-alias"
 	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL(), "alias": alias}); err != nil {
