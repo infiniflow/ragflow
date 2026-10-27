@@ -179,6 +179,9 @@ func (c *SkillInstallCommand) Execute(args []string) error {
 	if parsedArgs.SkillName != "" {
 		bundle.Name = parsedArgs.SkillName
 	}
+	if !isValidSkillName(bundle.Name) {
+		return fmt.Errorf("invalid skill name %q", bundle.Name)
+	}
 
 	// 3. Check if skill already exists
 	exists, err := c.skillExists(ctx, parsedArgs.SpaceID, bundle.Name)
@@ -264,33 +267,49 @@ func (c *SkillInstallCommand) uninstallSkill(ctx stdctx.Context, spaceID, skillN
 	return nil
 }
 
-// installSkill installs a skill bundle using existing SkillUploader
+// installSkill installs a skill bundle using existing SkillUploader.
 func (c *SkillInstallCommand) installSkill(ctx stdctx.Context, spaceID string, bundle *source.SkillBundle, force bool) error {
-	// Create a temporary directory to hold the skill files
+	if bundle == nil {
+		return fmt.Errorf("skill bundle is required")
+	}
+	if !isValidSkillName(bundle.Name) {
+		return fmt.Errorf("invalid skill name %q", bundle.Name)
+	}
+
+	// Create a temporary directory to hold the skill files.
 	tempDir, err := os.MkdirTemp("", "skill-install-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory: %w", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Write files to temp directory
 	skillDir := filepath.Join(tempDir, bundle.Name)
+	type stagedFile struct {
+		path    string
+		content []byte
+	}
+	stagedFiles := make([]stagedFile, 0, len(bundle.Files))
+	for relPath, content := range bundle.Files {
+		filePath, err := resolveSkillFilePath(skillDir, relPath)
+		if err != nil {
+			return err
+		}
+		stagedFiles = append(stagedFiles, stagedFile{path: filePath, content: content})
+	}
+
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return fmt.Errorf("failed to create skill directory: %w", err)
 	}
-
-	for relPath, content := range bundle.Files {
-		filePath := filepath.Join(skillDir, relPath)
-		dir := filepath.Dir(filePath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	for _, file := range stagedFiles {
+		if err := os.MkdirAll(filepath.Dir(file.path), 0755); err != nil {
+			return fmt.Errorf("failed to create directory for skill file: %w", err)
 		}
-		if err := os.WriteFile(filePath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write file %s: %w", relPath, err)
+		if err := os.WriteFile(file.path, file.content, 0644); err != nil {
+			return fmt.Errorf("failed to write skill file: %w", err)
 		}
 	}
 
-	// Use existing SkillUploader to upload the skill
+	// Use existing SkillUploader to upload the skill.
 	uploader := NewSkillUploader(c.client, c.fileProvider)
 	uploader.SetSkillProvider(c.skillProvider)
 	uploader.SetForce(force)
@@ -301,6 +320,26 @@ func (c *SkillInstallCommand) installSkill(ctx stdctx.Context, spaceID string, b
 	}
 
 	return uploader.UploadSkill(ctx, skillDir, version, fmt.Sprintf("skills/%s", spaceID), bundle.Name)
+}
+
+func resolveSkillFilePath(root, relPath string) (string, error) {
+	if relPath == "" || strings.ContainsRune(relPath, '\\') {
+		return "", fmt.Errorf("invalid skill file path %q", relPath)
+	}
+	localPath := filepath.Clean(filepath.FromSlash(relPath))
+	if localPath == "." || !filepath.IsLocal(localPath) {
+		return "", fmt.Errorf("invalid skill file path %q", relPath)
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve skill directory: %w", err)
+	}
+	filePath := filepath.Join(root, localPath)
+	relativePath, err := filepath.Rel(root, filePath)
+	if err != nil || !filepath.IsLocal(relativePath) {
+		return "", fmt.Errorf("skill file path %q escapes the skill directory", relPath)
+	}
+	return filePath, nil
 }
 
 // skillExists checks if a skill already exists
