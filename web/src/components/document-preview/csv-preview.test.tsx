@@ -102,12 +102,6 @@ describe('CSVFileViewer', () => {
     expect(screen.getAllByText('r1a').length).toBeGreaterThan(0);
   });
 
-  it('keeps the table intact when only the highlight is invalid', async () => {
-    await renderViewer('h1,h2\nr1a,r1b\nr2a,r2b\n', [[2, 1, 1, 1, 1]]);
-    expect(highlightedCells()).toEqual([]);
-    expect(screen.getAllByText('r2b').length).toBeGreaterThan(0);
-  });
-
   it('locates a row far past the first rendered window', async () => {
     // 150k rows: the old Math.max(...lengths) threw a RangeError here, and the
     // virtualized window means the target row is not in the initial render.
@@ -131,9 +125,11 @@ describe('CSVFileViewer', () => {
     expect(highlighted[0].textContent).toBe('b149998');
   });
 
-  it('does not scroll when the position set is rejected', async () => {
-    await renderViewer('h1,h2\nr1a,r1b\nr2a,r2b\n', [[1, 9, 9, 1, 1]]);
+  it('renders the table in place and does not scroll when positions are rejected', async () => {
+    await renderViewer('h1,h2\nr1a,r1b\nr2a,r2b\n', [[2, 1, 1, 1, 1]]);
     const container = document.querySelector('.overflow-auto') as HTMLElement;
     expect(container.scrollTop).toBe(0);
+    expect(highlightedCells()).toEqual([]);
+    expect(screen.getAllByText('r2b').length).toBeGreaterThan(0);
   });
 });

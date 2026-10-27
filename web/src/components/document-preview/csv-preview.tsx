@@ -164,30 +164,25 @@ const CSVFileViewer: React.FC<FileViewerProps> = ({
     setScrollTop(e.currentTarget.scrollTop);
   }, []);
 
-  // Bring the chunk's first row into view once the table is rendered.
+  // Bring the chunk's first row into view once the table is rendered, but only
+  // when the coordinates change: callers build `positions` inline on every
+  // render, and re-locating on an unchanged target would drag the user back to
+  // the chunk's first row after they scrolled away.
   //
-  // Callers build `positions` inline on every render, so the array identity
-  // changes even when the coordinates do not. Locating only when the
-  // coordinates actually change keeps a parent re-render from dragging the
-  // user back to the chunk's first row after they scrolled away.
-  //
-  // scrollTop is read back from the element rather than from the assignment:
-  // the browser clamps it to the scrollable range, and the virtual window must
-  // follow the position that actually took effect. It is copied into state
-  // here as well as through onScroll because assigning scrollTop from script
-  // does not always dispatch a scroll event.
+  // scrollTop is read back from the element rather than from the assignment
+  // because the browser clamps it to the scrollable range, and the virtual
+  // window must follow the position that actually took effect. It is copied
+  // into state here as well as through onScroll: assigning scrollTop from
+  // script does not always dispatch a scroll event.
   const locateKey = JSON.stringify(positions ?? []);
-  const locatedRef = useRef<{ data: CSVData; key: string } | null>(null);
+  const locatedKeyRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     const el = containerRef.current;
-    if (!el || !data) return;
-    const located = locatedRef.current;
-    if (located?.data === data && located.key === locateKey) return;
-    locatedRef.current = { data, key: locateKey };
-    if (!highlight) return;
+    if (!el || !highlight || locatedKeyRef.current === locateKey) return;
+    locatedKeyRef.current = locateKey;
     el.scrollTop = highlight.targetRowIndex * rowHeight;
     setScrollTop(el.scrollTop);
-  }, [data, highlight, locateKey, rowHeight]);
+  }, [highlight, locateKey, rowHeight]);
 
   // Calculate visible row range with overscan
   const { startIdx, endIdx } = useMemo(() => {
