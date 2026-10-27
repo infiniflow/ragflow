@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/engine"
@@ -1168,6 +1169,11 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) {
+			common.ResponseWithCodeData(c, codedErr.Code, nil, codedErr.Message)
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -1227,6 +1233,11 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) {
+			common.ResponseWithCodeData(c, codedErr.Code, nil, codedErr.Message)
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -1235,6 +1246,11 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	if req.RetrievalMode != "" {
+		if err := req.RetrievalMode.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
 		return err
 	}
@@ -1247,6 +1263,11 @@ func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	if req.RetrievalMode != "" {
+		if err := req.RetrievalMode.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
 		return err
 	}

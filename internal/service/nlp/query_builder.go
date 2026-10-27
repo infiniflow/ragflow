@@ -432,7 +432,7 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64, langu
 	}
 
 	for _, segment := range segments {
-		if segment == "" {
+		if strings.TrimSpace(reSpecialChar.ReplaceAllString(segment, "")) == "" {
 			continue
 		}
 		keywords = append(keywords, segment)
