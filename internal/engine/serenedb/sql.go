@@ -52,7 +52,7 @@ func scanRunSQLTokens(sqlText string) ([]runSQLToken, error) {
 		}
 		if c == '-' && i+1 < len(sqlText) && sqlText[i+1] == '-' {
 			i += 2
-			for i < len(sqlText) && sqlText[i] != '\n' {
+			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
 				i++
 			}
 			continue
@@ -79,9 +79,22 @@ func scanRunSQLTokens(sqlText string) ([]runSQLToken, error) {
 		}
 		if c == '\'' || c == '"' {
 			quote, start := c, i
+			backslashEscapes := quote == '\'' && i > 0 && (sqlText[i-1] == 'e' || sqlText[i-1] == 'E') &&
+				(i == 1 || !isRunSQLWordByte(sqlText[i-2]))
 			i++
 			closed := false
 			for i < len(sqlText) {
+				if sqlText[i] == '\\' && i+1 < len(sqlText) {
+					if backslashEscapes {
+						i += 2
+						continue
+					}
+					// Plain-string escaping depends on standard_conforming_strings; reject
+					// ambiguous quote escapes rather than guessing the server setting.
+					if quote == '\'' && sqlText[i+1] == '\'' {
+						return nil, fmt.Errorf("ambiguous backslash escape in SQL string at byte %d", i)
+					}
+				}
 				if sqlText[i] != quote {
 					i++
 					continue

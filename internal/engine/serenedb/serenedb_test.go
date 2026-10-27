@@ -405,6 +405,15 @@ func TestBoundRunSQL(t *testing.T) {
 	if _, err := boundRunSQL("SELECT 1; DROP TABLE t", 1024); err == nil {
 		t.Error("multiple statements should be rejected")
 	}
+	if _, err := boundRunSQL("SELECT 1 --\r; DROP TABLE t", 1024); err == nil {
+		t.Error("CR-terminated comment must not hide a second statement")
+	}
+	if _, err := boundRunSQL(`SELECT E'\'' ; DROP TABLE t; --'`, 1024); err == nil {
+		t.Error("backslash escape in E string must not hide a second statement")
+	}
+	if _, err := boundRunSQL("SELECT 'x\\'; DROP TABLE t; --'", 1024); err == nil {
+		t.Error("ambiguous backslash escape in a plain string must be rejected")
+	}
 	if got, err := boundRunSQL("SELECT 'UPDATE; DROP'; -- ignored trailing comment", 1024); err != nil || got != "SELECT 'UPDATE; DROP'\nLIMIT 1024" {
 		t.Errorf("quoted commands should not be interpreted as SQL: %q, error = %v", got, err)
 	}
