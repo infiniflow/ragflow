@@ -262,6 +262,11 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 			EntryOp:   permission.OperationUse,
 		})
 		if scopeErr != nil {
+			if errors.Is(scopeErr, permission.ErrPermissionDenied) ||
+				errors.Is(scopeErr, permission.ErrMembershipNotFound) ||
+				errors.Is(scopeErr, permission.ErrResourceNotFound) {
+				continue
+			}
 			code, permissionErr := permissionresponse.Normalize(scopeErr)
 			return nil, code, permissionErr
 		}

@@ -410,6 +410,8 @@ func (p *Parser) parseAdminShowCommands() (*Command, error) {
 		return p.parseAdminShowQuota()
 	case TokenTasks:
 		return p.parseAdminShowTasks()
+	case TokenIngestion:
+		return p.parseAdminShowIngestionLog()
 	case TokenLog:
 		return p.parseAdminShowLogCommands()
 	case TokenHardware:

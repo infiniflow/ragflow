@@ -505,7 +505,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
       action: '操作',
@@ -705,9 +705,11 @@ export default {
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方式',
+      parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      parserSettingsChangeWarning:
+        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -728,8 +730,6 @@ export default {
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
         '建议的生成文本块的 Token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
       chinese: '中文',
@@ -1218,8 +1218,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '语言',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
@@ -2039,6 +2037,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       modelFeatures: '模型特性',
       modelNameRequired: '请输入模型名称',
@@ -2475,6 +2474,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         download: '下载',
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
+        label: '流水线版本',
+        latest: '最新版本',
+        filterByAlias: '按别名筛选',
+        alias: '别名',
+        pinnedTooltip: '该数据集已固定到特定版本。画布新发布的版本不会影响它。',
+        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        delete: '删除版本',
+        deleteConfirmTitle: '删除该版本？',
+        deleteConfirmContent:
+          '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        restore: '恢复为当前版本',
+        restoreConfirmTitle: '恢复此版本为当前画布？',
+        restoreConfirmContent:
+          '当前画布 DSL 将被此版本替换。再次发布会将其保存为新版本。',
+        missingContent:
+          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -2510,7 +2525,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
-      categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
+      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
@@ -2616,7 +2631,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       news: '新闻',
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
-        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
+        '控制所选模型可以参考的近期对话历史范围。窗口越大，使用的 Token 越多，也可能引入无关上下文。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
@@ -3003,7 +3018,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       userPrompt: '用户提示词',
       tagFile: '标签文件',
       tagFileTip:
-        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签文件支持 XLSX、XLS、CSV、TXT 格式，每行包含文本和标签两列，多个标签用英文逗号分隔，无需表头。标签提取可能产生额外的 Token 消耗。提取失败时，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3304,6 +3319,20 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
+        endpoint: '接口地址',
+        testEndpoint: '测试接口地址',
+        personalUrl: '个人 Webhook URL',
+        credentialDescription:
+          '持有此链接即可按你的权限运行 Agent，请妥善保管；重新生成会使旧链接失效。',
+        createCredential: '生成或轮换 URL',
+        revokeCredential: '撤销我的 URL',
+        credentialCreated:
+          'Webhook URL 已生成，请立即复制保存；离开页面后将无法再次查看。',
+        credentialRevoked: 'Webhook URL 已撤销。',
+        credentialRequestFailed: '更新 Webhook URL 失败。',
+        revokeCredentialTitle: '撤销 Webhook URL？',
+        revokeCredentialDescription:
+          '使用此 URL 的请求将立即失效。你可以随时重新生成 URL。',
         methods: '方法',
         contentTypes: '内容类型',
         security: '安全配置',

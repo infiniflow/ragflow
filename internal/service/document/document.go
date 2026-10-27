@@ -80,28 +80,30 @@ type UpdateDocumentRequest struct {
 
 // DocumentResponse document response
 type DocumentResponse struct {
-	ID                   string                      `json:"id"`
-	Name                 *string                     `json:"name,omitempty"`
-	KbID                 string                      `json:"kb_id"`
-	ParserID             string                      `json:"parser_id"`
-	PipelineID           *string                     `json:"pipeline_id,omitempty"`
-	Type                 string                      `json:"type"`
-	SourceType           string                      `json:"source_type"`
-	CreatedBy            string                      `json:"created_by"`
-	Location             *string                     `json:"location,omitempty"`
-	Size                 int64                       `json:"size"`
-	TokenNum             int64                       `json:"token_num"`
-	ChunkNum             int64                       `json:"chunk_num"`
-	Progress             float64                     `json:"progress"`
-	ProgressMsg          *string                     `json:"progress_msg,omitempty"`
-	LatestIngestionEvent *service.IngestionEventItem `json:"latest_ingestion_event,omitempty"`
-	ProcessBeginAt       *time.Time                  `json:"process_begin_at,omitempty"`
-	ProcessDuration      float64                     `json:"process_duration"`
-	Suffix               string                      `json:"suffix"`
-	IngestionStatus      string                      `json:"ingestion_status"`
-	Status               *string                     `json:"status,omitempty"`
-	CreatedAt            string                      `json:"created_at"`
-	UpdatedAt            string                      `json:"updated_at"`
+	ID                      string                      `json:"id"`
+	Name                    *string                     `json:"name,omitempty"`
+	KbID                    string                      `json:"kb_id"`
+	ParserID                string                      `json:"parser_id"`
+	PipelineID              *string                     `json:"pipeline_id,omitempty"`
+	PipelineVersionID       *string                     `json:"pipeline_version_id,omitempty"`
+	PipelineVersionOutdated bool                        `json:"pipeline_version_outdated"`
+	Type                    string                      `json:"type"`
+	SourceType              string                      `json:"source_type"`
+	CreatedBy               string                      `json:"created_by"`
+	Location                *string                     `json:"location,omitempty"`
+	Size                    int64                       `json:"size"`
+	TokenNum                int64                       `json:"token_num"`
+	ChunkNum                int64                       `json:"chunk_num"`
+	Progress                float64                     `json:"progress"`
+	ProgressMsg             *string                     `json:"progress_msg,omitempty"`
+	LatestIngestionEvent    *service.IngestionEventItem `json:"latest_ingestion_event,omitempty"`
+	ProcessBeginAt          *time.Time                  `json:"process_begin_at,omitempty"`
+	ProcessDuration         float64                     `json:"process_duration"`
+	Suffix                  string                      `json:"suffix"`
+	IngestionStatus         string                      `json:"ingestion_status"`
+	Status                  *string                     `json:"status,omitempty"`
+	CreatedAt               string                      `json:"created_at"`
+	UpdatedAt               string                      `json:"updated_at"`
 }
 
 type ThumbnailResponse struct {
@@ -131,6 +133,9 @@ type UpdateDatasetDocumentRequest struct {
 	Progress     *float64       `json:"progress"`
 	ParserConfig map[string]any `json:"parser_config"`
 	MetaFields   map[string]any `json:"meta_fields"`
+	// PipelineVersionID pins the document to a specific dataflow canvas version
+	// (design section 5/C2). Empty/omitted means the latest version is used.
+	PipelineVersionID *string `json:"pipeline_version_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
@@ -142,6 +147,7 @@ type UpdateDatasetDocumentResponse struct {
 	DatasetID            string                      `json:"dataset_id"`
 	ParserID             string                      `json:"parser_id"`
 	PipelineID           *string                     `json:"pipeline_id,omitempty"`
+	PipelineVersionID    *string                     `json:"pipeline_version_id,omitempty"`
 	ParserConfig         map[string]interface{}      `json:"parser_config"`
 	SourceType           string                      `json:"source_type"`
 	Type                 string                      `json:"type"`
@@ -226,8 +232,15 @@ type IngestDocumentRequest struct {
 
 // StartParseOptions controls StartParseDocuments behavior.
 type StartParseOptions struct {
-	// ApplyKB merges the knowledge base's parser_config (llm_id, metadata)
-	// into the document before parsing.
+	// ApplyKB scopes the dataset's parser_config (llm_id and the modular
+	// metadata object: enabled, metadata, built_in_metadata) onto the document's
+	// existing Extractor nodes before parsing. The dataset llm_id only fills
+	// Extractor/Compiler nodes whose llm_id is empty; explicit per-node values
+	// are preserved and no top-level llm_id is written. When the dataset sets
+	// modular metadata it replaces each Extractor node's metadata; when it
+	// sets none, each node's metadata is reset to the disabled default
+	// ({enabled:false, metadata:[], built_in_metadata:[]}) with no top-level
+	// metadata key left behind.
 	ApplyKB bool
 	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool

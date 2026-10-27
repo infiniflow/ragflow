@@ -39,6 +39,12 @@ jest.mock('@/hooks/use-agent-request', () => ({
     dsl: isBuiltin ? mockBuiltinDsl : mockCustomDsl,
     loading: false,
   }),
+  // The version selector in DocumentPipelineDialog lists canvas versions;
+  // these tests do not exercise version pinning, so an empty list suffices.
+  useFetchCanvasVersionList: (_id?: string) => ({
+    data: [],
+    loading: false,
+  }),
 }));
 jest.mock('@/hooks/use-document-request', () => ({
   useRunDocument: () => ({ runDocumentByIds: mockRun, loading: false }),

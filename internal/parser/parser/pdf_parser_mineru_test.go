@@ -89,8 +89,8 @@ func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 	if !submitCalled.Load() || !resultCalled.Load() {
 		t.Fatalf("submit/result called = %v/%v, want true/true", submitCalled.Load(), resultCalled.Load())
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	var text strings.Builder
 	for _, item := range ItemsToMaps(res.JSON) {

@@ -363,7 +363,7 @@ func (p *PDFParser) validateParseMethod() error {
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
-	if result.Err == nil && result.OutputFormat == "json" {
+	if result.Err == nil {
 		return p.NormalizeResult(ctx, filename, result)
 	}
 	return result
@@ -418,7 +418,6 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 
 func emptyPDFResult(filename string) ParseResult {
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": 0,
@@ -584,7 +583,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": len(processed.PageHeight),

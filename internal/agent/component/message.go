@@ -470,7 +470,14 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if inThinking {
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
+		targetNodeID := deferredNodeID
+		if targetNodeID == "" && strings.Contains(ref, "@") {
+			targetNodeID, _, _ = strings.Cut(ref, "@")
+		}
 		if err != nil {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, err)
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return "", true, &runtime.DeferredStreamError{Err: err}
 			}
@@ -479,6 +486,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			return "", true, &runtime.DeferredStreamError{Text: "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, errors.New(resultErr))
+			}
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}
 		}
 		finalText := visible.String()
@@ -487,14 +497,13 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 				finalText = completedContent
 			}
 		}
-		if strings.Contains(ref, "@") {
-			nodeID, _, _ := strings.Cut(ref, "@")
+		if targetNodeID != "" {
 			if result != nil {
 				for key, output := range result {
-					state.SetVar(nodeID, key, output)
+					state.SetVar(targetNodeID, key, output)
 				}
 			}
-			runtime.CompleteDeferredNode(ctx, nodeID)
+			runtime.CompleteDeferredNode(ctx, targetNodeID, nil)
 		}
 		resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
 		if strings.HasSuffix(ref, "@content") {

@@ -262,7 +262,11 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
+			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+			if tenantID == "" {
+				tenantID = userID
+			}
+			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
 			if err != nil {
 				respondFileServiceError(c, err)
 				return
@@ -306,7 +310,11 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
+			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+			if tenantID == "" {
+				tenantID = userID
+			}
+			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
 			if err != nil {
 				respondFileServiceError(c, err)
 				return

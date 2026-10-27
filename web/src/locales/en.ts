@@ -564,7 +564,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
-      chunkMethod: 'Chunking method',
+      parsingMode: 'Parsing mode',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
@@ -769,9 +769,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse mode',
+      parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      parserSettingsChangeWarning:
+        'Updated parser settings apply only to newly uploaded files. To apply these settings to existing files, update their parser settings and re-parse them.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
@@ -793,8 +795,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunking method',
-      chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -1335,8 +1335,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
@@ -2434,6 +2432,7 @@ Example: Virtual Hosted Style`,
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
@@ -2892,6 +2891,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Message cannot be empty',
+      aggregationIncomplete: 'Complete every aggregation group and variable',
       inputOptionsIncomplete: 'Dropdown options cannot contain empty entries',
       dataOperationsEntriesIncomplete:
         'Complete all data operation entries before running',
@@ -2920,7 +2920,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
@@ -3032,7 +3032,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       news: 'News',
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
-        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+        'Controls how much recent conversation history is available to the selected model as context. Larger windows use more tokens and may include unrelated context.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -3411,7 +3411,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       userPrompt: 'User prompt',
       tagFile: 'Tag file',
       tagFileTip:
-        'Automatically extracts up to N relevant tags for each chunk based on the selected tag file to improve retrieval accuracy. Tag extraction may invoke a model and consume additional tokens. If extraction fails, the original chunk will be preserved. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
+        'Automatically extracts up to N relevant tags per chunk to improve retrieval accuracy. Supports XLSX, XLS, CSV, and TXT files, with two columns for text and tags. Separate multiple tags with commas. No header required. Tag extraction may consume additional tokens. The original chunk is preserved if extraction fails. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3438,6 +3438,24 @@ This delimiter is used to split the input text into several text pieces echo of 
         loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
+        label: 'Pipeline version',
+        latest: 'Latest version',
+        filterByAlias: 'Filter by alias',
+        alias: 'Alias',
+        pinnedTooltip:
+          'This dataset is pinned to a specific version. New versions published on the canvas will not affect it.',
+        outdated:
+          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+        delete: 'Delete version',
+        deleteConfirmTitle: 'Delete this version?',
+        deleteConfirmContent:
+          'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
+        restore: 'Restore as current',
+        restoreConfirmTitle: 'Restore this version as the current canvas?',
+        restoreConfirmContent:
+          'The current canvas DSL will be replaced by this version. Publish again to save it as a new version.',
+        missingContent:
+          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {
@@ -3599,6 +3617,7 @@ This process aggregates variables from multiple branches into a single variable 
       nodeFormInvalid: 'Invalid settings, please fix them first',
       apiKeyRequired: 'Please enter the API Key',
       apiKeyMissing: 'No API key configured, please enter one first',
+      agentToolsMissing: 'Agent tools contain an empty entry',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
       extractorKeywordsTopNMissing:
@@ -3811,6 +3830,20 @@ Important structured information may include: names, dates, locations, events, k
       variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
+        endpoint: 'Endpoint',
+        testEndpoint: 'Test endpoint',
+        personalUrl: 'Personal webhook URL',
+        credentialDescription:
+          'Anyone with this URL can run the agent as you. Keep it secret; creating a new URL invalidates the old one.',
+        createCredential: 'Create or rotate URL',
+        revokeCredential: 'Revoke my URL',
+        credentialCreated:
+          'Webhook URL created. Copy and store it now; it will not be shown again after you leave this page.',
+        credentialRevoked: 'Webhook URL revoked.',
+        credentialRequestFailed: 'Unable to update the webhook URL.',
+        revokeCredentialTitle: 'Revoke your webhook URL?',
+        revokeCredentialDescription:
+          'Requests using this URL will stop working. You can create a new URL at any time.',
         methods: 'Methods',
         contentTypes: 'Content types',
         security: 'Security',

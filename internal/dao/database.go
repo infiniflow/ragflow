@@ -177,6 +177,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.InvitationCode{},
 		&entity.Document{},
 		&entity.UserCanvas{},
+		&entity.AgentWebhookCredential{},
 		&entity.CanvasTemplate{},
 		&entity.UserCanvasVersion{},
 		&entity.LLMFactories{},
@@ -239,9 +240,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-		if err = migrateKnowledgeCompileQueues(ctx, DB); err != nil {
-			return fmt.Errorf("failed to split knowledge compilation queues: %w", err)
-		}
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -261,8 +259,25 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migratePermissions(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate permissions: %w", err)
 		}
+		if err = migrateTenantDefaultModels(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate tenant default models: %w", err)
+		}
 		if err = migrateTenantModelProviderUserUniqueIndex(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate tenant model provider unique index: %w", err)
+		}
+		if err = migrateKnowledgeCompileQueues(ctx, DB); err != nil {
+			return fmt.Errorf("failed to split knowledge compilation queues: %w", err)
+		}
+
+		// Add pipeline_version_id columns and lock existing dataflow bindings to a
+		// version. Runs LAST so the shared migration marker only advances to
+		// v1.0.0-rc3.dev6 after every lower-target migration (notably the
+		// v1.0.0-rc3.dev5 tenant default-model column drop) has already run.
+		if err = MigrateDSLVersionColumns(ctx, DB); err != nil {
+			return fmt.Errorf("failed to add DSL version columns: %w", err)
+		}
+		if err = BackfillDSLVersionBindings(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill DSL version bindings: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
 	} else {
