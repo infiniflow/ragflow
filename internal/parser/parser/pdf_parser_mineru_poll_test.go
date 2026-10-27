@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -134,5 +135,58 @@ func TestPollMinerUTask_ReportsTimeoutWhenStatusReturnsLate(t *testing.T) {
 	}
 	if elapsed > time.Second {
 		t.Fatalf("poll returned after %s, want it bounded by the 100ms budget", elapsed)
+	}
+}
+
+// A cancel that lands while a status call is still waiting has to abort that
+// call, not wait for its own request timeout.
+func TestPollMinerUTask_StopsWhenCancelledDuringStatusCall(t *testing.T) {
+	withSSRFBypass(t)
+	var calls atomic.Int64
+	inFlight := make(chan struct{})
+	var signalOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		signalOnce.Do(func() { close(inFlight) })
+		select {
+		case <-r.Context().Done():
+		case <-time.After(30 * time.Second):
+		}
+	}))
+	defer server.Close()
+	driver := models.NewMinerLocalUModel(
+		map[string]string{"default": server.URL},
+		models.URLSuffix{Task: "tasks"},
+	)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	done := make(chan error, 1)
+	go func() {
+		_, err := pollMinerUTask(ctx, driver, "task-inflight", &models.APIConfig{}, 30*time.Second)
+		done <- err
+	}()
+
+	select {
+	case <-inFlight:
+	case <-time.After(5 * time.Second):
+		t.Fatal("status request never reached the server")
+	}
+	start := time.Now()
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context.Canceled", err)
+		}
+		if elapsed := time.Since(start); elapsed > 5*time.Second {
+			t.Fatalf("poll returned after %s, want it to stop when the run was cancelled", elapsed)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("poll kept waiting on the in-flight status call after the run was cancelled")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("status requests = %d, want 1: the poll must cancel the call in flight instead of starting another", calls.Load())
 	}
 }
