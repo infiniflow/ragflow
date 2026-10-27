@@ -1158,7 +1158,7 @@ export default {
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       tags: 'Tag',
-      canvasCategory: 'Kategori kanvas',
+      agentCategory: 'Kategori kanvas',
       created: 'Dibuat',
       id: 'ID',
       logTitle: 'Judul',

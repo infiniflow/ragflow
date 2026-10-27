@@ -2682,7 +2682,7 @@ Example: Virtual Hosted Style`,
         sectionTitle: 'Section title',
       },
       tags: 'Tags',
-      canvasCategory: 'Agent category',
+      agentCategory: 'Agent category',
       editTags: 'Edit tags',
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
@@ -4215,7 +4215,6 @@ Important structured information may include: names, dates, locations, events, k
       permission: 'Permission',
 
       agentTitle: 'Agent title',
-      canvasCategory: 'Agent category',
 
       newRole: 'New role',
       addNewRole: 'Add new role',
@@ -4234,18 +4233,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: 'Launch',
-      canvasList: 'Agent list',
       sessions: 'Sessions',
       newSession: 'New Session',
       newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
-      searchCanvas: 'Search agent...',
       searchSessions: 'Search sessions...',
-      noCanvasSelected: 'Please select an agent',
       noSessionSelected: 'Please select a session or create a new one',
       noSessionsFound: 'No sessions found',
       createFirstSession: 'Create your first session',
-      noCanvasFound: 'No agent found',
       deleteSelectedConfirm:
         'Are you sure you want to delete {{count}} session(s)?',
       batchDeleteSessions: 'Delete Sessions',
