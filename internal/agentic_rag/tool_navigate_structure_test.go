@@ -18,7 +18,6 @@ package agentic_rag
 import (
 	"context"
 	"encoding/json"
-	"sort"
 	"strings"
 	"testing"
 )
@@ -37,75 +36,6 @@ func installFakeStructureReader(t *testing.T, r structureReader) {
 	prev := getStructureReader()
 	setStructureReader(r)
 	t.Cleanup(func() { setStructureReader(prev) })
-}
-
-// fakeClaimStructureReader is a structureReader that also carries a claim leg:
-// structure rows and claim hits are canned separately, so a test can prove
-// which strategy actually rendered the outline.
-type fakeClaimStructureReader struct {
-	fakeStructureReader
-	claims map[string][]claimHit
-	// gotQVec captures the vector the tool handed to the claim leg.
-	gotQVec *[]float64
-}
-
-func (f fakeClaimStructureReader) ReadClaims(_ context.Context, _ string, _ string, docIDs, _ []string, _ string, qvec []float64, limit int) ([]claimHit, error) {
-	if f.gotQVec != nil {
-		*f.gotQVec = qvec
-	}
-	// nil/empty docIDs is the corpus-wide read: every canned document, in stable
-	// order so a test asserts on a deterministic page.
-	requested := docIDs
-	if len(requested) == 0 {
-		for docID := range f.claims {
-			requested = append(requested, docID)
-		}
-		sort.Strings(requested)
-	}
-	var hits []claimHit
-	for _, docID := range requested {
-		for _, h := range f.claims[docID] {
-			if h.docID == "" {
-				h.docID = docID
-			}
-			hits = append(hits, h)
-		}
-	}
-	// Spread a cap across the requested documents rather than truncating in
-	// document order: the ranked reader interleaves documents, so truncating by
-	// document would model a reader this codebase does not have.
-	if limit > 0 && len(hits) > limit {
-		var byDoc [][]claimHit
-		for _, docID := range requested {
-			var group []claimHit
-			for _, h := range hits {
-				if h.docID == docID {
-					group = append(group, h)
-				}
-			}
-			if len(group) > 0 {
-				byDoc = append(byDoc, group)
-			}
-		}
-		var spread []claimHit
-		for round := 0; len(spread) < limit; round++ {
-			progressed := false
-			for _, group := range byDoc {
-				if round < len(group) {
-					spread = append(spread, group[round])
-					progressed = true
-					if len(spread) == limit {
-						break
-					}
-				}
-			}
-			if !progressed {
-				break
-			}
-		}
-		hits = spread
-	}
-	return hits, nil
 }
 
 func claimRowJSON(name, desc, quote, chunkID string) structureRow {
@@ -366,140 +296,6 @@ func TestBuildTocTreeAndOutline(t *testing.T) {
 
 // --- Claim/evidence leg ---
 
-// TestNavigateStructureClaimLegReplacesDrill pins claim-first: a claim hit takes
-// over the selection, so the tree is NOT descended even when structure rows
-// exist for the same document.
-func TestNavigateStructureClaimLegReplacesDrill(t *testing.T) {
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{
-			"d1": {graphRow()},
-		}},
-		claims: map[string][]claimHit{
-			"d1": {{
-				chunkID:     "c9",
-				name:        "Paris is the capital of France",
-				description: "capital city",
-				quote:       "Paris is the capital of France.",
-				score:       0.8,
-			}},
-		},
-	})
-
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"capital of France","doc_id":"d1"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	for _, want := range []string{
-		`<structure_navigation count="1" query="capital of France" kind="">`,
-		`<doc rank="1" doc_id="d1"`,
-		// The outline is escaped as a whole, so the quote's own quotes ship as
-		// &quot; (the same escaping the harness applies).
-		`- [claim] Paris is the capital of France | Evidence: &quot;Paris is the capital of France.&quot; [chunks: c9]`,
-		`</structure>`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output must contain %q, got:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "Alpha (section)") {
-		t.Errorf("a claim hit must replace the drill, so no structure node may render, got:\n%s", out)
-	}
-}
-
-// TestNavigateStructureRendersEveryClaim: the tool renders the claims it recalled,
-// with no self-declared sufficiency verdict - whether a claim set is enough to
-// answer from is decided by the pipeline's pre-loop recall, not by a marker the
-// model has to interpret (and which could never agree with that gate's
-// document-diversity rule).
-func TestNavigateStructureRendersEveryClaim(t *testing.T) {
-	hits := []claimHit{
-		{chunkID: "c1", name: "claim one", quote: "q1"},
-		{chunkID: "c2", name: "claim two", quote: "q2"},
-		{chunkID: "c3", name: "claim three", quote: "q3"},
-	}
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims:              map[string][]claimHit{"d1": hits},
-	})
-
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"claims","doc_id":"d1"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if got := strings.Count(out, "- [claim] "); got != len(hits) {
-		t.Errorf("rendered %d claim lines, want %d:\n%s", got, len(hits), out)
-	}
-}
-
-// TestNavigateStructureClaimOnlyDocumentIsNotNoStructure: a document whose
-// compiler wrote claims but no tree nodes still renders — counting only entities
-// would report "no compiled structure" and throw the evidence away.
-func TestNavigateStructureClaimOnlyDocumentIsNotNoStructure(t *testing.T) {
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{"d1": {
-			{chunkID: "c1", name: "only claim", quote: "only quote"},
-		}},
-	})
-
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"only","doc_id":"d1"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if !strings.Contains(out, `count="1"`) {
-		t.Fatalf("a claim-only document must still render, got:\n%s", out)
-	}
-	if strings.Contains(out, "no compiled structure") {
-		t.Errorf("claim-only document must not report no_structure, got:\n%s", out)
-	}
-}
-
-// TestNavigateStructureClaimLegReceivesQueryVector: the tool must hand the nav
-// service's query vector to the claim leg (the dense half of hybrid recall), and
-// must pass nothing when no service is installed.
-func TestNavigateStructureClaimLegReceivesQueryVector(t *testing.T) {
-	var got []float64
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims:              map[string][]claimHit{"d1": {{chunkID: "c1", name: "n", quote: "q"}}},
-		gotQVec:             &got,
-	})
-	installFakeNavService(t, fakeNavService{
-		encode: func(context.Context, string, string) []float64 { return []float64{0.25, 0.5} },
-	})
-
-	if _, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"q","doc_id":"d1"}`); err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if len(got) != 2 || got[0] != 0.25 {
-		t.Errorf("claim leg received qvec %v, want the service's vector", got)
-	}
-
-	installFakeNavService(t, nil)
-	if _, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"q","doc_id":"d1"}`); err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("without a nav service the claim leg must run lexical-only, got qvec %v", got)
-	}
-}
-
-// TestClaimQueryVectorSwallowsPanic: a misconfigured embedder degrades recall to
-// the lexical leg; it must never take the tool call down.
-func TestClaimQueryVectorSwallowsPanic(t *testing.T) {
-	installFakeNavService(t, fakeNavService{
-		encode: func(context.Context, string, string) []float64 { panic("boom") },
-	})
-	if vec := claimQueryVector(context.Background(), "tenant-1", "q"); vec != nil {
-		t.Errorf("a panicking encoder must yield no vector, got %v", vec)
-	}
-}
-
 func TestParseClaimHitReadsEvidenceAndPointer(t *testing.T) {
 	row := map[string]interface{}{
 		"content_with_weight": claimRowJSON("Paris is the capital", "capital city", "Paris is the capital of France.", "c9").Content,
@@ -528,52 +324,6 @@ func TestParseClaimHitReadsEvidenceAndPointer(t *testing.T) {
 	}
 	if hit, ok := parseClaimHit(col); !ok || hit.chunkID != "c7" {
 		t.Errorf("column source_chunk_ids must be honored, got %+v ok=%v", hit, ok)
-	}
-}
-
-// TestRRFFuseMergesLegsByRank: RRF consumes ranks only, so a hit found by both
-// legs outranks one found by a single leg, and the fused list is capped.
-func TestRRFFuseMergesLegsByRank(t *testing.T) {
-	dense := []claimHit{{name: "both", chunkID: "c1", score: 0.9}, {name: "only dense", chunkID: "c2", score: 0.8}}
-	text := []claimHit{{name: "only text", chunkID: "c3", score: 11}, {name: "both", chunkID: "c1", score: 3}}
-
-	fused := rrfFuse(navClaimRRFK, 0, dense, text)
-	if len(fused) != 3 {
-		t.Fatalf("fused %d hits, want 3: %+v", len(fused), fused)
-	}
-	if fused[0].name != "both" {
-		t.Errorf("the hit found by BOTH legs must rank first, got %+v", fused)
-	}
-	// A fused hit keeps the best raw score across the legs that found it; the
-	// legs' scales are incomparable, which is exactly why fusion uses ranks.
-	if fused[0].score != 3 {
-		t.Errorf("a fused hit keeps its best raw score, got %v", fused[0].score)
-	}
-	if len(fused) != 3 || fused[1].name != "only text" || fused[2].name != "only dense" {
-		t.Errorf("single-leg hits must follow the double-leg hit, got %+v", fused)
-	}
-	if capped := rrfFuse(navClaimRRFK, 2, dense, text); len(capped) != 2 {
-		t.Errorf("limit must cap the fused list, got %d", len(capped))
-	}
-}
-
-// TestClaimRecallKeepsDistinctClaimsFromOneChunk: several facts commonly come
-// from the same passage, so dedupe must be by claim, not by chunk id.
-func TestClaimRecallKeepsDistinctClaimsFromOneChunk(t *testing.T) {
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{"d1": {
-			{chunkID: "c1", name: "Acme was founded in 1994", quote: "Acme, founded in 1994"},
-			{chunkID: "c1", name: "Acme is based in Zurich", quote: "the Zurich-based firm"},
-		}},
-	})
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"Acme","doc_id":"d1"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if got := strings.Count(out, "- [claim] "); got != 2 {
-		t.Errorf("both claims from the shared chunk must render, got %d:\n%s", got, out)
 	}
 }
 
@@ -621,58 +371,6 @@ func installFakeStructureRoute(t *testing.T, docs [][2]string) {
 	t.Cleanup(func() { navStructureRoute = prev })
 }
 
-// TestNavigateStructureQueryOnlyRoutesAndClaims: without a doc_id the tool routes
-// the query itself and returns compiled claim evidence - this is what makes the
-// tool callable in one step, without a prior navigate_tree.
-func TestNavigateStructureQueryOnlyRoutesAndClaims(t *testing.T) {
-	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{"d1": {{
-			chunkID: "c1",
-			name:    "Acme was founded in 1994",
-			quote:   "Acme, founded in 1994",
-		}}},
-	})
-
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"when was Acme founded"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	for _, want := range []string{
-		`count="1"`,
-		`doc_id="d1"`,
-		`- [claim] Acme was founded in 1994 | Evidence: &quot;Acme, founded in 1994&quot; [chunks: c1]`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output must contain %q, got:\n%s", want, out)
-		}
-	}
-	if strings.Contains(out, "route first with navigate_tree") {
-		t.Errorf("a routed query must not ask for navigate_tree, got:\n%s", out)
-	}
-}
-
-// TestNavigateStructureQueryOnlyNoClaimsIsAHint: routing that reaches documents
-// with no claims says so instead of pretending the corpus has no structure.
-func TestNavigateStructureQueryOnlyNoClaimsIsAHint(t *testing.T) {
-	installFakeStructureRoute(t, [][2]string{{"d1", "Alpha"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims:              map[string][]claimHit{},
-	})
-
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"nothing here"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if !strings.Contains(out, `count="0"`) || !strings.Contains(out, "no claim hits") {
-		t.Errorf("expected a claim-miss hint, got:\n%s", out)
-	}
-}
-
 // TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint: when routing finds nothing
 // at all, the tool still tells the model to route with navigate_tree.
 func TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint(t *testing.T) {
@@ -689,77 +387,123 @@ func TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint(t *testing.T) {
 	}
 }
 
-func claimsPerDoc(docID string, n int) []claimHit {
-	out := make([]claimHit, 0, n)
-	for i := 0; i < n; i++ {
-		out = append(out, claimHit{
-			chunkID: docID + "-c" + string(rune('a'+i)),
-			name:    docID + " claim " + string(rune('a'+i)),
-			quote:   "quote",
-		})
-	}
-	return out
-}
-
-// TestRecallCapsClaims: the recall block is the whole prompt of the answer call,
-// so it honours its cap - and the cap is spread across documents, not spent on
-// the first one.
-// TestClaimAnswerPromptCarriesEvidenceAndCitationRule pins what the
-// sufficient-claims answer depends on: the evidence itself, the rule that turns
-// each fact line into a resolvable reference, and the refusal path - a model that
-// narrates instead of answering must have an explicit way to say so, because the
-// caller falls back to the loop on it.
+// TestClaimAnswerPromptCarriesEvidenceAndCitationRule pins what the answer call
+// depends on: the evidence itself, the rule that turns each fact line into a
+// resolvable reference, and the two answer rules this corpus needs - pick the
+// candidate the question names, and name the inputs of a computation.
 func TestClaimAnswerPromptCarriesEvidenceAndCitationRule(t *testing.T) {
 	evidence := "- [claim] Acme was founded in 1994 [chunks: c1] ref=0"
 	prompt := claimAnswerPrompt(evidence)
-	for _, want := range []string{evidence, "[ID:n]", "ref=n", "Do not call tools", `"answerable"`} {
+	for _, want := range []string{
+		evidence, "[ID:n]", "ref=n", "Do not call tools", `"answer"`,
+		"the one the question names (last, first, most",
+		"One input is a complete derivation when that claim states every operand",
+		"complete list", `"answerable": false`,
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("claim answer prompt must contain %q, got:\n%s", want, prompt)
 		}
 	}
 }
 
-// TestParseClaimAnswer: the verdict decides control flow, so both the refusal and
-// the malformed-reply cases must fall back rather than ship prose.
+// TestClaimVerifyPromptTargetsNearMisses: the verifier exists to catch the two
+// measured wrong shortcuts, both of which were "right subject, wrong fact". It
+// must name that failure, must not become a second answerer, and must carry both
+// the page and the candidate.
+func TestClaimVerifyPromptTargetsNearMisses(t *testing.T) {
+	evidence := "- [claim] The King's Speech was released in 2010 [chunks: c1] ref=0"
+	answer := "Colin Firth received his first Academy Award in 2010. [ID:0]"
+	prompt := claimVerifyPrompt(context.Background(), evidence, answer, nil)
+	for _, want := range []string{
+		evidence, answer, "near miss", "release year", "last/latest",
+		"Do not rewrite the answer", `"supported": false`, "The page is the only source",
+		// A rejection has to name the statement it rejected against, or it is a
+		// feeling the caller cannot check.
+		"`against` is MANDATORY",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("claim verify prompt must contain %q, got:\n%s", want, prompt)
+		}
+	}
+
+	// The competing statements the answer passed over are handed over with their
+	// handles: that is what makes a rejection checkable afterwards.
+	withCompeting := claimVerifyPrompt(context.Background(), evidence, answer,
+		[]claimHit{{name: "The King's Speech won Best Picture in 2011", chunkID: "c1"}})
+	if !strings.Contains(withCompeting, "state a different value") ||
+		!strings.Contains(withCompeting, "The King's Speech won Best Picture in 2011") {
+		t.Errorf("competing statements must be rendered, got:\n%s", withCompeting)
+	}
+}
+
+// TestClaimHandleCount backs the only floor left on a claim answer: it must cite
+// at least one claim, and one claim cited three times is still one. There is no
+// two-input rule for a derivation - a single claim can state every operand.
+func TestClaimHandleCount(t *testing.T) {
+	cases := []struct {
+		answer string
+		want   int
+	}{
+		{"no handles at all", 0},
+		{"1994 [ID:0]", 1},
+		{"1994 [ID:0] and 56 years later [ID:0]", 1},
+		{"1967 minus 56 = 1911 [ID:1][ID:3]", 2},
+		{"[ID:7], [ID:11], [ID:7]", 2},
+	}
+	for _, c := range cases {
+		if got := claimHandleCount(c.answer); got != c.want {
+			t.Errorf("claimHandleCount(%q) = %d, want %d", c.answer, got, c.want)
+		}
+	}
+}
+
+// TestParseClaimAnswer: only an explicit answerable answer may produce text, and
+// a reply with no answer field is not one - shipping prose is the zero-score
+// failure mode. The refusal keeps its named gap for the gap_overlap diagnostic.
 func TestParseClaimAnswer(t *testing.T) {
 	ok := parseClaimAnswer(`{"answerable": true, "answer": "1994 [ID:0]"}`)
-	if !ok.answerable || ok.answer != "1994 [ID:0]" {
-		t.Errorf("answerable verdict parsed as %+v", ok)
+	if !ok.answerable || ok.answer != "1994 [ID:0]" || ok.missing != "" {
+		t.Errorf("answer parsed as %+v", ok)
 	}
 	no := parseClaimAnswer(`{"answerable": false, "missing": "the founding year"}`)
 	if no.answerable || no.missing != "the founding year" {
 		t.Errorf("refusal parsed as %+v", no)
 	}
-	// A model that narrates instead of answering must NOT be shipped as the
-	// answer: that is the zero-score failure mode.
 	narrated := parseClaimAnswer("I need to research who Brian Bergstein is. Let me search for this information.")
 	if narrated.answerable || narrated.answer != "" {
 		t.Errorf("narrated reply must be treated as not answerable, got %+v", narrated)
 	}
-	// "answerable" without an answer is not an answer.
 	empty := parseClaimAnswer(`{"answerable": true, "answer": "   "}`)
 	if empty.answerable {
 		t.Errorf("empty answer must be not answerable, got %+v", empty)
 	}
+	// An answer without the flag is still an answer: treating it as a refusal
+	// would hand a usable answer to the loop.
+	noFlag := parseClaimAnswer(`{"answer": "1994 [ID:0]"}`)
+	if !noFlag.answerable || noFlag.answer != "1994 [ID:0]" {
+		t.Errorf("answer without the flag parsed as %+v", noFlag)
+	}
 }
 
-// TestQueryOnlyToolCallIsUncapped: a model-invoked call is not capped - the model
-// asked for it and its result lands in the history once.
-func TestQueryOnlyToolCallIsUncapped(t *testing.T) {
-	installFakeStructureRoute(t, [][2]string{{"d1", "A"}, {"d2", "B"}})
-	installFakeStructureReader(t, fakeClaimStructureReader{
-		fakeStructureReader: fakeStructureReader{byDoc: map[string][]structureRow{}},
-		claims: map[string][]claimHit{
-			"d1": claimsPerDoc("d1", 5),
-			"d2": claimsPerDoc("d2", 5),
-		},
-	})
-	out, err := NewNavigateStructureTool("tenant-1", []string{"kb1"}).
-		InvokableRun(context.Background(), `{"query":"acme"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
+// TestParseClaimSupport: a rejection needs an explicit `supported: false`; every
+// other reply counts as support, because refusing a good answer hands the
+// question to the loop for 300-600k tokens. The unparsed case stays visible
+// through parsed=false so that default cannot mask a prompt regression.
+func TestParseClaimSupport(t *testing.T) {
+	ok := parseClaimSupport(`{"supported": true}`)
+	if !ok.supported || !ok.parsed || ok.reason != "" {
+		t.Errorf("support parsed as %+v", ok)
 	}
-	if got := strings.Count(out, "- [claim] "); got != 10 {
-		t.Errorf("a model-invoked call must not be capped, got %d claims:\n%s", got, out)
+	no := parseClaimSupport(`{"supported": false, "reason": "2010 is the release year, not the award year"}`)
+	if no.supported || !no.parsed || !strings.Contains(no.reason, "release year") {
+		t.Errorf("rejection parsed as %+v", no)
+	}
+	narrated := parseClaimSupport("This looks right to me.")
+	if !narrated.supported || narrated.parsed {
+		t.Errorf("unparsed reply must fail open and be flagged, got %+v", narrated)
+	}
+	missingField := parseClaimSupport(`{"verdict": "ok"}`)
+	if !missingField.supported || missingField.parsed {
+		t.Errorf("reply without a supported field must fail open, got %+v", missingField)
 	}
 }

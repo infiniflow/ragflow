@@ -35,11 +35,12 @@ package agentic_rag
 // Two consumers, one rule ("compiled first, raw chunk only when it is not
 // enough"):
 //
-//   - the pre-loop probe: one search plus one verdict call. When the model says
-//     the claims answer the question, the turn ends without reading a chunk;
-//     when it names the fact that is absent, the probe searches THAT fact and
-//     asks again, because a multi-hop question's second fact lives in a document
-//     the question's own wording never reaches.
+//   - the pre-loop probe: one search, an answer call over the claims it found,
+//     then a verification of that answer. An answer that survives verification
+//     ends the turn without a chunk ever being read; one that does not is dropped
+//     and the ordinary loop runs, because a multi-hop question's second fact
+//     lives in a document the question's own wording never reaches and the loop
+//     is the only place that decides what to search next.
 //   - every locate tool result: the claims compiled from THAT result set's
 //     chunks are rendered ahead of the hits, so a mid-loop search can be
 //     answered without list_chunks. Claims the run has already shown are not
@@ -58,8 +59,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
@@ -69,31 +72,87 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/tokenizer"
 )
 
+// Claim-page sizing.
+//
+// A page is not "a chunk's whole claim set" any more. Measured on the FRAMES
+// corpus: the chunks one retrieval returns carry 121-127 claims (up to 186
+// across runs), while the claims that actually bear on the question are 2-5.
+// Shipping all of them cost 11-15k prompt tokens per question EVEN WHEN the
+// answer was then refused and the loop ran anyway - a cost paid by every
+// question the claims fail to answer, which is most of them (15 of 19 in the
+// 20261027_001832 run). The budget below is what a page costs at most; the
+// claims it leaves out are named by pointer (see claimPagePointer) so the model
+// can still tell "not on the page" from "does not exist".
 const (
 	// compiledAnchorTopN is the chunk page the pre-loop probe anchors on. It is
 	// the retrieval's own top-N, not a claim count: the claims come from
 	// whatever these chunks hold.
 	compiledAnchorTopN = 10
-	// compiledAnchorMaxChunks bounds the chunk ids in one claim lookup (a terms
-	// filter, so the bound is about request size, not correctness).
-	compiledAnchorMaxChunks = 32
-	// compiledClaimsPerChunk sizes ONE claim lookup. It is a query bound, not a
-	// cap on what is shown: a lookup has to name a row count, so it asks for the
-	// most rows a chunk was measured to carry (38) for every chunk it asks
-	// about, and every row that comes back is served. A chunk's claim set is that
-	// chunk's representation - serving a part of it serves a part of the chunk,
-	// and a model that is shown a part cannot judge whether the whole suffices.
+	// compiledClaimsPerChunk sizes ONE claim lookup (a query bound, not a cap on
+	// what is shown): a lookup has to name a row count, so it asks for the most
+	// rows a chunk was measured to carry (38).
 	compiledClaimsPerChunk = 48
-	// compiledCandidateMax bounds the rows one claim lookup reads.
-	compiledCandidateMax = 2048
+	// compiledPrefetchPageClaims is the claim budget of the pre-loop page. This
+	// block is the ENTIRE prompt of the answer call, and it is paid by every
+	// question - answered from claims or not - so it is the one place a budget
+	// buys the most. 32 keeps the page at roughly a quarter of the measured
+	// 121-127 and still leaves room for a multi-document question.
+	compiledPrefetchPageClaims = 32
+	// compiledPagePerAnchor is the share of ONE anchor chunk a page is
+	// guaranteed before the budget is spent in rank order. Two: the first claim
+	// states the fact the retrieval ranked the chunk for, the second is where a
+	// second-hop fact sits. Without a per-anchor floor the top-ranked chunk of a
+	// long tail can take the whole budget.
+	compiledPagePerAnchor = 2
+	// compiledNoticeClaims caps the claims attached to ONE locate result. It is
+	// comparable to the raw text a notice exists to avert (~3-4k characters, one
+	// chunk of prose), so a notice can never cost more than the read it may save.
+	compiledNoticeClaims = 12
+	// compiledNoticePerAnchor is the per-hit floor of a notice: one claim per
+	// hit is what makes the block cover the result set instead of its head.
+	compiledNoticePerAnchor = 1
 	// compiledNoticeShownChunks caps the pointer line that names hits whose
 	// statements this turn already showed. Eight is where the line stays under
 	// ~300 characters: it pays for itself if it averts a single deep read, and it
 	// stops paying once it grows into a second block of text.
 	compiledNoticeShownChunks = 8
+	// compiledGapReaskOverlap is the share of a refused gap's content words the
+	// page must ALREADY state before the narrowed re-ask runs. Measured refusals
+	// cluster at 0.55-0.95: below this line the fact is genuinely missing
+	// (retrieval or compilation), above it the page holds the words and the
+	// refusal is a selection failure - which is what the re-ask addresses.
+	compiledGapReaskOverlap = 0.85
+	// compiledGapReaskClaims caps the narrowed page of a re-ask. It is small on
+	// purpose: the point is to remove the noise that buried the fact, not to
+	// re-present the page.
+	compiledGapReaskClaims = 8
+	// compiledCompetitionOverlap is the share of the ANSWER's content words a
+	// page claim must share before it can be considered a competing statement
+	// about the same subject. It only informs the verifier (see
+	// competingClaims), so a near miss under-reports rather than mis-rejects.
+	compiledCompetitionOverlap = 0.5
+	// compiledCompetitionCandidates caps how many competing statements the
+	// verifier is shown. Three covers the observed failure mode (two editions of
+	// an event, a release year and an award year) without turning the check into
+	// a second page.
+	compiledCompetitionCandidates = 3
 )
+
+// compiledPage is one claim page: the claims a budget admits, the chunks the
+// store HAS claims for, and what the budget left out.
+type compiledPage struct {
+	claims    []claimHit
+	hasClaims map[string]struct{}
+	// omitted names the anchor chunks whose claims did not fit the budget, in
+	// retrieval order. Naming them is what keeps the page honest: a model that
+	// cannot see a statement must still be able to tell it exists.
+	omitted []string
+	// dropped counts the claims the budget left out.
+	dropped int
+}
 
 // compiledRun is the per-turn compiled-evidence state: the scope claims are
 // looked up in, whether the corpus has any, and what this turn already showed.
@@ -270,14 +329,10 @@ func readCompiledClaimsByChunk(ctx context.Context, tenantID string, datasetIDs,
 	if de == nil {
 		return nil
 	}
-	ids := chunkIDs
-	if len(ids) > compiledAnchorMaxChunks {
-		ids = ids[:compiledAnchorMaxChunks]
-	}
 	filter := map[string]interface{}{
 		"entity_type_kwd":  []string{navClaimRowType},
 		"scope_kwd":        []string{navClaimDocScope},
-		"source_chunk_ids": ids,
+		"source_chunk_ids": chunkIDs,
 	}
 	if len(docScope) > 0 {
 		filter["doc_id"] = docScope
@@ -315,28 +370,31 @@ func readCompiledClaimsByChunk(ctx context.Context, tenantID string, datasetIDs,
 //
 // The anchor is the retrieval's rank, so the best-ranked chunk's claims come
 // first; within one chunk the claim closest to the question wins. The coverage
-// score ORDERS the claims (those that name the question's own terms lead) rather
-// than dropping any: a chunk's claim set is that chunk's representation, so the
-// page is every claim of every chunk it was asked about. Nothing is capped -
-// dropping a claim would drop part of the chunk it belongs to, and the caller's
-// verdict would then be judging an excerpt rather than the evidence.
+// score ORDERS the claims (those that name the question's own terms lead).
 //
-// The second return names the chunks the store HAS claims for. It is not the
-// same as the chunks the page covers: a claim whose statement another chunk
-// already stated is deduped away, and a chunk whose every claim was such a
-// duplicate still has claims - it must not be served as raw text on top of them.
-func compiledClaimsForChunks(ctx context.Context, tenantID string, datasetIDs, chunkIDs []string, question string) ([]claimHit, map[string]struct{}) {
+// budget and perAnchor bound what the page costs. perAnchor is spent FIRST, in
+// rank order, so the best-ranked chunk of a long tail cannot swallow the page;
+// the rest of the budget then follows the same order. Whatever the budget leaves
+// out is reported as a pointer (compiledPage.omitted) rather than silently
+// disappearing - the model must be able to tell "not shown" from "does not
+// exist". budget <= 0 means "no cap".
+//
+// hasClaims names the chunks the store HAS claims for. It is not the same as the
+// chunks the page covers: a claim whose statement another chunk already stated
+// is deduped away, and a chunk whose every claim was such a duplicate still has
+// claims - it must not be served as raw text on top of them.
+func compiledClaimsForChunks(ctx context.Context, tenantID string, datasetIDs, chunkIDs []string, question string, budget, perAnchor int) compiledPage {
 	if len(chunkIDs) == 0 {
-		return nil, nil
+		return compiledPage{}
 	}
 	docScope, _ := resolveDocumentScope(ctx, nil)
 	// The pool is sized by the ANCHOR COUNT: the store returns filter hits in its
 	// own order, so the query has to be wide enough to hold every anchor's whole
-	// claim set before the local ranking sees it.
+	// claim set before the local ranking sees it. Every chunk asked about is
+	// queried and every row that comes back is served - a chunk's claim set is
+	// that chunk's representation, so neither the chunk list nor the row count can
+	// be trimmed without serving a part of a chunk as if it were the whole.
 	pool := len(chunkIDs) * compiledClaimsPerChunk
-	if pool > compiledCandidateMax {
-		pool = compiledCandidateMax
-	}
 	raw := compiledClaimsByChunk(ctx, tenantID, datasetIDs, chunkIDs, docScope, pool)
 	rank := make(map[string]int, len(chunkIDs))
 	for i, id := range chunkIDs {
@@ -398,7 +456,7 @@ func compiledClaimsForChunks(ctx context.Context, tenantID string, datasetIDs, c
 		zap.Int("rows_dropped", dropped))
 
 	if len(cands) == 0 {
-		return nil, hasClaims
+		return compiledPage{hasClaims: hasClaims}
 	}
 	sort.SliceStable(cands, func(i, j int) bool {
 		if cands[i].rank != cands[j].rank {
@@ -410,17 +468,95 @@ func compiledClaimsForChunks(ctx context.Context, tenantID string, datasetIDs, c
 		return cands[i].hit.name < cands[j].hit.name
 	})
 
-	// No budget, no rounds, no window: the page is every claim the chunks above
-	// carry, best-ranked chunk first and closest-to-question first inside it. A
-	// chunk is either on the page whole or not on it at all.
-	kept := make([]claimHit, 0, len(cands))
-	for _, c := range cands {
-		kept = append(kept, c.hit)
+	// Admission, in two passes over the same rank-ordered list: the per-anchor
+	// floor first, then the remaining budget in order. Selection is by index so
+	// the emitted page keeps the rank order the caller relies on.
+	selected := make([]bool, len(cands))
+	keptCount := 0
+	if budget > 0 {
+		perAnchorTaken := make(map[int]int, len(chunkIDs))
+		for i, c := range cands {
+			if keptCount >= budget {
+				break
+			}
+			if perAnchor <= 0 || perAnchorTaken[c.rank] >= perAnchor {
+				continue
+			}
+			perAnchorTaken[c.rank]++
+			selected[i] = true
+			keptCount++
+		}
+		for i := range cands {
+			if keptCount >= budget {
+				break
+			}
+			if selected[i] {
+				continue
+			}
+			selected[i] = true
+			keptCount++
+		}
+	} else {
+		for i := range selected {
+			selected[i] = true
+		}
+		keptCount = len(cands)
+	}
+
+	page := compiledPage{
+		claims:    make([]claimHit, 0, keptCount),
+		hasClaims: hasClaims,
+		dropped:   len(cands) - keptCount,
+	}
+	omittedRank := make(map[int]struct{})
+	for i, c := range cands {
+		if selected[i] {
+			page.claims = append(page.claims, c.hit)
+			continue
+		}
+		omittedRank[c.rank] = struct{}{}
+	}
+	if len(omittedRank) > 0 {
+		page.omitted = make([]string, 0, len(omittedRank))
+		for _, id := range chunkIDs {
+			r, ok := rank[id]
+			if !ok {
+				continue
+			}
+			if _, out := omittedRank[r]; !out {
+				continue
+			}
+			page.omitted = append(page.omitted, id)
+			delete(omittedRank, r)
+		}
 	}
 	common.DebugCtx(ctx, "agentic_rag: claim page assembled",
 		zap.Int("anchored", len(cands)),
-		zap.Int("kept", len(kept)))
-	return kept, hasClaims
+		zap.Int("kept", len(page.claims)),
+		zap.Int("dropped", page.dropped),
+		zap.Int("omitted_anchors", len(page.omitted)))
+	return page
+}
+
+// claimPagePointer renders the line that names claims the budget left out. It is
+// the counterweight to the budget: a page that silently truncates teaches the
+// model that what it cannot see does not exist.
+func claimPagePointer(ctx context.Context, page compiledPage) string {
+	if len(page.omitted) == 0 {
+		return ""
+	}
+	reg := evidenceRegistryFrom(ctx)
+	refs := make([]string, 0, len(page.omitted))
+	for _, id := range page.omitted {
+		if n := reg.Stamp(id); n >= 0 {
+			refs = append(refs, fmt.Sprintf("%s ref=%d", id, n))
+			continue
+		}
+		refs = append(refs, id)
+	}
+	return fmt.Sprintf("- %d more statement(s) from %d chunk(s) of this result set did not fit this page: %s. "+
+		"Nothing else is missing; read such a chunk only when the fact you need is not stated above.",
+		page.dropped, len(page.omitted), strings.Join(refs, ", "))
 }
 
 // compiledPrefetch is the ONE compiled-evidence recall a turn performs before
@@ -489,12 +625,13 @@ func prefetchCompiledEvidence(ctx context.Context, tenantID string, datasetIDs [
 		return compiledPrefetch{}
 	}
 	// The page is the retrieved chunks' own claims: no document-scoped leg (a
-	// chunk the search did not return is not evidence this turn may offer), and
-	// no cap of any kind - a chunk is on the page whole, with every claim it
-	// carries, or it is not on the page at all.
-	claims, hasClaims := compiledClaimsForChunks(ctx, tenantID, datasetIDs, chunkIDs, question)
-	pf := compiledPrefetch{chunks: chunkIDs, claims: claims}
-	if len(claims) == 0 {
+	// chunk the search did not return is not evidence this turn may offer). Its
+	// SIZE is budgeted, because the block is the whole prompt of the answer call
+	// and it is paid by every question, answered or not.
+	page := compiledClaimsForChunks(ctx, tenantID, datasetIDs, chunkIDs, question,
+		compiledPrefetchPageClaims, compiledPagePerAnchor)
+	pf := compiledPrefetch{chunks: chunkIDs, claims: page.claims}
+	if len(page.claims) == 0 {
 		common.InfoCtx(ctx, "agentic_rag: compiled prefetch found no claims for the searched chunks",
 			zap.String("query", question),
 			zap.Strings("datasets", datasetIDs),
@@ -505,8 +642,11 @@ func prefetchCompiledEvidence(ctx context.Context, tenantID string, datasetIDs [
 	// same page: the verdict is asked whether this evidence answers the question,
 	// and a chunk that silently vanished from the page cannot be part of that
 	// answer. "Claims where they exist, the chunk itself where they do not."
-	bare := chunksWithoutClaims(chunks, hasClaims)
-	pf.evidence = claimEvidenceBlock(ctx, claims)
+	bare := chunksWithoutClaims(chunks, page.hasClaims)
+	pf.evidence = claimEvidenceBlock(ctx, page.claims)
+	if pointer := claimPagePointer(ctx, page); pointer != "" {
+		pf.evidence += "\n" + pointer
+	}
 	if raw := chunksAsEvidence(ctx, bare); raw != "" {
 		if pf.evidence != "" {
 			pf.evidence += "\n"
@@ -518,10 +658,12 @@ func prefetchCompiledEvidence(ctx context.Context, tenantID string, datasetIDs [
 		zap.Strings("datasets", datasetIDs),
 		zap.Int("chunks", len(chunkIDs)),
 		zap.Int("anchor_docs", len(anchorDocsOf(chunks))),
-		zap.Int("chunks_with_claims", len(hasClaims)),
+		zap.Int("chunks_with_claims", len(page.hasClaims)),
 		zap.Int("chunks_as_text", len(bare)),
-		zap.Int("claims", len(claims)),
-		zap.Strings("docs", claimDocsInOrder(claims)),
+		zap.Int("claims", len(page.claims)),
+		zap.Int("claims_dropped", page.dropped),
+		zap.Int("omitted_anchors", len(page.omitted)),
+		zap.Strings("docs", claimDocsInOrder(page.claims)),
 		zap.Int("evidence_bytes", len(pf.evidence)))
 	return pf
 }
@@ -677,39 +819,46 @@ func compiledEvidenceNotice(ctx context.Context, tool, query string, hits []snip
 	if need == "" {
 		need = queryFrom(ctx)
 	}
-	// Every hit's every claim, deduped against what this turn already showed. The
-	// result set's size is the retrieval's to decide: a cap here would serve some
-	// chunks as a fragment of themselves, and the model has no way to tell a
-	// chunk's full statement set from the part it was shown.
-	page, _ := compiledClaimsForChunks(ctx, run.tenantID, run.datasetIDs, chunkIDs, need)
-	claims := run.takeUnseen(page)
+	// Every hit's claims up to the notice budget, deduped against what this turn
+	// already showed. The budget is one chunk of prose: a notice exists to avert
+	// a deep read, so it may never cost more than the read it saves.
+	page := compiledClaimsForChunks(ctx, run.tenantID, run.datasetIDs, chunkIDs, need,
+		compiledNoticeClaims, compiledNoticePerAnchor)
+	claims := run.takeUnseen(page.claims)
 	// Hits whose statements an EARLIER result already put in this turn: their text
 	// is in the transcript under a ref handle, so the model needs the handle, not
 	// the chunk. Without this line the result looks claim-less and the only way to
 	// find out what those chunks say is a deep read of text the model already has.
-	shown := shownClaimChunks(ctx, run, page, coveredAnchorChunks(claims))
+	shown := shownClaimChunks(ctx, run, page.claims, coveredAnchorChunks(claims))
 	if len(claims) == 0 && len(shown) == 0 {
 		return ""
 	}
+	pointer := claimPagePointer(ctx, page)
 	lines := make([]string, 0, len(claims))
 	for _, c := range claims {
-		lines = append(lines, xmlEscape(claimOutlineLine(ctx, c)))
+		lines = append(lines, xmlEscape(claimCompactLine(ctx, c)))
 	}
 	common.InfoCtx(ctx, "agentic_rag: compiled evidence attached to tool result",
 		zap.String("tool", tool),
 		zap.Int("hits", len(hits)),
 		zap.Int("covered_chunks", len(coveredAnchorChunks(claims))),
 		zap.Int("shown_chunks", len(shown)),
-		zap.Int("claims", len(claims)))
+		zap.Int("claims", len(claims)),
+		zap.Int("claims_dropped", page.dropped),
+		zap.Int("omitted_anchors", len(page.omitted)))
 	var b strings.Builder
 	fmt.Fprintf(&b, "<compiled_evidence count=\"%d\">\n", len(claims))
 	if len(lines) > 0 {
 		fmt.Fprintf(&b, "<note>These statements are the compiled artifacts of %d of the %d chunks below: each one is an "+
-			"atomic fact with the verbatim quote it was compiled from, and ref=n is the handle to cite that source chunk by. "+
+			"atomic fact, and ref=n is the handle to cite that source chunk by. "+
 			"If they already state what the question needs, answer from them now and cite their ref handles - do NOT "+
 			"call list_chunks for those chunks. Read a raw chunk only when the fact you need is not stated here, "+
 			"or when that chunk carries no statement above.</note>\n", len(coveredAnchorChunks(claims)), len(chunkIDs))
 		b.WriteString(strings.Join(lines, "\n"))
+		b.WriteString("\n")
+	}
+	if pointer != "" {
+		b.WriteString(xmlEscape(pointer))
 		b.WriteString("\n")
 	}
 	if len(shown) > 0 {
@@ -756,71 +905,198 @@ func shownClaimChunks(ctx context.Context, run *compiledRun, page []claimHit, co
 	return out
 }
 
-// compiledEvidenceGate is the last station before raw text: a deep read that is
-// about to open these chunks is answered with their compiled artifacts instead,
-// as long as any of those statements is new to this turn.
-//
-// It returns "" - meaning "go ahead and serve the raw text" - when the corpus
-// has no claims, when these chunks carry none, or when everything they carry was
-// already offered earlier in the turn. That last case is the important one: a
-// caller that still asks to read after the statements were put in front of it
-// has judged them insufficient, so withholding the passage a second time would
-// only stall the loop.
-//
-// The note names the way out (raw=true): a gate that does not offer one turns
-// "the claims were not enough" into a dead end, and every line carries its ref
-// handle so an answer given from this block is still citable.
-//
-// It returns the block AND the chunks that block represents, so the caller can
-// serve "claims where they exist, the chunk itself where they do not" in one
-// answer instead of making the model ask twice.
-func compiledEvidenceGate(ctx context.Context, chunkIDs []string) (string, []string) {
-	if len(chunkIDs) == 0 {
-		return "", nil
+// Claim row shape, read by the chunk-anchored claim lookup.
+const (
+	// navClaimRowType is the entity_type_kwd every compiler gives its evidence
+	// rows. They deliberately carry no knowledge_graph_kwd and no type_kwd, so
+	// they never show up as artifacts-tree nodes — this filter is the only way
+	// to find them.
+	navClaimRowType = "claim"
+	// navClaimDocScope pins the lookup to doc-level rows: the KB-wide merged
+	// rows written by the Build button carry a doc_id too, and without this
+	// filter they would answer for a single document.
+	navClaimDocScope = "doc"
+	// navClaimEvidenceChars caps the rendered verbatim quote of a claim line.
+	// Generous on purpose: a thin quote makes the answer stage judge the context
+	// insufficient, and one extra re-search turn costs a full prompt — far more
+	// than the extra characters.
+	navClaimEvidenceChars = 1200
+)
+
+// claimHit is one recalled claim row: an atomic proposition plus its verbatim
+// evidence. chunkID is the FIRST source chunk id — the pointer the model feeds
+// to list_chunks when it needs the surrounding passage. docID names the document
+// the claim was compiled from, which is what makes document diversity checkable.
+type claimHit struct {
+	docID string
+	// chunkID is the chunk this claim is ATTRIBUTED to: the source chunk the
+	// caller matched it by, which is not necessarily sourceChunkIDs[0] — a claim
+	// compiled from a multi-chunk passage names several. Rendering and citation
+	// handles use this one.
+	chunkID string
+	// sourceChunkIDs is every chunk the claim was compiled from, as stored. A
+	// chunk-anchored lookup must match against ALL of them: matching only the
+	// first would drop a claim whose first source chunk is not in the retrieved
+	// page while its second is.
+	sourceChunkIDs []string
+	name           string
+	description    string
+	quote          string
+	score          float64
+}
+
+// parseClaimHit turns one claim row into a hit. A row that is not a usable
+// claim — bad payload, unnamed, or carrying no chunk pointer — is dropped: a
+// claim the model cannot open is not an answer anchor.
+func parseClaimHit(row map[string]interface{}) (claimHit, bool) {
+	payload, ok := decodeJSONObject(contentWithWeightFromRaw(row))
+	if !ok {
+		return claimHit{}, false
 	}
-	run := compiledRunFrom(ctx)
-	if run == nil || !run.claimsPresent(ctx) {
-		return "", nil
+	name := strings.TrimSpace(stringFromAny(payload["name"]))
+	if name == "" {
+		return claimHit{}, false
 	}
-	// Rank against what THIS call needs (its stated intent), not only against the
-	// turn's question: a deep read in the middle of a multi-hop run exists to
-	// fetch a link that is often irrelevant to the final question.
-	need := strings.TrimSpace(intentFrom(ctx))
-	if need == "" {
-		need = queryFrom(ctx)
+	ids := navStringList(row["source_chunk_ids"])
+	if len(ids) == 0 {
+		ids = navStringList(payload["source_chunk_ids"])
 	}
-	page, hasClaims := compiledClaimsForChunks(ctx, run.tenantID, run.datasetIDs, chunkIDs, need)
-	claims := run.takeUnseen(page)
-	if len(claims) == 0 {
-		return "", nil
+	if len(ids) == 0 {
+		return claimHit{}, false
 	}
-	// hasClaims, not the survival set: a chunk whose statement another chunk
-	// already stated is deduped off the page, and serving it as raw text would
-	// repeat what the block above says.
-	coveredSet := hasClaims
-	covered := make([]string, 0, len(coveredSet))
-	for _, id := range chunkIDs {
-		if _, ok := coveredSet[id]; ok {
-			covered = append(covered, id)
+	docID := strings.TrimSpace(fmt.Sprint(row["doc_id"]))
+	if docID == "<nil>" {
+		docID = ""
+	}
+	return claimHit{
+		docID:          docID,
+		chunkID:        ids[0],
+		sourceChunkIDs: ids,
+		name:           name,
+		description:    strings.TrimSpace(stringFromAny(payload["description"])),
+		quote:          firstEvidenceQuote(payload["evidence"]),
+		score:          floatFromMap(row, "_score"),
+	}, true
+}
+
+// claimTokens returns the set of content tokens of a text, the vocabulary the
+// claim coverage score is measured against. It uses the corpus tokenizer when
+// the pool is up (same analyzer the claim text was indexed with) and falls back
+// to a rune-level splitter, so a deployment without the analyzer still gets a
+// score instead of none. Single-rune tokens are dropped: they are stopwords in
+// alphabetic languages.
+func claimTokens(text string) map[string]struct{} {
+	tokens := map[string]struct{}{}
+	if tok, err := tokenizer.Tokenize(text); err == nil {
+		for _, t := range strings.Fields(strings.ToLower(tok)) {
+			if len([]rune(t)) >= 2 {
+				tokens[t] = struct{}{}
+			}
 		}
 	}
-	common.InfoCtx(ctx, "agentic_rag: compiled evidence gated a raw read",
-		zap.Strings("chunks", chunkIDs),
-		zap.Int("claims", len(claims)),
-		zap.Int("covered_chunks", len(covered)))
-
-	lines := make([]string, 0, len(claims))
-	for _, c := range claims {
-		lines = append(lines, xmlEscape(claimOutlineLine(ctx, c)))
+	if len(tokens) > 0 {
+		return tokens
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "<compiled_evidence count=\"%d\">\n", len(claims))
-	b.WriteString("<note>These statements are the compiled artifacts of the chunks this call asked to read: each one is an ")
-	b.WriteString("atomic fact with the verbatim quote it was compiled from, and ref=n is the handle for citing that chunk. ")
-	b.WriteString("No raw text accompanies them. If these statements already state the fact this call needs, answer from them ")
-	b.WriteString("now and cite their ref handles. If the passage itself is genuinely still needed, call list_chunks again ")
-	b.WriteString("with raw=true and the original text is returned.</note>\n")
-	b.WriteString(strings.Join(lines, "\n"))
-	b.WriteString("\n</compiled_evidence>")
-	return b.String(), covered
+	for _, t := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}) {
+		if len([]rune(t)) >= 2 {
+			tokens[t] = struct{}{}
+		}
+	}
+	return tokens
+}
+
+// claimCoverage is the share of the question's content tokens this claim states
+// or quotes. It ORDERS a chunk's claims by how close they are to the question
+// being asked; it is not a membership filter, because a chunk's claim set is
+// that chunk's representation and dropping part of it would judge an excerpt.
+func claimCoverage(question map[string]struct{}, c claimHit) float64 {
+	if len(question) == 0 {
+		return 1
+	}
+	text := c.name + " " + c.description + " " + c.quote
+	claim := claimTokens(text)
+	if len(claim) == 0 {
+		return 0
+	}
+	matched := 0
+	for t := range question {
+		if _, ok := claim[t]; ok {
+			matched++
+		}
+	}
+	return float64(matched) / float64(len(question))
+}
+
+// firstEvidenceQuote returns the first non-empty verbatim quote of a claim's
+// evidence list.
+func firstEvidenceQuote(v any) string {
+	list, _ := v.([]any)
+	for _, item := range list {
+		ev, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if q := strings.TrimSpace(stringFromAny(ev["quote"])); q != "" {
+			return q
+		}
+	}
+	return ""
+}
+
+// stringFromAny reads a scalar as a trimmed string, tolerating the numeric
+// types engines decode JSON numbers into.
+func stringFromAny(v any) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case fmt.Stringer:
+		return x.String()
+	case nil:
+		return ""
+	default:
+		return fmt.Sprint(x)
+	}
+}
+
+// claimOutlineLine renders one claim hit: the statement, its verbatim evidence,
+// and the chunk pointer that opens the surrounding passage.
+//
+// The line is ANSWER MATERIAL (a claim carries its own evidence, so the model is
+// expected to cite it instead of re-reading the document), which makes the
+// passage handle mandatory: an uncited claim line ships an answer the reference
+// payload cannot resolve. The handle is appended unquoted (`ref=3`) on purpose -
+// claim lines are rendered inside an escaped <structure> text node, where a
+// `ref="3"` attribute would arrive as `ref=&quot;3&quot;`.
+func claimOutlineLine(ctx context.Context, c claimHit) string {
+	line := "- [claim] " + c.name
+	if q := strings.TrimSpace(c.quote); q != "" {
+		line += ` | Evidence: "` + snippetRunes(q, navClaimEvidenceChars) + `"`
+	}
+	if c.chunkID != "" {
+		line += " [chunks: " + c.chunkID + "]"
+	}
+	if n := evidenceRegistryFrom(ctx).Stamp(c.chunkID); n >= 0 {
+		line += " ref=" + strconv.Itoa(n)
+	}
+	return line
+}
+
+// claimCompactLine renders a claim hit as its statement plus the handle to the
+// chunk it came from, and nothing else.
+//
+// It is the line used where claims are re-read on every later call of the turn
+// (a locate result's block, the gate in front of a raw read). The quote and the
+// chunk id are omitted there because both are carried by the handle: the handle
+// resolves to the source chunk, so a quote repeated in the transcript buys
+// nothing the model can act on while costing a line's worth of tokens in every
+// subsequent call. The verdict page - the one call that decides whether the
+// claims are enough - keeps the full form.
+func claimCompactLine(ctx context.Context, c claimHit) string {
+	line := "- [claim] " + c.name
+	if n := evidenceRegistryFrom(ctx).Stamp(c.chunkID); n >= 0 {
+		line += " ref=" + strconv.Itoa(n)
+	}
+	return line
 }

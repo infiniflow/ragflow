@@ -32,6 +32,7 @@ import (
 
 	"ragflow/internal/agentic_rag/decisionhead"
 	"ragflow/internal/common"
+	"ragflow/internal/tokenizer"
 )
 
 // The decision-model backend answers the filter's per-passage question over
@@ -416,6 +417,10 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 	if len(passages) == 0 {
 		return res, nil
 	}
+	// Attribute this cost to the filter rather than to whatever phase happened to
+	// be running: a caller can then see what judging costs, separately from the
+	// research loop it is there to shrink.
+	ctx = tokenizer.WithUsagePhase(ctx, "decision")
 	templates := phrasingsFor(intent)
 	step := strings.TrimSpace(intent) != ""
 	questions := make(map[string]decisionQuestion, len(passages)*len(templates))
@@ -462,6 +467,14 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 	var parsed decisionResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return res, fmt.Errorf("decode response: %w", err)
+	}
+	// The decision model is an LLM call like any other. Recording it under its own
+	// phase makes the filter's cost visible in the turn's usage, and charging it
+	// makes the run's token ceiling cover it: before this, judging passages was
+	// invisible to both, so a run could spend an unbounded amount on it.
+	if n := parsed.Usage.InputTokens; n > 0 {
+		tokenizer.RecordRunTokenUsageFor(ctx, b.model, n, 0, n)
+		common.ChargeTokens(ctx, n)
 	}
 	sums := make([]float64, len(passages))
 	counts := make([]int, len(passages))

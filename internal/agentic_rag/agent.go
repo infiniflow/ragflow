@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -332,7 +334,6 @@ func Run(ctx context.Context, in Input) (string, error) {
 	if in.DocIDs != nil {
 		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
-
 	// Conversation identity for per-conversation compiled-knowledge tool
 	// availability: the chat pipeline passes the chat id; when absent, a unique
 	// per-run key keeps any availability decision scoped to this turn and
@@ -423,6 +424,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 					zap.Int("claims", len(pf.claims)),
 					zap.Int("chunks", len(pf.chunks)),
 					zap.Strings("docs", claimDocsInOrder(pf.claims)),
+					zap.Int("handles", claimHandleCount(answer)),
 					zap.Int("answer_bytes", len(answer)))
 				emit(ctx, in.OnDelta, answer, "")
 				return answer, nil
@@ -873,9 +875,10 @@ const finalizeTimeout = 90 * time.Second
 // this corpus.
 const finalizeEvidenceMaxRunes = 40000
 
-// claimAnswerTimeout bounds the sufficient-claims answer. It is a single
-// non-streaming call over evidence that was already retrieved, so it needs a
-// fraction of the loop's budget - and a hung provider must not eat the turn.
+// claimAnswerTimeout bounds the claims path as a whole: an answer call over
+// evidence that was already retrieved and, only if it produced an answer, its
+// verification. Both are non-streaming and need a fraction of the loop's budget -
+// and a hung provider must not eat the turn.
 const claimAnswerTimeout = 90 * time.Second
 
 // synthModelFor picks the model that answers without tools: the caller's
@@ -887,20 +890,27 @@ func synthModelFor(in Input) *models.EinoChatModel {
 	return in.Model
 }
 
-// claimAnswerPrompt renders the user message of the sufficient-claims answer.
+// claimAnswerPrompt renders the user message of the call that produces a
+// candidate answer from the recalled claims.
 //
-// It states the rules the loop would otherwise carry in its system prompt, in
-// the one place they apply: the answer must be built from these claims, each
-// fact line must carry the [ID:n] handle of the passage it came from (the
-// pipeline turns those handles into the reference payload), and nothing may be
-// extrapolated. It deliberately does NOT advertise tools: this call has none, so
-// a model that looks for one would burn its only turn.
+// One call produces it, and the sufficiency judgement is made afterwards, by
+// claimVerifyPrompt, on the answer itself. Judging the page BEFORE answering was
+// measured and rejected: with no answer to commit to, the model answered "is the
+// page enough?" too harshly, refusing five questions whose facts were all on the
+// page (gap_overlap 0.86-1.00), and a refusal is what feeds the loop - q142 cost
+// 12.6k as an answer and 590,139 after a refusal, for the same 4 points. An
+// answer is also the only thing that exposes the failure this corpus produces
+// (the film's release year given as the year of the award), because a page can
+// hold the wrong-looking claim without the answer using it.
 //
-// The reply is a JSON verdict, not prose, because the caller has to act on it:
-// "these claims do not answer the question" is a routing decision (fall back to
-// the loop), and reading it reliably out of free text is not possible. A model
-// that cannot answer from the claims says so here instead of shipping a
-// non-answer, which is exactly what a zero-score benchmark run looked like.
+// It carries the rules the loop would otherwise hold in its system prompt: every
+// fact line must be traceable to the claim it came from via its [ID:n] handle
+// (the pipeline turns those handles into the reference payload), and nothing may
+// be extrapolated. A computation must name its inputs: "the last time they beat
+// them" answered from the wrong edition of the same fact is a real error here,
+// and naming the inputs is what makes it visible. It deliberately does NOT
+// advertise tools: this call has none, so a model that looks for one would burn
+// its only turn.
 func claimAnswerPrompt(evidence string) string {
 	var b strings.Builder
 	b.WriteString("### Compiled evidence retrieved for this question\n")
@@ -908,16 +918,22 @@ func claimAnswerPrompt(evidence string) string {
 	b.WriteString("the chunk that quote came from, and the passage handle `ref=n` it was shown as.\n\n")
 	b.WriteString(evidence)
 	b.WriteString("\n\n### Task\n")
-	b.WriteString("Decide whether this evidence answers the question above, then answer from it.\n")
-	b.WriteString("- If it does: combine claims where the question needs it, and end every line that states a fact with ")
-	b.WriteString("the handle of the claim it came from: `[ID:n]`, where n is that claim's `ref=n` value. Never ")
-	b.WriteString("introduce an entity, date or number that no claim states. Write the answer in the user's language.\n")
-	b.WriteString("- Combining claims IS answering: when the question asks for a difference, a count, an age, or a ")
-	b.WriteString("who/which that no single claim states outright, derive it from the claims (a date minus a date, a ")
-	b.WriteString("total across two claims, the entity a relation points at) and say which claims you combined. Only a ")
-	b.WriteString("MISSING INPUT justifies refusing: an entity, date or number the derivation needs and no claim states.\n")
-	b.WriteString("- If it does not (wrong topic, or the specific fact the question asks for is absent): do NOT ")
-	b.WriteString("guess and do NOT answer from world knowledge. Report it as not answerable instead.\n")
+	b.WriteString("Answer the question above from these claims.\n")
+	b.WriteString("- End every line that states a fact with the handle of the claim it came from: `[ID:n]`, where n ")
+	b.WriteString("is that claim's `ref=n` value. Never introduce an entity, date or number that no claim states. ")
+	b.WriteString("Write the answer in the user's language.\n")
+	b.WriteString("- Combining claims IS answering: a difference, a count, an age, or a who/which that no single ")
+	b.WriteString("claim states outright is derived from the claims that give its inputs.\n")
+	b.WriteString("- Use the fact the question actually asks for. When the page states several candidates - two ")
+	b.WriteString("editions of an event, a release year and an award year, several people with the same role - pick ")
+	b.WriteString("the one the question names (last, first, most, the award, the time of the battle) instead of the ")
+	b.WriteString("first one you read.\n")
+	b.WriteString("- A count must be taken from the complete list the page gives, not from the entries you happened ")
+	b.WriteString("to read; a difference must name both operands.\n")
+	b.WriteString("- If the answer is computed from claims, name the claims it used with their handles. One input is ")
+	b.WriteString("a complete derivation when that claim states every operand.\n")
+	b.WriteString("- If a fact the answer needs is absent from every claim, do NOT guess and do NOT use world ")
+	b.WriteString("knowledge: report the question as not answerable and name that fact.\n")
 	b.WriteString("- Do not call tools and do not narrate what you are about to do: this call is the whole ")
 	b.WriteString("turn, so a plan or a promise to search further is not an answer.\n\n")
 	b.WriteString("Reply with ONE JSON object and nothing else:\n")
@@ -927,30 +943,96 @@ func claimAnswerPrompt(evidence string) string {
 	return b.String()
 }
 
-// claimAnswer is the model's verdict on a sufficient-claims recall. answerable
-// false is a real outcome, not an error: it means the gate's relevance floor let
-// through claims that do not actually answer the question, so the caller must
-// fall back to the ordinary loop instead of shipping a non-answer.
+// claimVerifyPrompt renders the user message of the verification call: the one
+// place the question "does this answer the question that was asked?" is decided.
+//
+// It is asked with the answer in hand, which is what makes it tractable, and it
+// is asked about ONE failure mode: the near miss. Both wrong shortcuts measured
+// on this corpus were near misses - the release year given for the year of the
+// award, and an earlier World Series win given for "the last time they beat
+// them" while the page also stated the later one. Neither is detectable by asking
+// whether the page was sufficient, because the page WAS sufficient; the error is
+// in which fact the answer used.
+//
+// It explicitly forbids rewriting the answer or answering the question, so this
+// call stays a check rather than a second opinion that could itself be wrong in
+// a new way.
+func claimVerifyPrompt(ctx context.Context, evidence, answer string, competing []claimHit) string {
+	var b strings.Builder
+	b.WriteString("### Compiled evidence that was available\n")
+	b.WriteString(evidence)
+	b.WriteString("\n\n### Candidate answer\n")
+	b.WriteString(answer)
+	if len(competing) > 0 {
+		// The alternatives the answer passed over, with their handles. Handing
+		// them over is what makes a rejection checkable afterwards: it must name
+		// one of these, so "reject" cannot be a feeling.
+		b.WriteString("\n\n### Statements on the page that state a different value\n")
+		b.WriteString("These are about the same subject as the answer but state another value of the same kind. ")
+		b.WriteString("If the question names last/latest/first/most, the award, or a specific kind of year, the ")
+		b.WriteString("answer must use the statement the question names:\n")
+		reg := evidenceRegistryFrom(ctx)
+		for _, c := range competing {
+			b.WriteString("- ")
+			b.WriteString(c.name)
+			if n := reg.Stamp(c.chunkID); n >= 0 {
+				b.WriteString(fmt.Sprintf(" [ID:%d]", n))
+			}
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("\n\n### Task\n")
+	b.WriteString("Check ONE thing: is this candidate answer the answer to the question that was asked?\n")
+	b.WriteString("- Look for a near miss: a fact about the right subject that answers a DIFFERENT question. The ")
+	b.WriteString("release year instead of the year of the award. An earlier edition of an event when the question ")
+	b.WriteString("says last/latest. One candidate when the question asks for the first, the most, or the one that ")
+	b.WriteString("holds a named office. A namesake instead of the person. If another claim on the page fits the ")
+	b.WriteString("question better than the one the answer used, that is a near miss and the answer is wrong.\n")
+	b.WriteString("- Every date, number, title and entity the answer states must be stated by the claim it cites, ")
+	b.WriteString("or computed from the claims it names. A computation is fine when every input is on the page and ")
+	b.WriteString("the operands named really are those inputs.\n")
+	b.WriteString("- The page is the only source. \"It is well known that\" is not support, and a fact only the ")
+	b.WriteString("answer knows is not evidence.\n")
+	b.WriteString("- Do not rewrite the answer, do not improve it, and do not answer the question yourself. Judge ")
+	b.WriteString("only whether this answer answers this question.\n\n")
+	b.WriteString("Reply with ONE JSON object and nothing else:\n")
+	b.WriteString(`{"supported": true}`)
+	b.WriteString(" or ")
+	b.WriteString(`{"supported": false, "against": "[ID:n]", "reason": "<wrong attribute, ignored candidate, or unsupported fact>"}`)
+	b.WriteString("\n`against` is MANDATORY when supported is false: it is the handle of the statement on the page ")
+	b.WriteString("that fits the question better than the one the answer used. A rejection that cannot name one is ")
+	b.WriteString("not a rejection.\n")
+	return b.String()
+}
+
+// claimAnswer is the answer call's reply. answerable=false is not an error: the
+// page may genuinely not hold the asked-for fact, and the caller then runs the
+// ordinary loop instead of shipping a non-answer.
 type claimAnswer struct {
 	answerable bool
 	answer     string
 	missing    string
 }
 
-// parseClaimAnswer reads the JSON verdict. A reply that is not the requested
-// object is reported as not answerable: shipping unparsed prose is how a turn
-// with no retrieval ends up scored zero, and one extra loop is far cheaper.
+// parseClaimAnswer reads the JSON answer. A reply with no answer field is
+// reported as not answerable: shipping unparsed prose is how a turn ends up
+// scored zero, and one extra loop is far cheaper.
 func parseClaimAnswer(reply string) claimAnswer {
 	obj, ok := decodeJSONObject(reply)
 	if !ok {
 		return claimAnswer{missing: "model did not return the requested JSON verdict"}
 	}
-	out := claimAnswer{missing: stringFromAny(obj["missing"])}
-	if v, ok := obj["answerable"].(bool); ok {
-		out.answerable = v
-	}
+	out := claimAnswer{missing: strings.TrimSpace(stringFromAny(obj["missing"]))}
 	if s, ok := obj["answer"].(string); ok {
 		out.answer = strings.TrimSpace(s)
+	}
+	if v, ok := obj["answerable"].(bool); ok {
+		out.answerable = v
+	} else {
+		// A model that answers without the flag has still answered. Reading the
+		// missing field as a refusal would hand a usable answer to the loop, which
+		// is the expensive direction of this mistake.
+		out.answerable = out.answer != ""
 	}
 	if out.answerable && out.answer == "" {
 		out.answerable = false
@@ -958,11 +1040,70 @@ func parseClaimAnswer(reply string) claimAnswer {
 	return out
 }
 
+// claimSupport is the verifier's finding on a candidate answer.
+type claimSupport struct {
+	supported bool
+	reason    string
+	// against is the handle the verifier names as the statement that fits the
+	// question better. A rejection without one is not evidence: the caller
+	// accepts the answer in that case (see answerFromClaims).
+	against string
+	// parsed records whether the reply was the requested object at all. A reply
+	// that is not is treated as support (see parseClaimSupport) but must stay
+	// visible in the logs, or a prompt regression would look like a clean run.
+	parsed bool
+}
+
+// parseClaimSupport reads the verifier's JSON. A reply that is not the requested
+// object counts as SUPPORTED. The two mistakes are not symmetric: rejecting a
+// good answer hands the question to the loop for 300-600k tokens, while shipping
+// a wrong one costs 2-4 points, so the expensive mistake is the rejection. The
+// caller logs the unparsed case so this default cannot hide one.
+func parseClaimSupport(reply string) claimSupport {
+	obj, ok := decodeJSONObject(reply)
+	if !ok {
+		return claimSupport{supported: true}
+	}
+	v, ok := obj["supported"].(bool)
+	if !ok {
+		return claimSupport{supported: true}
+	}
+	return claimSupport{
+		supported: v,
+		reason:    strings.TrimSpace(stringFromAny(obj["reason"])),
+		against:   strings.TrimSpace(stringFromAny(obj["against"])),
+		parsed:    true,
+	}
+}
+
+// claimHandleCount counts the distinct [ID:n] handles an answer cites.
+func claimHandleCount(answer string) int {
+	seen := map[string]struct{}{}
+	for _, h := range claimHandleRe.FindAllString(answer, -1) {
+		seen[h] = struct{}{}
+	}
+	return len(seen)
+}
+
+var claimHandleRe = regexp.MustCompile(`\[ID:\d+\]`)
+
 // answerFromClaims is the termination of a turn whose pre-loop compiled
-// prefetch already found claims for the question: ONE model call over them, with
-// no tools and therefore no raw-chunk read. It returns ("", nil) when the model
-// judged the claims insufficient, which the caller treats as a reason to run the
-// ordinary loop instead - the loop, not this path, decides what to search next.
+// prefetch already found claims for the question: an answer call over them, then
+// - only if it produced an answer - a verification call. No tools, so no raw
+// chunk is read either way.
+//
+// The order is deliberate and measured. Verification runs AFTER the answer, not
+// before it: a sufficiency call with no answer in hand refuses pages that hold
+// every needed fact, and each of those refusals costs the loop 300-600k tokens
+// for the same final score. With the answer in hand the check is narrower and
+// cheaper per question (it only runs when there IS an answer), and it can look
+// for the failure that actually happens here: the right subject, the wrong fact
+// (a release year given for an award year, an earlier edition given for "the
+// last time").
+//
+// It returns ("", nil) when no answer survives, which the caller treats as a
+// reason to run the ordinary loop instead - the loop, not this path, decides
+// what to search next.
 func answerFromClaims(
 	ctx context.Context,
 	m *models.EinoChatModel,
@@ -981,39 +1122,340 @@ func answerFromClaims(
 	// The template's instruction goes in as the system message because this path
 	// bypasses the agent that would otherwise carry it: the answer must keep the
 	// same shape and language rules as every other answer this template ships.
-	req := make([]*schema.Message, 0, len(messages)+2)
-	req = append(req, schema.SystemMessage(instruction))
-	req = append(req, messages...)
-	req = append(req, schema.UserMessage(claimAnswerPrompt(pf.evidence)))
+	//
+	// One transient provider failure must not throw away evidence that was already
+	// retrieved: measured, a single "failed to send request" on q142 handed a
+	// 12.6k-token answer back to the loop, which then spent 437k tokens for the
+	// same 4 points. The retry policy is the loop's own (llmRetryMax), so both
+	// paths treat a 529/429/reset alike.
+	attempts := 0
+	ask := func(prompt string) (string, error) {
+		req := make([]*schema.Message, 0, len(messages)+2)
+		req = append(req, schema.SystemMessage(instruction))
+		req = append(req, messages...)
+		req = append(req, schema.UserMessage(prompt))
+		var lastErr error
+		for attempt := 0; attempt <= llmRetryMax; attempt++ {
+			attempts++
+			if attempt > 0 {
+				select {
+				case <-ctx.Done():
+					return "", ctx.Err()
+				case <-time.After(claimRetryBackoff):
+				}
+			}
+			resp, err := m.Generate(ctx, req)
+			if err == nil {
+				if resp == nil {
+					return "", nil
+				}
+				return resp.Content, nil
+			}
+			lastErr = err
+			if !transientLLMError(err) {
+				return "", err
+			}
+			common.WarnCtx(ctx, "agentic_rag: claims model call failed; retrying",
+				zap.Int("attempt", attempt+1),
+				zap.Error(err))
+		}
+		return "", lastErr
+	}
 
-	resp, err := m.Generate(ctx, req)
+	answerReply, err := ask(claimAnswerPrompt(pf.evidence))
 	if err != nil {
+		common.WarnCtx(ctx, "agentic_rag: compiled claim answer failed; falling back to the loop",
+			zap.String("stage", "answer"), zap.Int("calls", attempts), zap.Error(err))
 		return "", err
 	}
-	if resp == nil {
-		return "", nil
-	}
-	verdict := parseClaimAnswer(resp.Content)
-	if !verdict.answerable {
+	answer := parseClaimAnswer(answerReply)
+	page := pf.claims
+	reasked := false
+	if !answer.answerable {
 		// gap_overlap splits the two ways a refusal can happen, and it is the only
-		// signal that tells them apart in the logs: a gap whose words ARE on the
-		// page means the model would not use what it had (selection or prompt),
-		// a gap whose words are not means the page never held the fact
-		// (retrieval). Both need different work, and only this number says which.
-		common.InfoCtx(ctx, "agentic_rag: claims judged insufficient by the model",
-			zap.Int("claims", len(pf.claims)),
-			zap.Int("chunks", len(pf.chunks)),
-			zap.Strings("docs", claimDocsInOrder(pf.claims)),
-			zap.String("missing", truncateForLog(verdict.missing, 200)),
-			zap.Float64("gap_overlap", claimGapOverlap(pf.claims, verdict.missing)))
+		// signal that tells them apart: a gap whose words ARE on the page means
+		// the model would not use what it had (selection), a gap whose words are
+		// not means the page never held the fact (retrieval or compilation). Only
+		// the first is fixable here, by showing the page WITHOUT the noise that
+		// buried the fact - the same evidence, never a new search.
+		gap := strings.TrimSpace(answer.missing)
+		overlap := claimGapOverlap(page, gap)
+		matched := claimsForGap(page, gap, compiledGapReaskOverlap, compiledGapReaskClaims)
+		if overlap >= compiledGapReaskOverlap && len(matched) > 0 {
+			narrowed := claimEvidenceBlock(ctx, matched)
+			if reply, rerr := ask(claimGapReaskPrompt(narrowed, gap)); rerr != nil {
+				common.WarnCtx(ctx, "agentic_rag: claim gap re-ask failed",
+					zap.Int("gap_claims", len(matched)), zap.Error(rerr))
+			} else if again := parseClaimAnswer(reply); again.answerable && strings.TrimSpace(again.answer) != "" {
+				answer = again
+				page = matched
+				reasked = true
+			}
+		}
+		if !answer.answerable {
+			common.InfoCtx(ctx, "agentic_rag: claims judged unanswerable by the model",
+				zap.String("stage", "answer"),
+				zap.Int("claims", len(page)),
+				zap.Int("chunks", len(pf.chunks)),
+				zap.Strings("docs", claimDocsInOrder(page)),
+				zap.String("missing", truncateForLog(gap, 200)),
+				zap.Float64("gap_overlap", overlap),
+				zap.Int("gap_claims", len(matched)),
+				zap.Bool("reasked", reasked),
+				zap.Int("reply_bytes", len(answerReply)))
+			return "", nil
+		}
+	}
+	// Deterministic floor, checked before the verifier because it is free: an
+	// answer that cites nothing cannot be resolved into a reference payload.
+	//
+	// There is deliberately NO "a derivation must cite two inputs" floor. It was
+	// measured to be wrong: q654's answer computed 48-27 from ONE claim that
+	// states both numbers, was rejected for citing one handle, and the loop then
+	// spent 118k tokens to reach the same 4 points.
+	handles := claimHandleCount(answer.answer)
+	if handles == 0 {
+		common.InfoCtx(ctx, "agentic_rag: claim answer cites no claim; falling back to the loop",
+			zap.String("stage", "floor"),
+			zap.Int("claims", len(page)),
+			zap.Int("answer_bytes", len(answer.answer)))
 		return "", nil
 	}
-	return verdict.answer, nil
+
+	// The verifier is shown the competing statements, not just the answer: both
+	// wrong short-circuits this corpus produces are near misses whose antidote is
+	// on the page (a second edition of the event, a release year beside the award
+	// year), and a verifier that cannot see them is judging half the evidence.
+	competing := competingClaims(page, answer.answer)
+	verifyReply, err := ask(claimVerifyPrompt(ctx, pf.evidence, answer.answer, competing))
+	if err != nil {
+		common.WarnCtx(ctx, "agentic_rag: claim verification failed; answer accepted",
+			zap.String("stage", "verify"), zap.Int("calls", attempts), zap.Error(err))
+		return answer.answer, nil
+	}
+	support := parseClaimSupport(verifyReply)
+	if !support.parsed {
+		common.WarnCtx(ctx, "agentic_rag: claim verification reply was not the requested JSON; answer accepted",
+			zap.Int("reply_bytes", len(verifyReply)))
+	}
+	if !support.supported {
+		// A rejection is only evidence when it names the better-fitting claim ON
+		// the page. A rejection that cannot do that is a feeling, and the two
+		// mistakes are not symmetric: rejecting a good answer costs the loop
+		// 100-600k, shipping a wrong one costs 2-4 points.
+		if !claimHandleOnPage(ctx, page, support.against) {
+			common.WarnCtx(ctx, "agentic_rag: claim answer rejection cited no claim on the page; answer accepted",
+				zap.String("stage", "verify"),
+				zap.String("against", truncateForLog(support.against, 40)),
+				zap.String("reason", truncateForLog(support.reason, 200)))
+			return answer.answer, nil
+		}
+		common.InfoCtx(ctx, "agentic_rag: claim answer rejected by verification; falling back to the loop",
+			zap.String("stage", "verify"),
+			zap.String("against", support.against),
+			zap.String("reason", truncateForLog(support.reason, 200)),
+			zap.Int("handles", handles),
+			zap.Int("competing", len(competing)),
+			zap.Int("claims", len(page)),
+			zap.Int("answer_bytes", len(answer.answer)))
+		return "", nil
+	}
+	common.InfoCtx(ctx, "agentic_rag: claim answer accepted",
+		zap.String("stage", "verify"),
+		zap.Int("handles", handles),
+		zap.Int("competing", len(competing)),
+		zap.Int("claims", len(page)),
+		zap.Bool("reasked", reasked),
+		zap.Int("calls", attempts))
+	return answer.answer, nil
+}
+
+// claimRetryBackoff is the wait between two attempts of one claims-stage model
+// call. Seconds-scale, matching the loop's own retry policy: a 529/429 recovers
+// in that window, and a genuine wall then fails after ~2s instead of burning the
+// claims budget.
+const claimRetryBackoff = 2 * time.Second
+
+// claimGapReaskPrompt is the narrowed re-ask: the SAME retrieval, with the page
+// cut down to the statements that cover the fact the first pass reported missing.
+// It exists because a refusal at high gap_overlap is a selection failure, and the
+// cure for a selection failure is a smaller page - not another search.
+func claimGapReaskPrompt(evidence, gap string) string {
+	var b strings.Builder
+	b.WriteString(claimAnswerPrompt(evidence))
+	b.WriteString("\n\n### Note\n")
+	b.WriteString("A first pass over a larger page reported this fact as absent: \"")
+	b.WriteString(strings.TrimSpace(gap))
+	b.WriteString("\"\n")
+	b.WriteString("The statements above are the ones from that same retrieval which state it. Answer from them. ")
+	b.WriteString("If they still do not state it, report it as not answerable again.\n")
+	return b.String()
+}
+
+// claimsForGap returns the page claims that state the refused gap: those whose
+// text covers at least minOverlap of the gap's content words, best first, capped
+// at limit. It never reaches outside the page it was given.
+func claimsForGap(page []claimHit, gap string, minOverlap float64, limit int) []claimHit {
+	gapTokens := claimTokens(gap)
+	if len(gapTokens) == 0 || limit <= 0 {
+		return nil
+	}
+	type scored struct {
+		hit     claimHit
+		overlap float64
+	}
+	cands := make([]scored, 0, len(page))
+	for _, c := range page {
+		claim := claimTokens(c.name + " " + c.description + " " + c.quote)
+		if len(claim) == 0 {
+			continue
+		}
+		hit := 0
+		for t := range gapTokens {
+			if _, ok := claim[t]; ok {
+				hit++
+			}
+		}
+		overlap := float64(hit) / float64(len(gapTokens))
+		if overlap < minOverlap {
+			continue
+		}
+		cands = append(cands, scored{hit: c, overlap: overlap})
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].overlap != cands[j].overlap {
+			return cands[i].overlap > cands[j].overlap
+		}
+		return cands[i].hit.name < cands[j].hit.name
+	})
+	if len(cands) > limit {
+		cands = cands[:limit]
+	}
+	out := make([]claimHit, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, c.hit)
+	}
+	return out
+}
+
+// numericLiteralRe matches a number as the corpus writes it. It is the slot a
+// near miss swaps: a year for another year, a count for another count.
+var numericLiteralRe = regexp.MustCompile(`\d+`)
+
+// competingClaims returns the page claims that state a DIFFERENT value of the
+// same kind for the subject the answer is about - the statements a near miss
+// ignored.
+//
+// It is the deterministic half of the precision check: it never rejects on its
+// own (a wrong rejection costs 20-45x a wrong answer), it only makes sure the
+// verifier sees the alternative it would otherwise have to find by itself.
+func competingClaims(page []claimHit, answer string) []claimHit {
+	answerTokens := claimTokens(answer)
+	used := make(map[string]struct{})
+	// The kinds of value the answer itself states: a competing statement must
+	// offer a value of the same width, which is what keeps a runtime in minutes
+	// from competing with a year.
+	kinds := map[int]struct{}{}
+	for _, n := range numericLiteralRe.FindAllString(answer, -1) {
+		used[n] = struct{}{}
+		kinds[len(n)] = struct{}{}
+	}
+	if len(answerTokens) < 2 || len(kinds) == 0 {
+		return nil
+	}
+	type scored struct {
+		hit     claimHit
+		overlap float64
+		value   string
+	}
+	cands := make([]scored, 0, len(page))
+	for _, c := range page {
+		text := c.name + " " + c.description + " " + c.quote
+		fresh := ""
+		for _, n := range numericLiteralRe.FindAllString(text, -1) {
+			if _, ok := used[n]; ok {
+				continue
+			}
+			if _, ok := kinds[len(n)]; !ok {
+				continue
+			}
+			fresh = n
+			break
+		}
+		if fresh == "" {
+			continue
+		}
+		claim := claimTokens(text)
+		if len(claim) == 0 {
+			continue
+		}
+		hit := 0
+		for t := range answerTokens {
+			if _, ok := claim[t]; ok {
+				hit++
+			}
+		}
+		overlap := float64(hit) / float64(len(answerTokens))
+		if overlap < compiledCompetitionOverlap {
+			continue
+		}
+		cands = append(cands, scored{hit: c, overlap: overlap, value: fresh})
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].overlap != cands[j].overlap {
+			return cands[i].overlap > cands[j].overlap
+		}
+		return cands[i].hit.name < cands[j].hit.name
+	})
+	// One statement per competing value: three copies of "it was 2011" are one
+	// alternative, and the verifier needs the alternatives, not repetitions.
+	seenValue := make(map[string]struct{}, compiledCompetitionCandidates)
+	out := make([]claimHit, 0, compiledCompetitionCandidates)
+	for _, c := range cands {
+		if _, dup := seenValue[c.value]; dup {
+			continue
+		}
+		seenValue[c.value] = struct{}{}
+		out = append(out, c.hit)
+		if len(out) >= compiledCompetitionCandidates {
+			break
+		}
+	}
+	return out
+}
+
+// claimHandleOnPage reports whether a handle the verifier named resolves to one
+// of the claims it was shown. A rejection that fails this test is not evidence.
+func claimHandleOnPage(ctx context.Context, page []claimHit, handle string) bool {
+	reg := evidenceRegistryFrom(ctx)
+	if reg == nil {
+		return false
+	}
+	m := numericLiteralRe.FindString(handle)
+	if m == "" {
+		return false
+	}
+	n, err := strconv.Atoi(m)
+	if err != nil {
+		return false
+	}
+	for _, c := range page {
+		if reg.Stamp(c.chunkID) == n {
+			return true
+		}
+	}
+	return false
 }
 
 // claimGapOverlap is the share of the refused gap's content words that the page's
-// claims already state. It is a diagnostic, not a control signal: the refusal
-// still falls back to the loop. See the log line it feeds.
+// claims already state. It decides whether a refusal is a selection failure the
+// narrowed re-ask can fix, or a fact the page never held.
 func claimGapOverlap(claims []claimHit, gap string) float64 {
 	gapTokens := claimTokens(gap)
 	if len(gapTokens) == 0 {
