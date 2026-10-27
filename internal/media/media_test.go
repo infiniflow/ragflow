@@ -135,3 +135,22 @@ func TestResolverRejectsSizeMismatch(t *testing.T) {
 		t.Fatalf("err = %v, want size mismatch", err)
 	}
 }
+
+func TestMaterializeRejectsInvalidMediaRef(t *testing.T) {
+	m := map[string]any{"media_ref": map[string]any{"format": "html"}}
+	src := SourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+	if err := Materialize(context.Background(), m, NewResolver(), src); err == nil {
+		t.Fatal("a present but unusable media_ref was treated as absent")
+	}
+}
+
+func TestMaterializeTreatsAbsentMediaRefAsNoop(t *testing.T) {
+	var nilRef *entity.MediaRef
+	for _, value := range []any{nil, "", map[string]any{}, nilRef} {
+		m := map[string]any{"media_ref": value}
+		src := SourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+		if err := Materialize(context.Background(), m, NewResolver(), src); err != nil {
+			t.Errorf("media_ref %#v: %v", value, err)
+		}
+	}
+}

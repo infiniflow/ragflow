@@ -272,3 +272,23 @@ func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
 		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
 	}
 }
+
+// TestUploadChunkMediaRejectsInvalidMediaRef pins the malformed-reference
+// path: a present ref that does not decode must fail the run, not persist a
+// chunk without its image.
+func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
+	ck := map[string]any{
+		"id":           "chunk-1",
+		"text":         "",
+		"doc_type_kwd": "image",
+		"media_ref":    map[string]any{"format": "html"},
+	}
+	up := func(context.Context, string, string, []byte) (string, error) { return "", nil }
+	src := media.SourceFunc(func(context.Context) ([]byte, error) {
+		t.Fatal("resolver must not run for an invalid reference")
+		return nil, nil
+	})
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, media.NewResolver(), src); err == nil {
+		t.Fatal("invalid media_ref was treated as absent")
+	}
+}

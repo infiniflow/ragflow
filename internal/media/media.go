@@ -153,6 +153,9 @@ func Materialize(ctx context.Context, m map[string]any, resolver Resolver, src S
 	}
 	ref := entity.MediaRefFromAny(m["media_ref"])
 	if ref == nil {
+		if mediaRefPresent(m["media_ref"]) {
+			return errors.New("media: media_ref is present but has no usable format/kind/digest")
+		}
 		return nil
 	}
 	data, err := resolver.Resolve(ctx, *ref, src)
@@ -161,6 +164,24 @@ func Materialize(ctx context.Context, m map[string]any, resolver Resolver, src S
 	}
 	m["image"] = EncodeDataURI(ref.MIME, data)
 	return nil
+}
+
+// mediaRefPresent reports whether a media_ref value claims to be a reference.
+// A nil pointer, empty string, or empty map is treated as absent; anything
+// else that did not decode into a usable MediaRef is a malformed reference.
+func mediaRefPresent(v any) bool {
+	switch ref := v.(type) {
+	case nil:
+		return false
+	case *entity.MediaRef:
+		return ref != nil
+	case string:
+		return ref != ""
+	case map[string]any:
+		return len(ref) > 0
+	default:
+		return true
+	}
 }
 
 // EncodeDataURI renders image bytes in the form the chunker expects for
