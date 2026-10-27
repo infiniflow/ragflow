@@ -47,13 +47,13 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    ```bash
    # Enter the Docker deployment directory.
    cd ragflow/docker
-   # Check out the release tag you want to deploy.
-   git checkout <release-tag>
+   # Check out the latest 1.0 release tag; replace it with another version if needed.
+   git checkout v1.0.0-rc2
    # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
 
-   Replace `<release-tag>` with the version you want to deploy from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
+   To deploy another version, replace `v1.0.0-rc2` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
