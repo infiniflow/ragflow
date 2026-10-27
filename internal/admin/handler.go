@@ -522,56 +522,6 @@ func (h *Handler) GetService(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotFound, "Service not found")
 }
 
-// ShutdownService handle shutdown service
-func (h *Handler) ShutdownService(c *gin.Context) {
-	serviceName := c.Param("service_name")
-	if serviceName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Service name is required")
-		return
-	}
-
-	result, err := h.service.ShutdownService(serviceName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "")
-}
-
-// StartService handle start service
-func (h *Handler) StartService(c *gin.Context) {
-	serviceName := c.Param("service_name")
-	if serviceName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Service name is required")
-		return
-	}
-
-	result, err := h.service.StartService(serviceName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "")
-}
-
-// RestartService handle restart service
-func (h *Handler) RestartService(c *gin.Context) {
-	serviceName := c.Param("service_name")
-	if serviceName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Service name is required")
-		return
-	}
-
-	result, err := h.service.RestartService(serviceName)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "")
-}
 
 // ListVariables handle list variables
 func (h *Handler) ListVariables(c *gin.Context) {
@@ -1030,26 +980,6 @@ func (h *Handler) ListIngestors(c *gin.Context) {
 	common.SuccessWithData(c, ingestorResults, "Get all tasks")
 }
 
-type ShutdownIngestorRequest struct {
-	IngestorID string `json:"ingestor_name" binding:"required"`
-}
-
-func (h *Handler) ShutdownIngestor(c *gin.Context) {
-	var req ShutdownIngestorRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Ingestor ID is required")
-		return
-	}
-
-	taskID := common.GenerateUUID()
-	//ingestionManager.SubmitTask(&common.TaskAssignment{
-	//	TaskId:     taskID,
-	//	TaskType:   "SHUTDOWN",
-	//	AssignedTo: req.IngestorID,
-	//})
-
-	common.SuccessWithData(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
-}
 
 // Reports handle heartbeat reports from servers
 func (h *Handler) Reports(c *gin.Context) {

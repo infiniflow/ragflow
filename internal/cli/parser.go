@@ -114,12 +114,6 @@ func (p *Parser) parseAdminCommand() (*Command, error) {
 		return p.parseAdminResetCommand()
 	case TokenBenchmark:
 		return p.parseAdminBenchmarkCommand()
-	case TokenStart:
-		return p.parseAdminStartService()
-	case TokenShutdown:
-		return p.parseAdminShutdownCommands()
-	case TokenRestart:
-		return p.parseAdminRestart()
 	case TokenMQ:
 		return p.parseMessageQueueCommand()
 	case TokenRemove:

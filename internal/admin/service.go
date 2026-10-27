@@ -1005,33 +1005,6 @@ func (s *Service) checkOlapAlive(name string) (map[string]interface{}, error) {
 	}, nil
 }
 
-// ShutdownService shutdown service
-func (s *Service) ShutdownService(serviceName string) (map[string]interface{}, error) {
-	// TODO: Implement with proper service manager
-	return map[string]interface{}{
-		"command":      "shutdown service",
-		"service_name": serviceName,
-		"error":        "shutdown service not implemented",
-	}, nil
-}
-
-// StartService start service
-func (s *Service) StartService(serviceName string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"command":      "start service",
-		"service_name": serviceName,
-		"error":        "command 'start service' isn't implemented",
-	}, nil
-}
-
-// RestartService restart service
-func (s *Service) RestartService(serviceName string) (map[string]interface{}, error) {
-	return map[string]interface{}{
-		"command":      "restart service",
-		"service_name": serviceName,
-		"error":        "command 'restart service' isn't implemented",
-	}, nil
-}
 
 // AdminException admin exception error
 type AdminException struct {

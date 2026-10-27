@@ -101,21 +101,6 @@ func TestStop_GracefulShutdown(t *testing.T) {
 	}
 }
 
-// TestStop_ClosesShutdownCh verifies that Stop closes ShutdownCh so the
-// cmd-side select on <-ingestor.ShutdownCh unblocks and the orchestrator
-// knows shutdown completed. Mirrors syncer.go which closes its ShutdownCh in
-// Stop. Without this, the admin graceful-shutdown path is dead (cmd blocks
-// forever on the receive).
-func TestStop_ClosesShutdownCh(t *testing.T) {
-	ingestor := newUnitIngestor("test-shutdown-ch", 1, nil)
-	ingestor.Stop(context.Background())
-	select {
-	case <-ingestor.ShutdownCh:
-		// closed - pass
-	default:
-		t.Fatal("ShutdownCh should be closed after Stop returns")
-	}
-}
 
 // TestStop_TimesOutWhenWorkerStuck verifies the B1 fix: when a worker is
 // blocked in a stage that does not honor ctx cancellation (e.g. a native

@@ -78,9 +78,6 @@ type Ingestor struct {
 	leasesMu             sync.Mutex
 	stopLeases           atomic.Bool
 
-	// Shutdown channel - receive on this to trigger graceful shutdown
-	ShutdownCh chan struct{}
-
 	// Worker pool
 	workerQueue  chan *worker
 	dispatcherWg sync.WaitGroup
@@ -88,7 +85,6 @@ type Ingestor struct {
 	startOnce    sync.Once
 	startErr     error
 	workerOnce   sync.Once // guards startWorkerPool; must NOT be startOnce (Start wraps start() in startOnce, and start() calls startWorkerPool -> re-entry deadlock)
-	stopOnce     sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
 
 	ingestionTaskSvc *servicepkg.IngestionTaskService
 	docState         *docStateUpdater
@@ -191,7 +187,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
 		workerQueue:              make(chan *worker, maxConcurrency),
-		ShutdownCh:               make(chan struct{}, 1),
 		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
 		docState:                 newDocStateUpdater(),
 		heartbeatInterval:        defaultHeartbeatInterval,
@@ -1360,9 +1355,4 @@ func (e *Ingestor) Stop(ctx context.Context) {
 		e.tasksMu.RUnlock()
 		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
 	}
-
-	// Signal shutdown completion so the cmd-side select on <-ShutdownCh
-	// unblocks (the admin graceful-shutdown path). Guarded by stopOnce: a
-	// repeated Stop must not double-close the channel.
-	e.stopOnce.Do(func() { close(e.ShutdownCh) })
 }
