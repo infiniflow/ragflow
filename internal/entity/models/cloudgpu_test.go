@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"strings"
 	"testing"
 )
 
@@ -146,5 +147,48 @@ func TestCloudGPUListModelsAndCheckConnection(t *testing.T) {
 	}
 	if err := model.CheckConnection(t.Context(), &APIConfig{ApiKey: &testAPIKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
+	}
+}
+
+// Known CloudGPU models must report their catalogued types, so the vision
+// models are not downgraded to chat-only by name inference. Unknown ids keep
+// the name-based fallback.
+func TestCloudGPUListModelsUsesCatalogTypes(t *testing.T) {
+	withSSRFBypass(t)
+	dir, restore := setupProviderTestDir(t, "cloudgpu.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "deepseek-v4.1-flash"},
+				{"id": "kimi-k2.6"},
+				{"id": "glm-5.2"},
+				{"id": "some-new-vl-model"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newCloudGPUForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	want := map[string]string{
+		"deepseek-v4.1-flash": "chat,vision",
+		"kimi-k2.6":           "chat,vision",
+		"glm-5.2":             "chat",
+		"some-new-vl-model":   "chat,vision",
+	}
+	if len(list) != len(want) {
+		t.Fatalf("models=%v", list)
+	}
+	for _, model := range list {
+		if got := strings.Join(model.ModelTypes, ","); got != want[model.Name] {
+			t.Errorf("%s types=%q, want %q", model.Name, got, want[model.Name])
+		}
 	}
 }

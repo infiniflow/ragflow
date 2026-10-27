@@ -16,6 +16,8 @@
 
 package models
 
+import "context"
+
 // CloudGPUModel drives CloudGPU (https://cloudgpu.app/v1), a GPU cloud whose
 // inference API serves open models through OpenAI-compatible chat and
 // model-list endpoints, so the embedded OpenAIAPICompatibleModel covers
@@ -39,4 +41,30 @@ func (m *CloudGPUModel) Name() string {
 // NewInstance returns a driver bound to the given base URL.
 func (m *CloudGPUModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewCloudGPUModel(baseURL, m.baseModel.URLSuffix)
+}
+
+// ListModels lists CloudGPU models and, for ids in the CloudGPU catalog
+// (conf/models/cloudgpu.json), returns the catalogued model types so vision
+// models keep their image-input capability. Unknown ids keep the name-based
+// inference of the embedded driver.
+func (m *CloudGPUModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	models, err := m.OpenAIAPICompatibleModel.ListModels(ctx, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	pm := GetProviderManager()
+	if pm == nil {
+		return models, nil
+	}
+	provider := pm.FindProvider("CloudGPU")
+	if provider == nil {
+		return models, nil
+	}
+	for i := range models {
+		if known := pm.FindModel(provider, models[i].Name); known != nil && len(known.ModelTypes) > 0 {
+			models[i].ModelTypes = append([]string(nil), known.ModelTypes...)
+		}
+	}
+	return models, nil
 }
