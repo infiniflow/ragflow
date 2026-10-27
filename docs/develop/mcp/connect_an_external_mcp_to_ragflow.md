@@ -77,10 +77,10 @@ RAGFlow keeps **Save** disabled until the current connection settings have been 
 RAGFlow validates the endpoint before connecting:
 
 - The URL must use `http://` or `https://` and contain a host. `stdio://` is not supported.
-- Every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
+- By default, every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
 - The Go MCP client connects to the validated address directly and does not use HTTP proxy environment variables.
 
-Consequently, endpoints such as `localhost`, `127.0.0.1`, `::1`, `10.x.x.x`, `172.16.x.x` through `172.31.x.x`, and `192.168.x.x` cannot be added through this path. `ALLOW_ANY_HOST` does not disable this validation. Publish the MCP endpoint on a public address whose DNS records all resolve to public addresses.
+To connect to self-hosted MCP endpoints on private or Docker networks, set `ALLOW_ANY_HOST=true` in the RAGFlow backend environment and restart the backend. This shared setting also permits private database and connector hosts. Accepted true values are `1`, `true`, `yes`, and `on` (case-insensitive, with surrounding whitespace ignored). HTTP/HTTPS scheme validation, DNS resolution, and connection pinning remain enabled.
 
 ## Troubleshoot a failed connection
 

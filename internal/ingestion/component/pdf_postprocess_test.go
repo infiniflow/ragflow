@@ -71,7 +71,7 @@ func TestPDFDispatchNormalizesBeforeOutputsAndEnhancement(t *testing.T) {
 }
 
 func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}}, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}}, nil, nil)
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Caption" || len(table.CellTexts()) != 1 || len(table.CellTexts()[0]) != 1 || table.CellTexts()[0][0] != "Cell" || table.Page != 2 {
 		t.Fatalf("structured table missing: %#v", item)
@@ -82,7 +82,7 @@ func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
 }
 
 func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"}, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"}, nil, nil)
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Embedded caption" {
 		t.Fatalf("embedded caption lost: %#v", item)
@@ -111,7 +111,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 		"type": "image", "image_caption": []any{"Caption"},
 		"vlm_description": "backend desc",
 		"page_idx":        0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil)
+	}, nil, nil)
 	if withDesc == nil {
 		t.Fatal("image item dropped")
 	}
@@ -124,7 +124,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 	withoutDesc := mineruContentItemToJSON(map[string]any{
 		"type": "image", "image_caption": []any{"Caption"},
 		"page_idx": 0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil)
+	}, nil, nil)
 	if withoutDesc == nil {
 		t.Fatal("image item dropped")
 	}

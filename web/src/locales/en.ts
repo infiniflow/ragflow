@@ -1150,7 +1150,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
-        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
+        "Evaluates whether retrieved chunks are relevant to the user's query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.",
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -2682,7 +2682,7 @@ Example: Virtual Hosted Style`,
         sectionTitle: 'Section title',
       },
       tags: 'Tags',
-      canvasCategory: 'Canvas category',
+      agentCategory: 'Agent category',
       editTags: 'Edit tags',
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
@@ -2920,7 +2920,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
@@ -3032,7 +3032,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       news: 'News',
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
-        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+        'Controls how much recent conversation history is available to the selected model as context. Larger windows use more tokens and may include unrelated context.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -3438,6 +3438,24 @@ This delimiter is used to split the input text into several text pieces echo of 
         loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
+        label: 'Pipeline version',
+        latest: 'Latest version',
+        filterByAlias: 'Filter by alias',
+        alias: 'Alias',
+        pinnedTooltip:
+          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
+        outdated:
+          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+        delete: 'Delete version',
+        deleteConfirmTitle: 'Delete this version?',
+        deleteConfirmContent:
+          'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
+        restore: 'Restore as current',
+        restoreConfirmTitle: 'Restore this version as the current agent?',
+        restoreConfirmContent:
+          'The current agent DSL will be replaced by this version. Publish again to save it as a new version.',
+        missingContent:
+          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {
@@ -3624,9 +3642,9 @@ This process aggregates variables from multiple branches into a single variable 
       memoryUnavailable:
         'The selected memory is unavailable (deleted), please re-select',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalTemplateMemoryHint:
-        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
@@ -4197,7 +4215,6 @@ Important structured information may include: names, dates, locations, events, k
       permission: 'Permission',
 
       agentTitle: 'Agent title',
-      canvasCategory: 'Canvas category',
 
       newRole: 'New role',
       addNewRole: 'Add new role',
@@ -4216,18 +4233,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: 'Launch',
-      canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',
       newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
-      searchCanvas: 'Search canvas...',
       searchSessions: 'Search sessions...',
-      noCanvasSelected: 'Please select a canvas',
       noSessionSelected: 'Please select a session or create a new one',
       noSessionsFound: 'No sessions found',
       createFirstSession: 'Create your first session',
-      noCanvasFound: 'No canvas found',
       deleteSelectedConfirm:
         'Are you sure you want to delete {{count}} session(s)?',
       batchDeleteSessions: 'Delete Sessions',

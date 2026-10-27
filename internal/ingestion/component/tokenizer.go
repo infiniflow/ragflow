@@ -485,6 +485,14 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// cacheHits counts the chunks served from the per-chunk embedding cache;
 	// they are already-resolved work, so the progress fraction starts from them.
 	cacheHits := 0
+	// fieldsResolvedNoText counts chunks where the configured fields produced
+	// nothing at all, which is the signature of a `fields` value naming a chunk
+	// field this pipeline does not produce.
+	fieldsResolvedNoText := 0
+	// emptyAfterTrim counts chunks whose text survived that check but produced
+	// nothing after trimming, which means the embedder's trimmer returned no
+	// text for non-empty input.
+	emptyAfterTrim := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		// Python parity (tokenizer.py:86-89): strip table-structure tags
@@ -492,6 +500,15 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// empty-table chunk contributes nothing to the batch.
 		txt := cleanEmbedText(raw)
 		if txt == "" {
+			// Two different causes reach this branch and only one is a defect:
+			// no configured field produced text at all (misconfiguration),
+			// versus a chunk that really is only table tags or whitespace (the
+			// supported empty-table case, which must stay silent). Only a
+			// literally empty concatFields result is the first — whitespace-only
+			// content is still content a field produced.
+			if raw == "" {
+				fieldsResolvedNoText++
+			}
 			continue
 		}
 		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
@@ -504,6 +521,19 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// every model would collapse onto one key and served vectors could come
 		// from a different model.
 		trunc := trimForEmbedding(embedder, txt)
+		// A provider rejects the WHOLE batch when any input carries no content
+		// token — vLLM answers 400 "Input validation error: `inputs` cannot be
+		// empty" — so an empty input must never reach the batch. The
+		// EmbedderTrimmer seam promises nothing about the result, so a trimmer
+		// that returns no text for non-empty input is handled by embedding the
+		// pre-trim text: that keeps this chunk's vector requirement intact
+		// (validateTokenizerOutputs decides embeddability on the pre-trim text)
+		// and lets the embedder's own over-limit ladder re-cut it if the
+		// untrimmed text is too long.
+		if strings.TrimSpace(trunc) == "" {
+			emptyAfterTrim++
+			trunc = txt
+		}
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
 			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
@@ -517,6 +547,20 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		texts = append(texts, trunc)
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
+	}
+	// Both warnings sit outside the early return on purpose: a mixed batch can
+	// embed some chunks and drop others, and the dropped ones must still be
+	// reported. Each reports how many chunks it covers, not the batch size.
+	if fieldsResolvedNoText > 0 {
+		common.Warn("Tokenizer: configured fields produced no text for some chunks; they were skipped",
+			zap.Strings("fields", c.param.Fields),
+			zap.Int("chunks", fieldsResolvedNoText),
+			zap.Int("total_chunks", len(chunks)))
+	}
+	if emptyAfterTrim > 0 {
+		common.Warn("Tokenizer: embedder returned no text after trimming; embedded the untrimmed text instead",
+			zap.Int("chunks", emptyAfterTrim),
+			zap.Int("total_chunks", len(chunks)))
 	}
 	if len(texts) == 0 && cacheHits == 0 {
 		// Nothing to embed and nothing to serve from cache: return before the

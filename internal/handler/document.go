@@ -1262,6 +1262,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"parser_id":              doc.ParserID,
 		"chunk_method":           doc.ParserID,
 		"pipeline_id":            stringValue(doc.PipelineID),
+		"pipeline_version_id":    stringValue(doc.PipelineVersionID),
 		"pipeline_name":          stringValue(doc.PipelineName),
 		"nickname":               stringValue(doc.Nickname),
 		"parser_config":          decodeJSONMap(string(doc.ParserConfig)),

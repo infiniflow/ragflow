@@ -66,9 +66,11 @@ import (
 // version (it falls through to GetLatest).
 func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID string, dsl map[string]any) {
 	t.Helper()
-	dao.DB.Create(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
-	dao.DB.Create(&entity.Tenant{ID: tenantID, Name: sptr(tenantID)})
-	dao.DB.Create(&entity.UserTenant{ID: tenantID + "-" + userID, UserID: userID, TenantID: tenantID, Role: "owner", Status: sptr("1")})
+	dao.DB.Where("id = ?", userID).FirstOrCreate(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
+	dao.DB.Where("id = ?", tenantID).FirstOrCreate(&entity.Tenant{ID: tenantID, Name: sptr(tenantID)})
+	dao.DB.Where("user_id = ? AND tenant_id = ?", userID, tenantID).FirstOrCreate(&entity.UserTenant{
+		ID: tenantID + "-" + userID, UserID: userID, TenantID: tenantID, Role: "owner", Status: sptr("1"),
+	})
 	dao.DB.Create(&entity.UserCanvas{
 		ID:             canvasID,
 		UserID:         userID,

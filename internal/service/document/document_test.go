@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
@@ -54,11 +55,11 @@ type recordingTaskPublisher struct {
 }
 
 func documentTestContext(ctx context.Context) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{TenantID: "tenant-1"})
+	return permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 }
 
 func documentTestContextFor(ctx context.Context, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{TenantID: tenantID})
+	return permission.WithSubject(ctx, permission.Subject{UserID: tenantID, TenantID: tenantID})
 }
 
 func documentTestActorContext(ctx context.Context, userID, tenantID string) context.Context {
@@ -666,6 +667,9 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	var owner entity.UserTenant
 	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", string(entity.StatusValid)).First(&owner).Error
 	if err == nil {
+		if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+			t.Fatalf("prepare document owner permission fixture: %v", err)
+		}
 		return
 	}
 	if !dao.IsNotFoundErr(err) {
@@ -683,12 +687,15 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	if err := dao.DB.Create(&owner).Error; err != nil {
 		t.Fatalf("insert test tenant owner: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare document owner permission fixture: %v", err)
+	}
 }
 
 func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
 	t.Helper()
 	tenantID := "tenant-1"
-	dslJSON, err := service.LoadPipelineDSL(t.Context(), false, "general", nil)
+	dslJSON, err := service.LoadPipelineDSL(t.Context(), false, "general", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1066,12 +1073,13 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 }
 
 func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
-	ctx := t.Context()
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	ctx := documentTestContext(t.Context())
 
 	kb := entity.Knowledgebase{
-		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive", CreatedBy: "user-1",
 	}
 	if err := db.Create(&kb).Error; err != nil {
 		t.Fatalf("create dataset: %v", err)
@@ -1347,6 +1355,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			UserID:   userID,
 			TenantID: tenantID,
 			Role:     "owner",
+			Status:   sptr(entity.TenantMembershipStatusJoined),
 			LLMID:    "llm-default",
 			EmbdID:   "embd-default",
 			ASRID:    "asr-default",
@@ -1359,6 +1368,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
 		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
 		t.Fatalf("set test owner model defaults: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare document permission fixture: %v", err)
 	}
 }
 
@@ -1678,7 +1690,7 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
@@ -1873,7 +1885,7 @@ func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
@@ -2741,12 +2753,14 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 
 	// A member of the dataset's tenant reads it too.
 	seedDocumentPreviewMemberAccess(t, db)
-	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev"); err != nil {
+	memberCtx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
+	if _, err = svc.GetDocumentPreview(memberCtx, "user-2", "doc-prev"); err != nil {
 		t.Fatalf("team member preview: %v", err)
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
-	_, err = svc.GetDocumentPreview(ctx, "user-3", "doc-prev")
+	strangerCtx := documentTestActorContext(t.Context(), "user-3", "tenant-1")
+	_, err = svc.GetDocumentPreview(strangerCtx, "user-3", "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2863,11 +2877,15 @@ func TestDownloadDocument_DatabaseErrorIsNotNotFound(t *testing.T) {
 func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	ensureTestTenantOwner(t, "user-1", "tenant-1")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-2"); err != nil {
+		t.Fatalf("prepare non-owner permission fixture: %v", err)
+	}
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 
 	svc := testDocumentService(t)
-	ctx := documentTestContext(t.Context())
+	ctx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
 	_, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
@@ -3180,11 +3198,14 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 		present      map[string]bool
 		wantParser   string
 		wantPipeline string
+		// reset marks a pipeline switch, which (by design A3 整体重置) must reset
+		// parser_config to the canvas DSL defaults, discarding the submitted config.
+		reset bool
 	}{
 		{name: "config only", wantParser: "naive"},
 		{name: "same builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("naive")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "naive"},
 		{name: "different builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("manual")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "manual"},
-		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID}, present: map[string]bool{"parse_type": true, "pipeline_id": true}, wantParser: "naive", wantPipeline: pipelineID},
+		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID, reset: true},
 		{name: "chunk method", request: UpdateDatasetDocumentRequest{ChunkMethod: sptr("manual")}, present: map[string]bool{"chunk_method": true}, wantParser: "manual"},
 	}
 	for _, tc := range cases {
@@ -3194,6 +3215,7 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 			insertNamedTestDoc(t, "doc-1", "kb-1", "doc.docx", 10, 5)
 			insertTestCanvas(t, pipelineID, "user-1")
+			seedDocVersion(t, db, pipelineID, "v-doc-pipe-0001", 0)
 			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_duration", 42).Error; err != nil {
 				t.Fatalf("prepare document: %v", err)
@@ -3229,13 +3251,28 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			if doc.TokenNum != 10 || doc.ChunkNum != 5 || doc.Progress != 0.75 || doc.ProcessDuration != 42 {
 				t.Fatalf("persisted parse results changed: %+v", doc)
 			}
-			extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
-			}
-			keywords, ok := extractor["keywords"].(map[string]interface{})
-			if !ok || keywords["top_n"] != float64(5) {
-				t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
+			if tc.reset {
+				// A pipeline switch resets parser_config to the canvas DSL
+				// defaults (design A3 整体重置). The submitted
+				// Extractor keywords.top_n=5 must be discarded and replaced by the
+				// DSL default (0), proving the reset took effect.
+				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("canvas DSL default parser_config missing Extractor after pipeline switch: %#v", doc.ParserConfig)
+				}
+				keywords, ok := extractor["keywords"].(map[string]interface{})
+				if !ok || keywords["top_n"] != float64(0) {
+					t.Fatalf("submitted keywords.top_n should be reset to DSL default (0), got %#v (config=%#v)", keywords["top_n"], doc.ParserConfig)
+				}
+			} else {
+				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
+				}
+				keywords, ok := extractor["keywords"].(map[string]interface{})
+				if !ok || keywords["top_n"] != float64(5) {
+					t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
+				}
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 			if err != nil {
@@ -4118,13 +4155,15 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	insertTestCanvas(t, pipelineID, "user-1")
+	seedDocVersion(t, db, pipelineID, "v-pre-0001", 0)
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		PipelineID: &pipelineID,
-		ParseType:  &parseType,
-	}, map[string]bool{"pipeline_id": true, "parse_type": true})
+		PipelineID:        &pipelineID,
+		PipelineVersionID: sptr("v-pre-0001"),
+		ParseType:         &parseType,
+	}, map[string]bool{"pipeline_id": true, "pipeline_version_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -4192,10 +4231,12 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	insertTestCanvas(t, pipelineID, "user-1")
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
+	seedDocVersion(t, db, pipelineID, "v-ptp-0001", 0)
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParseType:  &parseType,
-		PipelineID: &pipelineID,
-	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
+		ParseType:         &parseType,
+		PipelineID:        &pipelineID,
+		PipelineVersionID: sptr("v-ptp-0001"),
+	}, map[string]bool{"parser_id": false, "pipeline_id": true, "pipeline_version_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -4243,12 +4284,16 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
-	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	insertTestCanvas(t, pipelineID, "user-1")
+	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
+	// Bind the document to the pipeline first, so the update below is a plain
+	// parser_config patch on an already-canvas document. A pipeline switch must
+	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// submitted parent_child would be dropped on a switch; this test verifies the
+	// config reaches the canvas chunker when no switch occurs.
+	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
 	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
-		ParseType:  &parseType,
-		PipelineID: &pipelineID,
 		ParserConfig: map[string]any{
 			"GeneralChunker:SixApplesFall": map[string]any{
 				"parent_child": map[string]any{
@@ -4257,7 +4302,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 				},
 			},
 		},
-	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	}, map[string]bool{"parser_config": true})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
 	}
@@ -4710,14 +4755,14 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 }
 
 func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
-	ctx := documentTestContextFor(t.Context(), "owner-1")
+	ctx := documentTestActorContext(t.Context(), "user-1", "owner-1")
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
 	thumbnail := "thumbnail.png"
 	if err := db.Create(&entity.Document{
 		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
-		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "user-1",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

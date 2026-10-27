@@ -20,6 +20,7 @@ export function ChangeParserDialog({
     <DocumentPipelineDialog
       parserId={record.chunk_method}
       pipelineId={record.pipeline_id}
+      pipelineVersionId={record.pipeline_version_id}
       parserConfig={record.parser_config}
       onOk={onOk}
       hideModal={hideModal}
