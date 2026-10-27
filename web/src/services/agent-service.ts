@@ -76,6 +76,11 @@ const methods = {
       updateVersionApi(config.agentId, config.versionId),
     method: 'put',
   },
+  applyVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      api.applyVersion(config.agentId, config.versionId),
+    method: 'post',
+  },
   listAgents: {
     url: listAgents,
     method: 'get',
