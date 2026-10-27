@@ -19,27 +19,27 @@ import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { Routes } from '@/routes';
 import { useCallback, useMemo } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 import { BlueprintSection } from './components/blueprint-section';
 import { TemplateConfiguration } from './components/template-configuration';
 import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
+import { resolveAgentsUrl } from './utils';
 
 const SelectedTemplateIndex = 0;
-
-const agentsUrl = Routes.Agents;
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
 
   const navigateToAgents = useCallback(() => {
     navigate(agentsUrl);
-  }, [navigate]);
+  }, [navigate, agentsUrl]);
 
   const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
     useEditNextCompilationTemplateGroup({

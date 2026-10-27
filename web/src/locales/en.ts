@@ -3391,6 +3391,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      jsonUploadCategoryMismatch:
+        'The JSON file type does not match the current tab. Please switch to the corresponding tab and import again.',
       nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
@@ -3597,18 +3599,17 @@ This process aggregates variables from multiple branches into a single variable 
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      duplicate: 'Duplicate',
       copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       createIngestionPipeline: 'Create ingestion pipeline',
       createWorkflow: 'Create workflow',
+      createCompilationOperator: 'Create compilation operator',
       tabList: {
         ingestionPipeline: 'Ingestion pipeline',
         compilationOperator: 'Compilation operator',
         workflow: 'Workflow',
       },
-      chooseAgentType: 'Choose agent type',
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',

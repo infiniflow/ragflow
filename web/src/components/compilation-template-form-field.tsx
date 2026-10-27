@@ -38,6 +38,12 @@ export function CompilationTemplateFormField({
   const { options, isFetched, isError } =
     useCompilationTemplateGroupOptions(ownerTenantId);
 
+  // Zero-arg wrapper: labelLink.onClick is wired to a DOM click, which would
+  // feed the event into navigateToAgents' canvasCategory parameter.
+  const handleCreateTemplateClick = useCallback(() => {
+    navigateToAgents();
+  }, [navigateToAgents]);
+
   // No owner-scoped name lookup exists for template groups (strictly
   // owner-tenant, no sharing mechanism) — the raw id is all the missing
   // display can show. Styled like MissingModelLabel.
@@ -57,7 +63,7 @@ export function CompilationTemplateFormField({
       label={t('knowledgeConfiguration.compilationTemplate')}
       labelLink={{
         text: t('knowledgeConfiguration.createTemplate'),
-        onClick: navigateToAgents,
+        onClick: handleCreateTemplateClick,
       }}
       className="pb-4"
       horizontal={horizontal}
