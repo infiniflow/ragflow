@@ -345,6 +345,85 @@ type OntologyRetrieveRequest struct {
 	HypergraphRecall bool
 }
 
+// OntologyTraverseRequest asks for a typed walk along compiled assertions.
+//
+// It exists as a separate request from OntologyRetrieveRequest because a walk and
+// a lookup answer different questions: a lookup ranks rows against a question,
+// a walk follows the declared properties outward from an entity the caller named.
+// Folding one into the other as a "mode" would make the mode and the arguments
+// two ways to say the same thing, and the two would drift.
+type OntologyTraverseRequest struct {
+	UserID string
+	// KnowledgeDatasetIDs is the knowledge scope, a different set from the
+	// conversation's document datasets.
+	KnowledgeDatasetIDs []string
+	// ModelID names the model whose declarations prune the walk. Required: without
+	// it a walk cannot tell a declared property from an invented one.
+	ModelID      string
+	ModelVersion int
+	// Starts are the entity names to walk from, as the compiled rows spell them.
+	Starts []string
+	// Hops bounds the walk. Zero means the service default; it is clamped to the
+	// service's cap rather than refused.
+	Hops int
+	// AllowProperties restricts every hop to these object properties. Empty means
+	// every declared object property.
+	AllowProperties []string
+	// AllowTypes restricts the classes an entity reached by the walk may have.
+	AllowTypes []string
+	// MaxPaths bounds the returned chains.
+	MaxPaths int
+	// DocumentScope is the conversation's readable document set, used to mark a
+	// step whose source cannot be cited.
+	DocumentScope []string
+}
+
+// OntologyTraverseStep is one assertion a walk followed.
+type OntologyTraverseStep struct {
+	From     string
+	Property string
+	To       string
+	FromType string
+	ToType   string
+	// Direction is how the path crosses this assertion: "forward" follows
+	// from→to, "reverse" follows to→from.
+	Direction      string
+	SourceChunkIDs []string
+}
+
+// OntologyTraversePath is one chain from a starting entity.
+type OntologyTraversePath struct {
+	Start string
+	Nodes []string
+	Steps []OntologyTraverseStep
+}
+
+// OntologyTraverseHop is what one hop did, so a failed walk can be attributed:
+// "the frontier found nothing" is a corpus answer, "the declaration refused the
+// rows" is a declaration answer.
+type OntologyTraverseHop struct {
+	Hop                   int
+	Frontier              int
+	Rows                  int
+	Matched               int
+	RejectedByDeclaration int
+	RejectedByAllowList   int
+	Truncated             bool
+}
+
+// OntologyTraversal is the walk together with its accounting.
+type OntologyTraversal struct {
+	Paths []OntologyTraversePath
+	Hops  []OntologyTraverseHop
+	Model OntologyModelRef
+	// DegradeCode is set when the walk could not be constrained by the model. The
+	// walk still runs unnarrowed: an unreadable model must not make the
+	// assertions unreachable, but the caller has to see which of the two it got.
+	DegradeCode   string
+	DegradeReason string
+	Truncated     bool
+}
+
 // ErrOntologyServiceMissing is returned when no knowledge-layer service was
 // installed. It is deliberately not fatal to a run: an ontology that cannot be
 // read must not make the corpus unsearchable.
@@ -355,6 +434,7 @@ var ErrOntologyServiceMissing = errors.New("agentic_rag: no ontology retrieval s
 // compiled knowledge scope pays nothing for it.
 type OntologyService interface {
 	Retrieve(ctx context.Context, req OntologyRetrieveRequest) (*OntologyDigest, error)
+	Traverse(ctx context.Context, req OntologyTraverseRequest) (*OntologyTraversal, error)
 }
 
 var (
@@ -384,5 +464,9 @@ func GetOntologyService() OntologyService {
 type stubOntologyService struct{}
 
 func (stubOntologyService) Retrieve(context.Context, OntologyRetrieveRequest) (*OntologyDigest, error) {
+	return nil, ErrOntologyServiceMissing
+}
+
+func (stubOntologyService) Traverse(context.Context, OntologyTraverseRequest) (*OntologyTraversal, error) {
 	return nil, ErrOntologyServiceMissing
 }

@@ -52,11 +52,12 @@ type fakeOntologyCoverage struct {
 	err    error
 
 	datasetIDs []string
+	templateID string
 	limit      int
 }
 
-func (f *fakeOntologyCoverage) scan(_ context.Context, _ string, datasetIDs []string, limit int) (ontologyCoverageSample, error) {
-	f.datasetIDs, f.limit = datasetIDs, limit
+func (f *fakeOntologyCoverage) scan(_ context.Context, _ string, datasetIDs []string, templateID string, limit int) (ontologyCoverageSample, error) {
+	f.datasetIDs, f.templateID, f.limit = datasetIDs, templateID, limit
 	if f.err != nil {
 		return ontologyCoverageSample{}, f.err
 	}
@@ -147,6 +148,69 @@ func guildOntology() declaredOntology {
 	}
 }
 
+// assertOntologyBaseFilter checks the two conditions every knowledge-layer
+// search carries: the row-kind pin that makes "the compiled rows" mean
+// assertions, and the scope pin that makes them THIS model's assertions. Neither
+// narrows the question, so both are present even when the search is unnarrowed.
+func assertOntologyBaseFilter(t *testing.T, filter map[string]interface{}, templateID string) {
+	t.Helper()
+	if filter["knowledge_graph_kwd"] == nil {
+		t.Fatalf("filter = %#v, want the row-kind pin", filter)
+	}
+	ids, _ := filter["compilation_template_ids"].([]string)
+	if len(ids) != 1 || ids[0] != templateID {
+		t.Fatalf("filter = %#v, want the scope pin %q", filter, templateID)
+	}
+	if len(filter) != 2 {
+		t.Fatalf("filter = %#v, want exactly the row-kind pin and the scope pin", filter)
+	}
+}
+
+// Rows compiled by another model are excluded from the search by the scope pin,
+// and the sample reports how many were excluded. Silent exclusion would look
+// exactly like a model with thin coverage, and the reader would go hunting for
+// missing compilations instead of a mis-scoped dataset.
+func TestOntologyABoxRetrievalReportsForeignModelRows(t *testing.T) {
+	coverage := &fakeOntologyCoverage{sample: ontologyCoverageSample{
+		Classes:    map[string]bool{"agent": true},
+		Properties: map[string]bool{"leads": true},
+		Templates:  map[string]int{"tpl-1": 7, "tpl-2": 4},
+		Sampled:    11,
+	}}
+	svc := newOntologyTestService(guildScope(), nil, coverage,
+		&nlp.RetrievalResult{Chunks: []map[string]interface{}{entityRow()}, Total: 1})
+
+	result, err := svc.svc.Retrieve(context.Background(), validOntologyABoxRequest())
+	if err != nil {
+		t.Fatalf("retrieve: %v", err)
+	}
+	if coverage.templateID != "tpl-1" {
+		t.Fatalf("coverage scanned with model %q, want the bound model", coverage.templateID)
+	}
+	if result.ScopeSampledRows != 11 {
+		t.Fatalf("sampled rows = %d, want 11", result.ScopeSampledRows)
+	}
+	if result.ScopeForeignTemplates["tpl-2"] != 4 {
+		t.Fatalf("foreign = %#v, want tpl-2 counted", result.ScopeForeignTemplates)
+	}
+	if _, sawSelf := result.ScopeForeignTemplates["tpl-1"]; sawSelf {
+		t.Fatalf("foreign = %#v, want the bound model excluded from its own foreign list", result.ScopeForeignTemplates)
+	}
+}
+
+// A caller that never bound a model gets no scope pin: pinning to the empty id
+// would match nothing and turn a working search into an empty one.
+func TestOntologyScopeFilterIsEmptyWithoutAModel(t *testing.T) {
+	if got := OntologyScopeFilter("  "); got != nil {
+		t.Fatalf("filter = %#v, want none", got)
+	}
+	got := OntologyScopeFilter("tpl-9")
+	ids, _ := got["compilation_template_ids"].([]string)
+	if len(ids) != 1 || ids[0] != "tpl-9" {
+		t.Fatalf("filter = %#v, want the model pinned", got)
+	}
+}
+
 func validOntologyABoxRequest() *OntologyABoxRetrievalRequest {
 	return &OntologyABoxRetrievalRequest{
 		UserID:             "user-1",
@@ -185,9 +249,7 @@ func TestOntologyABoxRetrievalSearchesWithoutAConstraint(t *testing.T) {
 		t.Fatalf("engine calls = %d, want the unnarrowed search issued once", svc.searcher.callCount())
 	}
 	issued := svc.searcher.calls[0]
-	if issued.Filter["knowledge_graph_kwd"] == nil || len(issued.Filter) != 1 {
-		t.Fatalf("filter = %#v, want the row-kind pin and nothing else", issued.Filter)
-	}
+	assertOntologyBaseFilter(t, issued.Filter, validOntologyABoxRequest().OntologyTemplateID)
 	if result.StructureApplied {
 		t.Fatalf("result = %#v, want no narrowing applied", result)
 	}
@@ -344,9 +406,7 @@ func TestOntologyABoxRetrievalGradesSchemaFreeWhenTheStructureMatchesNothing(t *
 	if svc.searcher.calls[0].Filter["entity_type_kwd"] == nil {
 		t.Fatal("the first attempt must carry the narrowing")
 	}
-	if len(svc.searcher.calls[1].Filter) != 1 {
-		t.Fatalf("retry filter = %#v, want the same question without the narrowing", svc.searcher.calls[1].Filter)
-	}
+	assertOntologyBaseFilter(t, svc.searcher.calls[1].Filter, req.OntologyTemplateID)
 	if result.StructureApplied || result.DegradeCode != OntologyABoxDegradeNoMatch {
 		t.Fatalf("result = %#v, want a no_match degrade", result)
 	}
@@ -408,9 +468,7 @@ func TestOntologyABoxRetrievalDegradesWhenTheModelCannotBeRead(t *testing.T) {
 	if svc.searcher.callCount() != 1 {
 		t.Fatalf("engine calls = %d, want the unfiltered search still issued", svc.searcher.callCount())
 	}
-	if len(svc.searcher.calls[0].Filter) != 1 {
-		t.Fatalf("filter = %#v, want no narrowing when the model is unreadable", svc.searcher.calls[0].Filter)
-	}
+	assertOntologyBaseFilter(t, svc.searcher.calls[0].Filter, req.OntologyTemplateID)
 	if result.StructureApplied || result.DegradeCode != OntologyABoxDegradeNoModel {
 		t.Fatalf("result = %#v, want a no_model degrade", result)
 	}

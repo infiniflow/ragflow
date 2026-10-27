@@ -164,16 +164,20 @@ func ontologyToolsFor(ctx context.Context, tools []tool.BaseTool, mode ontologyM
 	if mode == ontologyModeOff {
 		return tools
 	}
-	out := make([]tool.BaseTool, 0, len(tools)+1)
-	hasOntology := false
+	out := make([]tool.BaseTool, 0, len(tools)+2)
+	hasOntology, hasTraversal := false, false
 	for _, t := range tools {
 		info, err := t.Info(ctx)
 		if err != nil || info == nil {
 			out = append(out, t)
 			continue
 		}
-		if info.Name == searchOntologyToolName {
-			hasOntology = true
+		if info.Name == searchOntologyToolName || info.Name == traverseOntologyToolName {
+			if info.Name == searchOntologyToolName {
+				hasOntology = true
+			} else {
+				hasTraversal = true
+			}
 			out = append(out, t)
 			continue
 		}
@@ -184,6 +188,13 @@ func ontologyToolsFor(ctx context.Context, tools []tool.BaseTool, mode ontologyM
 	}
 	if !hasOntology {
 		out = append(out, NewSearchOntologyTool())
+	}
+	if !hasTraversal {
+		// The walk is appended for the same reason the lookup is: a multi-hop
+		// question is joined by an entity the question does not name, and no
+		// ranking reaches it. A configured knowledge layer the model can only
+		// look up, never walk, answers strictly less than the layer holds.
+		out = append(out, NewTraverseOntologyTool())
 	}
 	return out
 }

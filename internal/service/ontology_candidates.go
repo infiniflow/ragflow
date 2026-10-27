@@ -43,11 +43,13 @@ func OntologyQueryCandidates(question string, declared declaredOntology, maxClas
 		return out
 	}
 	haystack := newOntologyTermHaystack(question)
-	out.EntityTypes = ontologyMatchedTerms(haystack, declared.classOrder, maxClasses, func(name string) string {
-		return declared.classes[name].label
+	out.EntityTypes = ontologyMatchedTerms(haystack, declared.classOrder, maxClasses, func(name string) []string {
+		c := declared.classes[name]
+		return append([]string{name, c.label}, c.aliases...)
 	})
-	out.Properties = ontologyMatchedTerms(haystack, declared.propOrder, maxProperties, func(name string) string {
-		return declared.props[name].label
+	out.Properties = ontologyMatchedTerms(haystack, declared.propOrder, maxProperties, func(name string) []string {
+		p := declared.props[name]
+		return append([]string{name, p.label}, p.aliases...)
 	})
 	return out
 }
@@ -55,13 +57,19 @@ func OntologyQueryCandidates(question string, declared declaredOntology, maxClas
 // ontologyMatchedTerms keeps the declared terms the question names, strongest
 // match first, then restores declaration order.
 //
+// surfaces lists every form the template says names one term — the declared name,
+// its label and its declared aliases. Aliases are read here for the same reason
+// compilation resolves them: one declaration must mean one vocabulary on both
+// sides, and an alias the writer accepts but the reader ignores silently splits
+// them.
+//
 // The ranking matters because the candidate set is capped: without it the cap is
 // decided by the order the template happens to list classes in, so a model with
 // thirty classes can spend all six slots on short generic names that happened to
 // appear in the question and drop the one class the question is actually about.
 // A longer matched term is the stronger claim, and a tie keeps declaration order
 // so the result stays reproducible.
-func ontologyMatchedTerms(haystack ontologyTermHaystack, order []string, limit int, label func(string) string) []string {
+func ontologyMatchedTerms(haystack ontologyTermHaystack, order []string, limit int, surfaces func(string) []string) []string {
 	type match struct {
 		name  string
 		index int
@@ -70,7 +78,7 @@ func ontologyMatchedTerms(haystack ontologyTermHaystack, order []string, limit i
 	matches := make([]match, 0, len(order))
 	for i, name := range order {
 		best := 0
-		for _, term := range []string{name, label(name)} {
+		for _, term := range surfaces(name) {
 			if n := haystack.matchLength(term); n > best {
 				best = n
 			}

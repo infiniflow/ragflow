@@ -122,6 +122,21 @@ type OntologyABoxRetrievalResult struct {
 	// sees the wrong class matched can say so, which a hidden derivation would
 	// not allow.
 	SuggestedConstraints OntologyStructureConstraints
+	// ScopeForeignTemplates counts the rows the coverage sample found in the
+	// knowledge scope that were compiled by a DIFFERENT model, keyed by model id.
+	//
+	// They are outside the search by construction (the scope pin keeps them out)
+	// and the count exists so that exclusion is visible rather than silent: a
+	// knowledge scope half-filled with another model's rows would otherwise look
+	// like a model with thin coverage, and the reader would go looking for
+	// missing compilations instead of a mis-scoped dataset.
+	//
+	// The count is a bounded sample, not a total: engines expose no aggregation,
+	// so it is the same page the coverage figures come from.
+	ScopeForeignTemplates map[string]int
+	// ScopeSampledRows is the number of rows the coverage sample read, which is
+	// what makes ScopeForeignTemplates interpretable.
+	ScopeSampledRows int
 	// Digest is the knowledge layer's output for an agent loop: the assertions,
 	// the vocabulary, the coverage, the citation counts and the receipt.
 	Digest *agentic_rag.OntologyDigest
@@ -152,15 +167,23 @@ type ontologyStructureLoader func(ctx context.Context, tenantID, templateID stri
 // ontologyCoverageScanner samples the knowledge scope's compiled rows to find
 // which declared classes and properties it exercises. It is injectable because
 // it needs a database, and the rest of the flow does not.
-type ontologyCoverageScanner func(ctx context.Context, tenantID string, datasetIDs []string, limit int) (ontologyCoverageSample, error)
+//
+// templateID names the model whose rows the coverage describes. Rows compiled by
+// another model are counted separately rather than folded in: a foreign row that
+// happens to carry a same-named class would otherwise report the model as
+// covering a class it never declared an instance of.
+type ontologyCoverageScanner func(ctx context.Context, tenantID string, datasetIDs []string, templateID string, limit int) (ontologyCoverageSample, error)
 
 // ontologyCoverageSample is one bounded read of the knowledge scope's type
 // columns.
 type ontologyCoverageSample struct {
 	Classes    map[string]bool
 	Properties map[string]bool
-	Sampled    int
-	Truncated  bool
+	// Templates counts the sampled rows per compiling model, so the caller can
+	// tell "the model covers little" from "the scope holds someone else's rows".
+	Templates map[string]int
+	Sampled   int
+	Truncated bool
 }
 
 // ontologyCoverageSampleLimit bounds the coverage scan per dataset. The engines
@@ -276,7 +299,12 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 	// Every knowledge-layer search is pinned to compiled assertions. The
 	// knowledge scope may also hold navigation clusters, wiki pages and build
 	// markers, and none of them is a fact the model states.
-	base := OntologyAssertionKindFilter()
+	//
+	// The scope pin is part of the base, not part of the narrowing: it says which
+	// model's rows these are, not how the question narrows them. Keeping it in the
+	// base also keeps it out of the echoed Filter, where it would read as a
+	// constraint the caller asked for.
+	base := mergeOntologyFilters(OntologyAssertionKindFilter(), OntologyScopeFilter(req.OntologyTemplateID))
 	var degrade *agentic_rag.OntologyDegrade
 	structureApplied := false
 	switch {
@@ -369,7 +397,7 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 				"so their quotations cannot be cited",
 		}
 	}
-	if coverage, covErr := s.scanCoverage(ctx, tenantID, req.DatasetIDs, declared); covErr != nil {
+	if coverage, foreign, sampled, covErr := s.scanCoverage(ctx, tenantID, req.DatasetIDs, declared, req.OntologyTemplateID); covErr != nil {
 		// A coverage scan that fails is reported as unknown rather than as
 		// empty: "we could not sample" and "nothing is there" are different
 		// facts, and only one of them is about the corpus.
@@ -379,6 +407,8 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 		})
 	} else {
 		digest.Coverage = coverage
+		out.ScopeForeignTemplates = foreign
+		out.ScopeSampledRows = sampled
 	}
 	out.Digest = digest
 	return out, nil
@@ -491,7 +521,8 @@ func (s *OntologyABoxRetrievalService) searchOntologyEntityRows(
 	if limit > topK {
 		limit = topK
 	}
-	filter := mergeOntologyFilters(OntologyAssertionKindFilter(),
+	filter := mergeOntologyFilters(
+		mergeOntologyFilters(OntologyAssertionKindFilter(), OntologyScopeFilter(req.OntologyTemplateID)),
 		OntologyStructureFilter(declared, OntologyStructureConstraints{EntityTypes: applied.EntityTypes}))
 	page, err := s.searchOntologyRows(ctx, scope, req, ontologyFilterWithSkip(filter, req.SkipUnreviewed), limit, similarity)
 	if err != nil || page == nil {
@@ -603,16 +634,27 @@ func describeOntologyConstraints(c OntologyStructureConstraints) string {
 }
 
 // scanCoverage samples the knowledge scope and turns the sample into the
-// declared-structure coverage the digest reports.
-func (s *OntologyABoxRetrievalService) scanCoverage(ctx context.Context, tenantID string, datasetIDs []string, declared declaredOntology) (agentic_rag.OntologyCoverage, error) {
+// declared-structure coverage the digest reports, together with the rows the
+// scope holds that belong to other models.
+func (s *OntologyABoxRetrievalService) scanCoverage(ctx context.Context, tenantID string, datasetIDs []string, declared declaredOntology, templateID string) (agentic_rag.OntologyCoverage, map[string]int, int, error) {
 	if s.coverageScanner == nil {
-		return agentic_rag.OntologyCoverage{}, fmt.Errorf("coverage scan is not wired")
+		return agentic_rag.OntologyCoverage{}, nil, 0, fmt.Errorf("coverage scan is not wired")
 	}
-	sample, err := s.coverageScanner(ctx, tenantID, datasetIDs, ontologyCoverageSampleLimit)
+	sample, err := s.coverageScanner(ctx, tenantID, datasetIDs, templateID, ontologyCoverageSampleLimit)
 	if err != nil {
-		return agentic_rag.OntologyCoverage{}, err
+		return agentic_rag.OntologyCoverage{}, nil, 0, err
 	}
-	return ontologyCoverage(declared, sample.Classes, sample.Properties, sample.Sampled, ontologyCoverageSampleLimit, sample.Truncated), nil
+	foreign := make(map[string]int, len(sample.Templates))
+	for id, count := range sample.Templates {
+		if id == "" || id == strings.TrimSpace(templateID) {
+			continue
+		}
+		foreign[id] += count
+	}
+	if len(foreign) == 0 {
+		foreign = nil
+	}
+	return ontologyCoverage(declared, sample.Classes, sample.Properties, sample.Sampled, ontologyCoverageSampleLimit, sample.Truncated), foreign, sample.Sampled, nil
 }
 
 // firstDegrade keeps the earlier of two degrade reasons: the search-level one
@@ -626,11 +668,21 @@ func firstDegrade(existing, fallback *agentic_rag.OntologyDegrade) *agentic_rag.
 
 // scanOntologyCoverage reads a bounded page of the knowledge scope's entity and
 // assertion rows per dataset and collects their class and property columns.
-func scanOntologyCoverage(ctx context.Context, tenantID string, datasetIDs []string, limit int) (ontologyCoverageSample, error) {
-	sample := ontologyCoverageSample{Classes: map[string]bool{}, Properties: map[string]bool{}}
+//
+// Rows compiled by another model are counted under Templates but contribute no
+// classes or properties: the coverage answers "what has THIS model produced",
+// and folding a foreign row in would report a class the model never declared an
+// instance of — the very confusion the scope pin removes from search.
+func scanOntologyCoverage(ctx context.Context, tenantID string, datasetIDs []string, templateID string, limit int) (ontologyCoverageSample, error) {
+	sample := ontologyCoverageSample{
+		Classes:    map[string]bool{},
+		Properties: map[string]bool{},
+		Templates:  map[string]int{},
+	}
 	if limit <= 0 {
 		limit = ontologyCoverageSampleLimit
 	}
+	want := strings.TrimSpace(templateID)
 	for _, datasetID := range datasetIDs {
 		rows, total, err := graphRowSearch(ctx, tenantID, datasetID, ontologyCoverageRowFields,
 			OntologyAssertionKindFilter(), nil, 0, limit, nil)
@@ -642,6 +694,23 @@ func scanOntologyCoverage(ctx context.Context, tenantID string, datasetIDs []str
 			sample.Truncated = true
 		}
 		for _, row := range rows {
+			owners := ontologyRowTemplateIDs(row)
+			if len(owners) == 0 {
+				sample.Templates[""]++
+				if want != "" {
+					continue
+				}
+			}
+			mine := want == ""
+			for _, owner := range owners {
+				sample.Templates[owner]++
+				if owner == want {
+					mine = true
+				}
+			}
+			if !mine {
+				continue
+			}
 			kind := ontologyRowKind(row)
 			switch kind {
 			case "entity":
@@ -656,6 +725,36 @@ func scanOntologyCoverage(ctx context.Context, tenantID string, datasetIDs []str
 		}
 	}
 	return sample, nil
+}
+
+// ontologyRowTemplateIDs reads the models a compiled row belongs to. The column
+// is keyword-typed, so an engine may hand it back as a list or as a single
+// string; both mean the same ownership.
+func ontologyRowTemplateIDs(row map[string]interface{}) []string {
+	if row == nil {
+		return nil
+	}
+	raw, ok := row["compilation_template_ids"]
+	if !ok {
+		raw = row["compilation_template_id"]
+	}
+	switch v := raw.(type) {
+	case string:
+		if id := strings.TrimSpace(v); id != "" {
+			return []string{id}
+		}
+	case []string:
+		return dedupeStrings(v)
+	case []interface{}:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if id, ok := item.(string); ok {
+				out = append(out, id)
+			}
+		}
+		return dedupeStrings(out)
+	}
+	return nil
 }
 
 // mergeOntologyFilters returns the kind pin together with the structure filter.

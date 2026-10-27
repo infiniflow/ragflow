@@ -141,6 +141,12 @@ export interface IOntologyDroppedRelation {
   /** The compiler's own sentence, naming the declaration that was violated. */
   reason?: string;
   doc_id?: string;
+  /**
+   * Which half of the declaration the compiler blamed. The compiler writes it on
+   * the row; reading it beats inferring the side by comparing endpoints, which
+   * picks the domain whenever both ends are wrong.
+   */
+  side?: 'domain' | 'range';
 }
 
 /**

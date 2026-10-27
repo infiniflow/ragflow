@@ -259,6 +259,11 @@ type OntologyDroppedRelation struct {
 	// declared class that was violated.
 	Reason string `json:"reason,omitempty"`
 	DocID  string `json:"doc_id,omitempty"`
+	// Side is the half of the declaration the compiler blamed: "domain" or
+	// "range". The compiler has been writing it since the rejection row existed;
+	// reading it is what turns "we rejected something" into "widen the range of
+	// this property".
+	Side string `json:"side,omitempty"`
 }
 
 // declaredOntology is the template-declared half of the model graph.
@@ -276,6 +281,12 @@ type declaredOntology struct {
 type declaredClass struct {
 	label       string
 	description string
+	// aliases are the other surface forms the template says name this class.
+	// Compilation already resolves them to the canonical name (ontologyTermIndex
+	// in the structure compiler), so retrieval has to read them too: an alias the
+	// writer accepts but the reader ignores leaves the two halves of one
+	// declaration speaking different vocabularies.
+	aliases []string
 	// parents is rdfs:subClassOf. ValidateTemplatePayload already rejects an
 	// unknown parent and a cyclic chain, so the walk in effectiveAttributes
 	// terminates; it still guards itself, because a config edited outside the
@@ -286,6 +297,8 @@ type declaredClass struct {
 type declaredProperty struct {
 	label       string
 	description string
+	// aliases mirror declaredClass.aliases for object and datatype properties.
+	aliases []string
 	// kind is "object" or "datatype" as declared. Empty means the template did
 	// not say, so it is inferred from the endpoints (see isObject/isDatatype).
 	kind     string
@@ -351,6 +364,7 @@ func parseDeclaredOntology(cfg map[string]interface{}) declaredOntology {
 		out.classes[name] = declaredClass{
 			label:       strings.TrimSpace(jsonStringAt(field, "label")),
 			description: strings.TrimSpace(jsonStringAt(field, "description")),
+			aliases:     jsonStringListAt(field, "aliases"),
 			parents:     splitTypeList(jsonStringAt(field, "parent")),
 		}
 	}
@@ -371,6 +385,7 @@ func parseDeclaredOntology(cfg map[string]interface{}) declaredOntology {
 		out.props[name] = declaredProperty{
 			label:       strings.TrimSpace(jsonStringAt(field, "label")),
 			description: strings.TrimSpace(jsonStringAt(field, "description")),
+			aliases:     jsonStringListAt(field, "aliases"),
 			kind:        strings.TrimSpace(jsonStringAt(field, "kind")),
 			datatype:    strings.TrimSpace(jsonStringAt(field, "datatype")),
 			domains:     splitTypeList(jsonStringAt(field, "domain")),
@@ -1028,7 +1043,7 @@ func countDroppedRelations(
 	}
 	rows, _, err := graphRowSearch(ctx, tenantID, datasetID,
 		[]string{"prop_kwd", "from_entity_kwd", "to_entity_kwd", "from_type_kwd", "to_type_kwd",
-			"content_with_weight", "doc_id"},
+			"content_with_weight", "doc_id", "drop_side"},
 		filter, nil, 0, ontologyDroppedSampleLimit, nil)
 	if err != nil {
 		return 0, nil, false, err
@@ -1042,6 +1057,7 @@ func countDroppedRelations(
 			ToType:   strings.TrimSpace(firstStringValue(row["to_type_kwd"])),
 			Reason:   strings.TrimSpace(firstStringValue(row["content_with_weight"])),
 			DocID:    strings.TrimSpace(firstStringValue(row["doc_id"])),
+			Side:     strings.TrimSpace(firstStringValue(row["drop_side"])),
 		})
 	}
 	return int(totalCount), samples, int(totalCount) > len(samples), nil
@@ -1403,6 +1419,42 @@ func jsonStringAt(container map[string]interface{}, key string) string {
 		return s
 	}
 	return ""
+}
+
+// jsonStringListAt reads a declared value set: the template editor writes a YAML
+// list, a hand-edited config may carry a "|"-separated string. Both mean the same
+// closed set, and the structure compiler reads both (splitValueList), so the
+// reader side has to accept both or the two ends disagree about one declaration.
+func jsonStringListAt(container map[string]interface{}, key string) []string {
+	if container == nil {
+		return nil
+	}
+	var raw []string
+	switch v := container[key].(type) {
+	case string:
+		raw = strings.Split(v, "|")
+	case []string:
+		raw = v
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				raw = append(raw, s)
+			}
+		}
+	default:
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, s := range raw {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
 }
 
 // jsonBoolAt reads a boolean-valued key, tolerating the string form a

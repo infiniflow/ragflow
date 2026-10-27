@@ -31,12 +31,16 @@ import (
 // prefetch narrowing by the same structure under the same model version.
 type OntologyAdapter struct {
 	svc *OntologyABoxRetrievalService
+	// traversal is built from the same wiring as svc: both read the same snapshots
+	// and the same rows, and a walk that resolved its own model separately could
+	// prune by a different version than the lookup reported.
+	traversal *OntologyTraversalService
 }
 
 // NewOntologyAdapter wraps an ABox retrieval service for install into the agent
 // runtime.
 func NewOntologyAdapter(svc *OntologyABoxRetrievalService) *OntologyAdapter {
-	return &OntologyAdapter{svc: svc}
+	return &OntologyAdapter{svc: svc, traversal: NewOntologyTraversalService()}
 }
 
 // Retrieve runs one knowledge-layer lookup and returns the digest.
@@ -69,6 +73,77 @@ func (a *OntologyAdapter) Retrieve(ctx context.Context, req agentic_rag.Ontology
 		return nil, err
 	}
 	return result.Digest, nil
+}
+
+// Traverse walks the compiled assertions outward from the named entities.
+//
+// The agent gets paths rather than assertions because that is what a multi-hop
+// answer needs: the middle entity of a chain usually appears in no sentence the
+// reader wrote, so no ranking can reach it — the chain has to be followed, and
+// the result has to say which hops succeeded and which were refused.
+func (a *OntologyAdapter) Traverse(ctx context.Context, req agentic_rag.OntologyTraverseRequest) (*agentic_rag.OntologyTraversal, error) {
+	if a == nil || a.traversal == nil {
+		return nil, agentic_rag.ErrOntologyServiceMissing
+	}
+	result, err := a.traversal.Traverse(ctx, &OntologyTraversalRequest{
+		UserID:             req.UserID,
+		DatasetIDs:         req.KnowledgeDatasetIDs,
+		OntologyTemplateID: req.ModelID,
+		OntologyVersion:    req.ModelVersion,
+		Starts:             req.Starts,
+		Hops:               req.Hops,
+		AllowProperties:    req.AllowProperties,
+		AllowTypes:         req.AllowTypes,
+		MaxPaths:           req.MaxPaths,
+		DocumentScope:      req.DocumentScope,
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := &agentic_rag.OntologyTraversal{
+		Paths: make([]agentic_rag.OntologyTraversePath, 0, len(result.Paths)),
+		Hops:  make([]agentic_rag.OntologyTraverseHop, 0, len(result.Hops)),
+		Model: agentic_rag.OntologyModelRef{
+			ID:            result.Model.ID,
+			Name:          result.Model.Name,
+			Version:       result.Model.Version,
+			PublishStatus: result.Model.PublishStatus,
+		},
+		DegradeCode:   result.DegradeCode,
+		DegradeReason: result.DegradeReason,
+		Truncated:     result.Truncated,
+	}
+	for _, path := range result.Paths {
+		converted := agentic_rag.OntologyTraversePath{
+			Start: path.Start,
+			Nodes: path.Nodes,
+			Steps: make([]agentic_rag.OntologyTraverseStep, 0, len(path.Steps)),
+		}
+		for _, step := range path.Steps {
+			converted.Steps = append(converted.Steps, agentic_rag.OntologyTraverseStep{
+				From:           step.From,
+				Property:       step.Property,
+				To:             step.To,
+				FromType:       step.FromType,
+				ToType:         step.ToType,
+				Direction:      step.Direction,
+				SourceChunkIDs: step.SourceChunkIDs,
+			})
+		}
+		out.Paths = append(out.Paths, converted)
+	}
+	for _, hop := range result.Hops {
+		out.Hops = append(out.Hops, agentic_rag.OntologyTraverseHop{
+			Hop:                   hop.Hop,
+			Frontier:              hop.Frontier,
+			Rows:                  hop.Rows,
+			Matched:               hop.Matched,
+			RejectedByDeclaration: hop.RejectedByDeclaration,
+			RejectedByAllowList:   hop.RejectedByAllowList,
+			Truncated:             hop.Truncated,
+		})
+	}
+	return out, nil
 }
 
 // compile-time proof that the adapter satisfies the agent-side contract.

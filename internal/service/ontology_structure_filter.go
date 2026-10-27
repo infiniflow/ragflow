@@ -66,6 +66,30 @@ func OntologyAssertionKindFilter() map[string]interface{} {
 	return map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}
 }
 
+// OntologyScopeFilter pins a knowledge-layer search to the rows one model
+// produced.
+//
+// The knowledge scope is a set of datasets, not a set of models, and one dataset
+// may hold rows from more than one published model: a document compiled under
+// model A keeps A's rows until it is recompiled, and a document compiled under B
+// sits beside them. Nothing in the row-kind pin tells those apart, so a class
+// name becomes ambiguous — `Person` declared by the organization model would
+// narrow a search performed against the contract model that never declared it,
+// and the digest would report those rows as the contract model's assertions. That
+// is not a ranking error: it is a false attribution, and the citation contract
+// ("the quotation is what this model states") rests on attribution.
+//
+// An empty model id yields no condition, which is the case of a caller that never
+// bound a model: pinning to "" would match nothing and turn a working search into
+// an empty one.
+func OntologyScopeFilter(templateID string) map[string]interface{} {
+	id := strings.TrimSpace(templateID)
+	if id == "" {
+		return nil
+	}
+	return map[string]interface{}{"compilation_template_ids": []string{id}}
+}
+
 // OntologyStructureConstraints is the structural narrowing a caller asks of a
 // retrieval: which classes the compiled entities must be typed with, which
 // object properties the assertions must use, and which endpoint classes those

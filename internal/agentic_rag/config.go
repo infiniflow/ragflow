@@ -139,6 +139,12 @@ func toolRegistry() map[string]toolFactory {
 		// arguments (typed constraints narrow, none retrieve), not by a mode
 		// flag.
 		"search_ontology": func(_ string, _ []string) tool.BaseTool { return NewSearchOntologyTool() },
+		// The typed walk. Registered beside the lookup because the two answer
+		// different shapes of question: the lookup ranks assertions against the
+		// question's words, the walk follows declared properties out to the entity
+		// the question never names. Binding comes from the run's context for the
+		// same reason: the model chooses where to walk, not under which model.
+		"traverse_ontology": func(_ string, _ []string) tool.BaseTool { return NewTraverseOntologyTool() },
 	}
 }
 

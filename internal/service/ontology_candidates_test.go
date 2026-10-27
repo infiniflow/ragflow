@@ -51,6 +51,41 @@ func TestOntologyQueryCandidatesMatchesNameSpellings(t *testing.T) {
 	}
 }
 
+// A declared alias names the same term as the canonical name.
+//
+// Compilation has always resolved aliases to the canonical name; retrieval used
+// to match only the name and the label, so a template's alias worked on the write
+// side and silently did nothing on the read side. Both ends read one declaration,
+// so both have to see the same surface forms.
+func TestOntologyQueryCandidatesMatchesDeclaredAliases(t *testing.T) {
+	declared := parseDeclaredOntology(ontologyTestConfig(
+		[]map[string]interface{}{
+			{"type": "ingredient", "label": "食材", "aliases": []interface{}{"原料", "配料"}},
+			// The "|"-separated string form a hand-edited config carries.
+			{"type": "nutrient", "aliases": "营养成分|营养素"},
+		},
+		[]map[string]interface{}{
+			{"type": "contains", "kind": "object", "aliases": []interface{}{"含有", "包含"}},
+		},
+	))
+
+	for question, wantClass := range map[string]string{
+		"哪些配料含有花青素":  "ingredient",
+		"哪些原料富含蛋白质":  "ingredient",
+		"哪些食物的营养素最多": "nutrient",
+	} {
+		got := OntologyQueryCandidates(question, declared, 6, 6)
+		if len(got.EntityTypes) != 1 || got.EntityTypes[0] != wantClass {
+			t.Fatalf("question %q -> %#v, want %q", question, got.EntityTypes, wantClass)
+		}
+	}
+
+	got := OntologyQueryCandidates("哪些配料含有花青素", declared, 6, 6)
+	if len(got.Properties) != 1 || got.Properties[0] != "contains" {
+		t.Fatalf("properties = %#v, want the alias to name the declared property", got.Properties)
+	}
+}
+
 // The candidate cap is applied on match strength, not on declaration order: a
 // model that lists thirty classes must not spend its six slots on short generic
 // names that happened to appear in the question.

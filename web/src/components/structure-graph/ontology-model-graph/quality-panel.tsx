@@ -189,9 +189,12 @@ export function OntologyQualityPanel({
         domains: [],
         ranges: [],
       };
+      // The compiler records which half of the declaration it blamed; only fall
+      // back to comparing endpoints when the row predates that column.
       const domainMissed =
         item.from_type !== undefined && !declared.domains.includes(item.from_type);
-      const side: 'domain' | 'range' = domainMissed ? 'domain' : 'range';
+      const side: 'domain' | 'range' =
+        item.side ?? (domainMissed ? 'domain' : 'range');
       const observed = (side === 'domain' ? item.from_type : item.to_type) ?? '';
       const key = `${item.property}|${side}|${observed}`;
       const group = groups.get(key) ?? {

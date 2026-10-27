@@ -52,7 +52,7 @@ func ontologyFieldUnion(groups ...[]string) []string {
 
 // ontologyCoverageRowFields is the minimal projection the coverage scan needs:
 // the class column of entity rows and the property column of assertion rows.
-var ontologyCoverageRowFields = []string{"type_kwd", "knowledge_graph_kwd", "entity_type_kwd", "prop_kwd"}
+var ontologyCoverageRowFields = []string{"type_kwd", "knowledge_graph_kwd", "entity_type_kwd", "prop_kwd", "compilation_template_ids"}
 
 // buildOntologyAssertion converts one compiled row into the digest's assertion
 // form.
