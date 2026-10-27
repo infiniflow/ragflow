@@ -16,7 +16,10 @@
 
 package chunk
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestRun_SentenceSplitHandlesASCIIBoundaries(t *testing.T) {
 	ctx, err := Run("One. Two! Three? Four;", ChunkOptions{SplitStrategy: "sentence"})
@@ -50,4 +53,62 @@ func TestRun_PostprocessHonorsTypedNumericOptions(t *testing.T) {
 	if ctx.ResultChunks[0].Content != "a bb ccc" {
 		t.Errorf("merged content = %q, want %q", ctx.ResultChunks[0].Content, "a bb ccc")
 	}
+}
+
+// TestRun_FilterDroppingEveryChunkYieldsNoChunks pins that a postprocess
+// stage's empty output is the answer. The split chunks stayed reachable
+// through the "no result yet" fallback, so a min_length above every chunk's
+// length re-emitted all of them, whitespace chunks included.
+func TestRun_FilterDroppingEveryChunkYieldsNoChunks(t *testing.T) {
+	ctx, err := Run("a b c", ChunkOptions{
+		SplitStrategy:   "char",
+		FilterMinLength: 5,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(ctx.SplitChunks) != 5 {
+		t.Fatalf("split chunks = %d, want 5 as the fixture premise", len(ctx.SplitChunks))
+	}
+	if len(ctx.ResultChunks) != 0 {
+		t.Fatalf("got %d chunks, want none: every chunk is 1 rune and below min_length 5 (%q)",
+			len(ctx.ResultChunks), chunkContents(ctx.ResultChunks))
+	}
+}
+
+// TestRun_FilterKeepsOnlyQualifyingChunks pins the surviving half of the same
+// contract: the filter selects, it does not pass everything through.
+func TestRun_FilterKeepsOnlyQualifyingChunks(t *testing.T) {
+	ctx, err := Run("hi\nthis one is long enough to survive", ChunkOptions{
+		SplitStrategy:   "paragraph",
+		FilterMinLength: 20,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	want := []string{"this one is long enough to survive"}
+	if got := chunkContents(ctx.ResultChunks); !reflect.DeepEqual(got, want) {
+		t.Fatalf("chunks = %q, want %q", got, want)
+	}
+}
+
+// TestRun_SplitOnlyPipelineStillYieldsChunks keeps the fallback that serves a
+// pipeline with no postprocess stage.
+func TestRun_SplitOnlyPipelineStillYieldsChunks(t *testing.T) {
+	ctx, err := Run("a b c", ChunkOptions{SplitStrategy: "char"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(ctx.ResultChunks) != len(ctx.SplitChunks) || len(ctx.ResultChunks) == 0 {
+		t.Fatalf("result chunks = %q, want the split output (%d) passed through",
+			chunkContents(ctx.ResultChunks), len(ctx.SplitChunks))
+	}
+}
+
+func chunkContents(chunks []ChunkData) []string {
+	out := make([]string, len(chunks))
+	for i, c := range chunks {
+		out[i] = c.Content
+	}
+	return out
 }
