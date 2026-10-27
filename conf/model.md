@@ -176,6 +176,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **AstraFlow** | Multi-provider aggregator |
 | **Avian** | Multi-provider aggregator |
 | **Baidu (Qianwen)** | Ernie + third-party models |
+| **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
 | **Demon Route** | OpenAI-compatible router |
