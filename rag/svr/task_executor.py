@@ -1479,7 +1479,16 @@ async def do_handle_task(task):
     raptor_cleanup_chunks = []
 
     # prepare the progress callback function
-    progress_callback = partial(set_progress, task_id, task_from_page, task_to_page)
+    _set_progress = partial(set_progress, task_id, task_from_page, task_to_page)
+    run_state = {"failure_signaled": False}
+
+    def progress_callback(prog=None, msg="Processing..."):
+        # Record a failure signaled during this run (progress_callback(-1, ...))
+        # so the empty-chunk branch below can tell "parser failed" apart from
+        # "parsed cleanly but empty" without a database read (issue #18013).
+        if prog is not None and prog < 0:
+            run_state["failure_signaled"] = True
+        return _set_progress(prog=prog, msg=msg)
 
     task_canceled = has_canceled(task_id)
     if task_canceled:
@@ -1641,7 +1650,16 @@ async def do_handle_task(task):
         # Record chunks array for content comparison (first, middle, last, random)
         logging.info(f"Build document {task_document_name}: {timer() - start_ts:.2f}s")
         if not chunks:
-            progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
+            # (a) The parser signaled a hard failure via progress_callback(-1, ...)
+            #     during this run. Preserve the failure: append the message only
+            #     (set_progress skips the progress field when prog is None), so a
+            #     failed task is not reported as DONE with progress=1.0 (#18013).
+            # (b) The parser succeeded but produced zero chunks - a legitimate
+            #     terminal state for a genuinely empty document, so mark 1.0.
+            if run_state["failure_signaled"]:
+                progress_callback(msg=f"No chunk built from {task_document_name}")
+            else:
+                progress_callback(1.0, msg=f"No chunk built from {task_document_name}")
             return
         progress_callback(msg=f"Generate {len(chunks)} chunks")
         start_ts = timer()
