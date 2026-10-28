@@ -135,27 +135,36 @@ func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 // TestGetIngestorConcurrentWorkers pins the precedence
 // CLI > environment > config file > default(1) and the inclusive [1, 256]
 // range guard on the FINAL value. An out-of-range or non-integer value at
-// any layer is a fatal startup error.
+// any layer is a fatal startup error. An explicit zero or negative value at
+// the config layer is rejected (not silently defaulted), so an operator typo
+// such as concurrent_workers: 0 or -1 fails fast instead of silently running
+// at the default of 1.
 func TestGetIngestorConcurrentWorkers(t *testing.T) {
 	const envKey = common.EnvIngestorConcurrentWorkers
 
 	cases := []struct {
 		name       string
 		configured int
+		set        bool   // true iff concurrent_workers was explicitly present in the config file
 		env        string // "" means leave unset
 		argValue   *int
 		want       int
 		wantErr    bool
 	}{
-		{"default", 0, "", nil, 1, false},
-		{"config only", 5, "", nil, 5, false},
-		{"env overrides config", 5, "8", nil, 8, false},
-		{"cli overrides env and config", 5, "8", intPtr(12), 12, false},
-		{"env invalid errors", 5, "notanint", nil, 0, true},
-		{"env only", 0, "9", nil, 9, false},
-		{"config above range errors", 300, "", nil, 0, true},
-		{"cli below range errors", 0, "", intPtr(0), 0, true},
-		{"cli above range errors", 0, "", intPtr(1000), 0, true},
+		{"default", 0, false, "", nil, 1, false},
+		{"config only", 5, true, "", nil, 5, false},
+		{"env overrides config", 5, true, "8", nil, 8, false},
+		{"cli overrides env and config", 5, true, "8", intPtr(12), 12, false},
+		{"env invalid errors", 5, true, "notanint", nil, 0, true},
+		{"env only", 0, false, "9", nil, 9, false},
+		{"config above range errors", 300, true, "", nil, 0, true},
+		{"cli below range errors", 0, false, "", intPtr(0), 0, true},
+		{"cli above range errors", 0, false, "", intPtr(1000), 0, true},
+		// Adversarial: an explicitly present zero/negative config value must be
+		// rejected, distinguishing "explicit 0" (set=true) from "absent" (set=false
+		// -> default 1). The old >0 guard silently defaulted both to 1.
+		{"config explicit zero errors", 0, true, "", nil, 0, true},
+		{"config negative errors", -5, true, "", nil, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,6 +175,7 @@ func TestGetIngestorConcurrentWorkers(t *testing.T) {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
 			c.ingestor.ConcurrentWorkers = tc.configured
+			c.ingestor.ConcurrentWorkersSet = tc.set
 			got, err := c.GetIngestorConcurrentWorkers(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
@@ -188,26 +198,34 @@ func TestGetIngestorConcurrentWorkers(t *testing.T) {
 // TestGetIngestorPageConcurrency pins the precedence
 // CLI > environment > config file > default(2) and the inclusive [1, 16]
 // range guard on the FINAL value. An out-of-range or non-integer value at
-// any layer is a fatal startup error.
+// any layer is a fatal startup error. An explicit zero or negative value at
+// the config layer is rejected (not silently defaulted to 2), matching the
+// env/CLI behavior.
 func TestGetIngestorPageConcurrency(t *testing.T) {
 	const envKey = common.EnvIngestorPageConcurrency
 
 	cases := []struct {
 		name       string
 		configured int
+		set        bool   // true iff page_concurrency was explicitly present in the config file
 		env        string // "" means leave unset
 		argValue   *int
 		want       int
 		wantErr    bool
 	}{
-		{"default", 0, "", nil, 2, false},
-		{"config only", 6, "", nil, 6, false},
-		{"env overrides config", 6, "8", nil, 8, false},
-		{"cli overrides env and config", 6, "8", intPtr(12), 12, false},
-		{"env invalid errors", 6, "notanint", nil, 0, true},
-		{"env only", 0, "9", nil, 9, false},
-		{"config above range errors", 20, "", nil, 0, true},
-		{"cli below range errors", 0, "", intPtr(0), 0, true},
+		{"default", 0, false, "", nil, 2, false},
+		{"config only", 6, true, "", nil, 6, false},
+		{"env overrides config", 6, true, "8", nil, 8, false},
+		{"cli overrides env and config", 6, true, "8", intPtr(12), 12, false},
+		{"env invalid errors", 6, true, "notanint", nil, 0, true},
+		{"env only", 0, false, "9", nil, 9, false},
+		{"config above range errors", 20, true, "", nil, 0, true},
+		{"cli below range errors", 0, false, "", intPtr(0), 0, true},
+		// Adversarial: an explicitly present zero/negative config value must be
+		// rejected, distinguishing "explicit 0" (set=true) from "absent" (set=false
+		// -> default 2).
+		{"config explicit zero errors", 0, true, "", nil, 0, true},
+		{"config negative errors", -5, true, "", nil, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -217,6 +235,7 @@ func TestGetIngestorPageConcurrency(t *testing.T) {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
 			c.ingestor.PageConcurrency = tc.configured
+			c.ingestor.PageConcurrencySet = tc.set
 			got, err := c.GetIngestorPageConcurrency(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
