@@ -152,6 +152,10 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		return "", nil, false
 	}
 	if s.refOnly {
+		if media.HTMLImageExceedsLimit(src) {
+			s.err = fmt.Errorf("html image exceeds %d-byte limit", media.HTMLImageMaxBytes())
+			return "", nil, false
+		}
 		mime, data, ok := media.DecodeHTMLImageSource(src)
 		if !ok {
 			return "", nil, false

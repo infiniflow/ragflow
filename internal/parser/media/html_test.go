@@ -66,3 +66,31 @@ func TestNormalizeHTMLImageSourceMatchesDecode(t *testing.T) {
 			size, len(data), normalizedSum, decodeSum, mime)
 	}
 }
+
+func TestHTMLImageExceedsConfiguredLimit(t *testing.T) {
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "5")
+	for _, tc := range []struct {
+		src  string
+		want bool
+	}{
+		{"data:image/png;base64,aGVsbG8=", false},
+		{"data:image/png;base64,aGVsbG8", false},
+		{"data:image/png;base64,aGVsbG8h", true},
+		{"data:image/png;base64,YQ==", false},
+	} {
+		if got := HTMLImageExceedsLimit(tc.src); got != tc.want {
+			t.Errorf("%q: got %v, want %v", tc.src, got, tc.want)
+		}
+	}
+}
+
+func TestHTMLImageLimitDefaultsAndConfiguration(t *testing.T) {
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "")
+	if got := HTMLImageMaxBytes(); got != 256<<20 {
+		t.Fatalf("default = %d", got)
+	}
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "12")
+	if got := HTMLImageMaxBytes(); got != 12 {
+		t.Fatalf("configured = %d", got)
+	}
+}

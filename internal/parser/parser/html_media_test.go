@@ -175,19 +175,11 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 }
 
 func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
-	payload := base64.StdEncoding.EncodeToString(make([]byte, maxEmbeddedImageBytes+1))
-	input := "<p><img alt=\"large\" src=\"data:image/png;base64," + payload + "\"></p>"
-	result := NewHTMLParser().ParseWithResult(context.Background(), "large.html", []byte(input))
-	if result.Err != nil {
-		t.Fatalf("ParseWithResult: %v", result.Err)
-	}
-	for _, item := range ItemsToMaps(result.JSON) {
-		if item["doc_type_kwd"] == "image" {
-			t.Fatal("oversized data URI emitted as an image item")
-		}
-	}
-	if len(result.Warnings) == 0 {
-		t.Fatal("oversized inline image should produce a parser warning")
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "4")
+	ctx, _ := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "large.html", []byte(`<img src="data:image/png;base64,aGVsbG8=">`))
+	if result.Err == nil {
+		t.Fatal("oversized image must fail parsing")
 	}
 }
 

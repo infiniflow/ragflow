@@ -17,6 +17,7 @@ package mediacache
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -231,51 +232,10 @@ func TestPut_RejectsMissingStoreScopeAndOversizedImage(t *testing.T) {
 	if _, err := New(nil, "task-1").Put(ctx, "html", "image/png", []byte("hello")); err == nil {
 		t.Fatal("Put accepted an unavailable cache")
 	}
-	data := make([]byte, media.MaxImagePayloadBytes+1)
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "5")
+	data := make([]byte, 6)
 	if _, err := New(backend, "task-1").Put(ctx, "html", "image/png", data); err == nil {
 		t.Fatal("Put accepted an oversized image")
-	}
-}
-
-func TestPut_EnforcesRunByteBudgetAndDeduplicatesContent(t *testing.T) {
-	backend := newFakeStore()
-	store := New(backend, "task-1")
-	store.maxBytes = 5
-	ctx := taskContext("task-1")
-
-	if _, err := store.Put(ctx, "html", "image/png", []byte("hello")); err != nil {
-		t.Fatal(err)
-	}
-	// Repeating the same content reuses the same key and consumes no extra
-	// budget, as happens when VLM and several chunks reference one image.
-	if _, err := store.Put(ctx, "html", "image/png", []byte("hello")); err != nil {
-		t.Fatalf("duplicate Put: %v", err)
-	}
-	if backend.setCalls != 1 || backend.addCalls != 1 {
-		t.Fatalf("backend writes after duplicate Put = Set %d / SAdd %d, want 1/1", backend.setCalls, backend.addCalls)
-	}
-	if _, err := store.Put(ctx, "html", "image/png", []byte("world")); err == nil || !strings.Contains(err.Error(), "run cache limit exceeded") {
-		t.Fatalf("over-budget Put error = %v", err)
-	}
-	if len(backend.kv) != 1 {
-		t.Fatalf("cached keys = %d, want only the first image", len(backend.kv))
-	}
-	if store.used != 5 {
-		t.Fatalf("used bytes = %d, want 5", store.used)
-	}
-}
-
-func TestPut_EnforcesRunImageCountBudget(t *testing.T) {
-	backend := newFakeStore()
-	store := New(backend, "task-1")
-	store.maxItems = 1
-	ctx := taskContext("task-1")
-
-	if _, err := store.Put(ctx, "html", "image/png", []byte("hello")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Put(ctx, "html", "image/png", []byte("world")); err == nil || !strings.Contains(err.Error(), "run image limit exceeded") {
-		t.Fatalf("over-count Put error = %v", err)
 	}
 }
 
@@ -319,5 +279,16 @@ func TestMediaManifestDoesNotTouchChunkManifest(t *testing.T) {
 	}
 	if backend.kv["kc:model-result"] != "result" || !backend.sets["kc:manifest:task-1"]["kc:model-result"] {
 		t.Fatal("media cleanup modified chunk cache")
+	}
+}
+
+func TestPutAllowsMoreThan256DistinctImages(t *testing.T) {
+	backend := newFakeStore()
+	store := New(backend, "task-1")
+	ctx := taskContext("task-1")
+	for i := 0; i < 257; i++ {
+		if _, err := store.Put(ctx, "html", "image/png", []byte(fmt.Sprintf("image-%d", i))); err != nil {
+			t.Fatalf("image %d: %v", i, err)
+		}
 	}
 }

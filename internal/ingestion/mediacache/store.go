@@ -39,10 +39,6 @@ import (
 const (
 	keyNamespace = "mc"
 	TTL          = 24 * time.Hour
-	// MaxRunBytes bounds the decoded image bytes one parser run may retain.
-	// This restores the HTML parser's former 64 MiB document budget while
-	// keeping every image individually bounded by media.MaxImagePayloadBytes.
-	MaxRunBytes = 64 << 20
 )
 
 // Store is a run-scoped media cache backed by a chunkcache.Store.
@@ -50,11 +46,8 @@ type Store struct {
 	backend chunkcache.Store
 	scope   string
 
-	mu       sync.Mutex
-	maxItems int
-	maxBytes int64
-	used     int64
-	seen     map[string]int64
+	mu   sync.Mutex
+	seen map[string]int64
 }
 
 // New returns a cache bound to one ingestion run. A nil backend is a valid
@@ -62,11 +55,9 @@ type Store struct {
 // actually encountered.
 func New(backend chunkcache.Store, scope string) *Store {
 	return &Store{
-		backend:  backend,
-		scope:    strings.TrimSpace(scope),
-		maxBytes: MaxRunBytes,
-		maxItems: 256,
-		seen:     make(map[string]int64),
+		backend: backend,
+		scope:   strings.TrimSpace(scope),
+		seen:    make(map[string]int64),
 	}
 }
 
@@ -88,8 +79,8 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	if strings.TrimSpace(mime) == "" {
 		return entity.MediaRef{}, errors.New("mediacache: media type is empty")
 	}
-	if len(data) == 0 || len(data) > media.MaxImagePayloadBytes {
-		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.MaxImagePayloadBytes)
+	if len(data) == 0 || len(data) > media.HTMLImageMaxBytes() {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.HTMLImageMaxBytes())
 	}
 
 	sum := sha256.Sum256(data)
@@ -113,17 +104,6 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	if exists {
 		return ref, nil
 	}
-	if len(s.seen) >= s.maxItems {
-		return entity.MediaRef{}, errors.New("mediacache: run image limit exceeded")
-	}
-	if s.used+int64(len(data)) > s.maxBytes {
-		return entity.MediaRef{}, fmt.Errorf(
-			"mediacache: run cache limit exceeded: %d + %d > %d bytes",
-			s.used,
-			len(data),
-			s.maxBytes,
-		)
-	}
 
 	key := s.key(digest)
 	if !s.backend.Set(ctx, key, string(data), TTL) {
@@ -136,7 +116,6 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 		return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w", mediaShortDigest(digest), err)
 	}
 	s.seen[digest] = int64(len(data))
-	s.used += int64(len(data))
 	return ref, nil
 }
 
@@ -162,8 +141,8 @@ func (s *Store) Get(ctx context.Context, ref entity.MediaRef) ([]byte, error) {
 	if ref.Scope != s.scope {
 		return nil, fmt.Errorf("mediacache: reference scope %q does not match run scope %q", ref.Scope, s.scope)
 	}
-	if ref.Size > media.MaxImagePayloadBytes {
-		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.MaxImagePayloadBytes)
+	if ref.Size > int64(media.HTMLImageMaxBytes()) {
+		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.HTMLImageMaxBytes())
 	}
 
 	value, err := s.backend.Get(ctx, s.key(ref.SHA256))

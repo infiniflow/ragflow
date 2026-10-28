@@ -54,8 +54,8 @@ func CacheFromContext(ctx context.Context) Cache {
 
 // ValidatePayload performs the shared cache integrity and size checks.
 func ValidatePayload(data []byte, ref entity.MediaRef) ([]byte, error) {
-	if int64(len(data)) > MaxImagePayloadBytes {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), MaxImagePayloadBytes)
+	if len(data) > HTMLImageMaxBytes() {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), HTMLImageMaxBytes())
 	}
 	sum := sha256.Sum256(data)
 	if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
