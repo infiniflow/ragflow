@@ -44,11 +44,11 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewTokenChunker(map[string]any{})
 	if err != nil {
@@ -107,11 +107,11 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {
@@ -161,11 +161,11 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 128})
 	if err != nil {
@@ -230,9 +230,9 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 	}
 }
 
-// TestChunkMediaSourceFactoryResolvesStorage covers both source locations the
+// TestChunkMediaSourceResolvesStorage covers both source locations the
 // chunker accepts: the forwarded bucket/path pair and doc_id-driven lookup.
-func TestChunkMediaSourceFactoryResolvesStorage(t *testing.T) {
+func TestChunkMediaSourceResolvesStorage(t *testing.T) {
 	ctx := t.Context()
 	payload := []byte("<p>source</p>")
 	mem := storage.NewMemoryStorage()
@@ -243,7 +243,7 @@ func TestChunkMediaSourceFactoryResolvesStorage(t *testing.T) {
 	component.SetStorageFactoryOverride = func() storage.Storage { return mem }
 	t.Cleanup(func() { component.SetStorageFactoryOverride = prevStorage })
 
-	src := ChunkMediaSourceFactory(nil, map[string]any{"bucket": "kb-1", "path": "docs/a.html"})
+	src := chunkMediaSourceFactory(nil, map[string]any{"bucket": "kb-1", "path": "docs/a.html"})
 	data, err := src.Bytes(ctx)
 	if err != nil || string(data) != string(payload) {
 		t.Fatalf("bucket/path source = %q, %v", data, err)
@@ -255,7 +255,7 @@ func TestChunkMediaSourceFactoryResolvesStorage(t *testing.T) {
 	}
 	t.Cleanup(func() { component.ResolveDocumentStorageOverride = prevResolve })
 
-	src = ChunkMediaSourceFactory(&gorm.DB{}, map[string]any{"doc_id": "doc-1"})
+	src = chunkMediaSourceFactory(&gorm.DB{}, map[string]any{"doc_id": "doc-1"})
 	data, err = src.Bytes(ctx)
 	if err != nil || string(data) != string(payload) {
 		t.Fatalf("doc_id source = %q, %v", data, err)
@@ -280,11 +280,11 @@ func TestImageUploadDecorator_ResolvesSelfClosingImage(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {

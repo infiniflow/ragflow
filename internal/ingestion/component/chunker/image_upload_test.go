@@ -58,11 +58,11 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 			if format == "html" {
 				source := []byte(`<img alt="caption" src="` + uri + `">`)
 				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", source)
-				prevSource := ChunkMediaSourceFactory
-				ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+				prevSource := chunkMediaSourceFactory
+				chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 					return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
 				}
-				t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+				t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 			} else {
 				p, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
 				if err != nil {
@@ -507,11 +507,11 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {
@@ -558,14 +558,14 @@ func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 		t.Fatal(parsed.Err)
 	}
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		// Readable source, but the referenced image is absent.
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return []byte("<p>no image here</p>"), nil
 		})
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {
@@ -596,13 +596,13 @@ func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
 		t.Fatal(parsed.Err)
 	}
 
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
 		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return nil, context.DeadlineExceeded
 		})
 	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {

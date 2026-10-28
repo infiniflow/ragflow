@@ -26,9 +26,9 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-// ChunkMediaSourceFactory resolves the source document for deferred media_refs.
+// chunkMediaSourceFactory resolves the source document for deferred media_refs.
 // Tests override it with an in-memory source.
-var ChunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+var chunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
 	return chunkMediaSource(db, inputs)
 }
 

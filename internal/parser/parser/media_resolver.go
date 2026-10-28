@@ -72,6 +72,12 @@ type mediaResolver struct {
 	htmlData      []byte
 	htmlTruncated bool
 
+	// domOnce caches the tree built for the rare fallback path. The tree is
+	// read-only after parsing, so concurrent Resolve calls can walk it.
+	domOnce sync.Once
+	dom     *html.Node
+	domErr  error
+
 	err error
 }
 
@@ -111,7 +117,7 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 	// example <svg><title>) and other tree-construction edge cases. Fall back
 	// to the parser's actual DOM walk, which is the source of truth for what
 	// the parser emitted.
-	if data, sum, found := findHTMLMediaPayloadInDOM(r.htmlData, ref.SHA256); found {
+	if data, sum, found := r.findMediaPayloadInDOM(ref.SHA256); found {
 		return validateMediaPayload(data, sum, ref)
 	}
 	if r.htmlTruncated {
@@ -135,18 +141,22 @@ func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byt
 	return data, nil
 }
 
-// findHTMLMediaPayloadInDOM re-parses the source with the HTML tree builder
-// and returns the payload for digest when the streaming tokenizer missed it.
-// It walks the same DOM the parser walks, so foreign-content contexts and
-// other tree-construction rules are honoured without a second attribute
-// parser. The DOM briefly holds the attribute strings; the fallback only runs
-// after the low-memory tokenizer index misses.
-func findHTMLMediaPayloadInDOM(data []byte, digest string) ([]byte, [32]byte, bool) {
-	var sum [32]byte
-	doc, err := html.Parse(bytes.NewReader(data))
-	if err != nil {
-		return nil, sum, false
+// findMediaPayloadInDOM resolves a tokenizer miss from the same tree the
+// parser walks. The tree is built once per resolver: a document with several
+// foreign-content images pays for one parse, and later misses only walk it.
+// The fallback only runs after the low-memory tokenizer index misses.
+func (r *mediaResolver) findMediaPayloadInDOM(digest string) ([]byte, [32]byte, bool) {
+	r.domOnce.Do(func() {
+		r.dom, r.domErr = html.Parse(bytes.NewReader(r.htmlData))
+	})
+	if r.domErr != nil {
+		return nil, [32]byte{}, false
 	}
+	return findHTMLMediaPayloadInNode(r.dom, digest)
+}
+
+func findHTMLMediaPayloadInNode(doc *html.Node, digest string) ([]byte, [32]byte, bool) {
+	var sum [32]byte
 	var payload []byte
 	found := false
 	var walk func(*html.Node)

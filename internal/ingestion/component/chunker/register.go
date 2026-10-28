@@ -145,7 +145,7 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// memory until a persist stage that will never run.
 	if kbID != "" {
 		resolver := parser.NewMediaResolver()
-		source := ChunkMediaSourceFactory(db, inputs)
+		source := chunkMediaSourceFactory(db, inputs)
 		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID, resolver, source)
 		if err != nil {
 			return nil, err
