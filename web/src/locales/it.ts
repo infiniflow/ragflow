@@ -3014,10 +3014,10 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         share: 'Condividi',
       },
 
-      serviceStatus: 'Stato servizio',
-      userManagement: 'Gestione utenti',
-      sandboxSettings: 'Impostazioni sandbox',
-      registrationWhitelist: 'Whitelist registrazione',
+      serviceStatus: 'Servizi',
+      userManagement: 'Utenti',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Ruoli',
       monitoring: 'Monitoraggio',
 
@@ -3121,7 +3121,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       importWhitelist: 'Importa whitelist (Excel)',
       importSelectExcelFile: 'File Excel (.xlsx)',
       importOverwriteExistingEmails: 'Sovrascrivi email esistenti',
-      importInvalidExcelFile: 'Seleziona un file Excel valido',
+      importValidExcelFile: 'Seleziona un file Excel valido',
       importFileRequired: 'Seleziona un file da importare',
       importFileTips:
         'Il file deve contenere una singola colonna di intestazione chiamata <code>email</code>.',

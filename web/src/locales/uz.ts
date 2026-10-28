@@ -3849,10 +3849,10 @@ export default {
         write: 'Yozish',
         share: 'Ulashish',
       },
-      serviceStatus: 'Xizmatlar holati',
-      userManagement: 'Foydalanuvchilarni boshqarish',
-      sandboxSettings: 'Sandbox sozlamalari',
-      registrationWhitelist: 'Ro‘yxatdan o‘tish uchun oq ro‘yxat',
+      serviceStatus: 'Xizmatlar',
+      userManagement: 'Foydalanuvchilar',
+      sandboxSettings: 'Qum qutisi',
+      registrationWhitelist: 'Oq ro‘yxat',
       roles: 'Rollar',
       monitoring: 'Monitoring',
       sandboxSettingsPage: {
@@ -3939,7 +3939,7 @@ export default {
       importWhitelist: 'Oq ro‘yxatni import qilish (Excel)',
       importSelectExcelFile: 'Excel fayli (.xlsx)',
       importOverwriteExistingEmails: 'Mavjud pochtalarni almashtirish',
-      importInvalidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
+      importValidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
       importFileRequired: 'Iltimos, import qilish uchun fayl tanlang',
       importFileTips:
         'Fayl <code>email</code> nomli bitta sarlavha ustunini o‘z ichiga olishi kerak.',
