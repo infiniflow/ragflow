@@ -664,8 +664,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// context_below) then .strip() — so a context that carries nothing but
 		// a position tag counts as empty. The context is folded into Text once,
 		// at chunkOutputs, so the decision is made on that merged text here
-		// without duplicating the fold.
-		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
+		// without duplicating the fold. Inline bytes, an uploaded ID or a
+		// deferred reference also make the chunk retrievable; dropping it here
+		// would lose the image before the materializer can resolve or reject it.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" &&
+			m.Image == "" && m.ImgID == "" && m.MediaRef == nil {
 			continue
 		}
 		materialized = append(materialized, materializeMediaContext(m))

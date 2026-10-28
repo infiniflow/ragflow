@@ -143,6 +143,20 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	}
 }
 
+// TestTokenChunkerKeepsTextlessMediaRef pins that a standalone image with no
+// alt text is not dropped as an empty text chunk before materialization.
+func TestTokenChunkerKeepsTextlessMediaRef(t *testing.T) {
+	html := `<img src="data:image/png;base64,` + pngBase64 + `">`
+	comp, err := NewTokenChunker(map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := runMediaRefChunker(t, comp, "no-alt.html", html, nil)
+	if images := uploadedMediaChunks(t, chunks); len(images) != 1 {
+		t.Fatalf("image chunks = %d, want 1", len(images))
+	}
+}
+
 // TestImageUploadDecoratorRejectsUnusableMediaRef pins the error contract at
 // the component boundary: a present reference that cannot be materialized
 // must fail the run, even when the item has no text and would otherwise be
@@ -165,18 +179,26 @@ func TestImageUploadDecoratorRejectsUnusableMediaRef(t *testing.T) {
 			item: map[string]any{"text": "caption", "media_ref": map[string]any{"unknown": "value"}},
 		},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			comp, err := NewOneChunker(nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
-				"name": "bad.html", "kb_id": testKBID, "doc_id": testDocID,
-				"output_format": "json", "json": []any{tc.item},
-			}); err == nil {
-				t.Fatal("unusable media_ref was accepted")
-			}
-		})
+		for _, chunker := range []struct {
+			name string
+			new  func() (runtime.Component, error)
+		}{
+			{"one", func() (runtime.Component, error) { return NewOneChunker(nil) }},
+			{"token", func() (runtime.Component, error) { return NewTokenChunker(map[string]any{}) }},
+		} {
+			t.Run(tc.name+"/"+chunker.name, func(t *testing.T) {
+				comp, err := chunker.new()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+					"name": "bad.html", "kb_id": testKBID,
+					"output_format": "json", "json": []any{tc.item},
+				}); err == nil {
+					t.Fatal("unusable media_ref was accepted")
+				}
+			})
+		}
 	}
 }
 
