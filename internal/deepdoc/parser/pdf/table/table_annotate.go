@@ -364,9 +364,10 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 
 	// Marks for Python-style pop removal.
 	dropped := make([]bool, len(boxes))
-	// Text of boxes discarded as garbage layouts, with occurrence counts.
-	// Used after compaction to drop surviving duplicates of page decoration.
-	discardedGarbageText := make(map[string]int)
+	// Boxes discarded as garbage layouts, keyed by trimmed text and the
+	// layout type that discarded them. Used after compaction to drop
+	// surviving copies of the same page decoration.
+	discardedGarbage := make(map[string]*discardedGarbageText)
 
 	// Priority order matching Python's findLayout loop.
 	priorityOrder := []string{
@@ -425,7 +426,11 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 				if pdf.GarbageLayoutTypes[ty] && pageImgHeight > 0 && !garbageKeepFeat(ty, boxes[i], pageImgHeight/scale) {
 					dropped[i] = true
 					if key := strings.TrimSpace(boxes[i].Text); key != "" {
-						discardedGarbageText[key]++
+						if discardedGarbage[key] == nil {
+							discardedGarbage[key] = &discardedGarbageText{types: make(map[string]bool, 1)}
+						}
+						discardedGarbage[key].count++
+						discardedGarbage[key].types[ty] = true
 					}
 					continue
 				}
@@ -462,9 +467,9 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	boxes = compacted
 
 	// Page decoration that the layout pass discarded can still survive as a
-	// second box elsewhere on the same page. Drop those duplicates so the
-	// text does not reach indexing twice.
-	boxes = dropRepeatedGarbageText(boxes, discardedGarbageText)
+	// second box elsewhere on the same page. Drop those copies so the text
+	// does not reach indexing twice.
+	boxes = dropRepeatedGarbageText(boxes, discardedGarbage, pageImgHeight/scale)
 
 	// Keep one geometry box per figure/equation, independently of its text.
 	// ConsolidateFigures combines it with matching labels after text cleanup.
@@ -488,38 +493,67 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 }
 
 // ── garbage layout helpers ────────────────────────────────────────────
-// Cleanup policy for text that the layout pass already discarded as garbage:
-//   - at least two boxes must have been discarded with the same trimmed text,
-//     so a single stray drop cannot silence legitimate content;
-//   - the string must be short (headers/footers/watermarks are short),
-//     which keeps body paragraphs out of reach even on an exact match;
-//   - captions are never removed, preserving the caption handling fixed in
-//     #20767.
+// Cleanup policy for text that the layout pass already discarded as garbage.
+// Text equality alone is not evidence: short body text can legitimately repeat
+// a header or footer string, and deleting it loses content permanently. A
+// surviving box is removed only when every condition below holds:
+//   - at least two boxes were discarded with the same trimmed text, so a
+//     single stray drop cannot cascade;
+//   - the string is short (headers/footers/watermarks are short), which keeps
+//     body paragraphs out of reach even on an exact match;
+//   - the survivor sits in the same page-edge band that made the layout pass
+//     discard the other copies, so it is a decoration in its own right;
+//   - it is not a caption, preserving the caption handling fixed in #20767.
 //
 // The pass is page-scoped because AnnotateBoxLayouts owns exactly one page.
 const (
 	repeatedGarbageMinDrops = 2
 	repeatedGarbageMaxRunes = 64
+	// repeatedGarbageBandFrac is the header/footer band depth, matching the
+	// page-edge test in garbageKeepFeat.
+	repeatedGarbageBandFrac = 0.1
 )
 
-// dropRepeatedGarbageText removes surviving boxes whose trimmed text repeats a
-// string already discarded as garbage on the same page.
-func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]int) []pdf.TextBox {
-	if len(discarded) == 0 {
+// discardedGarbageText records how one trimmed string was discarded.
+type discardedGarbageText struct {
+	count int
+	types map[string]bool
+}
+
+// dropRepeatedGarbageText removes surviving boxes that repeat a string the
+// layout pass discarded on the same page and that sit in the decoration band
+// of the discarding layout type.
+func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discardedGarbageText, pageHeight float64) []pdf.TextBox {
+	if len(discarded) == 0 || pageHeight <= 0 {
 		return boxes
 	}
 	kept := boxes[:0]
 	for _, b := range boxes {
 		key := strings.TrimSpace(b.Text)
-		if key != "" &&
-			discarded[key] >= repeatedGarbageMinDrops &&
-			utf8.RuneCountInString(key) <= repeatedGarbageMaxRunes &&
-			!IsCaptionBox(b.Text, b.LayoutType) {
-			continue
+		if key != "" {
+			if evidence := discarded[key]; evidence != nil &&
+				evidence.count >= repeatedGarbageMinDrops &&
+				utf8.RuneCountInString(key) <= repeatedGarbageMaxRunes &&
+				!IsCaptionBox(b.Text, b.LayoutType) &&
+				inGarbageBand(b, evidence.types, pageHeight) {
+				continue
+			}
 		}
 		kept = append(kept, b)
 	}
 	return kept
+}
+
+// inGarbageBand reports whether b lies in a page-edge band that the given
+// garbage layout types own.
+func inGarbageBand(b pdf.TextBox, types map[string]bool, pageHeight float64) bool {
+	if types[pdf.LayoutTypeHeader] && b.Top <= pageHeight*repeatedGarbageBandFrac {
+		return true
+	}
+	if types[pdf.LayoutTypeFooter] && b.Bottom >= pageHeight*(1-repeatedGarbageBandFrac) {
+		return true
+	}
+	return false
 }
 
 // garbageKeepFeat keeps likely false-positive garbage labels.
