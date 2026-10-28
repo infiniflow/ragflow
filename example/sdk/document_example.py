@@ -5,7 +5,7 @@ import os
 from ragflow_sdk import RAGFlow
 
 HOST_ADDRESS = os.environ.get("RAGFLOW_HOST_ADDRESS", "http://127.0.0.1:9380")
-API_KEY = os.environ.get("RAGFLOW_API_KEY", "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm")
+API_KEY = os.environ["RAGFLOW_API_KEY"]
 
 
 rag = RAGFlow(api_key=API_KEY, base_url=HOST_ADDRESS)

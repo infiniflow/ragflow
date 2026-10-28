@@ -18,11 +18,13 @@
 The example is about CRUD operations (Create, Read, Update, Delete) on a dataset.
 """
 
-from ragflow_sdk import RAGFlow
+import os
 import sys
 
+from ragflow_sdk import RAGFlow
+
 HOST_ADDRESS = "http://127.0.0.1"
-API_KEY = "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm"
+API_KEY = os.environ["RAGFLOW_API_KEY"]
 
 try:
     # create a ragflow instance

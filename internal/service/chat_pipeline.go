@@ -240,6 +240,9 @@ func (s *ChatPipelineService) AsyncChat(
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
+	if err := validateUserMessageContent(messages); err != nil {
+		return nil, err
+	}
 	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
 		return nil, err
 	}
@@ -1375,6 +1378,19 @@ func (s *ChatPipelineService) AsyncChat(
 	}()
 
 	return out, nil
+}
+
+func validateUserMessageContent(messages []map[string]interface{}) error {
+	for i, message := range messages {
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+		if _, ok := message["content"].(string); !ok {
+			return fmt.Errorf("messages[%d].content must be a string for user messages", i)
+		}
+	}
+	return nil
 }
 
 // deepResearchProgressCallback builds the progress callback handed to

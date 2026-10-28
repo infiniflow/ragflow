@@ -106,6 +106,15 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	}
 }
 
+func TestAsyncChatRejectsNonStringUserContent(t *testing.T) {
+	s := &ChatPipelineService{}
+	messages := []map[string]interface{}{{"role": "user", "content": map[string]interface{}{"text": "question"}}}
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "messages[0].content must be a string") {
+		t.Fatalf("AsyncChat error = %v, want non-string user content validation error", err)
+	}
+}
+
 func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	insertForeignPrivateDatasetForChatTest(t, db)

@@ -25,7 +25,7 @@ import time
 import os
 
 HOST_ADDRESS = os.environ.get("RAGFLOW_HOST_ADDRESS", "http://127.0.0.1")
-API_KEY = os.environ.get("RAGFLOW_API_KEY", "ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm")
+API_KEY = os.environ["RAGFLOW_API_KEY"]
 
 try:
     rag = RAGFlow(api_key=API_KEY, base_url=HOST_ADDRESS)

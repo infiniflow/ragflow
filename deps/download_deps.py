@@ -70,6 +70,13 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 # NOT track each other, so there is no cross-reference to keep in sync here.
 # Kept with the "v" prefix because it is used verbatim in the release tag path.
 STAGEHAND_SERVER_VERSION = "v3.7.2"
+# GitHub release asset digests for this pinned tag. Update both hashes whenever
+# STAGEHAND_SERVER_VERSION changes.
+STAGEHAND_SERVER_SHA256 = {
+    "x64": "72b526042511e24c30eaab8b49bb8372c6ae1429af56eec9328f99d6db14b90f",
+    "arm64": "d8d0e9836e436eb9331aadc6cada935904548a7b8f5b9374a86f486444de20cb",
+}
+GH_PROXY_URL = "https://gh-proxy.com/"
 
 
 # Noto Sans CJK SC variable TTF, rendered into PDFs by the Go backend
@@ -84,7 +91,12 @@ NOTO_CJK_FONT_SHA256 = ""
 
 def gh_proxy() -> str:
     """GitHub release proxy prefix (gh-proxy.com behind the GFW), else empty."""
-    return os.environ.get("GH_PROXY") or ""
+    proxy = (os.environ.get("GH_PROXY") or "").strip()
+    if not proxy:
+        return ""
+    if proxy.rstrip("/") != GH_PROXY_URL.rstrip("/"):
+        raise RuntimeError(f"GH_PROXY must be empty or {GH_PROXY_URL!r}")
+    return GH_PROXY_URL
 
 
 def go_module_version(module: str, repo_root: str) -> str:
@@ -177,12 +189,17 @@ def download_with_progress(url, filename):
     print()
 
 
-def _valid_stagehand_binary(path):
-    """True when PATH is a non-empty ELF executable (the stagehand-server SEA)."""
+def _valid_stagehand_binary(path, arch):
+    """True when PATH is the pinned stagehand-server release for ARCH."""
+    expected_sha256 = STAGEHAND_SERVER_SHA256.get(arch)
+    if expected_sha256 is None:
+        return False
     if not os.path.isfile(path) or os.path.getsize(path) == 0:
         return False
     with open(path, "rb") as file:
-        return file.read(4) == b"\x7fELF"
+        if file.read(4) != b"\x7fELF":
+            return False
+    return _sha256_of(path) == expected_sha256
 
 
 def _valid_font(path):
@@ -272,9 +289,13 @@ def _install_stagehand():
     filename = f"stagehand-server-v3-linux-{architecture}"
     source = os.path.join(SCRIPT_DIR, filename)
     target = os.path.join(target_dir, filename)
+    if not _valid_stagehand_binary(source, architecture):
+        raise RuntimeError(f"Refusing to install unverified stagehand binary: {filename}")
     with tempfile.TemporaryDirectory(dir=target_dir) as staging:
         prepared = os.path.join(staging, filename)
         shutil.copyfile(source, prepared)
+        if not _valid_stagehand_binary(prepared, architecture):
+            raise RuntimeError(f"Staged stagehand binary failed SHA-256 verification: {filename}")
         os.chmod(prepared, 0o755)
         os.replace(prepared, target)
     print(f"  ✓ stagehand installed to {target}")
@@ -422,14 +443,17 @@ def main():
     for arch in ("x64", "arm64"):
         filename = f"stagehand-server-v3-linux-{arch}"
         target = os.path.join(SCRIPT_DIR, filename)
-        if os.path.isfile(target) and os.path.getsize(target) > 0:
-            print(f"  ✓ {filename} already present")
-            continue
+        if os.path.isfile(target):
+            if _valid_stagehand_binary(target, arch):
+                print(f"  ✓ {filename} already present and verified")
+                continue
+            print(f"  Existing {filename} failed verification; re-downloading", file=sys.stderr)
+            os.unlink(target)
         print(f"Downloading {filename} from {stagehand_url(arch)}...")
         download_with_progress(stagehand_url(arch), target)
-        if not _valid_stagehand_binary(target):
+        if not _valid_stagehand_binary(target, arch):
             os.unlink(target)
-            raise RuntimeError(f"Invalid downloaded dependency: {filename}")
+            raise RuntimeError(f"Downloaded stagehand binary failed SHA-256 verification: {filename}")
     _install_stagehand()
 
     # ── Noto Sans CJK SC font (rendered into PDFs by the Go backend) ─────────

@@ -493,6 +493,49 @@ def test_image_script_does_not_handle_native_archives():
     assert "onnxruntime" not in (img.__doc__ or "").lower()
 
 
+def _image_deps_module():
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deps", "download_deps.py")
+    spec = importlib.util.spec_from_file_location("download_deps_image_security", deps_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_stagehand_proxy_is_restricted_to_the_configured_mirror(monkeypatch):
+    image_deps = _image_deps_module()
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        image_deps.stagehand_url("x64")
+
+
+def test_stagehand_binary_requires_pinned_sha256(tmp_path):
+    image_deps = _image_deps_module()
+    binary = tmp_path / "stagehand-server-v3-linux-x64"
+    binary.write_bytes(b"\x7fELFattacker-controlled executable")
+
+    assert not image_deps._valid_stagehand_binary(str(binary), "x64")
+    assert not image_deps._valid_stagehand_binary(str(binary), "unknown")
+
+
+def test_stagehand_install_rejects_unverified_existing_binary(tmp_path, monkeypatch):
+    image_deps = _image_deps_module()
+    deps_dir = tmp_path / "deps"
+    deps_dir.mkdir()
+    binary = deps_dir / "stagehand-server-v3-linux-x64"
+    binary.write_bytes(b"\x7fELFattacker-controlled executable")
+    cache_dir = tmp_path / "cache"
+
+    monkeypatch.setattr(image_deps, "SCRIPT_DIR", str(deps_dir))
+    monkeypatch.setattr(image_deps.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(image_deps.platform, "machine", lambda: "x86_64")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
+
+    with pytest.raises(RuntimeError, match="Refusing to install unverified stagehand binary"):
+        image_deps._install_stagehand()
+
+    assert not list(cache_dir.rglob("stagehand-server-v3-linux-x64"))
+
+
 # ── Documentation contract: ARM64 build-host minimums ─────────────────────
 # The ARM64 host requirements are empirical findings from real hardware
 # (glibc 2.38 __isoc23_* symbols, GCC 13 libstdc++, SIMDe headers, cmake 4.x,
