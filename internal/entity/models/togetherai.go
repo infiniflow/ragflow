@@ -588,7 +588,10 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 
 	if resp.StatusCode != http.StatusOK {
 		buf := make([]byte, 1024)
-		n, _ := resp.Body.Read(buf)
+		n, err := resp.Body.Read(buf)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("TogetherAI stream API error: %d - %s: %w", resp.StatusCode, string(buf[:n]), err)
+		}
 		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
 	}
 

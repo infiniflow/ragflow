@@ -19,6 +19,7 @@ package models
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -128,5 +129,45 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 			_, err := m.Balance(ctx, apiConfig())
 			return err
 		})
+	})
+
+	// A non-200 body that fails mid-read must report that failure. Discarding the
+	// read error turns an interrupted body (or a cancellation) into a bare status
+	// line, which hides why the retry-worthy call actually failed.
+	truncatedError := func(t *testing.T) *httptest.Server {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			defer conn.Close()
+			// Promise a body and send none: the first read fails, so a driver that
+			// swallows the read error can only report the status line.
+			buf.WriteString("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 64\r\n\r\n")
+			buf.Flush()
+		}))
+		t.Cleanup(srv.Close)
+		return srv
+	}
+	noopSender := func(*string, *string) error { return nil }
+
+	t.Run("stepfun stream error body read failure", func(t *testing.T) {
+		srv := truncatedError(t)
+		m := NewStepFunModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
+		}
+	})
+
+	t.Run("togetherai stream error body read failure", func(t *testing.T) {
+		srv := truncatedError(t)
+		m := NewTogetherAIModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
+		}
 	})
 }

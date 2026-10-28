@@ -296,7 +296,10 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("StepFun stream TTS API error: %d (body: %q): %w", resp.StatusCode, string(body), err)
+		}
 		return fmt.Errorf("StepFun stream TTS API error: %d - %s", resp.StatusCode, string(body))
 	}
 
