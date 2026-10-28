@@ -740,6 +740,23 @@ func claimJudgeCap() int {
 	return envIntDefault(common.EnvDecisionClaimJudgeCap, claimJudgeCapDefault)
 }
 
+// claimMinProbDefault is the P(relevant) a statement must reach to survive.
+//
+// It is NOT the passage threshold. A statement is one fact with a short quote -
+// thirty to eighty tokens - while the threshold in RAGFLOW_DECISION_MIN_PROB was
+// calibrated on chunk passages several times that size. Measured on identical
+// irrelevant evidence the two shapes do not even share a scale (the same passage
+// scored 0.0 on one judge and 0.042 on another), so borrowing the passage
+// threshold for statements is how a correctly recalled statement gets dropped:
+// the claim page is exactly where the recall that matters is weakest.
+const claimMinProbDefault = 0.25
+
+// claimMinProb is the statement threshold, env-tunable so the two exits can be
+// tuned against their own evidence instead of a shared guess.
+func claimMinProb() float64 {
+	return envFloatDefault(common.EnvDecisionClaimMinProb, claimMinProbDefault)
+}
+
 // capClaimPage returns the statements a page may send to the judge, in page order:
 // the leading limit entries, plus the first claim of every chunk those entries did
 // not cover. A chunk is on the page because the retrieval ranked it, so it keeps
@@ -869,7 +886,9 @@ func filterClaims(ctx context.Context, question string, claims []claimHit) []cla
 		judged++
 		p := passage{side: filterSideClaim, tool: "compiled_claim", chunkID: c.chunkID, docID: c.docID, pos: i}
 		logDecision(ctx, p, 0, v)
-		if !v.Useful {
+		// The statement threshold, not the passage one: v.Useful was computed
+		// against RAGFLOW_DECISION_MIN_PROB, which is calibrated on chunk passages.
+		if v.Probability < claimMinProb() {
 			if floor && pageMax > 0 && (v.Probability >= pageMax*claimRelativeFloor || v.Probability >= best[c.chunkID]) {
 				floored++
 				kept = append(kept, c)

@@ -98,7 +98,14 @@ func verdictsOf(useful ...bool) func(context.Context, string, []string) []decisi
 	return func(_ context.Context, _ string, segments []string) []decisionhead.Verdict {
 		out := make([]decisionhead.Verdict, len(segments))
 		for i, segment := range segments {
-			out[i] = decisionhead.Verdict{Segment: segment, Useful: useful[i], Judged: true}
+			// The claim exit reads Probability, so a stub that only sets Useful would
+			// look like a 0.0 verdict to it. 0.9 clears both thresholds, 0.1 clears
+			// neither.
+			p := 0.1
+			if useful[i] {
+				p = 0.9
+			}
+			out[i] = decisionhead.Verdict{Segment: segment, Useful: useful[i], Judged: true, Probability: p}
 		}
 		return out
 	}
@@ -690,7 +697,7 @@ func TestClaimFilterKeepsOnePerChunkByFloor(t *testing.T) {
 // the page falls back to its single best-ranked claim.
 func TestClaimFilterWithoutFloorDropsTheWholePage(t *testing.T) {
 	t.Setenv(common.EnvDecisionClaimFloor, "0")
-	stubDecision(t, wholeText(), claimProbVerdicts(0.10, 0.05, 0.35))
+	stubDecision(t, wholeText(), claimProbVerdicts(0.10, 0.05, 0.20))
 	claims := []claimHit{
 		{name: "a", chunkID: "c1"},
 		{name: "b", chunkID: "c1"},
@@ -702,10 +709,39 @@ func TestClaimFilterWithoutFloorDropsTheWholePage(t *testing.T) {
 	}
 }
 
+// A statement is not a passage. The claim exit rules on its own threshold because
+// a thirty-token fact and a thousand-token chunk do not share a score scale, and
+// borrowing the passage number is how a correctly recalled statement gets dropped.
+func TestClaimThresholdIsSeparateFromPassageThreshold(t *testing.T) {
+	t.Setenv(common.EnvDecisionMinProb, "0.30")
+	t.Setenv(common.EnvDecisionClaimMinProb, "0.25")
+	stubDecision(t, wholeText(), claimProbVerdicts(0.27))
+	got := filterClaims(context.Background(), "q", []claimHit{{name: "a", chunkID: "c1"}})
+	if len(got) != 1 || got[0].name != "a" {
+		t.Fatalf("kept %+v, want the 0.27 statement kept by the 0.25 claim threshold", got)
+	}
+}
+
+// ...and the defaults are the split the deployment expects: 0.30 for passages,
+// 0.25 for statements.
+func TestClaimMinProbDefaults(t *testing.T) {
+	t.Setenv(common.EnvDecisionMinProb, "")
+	t.Setenv(common.EnvDecisionClaimMinProb, "")
+	if got := claimMinProb(); got != 0.25 {
+		t.Fatalf("claim min prob = %v, want 0.25", got)
+	}
+	if defaultDecisionMinProb != 0.30 {
+		t.Fatalf("passage min prob = %v, want 0.30", defaultDecisionMinProb)
+	}
+}
+
 // A page the model judged entirely useless keeps its best-ranked claim: an empty
 // page makes the callers serve the raw chunk instead, which costs more text than
 // the claim it replaced.
 func TestClaimFilterKeepsBestRankedClaimWhenEveryLineDrops(t *testing.T) {
+	// Floor off: the floor exists to keep something, so the all-dropped fallback is
+	// only observable without it.
+	t.Setenv(common.EnvDecisionClaimFloor, "0")
 	stubDecision(t, wholeText(), verdictsOf(false, false))
 	claims := []claimHit{{name: "a"}, {name: "b"}}
 	got := filterClaims(context.Background(), "q", claims)

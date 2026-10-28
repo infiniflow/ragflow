@@ -365,6 +365,12 @@ const (
 	// design; the judge cannot afford to be, and a rate-limited key trips its
 	// breaker long before a 300-statement page is scored.
 	EnvDecisionClaimJudgeCap = "RAGFLOW_DECISION_CLAIM_JUDGE_CAP"
+	// EnvDecisionClaimMinProb is the P(relevant) a compiled statement must reach to
+	// survive the claim exit. It is separate from EnvDecisionMinProb because a
+	// statement is a single fact with a short quote, not a passage: the judge scores
+	// the two shapes on different scales, so one threshold for both either drops
+	// recalled statements or keeps noise.
+	EnvDecisionClaimMinProb = "RAGFLOW_DECISION_CLAIM_MIN_PROB"
 	// EnvDecisionFilterClaim switches the filter's third exit: compiled claims,
 	// judged one statement at a time. On by default because the claim page is the
 	// only model-visible block with no length bound of its own - a chunk's claim
