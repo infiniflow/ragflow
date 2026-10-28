@@ -40,6 +40,11 @@ func NewHTMLParser() *HTMLParser {
 	return &HTMLParser{}
 }
 
+// NewHTMLTextParser extracts HTML text without caching inline images.
+func NewHTMLTextParser() *HTMLParser {
+	return &HTMLParser{textOnly: true}
+}
+
 func (p *HTMLParser) String() string {
 	return "HTMLParser"
 }
@@ -139,7 +144,7 @@ type htmlWalkState struct {
 func (s *htmlWalkState) warnings() []string {
 	warnings := s.mediaBudget.warnings()
 	if s.skippedInlineImages > 0 {
-		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid inline image(s)", s.skippedInlineImages))
 	}
 	return warnings
 }

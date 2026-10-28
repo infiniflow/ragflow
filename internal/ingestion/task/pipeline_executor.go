@@ -40,6 +40,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -376,11 +377,15 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (index write, compiled-product reconcile, Wiki active-MAP state) has
 	// succeeded. Only now drop the run-scoped cache entries this task produced,
 	// so a failure in any of those steps leaves chunk results and parser media
-	// intact for retry. PurgeTask is best-effort and silent when no manifest
-	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	// intact for retry. Cleanup is best-effort; failed media cleanup is logged
+	// and the entries expire independently.
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
-		mediacache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+		if s.deps.KV != nil {
+			if err := mediacache.PurgeTask(ctx, s.deps.KV, s.taskCtx.IngestionTask.ID); err != nil {
+				common.Warn("failed to purge task media cache", zap.String("task_id", s.taskCtx.IngestionTask.ID), zap.Error(err))
+			}
+		}
 	}
 
 	return &PipelineResult{

@@ -8,12 +8,16 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"gopkg.in/yaml.v3"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
@@ -22,7 +26,10 @@ import (
 	"ragflow/internal/ingestion/mediacache"
 	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"ragflow/internal/storage"
+	"ragflow/internal/tokenizer"
 )
 
 // TestHTMLMediaRealServices exercises the normal ingestion canvas using real
@@ -31,9 +38,17 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	if os.Getenv("RAGFLOW_REAL_HTML_MEDIA_TEST") != "1" {
 		t.Skip("set RAGFLOW_REAL_HTML_MEDIA_TEST=1 with configured MySQL, Kvrocks and MinIO")
 	}
-	prepareTokenizerResourceForIntegration(t)
-	RequireTokenizerPool(t)
-	cfg := mustLoadRealIntegrationConfig(t)
+	if common.GetEnv(common.EnvRAGFlowDictPath) == "" {
+		const dictPath = "/usr/share/infinity/resource"
+		if _, err := os.Stat(filepath.Join(dictPath, "rag", "huqie.txt")); err != nil {
+			t.Fatalf("tokenizer resource: %v", err)
+		}
+		t.Setenv(common.EnvRAGFlowDictPath, dictPath)
+	}
+	if err := tokenizer.Init(&tokenizer.PoolConfig{DictPath: "/usr/share/infinity/resource", MinSize: 1, MaxSize: 2, IdleTimeout: 30 * time.Second, AcquireTimeout: 5 * time.Second}); err != nil {
+		t.Fatalf("tokenizer initialization: %v", err)
+	}
+	cfg := loadHTMLMediaIntegrationConfig(t)
 	db := mustOpenRealMySQL(t, cfg)
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -184,4 +199,81 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	if _, err := retry.Get(t.Context(), retryRef); !errors.Is(err, media.ErrMediaNotFound) {
 		t.Fatalf("purged cache read: %v", err)
 	}
+}
+
+// loadHTMLMediaIntegrationConfig uses CI's published service addresses when
+// supplied, while leaving the checked-in configuration untouched.
+func loadHTMLMediaIntegrationConfig(t *testing.T) *config.Config {
+	t.Helper()
+	kvAddr := os.Getenv("RAGFLOW_TEST_KVROCKS_ADDR")
+	if kvAddr == "" {
+		return mustLoadRealIntegrationConfig(t)
+	}
+	mysqlAddr := os.Getenv("RAGFLOW_TEST_MYSQL_ADDR")
+	minioAddr := os.Getenv("RAGFLOW_TEST_MINIO_ADDR")
+	host, portString, err := net.SplitHostPort(mysqlAddr)
+	if err != nil {
+		t.Fatalf("invalid mysql address: %v", err)
+	}
+	port, err := strconv.Atoi(portString)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := net.SplitHostPort(kvAddr); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := net.SplitHostPort(minioAddr); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "conf", "service_conf.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	mysql, ok := cfg["mysql"].(map[string]any)
+	if !ok {
+		t.Fatal("missing mysql config")
+	}
+	minio, ok := cfg["minio"].(map[string]any)
+	if !ok {
+		t.Fatal("missing minio config")
+	}
+	kvrocks, ok := cfg["kvrocks"].(map[string]any)
+	if !ok {
+		t.Fatal("missing kvrocks config")
+	}
+	mysql["host"], mysql["port"] = host, port
+	minio["host"], kvrocks["host"] = minioAddr, kvAddr
+	for _, entry := range []struct {
+		env     string
+		section map[string]any
+		key     string
+	}{
+		{"RAGFLOW_TEST_MYSQL_PASSWORD", mysql, "password"},
+		{"RAGFLOW_TEST_MINIO_USER", minio, "user"},
+		{"RAGFLOW_TEST_MINIO_PASSWORD", minio, "password"},
+		{"RAGFLOW_TEST_KVROCKS_PASSWORD", kvrocks, "password"},
+	} {
+		if value, ok := os.LookupEnv(entry.env); ok {
+			entry.section[entry.key] = value
+		}
+	}
+	data, err = yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "service_conf.yaml")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.Init(path); err != nil {
+		t.Fatal(err)
+	}
+	return server.GetConfig()
 }
