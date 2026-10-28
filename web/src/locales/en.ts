@@ -1075,7 +1075,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
-      applyModelConfigs: 'Apply model configs',
+      applyModelConfigs:
+        'Use this model and its settings in single-model Chat.',
       conversations: 'Conversations',
       chatApps: 'Chat apps',
       newConversation: 'New conversation',
