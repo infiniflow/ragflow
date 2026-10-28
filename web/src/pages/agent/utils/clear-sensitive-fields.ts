@@ -7,7 +7,6 @@ const apiKeyOperators = [
   Operator.Google,
   Operator.KeenableSearch,
   Operator.YouComSearch,
-  Operator.PerplexitySearch,
   Operator.SofyaSearch,
   Operator.BGPT,
   Operator.QueritContents,
@@ -19,7 +18,6 @@ const apiKeyOperators = [
 // agent-tool records above.
 const nodeLabelApiKeyOperators: string[] = [
   Operator.YouComSearch,
-  Operator.PerplexitySearch,
   Operator.SofyaSearch,
 ];
 
@@ -50,6 +48,19 @@ function isSearch1APIOperator(value: unknown) {
   );
 }
 
+// The backend registers the tool as `perplexity` with the canvas alias
+// `perplexitysearch`, and the model-facing name is `perplexity_search`, so
+// every spelling has to be scrubbed, not only the canonical operator.
+function isPerplexityOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return ['perplexity', 'perplexitysearch'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
 function isNodeLabelApiKeyOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
@@ -58,6 +69,7 @@ function isNodeLabelApiKeyOperator(value: unknown) {
   return (
     isQueritOperator(value) ||
     isSearch1APIOperator(value) ||
+    isPerplexityOperator(value) ||
     nodeLabelApiKeyOperators.includes(value)
   );
 }
@@ -94,7 +106,8 @@ export function clearSensitiveFields<T>(obj: T): T {
     if (
       (apiKeyOperators.includes(value.component_name) ||
         isQueritOperator(value.component_name) ||
-        isSearch1APIOperator(value.component_name)) &&
+        isSearch1APIOperator(value.component_name) ||
+        isPerplexityOperator(value.component_name)) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

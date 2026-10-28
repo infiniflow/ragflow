@@ -2674,7 +2674,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       perplexityRecencyYear: '过去一年',
       perplexityDomainFilter: '域名过滤',
       perplexityDomainFilterTip:
-        '以逗号分隔，最多 20 个域名。域名前加 "-" 表示排除。留空则搜索整个网络。',
+        '以逗号分隔，最多 20 个域名。每次请求只能使用一种模式：要么只列出要搜索的域名（例如 "ragflow.io, docs.example.com"），要么只列出要排除的域名并加 "-" 前缀（例如 "-pinterest.com, -reddit.com"）。两者混用会被拒绝。留空则搜索整个网络。',
       perplexityCountry: '国家/地区',
       perplexityCountryTip:
         '可选的 ISO 3166-1 alpha-2 国家代码（例如 US），用于优先返回该国家/地区的结果。',

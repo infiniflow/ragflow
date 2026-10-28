@@ -17,8 +17,10 @@
 package tool
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,7 +98,7 @@ func TestPerplexity_BuildRequest(t *testing.T) {
 	tool := newPerplexityTool(helper, " pplx-test ", perplexityDefaults{
 		SearchType:          "fast",
 		SearchRecencyFilter: "week",
-		SearchDomainFilter:  []string{"ragflow.io", "-example.com"},
+		SearchDomainFilter:  []string{"ragflow.io", "docs.perplexity.ai"},
 		Country:             "US",
 		TopN:                5,
 	})
@@ -144,7 +146,7 @@ func TestPerplexity_BuildRequest(t *testing.T) {
 		t.Errorf("country = %v, want US", sent["country"])
 	}
 	domains, _ := sent["search_domain_filter"].([]any)
-	if len(domains) != 2 || domains[0] != "ragflow.io" || domains[1] != "-example.com" {
+	if len(domains) != 2 || domains[0] != "ragflow.io" || domains[1] != "docs.perplexity.ai" {
 		t.Errorf("search_domain_filter = %v", sent["search_domain_filter"])
 	}
 }
@@ -198,12 +200,21 @@ func TestPerplexity_MaxResultsArg(t *testing.T) {
 
 func TestPerplexity_DomainFilterArg(t *testing.T) {
 	t.Parallel()
-	got, err := perplexityDomainFilterArg(" ragflow.io, -example.com ,, \n docs.perplexity.ai ")
+	// Allowlist mode: plain domains, comma or newline separated, blanks dropped.
+	got, err := perplexityDomainFilterArg(" ragflow.io, example.com ,, \n docs.perplexity.ai ")
 	if err != nil {
-		t.Fatalf("string filter: %v", err)
+		t.Fatalf("allowlist filter: %v", err)
 	}
-	if len(got) != 3 || got[0] != "ragflow.io" || got[1] != "-example.com" || got[2] != "docs.perplexity.ai" {
-		t.Errorf("string filter = %v", got)
+	if len(got) != 3 || got[0] != "ragflow.io" || got[1] != "example.com" || got[2] != "docs.perplexity.ai" {
+		t.Errorf("allowlist filter = %v", got)
+	}
+	// Denylist mode: every entry carries the "-" prefix.
+	got, err = perplexityDomainFilterArg("-pinterest.com, -reddit.com")
+	if err != nil {
+		t.Fatalf("denylist filter: %v", err)
+	}
+	if len(got) != 2 || got[0] != "-pinterest.com" || got[1] != "-reddit.com" {
+		t.Errorf("denylist filter = %v", got)
 	}
 	got, err = perplexityDomainFilterArg([]any{"a.com", " ", "b.com"})
 	if err != nil || len(got) != 2 {
@@ -214,6 +225,13 @@ func TestPerplexity_DomainFilterArg(t *testing.T) {
 	}
 	if _, err := perplexityDomainFilterArg([]any{1}); err == nil {
 		t.Error("non-string entry accepted")
+	}
+	// The API accepts one mode per request; a mix is rejected up front.
+	for _, mixed := range []any{"ragflow.io, -example.com", []string{"-a.com", "b.com"}} {
+		_, err := perplexityDomainFilterArg(mixed)
+		if err == nil || !strings.Contains(err.Error(), "not both") {
+			t.Errorf("mixed filter %v: err = %v, want a not-both error", mixed, err)
+		}
 	}
 	tooMany := strings.Repeat("a.com,", perplexityMaxDomainFilters+1)
 	if _, err := perplexityDomainFilterArg(tooMany); err == nil {
@@ -275,31 +293,101 @@ func TestPerplexity_MissingKeyIsEnvelopeError(t *testing.T) {
 }
 
 func TestPerplexity_UpstreamErrorBecomesEnvelope(t *testing.T) {
-	t.Parallel()
+	// Not parallel: it captures the process-wide log output to prove that
+	// neither the key nor the upstream body is written anywhere.
+	const keyMarker = "pplx-SECRET-KEY-MARKER-7f3a"
+	const bodyMarker = "BODY-TEXT-MARKER-91c2"
+	var logs bytes.Buffer
+	prevOut := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(prevOut) })
+
 	cases := []struct {
 		name   string
 		status int
 		body   string
 		want   string
 	}{
-		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"Invalid API key","type":"unauthorized","code":401}}`, "401 (invalid API key): Invalid API key"},
-		{"validation", http.StatusUnprocessableEntity, `{"detail":[{"loc":["body","max_results"],"msg":"ensure this value is less than or equal to 20","type":"value_error"}]}`, "422 (request rejected): ensure this value"},
-		{"rate limited", http.StatusTooManyRequests, ``, "429 (rate limited)"},
-		{"other", http.StatusBadGateway, `not json`, "upstream returned 502"},
+		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"` + bodyMarker + ` for key ` + keyMarker + `","type":"unauthorized","code":401}}`, "perplexity: upstream returned 401 (invalid API key)"},
+		{"validation", http.StatusUnprocessableEntity, `{"detail":[{"loc":["body","max_results"],"msg":"` + bodyMarker + `","type":"value_error"}]}`, "perplexity: upstream returned 422 (request rejected, check search_domain_filter, country and max_results)"},
+		{"rate limited", http.StatusTooManyRequests, `{"error":{"message":"` + bodyMarker + `"}}`, "perplexity: upstream returned 429 (rate limited, retry later)"},
+		{"server error", http.StatusInternalServerError, bodyMarker + " " + keyMarker, "perplexity: upstream returned 500"},
+		{"other", http.StatusBadGateway, `<html>` + bodyMarker + `</html>`, "perplexity: upstream returned 502"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			helper, _, _, _ := perplexityTestServer(t, tc.status, tc.body)
-			tool := newPerplexityTool(helper, "key", perplexityDefaults{})
+			tool := newPerplexityTool(helper, keyMarker, perplexityDefaults{})
 
 			out, err := tool.InvokableRun(t.Context(), `{"query":"q"}`)
 			if err != nil {
 				t.Fatalf("InvokableRun: %v", err)
 			}
 			env := decodePerplexityEnvelope(t, out)
-			if !strings.HasPrefix(env.Error, "perplexity: ") || !strings.Contains(env.Error, tc.want) {
-				t.Fatalf("_ERROR = %q, want it to contain %q", env.Error, tc.want)
+			if env.Error != tc.want {
+				t.Fatalf("_ERROR = %q, want exactly %q", env.Error, tc.want)
+			}
+			for _, marker := range []string{keyMarker, bodyMarker} {
+				if strings.Contains(out, marker) {
+					t.Errorf("tool output leaks %q: %s", marker, out)
+				}
+			}
+		})
+	}
+	for _, marker := range []string{keyMarker, bodyMarker} {
+		if strings.Contains(logs.String(), marker) {
+			t.Errorf("log output leaks %q: %s", marker, logs.String())
+		}
+	}
+}
+
+func TestPerplexity_MalformedSuccessBodyIsNotEchoed(t *testing.T) {
+	t.Parallel()
+	const bodyMarker = "BODY-TEXT-MARKER-91c2"
+	helper, _, _, _ := perplexityTestServer(t, http.StatusOK, bodyMarker+" not json")
+	tool := newPerplexityTool(helper, "key", perplexityDefaults{})
+
+	out, err := tool.InvokableRun(t.Context(), `{"query":"q"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	env := decodePerplexityEnvelope(t, out)
+	if env.Error != "perplexity: upstream returned a body that is not valid JSON" {
+		t.Fatalf("_ERROR = %q", env.Error)
+	}
+	if strings.Contains(out, bodyMarker) {
+		t.Fatalf("tool output leaks the body: %s", out)
+	}
+}
+
+func TestPerplexity_ControlCharactersInKeyAreRejectedBeforeRequest(t *testing.T) {
+	t.Parallel()
+	const keyMarker = "pplx-SECRET-KEY-MARKER-7f3a"
+	for name, key := range map[string]string{
+		// Control characters sit inside the key so TrimSpace cannot remove them.
+		"newline": keyMarker + "\nX-Injected: 1",
+		"cr":      "pplx-\r" + keyMarker,
+		"nul":     "pplx-\x00" + keyMarker,
+		"tab":     "pplx-\t" + keyMarker,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			helper, _, _, calls := perplexityTestServer(t, http.StatusOK, `{"results":[]}`)
+			tool := newPerplexityTool(helper, key, perplexityDefaults{})
+
+			out, err := tool.InvokableRun(t.Context(), `{"query":"q"}`)
+			if err != nil {
+				t.Fatalf("InvokableRun: %v", err)
+			}
+			env := decodePerplexityEnvelope(t, out)
+			if env.Error != "perplexity: api_key contains control characters" {
+				t.Fatalf("_ERROR = %q", env.Error)
+			}
+			if strings.Contains(out, keyMarker) {
+				t.Fatalf("tool output leaks the key: %s", out)
+			}
+			if calls.Load() != 0 {
+				t.Fatalf("request was sent %d times, want 0", calls.Load())
 			}
 		})
 	}
@@ -375,7 +463,7 @@ func TestBuildPerplexityTool_Params(t *testing.T) {
 		"api_key":               "k",
 		"search_type":           " Fast ",
 		"search_recency_filter": "Week",
-		"search_domain_filter":  "ragflow.io, -example.com",
+		"search_domain_filter":  "-pinterest.com, -reddit.com",
 		"country":               "us",
 		"top_n":                 float64(20),
 	})
@@ -398,6 +486,7 @@ func TestBuildPerplexityTool_Params(t *testing.T) {
 		{"search_type": "people"},
 		{"search_recency_filter": "decade"},
 		{"search_domain_filter": 3},
+		{"search_domain_filter": "ragflow.io, -example.com"},
 		{"country": 1},
 		{"top_n": float64(0)},
 		{"top_n": float64(21)},

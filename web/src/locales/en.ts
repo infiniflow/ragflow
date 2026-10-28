@@ -3081,7 +3081,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       perplexityRecencyYear: 'Past year',
       perplexityDomainFilter: 'Domain filter',
       perplexityDomainFilterTip:
-        'Comma-separated list of up to 20 domains to search. Prefix a domain with "-" to exclude it. Leave blank to search the whole web.',
+        'Comma-separated list of up to 20 domains. Use one mode per request: either list only the domains to search (for example "ragflow.io, docs.example.com"), or list only the domains to exclude with a "-" prefix (for example "-pinterest.com, -reddit.com"). Mixing the two is rejected. Leave blank to search the whole web.',
       perplexityCountry: 'Country',
       perplexityCountryTip:
         'Optional ISO 3166-1 alpha-2 country code (for example US) used to prefer results from that country.',

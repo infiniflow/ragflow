@@ -106,6 +106,21 @@ const ApiKeyRequiredOperators: string[] = [
   Operator.Search1APISearch,
 ];
 
+// Perplexity is also reachable under its backend registry name and canvas
+// alias (`perplexity`, `perplexitysearch`, `perplexity_search`), so match the
+// normalized spelling rather than the canonical operator alone.
+function isApiKeyRequiredOperator(value: unknown): boolean {
+  if (typeof value !== 'string') {
+    return false;
+  }
+  if (ApiKeyRequiredOperators.includes(value)) {
+    return true;
+  }
+  return ['perplexity', 'perplexitysearch'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
 function collectStrings(value: unknown): string[] {
   if (typeof value === 'string') {
     return [value];
@@ -721,7 +736,7 @@ export function collectCanvasIssues({
       });
     }
 
-    if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
+    if (isApiKeyRequiredOperator(label) && !form?.api_key) {
       issues.push({
         ...target,
         type: CanvasIssueType.MissingRequired,
@@ -762,9 +777,7 @@ export function collectCanvasIssues({
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
           const isRetrieval = tool?.component_name === Operator.Retrieval;
-          const needsApiKey = ApiKeyRequiredOperators.includes(
-            tool?.component_name,
-          );
+          const needsApiKey = isApiKeyRequiredOperator(tool?.component_name);
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool

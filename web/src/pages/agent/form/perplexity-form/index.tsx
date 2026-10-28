@@ -128,7 +128,7 @@ export function PerplexityWidgets() {
             <FormControl>
               <Input
                 {...field}
-                placeholder="example.com, -ads.example.com"
+                placeholder="ragflow.io, docs.example.com"
               ></Input>
             </FormControl>
             <FormMessage />

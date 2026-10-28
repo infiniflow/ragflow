@@ -57,10 +57,6 @@ const perplexityMaxDomainFilters = 20
 // still bounding what a misbehaving upstream can make us allocate.
 const perplexityMaxResponseBytes = 4 << 20
 
-// perplexityMaxErrorBytes caps how much of an error body is read for the
-// message surfaced to the model.
-const perplexityMaxErrorBytes = 8 << 10
-
 const (
 	perplexitySearchTypeWeb  = "web"
 	perplexitySearchTypeFast = "fast"
@@ -193,6 +189,11 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 	if p.apiKey == "" {
 		return perplexityErrJSON(fmt.Errorf("perplexity: api_key is required")), nil
 	}
+	if !perplexityKeyIsWellFormed(p.apiKey) {
+		// Checked before the request is built so the key never reaches
+		// net/http, which would reject it as an invalid header value.
+		return perplexityErrJSON(fmt.Errorf("perplexity: api_key contains control characters")), nil
+	}
 
 	recency, err := perplexityEnumArg("search_recency_filter", args.SearchRecencyFilter, perplexityRecencyValues, p.defaults.SearchRecencyFilter)
 	if err != nil {
@@ -240,7 +241,7 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 	}
 	var decoded perplexityResponse
 	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return perplexityErrJSON(fmt.Errorf("perplexity: decode response: %w", err)), nil
+		return perplexityErrJSON(fmt.Errorf("perplexity: upstream returned a body that is not valid JSON")), nil
 	}
 	results := decoded.Results
 	if results == nil {
@@ -252,68 +253,32 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 	return perplexityJSON(perplexityEnvelope{Results: results}), nil
 }
 
-// perplexityStatusError turns a non-2xx response into an error the model can
-// act on. 401 (invalid key), 422 (request rejected) and 429 (rate limited) are
-// the documented failure codes; the body's message is included when present.
+// perplexityStatusError turns a non-2xx response into a fixed, status-only
+// message the model can act on. 401 (invalid key), 422 (request rejected) and
+// 429 (rate limited) are the documented failure codes. The response body is
+// deliberately not read or echoed: it is upstream-controlled text and must not
+// reach the model, the canvas, or logs.
 func perplexityStatusError(resp *http.Response) error {
-	reason := ""
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		reason = "invalid API key"
+		return fmt.Errorf("perplexity: upstream returned 401 (invalid API key)")
 	case http.StatusUnprocessableEntity:
-		reason = "request rejected"
+		return fmt.Errorf("perplexity: upstream returned 422 (request rejected, check search_domain_filter, country and max_results)")
 	case http.StatusTooManyRequests:
-		reason = "rate limited"
-	}
-	message := perplexityErrorMessage(resp.Body)
-	switch {
-	case reason != "" && message != "":
-		return fmt.Errorf("perplexity: upstream returned %d (%s): %s", resp.StatusCode, reason, message)
-	case reason != "":
-		return fmt.Errorf("perplexity: upstream returned %d (%s)", resp.StatusCode, reason)
-	case message != "":
-		return fmt.Errorf("perplexity: upstream returned %d: %s", resp.StatusCode, message)
+		return fmt.Errorf("perplexity: upstream returned 429 (rate limited, retry later)")
 	}
 	return fmt.Errorf("perplexity: upstream returned %d", resp.StatusCode)
 }
 
-// perplexityErrorMessage extracts a short message from an error body. The API
-// uses {"error": {"message": ...}} for auth and rate-limit errors and
-// {"detail": [{"msg": ...}]} for validation errors.
-func perplexityErrorMessage(body io.Reader) string {
-	raw, err := io.ReadAll(io.LimitReader(body, perplexityMaxErrorBytes))
-	if err != nil || len(raw) == 0 {
-		return ""
-	}
-	var decoded struct {
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-		Detail json.RawMessage `json:"detail"`
-	}
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return ""
-	}
-	if message := strings.TrimSpace(decoded.Error.Message); message != "" {
-		return message
-	}
-	var details []struct {
-		Msg string `json:"msg"`
-	}
-	if err := json.Unmarshal(decoded.Detail, &details); err == nil {
-		messages := make([]string, 0, len(details))
-		for _, detail := range details {
-			if msg := strings.TrimSpace(detail.Msg); msg != "" {
-				messages = append(messages, msg)
-			}
+// perplexityKeyIsWellFormed reports whether the key can be placed in an HTTP
+// header: printable, no control characters (CR, LF, NUL, tabs and friends).
+func perplexityKeyIsWellFormed(key string) bool {
+	for _, r := range key {
+		if r < 0x20 || r == 0x7f {
+			return false
 		}
-		return strings.Join(messages, "; ")
 	}
-	var detail string
-	if err := json.Unmarshal(decoded.Detail, &detail); err == nil {
-		return strings.TrimSpace(detail)
-	}
-	return ""
+	return true
 }
 
 // perplexityEnumArg normalizes a model-supplied enum value. Blank means the
@@ -381,6 +346,18 @@ func perplexityDomainFilterArg(value any) ([]string, error) {
 	}
 	if len(domains) == 0 {
 		return nil, nil
+	}
+	// The API runs in allowlist mode (no prefix) or denylist mode ("-"
+	// prefix), never both in one request. Reject a mix here with a clear
+	// message instead of letting upstream answer 422.
+	excluded := 0
+	for _, domain := range domains {
+		if strings.HasPrefix(domain, "-") {
+			excluded++
+		}
+	}
+	if excluded != 0 && excluded != len(domains) {
+		return nil, fmt.Errorf("perplexity: search_domain_filter must list either domains to include or domains to exclude (prefixed with -), not both")
 	}
 	return domains, nil
 }

@@ -838,6 +838,10 @@ describe('collectCanvasIssues: required tool API key', () => {
   it.each([
     ['SofyaSearch', 'SofyaSearch:s1'],
     ['Search1APISearch', 'Search1API:s2'],
+    ['PerplexitySearch', 'PerplexitySearch:p1'],
+    ['perplexitysearch', 'PerplexitySearch:p2'],
+    ['perplexity', 'PerplexitySearch:p3'],
+    ['perplexity_search', 'PerplexitySearch:p4'],
   ])('flags a standalone %s node without an API key', (label, id) => {
     const issues = collect({
       nodes: [makeNode(id, label, { api_key: '' })],
@@ -852,7 +856,7 @@ describe('collectCanvasIssues: required tool API key', () => {
     );
   });
 
-  it.each([['SofyaSearch'], ['Search1APISearch']])(
+  it.each([['SofyaSearch'], ['Search1APISearch'], ['PerplexitySearch']])(
     'passes a standalone %s node with an API key',
     (label) => {
       const issues = collect({
@@ -917,6 +921,38 @@ describe('collectCanvasIssues: required tool API key', () => {
       }),
     );
   });
+
+  it.each([['perplexity'], ['perplexity_search'], ['PerplexitySearch']])(
+    'flags an agent-embedded %s tool without an API key on the Tool node',
+    (componentName) => {
+      const agent = makeNode('Agent:a1', 'Agent', {
+        llm_id: 'model-1',
+        tools: [
+          {
+            component_name: componentName,
+            id: 'tool-3',
+            name: 'Perplexity',
+            params: { api_key: '' },
+          },
+        ],
+      });
+
+      const issues = collect({
+        nodes: [agent, makeNode('Tool:t1', 'Tool')],
+        edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+      });
+
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          nodeId: 'Tool:t1',
+          toolId: 'tool-3',
+          nodeName: 'Agent:a1 / Perplexity',
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.apiKeyMissing',
+        }),
+      );
+    },
+  );
 
   it('passes an agent-embedded tool with an API key and skips other tools', () => {
     const agent = makeNode('Agent:a1', 'Agent', {

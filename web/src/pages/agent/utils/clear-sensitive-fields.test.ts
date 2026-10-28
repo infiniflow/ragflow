@@ -5,6 +5,7 @@ jest.mock('@/constants/agent', () => ({
     Google: 'Google',
     KeenableSearch: 'KeenableSearch',
     YouComSearch: 'YouComSearch',
+    PerplexitySearch: 'PerplexitySearch',
     SofyaSearch: 'SofyaSearch',
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
@@ -232,6 +233,74 @@ describe('clearSensitiveFields', () => {
         'search1api-graph-secret',
       );
       expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
+
+  it.each([
+    'PerplexitySearch',
+    'perplexitysearch',
+    'perplexity',
+    'perplexity_search',
+  ])(
+    'clears a %s key from a canvas node, a tool record and a nested agent tool',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'pplx-graph-secret',
+                  search_type: 'fast',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'pplx-tool-secret',
+              top_n: 5,
+            },
+          },
+        ],
+        components: {
+          agent: {
+            obj: {
+              component_name: 'Agent',
+              params: {
+                tools: [
+                  {
+                    component_name: operator,
+                    params: { api_key: 'pplx-nested-secret', country: 'US' },
+                  },
+                ],
+              },
+            },
+          },
+        },
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.search_type).toBe('fast');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.top_n).toBe(5);
+      expect(
+        sanitized.components.agent.obj.params.tools[0].params.api_key,
+      ).toBe('');
+      expect(
+        sanitized.components.agent.obj.params.tools[0].params.country,
+      ).toBe('US');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe('pplx-graph-secret');
+      expect(dsl.tools[0].params.api_key).toBe('pplx-tool-secret');
+      expect(dsl.components.agent.obj.params.tools[0].params.api_key).toBe(
+        'pplx-nested-secret',
+      );
     },
   );
 
