@@ -7,6 +7,7 @@ const apiKeyOperators = [
   Operator.Google,
   Operator.KeenableSearch,
   Operator.YouComSearch,
+  Operator.PerplexitySearch,
   Operator.SofyaSearch,
   Operator.BGPT,
   Operator.QueritContents,
@@ -18,6 +19,7 @@ const apiKeyOperators = [
 // agent-tool records above.
 const nodeLabelApiKeyOperators: string[] = [
   Operator.YouComSearch,
+  Operator.PerplexitySearch,
   Operator.SofyaSearch,
 ];
 

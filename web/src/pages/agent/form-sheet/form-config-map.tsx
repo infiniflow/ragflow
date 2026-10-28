@@ -25,6 +25,7 @@ import SofyaForm from '../form/sofya-form';
 import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
 import YouComForm from '../form/youcom-form';
+import PerplexityForm from '../form/perplexity-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
@@ -87,6 +88,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.YouComSearch]: {
     component: YouComForm,
+  },
+  [Operator.PerplexitySearch]: {
+    component: PerplexityForm,
   },
   [Operator.SofyaSearch]: {
     component: SofyaForm,

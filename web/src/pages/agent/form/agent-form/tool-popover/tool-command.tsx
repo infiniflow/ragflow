@@ -32,6 +32,7 @@ const Menus = [
       Operator.SearXNG,
       Operator.KeenableSearch,
       Operator.YouComSearch,
+      Operator.PerplexitySearch,
       Operator.SofyaSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,

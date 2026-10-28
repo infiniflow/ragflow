@@ -219,6 +219,40 @@ export const initialYouComValues = {
   },
 };
 
+export enum PerplexitySearchType {
+  Web = 'web',
+  Fast = 'fast',
+}
+
+export enum PerplexityRecency {
+  Any = 'any',
+  Hour = 'hour',
+  Day = 'day',
+  Week = 'week',
+  Month = 'month',
+  Year = 'year',
+}
+
+export const initialPerplexityValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  search_type: PerplexitySearchType.Web,
+  search_recency_filter: PerplexityRecency.Any,
+  search_domain_filter: '',
+  country: '',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export enum SofyaSearchDepth {
   Basic = 'basic',
   Snippets = 'snippets',
@@ -857,6 +891,7 @@ export const RestrictedUpstreamMap = {
   [Operator.SearXNG]: [Operator.Begin, Operator.Retrieval],
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.PerplexitySearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
@@ -916,6 +951,7 @@ export const NodeMap = {
   [Operator.SearXNG]: 'ragNode',
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
+  [Operator.PerplexitySearch]: 'ragNode',
   [Operator.SofyaSearch]: 'ragNode',
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',

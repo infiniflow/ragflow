@@ -101,6 +101,7 @@ const OrphanExemptOperators: string[] = [
 // Tools whose API key is required by the service, on the canvas and inside an
 // agent's tool list alike — an empty key always fails at run time.
 const ApiKeyRequiredOperators: string[] = [
+  Operator.PerplexitySearch,
   Operator.SofyaSearch,
   Operator.Search1APISearch,
 ];

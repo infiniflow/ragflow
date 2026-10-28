@@ -73,6 +73,7 @@ export const SVGIconMap = {
   [Operator.SearXNG]: 'searxng',
   [Operator.KeenableSearch]: 'keenable',
   [Operator.YouComSearch]: 'youcom',
+  [Operator.PerplexitySearch]: 'perplexity',
   [Operator.SofyaSearch]: 'sofya',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
