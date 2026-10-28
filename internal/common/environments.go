@@ -267,7 +267,6 @@ const (
 	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
 	EnvEnableRegister                    = "ENABLE_REGISTER"
-	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"
 	EnvLang                              = "LANG"
