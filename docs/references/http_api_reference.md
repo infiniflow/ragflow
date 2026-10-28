@@ -2485,7 +2485,7 @@ curl --request POST \
   Selects which searchable knowledge-compilation chunks to include: `"dataset"` for dataset artifacts, `"document"` for document artifacts, or `"all"` for both. Defaults to `"dataset"` when omitted, `null`, or an empty string. Ordinary source chunks remain eligible. When `"include_knowledge_compilation"` is `false`, all compiled chunks are excluded regardless of scope. Unsupported scope values and non-string values return an argument error. Intermediate wiki rows and disabled chunks remain excluded.
   With `"document_ids"` or metadata filtering, document artifacts and source chunks are limited to the selected documents; dataset artifacts must reference a selected document in their `source_doc_ids`. This parameter is also supported by `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`.
 - `"use_kg"`: `boolean`
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
+  Defaults to `false`. Graph-based retrieval is not implemented in the current Go backend. Setting this to `true` does not enable multi-hop graph retrieval; the request continues through ordinary hybrid retrieval. To control whether searchable knowledge-compilation chunks are included in ordinary retrieval, use `"include_knowledge_compilation"` and `"knowledge_compilation_scope"`. Knowledge graph generation and viewing through Knowledge Compilation are separate capabilities.
 - `"rerank_id"`: `string`
   The ID of the rerank model.
 - `"keyword"`: `boolean`
