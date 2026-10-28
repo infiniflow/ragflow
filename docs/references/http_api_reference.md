@@ -1123,6 +1123,45 @@ Failure:
 
 ---
 
+### Apply dataset parser settings to existing documents
+
+**POST** `/api/v1/datasets/{dataset_id}/documents/apply-parser-config`
+
+Applies the dataset's saved parser settings to all its existing documents. Save the dataset first with `PUT /api/v1/datasets/{dataset_id}`. This operation requires dataset update permission, takes no request body, and reads the current saved settings on the server.
+
+File-specific parser overrides are replaced. Parser selection and pipeline version are updated together with `parser_config`, using the same file-type resolution as uploads (including dedicated image, audio, presentation, and email parsers). A document assigned to a custom pipeline inherits the dataset's version pin; built-in parsers have no version pin.
+
+Existing chunks, indexes, metadata values, counters, and parsing progress are preserved. This endpoint does not start parsing or delete prior results. Manually re-parse the files to regenerate their content with the saved settings.
+
+All document changes are committed in one transaction. If any document has a queued, running, stopping, or unrecognized ingestion status, the operation fails with response body code `409` and no document changes are committed. Stop parsing or wait for completion before retrying. A database failure also rolls back all document updates. The dataset settings saved by the preceding PUT remain saved if this operation fails.
+
+Repeating this operation against unchanged dataset settings leaves already matching documents unchanged. An empty dataset succeeds with all counts set to zero.
+
+#### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/apply-parser-config \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response example
+
+```json
+{
+    "code": 0,
+    "message": "Parser settings applied. Re-parse files manually to update their content.",
+    "data": {
+        "dataset_id": "...",
+        "total_documents": 120,
+        "updated_documents": 115,
+        "unchanged_documents": 5
+    }
+}
+```
+
+---
+
 ### Update document
 
 **PATCH** `/api/v1/datasets/{dataset_id}/documents/{document_id}`
@@ -2647,7 +2686,7 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
@@ -2656,6 +2695,7 @@ curl --request POST \
   - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
+  - `"searchapi_api_key"`: `string` The [SearchApi](https://www.searchapi.io) API key. Set `web_search_provider` to `"searchapi"` when using this field. Results come from its Google engine. See the [SearchApi Google documentation](https://www.searchapi.io/docs/google) for details.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
 - `"similarity_threshold"`: `float`

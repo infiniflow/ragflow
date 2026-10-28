@@ -331,7 +331,7 @@ export default {
       webCrawl: 'Поисковый робот',
       chunkNumber: 'Количество чанков',
       uploadDate: 'Дата загрузки',
-      chunkMethod: 'Метод чанкинга',
+      parsingMode: 'Режим парсинга',
       enabled: 'Включено',
       disabled: 'Выключено',
       action: 'Действие',
@@ -522,7 +522,7 @@ export default {
       dataFlowPlaceholder: 'Пожалуйста, выберите пайплайн.',
       buildItFromScratch: 'Построить с нуля',
       dataFlow: 'Пайплайн',
-      parseType: 'Тип парсинга',
+      parsingMode: 'Режим парсинга',
       manualSetup: 'Выбрать пайплайн',
       builtIn: 'Встроенный',
       titleDescription:
@@ -544,8 +544,6 @@ export default {
         'Если установлено значение «Команда», все члены команды смогут управлять базой знаний.',
       chunkTokenNumberTip:
         'Это своего рода устанавливает порог токенов для создания чанка. Сегмент с меньшим количеством токенов, чем этот порог, будет объединен со следующими сегментами до тех пор, пока количество токенов не превысит порог, после чего будет создан чанк. Новый чанк не создается, если не встречен разделитель, даже если порог превышен.',
-      chunkMethod: 'Метод чанкинга',
-      chunkMethodTip: 'Смотрите подсказки справа.',
       upload: 'Загрузить',
       english: 'Английский',
       chinese: 'Китайский',
@@ -969,8 +967,6 @@ export default {
       },
       cancel: 'Отмена',
       chatSetting: 'Настройки чата',
-      tocEnhance: 'Улучшение оглавлением',
-      tocEnhanceTip: ` Во время парсинга документа была сгенерирована информация оглавления (см. опцию 'Включить извлечение оглавления' в методе General). Это позволяет большой модели возвращать элементы оглавления, релевантные запросу пользователя, тем самым используя эти элементы для извлечения связанных чанков и применения весов к этим чанкам в процессе сортировки. Этот подход получен из имитации поведенческой логики того, как люди ищут знания в книгах.`,
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       showChunkMetadata: 'Показать метаданные чанка',
       showChunkMetadataTip:
@@ -1477,6 +1473,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Показать содержание',
       hideToc: 'Скрыть содержание',
@@ -2488,7 +2485,7 @@ export default {
       failed: 'Ошибка',
       logTitle: 'Заголовок',
       tags: 'Теги',
-      canvasCategory: 'Категория канваса',
+      agentCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2800,7 +2797,6 @@ export default {
       permission: 'Права доступа',
 
       agentTitle: 'Название агента',
-      canvasCategory: 'Категория канваса',
 
       newRole: 'Новая роль',
       addNewRole: 'Добавить новую роль',
@@ -2819,18 +2815,14 @@ export default {
     },
     explore: {
       title: 'Запуск',
-      canvasList: 'Список канвасов',
       sessions: 'Сессии',
       newSession: 'Новая сессия',
       newSessionLabel: 'Начать новый разговор',
       deleteSession: 'Удалить сессию',
-      searchCanvas: 'Поиск по канвасу...',
       searchSessions: 'Поиск по сессиям...',
-      noCanvasSelected: 'Выберите канвас',
       noSessionSelected: 'Выберите сессию или создайте новую',
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
-      noCanvasFound: 'Канвасы не найдены',
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },

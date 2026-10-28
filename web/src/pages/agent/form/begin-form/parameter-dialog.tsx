@@ -20,7 +20,7 @@ import {
   SelectWithSearch,
   SelectWithSearchOptionType,
 } from '@/components/originui/select-with-search';
-import { Switch } from '@/components/ui/switch';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -47,23 +47,38 @@ function ParameterForm({
   submit,
 }: ModalFormProps) {
   const { t } = useTranslate('flow');
-  const FormSchema = z.object({
-    type: z.string(),
-    key: z
-      .string()
-      .trim()
-      .min(1)
-      .refine(
-        (value) =>
-          !value || !otherThanCurrentQuery.some((x) => x.key === value),
-        { message: 'The key cannot be repeated!' },
-      ),
-    optional: z.boolean(),
-    name: z.string().trim().min(1),
-    options: z
-      .array(z.object({ value: z.string().or(z.boolean()).or(z.number()) }))
-      .optional(),
-  });
+  const FormSchema = z
+    .object({
+      type: z.string(),
+      key: z
+        .string()
+        .trim()
+        .min(1)
+        .refine(
+          (value) =>
+            !value || !otherThanCurrentQuery.some((x) => x.key === value),
+          { message: 'The key cannot be repeated!' },
+        ),
+      optional: z.boolean(),
+      name: z.string().trim().min(1),
+      options: z
+        .array(z.object({ value: z.string().or(z.boolean()).or(z.number()) }))
+        .optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.type !== BeginQueryType.Options) {
+        return;
+      }
+      data.options?.forEach((option, index) => {
+        if (typeof option.value === 'string' && !option.value.trim()) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['options', index, 'value'],
+            message: 'The option cannot be empty!',
+          });
+        }
+      });
+    });
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -179,22 +194,7 @@ function ParameterForm({
             </FormItem>
           )}
         />
-        <FormField
-          name="optional"
-          control={form.control}
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>{t('optional')}</FormLabel>
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <SwitchFormField name="optional" label={t('optional')} />
         {type === BeginQueryType.Options && (
           <BeginDynamicOptions></BeginDynamicOptions>
         )}

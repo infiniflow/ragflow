@@ -598,9 +598,6 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	if len(dispatched.JSON) > 0 {
 		return "json"
 	}
-	if dispatched.Markdown != "" {
-		return "markdown"
-	}
 	return "raw"
 }
 

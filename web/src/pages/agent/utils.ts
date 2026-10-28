@@ -390,13 +390,17 @@ export function transformTokenChunkerParams(
     // while merging everything into a single chunk, but zeroing them here
     // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
     overlapped_percent: Number(rest.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(rest.delimiters, 'value'),
+    delimiters: rest.delimiters.map(
+      ({ value }: { value?: string }) => value ?? '',
+    ),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
     children_delimiters: rest.enable_children
-      ? transformObjectArrayToPureArray(rest.children_delimiters, 'value')
+      ? rest.children_delimiters.map(
+          ({ value }: { value?: string }) => value ?? '',
+        )
       : [],
   };
 }
@@ -768,6 +772,20 @@ export const buildDslComponentsByGraph = (
           break;
         case Operator.Begin:
           params = transformBeginParams(params);
+          break;
+        case Operator.UserFillUp:
+          if (Array.isArray(params.inputs)) {
+            params = {
+              ...params,
+              inputs: params.inputs.reduce(
+                (inputs, { key, ...value }) => {
+                  inputs[key] = value;
+                  return inputs;
+                },
+                {} as Record<string, Omit<BeginQuery, 'key'>>,
+              ),
+            };
+          }
           break;
         default:
           break;

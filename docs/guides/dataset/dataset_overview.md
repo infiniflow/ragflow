@@ -18,7 +18,7 @@ In terms of responsibility, a dataset is more than a "folder". It converts raw d
 
 ## Basic Information
 
-The configuration page allows you to manage the core settings of a knowledge base. Basic information includes the name, language, avatar, description, permissions, embedding model, PageRank, and tag sets.
+The configuration page allows you to manage the core settings of a knowledge base. Basic information includes the name, language, avatar, description, permissions, embedding model and PageRank.
 
 - **Name**: The name of the knowledge base. It can be changed after creation and is displayed on knowledge base cards and detail page headers.
 - **Language**: The primary language of the knowledge base. This setting affects the language assumptions used during parsing and model processing.

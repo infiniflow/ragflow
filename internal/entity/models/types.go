@@ -184,11 +184,19 @@ type Question interface {
 }
 
 type Noul struct {
-	Instructions any
-	Criteria     *NoulCriteria
+	Instructions any           `json:"instructions"`
+	Criteria     *NoulCriteria `json:"criteria,omitempty"`
 }
 
 func (Noul) isQuestion() {}
+
+func (q Noul) MarshalJSON() ([]byte, error) {
+	type question Noul
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		question
+	}{Type: "noul", question: question(q)})
+}
 
 type NoulCriteria struct {
 	True  any `json:"true,omitzero"`
@@ -217,10 +225,24 @@ func (Box) isQuestion() {}
 
 type DecideRequest struct {
 	State     any                 `json:"state"`
-	Questions map[string]Question `json:"question"`
+	Questions map[string]Question `json:"questions"`
+}
+
+// MaxDecisionQuestions is the System One endpoint's per-request question limit.
+const MaxDecisionQuestions = 16
+
+type DecisionAnswer struct {
+	Type string   `json:"type"`
+	Noul *float64 `json:"noul"`
 }
 
 type DecideResponse struct {
+	ID      string                    `json:"id"`
+	Answers map[string]DecisionAnswer `json:"answers"`
+	Usage   struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
 }
 
 type ModelListItem struct {

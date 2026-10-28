@@ -136,6 +136,7 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	engine.Use(requestBodyLimitMiddleware())
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
@@ -190,6 +191,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
 
 		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
@@ -341,6 +344,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
+				datasets.POST("/:dataset_id/documents/apply-parser-config", r.documentHandler.ApplyDatasetParserConfig)
 				// Scheduler compile-status contract; replaces the retired
 				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
@@ -571,6 +575,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
+
+				model.POST("/groups", r.providerHandler.CreateModelGroup)
+				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)
+				model.GET("/groups", r.providerHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
+				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup)        // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())
@@ -643,18 +653,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			system := v1.Group("/system")
 			{
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
+				system.GET("/stats/chat", r.statsHandler.GetChatStats)
+				system.GET("/stats/group", r.statsHandler.GetGroupStats)
+				system.GET("/stats/model", r.statsHandler.GetModelStats)
 
 				config := system.Group("/config")
 				{
 					config.GET("/log", r.systemHandler.GetLogLevel)
 					config.PUT("/log", r.systemHandler.SetLogLevel)
 				}
-
-				// Variables/Settings
-				system.GET("/variables", r.systemHandler.ListVariables)
-				system.PUT("/variables", r.systemHandler.SetVariable)
-				system.GET("/variables/:var_name", r.systemHandler.ShowVariable)
 
 				// Environments
 				system.GET("/environments", r.systemHandler.ListEnvironments)

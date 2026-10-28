@@ -104,7 +104,7 @@ export default {
       webCrawl: 'Rastreamento na web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Data de upload',
-      chunkMethod: 'Método de fragmentação',
+      parsingMode: 'Modo de análise',
       enabled: 'Habilitar',
       disabled: 'Desabilitar',
       action: 'Ação',
@@ -210,6 +210,7 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análise',
       builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Janela de contexto de imagem e tabela',
       imageTableContextWindowTip:
@@ -232,8 +233,6 @@ export default {
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
         'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado. Nenhum novo bloco será criado a menos que um delimitador seja encontrado, mesmo que esse limite seja excedido.',
-      chunkMethod: 'Método de fragmentação',
-      chunkMethodTip: 'Veja as dicas à direita.',
       upload: 'Enviar',
       english: 'Inglês',
       chinese: 'Chinês',
@@ -1208,7 +1207,7 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
-      canvasCategory: 'Categoria de canvas',
+      agentCategory: 'Categoria de canvas',
       tags: 'Tags',
       created: 'Criado',
       id: 'ID',

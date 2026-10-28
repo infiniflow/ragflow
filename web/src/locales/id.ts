@@ -101,7 +101,7 @@ export default {
       webCrawl: 'Penjelajahan Web',
       chunkNumber: 'Jumlah Potongan',
       uploadDate: 'Tanggal Unggah',
-      chunkMethod: 'Metode Potongan',
+      parsingMode: 'Mode parsing',
       enabled: 'Aktifkan',
       disabled: 'Nonaktifkan',
       action: 'Aksi',
@@ -172,6 +172,7 @@ export default {
       html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
+      parsingMode: 'Mode parsing',
       builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Jendela konteks gambar & tabel',
       imageTableContextWindowTip:
@@ -194,8 +195,6 @@ export default {
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
         'Ini menentukan jumlah token dari sebuah potongan secara kira-kira. Tidak ada blok baru yang akan dibuat kecuali jika sebuah pembatas ditemukan, bahkan jika ambang batas ini dilampaui.',
-      chunkMethod: 'Metode potongan',
-      chunkMethodTip: 'Instruksi ada di sebelah kanan.',
       upload: 'Unggah',
       english: 'Inggris',
       chinese: 'Cina',
@@ -1159,7 +1158,7 @@ export default {
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       tags: 'Tag',
-      canvasCategory: 'Kategori kanvas',
+      agentCategory: 'Kategori kanvas',
       created: 'Dibuat',
       id: 'ID',
       logTitle: 'Judul',

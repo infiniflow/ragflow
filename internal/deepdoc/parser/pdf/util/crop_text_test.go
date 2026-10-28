@@ -1,6 +1,7 @@
 package util
 
 import (
+	"encoding/base64"
 	"fmt"
 	"image"
 	"image/color"
@@ -13,8 +14,17 @@ import (
 func TestCropTextSectionPositionsKeepsUnresolvableCrop(t *testing.T) {
 	positions := []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 90, Top: 150, Bottom: 200}}
 	pages := map[int]image.Image{0: makeTestPageImage(100, 400, color.RGBA{80, 80, 80, 255})}
-	if got, want := CropTextSectionPositions(positions, pages, 1), CropSectionPositions(positions, pages, 1); got != want {
-		t.Fatal("a crop with no clear rows should retain its body and context boundaries")
+	b64 := CropTextSectionPositions(positions, pages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	// Solid page: no clear rows to snap to, so the text path retains its
+	// body and context boundaries — 114px top band + 50px body + 114px
+	// bottom band + three 6px stitch gaps.
+	if bounds := img.Bounds(); bounds.Dx() != 80 || bounds.Dy() != 296 {
+		t.Fatalf("unresolvable crop bounds = %v, want 80x296 (body + context)", bounds)
 	}
 }
 

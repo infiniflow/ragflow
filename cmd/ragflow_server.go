@@ -22,6 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -46,6 +47,51 @@ import (
 	syncerpkg "ragflow/internal/server/syncer"
 	"ragflow/internal/storage"
 )
+
+// isStandaloneDeepDocServer reports whether st is a standalone DeepDoc
+// inference server (CPU/GPU/Ascend). These boot the ONNX runtime only and never
+// the full RAGFlow infrastructure, so main() returns early for them before
+// initializing Redis/DB/engine/cache/storage/MQ. Every other server type — and
+// the unknown sentinel — returns false.
+func isStandaloneDeepDocServer(st common.ServerType) bool {
+	return st == common.ServerTypeDeepDocCPU ||
+		st == common.ServerTypeDeepDocGPU ||
+		st == common.ServerTypeDeepDocAscend
+}
+
+// ErrPProfBindFailed is returned by startPProf when the profiling port is
+// unavailable. Callers treat it as non-fatal: the inference server matters more
+// than profiling, so a bind failure is logged and startup continues.
+var ErrPProfBindFailed = errors.New("pprof bind failed")
+
+// startPProf opens a TCP listener on addr and serves the pprof handlers
+// (registered by the blank "net/http/pprof" import) for the process lifetime.
+// It returns ErrPProfBindFailed if addr is already taken instead of crashing
+// the server. The address is configurable via pprofAddr so tests (and ops) can
+// avoid the hard-coded localhost:6060 clash.
+func startPProf(addr string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrPProfBindFailed, err)
+	}
+	go func() {
+		common.Info("Starting pprof server", zap.String("addr", addr))
+		if pprofErr := http.Serve(ln, nil); pprofErr != nil {
+			common.Error("pprof server failed", pprofErr)
+		}
+	}()
+	return nil
+}
+
+// pprofAddr returns the listen address for the pprof server. It honors
+// RAGFLOW_PPROF_ADDR so callers/tests can override the default localhost:6060,
+// eliminating hard-coded-port clashes between concurrent tests and processes.
+func pprofAddr() string {
+	if a := os.Getenv("RAGFLOW_PPROF_ADDR"); a != "" {
+		return a
+	}
+	return "localhost:6060"
+}
 
 // parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
 // into a bootstrap.ServerArgs using the standard library flag package. The accepted
@@ -87,7 +133,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.IntVar(&port, "port", 0, "")
 	fs.IntVar(&port, "p", 0, "")
 	fs.IntVar(&deepdocConcurrency, "deepdoc-inference-concurrency", 0, "")
-	fs.IntVar(&ingestorWorkers, "ingestor-max-concurrent-workers", 0, "")
+	fs.IntVar(&ingestorWorkers, "ingestor-concurrent-workers", 0, "")
 	fs.IntVar(&pageConcurrency, "ingestor-page-concurrency", 0, "")
 	fs.IntVar(&cpuCores, "deepdoc-inference-cpu-cores", 0, "")
 	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
@@ -128,8 +174,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.Port = &port
 		case "deepdoc-inference-concurrency":
 			args.DeepdocInferenceConcurrency = &deepdocConcurrency
-		case "ingestor-max-concurrent-workers":
-			args.IngestorMaxConcurrentWorkers = &ingestorWorkers
+		case "ingestor-concurrent-workers":
+			args.IngestorConcurrentWorkers = &ingestorWorkers
 		case "ingestor-page-concurrency":
 			args.IngestorPageConcurrency = &pageConcurrency
 		case "deepdoc-inference-cpu-cores":
@@ -175,8 +221,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	if args.DeepdocInferenceConcurrency != nil && *args.DeepdocInferenceConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", *args.DeepdocInferenceConcurrency)
 	}
-	if args.IngestorMaxConcurrentWorkers != nil && *args.IngestorMaxConcurrentWorkers <= 0 {
-		return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", *args.IngestorMaxConcurrentWorkers)
+	if args.IngestorConcurrentWorkers != nil && *args.IngestorConcurrentWorkers <= 0 {
+		return nil, fmt.Errorf("invalid --ingestor-concurrent-workers %d: must be positive", *args.IngestorConcurrentWorkers)
 	}
 	if args.IngestorPageConcurrency != nil && *args.IngestorPageConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", *args.IngestorPageConcurrency)
@@ -242,7 +288,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -283,7 +329,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
@@ -332,6 +378,49 @@ func main() {
 	if arguments.VersionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
 		os.Exit(1)
+	}
+
+	// The DeepDoc inference server runs standalone: it only needs the ONNX
+	// runtime and MODEL_DIR, never the full RAGFlow infrastructure
+	// (DB/engine/cache/storage/MQ). Boot it and return before the heavy
+	// infrastructure init, so a bare inference container needs no MySQL/Redis.
+	if st := bootstrap.GetServerType(arguments); isStandaloneDeepDocServer(st) {
+		// SetServerName writes into the package-level local variables that
+		// InitLocalVariables allocates; this early boot returns before the
+		// shared InitLocalVariables call below, so it must allocate them
+		// itself. The initializer constructs the in-memory struct only and
+		// touches no external service, so the bare inference container stays
+		// free of MySQL/Redis.
+		if err = server.InitLocalVariables(); err != nil {
+			fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
+			os.Exit(1)
+		}
+		logLevel := bootstrap.SelectedLogLevel(arguments, "")
+		if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+			logLevel = "info"
+		}
+		if err = common.InitLogger(logLevel, common.FileOutput{}, bootstrap.TempServerName(st, arguments.Name)); err != nil {
+			panic("failed to initialize logger: " + err.Error())
+		}
+		finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, 0)
+		if nameErr != nil {
+			common.Error("invalid server mode", nameErr)
+			os.Exit(1)
+		}
+		server.SetServerName(finalName)
+		// The regular pprof block sits after the infrastructure init this
+		// path skips, so --profile must be honored here or the flag the
+		// --deepdoc help text advertises would be silently ignored.
+		if arguments.EnablePProf {
+			if err := startPProf(pprofAddr()); err != nil {
+				common.Error("pprof server failed", err)
+			}
+		}
+		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	// Initialize local variables (runtime variables from Redis)
@@ -448,12 +537,9 @@ func main() {
 
 	// Start pprof server if requested
 	if arguments.EnablePProf {
-		go func() {
-			common.Info("Starting pprof server", zap.String("addr", "localhost:6060"))
-			if pprofErr := http.ListenAndServe("localhost:6060", nil); pprofErr != nil {
-				common.Error("pprof server failed", pprofErr)
-			}
-		}()
+		if err := startPProf(pprofAddr()); err != nil {
+			common.Error("pprof server failed", err)
+		}
 	}
 
 	// Initialize database. The migrate mode stops here: it needs neither the
@@ -532,11 +618,6 @@ func main() {
 	case common.ServerTypeFileSyncer:
 		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			os.Exit(1)
-		}
-	case common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocCPU:
-		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
 	default:

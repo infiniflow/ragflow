@@ -160,8 +160,8 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
-	if res.OutputFormat != spreadsheetOutputFormat {
-		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, spreadsheetOutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if got := res.File["format"]; got != "xls" {
 		t.Fatalf("res.File[format] = %v, want xls", got)
@@ -218,8 +218,8 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 	}
 
 	// Default output format for XLSParser is "json"
-	if res.OutputFormat != "json" {
-		t.Errorf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("res.JSON should have structured table items")
@@ -241,8 +241,8 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 	if resJSON.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", resJSON.Err)
 	}
-	if resJSON.OutputFormat != "json" {
-		t.Errorf("resJSON.OutputFormat = %q, want 'json'", resJSON.OutputFormat)
+	if !resJSON.Produced() {
+		t.Errorf("resJSON.produced = %t, want true", resJSON.Produced())
 	}
 	if len(resJSON.JSON) == 0 {
 		t.Errorf("resJSON.JSON should not be empty")
@@ -261,8 +261,8 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("res.JSON = %#v, want one segmented HTML table item", res.JSON)

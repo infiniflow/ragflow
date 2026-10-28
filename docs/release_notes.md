@@ -11,6 +11,8 @@ Key features, improvements and bug fixes in the latest releases.
 
 ## v1.0.0-rc2
 
+Released on Oct 16, 2026.
+
 1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1 and introduces new features and expanded support.
 
 ### Highlights
@@ -23,6 +25,8 @@ Key features, improvements and bug fixes in the latest releases.
 7. Added Docker images for the arm64 architecture.
 
 ## v1.0.0-rc1
+
+Released on Sep 29, 2026.
 
 RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. This release marks a comprehensive rewrite of RAGFlow in Go, delivering a substantial reduction in system resource consumption and replacing the previous heavyweight deployment model with a lightweight architecture.
 
@@ -342,7 +346,6 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
 
 ### Improvements
 

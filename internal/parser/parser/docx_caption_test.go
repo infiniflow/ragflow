@@ -16,8 +16,7 @@ const docxCaptionTableBody = `{"type":"table","rows":[{"cells":[{"content":[{"ty
 
 // docxCaptionFindTableCaption returns the Caption of the (single) table
 // section, which buildDOCXJSONSections stores on the structured
-// entity.TableData (after projectPDFTable parses the injected <caption>
-// out of the table HTML).
+// entity.TableData through the Office IR table projection.
 func docxCaptionFindTableCaption(t *testing.T, sections []map[string]any) string {
 	t.Helper()
 	for _, s := range sections {

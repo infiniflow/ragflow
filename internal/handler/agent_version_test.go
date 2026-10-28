@@ -47,9 +47,6 @@ func TestAgentVersionActions(t *testing.T) {
 				}
 				c, w, db := setupGinContextWithUserAndDB(t, action.method, path)
 				c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}, {Key: "version_id", Value: "version-1"}}
-				if err := db.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
-					t.Fatal(err)
-				}
 				current := entity.UserCanvas{
 					ID: "canvas-1", UserID: "user-1", Title: sptr("Current Agent"),
 					Description: sptr("Current description"), Tags: "keep", Release: true,

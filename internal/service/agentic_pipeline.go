@@ -142,8 +142,8 @@ func (s *ChatPipelineService) agenticRag(
 		// its compile step; the agentic path has no canvas, so attach it here.
 		runState := runtime.NewCanvasState("", chat.ID)
 		if userID != "" {
-			runState.Sys["user_id"] = userID
-			runState.Sys["tenant_id"] = chat.TenantID
+			runState.SetSys("user_id", userID)
+			runState.SetSys("tenant_id", chat.TenantID)
 		}
 		runCtx = runtime.WithState(runCtx, runState)
 		// A result is abandoned only when the CALLER is gone. runCtx is not the
@@ -239,6 +239,7 @@ func (s *ChatPipelineService) agenticRag(
 			TemplateID:      mode,
 			Template:        &tmpl,
 			TenantID:        chat.TenantID,
+			UserID:          userID,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,

@@ -96,7 +96,7 @@ export default {
       webCrawl: 'Rastreo web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Fecha de carga',
-      chunkMethod: 'Método de fragmentación',
+      parsingMode: 'Modo de análisis',
       enabled: 'Habilitar',
       disabled: 'Deshabilitar',
       action: 'Acción',
@@ -169,6 +169,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análisis',
       builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
@@ -944,7 +945,7 @@ export default {
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
       tags: 'Etiquetas',
-      canvasCategory: 'Categoría de canvas',
+      agentCategory: 'Categoría de canvas',
       created: 'Creado',
       id: 'ID',
       logTitle: 'Título',
