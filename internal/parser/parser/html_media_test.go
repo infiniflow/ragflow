@@ -174,12 +174,29 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	}
 }
 
-func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
+func TestHTMLParser_SkipsOversizedInlineImagePayload(t *testing.T) {
 	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "4")
-	ctx, _ := recordingMediaContext()
-	result := NewHTMLParser().ParseWithResult(ctx, "large.html", []byte(`<img src="data:image/png;base64,aGVsbG8=">`))
-	if result.Err == nil {
-		t.Fatal("oversized image must fail parsing")
+	for name, oversized := range map[string]string{
+		"inline": `<p><img src="` + htmlMediaDataURI + `"></p>`,
+		"table":  `<table><tr><td><img src="` + htmlMediaDataURI + `"></td></tr></table>`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cache := recordingMediaContext()
+			input := oversized + `<p>after <img src="data:image/png;base64,YQ=="></p>`
+			result := NewHTMLParser().ParseWithResult(ctx, "large.html", []byte(input))
+			if result.Err != nil {
+				t.Fatalf("ParseWithResult: %v", result.Err)
+			}
+			if cache.putCalls != 1 || string(cache.puts[0].data) != "a" {
+				t.Fatalf("cached images = %+v, want only the smaller image", cache.puts)
+			}
+			if !strings.Contains(renderedText(result.JSON[len(result.JSON)-2].ToMap()), "after") {
+				t.Fatalf("text after oversized image lost: %+v", result.JSON)
+			}
+			if !strings.Contains(strings.Join(result.Warnings, " "), "invalid or oversized inline image") {
+				t.Fatalf("missing skipped-image warning: %v", result.Warnings)
+			}
+		})
 	}
 }
 

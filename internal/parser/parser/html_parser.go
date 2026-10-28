@@ -144,7 +144,7 @@ type htmlWalkState struct {
 func (s *htmlWalkState) warnings() []string {
 	warnings := s.mediaBudget.warnings()
 	if s.skippedInlineImages > 0 {
-		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid inline image(s)", s.skippedInlineImages))
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
 	return warnings
 }
@@ -162,7 +162,6 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	}
 	if s.refOnly {
 		if media.HTMLImageExceedsLimit(src) {
-			s.err = fmt.Errorf("html image exceeds %d-byte limit", media.HTMLImageMaxBytes())
 			return "", nil, false
 		}
 		mime, data, ok := media.DecodeHTMLImageSource(src)
