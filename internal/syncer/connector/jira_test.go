@@ -354,10 +354,12 @@ const jiraFixtureUpdatedAt = "2026-01-03T10:00:00.000+0000"
 
 func jiraFixtureServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	return jiraFixtureServerWithUpdated(t, jiraFixtureUpdatedAt)
+	return jiraFixtureServerWithUpdated(t, jiraFixtureUpdatedAt, "")
 }
 
-func jiraFixtureServerWithUpdated(t *testing.T, updated string) *httptest.Server {
+// jiraFixtureServerWithUpdated serves the issue regardless of the JQL filter, so
+// wantJQL lets a test pin the lower bound the connector actually requested.
+func jiraFixtureServerWithUpdated(t *testing.T, updated, wantJQL string) *httptest.Server {
 	t.Helper()
 	withConnectorLoopbackTestHook(t)
 	mux := http.NewServeMux()
@@ -365,8 +367,13 @@ func jiraFixtureServerWithUpdated(t *testing.T, updated string) *httptest.Server
 		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
 	})
 	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("jql"); !strings.Contains(got, `project = "RAG"`) {
+		got := r.URL.Query().Get("jql")
+		if !strings.Contains(got, `project = "RAG"`) {
 			t.Errorf("jql = %q", got)
+			return
+		}
+		if wantJQL != "" && !strings.Contains(got, wantJQL) {
+			t.Errorf("jql = %q, want it to contain %q", got, wantJQL)
 			return
 		}
 		jiraWriteJSON(t, w, map[string]any{
@@ -511,13 +518,14 @@ func TestJiraSyncKeepsIssuesInsideTheWatermarkMinute(t *testing.T) {
 }
 
 func TestJiraSyncHonoursConfiguredTimeBuffer(t *testing.T) {
-	// The issue was updated at 09:59:10Z, before the unbuffered 10:00:20Z
-	// watermark. With an explicitly configured 60s buffer the JQL lower bound
-	// is 09:59:20 floored to 09:59, so the page filter must keep the row.
-	server := jiraFixtureServerWithUpdated(t, "2026-01-03T09:59:10.000+0000")
+	// The issue was updated at 09:58:10Z. A configured 120s buffer — twice the
+	// default — moves the 10:00:20Z watermark back to 09:58:20, floored to
+	// 09:58, so both the requested JQL bound and the page filter must keep the
+	// row. With the 60s default the bound would be 09:59 and the row dropped.
+	server := jiraFixtureServerWithUpdated(t, "2026-01-03T09:58:10.000+0000", `updated >= "2026-01-03 09:58"`)
 	defer server.Close()
 
-	connector := mustJiraResumeConnector(t, server.URL, map[string]any{"time_buffer_seconds": 60})
+	connector := mustJiraResumeConnector(t, server.URL, map[string]any{"time_buffer_seconds": 120})
 	start := mustTime(t, "2026-01-03T10:00:20Z")
 	end := mustTime(t, "2026-01-03T11:00:00Z")
 	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
@@ -531,6 +539,6 @@ func TestJiraSyncHonoursConfiguredTimeBuffer(t *testing.T) {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
 	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
-		t.Fatalf("documents = %#v, want the issue updated at 09:59:10Z", batch.Documents)
+		t.Fatalf("documents = %#v, want the issue updated at 09:58:10Z", batch.Documents)
 	}
 }
