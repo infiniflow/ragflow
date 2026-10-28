@@ -161,8 +161,10 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 }
 
 // nearestFigureIn returns the index in `sections` of the figure closest to
-// caption by page-local centre distance, or -1 when none is within
-// maxCaptionGap.
+// caption by page-local box-edge distance, or -1 when none is within the
+// existing center-distance maxCaptionGap. Keeping the center-distance bound
+// preserves the set of eligible parents; edge distance only ranks eligible
+// figures, so a large or distant box does not become a new match.
 //
 // Candidates are read straight off `sections` and the section index is tracked
 // directly. A position box is NOT a figure's identity: page-local coordinates
@@ -197,7 +199,7 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 	// PageNumbers can still take a caption the table fallback must not drop;
 	// ordering the tiers means it cannot outbid a figure we can actually place.
 	//
-	bestIdx, bestDist, bestTier := -1, 1e9, 2
+	bestIdx, bestEdgeDist, bestCenterDist, bestTier := -1, 1e9, 1e9, 2
 	for i, t := range sections {
 		if t.LayoutType != pdf.LayoutTypeFigure || len(t.Positions) == 0 {
 			continue
@@ -216,13 +218,36 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 		tp := t.Positions[0]
 		cx := (tp.Left + tp.Right) / 2
 		cy := (tp.Top + tp.Bottom) / 2
-		dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
-		if tier < bestTier || (tier == bestTier && dist < bestDist) {
-			bestTier, bestDist, bestIdx = tier, dist, i
+		centerDist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
+		if tier < bestTier {
+			bestTier = tier
+			bestIdx, bestEdgeDist, bestCenterDist = -1, 1e9, 1e9
 		}
-	}
-	if bestIdx < 0 || bestDist >= maxCaptionGap {
-		return -1
+		if tier > bestTier || centerDist >= maxCaptionGap {
+			continue
+		}
+
+		// Captions are adjacent to a figure edge, not its center. In
+		// particular, a large diagram's center can be farther away than a
+		// nearby small equation even when the caption is directly below the
+		// diagram. Rectangle distance treats horizontal overlap as zero X gap
+		// and compares the actual vertical whitespace between their edges.
+		dx := 0.0
+		if tp.Right < cp.Left {
+			dx = cp.Left - tp.Right
+		} else if cp.Right < tp.Left {
+			dx = tp.Left - cp.Right
+		}
+		dy := 0.0
+		if tp.Bottom < cp.Top {
+			dy = cp.Top - tp.Bottom
+		} else if cp.Bottom < tp.Top {
+			dy = tp.Top - cp.Bottom
+		}
+		edgeDist := dx*dx + dy*dy
+		if edgeDist < bestEdgeDist || (edgeDist == bestEdgeDist && centerDist < bestCenterDist) {
+			bestIdx, bestEdgeDist, bestCenterDist = i, edgeDist, centerDist
+		}
 	}
 	return bestIdx
 }
