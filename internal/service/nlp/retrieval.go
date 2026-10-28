@@ -140,8 +140,16 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 	pageSize := req.PageSize
 	rerankCandidatesCount := *req.RerankCandidatesCount
-	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
-		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
+	// The page is valid while its start offset still falls inside the candidate
+	// pool, i.e. (page-1)*pageSize < rerankCandidatesCount. Express that as a
+	// division rather than a multiplication: req.Page-1 <= (rerankCandidatesCount-
+	// 1)/pageSize. The previous form `page > rerankCandidatesCount/pageSize`
+	// floored and rejected the last partial page; a multiplication form
+	// `(page-1)*pageSize >= rerankCandidatesCount` would admit the partial page
+	// but could overflow on an absurdly large page and then slice validIdx with
+	// a negative offset (panic). The division form has neither problem.
+	if rerankCandidatesCount <= 0 || req.Page-1 > (rerankCandidatesCount-1)/pageSize {
+		return nil, fmt.Errorf("page(%d) * page_size(%d) exceeds rerank_candidates_count(%d); the requested page starts at or beyond the candidate pool", req.Page, pageSize, rerankCandidatesCount)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
