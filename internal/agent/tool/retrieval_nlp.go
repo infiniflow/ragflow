@@ -200,7 +200,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := ""
 	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-		userID, _ = state.Sys["user_id"].(string)
+		userID, _ = state.GetSysString("user_id")
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)

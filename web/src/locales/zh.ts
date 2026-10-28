@@ -1192,6 +1192,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1apiApiKeyTip:
         '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
       search1apiApiKeyMessage: '请输入 Search1API API Key',
+      searchapiApiKeyTip:
+        '选择 SearchApi 后，将使用 SearchApi 的 Google 网络搜索结果补充知识库检索。',
+      searchapiApiKeyMessage: '请输入 SearchApi API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',

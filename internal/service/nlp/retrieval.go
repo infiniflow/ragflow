@@ -465,7 +465,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
 	qb := GetQueryBuilder()
-	useInfinity := engine.GetEngineType() == "infinity"
+	useInfinity := s.docEngine.GetType() == string(engine.EngineInfinity)
 	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
 	// Vastbase fusion returns a single fused score per chunk, so the
 	// tsim/vsim decomposition below needs the local rerank — same as OB.
@@ -806,7 +806,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if engine.GetEngineType() == "elasticsearch" || engine.IsOceanBaseFamily(engine.GetEngineType()) || engine.IsVastbase(engine.GetEngineType()) {
+			if s.docEngine.GetType() == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType()) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

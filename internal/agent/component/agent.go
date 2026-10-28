@@ -1582,7 +1582,7 @@ func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
 	if state == nil {
 		return "", false
 	}
-	v, ok := state.Sys[name].(string)
+	v, ok := state.GetSysString(name)
 	if !ok || strings.TrimSpace(v) == "" {
 		return "", false
 	}
