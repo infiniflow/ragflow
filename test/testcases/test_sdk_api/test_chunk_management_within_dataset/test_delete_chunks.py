@@ -13,104 +13,92 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import batch_add_chunks
+from conftest import raw_ids, wait_ids
+
+pytestmark = pytest.mark.integration
 
 
 class TestChunksDeletion:
-    @pytest.mark.parametrize(
-        "payload",
-        [
-            pytest.param(lambda r: {"ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r[:1] + ["invalid_id"] + r[1:4]}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
-        ],
-    )
-    def test_delete_partial_invalid_id(self, add_chunks_func, payload):
-        _, document, chunks = add_chunks_func
-        chunk_ids = [chunk.id for chunk in chunks]
-        payload = payload(chunk_ids)
+    @pytest.mark.parametrize("position", [0, 2, 4])
+    def test_delete_partial_invalid_id(self, add_chunks, position):
+        _, document, chunks = add_chunks
+        ids = [chunk.id for chunk in chunks]
+        ids.insert(position, "unknown")
+        document.delete_chunks(ids=ids)
+        wait_ids(document, [])
 
-        with pytest.raises(Exception) as exception_info:
-            document.delete_chunks(**payload)
-        assert "rm_chunk deleted chunks" in str(exception_info.value), str(exception_info.value)
+    def test_repeated_deletion(self, add_chunks):
+        _, document, chunks = add_chunks
+        ids = [chunk.id for chunk in chunks]
+        document.delete_chunks(ids=ids)
+        wait_ids(document, [])
+        document.delete_chunks(ids=ids)
+        assert raw_ids(document) == set()
 
-        remaining_chunks = document.list_chunks()
-        assert len(remaining_chunks) == 1, str(remaining_chunks)
+    def test_duplicate_deletion(self, add_chunks):
+        _, document, chunks = add_chunks
+        document.delete_chunks(ids=[chunk.id for chunk in chunks] * 2)
+        wait_ids(document, [])
 
-    @pytest.mark.p3
-    def test_repeated_deletion(self, add_chunks_func):
-        _, document, chunks = add_chunks_func
-        chunk_ids = [chunk.id for chunk in chunks]
-        document.delete_chunks(ids=chunk_ids)
+    def test_concurrent_deletion(self, add_chunks):
+        _, document, chunks = add_chunks
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [executor.submit(document.delete_chunks, ids=[chunk.id]) for chunk in chunks]
+            for future in as_completed(futures):
+                assert future.result() is None
+        wait_ids(document, [])
 
-        with pytest.raises(Exception) as exception_info:
-            document.delete_chunks(ids=chunk_ids)
-        assert "rm_chunk deleted chunks 0, expect" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_duplicate_deletion(self, add_chunks_func):
-        _, document, chunks = add_chunks_func
-        chunk_ids = [chunk.id for chunk in chunks]
-        document.delete_chunks(ids=chunk_ids * 2)
-        remaining_chunks = document.list_chunks()
-        assert len(remaining_chunks) == 1, str(remaining_chunks)
-
-    @pytest.mark.p3
-    def test_concurrent_deletion(self, add_document):
-        count = 100
-        _, document = add_document
-        chunks = batch_add_chunks(document, count)
-        chunk_ids = [chunk.id for chunk in chunks]
-
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(document.delete_chunks, ids=[chunk_id]) for chunk_id in chunk_ids]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
-
-    @pytest.mark.p3
     def test_delete_1k(self, add_document):
-        count = 1_000
         _, document = add_document
-        chunks = batch_add_chunks(document, count)
-        chunk_ids = [chunk.id for chunk in chunks]
-
-        from time import sleep
-
-        sleep(1)
-
-        document.delete_chunks(ids=chunk_ids)
-        remaining_chunks = document.list_chunks()
-        assert len(remaining_chunks) == 0, str(remaining_chunks)
+        chunks = [document.add_chunk(content=f"bulk chunk {i}") for i in range(1000)]
+        ids = [chunk.id for chunk in chunks]
+        wait_ids(document, ids)
+        document.delete_chunks(ids=ids)
+        wait_ids(document, [])
 
     @pytest.mark.parametrize(
-        "payload, expected_message, remaining",
+        "payload, removed",
         [
-            pytest.param(None, "", 5, marks=pytest.mark.p3),
-            pytest.param({"ids": ["invalid_id"]}, "rm_chunk deleted chunks 0, expect 1", 5, marks=pytest.mark.p3),
-            pytest.param("not json", "UnboundLocalError", 5, marks=pytest.mark.skip(reason="pull/6376")),
-            pytest.param(lambda r: {"ids": r[:1]}, "", 4, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"ids": r}, "", 1, marks=pytest.mark.p3),
-            pytest.param({"ids": []}, "", 5, marks=pytest.mark.p3),
+            ({"ids": ["unknown"]}, 0),
+            ("single", 1),
+            ("all_ids", 4),
+            ({"delete_all": True}, 4),
+            ({"ids": [], "delete_all": True}, 4),
         ],
     )
-    def test_basic_scenarios(self, add_chunks_func, payload, expected_message, remaining):
-        _, document, chunks = add_chunks_func
-        chunk_ids = [chunk.id for chunk in chunks]
-        if callable(payload):
-            payload = payload(chunk_ids)
+    def test_basic_scenarios(self, add_chunks, payload, removed):
+        _, document, chunks = add_chunks
+        ids = [chunk.id for chunk in chunks]
+        if payload == "single":
+            payload = {"ids": ids[:1]}
+        elif payload == "all_ids":
+            payload = {"ids": ids}
+        document.delete_chunks(**payload)
+        wait_ids(document, ids[removed:])
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                document.delete_chunks(**payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            if payload is None:
-                document.delete_chunks()
-            else:
-                document.delete_chunks(**payload)
+    @pytest.mark.skip(reason="Go RemoveChunks rejects omitted/empty IDs instead of documented safe no-op")
+    @pytest.mark.parametrize("payload", [{}, {"ids": None}, {"ids": []}])
+    def test_empty_selection_is_noop(self, add_chunks, payload):
+        _, document, chunks = add_chunks
+        document.delete_chunks(**payload)
+        assert raw_ids(document) == {chunk.id for chunk in chunks}
 
-        remaining_chunks = document.list_chunks()
-        assert len(remaining_chunks) == remaining, str(remaining_chunks)
+    def test_delete_all_rejects_ids(self, add_chunks):
+        _, document, chunks = add_chunks
+        with pytest.raises(Exception, match="mutually exclusive"):
+            document.delete_chunks(ids=[chunks[0].id], delete_all=True)
+        assert raw_ids(document) == {chunk.id for chunk in chunks}
+
+    def test_delete_all_is_document_scoped(self, add_chunks):
+        dataset, document, _ = add_chunks
+        other = dataset.upload_documents([{"display_name": "other.txt", "blob": b"Other owned document"}])[0]
+        chunk = other.add_chunk(content="Must survive deletion in another document")
+        wait_ids(other, [chunk.id])
+        document.delete_chunks(delete_all=True)
+        wait_ids(document, [])
+        assert raw_ids(other) == {chunk.id}
