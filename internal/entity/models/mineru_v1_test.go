@@ -286,6 +286,31 @@ func TestMinerUMarkdownFromStructuredContentZip(t *testing.T) {
 	}
 }
 
+func TestMinerUMarkdownFromZipFallsThroughEmptyContentList(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[{"type":"header"}]`))
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{"pages":[{"blocks":[{"type":"text","content":"正文"}]}]}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	md, err := minerUMarkdownFromZip(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md != "正文" {
+		t.Fatalf("md = %q", md)
+	}
+}
+
 func TestMinerULocalCheckConnectionPrefersV1Health(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

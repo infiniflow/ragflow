@@ -533,17 +533,19 @@ func minerUMarkdownFromZip(zipBytes []byte) (string, error) {
 	if strings.TrimSpace(md) != "" {
 		return md, nil
 	}
+	var contentErr error
 	if len(contentList) > 0 {
 		text, err := minerUMarkdownFromContentList(contentList)
-		if err != nil {
-			return "", err
-		}
-		if strings.TrimSpace(text) != "" {
+		if err == nil && strings.TrimSpace(text) != "" {
 			return text, nil
 		}
+		contentErr = err
 	}
 	if len(structured) > 0 {
 		return minerUMarkdownFromStructured(structured)
+	}
+	if contentErr != nil {
+		return "", contentErr
 	}
 	return "", fmt.Errorf("markdown, content_list.json, and structured_content.json not found in MinerU zip")
 }
