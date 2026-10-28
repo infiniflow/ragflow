@@ -627,6 +627,8 @@ export default {
       builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
+      parserOptionUnavailableMessage:
+        '所选的解析方式或流水线版本已不可用，请重新选择。',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -2470,6 +2472,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         version: '版本',
         label: '流水线版本',
         latest: '最新版本',
+        noPublished: '暂无已发布版本',
         filterByAlias: '按别名筛选',
         alias: '别名',
         addAlias: '添加别名',
@@ -2487,8 +2490,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
-        missingContent:
-          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
