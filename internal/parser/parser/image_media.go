@@ -25,13 +25,6 @@ import (
 	"sync"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
-	"ragflow/internal/parser/media"
-)
-
-const (
-	// MaxImagePayloadBytes is retained for callers outside the parser package;
-	// the canonical limit lives in parser/media.
-	MaxImagePayloadBytes = media.MaxImagePayloadBytes
 )
 
 // EnvImageRasterMaxBytes names the environment variable that sets the

@@ -645,7 +645,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, _, resolved = media.NormalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		encoded, decodedSize, _, resolved = media.NormalizeBase64ImagePayload(imageURL[idx+len("base64,"):], media.MaxImagePayloadBytes)
 		if !resolved {
 			return "", nil, false, false
 		}
@@ -745,12 +745,12 @@ func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, media.MaxImagePayloadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	if len(body) > MaxImagePayloadBytes {
-		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	if len(body) > media.MaxImagePayloadBytes {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, media.MaxImagePayloadBytes)
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)

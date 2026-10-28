@@ -37,6 +37,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -108,7 +109,7 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	if len(binary) == 0 || len(binary) > parser.MaxImagePayloadBytes {
+	if len(binary) == 0 || len(binary) > media.MaxImagePayloadBytes {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
 	// SVG carries its text in the document, so it is read rather than
