@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"mime/multipart"
@@ -12,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/signintech/gopdf"
 )
@@ -422,5 +424,78 @@ func TestSoMarkBlockPositionRejectsNonFinite(t *testing.T) {
 		if pos := soMarkBlockPosition(map[string]any{"bbox": bbox}, 0, 100, 100, nil); pos != nil {
 			t.Fatalf("non-finite bbox %v must drop the position, got %#v", bbox, pos)
 		}
+	}
+}
+
+// buildSoMarkPDFWithCount emits a minimal but structurally valid PDF whose
+// /Pages /Count is set to the supplied (possibly malformed) value, like
+// deepdoc/pdf's buildPDFWithCount. Offsets are computed so the xref table is
+// self-consistent and ledongthuc/pdf can open it.
+func buildSoMarkPDFWithCount(t *testing.T, count int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	off1 := buf.Len()
+	fmt.Fprintf(&buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+	off2 := buf.Len()
+	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count %d >>\nendobj\n", count)
+	off3 := buf.Len()
+	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>\nendobj\n")
+	xrefStart := buf.Len()
+	buf.WriteString("xref\n0 4\n")
+	buf.WriteString("0000000000 65535 f \n")
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off1)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off2)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off3)
+	fmt.Fprintf(&buf, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefStart)
+	return buf.Bytes()
+}
+
+func TestSoMarkPagePointSizesRejectsMalformedCount(t *testing.T) {
+	// A negative or absurd catalog /Count must fall back to the caller's
+	// pixel-space scaling instead of panicking make or allocating/iterating
+	// without bound.
+	for _, count := range []int{-1, 1 << 30} {
+		if got := soMarkPagePointSizes(buildSoMarkPDFWithCount(t, count)); got != nil {
+			t.Fatalf("/Count %d: got %v, want nil fallback", count, got)
+		}
+	}
+	// A sane count still reads page boxes.
+	if got := soMarkPagePointSizes(buildSoMarkPDFWithCount(t, 1)); len(got) != 1 {
+		t.Fatalf("/Count 1: got %v, want one page", got)
+	}
+}
+
+func TestSoMarkPagePointSizesStopsAtParentCycle(t *testing.T) {
+	// ledongthuc/pdf detects no reference cycles: a page whose /Parent points
+	// at itself must not hang the inheritance walk.
+	var buf bytes.Buffer
+	buf.WriteString("%PDF-1.4\n")
+	off1 := buf.Len()
+	fmt.Fprintf(&buf, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+	off2 := buf.Len()
+	fmt.Fprintf(&buf, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+	off3 := buf.Len()
+	fmt.Fprintf(&buf, "3 0 obj\n<< /Type /Page /Parent 3 0 R /Resources << >> >>\nendobj\n")
+	xrefStart := buf.Len()
+	buf.WriteString("xref\n0 4\n")
+	buf.WriteString("0000000000 65535 f \n")
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off1)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off2)
+	fmt.Fprintf(&buf, "%010d 00000 n \n", off3)
+	fmt.Fprintf(&buf, "trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n", xrefStart)
+
+	done := make(chan [][2]float64, 1)
+	go func() { done <- soMarkPagePointSizes(buf.Bytes()) }()
+	select {
+	case sizes := <-done:
+		// No box is resolvable through the cycle: the page falls back to an
+		// empty size (the caller's pixel-space scaling), as an unreadable
+		// box already does.
+		if len(sizes) != 1 || sizes[0] != [2]float64{} {
+			t.Fatalf("cyclic /Parent page: got %v, want one empty size", sizes)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("soMarkPagePointSizes hung on a self-referencing /Parent")
 	}
 }

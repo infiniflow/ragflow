@@ -324,6 +324,14 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 		return nil
 	}
 	numPage := r.NumPage()
+	// A corrupt or malicious catalog /Count can be negative (panics make) or
+	// enormous (allocates/iterates without bound). Treat it as unreadable and
+	// fall back to the caller's pixel-space scaling, mirroring the
+	// maxPDFPageCount guard deepdoc/pdf/plaintext_nocgo.go applies to the
+	// same library.
+	if numPage < 0 || numPage > maxSoMarkPageCount {
+		return nil
+	}
 	sizes := make([][2]float64, 0, numPage)
 	for p := 1; p <= numPage; p++ {
 		box := soMarkInheritedPageValue(r.Page(p), "CropBox")
@@ -351,13 +359,24 @@ func soMarkPagePointSizes(data []byte) [][2]float64 {
 	return sizes
 }
 
+// maxSoMarkPageCount mirrors deepdoc/pdf/plaintext_nocgo.go: one million
+// pages is far beyond any real document, so larger claimed counts are
+// malformed.
+const maxSoMarkPageCount = 1_000_000
+
+// maxSoMarkParentDepth bounds the /Parent walk: ledongthuc/pdf detects no
+// reference cycles, so a self-referencing /Parent would loop forever.
+const maxSoMarkParentDepth = 32
+
 // soMarkInheritedPageValue resolves a page dictionary key through the Parent
 // chain, the inheritance the PDF spec defines for page boxes.
 func soMarkInheritedPageValue(page pdfreader.Page, key string) pdfreader.Value {
-	for v := page.V; !v.IsNull(); v = v.Key("Parent") {
+	depth := 0
+	for v := page.V; !v.IsNull() && depth < maxSoMarkParentDepth; v = v.Key("Parent") {
 		if r := v.Key(key); !r.IsNull() {
 			return r
 		}
+		depth++
 	}
 	return pdfreader.Value{}
 }
