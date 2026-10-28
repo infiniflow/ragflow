@@ -16,6 +16,7 @@ package chunker
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -185,6 +186,39 @@ func TestImageUploadDecoratorRejectsUnusableMediaRef(t *testing.T) {
 				{"text": "kept"},
 				{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}},
 			},
+		},
+		{
+			name: "short digest",
+			items: []map[string]any{{
+				"text": "caption",
+				"media_ref": map[string]any{
+					"format": "html",
+					"kind":   "data-uri",
+					"sha256": strings.Repeat("a", 63),
+				},
+			}},
+		},
+		{
+			name: "non-hex digest",
+			items: []map[string]any{{
+				"text": "caption",
+				"media_ref": map[string]any{
+					"format": "html",
+					"kind":   "data-uri",
+					"sha256": strings.Repeat("z", 64),
+				},
+			}},
+		},
+		{
+			name: "uppercase digest",
+			items: []map[string]any{{
+				"text": "caption",
+				"media_ref": map[string]any{
+					"format": "html",
+					"kind":   "data-uri",
+					"sha256": strings.ToUpper(strings.Repeat("a", 64)),
+				},
+			}},
 		},
 	} {
 		for _, chunker := range []struct {
