@@ -772,8 +772,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      applyParserSettingsTitle: 'Apply parser settings to existing files?',
       parserSettingsChangeWarning:
-        'Updated parser settings apply only to newly uploaded files. To apply these settings to existing files, update their parser settings and re-parse them.',
+        'Updated parser settings apply only to newly uploaded files by default. Choose “Yes” to also apply them to all existing files in this dataset, replacing any file-specific parser settings. You’ll need to manually re-parse those files for the changes to affect their content. Choose “No” to keep existing files’ settings unchanged.',
+      parserSettingsApplied:
+        'Parser settings applied. Re-parse files manually to update their content.',
+      parserSettingsApplyFailed:
+        'Dataset settings saved, but existing files were not updated. Choose “Yes” to retry.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
@@ -1075,7 +1080,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
-      applyModelConfigs: 'Apply model configs',
+      applyModelConfigs:
+        'Use this model and its settings in single-model Chat.',
       conversations: 'Conversations',
       chatApps: 'Chat apps',
       newConversation: 'New conversation',

@@ -267,7 +267,6 @@ const (
 	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
 	EnvEnableRegister                    = "ENABLE_REGISTER"
-	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"
 	EnvLang                              = "LANG"
@@ -347,6 +346,35 @@ const (
 	// only RAGFLOW_DECISION_DIR keeps filtering deep reads and nothing else.
 	EnvDecisionFilterDeepRead = "RAGFLOW_DECISION_FILTER_DEEP_READ"
 	EnvDecisionFilterSnippet  = "RAGFLOW_DECISION_FILTER_SNIPPET"
+	// EnvClaimSearch switches the claim-text retrieval leg: claim rows are searched
+	// by their own text and the hits are UNIONED onto the anchored page. Off means
+	// the page is the anchored claims only, which is the pre-existing behaviour.
+	EnvClaimSearch = "RAGFLOW_CLAIM_SEARCH"
+	// EnvClaimPage switches the claim evidence page itself. Off means the
+	// prefetch serves the retrieved chunks as raw text instead of their claims:
+	// the control arm for measuring what the claim artifact is worth, and an
+	// escape hatch for a deployment whose ingestion has not compiled claims yet.
+	EnvClaimPage = "RAGFLOW_CLAIM_PAGE"
+	// EnvDecisionClaimFloor switches the claim exit's per-chunk floor and relative
+	// threshold. On by default: the absolute threshold was fitted on a different
+	// judge, so a correctly recalled claim can sit below it and be dropped.
+	EnvDecisionClaimFloor = "RAGFLOW_DECISION_CLAIM_FLOOR"
+	// EnvDecisionClaimJudgeCap bounds how many statements ONE claim page may send
+	// to the judge. Unset means the built-in bound. The page is unbounded by
+	// design; the judge cannot afford to be, and a rate-limited key trips its
+	// breaker long before a 300-statement page is scored.
+	EnvDecisionClaimJudgeCap = "RAGFLOW_DECISION_CLAIM_JUDGE_CAP"
+	// EnvDecisionClaimMinProb is the P(relevant) a compiled statement must reach to
+	// survive the claim exit. It is separate from EnvDecisionMinProb because a
+	// statement is a single fact with a short quote, not a passage: the judge scores
+	// the two shapes on different scales, so one threshold for both either drops
+	// recalled statements or keeps noise.
+	EnvDecisionClaimMinProb = "RAGFLOW_DECISION_CLAIM_MIN_PROB"
+	// EnvDecisionFilterClaim switches the filter's third exit: compiled claims,
+	// judged one statement at a time. On by default because the claim page is the
+	// only model-visible block with no length bound of its own - a chunk's claim
+	// set can cost more than the chunk it stands for, and this is what bounds it.
+	EnvDecisionFilterClaim = "RAGFLOW_DECISION_FILTER_CLAIM"
 	// EnvDecisionSnippetTools replaces the snippet filter's TOOL scope (comma
 	// separated). Unset means the corpus-passage locate tools only;
 	// search_metadata is never in scope because it returns no passages.
@@ -451,6 +479,46 @@ const (
 	// question and below every runaway one, so it bounds the tail without
 	// touching the body of the distribution.
 	EnvAgenticTokenBudget = "RAGFLOW_AGENTIC_TOKEN_BUDGET"
+
+	// EnvCompiledServe switches the corpus-passage SERVE PATH: after a locate
+	// recall (grep/bm25/semantic/search_chunks) the model is normally shown the
+	// recalled chunk's raw text; this knob replaces that text with the corpus's
+	// KNOWLEDGE-COMPILED products (entity/relation descriptions, RAPTOR tree
+	// summaries, …) that are DERIVED FROM those chunks via source_chunk_ids
+	// lineage.
+	//
+	//   - "off"   (default): unchanged behaviour — raw snippet/body is served,
+	//     the decision sufficiency filter runs as configured.
+	//   - "only" : locate exit serves compiled products only (raw snippet is
+	//     withheld); the deep-read exit (list_chunks) also serves the requested
+	//     chunks' compiled products. A chunk with no compiled derivative falls
+	//     back to its raw text (logged) so the run never sees an empty result.
+	//   - "first" : locate exit serves compiled products PLUS the chunk handles
+	//     and a deep-read hint — the model reads the compiled products first and
+	//     falls back to list_chunks (raw body, decision filter as baseline) only
+	//     when it needs more. The deep-read exit is unchanged.
+	EnvCompiledServe = "RAGFLOW_COMPILED_SERVE"
+	// EnvCompiledServeTopN caps how many compiled products one locate/deep-read
+	// result set may present. Default 12: a compiled product is one
+	// entity/summary paragraph, far shorter than a chunk, so a dozen fit in the
+	// space of one or two raw passages.
+	EnvCompiledServeTopN = "RAGFLOW_COMPILED_SERVE_TOP_N"
+	// EnvCompiledServeKinds restricts which compile_kwd kinds are served
+	// (comma-separated). Unset means every present kind except the "*" junk rows
+	// and dataset_nav metadata; per-run kinds are probed from the bound datasets
+	// by the compiled-knowledge tools, but here we keep it explicit so an arm can
+	// be narrowed (e.g. "tree,graph") without a recompile.
+	EnvCompiledServeKinds = "RAGFLOW_COMPILED_SERVE_KINDS"
+	// EnvCompiledServeTypes restricts the served rows to these entity_type_kwd
+	// values. Claim rows carry compile_kwd=tree exactly like tree nodes, so KINDS
+	// alone cannot separate them; TYPES=claim is what turns this path into claim
+	// serving. Unset keeps every type, i.e. the previous behaviour.
+	EnvCompiledServeTypes = "RAGFLOW_COMPILED_SERVE_TYPES"
+	// EnvCompiledServeScope overrides which locate tools feed compiled products
+	// (comma-separated tool names). Unset = the corpus-passage locate tools only;
+	// web_search is NEVER in scope because its hits carry no corpus document with
+	// a source_chunk_ids linkage.
+	EnvCompiledServeScope = "RAGFLOW_COMPILED_SERVE_SCOPE"
 )
 
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may

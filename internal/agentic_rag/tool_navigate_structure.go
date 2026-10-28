@@ -15,22 +15,14 @@
 
 package agentic_rag
 
-// navigate_structure: drill into ONE document's compiled structure (the
+// navigate_structure: drill into documents' compiled structure (the
 // entity/relation outline built at compile time) and return a query-focused
 // <structure_navigation> outline with chunk pointers the model can feed to
 // list_chunks.
 //
-// Two selection strategies, in priority order:
-//
-//  1. CLAIM recall (flat): the document's claim rows (entity_type_kwd="claim")
-//     are atomic propositions carrying their own verbatim evidence, recalled
-//     with a hybrid lexical + dense leg fused by reciprocal rank. A hit is
-//     already the answer material, so it REPLACES the drill instead of
-//     layering on top of it: descending the tree can only re-derive what the
-//     claim states, and every descent step is another chance to prune the
-//     branch holding the answer.
-//  2. TREE drill-down (fallback): the compiled structure is drilled with a
-//     keyword-relevance beam for documents without claim hits.
+// The structure is drilled with a keyword-relevance beam. Claim rows are NOT
+// searched here: retrieval in this package is chunk retrieval, and a chunk's
+// claims are fetched by the chunk, never by querying the claim rows.
 //
 // Typical use: call navigate_tree first to route to a document, take its
 // doc_id, then call navigate_structure with that doc_id to see where the answer
@@ -42,9 +34,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
-	"unicode"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -55,15 +45,14 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/service/nav"
-	"ragflow/internal/tokenizer"
 )
 
 const navigateStructureToolName = "navigate_structure"
 
-const navigateStructureToolDescription = `Drill into ONE document's COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
-Call it with just a query: it routes the query over the datasets' compiled navigation trees itself and returns the compiled CLAIM evidence of the best-matching documents, so no prior navigate_tree call is needed. To drill ONE document the model already chose, pass the doc_id from a <tree_navigation> result instead; that path returns the document's internal structure (entities and how they relate).
-Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline. Outline lines are either claim lines "- [claim] <statement> | Evidence: \"<verbatim quote>\" [chunks: c1] ref=3" (the document's compiled atomic propositions recalled for your query, each carrying its own evidence and the handle to cite it by) or structure lines "- name (type): description [chunks: c1,c2]". When claims hit they replace the structure descent outright. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
-An empty result (<structure_navigation count="0" error="...">) means this document has NO compiled structure or claims of the requested kind - the error attribute says which: "route first with navigate_tree" (no doc_id), or "no compiled structure for this kind" (absent in THAT document - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
+const navigateStructureToolDescription = `Drill into documents' COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
+Call it with just a query: it routes the query over the datasets' compiled navigation trees itself, so no prior navigate_tree call is needed. To drill ONE document the model already chose, pass the doc_id from a <tree_navigation> result; that path returns the document's internal structure (entities and how they relate).
+Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of lines "- name (type): description [chunks: c1,c2]". Feed the chunk pointers to list_chunks (anchor_chunk_ids).
+An empty result (<structure_navigation count="0" error="...">) means the routed documents have NO compiled structure of the requested kind - the error attribute says which: "route first with navigate_tree" (no doc_id), or "no compiled structure for this kind" (absent in THOSE documents - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
 
 // navigateStructureArgs is the JSON the model sends into InvokableRun.
 type navigateStructureArgs struct {
@@ -104,63 +93,11 @@ const (
 	structMaxChunks    = 4   // cap on chunk snippets returned in the outline
 )
 
-// Claim/evidence leg (mirroring the harness _STRUCT_CLAIM_* limits).
-const (
-	// navClaimRowType is the entity_type_kwd every compiler gives its evidence
-	// rows. They deliberately carry no knowledge_graph_kwd and no type_kwd, so
-	// they never show up as artifacts-tree nodes — this filter is the only way
-	// to find them.
-	navClaimRowType = "claim"
-	// navClaimDocScope pins recall to doc-level rows: the KB-wide merged rows
-	// written by the Build button carry a doc_id too, and without this filter
-	// they would answer for a single document.
-	navClaimDocScope = "doc"
-	// navClaimTopN is the claim count rendered per document.
-	navClaimTopN = 8
-	// navClaimEvidenceChars caps the rendered verbatim quote. Generous on
-	// purpose: a thin quote makes the answer stage judge the context
-	// insufficient, and one extra re-search turn costs a full prompt — far more
-	// than the extra characters.
-	navClaimEvidenceChars = 1200
-	// navClaimSufficientHits is the count at which the model may cite the claims
-	// without deep-reading chunks. It is a count of RELEVANT hits: both legs
-	// apply a relevance floor (below), because a leg with no floor returns a full
-	// page for any document and a count over it states nothing.
-	navClaimSufficientHits = 3
-	// navClaimMinCoverage is the relevance floor applied to every recalled claim:
-	// the share of the question's content tokens the claim text must contain.
-	// The store's own defaults make a floor mandatory — full-text recall runs at
-	// minimum_should_match 0% (one shared token is a hit) and KNN returns the
-	// nearest neighbours at any distance — so without it every document yielded a
-	// full page for every question. Measured failure: a Mike Tyson question
-	// answered from a TV-series document.
-	navClaimMinCoverage = 0.3
-	// navClaimDenseSimilarity is the dense leg's cosine floor: the paraphrase leg
-	// must not hand the fusion rows that are merely nearest, not near.
-	navClaimDenseSimilarity = 0.4
-	// navClaimMinDocs is the document diversity a sufficient recall needs. One
-	// document's claims answer one hop; a multi-document question needs evidence
-	// from more than one place, and a single-document recall is exactly what a
-	// degenerate router returns for every question.
-	navClaimMinDocs = 2
-	// navClaimRRFK is the reciprocal-rank-fusion constant. RRF consumes ranks
-	// only, so the two legs' scores never have to be comparable — their FLOORS
-	// are what decides membership.
-	navClaimRRFK = 60
-	// navClaimPool is the per-leg candidate pool (mirroring limit = max(top_n, 32)).
-	navClaimPool = 32
-	// navQueryRouteDocs bounds the documents a query-only call investigates. The
-	// two-step contract (navigate_tree -> navigate_structure) is a real adoption
-	// barrier: a query-only call removes it, at the cost of claiming over a few
-	// routed documents instead of one chosen by the model.
-	navQueryRouteDocs = 3
-	// navClaimPrefetchTopN bounds the claims the PIPELINE recalls before the
-	// loop. It is both a cost bound and an accuracy bound: the block is the whole
-	// prompt of the sufficient-claims answer and also what decides that verdict,
-	// so a cap below navClaimSufficientHits x navClaimMinDocs could never
-	// terminate early.
-	navClaimPrefetchTopN = 3 * navClaimTopN
-)
+// navQueryRouteDocs bounds the documents a query-only call investigates. The
+// two-step contract (navigate_tree -> navigate_structure) is a real adoption
+// barrier: a query-only call removes it, at the cost of drilling a few routed
+// documents instead of one chosen by the model.
+const navQueryRouteDocs = 3
 
 // navStructureRoute resolves candidate doc_ids for a query when the caller
 // supplied no doc_id. It is the same navigation-tree router navigate_tree uses,
@@ -218,58 +155,6 @@ type structureNode struct {
 type chunkWithText struct {
 	id   string
 	text string
-}
-
-// claimHit is one recalled claim row: an atomic proposition plus its verbatim
-// evidence. chunkID is the FIRST source chunk id — the pointer the model feeds
-// to list_chunks when it needs the surrounding passage. docID names the document
-// the claim was compiled from, which is what makes document diversity checkable.
-type claimHit struct {
-	docID       string
-	chunkID     string
-	name        string
-	description string
-	quote       string
-	score       float64
-}
-
-// claimReader is the OPTIONAL claim-recall capability of a structureReader. A
-// reader that does not implement it simply has no claim leg, and the drill-down
-// stays the only strategy (the pre-claim behavior).
-type claimReader interface {
-	// ReadClaims recalls claim rows of the given compile kinds, hybrid (lexical +
-	// dense when qvec is non-empty) fused by reciprocal rank, and returns at most
-	// limit hits that clear the relevance floor. A nil/empty docIDs spans the
-	// whole dataset, which is what the pre-loop recall uses: it needs no document
-	// choice.
-	ReadClaims(ctx context.Context, tenantID, kbID string, docIDs, kinds []string, text string, qvec []float64, limit int) ([]claimHit, error)
-}
-
-// claimQueryVector encodes the drill query for the claim dense leg, using the
-// embedder the nav service already resolved for this tenant — the same model
-// that wrote the claim rows' q_<dim>_vec columns.
-//
-// It reads that embedder through the nav service rather than through an injected
-// function: this package already depends on nav for routing, and the service is
-// where tenant-model resolution lives, so a second wiring point in the server
-// bootstrap would only duplicate it. A missing service, an unresolvable model or
-// a panicking encoder all yield nil, which leaves the leg out and recall running
-// on the lexical leg alone — a misconfigured embedder must never take a tool
-// call down.
-func claimQueryVector(ctx context.Context, tenantID, text string) (vec []float64) {
-	svc := nav.GetNavService()
-	if svc == nil || tenantID == "" || strings.TrimSpace(text) == "" {
-		return nil
-	}
-	defer func() {
-		if recover() != nil {
-			vec = nil
-		}
-	}()
-	if v := svc.EncodeQueryVector(ctx, tenantID, text); len(v) > 0 {
-		return v
-	}
-	return nil
 }
 
 // structureRow is one compiled-structure row: the doc-store fields the structure
@@ -340,261 +225,6 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 	return rows, nil
 }
 
-// ReadClaims is the claim leg: two independent reads over the claim rows of the
-// requested documents — a full-text leg on the tokenized content (exact /
-// proper-noun recall) and a KNN leg on the claim's OWN vector (paraphrase
-// recall) — fused by reciprocal rank. Each leg is one store round-trip.
-//
-// A leg that fails is dropped rather than propagated: without an embedder the
-// lexical leg alone still recalls claims, and a scope with no compiled claims
-// legitimately returns nothing.
-//
-// The RELEVANCE FLOOR is applied here, in Go, to the fused result. The store
-// cannot enforce it: `minimum_should_match` on a multi-field query_string is
-// silently ignored (measured: "100%" still returned 1950 rows for a two-term
-// query), and a KNN similarity cut would only cover the dense leg. Without a
-// floor every document yielded a full page for every question, which is how a
-// Mike Tyson question was answered from a TV-series document.
-func (engineStructureReader) ReadClaims(ctx context.Context, tenantID, kbID string, docIDs, kinds []string, text string, qvec []float64, limit int) ([]claimHit, error) {
-	de := engine.Get()
-	if de == nil || strings.TrimSpace(text) == "" {
-		return nil, nil
-	}
-	// The caller owns the cap: the per-document tool path asks for navClaimTopN,
-	// while the pre-loop recall asks for the corpus-wide budget
-	// (navClaimPrefetchTopN). Clamping every caller to the per-document count
-	// silently cut that budget to one page, which is too few claims to satisfy
-	// the sufficiency gate's document-diversity rule.
-	if limit <= 0 {
-		limit = navClaimTopN
-	}
-	pool := limit
-	if pool < navClaimPool {
-		pool = navClaimPool
-	}
-	filter := map[string]interface{}{
-		"entity_type_kwd": []string{navClaimRowType},
-		"scope_kwd":       []string{navClaimDocScope},
-	}
-	if len(docIDs) > 0 {
-		filter["doc_id"] = docIDs
-	}
-	if len(kinds) > 0 {
-		filter["compile_kwd"] = kinds
-	}
-
-	leg := func(exprs []interface{}) []claimHit {
-		res, err := de.Search(ctx, &enginetypes.SearchRequest{
-			IndexNames: []string{indexNameFor(tenantID, "")},
-			KbIDs:      []string{kbID},
-			SelectFields: []string{
-				"content_with_weight", "source_chunk_ids", "entity_type_kwd", "compile_kwd", "doc_id",
-			},
-			Filter:             filter,
-			MatchExprs:         exprs,
-			Limit:              pool,
-			IncludeUnavailable: true,
-		})
-		if err != nil {
-			common.DebugCtx(ctx, "claim recall: leg failed",
-				zap.Strings("doc_ids", docIDs), zap.Error(err))
-			return nil
-		}
-		hits := make([]claimHit, 0, len(res.Chunks))
-		for _, row := range res.Chunks {
-			if h, ok := parseClaimHit(row); ok {
-				hits = append(hits, h)
-			}
-		}
-		return hits
-	}
-
-	var denseLeg, textLeg []claimHit
-	if len(qvec) > 0 {
-		denseLeg = leg([]interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(qvec)),
-			EmbeddingData:     qvec,
-			EmbeddingDataType: "float",
-			DistanceType:      "cosine",
-			TopN:              pool,
-			ExtraOptions:      map[string]interface{}{"similarity": navClaimDenseSimilarity},
-		}})
-	}
-	textLeg = leg([]interface{}{&enginetypes.MatchTextExpr{
-		Fields:       []string{"content_ltks", "content_sm_ltks"},
-		MatchingText: text,
-		TopN:         pool,
-	}})
-	if len(denseLeg) == 0 && len(textLeg) == 0 {
-		return nil, nil
-	}
-
-	fused := rrfFuse(navClaimRRFK, pool, denseLeg, textLeg)
-	question := claimTokens(text)
-	out := make([]claimHit, 0, len(fused))
-	for _, h := range fused {
-		if claimCoverage(question, h) < navClaimMinCoverage {
-			continue
-		}
-		out = append(out, h)
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
-}
-
-// parseClaimHit turns one claim row into a hit. A row that is not a usable
-// claim — bad payload, unnamed, or carrying no chunk pointer — is dropped: a
-// claim the model cannot open is not an answer anchor.
-func parseClaimHit(row map[string]interface{}) (claimHit, bool) {
-	payload, ok := decodeJSONObject(contentWithWeightFromRaw(row))
-	if !ok {
-		return claimHit{}, false
-	}
-	name := strings.TrimSpace(stringFromAny(payload["name"]))
-	if name == "" {
-		return claimHit{}, false
-	}
-	ids := navStringList(row["source_chunk_ids"])
-	if len(ids) == 0 {
-		ids = navStringList(payload["source_chunk_ids"])
-	}
-	if len(ids) == 0 {
-		return claimHit{}, false
-	}
-	docID := strings.TrimSpace(fmt.Sprint(row["doc_id"]))
-	if docID == "<nil>" {
-		docID = ""
-	}
-	return claimHit{
-		docID:       docID,
-		chunkID:     ids[0],
-		name:        name,
-		description: strings.TrimSpace(stringFromAny(payload["description"])),
-		quote:       firstEvidenceQuote(payload["evidence"]),
-		score:       floatFromMap(row, "_score"),
-	}, true
-}
-
-// claimTokens returns the set of content tokens of a question, used as the
-// denominator of the claim relevance floor. It uses the corpus tokenizer when
-// the pool is up (same analyzer the claim text was indexed with) and falls back
-// to a rune-level splitter, so a deployment without the analyzer still gets a
-// relevance floor instead of none. Single-rune tokens are dropped: they are
-// stopwords in alphabetic languages.
-func claimTokens(text string) map[string]struct{} {
-	tokens := map[string]struct{}{}
-	if tok, err := tokenizer.Tokenize(text); err == nil {
-		for _, t := range strings.Fields(strings.ToLower(tok)) {
-			if len([]rune(t)) >= 2 {
-				tokens[t] = struct{}{}
-			}
-		}
-	}
-	if len(tokens) > 0 {
-		return tokens
-	}
-	for _, t := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	}) {
-		if len([]rune(t)) >= 2 {
-			tokens[t] = struct{}{}
-		}
-	}
-	return tokens
-}
-
-// claimCoverage is the share of the question's content tokens this claim states
-// or quotes. It is the floor's only input: a claim that does not repeat any of
-// the question's terms cannot be evidence for it, however highly the store
-// ranked it (ranks are relative, so the top hit of an irrelevant document is
-// still the top hit).
-func claimCoverage(question map[string]struct{}, c claimHit) float64 {
-	if len(question) == 0 {
-		return 1
-	}
-	text := c.name + " " + c.description + " " + c.quote
-	claim := claimTokens(text)
-	if len(claim) == 0 {
-		return 0
-	}
-	matched := 0
-	for t := range question {
-		if _, ok := claim[t]; ok {
-			matched++
-		}
-	}
-	return float64(matched) / float64(len(question))
-}
-
-// firstEvidenceQuote returns the first non-empty verbatim quote of a claim's
-// evidence list.
-func firstEvidenceQuote(v any) string {
-	list, _ := v.([]any)
-	for _, item := range list {
-		ev, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		if q := strings.TrimSpace(stringFromAny(ev["quote"])); q != "" {
-			return q
-		}
-	}
-	return ""
-}
-
-// rrfFuse merges retrieval legs by RECIPROCAL RANK (k=60 by default). Ranks
-// only, so no similarity threshold has to be calibrated across legs with
-// incomparable score scales; a hit keeps its best raw score for diagnostics.
-func rrfFuse(k, limit int, legs ...[]claimHit) []claimHit {
-	if k <= 0 {
-		k = navClaimRRFK
-	}
-	type fused struct {
-		hit   claimHit
-		score float64
-	}
-	byName := map[string]*fused{}
-	var order []string
-	for _, leg := range legs {
-		for rank, h := range leg {
-			key := strings.ToLower(strings.TrimSpace(h.name))
-			if key == "" {
-				continue
-			}
-			f, ok := byName[key]
-			if !ok {
-				byName[key] = &fused{hit: h, score: 1.0 / float64(k+rank+1)}
-				order = append(order, key)
-				continue
-			}
-			f.score += 1.0 / float64(k+rank+1)
-			if h.score > f.hit.score {
-				f.hit = h
-			}
-		}
-	}
-	if len(order) == 0 {
-		return nil
-	}
-	sort.SliceStable(order, func(i, j int) bool {
-		a, b := byName[order[i]], byName[order[j]]
-		if a.score != b.score {
-			return a.score > b.score
-		}
-		return order[i] < order[j]
-	})
-	if limit > 0 && len(order) > limit {
-		order = order[:limit]
-	}
-	out := make([]claimHit, 0, len(order))
-	for _, key := range order {
-		out = append(out, byName[key].hit)
-	}
-	return out
-}
-
 // navStringList coerces a doc-store column into a string slice: engines return
 // []string, []interface{} or a bare string for the same field.
 func navStringList(v any) []string {
@@ -621,54 +251,6 @@ func navStringList(v any) []string {
 		}
 	}
 	return nil
-}
-
-// stringFromAny reads a scalar as a trimmed string, tolerating the numeric
-// types engines decode JSON numbers into.
-func stringFromAny(v any) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case fmt.Stringer:
-		return x.String()
-	case nil:
-		return ""
-	default:
-		return fmt.Sprint(x)
-	}
-}
-
-// claimOutlineLine renders one claim hit: the statement, its verbatim evidence,
-// and the chunk pointer that opens the surrounding passage.
-//
-// The line is ANSWER MATERIAL (a claim carries its own evidence, so the model is
-// expected to cite it instead of re-reading the document), which makes the
-// passage handle mandatory: an uncited claim line ships an answer the reference
-// payload cannot resolve. The handle is appended unquoted (`ref=3`) on purpose -
-// claim lines are rendered inside an escaped <structure> text node, where a
-// `ref="3"` attribute would arrive as `ref=&quot;3&quot;`.
-func claimOutlineLine(ctx context.Context, c claimHit) string {
-	line := "- [claim] " + c.name
-	if q := strings.TrimSpace(c.quote); q != "" {
-		line += ` | Evidence: "` + snippetRunes(q, navClaimEvidenceChars) + `"`
-	}
-	if c.chunkID != "" {
-		line += " [chunks: " + c.chunkID + "]"
-	}
-	if n := evidenceRegistryFrom(ctx).Stamp(c.chunkID); n >= 0 {
-		line += " ref=" + strconv.Itoa(n)
-	}
-	return line
-}
-
-// claimOutline is the claim-first selection: the claims ARE the outline, so
-// nothing is drilled and no chunk snippet is loaded.
-func claimOutline(ctx context.Context, claims []claimHit) string {
-	lines := make([]string, 0, len(claims))
-	for _, c := range claims {
-		lines = append(lines, claimOutlineLine(ctx, c))
-	}
-	return strings.Join(lines, "\n")
 }
 
 // indexNameFor resolves the document/structure search index: the tenant's
@@ -1127,36 +709,10 @@ func navigateStructures(ctx context.Context, tenantID string, query string, docI
 	return strings.Join(parts, "\n")
 }
 
-// navigateClaimsForQuery is the query-only path: it claims over the ROUTED
-// documents and nothing else. No tree read, no drill — a document without claim
-// hits contributes nothing, because this path exists to surface compiled
-// evidence, not to duplicate what the explicit doc_id path already does.
-// limit caps the TOTAL claims rendered across documents (0 = uncapped, the
-// model-invoked behavior). Round-robin across documents rather than first-doc
-// order, so a tight cap still covers every routed document.
-func navigateClaimsForQuery(ctx context.Context, tenantID, query string, docIDs, datasetIDs []string, kind string, limit int, reader structureReader) (string, int) {
-	docs, perDoc := recallClaimsForQuery(ctx, tenantID, query, docIDs, datasetIDs, kind, limit, reader)
-	var segs []string
-	for i, claims := range perDoc {
-		if len(claims) == 0 {
-			continue
-		}
-		segs = append(segs, structureDocSegment(docs[i], len(segs)+1, 0, 0, claimOutline(ctx, claims)))
-	}
-	if len(segs) == 0 {
-		return "", 0
-	}
-	parts := append([]string{
-		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), xmlEscape(query), xmlEscape(kind)),
-	}, segs...)
-	parts = append(parts, "</structure_navigation>")
-	return strings.Join(parts, "\n"), len(segs)
-}
-
-// claimKindList flattens the requested compile kinds into the sorted filter the
-// claim reader takes. Claim rows are selected by compile_kwd, so every claim read
-// needs it — the per-document tool path and the corpus-wide pre-loop recall alike.
-func claimKindList(kinds map[string]bool) []string {
+// kindListOf flattens the requested structure kinds into the sorted list the
+// structure reader parses. Rows are selected by compile_kwd, so every read needs
+// it.
+func kindListOf(kinds map[string]bool) []string {
 	out := make([]string, 0, len(kinds))
 	for k := range kinds {
 		out = append(out, k)
@@ -1165,78 +721,14 @@ func claimKindList(kinds map[string]bool) []string {
 	return out
 }
 
-// recallClaimsForQuery runs the claim leg over the given documents and returns
-// the documents that hit, aligned with their claims. limit caps the TOTAL claims
-// (0 = uncapped); the trim is round-robin, so a tight budget still touches every
-// document instead of being spent on the first one.
-//
-// It is the retrieval half of the per-document tool path; the pre-loop recall
-// reads corpus-wide instead (see recallClaimsAcrossDatasets).
-func recallClaimsForQuery(ctx context.Context, tenantID, query string, docIDs, datasetIDs []string, kind string, limit int, reader structureReader) ([]string, [][]claimHit) {
-	kindList := claimKindList(structureKindsFor(kind))
-
-	var perDoc [][]claimHit
-	var docs []string
-	for _, did := range docIDs {
-		claims := recallClaimsForDoc(ctx, tenantID, query, did, kindList, datasetIDs, reader)
-		if len(claims) == 0 {
-			continue
-		}
-		perDoc = append(perDoc, claims)
-		docs = append(docs, did)
-	}
-	if len(perDoc) == 0 {
-		return nil, nil
-	}
-	if limit > 0 {
-		perDoc = trimClaimsRoundRobin(perDoc, limit)
-	}
-	return docs, perDoc
-}
-
-// trimClaimsRoundRobin keeps at most limit claims in total, taking one per
-// document per round so no document monopolizes a small budget.
-func trimClaimsRoundRobin(perDoc [][]claimHit, limit int) [][]claimHit {
-	if limit <= 0 {
-		return perDoc
-	}
-	out := make([][]claimHit, len(perDoc))
-	total := 0
-	for round := 0; total < limit; round++ {
-		progressed := false
-		for i := range perDoc {
-			if round >= len(perDoc[i]) {
-				continue
-			}
-			out[i] = append(out[i], perDoc[i][round])
-			total++
-			progressed = true
-			if total >= limit {
-				break
-			}
-		}
-		if !progressed {
-			break
-		}
-	}
-	return out
-}
-
 // readStructureDocCore reads ONE document's compiled structure of the requested
 // kind and drills it toward the query. It returns the rendered outline, the
 // entity/relation counts, and whether the document carried a structure at all.
-//
-// Claim recall runs FIRST and, when it hits, replaces the drill entirely: the
-// claims carry their own evidence, so descending the tree could only re-derive
-// what they already state.
 func readStructureDocCore(ctx context.Context, tenantID, query, docID string, kinds map[string]bool, datasetIDs []string, reader structureReader) (string, int, int, bool) {
 	if query == "" || docID == "" {
 		return "", 0, 0, false
 	}
-	kindList := claimKindList(kinds)
-	if claims := recallClaimsForDoc(ctx, tenantID, query, docID, kindList, datasetIDs, reader); len(claims) > 0 {
-		return claimOutline(ctx, claims), 0, 0, true
-	}
+	kindList := kindListOf(kinds)
 
 	var nodes []structureNode
 	var rels []structureRel
@@ -1262,41 +754,6 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID string, ki
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, tenantID, ids) }
 	return renderTocDrilldown(query, nodes, rels, loader), len(nodes), len(rels), true
-}
-
-// recallClaimsForDoc runs the claim leg across the document's datasets, keeping
-// the fused rank order. Hits are deduped by claim NAME (two datasets cannot both
-// hold the same document, but a reader may return a claim twice) — deliberately
-// NOT by chunk id: several distinct claims commonly come from one chunk, and
-// dropping all but the first would throw evidence away.
-func recallClaimsForDoc(ctx context.Context, tenantID, query, docID string, kindList, datasetIDs []string, reader structureReader) []claimHit {
-	cr, ok := reader.(claimReader)
-	if !ok {
-		return nil
-	}
-	qvec := claimQueryVector(ctx, tenantID, query)
-	var out []claimHit
-	seen := map[string]bool{}
-	for _, kbID := range datasetIDs {
-		hits, err := cr.ReadClaims(ctx, tenantID, kbID, []string{docID}, kindList, query, qvec, navClaimTopN)
-		if err != nil {
-			common.DebugCtx(ctx, "navigate_structure: claim recall failed",
-				zap.String("kb_id", kbID), zap.String("doc_id", docID), zap.Error(err))
-			continue
-		}
-		for _, h := range hits {
-			key := strings.ToLower(strings.TrimSpace(h.name))
-			if h.chunkID == "" || key == "" || seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, h)
-			if len(out) >= navClaimTopN {
-				return out
-			}
-		}
-	}
-	return out
 }
 
 // structureNodeLoader fetches chunk texts by id for the drill-down snippet pass.
@@ -1458,7 +915,7 @@ func (g *NavigateStructureTool) Info(_ context.Context) (*schema.ToolInfo, error
     },
     "doc_id": {
       "type": "string",
-      "description": "OPTIONAL: the document to drill, taken from a navigate_tree <doc doc_id> result. Omit it to route the query yourself and get compiled claim evidence from the best-matching documents directly (no navigate_tree call needed)."
+      "description": "OPTIONAL: the document to drill, taken from a navigate_tree <doc doc_id> result. Omit it to route the query yourself and drill the best-matching documents' structure directly (no navigate_tree call needed)."
     },
     "doc_ids": {
       "type": "array",
@@ -1500,209 +957,6 @@ func (g *NavigateStructureTool) InvokableRun(ctx context.Context, argumentsInJSO
 	return guardedToolRun(ctx, navigateStructureToolName, g.invokableRun, argumentsInJSON)
 }
 
-// claimPrefetch is the ONE claim recall a turn performs before its loop, with
-// the verdict the run flow acts on.
-//
-// The recall exists because the compiled tools are injected rather than
-// declared, and a model that prefers one-step keyword search never calls them:
-// in the FRAMES runs every turn was offered navigate_structure and the tool was
-// called zero times. Evidence a model cannot be relied upon to request has to be
-// retrieved by the pipeline, and the claim leg is exactly that - a flat read that
-// needs no document choice.
-//
-// The result is a CONTROL SIGNAL, not prompt text. Claims that answer the
-// question terminate the turn without reading a single raw chunk; a recall that
-// does not cover the question is dropped and the ordinary tool-driven
-// exploration runs. Nothing is appended to the system instruction: a block there
-// is re-billed on every model call of the turn, which is the cost this replaces.
-type claimPrefetch struct {
-	docs   []string
-	claims []claimHit
-	// evidence is the rendered claim block, carrying the [ID:n] handles its
-	// source chunks were stamped with. It is rendered ONLY for a sufficient
-	// recall, because rendering is what publishes handles: a discarded recall
-	// must not leave handles behind for passages the model never saw.
-	evidence string
-	// sufficient is true when claimsAnswerQuestion accepted the recall.
-	sufficient bool
-}
-
-// recallCompiledClaims recalls the bound datasets' claims for this turn's
-// question and decides whether they answer it themselves.
-func recallCompiledClaims(ctx context.Context, tenantID string, datasetIDs []string, messages []*schema.Message) claimPrefetch {
-	question := strings.TrimSpace(lastUserQuestion(messages))
-	if question == "" || len(datasetIDs) == 0 {
-		return claimPrefetch{}
-	}
-	// A compiled dataset does not imply claims: trees, timelines and mindmaps all
-	// carry compile_kwd but no evidence rows. Probing first keeps both retrieval
-	// legs from running over a corpus that can only come back empty.
-	if !claimRowsPresent(ctx, tenantID, datasetIDs) {
-		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
-			zap.Strings("datasets", datasetIDs),
-			zap.String("reason", "no claim rows in the bound datasets"))
-		return claimPrefetch{}
-	}
-	reader := getStructureReader()
-	// NO document routing: the claim leg is a flat, corpus-wide read, which is
-	// the whole reason it can run before the loop. Routing first (the nav-tree
-	// KNN) reintroduced the document choice this path exists to avoid, and it
-	// fails silently where it matters: a dataset whose nav tree holds a handful
-	// of rows routes every question to the same one or two documents, and the
-	// recall then dutifully returns their claims for every question.
-	//
-	// The turn's document scope, when set, is still honoured — as a filter on the
-	// claim rows themselves.
-	docScope, _ := resolveDocumentScope(ctx, nil)
-	// A non-nil EMPTY scope means the turn allows no documents. The reader drops
-	// its doc_id filter when the scope is empty, so passing one through would read
-	// as "unrestricted" and recall the whole dataset — the opposite of the turn's
-	// scope. Stop before the read instead.
-	if docScope != nil && len(docScope) == 0 {
-		common.DebugCtx(ctx, "agentic_rag: claim recall skipped",
-			zap.Strings("datasets", datasetIDs),
-			zap.String("reason", "no documents in the turn's scope"))
-		return claimPrefetch{}
-	}
-	claims := recallClaimsAcrossDatasets(ctx, tenantID, datasetIDs, docScope, question, navClaimPrefetchTopN, reader)
-
-	pf := claimPrefetch{claims: claims, docs: claimDocsInOrder(claims)}
-	pf.sufficient = claimsAnswerQuestion(claims, len(pf.docs))
-	if !pf.sufficient {
-		common.InfoCtx(ctx, "agentic_rag: claim recall insufficient",
-			zap.String("query", question),
-			zap.Int("claims", len(claims)),
-			zap.Int("docs", len(pf.docs)),
-			zap.Int("required_claims", navClaimSufficientHits),
-			zap.Int("required_docs", navClaimMinDocs))
-		return pf
-	}
-	pf.evidence = claimEvidenceBlock(ctx, claims)
-	common.InfoCtx(ctx, "agentic_rag: claim recall sufficient",
-		zap.String("query", question),
-		zap.Int("claims", len(claims)),
-		zap.Strings("docs", pf.docs),
-		zap.Int("evidence_bytes", len(pf.evidence)))
-	return pf
-}
-
-// recallClaimsAcrossDatasets runs the flat claim recall over every bound
-// dataset and merges the results by claim name, keeping the first (best-ranked)
-// occurrence. Each dataset is one pair of legs; the corpus-wide read is what
-// makes the pre-loop recall independent of any document ranking.
-func recallClaimsAcrossDatasets(ctx context.Context, tenantID string, datasetIDs, docScope []string, query string, limit int, reader structureReader) []claimHit {
-	cr, ok := reader.(claimReader)
-	if !ok {
-		return nil
-	}
-	kindList := claimKindList(structureKindsFor(""))
-	qvec := claimQueryVector(ctx, tenantID, query)
-
-	// Group the hits by source document, in ranked order, then take them
-	// round-robin. A ranking's top-N is routinely dominated by ONE document, and
-	// evidence from a single document cannot answer a multi-document question;
-	// taking one claim per document per round is what makes the sufficiency
-	// diversity check meaningful instead of accidental.
-	var docOrder []string
-	byDoc := map[string][]claimHit{}
-	seen := map[string]struct{}{}
-	for _, kbID := range datasetIDs {
-		hits, err := cr.ReadClaims(ctx, tenantID, kbID, docScope, kindList, query, qvec, limit)
-		if err != nil {
-			common.DebugCtx(ctx, "claim recall: dataset read failed",
-				zap.String("kb_id", kbID), zap.Error(err))
-			continue
-		}
-		for _, h := range hits {
-			key := strings.ToLower(strings.TrimSpace(h.name))
-			if key == "" {
-				continue
-			}
-			if _, dup := seen[key]; dup {
-				continue
-			}
-			seen[key] = struct{}{}
-			if _, ok := byDoc[h.docID]; !ok {
-				docOrder = append(docOrder, h.docID)
-			}
-			byDoc[h.docID] = append(byDoc[h.docID], h)
-		}
-	}
-	if len(docOrder) == 0 {
-		return nil
-	}
-	groups := make([][]claimHit, 0, len(docOrder))
-	for _, d := range docOrder {
-		groups = append(groups, byDoc[d])
-	}
-	if limit > 0 {
-		groups = trimClaimsRoundRobin(groups, limit)
-	}
-	out := make([]claimHit, 0, limit)
-	for _, g := range groups {
-		out = append(out, g...)
-	}
-	return out
-}
-
-// claimDocsInOrder returns the distinct source documents of a claim set, in
-// first-appearance order, for logging and evidence grouping.
-func claimDocsInOrder(claims []claimHit) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(claims))
-	for _, c := range claims {
-		if c.docID == "" {
-			continue
-		}
-		if _, dup := seen[c.docID]; dup {
-			continue
-		}
-		seen[c.docID] = struct{}{}
-		out = append(out, c.docID)
-	}
-	return out
-}
-
-// claimsAnswerQuestion reports whether a recall covers the question well enough
-// to answer without reading any raw chunk.
-//
-// Two conditions, both necessary:
-//   - COUNT: at least navClaimSufficientHits claims. Only meaningful because
-//     recall already applied the relevance floor (navClaimMinCoverage), so a hit
-//     states something about the question rather than sharing a stopword with it.
-//   - DIVERSITY: claims from at least navClaimMinDocs documents. A page of
-//     statements from ONE document answers at most one hop, and a single-document
-//     recall is also exactly what a broken document ranking produces for every
-//     question — the shape of the zero-score run this guard was added for.
-func claimsAnswerQuestion(claims []claimHit, docs int) bool {
-	return len(claims) >= navClaimSufficientHits && docs >= navClaimMinDocs
-}
-
-// claimEvidenceBlock renders the recalled claims as answer material, one <doc>
-// element per source document so a multi-document question keeps its provenance
-// and the answer can name which document each fact came from.
-func claimEvidenceBlock(ctx context.Context, claims []claimHit) string {
-	var b strings.Builder
-	current := ""
-	for _, c := range claims {
-		if c.docID != current {
-			if current != "" {
-				b.WriteString("</doc>\n")
-			}
-			if c.docID != "" {
-				fmt.Fprintf(&b, "<doc doc_id=\"%s\">\n", xmlEscape(c.docID))
-			}
-			current = c.docID
-		}
-		b.WriteString(claimOutlineLine(ctx, c))
-		b.WriteString("\n")
-	}
-	if current != "" {
-		b.WriteString("</doc>\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
 func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args navigateStructureArgs
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
@@ -1741,13 +995,11 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 		docIDs = []string{args.DocID}
 	}
 	// A doc_id is optional: with none, route the query ourselves so the tool is
-	// usable in one call. Only CLAIMS are read on this path - the drill needs a
-	// document the model actually chose.
+	// usable in one call.
 	routedByQuery := false
 	if len(docIDs) == 0 {
 		// The router ranks the whole bound corpus, so a turn restricted to a set
-		// of documents must intersect here - the same rule the pre-loop recall
-		// applies to its claim rows.
+		// of documents must intersect here.
 		docIDs = intersectDocumentScope(ctx, routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, navQueryRouteDocs))
 		if len(docIDs) == 0 {
 			return navStructEmpty("route first with navigate_tree"), nil
@@ -1758,23 +1010,6 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 		docIDs = docIDs[:10]
 	}
 
-	if routedByQuery {
-		// 0 = uncapped: the model asked for this call, so its result lands in the
-		// history once instead of being re-sent on every turn of the run. The
-		// pipeline's own pre-loop recall applies its cap instead.
-		out, docs := navigateClaimsForQuery(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, 0, reader)
-		common.InfoCtx(ctx, "agentic_rag: navigate_structure (query route)",
-			zap.String("query", query),
-			zap.Int("datasets", len(datasetIDs)),
-			zap.Strings("routed", docIDs),
-			zap.Int("docs_with_claims", docs),
-			zap.Int("out_bytes", len(out)))
-		if docs == 0 {
-			return navStructEmpty("no claim hits in the routed documents; fall back to search_chunks or list_chunks"), nil
-		}
-		return out, nil
-	}
-
 	out := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
 	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
 	// log, so a graph tool that rendered a structure without leaving a line here
@@ -1783,6 +1018,7 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 		zap.String("query", query),
 		zap.Int("datasets", len(datasetIDs)),
 		zap.Int("docs", len(docIDs)),
+		zap.Bool("routed_by_query", routedByQuery),
 		zap.Strings("names", docIDs),
 		zap.Int("out_bytes", len(out)))
 	return out, nil

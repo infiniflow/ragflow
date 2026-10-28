@@ -708,8 +708,12 @@ export default {
       parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      applyParserSettingsTitle: '将解析设置应用到现有文件？',
       parserSettingsChangeWarning:
-        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
+        '默认情况下，更新后的解析设置仅应用于新上传的文件。选择“是”可将设置同时应用于此知识库中的所有现有文件，并替换各文件的自定义解析设置。您仍需手动重新解析这些文件，设置才会对其内容生效。选择“否”可保留现有文件的解析设置。',
+      parserSettingsApplied: '解析设置已应用。请手动重新解析文件以更新其内容。',
+      parserSettingsApplyFailed:
+        '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -972,7 +976,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
-      applyModelConfigs: '应用模型配置',
+      applyModelConfigs: '在单模型对话中使用此模型及其设置',
       conversations: '会话',
       chatApps: '聊天',
       createChat: '创建聊天',
