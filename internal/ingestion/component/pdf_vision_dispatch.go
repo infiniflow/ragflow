@@ -87,10 +87,11 @@ func maybeDispatchPDFVision(
 	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
 	// returns, so the NormalizeResult closure below only ever applies item
 	// policies to already-normalized JSON and stays idempotent.
-	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
-		pdf := parser.PDFParser{FlattenMediaToText: flatten}
-		return pdf.NormalizeResult(ctx, filename, result)
+		var pdf parser.PDFParser
+		pdf.ConfigureFromSetup(map[string]any(setup))
+		result = pdf.NormalizeResult(ctx, filename, result)
+		return pdf.FinalizePDFResult(binary, result)
 	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
 		if err != nil {
@@ -268,7 +269,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	sections, err := monkeyOCRv2ExtractSections(zipBytes)
+	sections, err := monkeyOCRv2ExtractSections(zipBytes, setupRemoveHeaderFooter(setup))
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
@@ -354,7 +355,7 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 	return time.Duration(seconds) * time.Second
 }
 
-func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
+func monkeyOCRv2ExtractSections(zipBytes []byte, dropHeaderFooter bool) ([]string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
@@ -410,7 +411,7 @@ func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
 		if err = json.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", file.Name, err)
 		}
-		sections = append(sections, monkeyOCRv2Texts(raw, images)...)
+		sections = append(sections, monkeyOCRv2Texts(raw, images, dropHeaderFooter)...)
 	}
 	if len(sections) == 0 {
 		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
@@ -418,17 +419,19 @@ func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
 	return sections, nil
 }
 
-func monkeyOCRv2Texts(raw any, images map[string]*zip.File) []string {
+func monkeyOCRv2Texts(raw any, images map[string]*zip.File, dropHeaderFooter bool) []string {
 	if object, ok := raw.(map[string]any); ok {
 		for _, key := range []string{"layouts", "content_list", "results", "items"} {
 			if value, exists := object[key]; exists {
-				return monkeyOCRv2Texts(value, images)
+				return monkeyOCRv2Texts(value, images, dropHeaderFooter)
 			}
 		}
 		label := strings.ToLower(strings.ReplaceAll(getAnyString(object, "type", "label"), "_", "-"))
-		switch label {
-		case "page-header", "page-footer", "page-number", "discarded":
-			return nil
+		if dropHeaderFooter {
+			switch label {
+			case "page-header", "page-footer", "page-number", "discarded":
+				return nil
+			}
 		}
 		if label == "picture" || label == "figure" || label == "image" {
 			return monkeyOCRv2EmbeddedImage(getAnyString(object, "text", "content", "markdown"), images)
@@ -446,7 +449,7 @@ func monkeyOCRv2Texts(raw any, images map[string]*zip.File) []string {
 	}
 	var result []string
 	for _, item := range items {
-		result = append(result, monkeyOCRv2Texts(item, images)...)
+		result = append(result, monkeyOCRv2Texts(item, images, dropHeaderFooter)...)
 	}
 	return result
 }
@@ -588,7 +591,7 @@ func dispatchMinerUPDF(
 			v1Markdown = strings.TrimSpace(result.Markdown)
 			zipBytes = result.Zip
 		}
-		items, extractErr := mineruExtractJSONItems(zipBytes)
+		items, extractErr := mineruExtractJSONItems(zipBytes, setupRemoveHeaderFooter(setup))
 		if extractErr == nil && len(items) > 0 {
 			return mineruJSONParseResult(filename, items), nil
 		}
@@ -607,7 +610,7 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
-	items, err := mineruExtractJSONItems(zipBytes)
+	items, err := mineruExtractJSONItems(zipBytes, setupRemoveHeaderFooter(setup))
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
@@ -825,12 +828,17 @@ const (
 	mineruMaxMiddleBytes = 64 << 20
 )
 
+func setupRemoveHeaderFooter(setup schema.ParserSetup) bool {
+	v, _ := setup["remove_header_footer"].(bool)
+	return v
+}
+
 // mineruExtractJSONItems reads MinerU content_list.json from a zip and
 // emits JSON parser items with captions, embedded zip images, and
 // 1-indexed _pdf_positions so jump-to-source works like DeepDoc.
 // Bounding boxes are scaled from MinerU's 0..1000 space to PDF points
 // using the per-page sizes in middle.json when that member is present.
-func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
+func mineruExtractJSONItems(zipBytes []byte, dropHeaderFooter bool) ([]map[string]any, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
@@ -881,7 +889,7 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	pageSizes := mineruPageSizes(middleJSON)
 	out := make([]map[string]any, 0, len(rawItems))
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images, pageSizes)
+		converted := mineruContentItemToJSON(item, images, pageSizes, dropHeaderFooter)
 		if converted != nil {
 			out = append(out, converted)
 		}
@@ -929,12 +937,14 @@ func mineruPageSizes(middleJSON []byte) map[int][2]float64 {
 	return sizes
 }
 
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
+func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, dropHeaderFooter bool) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
-	switch typ {
-	case "header", "footer", "page_number", "page-header", "page-footer", "discarded":
-		return nil
+	if dropHeaderFooter {
+		switch typ {
+		case "header", "footer", "page_number", "page-header", "page-footer", "discarded":
+			return nil
+		}
 	}
 
 	text := mineruItemText(item, typ)

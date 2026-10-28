@@ -46,12 +46,31 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sections) != 2 || sections[0] != "Heading" || sections[1] != "x^2" {
 		t.Fatalf("sections=%v", sections)
+	}
+}
+
+func TestMonkeyOCRv2ExtractSectionsKeepsPageHeaderWhenNotRemoving(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	file, err := writer.Create("sample/sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "Running head"}, {"label": "Title", "content": "Heading"}}})
+	_, _ = file.Write(payload)
+	_ = writer.Close()
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 2 || sections[0] != "Running head" || sections[1] != "Heading" {
+		t.Fatalf("sections=%v, want Running head + Heading when remove_header_footer is off", sections)
 	}
 }
 
@@ -64,7 +83,7 @@ func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +237,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil, false)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -253,7 +272,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes())
+	items, err := mineruExtractJSONItems(buf.Bytes(), true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -297,6 +316,29 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 }
 
+func TestMinerUExtractJSONItemsKeepsHeaderWhenNotRemoving(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Hello","page_idx":0},
+		{"type":"header","text":"Running head","page_idx":0}
+	]`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	items, err := mineruExtractJSONItems(buf.Bytes(), false)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (header kept when remove_header_footer is off)", len(items))
+	}
+}
+
 // MinerU normalizes content_list bbox to 0..1000 against the page's point
 // size (pipeline _build_bbox / vlm mkcontent), so raw pass-through makes
 // highlights drift ~1.7x on A4. With middle.json in the zip the boxes must
@@ -323,7 +365,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes())
+	items, err := mineruExtractJSONItems(buf.Bytes(), true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
