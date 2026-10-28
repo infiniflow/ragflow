@@ -58,7 +58,6 @@ export default {
       viewLess: 'Daha az göster',
       comingSoon: 'Yakında',
       download: 'İndir',
-      figure: 'Şek.',
       close: 'Kapat',
       preview: 'Önizleme',
       move: 'Taşı',

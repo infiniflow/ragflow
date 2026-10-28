@@ -45,7 +45,6 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
-      figure: '引文',
       close: '关闭',
       preview: '预览',
       move: '移动',

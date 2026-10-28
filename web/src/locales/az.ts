@@ -55,7 +55,6 @@ export default {
       viewLess: 'Daha az göstər',
       comingSoon: 'Tezliklə',
       download: 'Endir',
-      figure: 'Şək.',
       close: 'Bağla',
       preview: 'Önbaxış',
       move: 'Köçür',

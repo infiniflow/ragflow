@@ -56,7 +56,6 @@ export default {
       viewLess: 'Kamroq ko‘rish',
       comingSoon: 'Tez orada',
       download: 'Yuklab olish',
-      figure: 'Rasm',
       close: 'Yopish',
       preview: 'Ko‘rish',
       move: 'Ko‘chirish',
