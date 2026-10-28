@@ -115,6 +115,31 @@ func TestAnnotateBoxLayouts_KeepsCaptionMatchingDiscardedGarbage(t *testing.T) {
 	}
 }
 
+func TestAnnotateBoxLayouts_KeepsTableCellMatchingDiscardedGarbage(t *testing.T) {
+	// A page number "1" discarded twice as footer garbage must not delete the
+	// same text when it is a table cell: table matching needs every cell.
+	text := "1"
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 940, Bottom: 960, Text: text},
+		{X0: 0, X1: 100, Top: 965, Bottom: 985, Text: text},
+		{X0: 420, X1: 450, Top: 930, Bottom: 960, Text: text},
+	}
+	regions := []pdf.DLARegion{
+		footerRegion(940, 990),
+		{
+			X0: 400 * repeatedGarbageTestScale, Y0: 900 * repeatedGarbageTestScale,
+			X1: 700 * repeatedGarbageTestScale, Y1: 990 * repeatedGarbageTestScale,
+			Label:      pdf.LayoutTypeTable,
+			Confidence: 0.9,
+		},
+	}
+
+	got := AnnotateBoxLayouts(boxes, regions, repeatedGarbageTestScale, repeatedGarbageTestPageImgHeight)
+	if !keptText(got, text) {
+		t.Fatalf("table cell %q matching discarded footer text was dropped", text)
+	}
+}
+
 func TestAnnotateBoxLayouts_KeepsTextAfterSingleGarbageDrop(t *testing.T) {
 	text := "Watermark"
 	boxes := []pdf.TextBox{

@@ -503,7 +503,9 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 //     body paragraphs out of reach even on an exact match;
 //   - the survivor sits in the same page-edge band that made the layout pass
 //     discard the other copies, so it is a decoration in its own right;
-//   - it is not a caption, preserving the caption handling fixed in #20767.
+//   - it is not a caption, preserving the caption handling fixed in #20767;
+//   - it is not a table box, because table matching needs every cell and a
+//     short cell value commonly equals a page number or header string.
 //
 // The pass is page-scoped because AnnotateBoxLayouts owns exactly one page.
 const (
@@ -535,6 +537,7 @@ func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discarde
 				evidence.count >= repeatedGarbageMinDrops &&
 				utf8.RuneCountInString(key) <= repeatedGarbageMaxRunes &&
 				!IsCaptionBox(b.Text, b.LayoutType) &&
+				b.LayoutType != pdf.LayoutTypeTable &&
 				inGarbageBand(b, evidence.types, pageHeight) {
 				continue
 			}
