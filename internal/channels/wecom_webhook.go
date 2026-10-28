@@ -325,6 +325,20 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 			}
 			go func() {
 				defer releaseWeComWork()
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						common.Error(
+							"wecom: panic while handling message",
+							fmt.Errorf("panic: %v", recovered),
+							zap.String("account_id", accountID),
+							zap.String("message_id", messageID),
+							zap.Stack("stack"),
+						)
+						// A panic is a retryable failure: let a later delivery
+						// run the message instead of suppressing it.
+						weComForgetMessage(accountID, messageID)
+					}
+				}()
 				// The request context is cancelled as soon as this handler
 				// returns, so the background reply must not inherit it.
 				runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), weComHandlerTimeout)
