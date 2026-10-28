@@ -24,7 +24,6 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/parser/media"
 )
@@ -123,11 +122,11 @@ func TestPutAndGet_RoundTripAcrossRepeatedReads(t *testing.T) {
 	var key string
 	for k := range backend.kv {
 		key = k
-		if backend.ttl[k] != chunkcache.TTL {
-			t.Errorf("cached TTL = %v, want %v", backend.ttl[k], chunkcache.TTL)
+		if backend.ttl[k] != TTL {
+			t.Errorf("cached TTL = %v, want %v", backend.ttl[k], TTL)
 		}
 	}
-	members, _ := backend.SMembers(ctx, "kc:manifest:task-1")
+	members, _ := backend.SMembers(ctx, manifestKey("task-1"))
 	if len(members) != 1 || members[0] != key {
 		t.Fatalf("manifest = %v, want [%s]", members, key)
 	}
@@ -280,14 +279,14 @@ func TestPut_EnforcesRunImageCountBudget(t *testing.T) {
 	}
 }
 
-func TestPurgeTask_RemovesMediaEntriesThroughSharedManifest(t *testing.T) {
+func TestPurgeTask_RemovesMediaEntriesThroughMediaManifest(t *testing.T) {
 	backend := newFakeStore()
 	store := New(backend, "task-1")
 	ctx := taskContext("task-1")
 	if _, err := store.Put(ctx, "html", "image/png", []byte("hello")); err != nil {
 		t.Fatal(err)
 	}
-	if err := chunkcache.PurgeTask(ctx, backend, "task-1"); err != nil {
+	if err := PurgeTask(ctx, backend, "task-1"); err != nil {
 		t.Fatal(err)
 	}
 	if len(backend.kv) != 0 {
@@ -295,5 +294,30 @@ func TestPurgeTask_RemovesMediaEntriesThroughSharedManifest(t *testing.T) {
 	}
 	if len(backend.sets) != 0 {
 		t.Fatalf("manifest after purge = %v, want empty", backend.sets)
+	}
+}
+
+func TestTTLIsOneDay(t *testing.T) {
+	if TTL != 24*time.Hour {
+		t.Fatalf("TTL = %v, want 24h", TTL)
+	}
+}
+
+func TestMediaManifestDoesNotTouchChunkManifest(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	backend.SAdd(ctx, "kc:manifest:task-1", "kc:model-result")
+	backend.Set(ctx, "kc:model-result", "result", 7*24*time.Hour)
+	if _, err := New(backend, "task-1").Put(ctx, "html", "image/png", []byte("hello")); err != nil {
+		t.Fatal(err)
+	}
+	if backend.ttl[manifestKey("task-1")] != TTL {
+		t.Fatal("media manifest must expire in one day")
+	}
+	if err := PurgeTask(ctx, backend, "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	if backend.kv["kc:model-result"] != "result" || !backend.sets["kc:manifest:task-1"]["kc:model-result"] {
+		t.Fatal("media cleanup modified chunk cache")
 	}
 }

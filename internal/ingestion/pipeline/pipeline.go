@@ -189,8 +189,7 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 }
 
 // defaultTrackerTTL is the expiry applied to the RunTracker run-status hash.
-// It matches the shared run-cache TTL (chunkcache.TTL) so task state and media
-// expire on the same horizon.
+// It matches the model-result cache TTL; media has its own one-day TTL.
 var defaultTrackerTTL = 7 * 24 * time.Hour
 
 // Run executes the full ingestion graph described by the canonical DSL.

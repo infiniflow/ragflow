@@ -222,49 +222,6 @@ func TestSet_SkipsManifestWhenValueWriteFails(t *testing.T) {
 	}
 }
 
-// TestTrack_RegistersKeyAndReturnsManifestFailure gives strict cache callers a
-// shared manifest path. chunkcache.Set stays best-effort, while media caching
-// can fail the task when its entry would not be reclaimed after persistence.
-func TestTrack_RegistersKeyAndReturnsManifestFailure(t *testing.T) {
-	f := newFakeStore()
-	ctx := taskCtx("task-1")
-	if err := Track(ctx, f, "mc:media:key"); err != nil {
-		t.Fatalf("Track: %v", err)
-	}
-	members, _ := f.SMembers(ctx, manifestKey("task-1"))
-	if len(members) != 1 || members[0] != "mc:media:key" {
-		t.Fatalf("manifest members = %v, want [mc:media:key]", members)
-	}
-	if got := f.ttl[manifestKey("task-1")]; got != TTL {
-		t.Errorf("manifest TTL = %v, want %v", got, TTL)
-	}
-
-	f.expireFails = true
-	if err := Track(ctx, f, "mc:media:second"); err == nil {
-		t.Fatal("Track succeeded after manifest expiry failed")
-	}
-	if _, ok := f.sets[manifestKey("task-1")]; ok {
-		t.Fatal("manifest without a TTL survived failed Track")
-	}
-}
-
-func TestTrack_RefreshesTTLForExistingManifest(t *testing.T) {
-	f := newFakeStore()
-	ctx := taskCtx("task-1")
-	const key = "mc:media:key"
-	if err := Track(ctx, f, key); err != nil {
-		t.Fatalf("initial Track: %v", err)
-	}
-	f.ttl[manifestKey("task-1")] = time.Second
-
-	if err := Track(ctx, f, key); err != nil {
-		t.Fatalf("repeat Track: %v", err)
-	}
-	if got := f.ttl[manifestKey("task-1")]; got != TTL {
-		t.Fatalf("manifest TTL = %v, want refreshed %v", got, TTL)
-	}
-}
-
 // TestGet_HitAndMiss asserts the miss signal is a boolean rather than an empty
 // string, so a caller can tell "not cached" from "cached empty".
 func TestGet_HitAndMiss(t *testing.T) {

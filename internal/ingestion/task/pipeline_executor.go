@@ -36,6 +36,7 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
@@ -379,6 +380,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+		mediacache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
 	}
 
 	return &PipelineResult{

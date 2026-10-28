@@ -14,8 +14,8 @@
 
 // Package mediacache stores decoded parser media for the short-lived,
 // run-scoped handoff between Parser, vision enhancement and Chunker. It uses
-// the same Kvrocks instance, TTL and task manifest as chunkcache; persistence
-// success purges both through one manifest.
+// an independent one-day TTL and media manifest; persistence success purges
+// media through that manifest.
 package mediacache
 
 import (
@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 
@@ -37,6 +38,7 @@ import (
 
 const (
 	keyNamespace = "mc"
+	TTL          = 24 * time.Hour
 	// MaxRunBytes bounds the decoded image bytes one parser run may retain.
 	// This restores the HTML parser's former 64 MiB document budget while
 	// keeping every image individually bounded by media.MaxImagePayloadBytes.
@@ -124,10 +126,10 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	}
 
 	key := s.key(digest)
-	if !s.backend.Set(ctx, key, string(data), chunkcache.TTL) {
+	if !s.backend.Set(ctx, key, string(data), TTL) {
 		return entity.MediaRef{}, fmt.Errorf("mediacache: write image %s", mediaShortDigest(digest))
 	}
-	if err := chunkcache.Track(ctx, s.backend, key); err != nil {
+	if err := s.track(ctx, key); err != nil {
 		if !s.backend.Delete(ctx, key) {
 			return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w (rollback failed)", mediaShortDigest(digest), err)
 		}
@@ -187,4 +189,45 @@ func mediaShortDigest(digest string) string {
 		return digest
 	}
 	return digest[:12]
+}
+
+func manifestKey(scope string) string {
+	return fmt.Sprintf("%s:manifest:%x", keyNamespace, xxhash.Sum64String(scope))
+}
+
+func (s *Store) track(ctx context.Context, key string) error {
+	// Taskless preview runs have no persist-time cleanup and rely on TTL.
+	if globals.TaskID(ctx) == "" {
+		return nil
+	}
+	mk := manifestKey(s.scope)
+	if !s.backend.SAdd(ctx, mk, key) {
+		return fmt.Errorf("mediacache: record manifest %s", mk)
+	}
+	if !s.backend.Expire(ctx, mk, TTL) {
+		s.backend.Delete(ctx, mk)
+		return fmt.Errorf("mediacache: expire manifest %s", mk)
+	}
+	return nil
+}
+
+// PurgeTask removes media after durable persistence. Failed runs rely on TTL.
+func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) error {
+	if backend == nil || taskID == "" {
+		return nil
+	}
+	mk := manifestKey(taskID)
+	keys, err := backend.SMembers(ctx, mk)
+	if err != nil {
+		return fmt.Errorf("mediacache: read manifest: %w", err)
+	}
+	for _, key := range keys {
+		if !backend.Delete(ctx, key) {
+			return fmt.Errorf("mediacache: delete %s", key)
+		}
+	}
+	if !backend.Delete(ctx, mk) {
+		return fmt.Errorf("mediacache: delete manifest %s", mk)
+	}
+	return nil
 }

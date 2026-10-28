@@ -14,13 +14,15 @@
 //  limitations under the License.
 //
 
-// Package chunkcache owns the run-scoped cache infrastructure shared by
-// per-chunk model results (Extractor → chat LLM, Tokenizer → embedding model)
-// and parser media.
+// Package chunkcache owns the per-chunk result cache shared by the ingestion
+// components that call an expensive external model (Extractor → chat LLM,
+// Tokenizer → embedding model).
 //
-// Retried tasks execute the full graph again. Memoising expensive model
-// results avoids repeating LLM and embedding calls, while Parser repopulates
-// the media cache before its consumers run.
+// Why it exists: the pipeline checkpoints only after the Parser, so a resumed
+// task re-executes every stage after it. That is affordable only if the
+// expensive per-chunk work is memoised, which is what this cache does — a
+// resumed run re-walks the same chunks, hits the cache, and issues no model
+// calls.
 //
 // Entry lifetime has two reclaim paths. The normal one is PurgeTask, called
 // once the task's chunks are durably indexed: from that point the cache can
@@ -40,7 +42,9 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 )
 
-// TTL bounds run-cache entries for failed, cancelled and abandoned tasks.
+// TTL bounds how long a cached per-chunk result stays useful. It matches the
+// pipeline checkpoint TTL on purpose: a task that can still be resumed must
+// still find its cache, and one that can no longer be resumed has no reader.
 const TTL = 7 * 24 * time.Hour
 
 // keyNamespace prefixes every key this package writes, including the
@@ -137,33 +141,6 @@ func Get(ctx context.Context, s Store, key string) (string, bool) {
 	return v, true
 }
 
-// Track records a key that was written through another cache path in the
-// current task's manifest. Media caching uses this so its entries share the
-// same persist-time reclaim and seven-day TTL backstop as chunk results.
-//
-// Unlike Set, Track returns bookkeeping failures. A caller that requires the
-// cache for correctness must fail the task rather than silently leave an
-// untracked entry until TTL expiry. Runs without a task scope have no
-// persist-time reclaim path, so their entries intentionally rely on TTL.
-func Track(ctx context.Context, s Store, key string) error {
-	if s == nil || key == "" {
-		return nil
-	}
-	taskID := globals.TaskID(ctx)
-	if taskID == "" {
-		return nil
-	}
-	mk := manifestKey(taskID)
-	if !s.SAdd(ctx, mk, key) {
-		return fmt.Errorf("record cache manifest %s: add %s", mk, key)
-	}
-	if !s.Expire(ctx, mk, TTL) {
-		s.Delete(ctx, mk)
-		return fmt.Errorf("expire cache manifest %s", mk)
-	}
-	return nil
-}
-
 // Set caches value under key for TTL and records key on the current task's
 // manifest so PurgeTask can reclaim it at persist time. Best-effort
 // throughout: a store outage costs a recomputation, never a failed run.
@@ -180,7 +157,20 @@ func Set(ctx context.Context, s Store, key, value string) {
 	if !s.Set(ctx, key, value, TTL) {
 		return
 	}
-	_ = Track(ctx, s, key)
+	taskID := globals.TaskID(ctx)
+	if taskID == "" {
+		return
+	}
+	mk := manifestKey(taskID)
+	if s.SAdd(ctx, mk, key) {
+		// Bound the manifest's own lifetime: it must not outlive the entries
+		// it lists, or an abandoned task would leak one set per task forever.
+		// If the TTL cannot be applied, drop the manifest immediately rather
+		// than leave a TTL-less set that leaks one empty key per task.
+		if !s.Expire(ctx, mk, TTL) {
+			s.Delete(ctx, mk)
+		}
+	}
 }
 
 // PurgeTask drops every cache entry recorded for taskID, then the manifest
@@ -200,15 +190,15 @@ func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	mk := manifestKey(taskID)
 	keys, err := s.SMembers(ctx, mk)
 	if err != nil {
-		return fmt.Errorf("read cache manifest %s: %w", mk, err)
+		return fmt.Errorf("read chunk cache manifest %s: %w", mk, err)
 	}
 	for _, k := range keys {
 		if !s.Delete(ctx, k) {
-			return fmt.Errorf("delete cache entry %s", k)
+			return fmt.Errorf("delete chunk cache entry %s", k)
 		}
 	}
 	if !s.Delete(ctx, mk) {
-		return fmt.Errorf("delete cache manifest %s", mk)
+		return fmt.Errorf("delete chunk cache manifest %s", mk)
 	}
 	return nil
 }
