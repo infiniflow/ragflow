@@ -893,3 +893,26 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 		t.Fatalf("expected GET for the legitimate file")
 	}
 }
+
+// TestWebDAVSessionFetchSkipsUnreadableFile verifies a failed or empty
+// download is a per-document skip rather than a task failure, matching the
+// pre-lazy behaviour that dropped the file and completed the run.
+func TestWebDAVSessionFetchSkipsUnreadableFile(t *testing.T) {
+	session := &webdavSyncSession{download: func(context.Context, string) ([]byte, error) {
+		return nil, fmt.Errorf("404 not found")
+	}}
+	_, err := session.Fetch(t.Context(), FetchReference{Key: "https://dav.example/a.txt"})
+	if !errors.Is(err, ErrDocumentSkipped) {
+		t.Fatalf("fetch error = %v, want ErrDocumentSkipped", err)
+	}
+	if !strings.Contains(err.Error(), "404 not found") {
+		t.Fatalf("fetch error dropped the download cause: %v", err)
+	}
+
+	empty := &webdavSyncSession{download: func(context.Context, string) ([]byte, error) {
+		return nil, nil
+	}}
+	if _, err := empty.Fetch(t.Context(), FetchReference{Key: "https://dav.example/empty.txt"}); !errors.Is(err, ErrDocumentSkipped) {
+		t.Fatalf("empty body error = %v, want ErrDocumentSkipped", err)
+	}
+}
