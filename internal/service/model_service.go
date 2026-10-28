@@ -480,15 +480,18 @@ func (m *ModelProviderService) resolveProviderInTenant(ctx context.Context, user
 	return provider, nil
 }
 
-// errInstanceProviderMismatch reports an instance identifier that exists but
-// belongs to a different provider than the one the request addressed.
+// errInstanceProviderMismatch reports an instance identifier that exists in the
+// caller's tenant but belongs to a different provider than the request
+// addressed. An instance owned by another tenant stays a plain miss so callers
+// cannot probe foreign identifiers.
 var errInstanceProviderMismatch = errors.New("model instance belongs to another provider")
 
 // resolveInstance resolves the instance segment of a provider route inside
 // provider: primary key first, then instance name.
 //
-// A primary key hit whose provider_id names another provider is a mismatch
-// rather than a miss, so callers never fall through to a name lookup.
+// A primary key hit whose provider_id names another provider of the same tenant
+// is a mismatch rather than a miss, so callers never fall through to a name
+// lookup. A hit owned by another tenant is reported as a miss.
 func (m *ModelProviderService) resolveInstance(ctx context.Context, provider *entity.TenantModelProvider, instanceIDOrName string) (*entity.TenantModelInstance, error) {
 	instanceIDOrName = strings.TrimSpace(instanceIDOrName)
 	if instanceIDOrName == "" {
@@ -498,6 +501,16 @@ func (m *ModelProviderService) resolveInstance(ctx context.Context, provider *en
 	if err == nil {
 		if instance.ProviderID == provider.ID {
 			return instance, nil
+		}
+		owner, ownerErr := m.modelProviderDAO.GetByID(ctx, dao.DB, instance.ProviderID)
+		if ownerErr != nil {
+			if errors.Is(ownerErr, gorm.ErrRecordNotFound) {
+				return nil, gorm.ErrRecordNotFound
+			}
+			return nil, ownerErr
+		}
+		if owner.TenantID != provider.TenantID {
+			return nil, gorm.ErrRecordNotFound
 		}
 		return nil, fmt.Errorf("%w: instance %q belongs to provider %q", errInstanceProviderMismatch, instanceIDOrName, instance.ProviderID)
 	}
@@ -2057,6 +2070,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	if newInstanceName != "" && newInstanceName != instance.InstanceName {
 		instanceUpdates["instance_name"] = newInstanceName
+		instance.InstanceName = newInstanceName
 	}
 
 	extraFields := make(map[string]interface{})
