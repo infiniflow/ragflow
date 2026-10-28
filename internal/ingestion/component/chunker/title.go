@@ -67,6 +67,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 
@@ -641,6 +642,7 @@ type lineRecord struct {
 	docType       string
 	imgID         *string
 	image         string
+	mediaRef      *entity.MediaRef
 	layout        string
 	pdfPositions  json.RawMessage
 	positions     json.RawMessage

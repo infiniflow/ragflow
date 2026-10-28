@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package parser
+package charset
 
 // Shared charset-label resolution and decode-acceptance helpers. Both
 // email_parser.go (RFC 2047 headers, mail bodies) and html_parser.go
@@ -49,7 +49,7 @@ func canonicalCharsetLabel(label string) string {
 	return strings.NewReplacer("-", "", "_", "").Replace(strings.ToLower(strings.TrimSpace(label)))
 }
 
-// charsetEncoding maps a charset label to its decoder, covering the
+// CharsetEncoding maps a charset label to its decoder, covering the
 // charsets common in real-world mail and legacy HTML beyond utf-8: the
 // Chinese families (gb2312/gbk/gb18030, big5), shift_jis, euc-kr, and
 // latin-1. It is the single label resolver shared by the RFC 2047 header
@@ -59,7 +59,7 @@ func canonicalCharsetLabel(label string) string {
 // The "gb2312" label maps to GBK, not HZGB2312: mail labeled gb2312 carries
 // plain 8-bit GB2312 bytes, while HZGB2312 only decodes the 7-bit HZ escape
 // form used under the distinct "hz-gb-2312" label.
-func charsetEncoding(charset string) (encoding.Encoding, bool) {
+func CharsetEncoding(charset string) (encoding.Encoding, bool) {
 	switch canonicalCharsetLabel(charset) {
 	case "gb2312", "gbk":
 		return simplifiedchinese.GBK, true
@@ -91,7 +91,7 @@ func decodeWithCharset(payload []byte, charset string) (string, error) {
 		}
 		return "", fmt.Errorf("invalid utf-8")
 	}
-	if enc, ok := charsetEncoding(charset); ok {
+	if enc, ok := CharsetEncoding(charset); ok {
 		return decodeTransform(payload, enc.NewDecoder())
 	}
 	if enc, _ := htmlcharset.Lookup(charset); enc != nil {
@@ -101,13 +101,13 @@ func decodeWithCharset(payload []byte, charset string) (string, error) {
 }
 
 // isRecognizedCharset reports whether charset maps to a known decoder
-// either via our shared charsetEncoding resolver or htmlcharset.Lookup.
+// either via our shared CharsetEncoding resolver or htmlcharset.Lookup.
 func isRecognizedCharset(charset string) bool {
 	switch canonicalCharsetLabel(charset) {
 	case "utf8", "":
 		return true
 	}
-	if _, ok := charsetEncoding(charset); ok {
+	if _, ok := CharsetEncoding(charset); ok {
 		return true
 	}
 	if enc, _ := htmlcharset.Lookup(charset); enc != nil {
