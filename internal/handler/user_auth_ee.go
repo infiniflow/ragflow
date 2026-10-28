@@ -24,30 +24,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func (h *UserHandler) OAuthCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "OAuthCallback not implemented")
-}
-
-func (h *UserHandler) GitHubAuthCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "GitHubAuthCallback not implemented")
-}
-
-func (h *UserHandler) LarkAuthCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "LarkAuthCallback not implemented")
-}
-
-func (h *UserHandler) ICBCAuthCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "ICBCAuthCallback not implemented")
-}
-
-func (h *UserHandler) AzureAuthCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "AzureAuthCallback not implemented")
-}
-
-func (h *UserHandler) AzureAuthLogin(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "AzureAuthLogin not implemented")
-}
-
 func (h *UserHandler) Captcha(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "Captcha not implemented")
 }
@@ -66,18 +42,6 @@ func (h *UserHandler) IsAdmin(c *gin.Context) {
 
 func (h *UserHandler) GetMeta(c *gin.Context) {
 	common.ErrorWithCode(c, common.CodeNotImplemented, "GetMeta not implemented")
-}
-
-func (h *UserHandler) OAuthLogin(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "OAuthLogin not implemented")
-}
-
-func (h *UserHandler) OAuthChannelCallback(c *gin.Context) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, "OAuthChannelCallback not implemented")
-}
-
-func (h *UserHandler) GetLoginChannels(c *gin.Context) {
-	common.SuccessWithData(c, []interface{}{}, "success")
 }
 
 func issueUserAccessToken(user *entity.User, secretKey string) (string, error) {
