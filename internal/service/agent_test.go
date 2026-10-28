@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -1004,6 +1005,34 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	}
 	if _, ok := messages[0]["prompt"]; ok {
 		t.Fatal("expected prompt to be removed from normalized session message")
+	}
+
+	createdAt := time.Unix(1, 0)
+	for i := 0; i < 41; i++ {
+		id := fmt.Sprintf("exp-session-%02d", i)
+		if err := dao.DB.Create(&entity.API4Conversation{
+			ID: id, Name: sptr(id), DialogID: "canvas-1", UserID: "user-1", ExpUserID: sptr("exp-user"),
+			BaseModel: entity.BaseModel{CreateDate: &createdAt},
+		}).Error; err != nil {
+			t.Fatalf("failed to create explore session: %v", err)
+		}
+	}
+	for _, page := range []struct{ number, size, count int }{{1, 30, 30}, {4, 10, 10}, {5, 10, 1}, {6, 10, 0}} {
+		resp, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
+			Page: page.number, PageSize: page.size, ExpUserID: "exp-user",
+		})
+		if err != nil || code != common.CodeSuccess {
+			t.Fatalf("explore page %d: code=%d err=%v", page.number, code, err)
+		}
+		if resp.Total != 41 || len(resp.Data) != page.count {
+			t.Fatalf("explore page %d: total=%d rows=%d, want total=41 rows=%d", page.number, resp.Total, len(resp.Data), page.count)
+		}
+		for i, row := range resp.Data {
+			wantID := fmt.Sprintf("exp-session-%02d", 40-(page.number-1)*page.size-i)
+			if len(row) != 2 || row["id"] != wantID {
+				t.Fatalf("explore page %d row %d: got %v, want id/name for %s", page.number, i, row, wantID)
+			}
+		}
 	}
 }
 

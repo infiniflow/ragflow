@@ -43,14 +43,6 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
-// agentPatternless matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviors here via the in-function split below.
-
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
 // when no `@<provider>` suffix exists. The bare model name is

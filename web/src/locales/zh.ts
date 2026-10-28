@@ -1096,7 +1096,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
       resetToDefault: '重置为默认',
       thinkingTip:
-        '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+        '仅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -1719,7 +1719,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
-      model: '模型提供商',
+      model: '模型供应商',
       systemModelDescription: '请在开始之前完成这些设置',
       dataSources: '数据源',
       team: '团队',
@@ -1771,7 +1771,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       hideModels: '隐藏模型',
       baseUrl: 'Base URL',
       baseUrlTip:
-        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间供应商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
       siliconBaseUrlTip:
@@ -1924,7 +1924,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型供应商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -2425,20 +2425,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       toolTimeout: '工具调用超时',
       toolTimeoutTip:
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
-      maxSteps: '最大步数',
-      headless: '无头模式',
-      enableDefaultExtensions: '启用默认扩展',
-      enableDefaultExtensionsTip:
-        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
-      chromiumSandbox: 'Chromium 沙箱',
-      chromiumSandboxTip:
-        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
-      persistSession: '持久化登录态',
-      persistSessionTip:
-        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
-      uploadSources: '上传来源',
-      uploadSourcesTip:
-        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -2608,9 +2594,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
-      browser: 'Browser',
-      browserDescription:
-        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
@@ -3546,6 +3529,169 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       skillsTitle: '尚未创建 Skills 空间',
       notFoundSkills: '未查询到 Skills 空间',
       addNow: '立即添加',
+    },
+
+    admin: {
+      confirm: '确认',
+      close: '关闭',
+      yes: '是',
+      no: '否',
+      delete: '删除',
+      cancel: '取消',
+      reset: '重置',
+      import: '导入',
+      description: '描述',
+      noDescription: '无描述',
+      none: '无',
+
+      resourceType: {
+        dataset: '数据集',
+        chat: '对话',
+        agent: 'Agent',
+        search: '搜索',
+        file: '文件',
+        team: '团队',
+        memory: '记忆',
+      },
+
+      permissionType: {
+        enable: '启用',
+        read: '读取',
+        write: '写入',
+        share: '共享',
+      },
+
+      serviceStatus: '服务',
+      userManagement: '用户',
+      sandboxSettings: '沙箱',
+      registrationWhitelist: '白名单',
+      roles: '角色',
+      monitoring: '监控',
+
+      sandboxSettingsPage: {
+        description: '配置代码执行沙箱供应商。沙箱由 Agent 中的代码组件使用。',
+        providerSelection: '供应商选择',
+        providerSelectionDescription: '为代码执行选择沙箱供应商',
+
+        namedProviderConfiguration: '{{name}} 配置',
+        namedProviderConfigurationDescription: '配置 {{name}} 的连接设置。',
+
+        saveConfiguration: '保存配置',
+        saving: '保存中...',
+
+        testConnectionResultModal: {
+          title: '连接测试结果',
+          testing: '正在测试与沙箱供应商的连接...',
+          success: '已成功连接沙箱供应商',
+          failed: '连接沙箱供应商失败',
+
+          exitCode: '退出码',
+          executionTime: '执行时间',
+          stdout: '标准输出',
+          stderr: '错误输出 / 堆栈跟踪',
+        },
+
+        testConnection: '测试连接',
+        testing: '测试中...',
+      },
+
+      selectFile: '选择文件',
+      noFileSelected: '未选择文件',
+
+      back: '返回',
+      active: '启用',
+      inactive: '禁用',
+      enable: '启用',
+      disable: '禁用',
+      all: '全部',
+      actions: '操作',
+      newUser: '新建用户',
+      email: '邮箱',
+      name: '名称',
+      nickname: '昵称',
+      status: '状态',
+      id: 'ID',
+      serviceType: '服务类型',
+      host: '主机',
+      port: '端口',
+
+      role: '角色',
+      user: '用户',
+      userType: '用户类型',
+      superuser: '超级用户',
+      normalUser: '普通',
+
+      createTime: '创建时间',
+      lastLoginTime: '最后登录时间',
+      lastUpdateTime: '最后更新时间',
+
+      isAnonymous: '是否匿名',
+      isSuperuser: '是否超级用户',
+
+      deleteUser: '删除用户',
+      deleteUserConfirmation: '确定要删除该用户吗？',
+
+      createNewUser: '新建用户',
+      changePassword: '修改密码',
+      newPassword: '新密码',
+      confirmNewPassword: '确认新密码',
+      password: '密码',
+      confirmPassword: '确认密码',
+
+      invalidEmail: '请输入有效的邮箱地址！',
+      passwordRequired: '请输入密码！',
+      passwordMinLength: '密码长度必须大于 8 个字符。',
+      confirmPasswordRequired: '请确认密码！',
+      confirmPasswordDoNotMatch: '两次输入的密码不一致！',
+
+      read: '读取',
+      write: '写入',
+      share: '共享',
+      create: '创建',
+
+      extraInfo: '额外信息',
+      serviceDetail: '服务 {{name}} 详情',
+      taskExecutorDetail: '任务执行器详情',
+
+      whitelistManagement: '白名单管理',
+      exportAsExcel: '导出 Excel',
+      importFromExcel: '导入 Excel',
+      createEmail: '新建邮箱',
+      deleteEmail: '删除邮箱',
+      editEmail: '编辑邮箱',
+      deleteWhitelistEmailConfirmation:
+        '确定要从白名单中删除该邮箱吗？此操作不可撤销。',
+
+      importWhitelist: '导入白名单（Excel）',
+      importSelectExcelFile: 'Excel 文件（.xlsx）',
+      importOverwriteExistingEmails: '覆盖已存在的邮箱',
+      importValidExcelFile: '请选择有效的 Excel 文件',
+      importFileRequired: '请选择要导入的文件',
+      importFileTips: '文件必须包含名为 <code>email</code> 的单一表头列。',
+
+      chunkNum: '分块',
+      docNum: '文档',
+      tokenNum: '已用 Token',
+      language: '语言',
+      createDate: '创建日期',
+      updateDate: '更新日期',
+      permission: '权限',
+
+      agentTitle: 'Agent 标题',
+
+      newRole: '新建角色',
+      addNewRole: '添加新角色',
+      roleName: '角色名称',
+      roleNameRequired: '角色名称为必填项',
+      resources: '资源',
+
+      editRoleDescription: '编辑角色描述',
+      deleteRole: '删除角色',
+      deleteRoleConfirmation: '确定要删除该角色吗？此操作不可撤销。',
+
+      alive: '存活',
+      timeout: '超时',
+      fail: '失败',
     },
 
     explore: {

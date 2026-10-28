@@ -2847,20 +2847,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       toolTimeout: 'Tool timeout',
       toolTimeoutTip:
         'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
-      maxSteps: 'Max steps',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Enable default extensions',
-      enableDefaultExtensionsTip:
-        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
-      persistSession: 'Persist session',
-      persistSessionTip:
-        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
-      uploadSources: 'Upload sources',
-      uploadSourcesTip:
-        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -3011,9 +2997,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -4106,10 +4089,10 @@ Important structured information may include: names, dates, locations, events, k
         share: 'Share',
       },
 
-      serviceStatus: 'Service status',
-      userManagement: 'User management',
-      sandboxSettings: 'Sandbox settings',
-      registrationWhitelist: 'Registration whitelist',
+      serviceStatus: 'Services',
+      userManagement: 'Users',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
 
@@ -4213,7 +4196,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
-      importInvalidExcelFile: 'Please select a valid Excel file',
+      importValidExcelFile: 'Please select a valid Excel file',
       importFileRequired: 'Please select a file to import',
       importFileTips:
         'File must contain a single header column named <code>email</code>.',
