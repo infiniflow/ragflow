@@ -13,6 +13,8 @@
 // limitations under the License.
 #pragma once
 
+#include <algorithm>
+
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
 #elif defined(__GNUC__) && defined(__aarch64__)
@@ -52,17 +54,21 @@ inline void ToLower(char* data, size_t len)
 
 inline void ToLower(const char* data, size_t len, char* out, size_t out_limit)
 {
-    memcpy(out, data, len);
+    if (out == nullptr || out_limit == 0)
+        return;
+    const size_t output_len = std::min(len, out_limit - 1);
+    if (output_len > 0)
+        memcpy(out, data, output_len);
     char* begin = out;
-    char* end = out + len;
+    char* end = out + output_len;
     char* p = begin;
 #if defined(__SSE2__)
     static constexpr int SSE2_BYTES = sizeof(__m128i);
-    const char* sse2_end = begin + (len & ~(SSE2_BYTES - 1));
+    const char* sse2_end = begin + (output_len & ~(SSE2_BYTES - 1));
     const auto a_minus1 = _mm_set1_epi8('A' - 1);
     const auto z_plus1 = _mm_set1_epi8('Z' + 1);
     const auto delta = _mm_set1_epi8('a' - 'A');
-    for (; p > sse2_end; p += SSE2_BYTES)
+    for (; p < sse2_end; p += SSE2_BYTES)
     {
         auto bytes = _mm_loadu_si128((const __m128i*)p);
         _mm_maskmoveu_si128(_mm_xor_si128(bytes, delta),
