@@ -27,6 +27,8 @@ package chunker
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -70,6 +72,14 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
+	}
+	// Chunkers report input-shape failures through _ERROR instead of a Go
+	// error (the legacy flow contract). This decorator is the pipeline-facing
+	// component, so promote that envelope to a real error: otherwise the run
+	// continues with an empty chunk list and a malformed input looks like an
+	// empty document.
+	if msg, _ := out["_ERROR"].(string); strings.TrimSpace(msg) != "" {
+		return nil, errors.New(msg)
 	}
 	// Accept the legacy []map[string]any carrier verbatim (no round-trip, so
 	// the id-stamp/upload logic below sees the exact maps the chunker emitted).

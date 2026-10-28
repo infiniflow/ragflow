@@ -16,7 +16,8 @@
 // parser that emits MediaRef keeps image bytes out of its result. Whoever
 // needs an actual image (the chunker's upload pass, the vision enhancement
 // path) hands the reference and a MediaSource to a MediaResolver, which reads
-// the source once per invocation and returns exactly one image.
+// the source once and returns exactly one image per call. An index build
+// cancelled by the caller's context is retried instead of cached.
 package media
 
 import (
@@ -39,8 +40,9 @@ import (
 const maxMediaImageBytes = int64(MaxImagePayloadBytes)
 
 // MediaSource supplies the raw bytes of the document a MediaRef points into.
-// It is called at most once per MediaResolver, so implementations may fetch
-// from object storage without adding a per-image round trip.
+// A completed read is reused for every image in that document, so
+// implementations may fetch from object storage without adding a per-image
+// round trip. A read cancelled by the caller's context may be retried.
 type MediaSource interface {
 	Bytes(ctx context.Context) ([]byte, error)
 }
@@ -57,7 +59,9 @@ func (f MediaSourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(c
 // failure that must not be turned into a silent image drop.
 var ErrMediaNotFound = errors.New("media: reference not found")
 
-// MediaResolver materializes image bytes for a MediaRef.
+// MediaResolver materializes image bytes for a MediaRef. One resolver serves
+// exactly one source document: the first source passed to Resolve supplies
+// the cached index, and every later call must pass that same document.
 type MediaResolver interface {
 	Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error)
 }
@@ -67,18 +71,25 @@ type MediaResolver interface {
 func NewMediaResolver() MediaResolver { return &mediaResolver{} }
 
 type mediaResolver struct {
-	once          sync.Once
+	// indexMu guards the source index. A cancellation is never cached as an
+	// index failure: Resolve may be called once per image with a per-image
+	// deadline, and one expired call must not hide the document from the
+	// next one.
+	indexMu       sync.Mutex
+	indexLoaded   bool
+	indexErr      error
 	htmlSpans     map[string]htmlMediaSpan
 	htmlData      []byte
 	htmlTruncated bool
 
-	// domOnce caches the tree built for the rare fallback path. The tree is
-	// read-only after parsing, so concurrent Resolve calls can walk it.
-	domOnce sync.Once
-	dom     *html.Node
-	domErr  error
-
-	err error
+	// domMu caches the tree and the digest-to-src index built for the rare
+	// fallback path. The tree is read-only after parsing, so concurrent
+	// Resolve calls can walk it.
+	domMu     sync.Mutex
+	domLoaded bool
+	dom       *html.Node
+	domImages map[string]string
+	domErr    error
 }
 
 func (r *mediaResolver) Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
@@ -126,7 +137,11 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 	// example <svg><title>) and other tree-construction edge cases. Fall back
 	// to the parser's actual DOM walk, which is the source of truth for what
 	// the parser emitted.
-	if data, sum, found := r.findMediaPayloadInDOM(ctx, ref.SHA256); found {
+	data, sum, found, err := r.findMediaPayloadInDOM(ctx, ref.SHA256)
+	if err != nil {
+		return nil, err
+	}
+	if found {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -156,100 +171,171 @@ func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byt
 	return data, nil
 }
 
-// findMediaPayloadInDOM resolves a tokenizer miss by rebuilding a tree with
-// the same HTML parser the parser uses. The tree is built once per resolver:
-// a document with several foreign-content images pays for one parse, and
-// later misses only walk it. The fallback only runs after the low-memory
-// tokenizer index misses.
-func (r *mediaResolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]byte, [32]byte, bool) {
-	r.domOnce.Do(func() {
-		if err := ctx.Err(); err != nil {
-			r.domErr = err
-			return
-		}
-		r.dom, r.domErr = html.Parse(bytes.NewReader(r.htmlData))
-	})
-	if r.domErr != nil {
-		return nil, [32]byte{}, false
+// loadDOMImages builds and caches the fallback tree and a digest-to-src map
+// in one walk. The fallback only runs after the tokenizer index misses, but a
+// document past the span cap can miss many times; indexing the tree once
+// keeps a miss O(1) instead of rescanning every image.
+//
+// A call cancelled before the map is published caches nothing: this is
+// document-level state, and a per-image deadline must not disable the
+// fallback for later images.
+func (r *mediaResolver) loadDOMImages(ctx context.Context) (map[string]string, error) {
+	r.domMu.Lock()
+	defer r.domMu.Unlock()
+	if r.domImages != nil {
+		return r.domImages, nil
 	}
-	return findHTMLMediaPayloadInNode(ctx, r.dom, digest)
+	if r.domErr != nil {
+		return nil, r.domErr
+	}
+	if !r.domLoaded {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		dom, err := html.Parse(bytes.NewReader(r.htmlData))
+		if err != nil {
+			r.domErr = err
+			return nil, err
+		}
+		r.dom = dom
+		r.domLoaded = true
+	}
+	images := make(map[string]string)
+	if err := collectHTMLMediaSources(ctx, r.dom, images); err != nil {
+		return nil, err
+	}
+	r.domImages = images
+	return images, nil
 }
 
-func findHTMLMediaPayloadInNode(ctx context.Context, doc *html.Node, digest string) ([]byte, [32]byte, bool) {
-	var sum [32]byte
-	var payload []byte
-	found := false
+// collectHTMLMediaSources records the first data URI seen for each digest.
+// The src strings share the tree's storage, so the index does not duplicate
+// the base64 payloads.
+func collectHTMLMediaSources(ctx context.Context, doc *html.Node, out map[string]string) error {
 	nodes := 0
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if found {
-			return
-		}
+	var walk func(*html.Node) error
+	walk = func(n *html.Node) error {
 		nodes++
-		if nodes%256 == 0 && ctx.Err() != nil {
-			return
+		if nodes%256 == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 		}
 		if n.Type == html.ElementNode && strings.EqualFold(n.Data, "img") {
 			for _, attr := range n.Attr {
 				if !strings.EqualFold(attr.Key, "src") {
 					continue
 				}
-				normalized, _, candidate, ok := NormalizeHTMLImageSource(attr.Val)
-				if ok && hex.EncodeToString(candidate[:]) == digest {
-					if decoded, err := decodeNormalizedMediaURI(normalized); err == nil {
-						payload, sum, found = decoded, candidate, true
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				if _, _, sum, ok := NormalizeHTMLImageSource(attr.Val); ok {
+					digest := hex.EncodeToString(sum[:])
+					if _, exists := out[digest]; !exists {
+						out[digest] = attr.Val
 					}
 				}
 				break
 			}
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walk(child)
+			if err := walk(child); err != nil {
+				return err
+			}
 		}
+		return nil
 	}
-	walk(doc)
-	return payload, sum, found
+	return walk(doc)
+}
+
+// findMediaPayloadInDOM resolves a tokenizer miss by rebuilding a tree with
+// the same HTML parser the parser uses. The tree and its digest index are
+// built once per resolver: a document with several foreign-content images
+// pays for one parse and one walk, and later misses only decode their entry.
+func (r *mediaResolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]byte, [32]byte, bool, error) {
+	images, err := r.loadDOMImages(ctx)
+	if err != nil {
+		return nil, [32]byte{}, false, err
+	}
+	src, ok := images[digest]
+	if !ok {
+		if err := ctx.Err(); err != nil {
+			return nil, [32]byte{}, false, err
+		}
+		return nil, [32]byte{}, false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, [32]byte{}, false, err
+	}
+	normalized, _, sum, ok := NormalizeHTMLImageSource(src)
+	if !ok {
+		return nil, [32]byte{}, false, errors.New("media: fallback image is not a data URI")
+	}
+	data, err := decodeNormalizedMediaURI(normalized)
+	if err != nil {
+		return nil, [32]byte{}, false, err
+	}
+	return data, sum, true, nil
 }
 
 // loadHTML reads and indexes the source once. The source bytes stay resident
 // because a payload is returned by offset; the index itself holds only the
 // spans, never the image bytes. Concurrent Resolve calls share both after the
 // first call completes.
+//
+// Cancellation is retryable: the vision path resolves images under a
+// per-image deadline and shares one resolver per document, so a deadline
+// that expires while the index is being built must not be returned to every
+// later image. Other failures are cached because they describe the source,
+// not the caller's deadline.
 func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
-	r.once.Do(func() {
-		if err := ctx.Err(); err != nil {
-			r.err = err
-			return
+	r.indexMu.Lock()
+	defer r.indexMu.Unlock()
+	if r.indexLoaded {
+		return nil
+	}
+	if r.indexErr != nil {
+		return r.indexErr
+	}
+	if err := r.buildHTMLIndex(ctx, src); err != nil {
+		if ctx.Err() == nil {
+			r.indexErr = err
 		}
-		data, err := src.Bytes(ctx)
-		if err != nil {
-			r.err = err
-			return
-		}
-		if err := ctx.Err(); err != nil {
-			r.err = err
-			return
-		}
-		// Scan the same UTF-8 form the parser walked; the raw bytes of a
-		// UTF-16 document would not contain the ASCII data-URI marker.
-		data = decodeHTMLSource(data)
-		if err := ctx.Err(); err != nil {
-			r.err = err
-			return
-		}
-		r.htmlData = data
-		spans, truncated := scanHTMLMediaSpans(ctx, data)
-		if err := ctx.Err(); err != nil {
-			r.err = err
-			return
-		}
-		r.htmlTruncated = truncated
-		r.htmlSpans = make(map[string]htmlMediaSpan, len(spans))
-		for _, span := range spans {
-			r.htmlSpans[span.Ref.SHA256] = span
-		}
-	})
-	return r.err
+		return err
+	}
+	r.indexLoaded = true
+	return nil
+}
+
+func (r *mediaResolver) buildHTMLIndex(ctx context.Context, src MediaSource) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	data, err := src.Bytes(ctx)
+	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Scan the same UTF-8 form the parser walked; the raw bytes of a UTF-16
+	// document would not contain the ASCII data-URI marker.
+	data = decodeHTMLSource(data)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	spans, truncated := scanHTMLMediaSpans(ctx, data)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	byDigest := make(map[string]htmlMediaSpan, len(spans))
+	for _, span := range spans {
+		byDigest[span.Ref.SHA256] = span
+	}
+	r.htmlData = data
+	r.htmlTruncated = truncated
+	r.htmlSpans = byDigest
+	return nil
 }
 
 func shortMediaDigest(digest string) string {

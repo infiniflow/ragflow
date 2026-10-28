@@ -143,6 +143,74 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	}
 }
 
+// TestImageUploadDecoratorRejectsUnusableMediaRef pins the error contract at
+// the component boundary: a present reference that cannot be materialized
+// must fail the run, even when the item has no text and would otherwise be
+// filtered as empty.
+func TestImageUploadDecoratorRejectsUnusableMediaRef(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		item map[string]any
+	}{
+		{
+			name: "textless partial reference",
+			item: map[string]any{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}},
+		},
+		{
+			name: "partial reference with text",
+			item: map[string]any{"text": "caption", "media_ref": map[string]any{"format": "html"}},
+		},
+		{
+			name: "unknown reference fields",
+			item: map[string]any{"text": "caption", "media_ref": map[string]any{"unknown": "value"}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, err := NewOneChunker(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+				"name": "bad.html", "kb_id": testKBID, "doc_id": testDocID,
+				"output_format": "json", "json": []any{tc.item},
+			}); err == nil {
+				t.Fatal("unusable media_ref was accepted")
+			}
+		})
+	}
+}
+
+// TestImageUploadDecoratorAcceptsEmptyMediaRef pins the other side: an empty
+// object keeps meaning "no reference", so a text item survives and a textless
+// item is still filtered as empty.
+func TestImageUploadDecoratorAcceptsEmptyMediaRef(t *testing.T) {
+	comp, err := NewOneChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+		"name": "empty-ref.html", "kb_id": testKBID, "doc_id": testDocID,
+		"output_format": "json",
+		"json": []any{
+			map[string]any{"text": "kept", "media_ref": map[string]any{}},
+			map[string]any{"doc_type_kwd": "image", "media_ref": map[string]any{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("empty media_ref failed: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want the text item only", len(chunks))
+	}
+	if chunks[0]["text"] != "kept" {
+		t.Fatalf("text = %v, want kept", chunks[0]["text"])
+	}
+	if _, ok := chunks[0]["media_ref"]; ok {
+		t.Fatal("empty media_ref reappeared on the wire")
+	}
+}
+
 // TestQAChunkerCarriesMediaRef covers an image item whose alt text is a QA
 // pair: the QA extractor must keep the reference so the upload pass can still
 // materialize the attachment.

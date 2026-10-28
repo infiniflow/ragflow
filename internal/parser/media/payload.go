@@ -26,6 +26,8 @@ import (
 const (
 	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
 	MaxImagePayloadBytes = 32 << 20
+	// maxStreamBuffer caps the copy buffer used while validating a payload.
+	maxStreamBuffer = 32 << 10
 )
 
 // NormalizeBase64ImagePayload validates an external image payload within its
@@ -49,8 +51,16 @@ func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, i
 	}
 	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(payload))
 	hasher := sha256.New()
-	decodedBytes, err := io.CopyN(io.MultiWriter(io.Discard, hasher), decoder, int64(maxDecodedBytes)+1)
-	if err != io.EOF || decodedBytes == 0 || decodedBytes > int64(maxDecodedBytes) {
+	limit := int64(maxDecodedBytes) + 1
+	// io.CopyN would allocate a fresh 32 KiB buffer for every image, which
+	// dominates both the parser and the fallback index walk on documents made
+	// of small images. Size the copy buffer to the decoded payload instead.
+	bufSize := int64(len(payload)/4*3) + 1
+	if bufSize > maxStreamBuffer {
+		bufSize = maxStreamBuffer
+	}
+	decodedBytes, err := io.CopyBuffer(io.MultiWriter(io.Discard, hasher), io.LimitReader(decoder, limit), make([]byte, bufSize))
+	if err != nil || decodedBytes == 0 || decodedBytes > int64(maxDecodedBytes) {
 		return "", 0, sum, false
 	}
 	copy(sum[:], hasher.Sum(nil))

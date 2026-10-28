@@ -226,9 +226,11 @@ func isMediaChunk(ck schema.ChunkDoc) bool {
 
 // hasMediaPayload reports whether a chunk still carries retrievable media:
 // inline bytes, an uploaded reference, or a deferred media_ref that the
-// upload pass will materialize.
+// upload pass will materialize. A present but unusable reference counts:
+// dropping the item here would silently lose the image instead of letting
+// the materializer reject it.
 func hasMediaPayload(ck schema.ChunkDoc) bool {
-	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef.Valid()
+	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".

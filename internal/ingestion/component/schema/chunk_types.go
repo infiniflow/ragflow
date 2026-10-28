@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -155,6 +156,10 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	// Keep the reference before the known-field deletion pass: the typed
+	// decode discards unknown keys, so the raw object is the only place an
+	// empty reference and a malformed one can be told apart.
+	mediaRefRaw := raw["media_ref"]
 	// Known ChunkDoc fields plus tag_kwd, which has no ChunkDoc field: Go's
 	// tagger emits tag_feas and the vocabulary comes from a tag source file,
 	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
@@ -172,12 +177,34 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	*d = ChunkDoc(decoded)
 	// A JSON `media_ref: {}` decodes into a non-nil zero value. Normalize it
 	// back to nil so an empty object keeps meaning "no reference"; partially
-	// filled references stay and are rejected by the materializer.
+	// filled references stay and are rejected by the materializer. A
+	// non-empty object that decodes to the zero value named no recognized
+	// field, and dropping it would let a malformed reference through.
 	if d.MediaRef.IsZero() {
+		if err := validateEmptyMediaRef(mediaRefRaw); err != nil {
+			return err
+		}
 		d.MediaRef = nil
 	}
 	if len(raw) > 0 {
 		d.Extra = raw
+	}
+	return nil
+}
+
+// validateEmptyMediaRef accepts the forms that legitimately mean "no
+// reference" (absent, null, or `{}`) and rejects an object whose keys are all
+// unknown to MediaRef.
+func validateEmptyMediaRef(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return fmt.Errorf("chunk media_ref: %w", err)
+	}
+	if len(fields) > 0 {
+		return fmt.Errorf("chunk media_ref: object has no recognized fields")
 	}
 	return nil
 }

@@ -65,6 +65,38 @@ func TestChunkDocEmptyMediaRefNormalizesToNil(t *testing.T) {
 	}
 }
 
+func TestChunkDocUnknownMediaRefFieldsFail(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		raw  map[string]any
+	}{
+		{"unknown only", map[string]any{"unknown": "value"}},
+		{"empty known field", map[string]any{"format": ""}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := ChunkDocFromMap(map[string]any{
+				"text":      "x",
+				"media_ref": tc.raw,
+			}); err == nil {
+				t.Fatal("malformed media_ref was normalized away")
+			}
+		})
+	}
+}
+
+func TestChunkDocNullMediaRefNormalizesToNil(t *testing.T) {
+	doc, err := ChunkDocFromMap(map[string]any{
+		"text":      "x",
+		"media_ref": nil,
+	})
+	if err != nil {
+		t.Fatalf("ChunkDocFromMap: %v", err)
+	}
+	if doc.MediaRef != nil {
+		t.Fatalf("null media_ref survived as %+v", doc.MediaRef)
+	}
+}
+
 func TestChunkDocPartialMediaRefSurvives(t *testing.T) {
 	doc, err := ChunkDocFromMap(map[string]any{
 		"text":      "x",
