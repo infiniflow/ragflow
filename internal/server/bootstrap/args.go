@@ -36,9 +36,9 @@ type ServerArgs struct {
 	// DeepdocInferenceConcurrency, when set, overrides the DeepDoc inference
 	// concurrency from env/config. nil means "unspecified".
 	DeepdocInferenceConcurrency *int
-	// IngestorMaxConcurrentWorkers, when set, overrides the ingestor worker
+	// IngestorConcurrentWorkers, when set, overrides the ingestor worker
 	// count (NATS consumer count K) from env/config. nil means "unspecified".
-	IngestorMaxConcurrentWorkers *int
+	IngestorConcurrentWorkers *int
 	// IngestorPageConcurrency, when set, overrides the per-document page
 	// concurrency (N) from env/config. nil means "unspecified".
 	IngestorPageConcurrency *int

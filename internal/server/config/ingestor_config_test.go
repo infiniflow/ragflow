@@ -27,15 +27,15 @@ import (
 func TestParseIngestorConfigReadsWorkerAndCompilerSettings(t *testing.T) {
 	v := viper.New()
 	v.Set("ingestor", map[string]any{
-		"max_concurrent_workers": 4,
-		"compiler_pool_size":     2,
+		"concurrent_workers": 4,
+		"compiler_pool_size": 2,
 	})
 
 	config := &Config{}
 	if err := config.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := config.GetIngestorConfig().MaxConcurrentWorkers; got != 4 {
+	if got := config.GetIngestorConfig().ConcurrentWorkers; got != 4 {
 		t.Fatalf("max concurrent workers = %d, want 4", got)
 	}
 	if got := config.GetIngestorConfig().CompilerPoolSize; got != 2 {
@@ -51,7 +51,7 @@ func TestParseIngestorConfigDefaultsToK1AndN2(t *testing.T) {
 	if err := config.ParseIngestorConfig(viper.New()); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := config.GetIngestorConfig().MaxConcurrentWorkers; got != 1 {
+	if got := config.GetIngestorConfig().ConcurrentWorkers; got != 1 {
 		t.Fatalf("max concurrent workers = %d, want 1", got)
 	}
 	if got := config.GetIngestorConfig().PageConcurrency; got != 2 {
@@ -64,16 +64,16 @@ func TestParseIngestorConfigDefaultsToK1AndN2(t *testing.T) {
 func TestParseIngestorConfigReadsPageConcurrency(t *testing.T) {
 	v := viper.New()
 	v.Set("ingestor", map[string]any{
-		"max_concurrent_workers": 3,
-		"page_concurrency":       10,
-		"compiler_pool_size":     2,
+		"concurrent_workers": 3,
+		"page_concurrency":   10,
+		"compiler_pool_size": 2,
 	})
 
 	config := &Config{}
 	if err := config.ParseIngestorConfig(v); err != nil {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
-	if got := config.GetIngestorConfig().MaxConcurrentWorkers; got != 3 {
+	if got := config.GetIngestorConfig().ConcurrentWorkers; got != 3 {
 		t.Fatalf("max concurrent workers = %d, want 3", got)
 	}
 	if got := config.GetIngestorConfig().PageConcurrency; got != 10 {
@@ -83,7 +83,7 @@ func TestParseIngestorConfigReadsPageConcurrency(t *testing.T) {
 
 // TestParseIngestorConfigToleratesOutOfRangeWorkers pins the precedence
 // contract: ParseIngestorConfig must NOT fail-fast on an out-of-range
-// ingestor.max_concurrent_workers. Range validation belongs to the
+// ingestor.concurrent_workers. Range validation belongs to the
 // CLI/env/config resolver (config.MinIngestorWorkers / MaxIngestorWorkers),
 // which runs later during startup, so a config value that a higher-priority
 // source (CLI flag or env var) overrides must survive config load. The resolver
@@ -100,10 +100,10 @@ func TestParseIngestorConfigToleratesOutOfRangeWorkers(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			v := viper.New()
-			v.Set("ingestor", map[string]any{"max_concurrent_workers": tc.value})
+			v.Set("ingestor", map[string]any{"concurrent_workers": tc.value})
 			config := &Config{}
 			if err := config.ParseIngestorConfig(v); err != nil {
-				t.Fatalf("ParseIngestorConfig rejected max_concurrent_workers=%d: %v (validation moved to resolver)", tc.value, err)
+				t.Fatalf("ParseIngestorConfig rejected concurrent_workers=%d: %v (validation moved to resolver)", tc.value, err)
 			}
 		})
 	}
@@ -132,12 +132,12 @@ func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 	}
 }
 
-// TestGetIngestorMaxConcurrentWorkers pins the precedence
+// TestGetIngestorConcurrentWorkers pins the precedence
 // CLI > environment > config file > default(1) and the inclusive [1, 256]
 // range guard on the FINAL value. An out-of-range or non-integer value at
 // any layer is a fatal startup error.
-func TestGetIngestorMaxConcurrentWorkers(t *testing.T) {
-	const envKey = common.EnvIngestorMaxConcurrentWorkers
+func TestGetIngestorConcurrentWorkers(t *testing.T) {
+	const envKey = common.EnvIngestorConcurrentWorkers
 
 	cases := []struct {
 		name       string
@@ -165,8 +165,8 @@ func TestGetIngestorMaxConcurrentWorkers(t *testing.T) {
 			if err := c.ParseIngestorConfig(viper.New()); err != nil {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
-			c.ingestor.MaxConcurrentWorkers = tc.configured
-			got, err := c.GetIngestorMaxConcurrentWorkers(tc.argValue)
+			c.ingestor.ConcurrentWorkers = tc.configured
+			got, err := c.GetIngestorConcurrentWorkers(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
