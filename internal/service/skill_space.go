@@ -475,6 +475,9 @@ func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID str
 // asyncDeleteSpace performs the actual deletion work in the background.
 // It deletes the search index, removes files via Go FileService, and soft-deletes the space record.
 func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folderID, tenantID string, docEngine engine.DocEngine) {
+	// Detach from the caller's cancellation: the request context is canceled once
+	// the handler returns, which is before this goroutine reaches the database.
+	ctx = context.WithoutCancel(ctx)
 	bgCtx, bgCancel := context.WithTimeout(ctx, 120*time.Second)
 	defer bgCancel()
 
@@ -500,9 +503,6 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	}
 
 	// Step 2: Delete folder and storage via Go FileService
-	// Use a fresh background context with timeout, NOT the incoming ctx (which
-	// is the HTTP request context canceled when the handler returns and the
-	// goroutine starts executing).
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
 	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelFS()
