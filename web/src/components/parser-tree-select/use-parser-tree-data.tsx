@@ -140,50 +140,46 @@ export function useParserTreeData({ value }: { value?: string }) {
             },
           ];
         } else {
-          children = versions.map(
-            (version): TreeSelectNode => ({
-              id: buildParserOptionValue(
-                ParserOptionKind.Pipeline,
-                item.id,
-                version.id,
-              ),
-              // The alias joins the plain-text title so TreeSelect search
-              // matches it; `label` renders it as secondary text instead.
-              title: version.alias
-                ? `${version.title} ${version.alias}`
-                : version.title,
-              searchKeywords: version.alias ? [version.alias] : undefined,
-              label: (
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="truncate">{version.title}</span>
-                  {version.alias && (
-                    <span className="text-text-secondary truncate flex-shrink-0">
-                      {version.alias}
-                    </span>
-                  )}
-                </span>
-              ),
-            }),
-          );
+          children = versions.map((version): TreeSelectNode => ({
+            id: buildParserOptionValue(
+              ParserOptionKind.Pipeline,
+              item.id,
+              version.id,
+            ),
+            // The alias joins the plain-text title so TreeSelect search
+            // matches it; `label` renders it as secondary text instead.
+            title: version.alias
+              ? `${version.title} ${version.alias}`
+              : version.title,
+            searchKeywords: version.alias ? [version.alias] : undefined,
+            label: (
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate">{version.title}</span>
+                {version.alias && (
+                  <span className="text-text-secondary truncate flex-shrink-0">
+                    {version.alias}
+                  </span>
+                )}
+              </span>
+            ),
+          }));
         }
         return { id: nodeId, title: item.title, children };
       });
 
-    const builtins = builtinOptions.map(
-      (option): TreeSelectNode => ({
-        id: buildParserOptionValue(ParserOptionKind.BuiltIn, option.value),
-        title: option.label,
-        searchKeywords: [option.label],
-        label: (
-          <span className="flex items-center gap-1.5 min-w-0">
-            <span className="truncate">{option.label}</span>
-            <span className="shrink-0 rounded-md bg-bg-card px-1.5 py-0.5 text-xs text-text-secondary">
-              {builtInTag}
-            </span>
+    const builtins = builtinOptions.map((option): TreeSelectNode => ({
+      id: buildParserOptionValue(ParserOptionKind.BuiltIn, option.value),
+      title: option.label,
+      searchKeywords: [option.label],
+      label: (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{option.label}</span>
+          <span className="shrink-0 rounded-md bg-bg-card px-1.5 py-0.5 text-xs text-text-secondary">
+            {builtInTag}
           </span>
-        ),
-      }),
-    );
+        </span>
+      ),
+    }));
 
     // Pipeline branches first, builtin leaves below — the same ordering the
     // flat parser select used.
