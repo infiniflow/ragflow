@@ -240,6 +240,11 @@ func notHeadingCandidate(s string) bool {
 	return notBullet(s) || headingTooLong(s)
 }
 
+// numberedMarkerRe matches a numbering prefix followed by whitespace: "(1) ",
+// "（一）", "1. ", "一、", "第三章 ". The whitespace after such a marker is
+// structural, not word separation, so headingTooLong must look past it.
+var numberedMarkerRe = regexp.MustCompile(`^(?:[\(（][0-9零一二三四五六七八九十百]{1,3}[\)）]|[0-9]{1,3}[\.、．\)）]|[零一二三四五六七八九十百]{1,4}[、.．]|第[零一二三四五六七八九十百0-9]+[章节])[ \t\x{3000}]+`)
+
 // headingTooLong reports whether a line is too long to be a heading. A numbered
 // body paragraph that happens to start like a heading — "(1)社区口腔健康教育：
 // 是在社区范围内…" of ~300 runes — is not a heading: with
@@ -252,7 +257,17 @@ func headingTooLong(s string) bool {
 	if strings.HasPrefix(s, "#") || notTitleException.MatchString(s) {
 		return false
 	}
-	return len(strings.Fields(s)) > 12 || (!strings.Contains(s, " ") && utf8.RuneCountInString(s) >= 32)
+	if len(strings.Fields(s)) > 12 {
+		return true
+	}
+	if !strings.Contains(s, " ") && utf8.RuneCountInString(s) >= 32 {
+		return true
+	}
+	// The marker delimiter is often the only space on a numbered CJK paragraph,
+	// which hid it from the rune cap above. Measure the text after the marker;
+	// a multi-word heading keeps its spaces and stays a heading.
+	rest := numberedMarkerRe.ReplaceAllString(s, "")
+	return !strings.Contains(rest, " ") && !strings.Contains(rest, "\u3000") && utf8.RuneCountInString(rest) >= 32
 }
 
 // notTitlePatterns mirrors rag/nlp.not_title:
@@ -400,7 +415,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 				trimmed := strings.TrimSpace(rec.text)
 				matched := false
 				for j, pat := range bulletPatterns[bull] {
-					if pat.MatchString(trimmed) && !notBullet(trimmed) {
+					if pat.MatchString(trimmed) && !notHeadingCandidate(trimmed) {
 						out[i] = j + 1
 						matched = true
 						break

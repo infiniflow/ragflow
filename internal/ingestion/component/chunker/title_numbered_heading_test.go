@@ -126,6 +126,61 @@ func TestHierarchyTitleChunker_LongNumberedParagraphNotRepeated(t *testing.T) {
 	}
 }
 
+// TestResolveTitleLevels_LongNumberedParagraphWithSpaceStaysBody: the marker
+// delimiter is often the line's only space, so a space must not exempt a long
+// numbered paragraph from the length guard.
+func TestResolveTitleLevels_LongNumberedParagraphWithSpaceStaysBody(t *testing.T) {
+	long := "(1) 社区口腔健康教育：是在社区范围内，以增进居民口腔健康为目标，通过有组织的社会活动，普及口腔健康知识，" +
+		"提高居民自我口腔保健意识和能力，改善口腔健康状况的综合性健康教育活动，内容包括口腔健康检查、口腔卫生指导、" +
+		"窝沟封闭、局部用氟、早期龋齿充填等适宜技术，并对重点人群实施分类管理。"
+	records := []lineRecord{
+		{text: "(1) 健康教育与健康促进", docType: "text"},
+		{text: long, docType: "text"},
+	}
+	levels := resolveTitleLevels(records, numberedHeadingParam())
+	if levels[0] == bodyLevel {
+		t.Errorf("short numbered heading %q was not promoted", records[0].text)
+	}
+	if levels[1] != bodyLevel {
+		t.Errorf("long numbered paragraph with a space after the marker (level %d) must stay body text", levels[1])
+	}
+}
+
+// TestResolveTitleLevels_BulletFallbackSkipsLongNumberedParagraph: when no
+// regex family wins, the Chunker-1.7 bullet fallback promotes numbered lines.
+// It must apply the same length guard, otherwise a document with no short
+// heading turns every long numbered paragraph into a heading.
+func TestResolveTitleLevels_BulletFallbackSkipsLongNumberedParagraph(t *testing.T) {
+	long := "(1) 社区口腔健康教育：是在社区范围内，以增进居民口腔健康为目标，通过有组织的社会活动，普及口腔健康知识，" +
+		"提高居民自我口腔保健意识和能力，改善口腔健康状况的综合性健康教育活动。"
+	records := []lineRecord{
+		{text: "(2) 概述", docType: "text"},
+		{text: long, docType: "text"},
+	}
+	p := &titleChunkerParam{}
+	p.Update(map[string]any{"hierarchy": 3})
+	levels := resolveTitleLevels(records, p)
+	if levels[0] == bodyLevel {
+		t.Errorf("short bullet %q was not promoted by the bullet fallback", records[0].text)
+	}
+	if levels[1] != bodyLevel {
+		t.Errorf("long numbered paragraph (level %d) must stay body text in the bullet fallback", levels[1])
+	}
+}
+
+// TestResolveTitleLevels_MultiWordNumberedHeadingStaysHeading: the space fix is
+// scoped to space-free CJK runs, so a long multi-word numbered heading keeps
+// its level.
+func TestResolveTitleLevels_MultiWordNumberedHeadingStaysHeading(t *testing.T) {
+	records := []lineRecord{
+		{text: "(1) Overview of the System Architecture and Its Components", docType: "text"},
+	}
+	levels := resolveTitleLevels(records, numberedHeadingParam())
+	if levels[0] == bodyLevel {
+		t.Error("long multi-word numbered heading was demoted to body text")
+	}
+}
+
 // TestResolveTitleLevels_LongMarkdownHeadingStaysHeading: an explicit ATX
 // marker is structural, so the length guard must not demote it.
 func TestResolveTitleLevels_LongMarkdownHeadingStaysHeading(t *testing.T) {
