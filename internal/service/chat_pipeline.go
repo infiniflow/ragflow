@@ -240,6 +240,9 @@ func (s *ChatPipelineService) AsyncChat(
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
+	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
+		return nil, err
+	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it
 	// has knowledge bases, and whether web search is enabled.
@@ -850,6 +853,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// Sub-steps: empty_response check → formatPrompt → citationPrompt →
 		// messageFitIn (95% token budget) → multimodal conversion → adjust max_tokens.
 		// If no knowledges and empty_response is configured, yield it and return.
+		// Compiled-serve: swap/extend the retrieved chunk text with knowledge-compiled
+		// products when enabled. Mirrors the agentic locate exit for the standard
+		// (reasoning level 1-4) retrieval path. No-op when inactive or no products
+		// were found for the recalled chunks.
+		if rawChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(rawChunks) > 0 {
+			if served := agentic_rag.CompiledServeChunks(ctx, chat.TenantID, rawChunks, kbIDStrings(kbs)); served != nil {
+				kbinfos["chunks"] = served
+			}
+		}
 		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",

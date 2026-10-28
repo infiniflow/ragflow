@@ -133,7 +133,7 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	fs.IntVar(&port, "port", 0, "")
 	fs.IntVar(&port, "p", 0, "")
 	fs.IntVar(&deepdocConcurrency, "deepdoc-inference-concurrency", 0, "")
-	fs.IntVar(&ingestorWorkers, "ingestor-max-concurrent-workers", 0, "")
+	fs.IntVar(&ingestorWorkers, "ingestor-concurrent-workers", 0, "")
 	fs.IntVar(&pageConcurrency, "ingestor-page-concurrency", 0, "")
 	fs.IntVar(&cpuCores, "deepdoc-inference-cpu-cores", 0, "")
 	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
@@ -174,8 +174,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 			args.Port = &port
 		case "deepdoc-inference-concurrency":
 			args.DeepdocInferenceConcurrency = &deepdocConcurrency
-		case "ingestor-max-concurrent-workers":
-			args.IngestorMaxConcurrentWorkers = &ingestorWorkers
+		case "ingestor-concurrent-workers":
+			args.IngestorConcurrentWorkers = &ingestorWorkers
 		case "ingestor-page-concurrency":
 			args.IngestorPageConcurrency = &pageConcurrency
 		case "deepdoc-inference-cpu-cores":
@@ -221,8 +221,8 @@ func parseArgsFrom(argv []string) (*bootstrap.ServerArgs, error) {
 	if args.DeepdocInferenceConcurrency != nil && *args.DeepdocInferenceConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", *args.DeepdocInferenceConcurrency)
 	}
-	if args.IngestorMaxConcurrentWorkers != nil && *args.IngestorMaxConcurrentWorkers <= 0 {
-		return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", *args.IngestorMaxConcurrentWorkers)
+	if args.IngestorConcurrentWorkers != nil && *args.IngestorConcurrentWorkers <= 0 {
+		return nil, fmt.Errorf("invalid --ingestor-concurrent-workers %d: must be positive", *args.IngestorConcurrentWorkers)
 	}
 	if args.IngestorPageConcurrency != nil && *args.IngestorPageConcurrency <= 0 {
 		return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", *args.IngestorPageConcurrency)
@@ -288,7 +288,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  -p, --port int \tServer port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (ingestor, syncer, deepdoc)\n")
 		fmt.Fprintf(os.Stderr, "  --name string  \tServer name (ingestor, syncer, deepdoc)\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --init-superuser\tInitialize superuser account (admin)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \tPrint version information and exit\n")
@@ -329,7 +329,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
-		fmt.Fprintf(os.Stderr, "  --ingestor-max-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")

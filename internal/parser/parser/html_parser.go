@@ -110,13 +110,36 @@ type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
+	mediaBudget         *embeddedMediaBudget
+	resolveImage        func(string) (string, bool)
 }
 
 func (s *htmlWalkState) warnings() []string {
-	if s.skippedInlineImages == 0 {
-		return nil
+	warnings := s.mediaBudget.warnings()
+	if s.skippedInlineImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
-	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
+	return warnings
+}
+
+func (s *htmlWalkState) imageSource(src string) (string, bool) {
+	if s.resolveImage != nil {
+		return s.resolveImage(src)
+	}
+	if !isHTMLDataImageSource(src) {
+		return "", false
+	}
+	if s.mediaBudget == nil {
+		s.mediaBudget = newEmbeddedMediaBudget()
+	}
+	if !s.mediaBudget.reserveItem() {
+		return "", false
+	}
+	normalized, size, ok := normalizeHTMLImageSource(src)
+	if !ok || !s.mediaBudget.includeReservedSize(size) {
+		return "", false
+	}
+	return normalized, true
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
@@ -369,9 +392,11 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			normalized, ok := normalizeHTMLImageSource(src)
+			normalized, ok := state.imageSource(src)
 			if !ok {
-				if isHTMLDataImageSource(src) {
+				if state.resolveImage != nil {
+					w.writeText(htmlAttribute(n, "alt"))
+				} else if isHTMLDataImageSource(src) {
 					state.skippedInlineImages++
 				}
 				return
@@ -426,7 +451,7 @@ type htmlTableImage struct {
 }
 
 func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
-	images, skippedInlineImages := htmlTableImages(n)
+	images, skippedInlineImages := htmlTableImages(n, state)
 	state.skippedInlineImages += skippedInlineImages
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
@@ -455,7 +480,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 }
 
-func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
+func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, int) {
 	var images []htmlTableImage
 	skippedInlineImages := 0
 	rowCount := 0
@@ -473,9 +498,12 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				normalized, ok := normalizeHTMLImageSource(src)
+				normalized, ok := state.imageSource(src)
 				if !ok {
-					if isHTMLDataImageSource(src) {
+					if state.resolveImage != nil {
+						alt := htmlAttribute(node, "alt")
+						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
+					} else if isHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
 					}
@@ -527,20 +555,20 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, 
 	*out = append(*out, item)
 }
 
-func normalizeHTMLImageSource(src string) (string, bool) {
+func normalizeHTMLImageSource(src string) (string, int, bool) {
 	src = strings.TrimSpace(src)
 	if !isHTMLDataImageSource(src) {
-		return "", false
+		return "", 0, false
 	}
 	separator := strings.IndexByte(src, ',')
 	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return "", false
+		return "", 0, false
 	}
-	payload, _, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
+	payload, size, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
 	if !ok {
-		return "", false
+		return "", 0, false
 	}
-	return strings.ToLower(src[:separator+1]) + payload, true
+	return strings.ToLower(src[:separator+1]) + payload, int(size), true
 }
 
 func isHTMLDataImageSource(src string) bool {

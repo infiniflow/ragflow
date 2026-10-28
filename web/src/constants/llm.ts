@@ -117,6 +117,8 @@ export enum LLMFactory {
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
   Runcrate = 'Runcrate',
+  WorldRouter = 'WorldRouter',
+  CloudGPU = 'CloudGPU',
   SystemOne = 'SystemOne',
 }
 
@@ -217,6 +219,8 @@ export const IconMap = {
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.WorldRouter]: 'worldrouter',
+  [LLMFactory.CloudGPU]: 'cloudgpu',
 };
 
 /**
@@ -265,6 +269,9 @@ export const APIMapUrl = {
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.WorldRouter]:
+    'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
+  [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

@@ -86,7 +86,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
-			if cookie, err := c.Cookie(oauthAuthCookie); err == nil {
+			if cookie, err := c.Cookie(authCookie); err == nil {
 				auth = cookie
 			}
 		}

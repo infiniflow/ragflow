@@ -16,6 +16,7 @@
 
 import { ParserSelect } from '@/components/parser-select';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
+import { PipelineVersionSelect } from '@/components/pipeline-version-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Form, FormField, FormItem, FormMessage } from '@/components/ui/form';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
@@ -50,6 +52,7 @@ export function DocumentPipelineDialog({
   onOk,
   parserId,
   pipelineId,
+  pipelineVersionId,
   parserConfig,
   loading,
 }: IProps) {
@@ -66,7 +69,16 @@ export function DocumentPipelineDialog({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-  } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
+    versions,
+    latestVersionId,
+    versionListLoading,
+    versionListError,
+  } = useDocumentPipelineForm({
+    parserId,
+    pipelineId,
+    pipelineVersionId,
+    parserConfig,
+  });
 
   const handleParserSelect = useParserSelectHandler(form);
 
@@ -78,6 +90,30 @@ export function DocumentPipelineDialog({
     control: form.control,
     name: 'pipeline_id',
   });
+  const selectedVersionId = useWatch({
+    control: form.control,
+    name: 'pipeline_version_id',
+  });
+
+  // versions / latestVersionId / versionListLoading / versionListError come
+  // from the form hook, which fetches the canvas version list reactively.
+  // versions is newest-first, so versions[0] is the latest.
+  // A selected version is only Missing when the list has finished loading and
+  // the id is genuinely absent. While loading (initial mount of a pinned doc,
+  // or after switching pipelines) the list is empty, so treating absence as
+  // Missing would flash the banner and disable save before the fetch resolves.
+  // A fetch error must NOT be treated as Missing either: an errored list is an
+  // unknown state, not proof the version is gone, so we neither warn nor block
+  // the save on it.
+  const versionMissing =
+    !!selectedVersionId &&
+    !versionListLoading &&
+    !versionListError &&
+    !versions.some((v) => v.id === selectedVersionId);
+  const versionOutdated =
+    !!selectedVersionId &&
+    !versionMissing &&
+    selectedVersionId !== latestVersionId;
 
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {
@@ -91,7 +127,6 @@ export function DocumentPipelineDialog({
 
   const onInvalid = useCallback(
     (errors: FieldErrors) => {
-      // Surface the first failing operator tab so its field errors are visible.
       const firstOperatorId = Object.keys(errors?.parser_config ?? {})[0];
       if (firstOperatorId) {
         setActiveTab(firstOperatorId);
@@ -111,6 +146,12 @@ export function DocumentPipelineDialog({
         <DialogHeader>
           <DialogTitle>{t('knowledgeDetails.parsingMode')}</DialogTitle>
         </DialogHeader>
+
+        {versionMissing && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {t('flow.version.missingContent')}
+          </div>
+        )}
 
         <Form {...form}>
           <form
@@ -137,6 +178,34 @@ export function DocumentPipelineDialog({
                 </FormItem>
               )}
             />
+            {parseType === ParseType.Pipeline && !!selectedPipelineId && (
+              <FormField
+                control={form.control}
+                name="pipeline_version_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-text-secondary">
+                        {t('flow.version.label')}
+                      </span>
+                      {versionOutdated && (
+                        <RAGFlowTooltip tooltip={t('flow.version.outdated')}>
+                          <span className="text-destructive cursor-help font-bold">
+                            !
+                          </span>
+                        </RAGFlowTooltip>
+                      )}
+                    </div>
+                    <PipelineVersionSelect
+                      versions={versions}
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                    />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
             {showOperatorTabs && (
               <PipelineOperatorTabs
                 nodes={operatorNodes}
@@ -158,6 +227,7 @@ export function DocumentPipelineDialog({
           <ButtonLoading
             type="submit"
             form={FormId}
+            disabled={versionMissing}
             loading={
               loading || (operatorNodesLoading && operatorNodes.length === 0)
             }

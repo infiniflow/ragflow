@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ChangeParserDialog } from './change-parser-dialog';
+import {
+  ChangeParserDialog,
+  ReparseConfirmDialog,
+} from './change-parser-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 
 const mockSave = jest.fn().mockResolvedValue(0);
@@ -37,6 +40,12 @@ let mockCustomDsl = mockDsl;
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchPipelineDslByPipelineId: (_id: string, isBuiltin: boolean) => ({
     dsl: isBuiltin ? mockBuiltinDsl : mockCustomDsl,
+    loading: false,
+  }),
+  // The version selector in DocumentPipelineDialog lists canvas versions;
+  // these tests do not exercise version pinning, so an empty list suffices.
+  useFetchCanvasVersionList: (_id?: string) => ({
+    data: [],
     loading: false,
   }),
 }));
@@ -130,6 +139,13 @@ function Harness({
           onOk={state.onChangeParserOk}
           hideModal={state.hideChangeParserModal}
           loading={state.changeParserLoading}
+        />
+      )}
+      {state.reparseVisible && (
+        <ReparseConfirmDialog
+          visible={state.reparseVisible}
+          onOk={state.confirmReparse}
+          onCancel={state.hideReparseModal}
         />
       )}
     </>

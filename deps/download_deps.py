@@ -10,14 +10,13 @@
 # ///
 
 # This script prepares the runtime / image resources that the dependency image
-# ships on Linux x86_64: the cl100k BPE table, the stagehand-server binaries
-# (installed into the Go SDK's cache), the Go DeepDoc `.ort` weights
+# ships on Linux x86_64: the cl100k BPE table, the Go DeepDoc `.ort` weights
 # (det/layout/tsr/rec.ort + ocr.res), and the embedding tokenizer assets the Go
 # counters load.
 #
-# This is the CI / image-build one-stop. It fetches the runtime resources PLUS
-# the stagehand server binary, and deliberately does NOT fetch the native static
-# libraries the Go build links — those come from tools/scripts/download_dev_deps.py
+# This is the CI / image-build one-stop. It fetches the runtime resources
+# and deliberately does NOT fetch the native static libraries the Go build links
+# — those come from tools/scripts/download_dev_deps.py
 # and are baked into the server binary by the build stage. Run this once to ready
 # a dependency image; for local development, run the dev downloader instead.
 # All version numbers and URLs are defined in the block below; bump a version
@@ -47,8 +46,6 @@
 import argparse
 import hashlib
 import os
-import platform
-import re
 import shutil
 import sys
 import tempfile
@@ -63,14 +60,6 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 # this script fetches. build.sh greps none of these (they are image-facing);
 # keep the `NAME = "value"` form greppable for consistency with
 # tools/scripts/download_dev_deps.py.
-
-# stagehand-server release binaries (used by the Browser component in local
-# mode). They are LOOSELY matched to the stagehand-go Go module: both stay on
-# the v3.x line and remain protocol-compatible, but the two version numbers do
-# NOT track each other, so there is no cross-reference to keep in sync here.
-# Kept with the "v" prefix because it is used verbatim in the release tag path.
-STAGEHAND_SERVER_VERSION = "v3.7.2"
-
 
 # Noto Sans CJK SC variable TTF, rendered into PDFs by the Go backend
 # (internal/agent/component/io/pdf_writer.go). When non-empty, it is the pinned
@@ -87,29 +76,10 @@ def gh_proxy() -> str:
     return os.environ.get("GH_PROXY") or ""
 
 
-def go_module_version(module: str, repo_root: str) -> str:
-    """Read a Go module's pinned version (the "vX.Y.Z" after its require line)
-    from `repo_root`/go.mod. Raises RuntimeError when go.mod or the module is
-    missing — the caller cannot link the right library without it."""
-    go_mod = os.path.join(repo_root, "go.mod")
-    if not os.path.isfile(go_mod):
-        raise RuntimeError(f"go.mod not found at {go_mod}")
-    with open(go_mod, encoding="utf-8") as file:
-        match = re.search(rf"{re.escape(module)}\s+v([^\s]+)", file.read())
-    if match is None:
-        raise RuntimeError(f"{module} version not found in {go_mod}")
-    return match.group(1)
-
-
 def cl100k_url() -> str:
     """cl100k BPE table. Hosted on Azure blob storage (NOT a GitHub release),
     so the GitHub mirror prefix does not apply and is deliberately omitted."""
     return "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-
-
-def stagehand_url(arch: str) -> str:
-    """stagehand-server release binary: stagehand_url("x64" | "arm64")."""
-    return f"{gh_proxy()}https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/{STAGEHAND_SERVER_VERSION}/stagehand-server-v3-linux-{arch}"
 
 
 def noto_cjk_font_url() -> str:
@@ -175,14 +145,6 @@ def download_with_progress(url, filename):
         if temporary is not None and os.path.exists(temporary):
             os.unlink(temporary)
     print()
-
-
-def _valid_stagehand_binary(path):
-    """True when PATH is a non-empty ELF executable (the stagehand-server SEA)."""
-    if not os.path.isfile(path) or os.path.getsize(path) == 0:
-        return False
-    with open(path, "rb") as file:
-        return file.read(4) == b"\x7fELF"
 
 
 def _valid_font(path):
@@ -257,27 +219,6 @@ def load_tokenizer_assets(assets=None):
     if not result:
         raise RuntimeError("no tokenizer assets listed")
     return result
-
-
-def _install_stagehand():
-    if platform.system() != "Linux":
-        raise RuntimeError("The downloaded native dependencies support Linux only")
-    architecture = {"x86_64": "x64", "aarch64": "arm64"}.get(platform.machine())
-    if architecture is None:
-        raise RuntimeError(f"Unsupported stagehand architecture: {platform.machine()}")
-    version = go_module_version("github.com/browserbase/stagehand-go/v3", REPO_ROOT)
-    cache_root = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
-    target_dir = os.path.join(cache_root, "stagehand", "lib", f"go_{version}")
-    os.makedirs(target_dir, exist_ok=True)
-    filename = f"stagehand-server-v3-linux-{architecture}"
-    source = os.path.join(SCRIPT_DIR, filename)
-    target = os.path.join(target_dir, filename)
-    with tempfile.TemporaryDirectory(dir=target_dir) as staging:
-        prepared = os.path.join(staging, filename)
-        shutil.copyfile(source, prepared)
-        os.chmod(prepared, 0o755)
-        os.replace(prepared, target)
-    print(f"  ✓ stagehand installed to {target}")
 
 
 def download_go_models(use_china_mirrors=False):
@@ -416,21 +357,6 @@ def main():
     else:
         print(f"Downloading cl100k_base.tiktoken from {cl100k_url()}...")
         download_with_progress(cl100k_url(), cl100k)
-
-    # ── stagehand-server binaries (image root + local cache) ────────────────
-    print("== stagehand-server ==")
-    for arch in ("x64", "arm64"):
-        filename = f"stagehand-server-v3-linux-{arch}"
-        target = os.path.join(SCRIPT_DIR, filename)
-        if os.path.isfile(target) and os.path.getsize(target) > 0:
-            print(f"  ✓ {filename} already present")
-            continue
-        print(f"Downloading {filename} from {stagehand_url(arch)}...")
-        download_with_progress(stagehand_url(arch), target)
-        if not _valid_stagehand_binary(target):
-            os.unlink(target)
-            raise RuntimeError(f"Invalid downloaded dependency: {filename}")
-    _install_stagehand()
 
     # ── Noto Sans CJK SC font (rendered into PDFs by the Go backend) ─────────
     # Verified by a font magic-number check (only the sfnt signature

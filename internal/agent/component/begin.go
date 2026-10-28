@@ -81,13 +81,13 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 
 	// Query: required to drive downstream components.
 	query, _ := inputs["query"].(string)
-	state.Sys["query"] = query
+	state.SetSys("query", query)
 
 	// Optional user_id — present in interactive chat flows, absent in
 	// background jobs. Always a string when set; cast failure silently
 	// drops the value (mirrors Python's getattr fallback).
 	if uid, ok := inputs["user_id"].(string); ok && uid != "" {
-		state.Sys["user_id"] = uid
+		state.SetSys("user_id", uid)
 	}
 
 	// Webhook payload injection. The webhook HTTP handler sets
@@ -97,7 +97,7 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// same way they read sys.query / sys.user_id. The chat path never
 	// sets this key, so existing tests stay green.
 	if payload, ok := inputs["webhook_payload"].(map[string]any); ok && len(payload) > 0 {
-		state.Sys["webhook_payload"] = payload
+		state.SetSys("webhook_payload", payload)
 	}
 
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.

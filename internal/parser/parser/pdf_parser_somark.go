@@ -15,7 +15,7 @@ import (
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
-func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -30,24 +30,29 @@ func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseRe
 	if strings.TrimSpace(apiKey) == "" && !parser.UseTenantModelConfig {
 		apiKey = strings.TrimSpace(common.GetEnv(common.EnvSOMarkAPIKey))
 	}
-	taskID, err := soMarkSubmit(strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
+	taskID, err := soMarkSubmit(ctx, strings.TrimRight(baseURL, "/"), filename, data, parser, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	result, err := soMarkPoll(strings.TrimRight(baseURL, "/"), taskID, apiKey)
+	result, err := soMarkPoll(ctx, strings.TrimRight(baseURL, "/"), taskID, apiKey)
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	items, pageCount := soMarkItems(result, parser.SoMarkKeepHeaderFooter)
+	items, pageCount, warnings := soMarkItems(ctx, result, parser.SoMarkKeepHeaderFooter)
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if len(items) == 0 {
 		return ParseResult{Err: fmt.Errorf("parser: SoMark returned no usable blocks")}
 	}
-	return pdfItemsToResult(filename, items, pageCount)
+	parsed := pdfItemsToResult(filename, items, pageCount)
+	parsed.Warnings = warnings
+	return parsed
 }
 
 // soMarkSubmit uploads a PDF with the supplied credentials and parser options,
 // applying environment defaults only when no tenant instance was selected.
-func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
+func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, parser *PDFParser, apiKey string) (string, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("file", filename)
@@ -81,7 +86,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	if err = writer.Close(); err != nil {
 		return "", fmt.Errorf("parser: SoMark finalize form: %w", err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async", &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async", &body)
 	if err != nil {
 		return "", fmt.Errorf("parser: SoMark request: %w", err)
 	}
@@ -114,12 +119,12 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 	return payload.Data.TaskID, nil
 }
 
-func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
+func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
 	form := url.Values{"task_id": {taskID}}
 	if apiKey != "" {
 		form.Set("api_key", apiKey)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
 	}
@@ -155,15 +160,21 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 	return result, nil
 }
 
-func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any, int) {
+func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bool) ([]map[string]any, int, []string) {
 	outputs, _ := result["outputs"].(map[string]any)
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
 	items := make([]map[string]any, 0)
-	for _, pageRaw := range pages {
+	state := &htmlWalkState{}
+	var warnings []string
+	for pageIndex, pageRaw := range pages {
 		page, ok := pageRaw.(map[string]any)
 		if !ok {
 			continue
+		}
+		pageNumber := pageIndex + 1
+		if n := int(numberValue(page["page_number"])); n > 0 {
+			pageNumber = n
 		}
 		blocks, _ := page["blocks"].([]any)
 		for _, blockRaw := range blocks {
@@ -171,22 +182,25 @@ func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any
 			if !ok {
 				continue
 			}
-			if item := soMarkBlockToItem(block, keepHeaderFooter); item != nil {
+			blockItems, blockWarnings := soMarkBlockToItems(ctx, block, keepHeaderFooter, state)
+			warnings = append(warnings, blockWarnings...)
+			for _, item := range blockItems {
+				item["page_number"] = pageNumber
 				items = append(items, item)
 			}
 		}
 	}
-	return items, len(pages)
+	return items, len(pages), append(state.warnings(), warnings...)
 }
 
-func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]any {
+func soMarkBlockToItems(ctx context.Context, block map[string]any, keepHeaderFooter bool, state *htmlWalkState) ([]map[string]any, []string) {
 	blockType := strings.ToLower(strings.TrimSpace(stringValue(block["type"])))
 	switch blockType {
 	case "cate", "cate_item", "blank":
-		return nil
+		return nil, nil
 	case "header", "footer":
 		if !keepHeaderFooter {
-			return nil
+			return nil, nil
 		}
 	}
 	content := strings.TrimSpace(stringValue(block["content"]))
@@ -195,33 +209,39 @@ func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]a
 		if content == "" {
 			content = "[Image]"
 		}
-		return map[string]any{"text": content, "doc_type_kwd": "image", "layout": "figure"}
+		return []map[string]any{{"text": content, "doc_type_kwd": "image", "layout": "figure"}}, nil
 	case "table":
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		item := map[string]any{"text": content, "doc_type_kwd": pdfTableDocType(content), "layout": "table"}
-		projectPDFTable(item)
-		return item
+		markdown := &MarkdownParser{libType: GoMarkdown}
+		parsed := markdown.parseWithState(ctx, "", []byte(content), state)
+		items := ItemsToMaps(parsed.JSON)
+		for _, item := range items {
+			if item["doc_type_kwd"] == "table" {
+				item["layout"] = "table"
+			}
+		}
+		return items, parsed.Warnings
 	case "equation":
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return map[string]any{"text": content, "doc_type_kwd": "text", "layout": "equation"}
+		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "equation"}}, nil
 	case "title":
 		level := int(numberValue(block["title_level"]))
 		if level < 1 || level > 6 {
 			level = 1
 		}
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return map[string]any{"text": strings.Repeat("#", level) + " " + content, "doc_type_kwd": "text", "layout": "title"}
+		return []map[string]any{{"text": strings.Repeat("#", level) + " " + content, "doc_type_kwd": "text", "layout": "title"}}, nil
 	default:
 		if content == "" {
-			return nil
+			return nil, nil
 		}
-		return map[string]any{"text": content, "doc_type_kwd": "text", "layout": "text"}
+		return []map[string]any{{"text": content, "doc_type_kwd": "text", "layout": "text"}}, nil
 	}
 }
 

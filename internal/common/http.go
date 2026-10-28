@@ -43,24 +43,35 @@ const (
 	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
 	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
 	DefaultMaxMultipartRequestBodyBytes int64 = 1 << 30
+	// DefaultMaxDocumentUploadBytes is the default per-file limit for dataset document uploads.
+	DefaultMaxDocumentUploadBytes int64 = 128 << 20
 	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
 	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
+
+	ssrfResponseHeaderTimeoutDefault       = 20 * time.Minute
+	schemeSafeResponseHeaderTimeoutDefault = 20 * time.Minute
 )
 
 // GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
 // limit in bytes, defaulting to 1 MiB.
 func GetMaxJSONRequestBodyBytes() int64 {
-	return getMaxRequestBodyBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
+	return getMaxConfiguredBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
 }
 
 // GetMaxMultipartRequestBodyBytes returns the configured multipart upload
 // request-body limit in bytes, defaulting to 1 GiB. MAX_CONTENT_LENGTH remains
 // a fallback for existing deployments when the new variable is unset.
 func GetMaxMultipartRequestBodyBytes() int64 {
-	return getMaxRequestBodyBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
+	return getMaxConfiguredBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
 }
 
-func getMaxRequestBodyBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
+// GetMaxDocumentUploadBytes returns the configured per-file limit for dataset document uploads,
+// defaulting to 128 MiB.
+func GetMaxDocumentUploadBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxDocumentUploadSize, "", DefaultMaxDocumentUploadBytes)
+}
+
+func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
 	raw := strings.TrimSpace(GetEnv(envName))
 	if raw == "" && fallbackEnvName != "" {
 		raw = strings.TrimSpace(GetEnv(fallbackEnvName))
@@ -79,6 +90,13 @@ func getMaxRequestBodyBytes(envName, fallbackEnvName string, defaultBytes int64)
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
 
+// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// headers, which is what a hung provider endpoint spends on every retry. Each
+// client keeps its own default while the override is unset.
+func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
+}
+
 func GetSSRFHTTPClient() *http.Client {
 	if ssrfHttpClient == nil {
 		var t *http.Transport
@@ -91,7 +109,7 @@ func GetSSRFHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
@@ -114,7 +132,7 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
@@ -467,9 +485,9 @@ var LookupHost = net.LookupHost
 // a deployment mistake. The explicit "_ForTest" suffix is the
 // signal that production code must never touch it.
 //
-// Host-based database and connector dials are a separate opt-in.
-// AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those dials
-// only. This function stays limited to the in-memory test hook.
+// Host-based database and connector dials and configured MCP servers are a
+// separate opt-in. AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those
+// dials only. This function stays limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private

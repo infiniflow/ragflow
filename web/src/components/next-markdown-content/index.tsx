@@ -229,9 +229,22 @@ function MarkdownContent({
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, loading, t]);
+
+  // Scope the display numbering to the whole message: each text node only
+  // sees its own markers, so a per-node map restarts at 0 every time and
+  // every distinct [ID:xxx] in a long answer renders as [1]. Building once
+  // from the rendered source (which keeps [n]/[ID:xxx] markers through the
+  // sanitize/latex/section pipeline) makes the numbers unique across the
+  // message while the tooltip still resolves chunks by the marker itself.
+  const citationDisplayMap = useMemo(
+    () => buildCitationDisplayMap(contentWithCursor),
+    [contentWithCursor],
+  );
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -394,20 +407,21 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      // Chip numbers follow each unique marker's first occurrence, so the
-      // same citation always renders as the same [N] chip. That numbering is
+      // Chip numbers follow each unique marker's first occurrence in the
+      // full message (citationDisplayMap), so the same citation always
+      // renders as the same [N] chip and distinct citations get distinct
+      // numbers across paragraphs and list items. That numbering is
       // display-only: the chunk behind a marker is resolved from the marker
       // itself (position for numeric markers, chunk id for agent
       // [ID:<chunkId>] markers), never from the display position — the
       // payload ships in retrieval order, which is unrelated to the order
       // the answer cites passages in.
-      const keyToDisplay = buildCitationDisplayMap(text);
       const replacedText = reactStringReplace(
         text,
         citationWholeMarkerReg,
         (match) => {
           const chunkKey = getChunkKey(match);
-          const displayIndex = keyToDisplay.get(chunkKey) ?? 0;
+          const displayIndex = citationDisplayMap.get(chunkKey) ?? 0;
           const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
           // The reference lands at message_end, after the answer stream, so an
           // unresolved marker keeps its chip while loading. Afterwards it
@@ -435,7 +449,7 @@ function MarkdownContent({
 
       return replacedText;
     },
-    [loading, reference?.chunks, renderPopoverContent],
+    [citationDisplayMap, loading, reference?.chunks, renderPopoverContent],
   );
 
   const dir = getDirAttribute(content?.replace(currentReg, ''));

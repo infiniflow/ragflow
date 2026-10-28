@@ -72,7 +72,7 @@ uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
+`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
 Build the Go resource image from `deps/` after preparing these files:
 
@@ -82,7 +82,7 @@ docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
 ```
 
-The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
+The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash

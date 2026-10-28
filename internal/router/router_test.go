@@ -177,6 +177,22 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 	}
 }
 
+func TestRouterSetupRegistersApplyDatasetParserConfigRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		datasetsHandler: handler.NewDatasetsHandler(nil, nil),
+	}
+	r.Setup(engine)
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/dataset-1/documents/apply-parser-config", nil)
+	engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle the registered route", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

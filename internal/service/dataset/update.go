@@ -169,7 +169,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	}
 
 	requestedAnyUpdate := len(simpleUpdates) > 0 || connectorsProvided || parserIDProvided ||
-		pipelineID != nil || embdIDProvided || pagerankRequested || req.ParserConfig != nil || req.ParserConfigProvided
+		pipelineID != nil || embdIDProvided || pagerankRequested || req.ParserConfig != nil || req.ParserConfigProvided || req.PipelineVersionID != nil
 	if !requestedAnyUpdate {
 		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
@@ -283,6 +283,20 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 		}
 
+		// Design §5 fallback chains (v5.1/v5.2): when the request omits a field,
+		// fall back to the persisted (locked) binding rather than resetting to
+		// latest/nil. This is what makes the sticky snapshot (B4), the pinned-DSL
+		// parser_config rebuild (B1), and single-field PATCH (B2) correct.
+		canvasCtx := pipelineID
+		if canvasCtx == nil {
+			canvasCtx = lockedKB.PipelineID
+		}
+		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
+		requestedVersion := req.PipelineVersionID
+		if requestedVersion == nil && !pipelineChanged {
+			requestedVersion = lockedKB.PipelineVersionID
+		}
+
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
 			// Resolve the effective mode/IDs once. sel is the request selection
 			// (nil when the whole selection block was omitted); current is the
@@ -295,7 +309,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 				return resolveErr
 			}
 			isPipeline, effParserID, effPipelineID := eff.Effective()
-			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+			// Thread the effective pipeline version (design §5): use the §5 fallback
+			// requestedVersion (explicit pin when supplied, else the persisted
+			// pinned version) so a parser_config-only PATCH (B1) rebuilds from the
+			// pinned DSL rather than the canvas latest. The binding block below
+			// re-resolves the same value (and surfaces any ownership error); a load
+			// failure here is best-effort for parser_config rebuild only.
+			effVersionID, _ := resolvePipelineVersionID(ctx, tx, effPipelineID, requestedVersion)
+			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID, effVersionID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
 					zap.String("parserID", effParserID), zap.Error(dslErr))
@@ -323,7 +344,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
-				if resolved, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, nil); cpErr != nil {
+				if resolved, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, nil, nil); cpErr != nil {
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
@@ -337,17 +358,68 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			}
 		}
 
-		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
-		if _, ok := updates["parser_config"]; pipelineChanged && !ok {
+		// pipelineChanged already computed in the §5 prep block above.
+		// C3 (T26/V5): an explicit, non-empty version that differs from the
+		// currently pinned version is a version switch even when the pipeline
+		// canvas is unchanged. Such a switch must reset the component params to
+		// the new version defaults (below), not only a pipeline_id change.
+		versionChanged := false
+		if req.PipelineVersionID != nil && strings.TrimSpace(*req.PipelineVersionID) != "" {
+			if lockedKB.PipelineVersionID == nil || strings.TrimSpace(*req.PipelineVersionID) != strings.TrimSpace(*lockedKB.PipelineVersionID) {
+				versionChanged = true
+			}
+		}
+		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
+		// (no longer silently cleared or auto-backfilled to the canvas latest).
+		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
+		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// bound) is exempt and may carry an empty version.
+		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
+		if req.PipelineVersionID != nil {
+			if strings.TrimSpace(*req.PipelineVersionID) != "" {
+				bound, perr := resolvePipelineVersionID(ctx, tx, canvasCtx, req.PipelineVersionID)
+				if perr != nil {
+					txCode = common.CodeBadRequest
+					return perr
+				}
+				updates["pipeline_version_id"] = bound
+			} else if isEffPipeline {
+				// Explicit empty version in Pipeline mode: reject (do not clear the
+				// pin). Only BuiltIn-mode explicit empties are allowed to clear.
+				txCode = common.CodeBadRequest
+				return service.ErrPipelineVersionEmpty
+			} else {
+				// BuiltIn mode explicit empty: clear the pin (no canvas to pin to).
+				updates["pipeline_version_id"] = nil
+			}
+		} else if pipelineChanged && pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+			// Switching to a Pipeline canvas without an explicit version is a
+			// missing-version Save (design C5/G3): reject rather than silently
+			// locking the new canvas's latest version.
+			txCode = common.CodeBadRequest
+			return service.ErrPipelineVersionEmpty
+		}
+		// C3 / A3 整体重置: BOTH a pipeline (canvas) switch and a version switch
+		// force a full parser_config reset to the new DSL defaults, discarding any
+		// echoed/submitted parser_config. When the version or pipeline is switched
+		// the settings form may still hold the previous value (e.g. a manually
+		// edited chunk size), so the reset must take precedence over the submitted
+		// config rather than merging it in.
+		if pipelineChanged || versionChanged {
 			cfgParserID := lockedKB.ParserID
 			if parserIDProvided {
 				cfgParserID = parserID
 			}
-			if cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, pipelineID); cpErr != nil {
-				common.Warn("failed to resolve component params defaults on pipeline change",
+			effVersionID, _ := resolvePipelineVersionID(ctx, tx, canvasCtx, requestedVersion)
+			cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, canvasCtx, effVersionID)
+			if cpErr != nil {
+				common.Warn("failed to resolve component params defaults on pipeline/version change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
-			} else if cpDefaults != nil {
-				updates["parser_config"] = preserveDatasetParserConfigState(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
+			}
+			// Full reset: replace parser_config with the new DSL defaults. The
+			// previous (echoed) value is intentionally dropped (design A3 整体重置).
+			if cpErr == nil {
+				updates["parser_config"] = cpDefaults
 			}
 		}
 
@@ -423,7 +495,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		}
 	}
 
-	data := datasetToMap(updatedKB)
+	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
 }

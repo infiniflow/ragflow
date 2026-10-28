@@ -84,7 +84,7 @@ func configDeclaredFamily(config entity.JSONMap, family string) (declared, found
 // dataset row storing a historical parser_id is judged by the template it
 // actually runs.
 func templateDeclaredFamily(ctx context.Context, parserID, family string) (declared, found bool) {
-	dslJSON, err := service.LoadPipelineDSL(ctx, false, parserID, nil)
+	dslJSON, err := service.LoadPipelineDSL(ctx, false, parserID, nil, nil)
 	if err != nil {
 		return false, false
 	}
@@ -181,7 +181,7 @@ func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filena
 // the caller keeps the dataset's selection instead of writing a half-switched
 // row.
 func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, filename string, base entity.JSONMap) (entity.JSONMap, bool) {
-	dslJSON, err := service.LoadPipelineDSL(ctx, false, target, nil)
+	dslJSON, err := service.LoadPipelineDSL(ctx, false, target, nil, nil)
 	if err != nil {
 		common.Warn("document: target pipeline DSL unavailable, keeping dataset selection",
 			zap.String("parser_id", target), zap.String("filename", filename), zap.Error(err))

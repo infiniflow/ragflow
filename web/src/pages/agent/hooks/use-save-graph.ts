@@ -5,7 +5,7 @@ import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
 import {
   GlobalVariableType,
@@ -22,10 +22,10 @@ import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
+  const { saveAgent, loading } = useSaveAgent(showMessage, skipDetailRefresh);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
@@ -37,6 +37,7 @@ export const useSaveGraph = (
         globalVariables: Record<string, GlobalVariableType>;
       },
       release?: boolean,
+      autosave?: boolean,
     ) => {
       if (!id) {
         return;
@@ -51,10 +52,16 @@ export const useSaveGraph = (
       if (release) {
         params.release = 'true';
       }
+      // Design §5.1: the debounced auto-save path passes autosave:true so the
+      // backend refreshes only the live draft and never mints a new version.
+      // An explicit (manual) Save omits this flag.
+      if (autosave) {
+        params.autosave = true;
+      }
 
-      return setAgent(params);
+      return saveAgent(params);
     },
-    [id, data.title, buildDslData, setAgent],
+    [id, data.title, buildDslData, saveAgent],
   );
 
   return { saveGraph, loading };
@@ -170,7 +177,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     ) {
       return;
     }
-    const ret = await saveGraph();
+    const ret = await saveGraph(undefined, undefined, undefined, true);
     if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }

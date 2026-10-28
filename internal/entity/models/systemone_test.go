@@ -94,6 +94,55 @@ func TestSystemOneListModelsProbesBaseURL(t *testing.T) {
 	}
 }
 
+// A decision model that cannot answer must not be addable: verification is the
+// last check before the model is saved, and it is the only one that speaks the
+// decision endpoint.
+//
+// The request is a well-formed one on purpose. A malformed request is rejected
+// before the transport call, so a test that sent one would pass here without the
+// server ever being asked — and would stay green if verification's status
+// handling broke. The "asked" counter below makes that impossible.
+func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
+	withSSRFBypass(t)
+
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"rejected credential", http.StatusUnauthorized},
+		{"no decision endpoint", http.StatusNotFound},
+		{"server error", http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := false
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				asked = true
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"error":"no"}`))
+			}))
+			defer srv.Close()
+
+			apiKey := "sk-test"
+			modelName := "decision-model-preview"
+			resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
+				context.Background(), &modelName, &DecideRequest{
+					State:     map[string]string{"passage": ""},
+					Questions: map[string]Question{"probe": Noul{Instructions: "Is this relevant?"}},
+				}, &APIConfig{ApiKey: &apiKey}, nil,
+			)
+			if err == nil {
+				t.Fatalf("Decide accepted status %d", tc.status)
+			}
+			if resp != nil {
+				t.Errorf("Decide returned a response alongside the error")
+			}
+			if !asked {
+				t.Fatal("the endpoint was never asked, so this proves nothing about its answer")
+			}
+		})
+	}
+}
+
 // An unreachable base URL must fail the listing rather than fall back to the
 // static catalog, or the model would appear even though it cannot be called.
 func TestSystemOneListModelsFailsWhenProbeFails(t *testing.T) {

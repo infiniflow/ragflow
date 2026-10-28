@@ -107,6 +107,59 @@ func createChatRESTUpdateServiceTestChat(t *testing.T, db *gorm.DB, id, tenantID
 	}
 }
 
+func insertForeignPrivateDatasetForChatTest(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{ID: "user-2", Status: &status}).Error; err != nil {
+		t.Fatalf("failed to create foreign tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-user-2", UserID: "user-2", TenantID: "user-2", Role: "owner", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create foreign tenant owner: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-private", TenantID: "user-2", CreatedBy: "user-2", Name: "private dataset",
+		ChunkNum: 1, Permission: string(entity.TenantPermissionMe), Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create private dataset: %v", err)
+	}
+}
+
+func TestChatServiceCreateRejectsForeignKBIDs(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	insertForeignPrivateDatasetForChatTest(t, db)
+
+	_, _, err := NewChatService().Create(serviceTestContext(t, "user-1", "user-1"), "user-1", map[string]interface{}{
+		"name":   "chat with foreign dataset",
+		"kb_ids": []interface{}{"kb-private"},
+	})
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("Create error = %v, want access denied or hidden resource", err)
+	}
+}
+
+func TestChatServicePatchRejectsForeignKBIDs(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	insertForeignPrivateDatasetForChatTest(t, db)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	_, err := NewChatService().PatchChat(serviceTestContext(t, "user-1", "user-1"), "user-1", "chat-1", map[string]interface{}{
+		"kb_ids": []interface{}{"kb-private"},
+	})
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("PatchChat error = %v, want access denied or hidden resource", err)
+	}
+	chat, loadErr := dao.NewChatDAO().GetByID(t.Context(), db, "chat-1")
+	if loadErr != nil {
+		t.Fatalf("failed to reload chat: %v", loadErr)
+	}
+	if len(chat.KBIDs) != 0 {
+		t.Fatalf("PatchChat persisted unauthorized dataset IDs: %v", chat.KBIDs)
+	}
+}
+
 func assertEmptyMetaDataFilter(t *testing.T, value interface{}) {
 	t.Helper()
 
@@ -619,7 +672,14 @@ func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 }
 
 func TestChatServiceCreateWithDatasetSeedsDatasetSystemPrompt(t *testing.T) {
-	setupChatRESTUpdateServiceTestDB(t)
+	db := setupChatRESTUpdateServiceTestDB(t)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "user-1", CreatedBy: "user-1", Name: "dataset",
+		ChunkNum: 1, Permission: string(entity.TenantPermissionMe), Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create dataset: %v", err)
+	}
 
 	svc := NewChatService()
 	ctx := serviceTestContext(t, "user-1", "user-1")
