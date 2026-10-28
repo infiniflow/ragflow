@@ -453,9 +453,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Final server name: explicit --name wins; api/admin embed the resolved
-	// port; ingestor/syncer/deepdoc/migrate use their fixed forms. An unknown
-	// mode is rejected by the switch above.
 	serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
 	if err != nil {
 		common.Error("invalid server mode", err)
@@ -465,18 +462,16 @@ func main() {
 	// set server name and log file path
 	server.SetServerName(serverName)
 
-	// Wire the in-process DeepDoc backend only after the REAL file-backed
-	// logger exists: its registration lines (and the Fatal abort on a missing
-	// backend) must land in the run's log file, not in the pre-config
-	// stdout-only window.
 	switch serverType {
 	case common.ServerTypeAPI, common.ServerTypeIngestion:
-		if err = deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
+		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
+		if err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
-		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
+		err = runDeepDoc(ctx, serverName, arguments)
+		if err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
@@ -501,7 +496,9 @@ func main() {
 	if migrate {
 		common.Info("Running database migrations")
 	}
-	if err = dao.InitDB(ctx, migrate); err != nil {
+
+	err = dao.InitDB(ctx, migrate)
+	if err != nil {
 		common.Fatal("Failed to initialize database", zap.Error(err))
 	}
 	if migrate {
@@ -509,38 +506,43 @@ func main() {
 		return
 	}
 
-	if err = checkDatabaseVersion(ctx); err != nil {
+	err = checkDatabaseVersion(ctx)
+	if err != nil {
 		common.Fatal("Database has a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
-	if err = engine.InitDocEngine(ctx); err != nil {
+	err = engine.InitDocEngine(ctx)
+	if err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Kvrocks cache
-	if err = kvrocks.Init(ctx); err != nil {
+	err = kvrocks.Init(ctx)
+	if err != nil {
 		common.Fatal("Failed to initialize Kvrocks", zap.Error(err))
 	}
 	defer kvrocks.Close()
 
-	if err = storage.Init(ctx); err != nil {
+	err = storage.Init(ctx)
+	if err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueue(); err != nil {
+	err = engine.InitMessageQueue()
+	if err != nil {
 		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 
-	// Initialize server variables (runtime variables that can change during operation)
-	// This must be done after Cache is initialized
-	if err = server.InitVariables(kvrocks.Get()); err != nil {
+	err = server.InitVariables(kvrocks.Get())
+	if err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
+	err = server.StartServer(ctx, cancel, serverName, serverType)
+	if err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
@@ -552,22 +554,26 @@ func main() {
 
 	switch serverType {
 	case common.ServerTypeAPI:
-		if err = apipkg.Run(ctx, serverName, arguments); err != nil {
+		err = apipkg.Run(ctx, serverName, arguments)
+		if err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeAdmin:
-		if err = admin.Run(ctx, serverName, arguments); err != nil {
+		err = admin.Run(ctx, serverName, arguments)
+		if err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeIngestion:
-		if err = ingestorpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		err = ingestorpkg.Run(ctx, cancel, serverName, arguments)
+		if err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeFileSyncer:
-		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		err = syncerpkg.Run(ctx, cancel, serverName, arguments)
+		if err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
@@ -593,8 +599,8 @@ func checkDatabaseVersion(ctx context.Context) error {
 	}
 
 	codeVersion := common.GetRAGFlowVersion()
-	older, comparable := common.IsOlderReleaseThan(codeVersion, databaseVersion)
-	if !comparable {
+	older, comparableVersion := common.IsOlderReleaseThan(codeVersion, databaseVersion)
+	if !comparableVersion {
 		common.Warn("Cannot compare code version with database version, skipping the downgrade check",
 			zap.String("code_version", codeVersion),
 			zap.String("database_version", databaseVersion))
