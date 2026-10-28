@@ -14,6 +14,9 @@
 
 package media
 
+// Stateful HTML half of Resolver: the source index, the DOM fallback, and
+// HTML data-uri resolution. Pure normalization and scanning live in html.go.
+
 import (
 	"bytes"
 	"context"
