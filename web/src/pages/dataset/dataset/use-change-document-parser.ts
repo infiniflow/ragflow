@@ -1,4 +1,3 @@
-import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useRunDocument,
@@ -9,10 +8,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export const useChangeDocumentParser = () => {
-  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { setDocumentPipelineParser, loading } = useSetDocumentPipelineParser();
   const { runDocumentByIds } = useRunDocument();
@@ -22,6 +19,12 @@ export const useChangeDocumentParser = () => {
     visible: changeParserVisible,
     hideModal: hideChangeParserModal,
     showModal: showChangeParserModal,
+  } = useSetModalState();
+
+  const {
+    visible: reparseVisible,
+    hideModal: hideReparseModal,
+    showModal: showReparseModal,
   } = useSetModalState();
 
   const onChangeParserOk = useCallback(
@@ -44,23 +47,7 @@ export const useChangeDocumentParser = () => {
           queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
           hideChangeParserModal();
           if (record.chunk_count > 0) {
-            Modal.confirm({
-              title: t('knowledgeDetails.parseFile'),
-              content: t('knowledgeDetails.parserConfigReparseTip'),
-              okText: t('common.yes'),
-              cancelText: t('common.no'),
-              onOk: async () => {
-                try {
-                  await runDocumentByIds({
-                    documentIds: [record.id],
-                    run: 1,
-                    option: { delete: true, apply_kb: false },
-                  });
-                } catch (error) {
-                  console.warn(error);
-                }
-              },
-            });
+            showReparseModal();
           }
         }
       }
@@ -69,12 +56,29 @@ export const useChangeDocumentParser = () => {
       record?.id,
       record?.dataset_id,
       record?.chunk_count,
-      runDocumentByIds,
+      queryClient,
       setDocumentPipelineParser,
       hideChangeParserModal,
-      t,
+      showReparseModal,
     ],
   );
+
+  // Chunks exist and the parser settings just changed, so ask before dropping
+  // them and re-ingesting with the saved settings.
+  const confirmReparse = useCallback(async () => {
+    if (record?.id) {
+      try {
+        await runDocumentByIds({
+          documentIds: [record.id],
+          run: 1,
+          option: { delete: true, apply_kb: false },
+        });
+      } catch (error) {
+        console.warn(error);
+      }
+    }
+    hideReparseModal();
+  }, [record, runDocumentByIds, hideReparseModal]);
 
   const handleShowChangeParserModal = useCallback(
     (row: IDocumentInfo) => {
@@ -91,6 +95,9 @@ export const useChangeDocumentParser = () => {
     hideChangeParserModal,
     showChangeParserModal: handleShowChangeParserModal,
     changeParserRecord: record,
+    reparseVisible,
+    hideReparseModal,
+    confirmReparse,
   };
 };
 

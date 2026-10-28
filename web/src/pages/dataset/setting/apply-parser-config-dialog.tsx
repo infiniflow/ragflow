@@ -1,13 +1,4 @@
-import {
-  AlertDialog,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { ButtonLoading, buttonVariants } from '@/components/ui/button';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import message from '@/components/ui/message';
 import { useApplyDatasetParserConfig } from '@/hooks/use-apply-dataset-parser-config';
 import { useTranslation } from 'react-i18next';
@@ -27,57 +18,44 @@ export function ApplyParserConfigDialog({
   const { mutateAsync, isPending, error, reset } =
     useApplyDatasetParserConfig(datasetId);
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (isPending) return;
+  const handleCancel = () => {
+    if (isPending) {
+      return;
+    }
     reset();
-    onOpenChange(nextOpen);
+    onOpenChange(false);
   };
 
   const handleApply = async () => {
+    if (isPending) {
+      return;
+    }
     try {
       await mutateAsync();
       message.success(t('knowledgeConfiguration.parserSettingsApplied'));
       onOpenChange(false);
     } catch {
-      // Keep the saved-settings dialog open so Yes can retry the operation.
+      // Keep the dialog open so Yes can retry the operation.
     }
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={handleOpenChange}>
-      <AlertDialogContent className="bg-bg-base border-border-default">
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t('knowledgeConfiguration.applyParserSettingsTitle')}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {t('knowledgeConfiguration.parserSettingsChangeWarning')}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        {error && (
+    <ConfirmDeleteDialog
+      open={open}
+      title={t('knowledgeConfiguration.applyParserSettingsTitle')}
+      content={{
+        title: t('knowledgeConfiguration.parserSettingsChangeWarning'),
+        node: error ? (
           <p role="alert" className="text-state-error text-sm">
             {t('knowledgeConfiguration.parserSettingsApplyFailed')}{' '}
             {error.message}
           </p>
-        )}
-        <AlertDialogFooter>
-          <ButtonLoading
-            type="button"
-            variant="outline"
-            loading={isPending}
-            disabled={isPending}
-            onClick={handleApply}
-          >
-            {t('common.yes')}
-          </ButtonLoading>
-          <AlertDialogCancel
-            className={buttonVariants({ variant: 'default' })}
-            disabled={isPending}
-          >
-            {t('common.no')}
-          </AlertDialogCancel>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+        ) : null,
+      }}
+      okButtonText={t('common.yes')}
+      cancelButtonText={t('common.no')}
+      onOk={handleApply}
+      onCancel={handleCancel}
+    ></ConfirmDeleteDialog>
   );
 }
