@@ -698,6 +698,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1257,6 +1259,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
