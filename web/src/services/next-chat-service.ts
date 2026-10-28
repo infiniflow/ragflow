@@ -78,7 +78,7 @@ const methods = {
     method: 'post',
   },
   listSessions: {
-    url: listSessions,
+    url: ({ chatId }: { chatId: string }) => listSessions(chatId),
     method: 'get',
   },
   getSession: {

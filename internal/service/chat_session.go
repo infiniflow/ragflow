@@ -53,6 +53,11 @@ type chatSessionStore interface {
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 }
 
+type chatSessionPermissionChecker interface {
+	resourceScopeChecker
+	FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error)
+}
+
 type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
@@ -83,7 +88,7 @@ type chunkPagerankAdjuster interface {
 // The RAG pipeline is delegated to ChatPipelineService.
 type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
-	permissionChecker    resourceScopeChecker
+	permissionChecker    chatSessionPermissionChecker
 	pipeline             chatPipelineRunner
 	modelFactory         chatModelInfoResolver
 	chunkFeedbackApplier chunkFeedbackApplier
@@ -126,8 +131,7 @@ type ChatSessionPayload struct {
 
 // ListChatSessions lists chat sessions for a dialog
 func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
-	sessionIDs, err := accessibleChatSessionIDs(ctx, s.permissionChecker, userID, chatID, permission.OperationRead)
-	if err != nil {
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		_, normalizedErr := normalizeChatPermissionError(err)
 		return nil, normalizedErr
 	}
@@ -138,12 +142,39 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, sessionID, name, terms, page, pageSize, includeHistory...)
+	sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, sessionID, name, terms, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
+	if len(sessions) == 0 {
+		return &ListChatSessionsResponse{Sessions: sessions}, nil
+	}
 
-	return &ListChatSessionsResponse{Sessions: sessions}, nil
+	checker := s.permissionChecker
+	if checker == nil {
+		checker = permission.NewDatabaseChecker(dao.DB)
+	}
+	refs := make([]permission.ResourceRef, 0, len(sessions))
+	for _, session := range sessions {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: session.ID})
+	}
+	accessible, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, refs, permission.OperationRead)
+	if err != nil {
+		_, normalizedErr := normalizeChatPermissionError(err)
+		return nil, normalizedErr
+	}
+	allowedIDs := make(map[string]bool, len(accessible))
+	for _, ref := range accessible {
+		allowedIDs[ref.ID] = true
+	}
+	filtered := make([]*entity.ChatSession, 0, len(accessible))
+	for _, session := range sessions {
+		if allowedIDs[session.ID] {
+			filtered = append(filtered, session)
+		}
+	}
+
+	return &ListChatSessionsResponse{Sessions: filtered}, nil
 }
 
 // GetSession returns one chat session after ownership validation.

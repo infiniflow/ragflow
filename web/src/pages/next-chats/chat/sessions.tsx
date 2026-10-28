@@ -21,6 +21,7 @@ import {
 import {
   LucideCopyX,
   LucideListChecks,
+  LucideLoader2,
   LucidePanelLeftClose,
   LucidePlus,
   LucideSend,
@@ -48,6 +49,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
     removeTemporaryConversation,
     handleInputChange,
     searchString,
+    loadingMore,
+    handleScroll,
   } = useSelectDerivedConversationList();
   const { data } = useFetchChat();
   const { visible, switchVisible } = useSetModalState(true);
@@ -322,7 +325,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         ></SearchInput>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" onScroll={handleScroll}>
         {selectionMode ? (
           <ul className="space-y-2" role="listbox" aria-multiselectable>
             {conversationList.map((x) => (
@@ -381,6 +384,13 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               ))}
             </ul>
           </nav>
+        )}
+        {loadingMore && (
+          <LucideLoader2
+            className="mx-auto size-4 animate-spin"
+            role="status"
+            aria-label={t('common.loading')}
+          />
         )}
       </div>
     </aside>

@@ -147,20 +147,23 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	})
 }
 
-// ListByResourceIDs lists only sessions authorized by the permission layer.
+// ListByResourceIDs lists sessions for a chat, optionally restricted to sessionIDs.
 func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
-	if len(sessionIDs) == 0 {
+	if sessionIDs != nil && len(sessionIDs) == 0 {
 		return []*entity.ChatSession{}, nil
 	}
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ? AND id IN ?", chatID, sessionIDs)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ?", chatID)
+	if sessionIDs != nil {
+		query = query.Where("id IN ?", sessionIDs)
+	}
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
 	}
 	if name != "" {
 		query = query.Where("name = ?", name)
 	}
-	query = query.Order(chatSessionOrderClause(terms))
+	query = query.Order(chatSessionOrderClause(terms)).Order("id DESC")
 	if pageSize > 0 {
 		if page < 1 {
 			page = 1
