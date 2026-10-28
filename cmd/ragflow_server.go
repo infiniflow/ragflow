@@ -380,49 +380,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// The DeepDoc inference server runs standalone: it only needs the ONNX
-	// runtime and MODEL_DIR, never the full RAGFlow infrastructure
-	// (DB/engine/cache/storage/MQ). Boot it and return before the heavy
-	// infrastructure init, so a bare inference container needs no MySQL/Redis.
-	if st := bootstrap.GetServerType(arguments); isStandaloneDeepDocServer(st) {
-		// SetServerName writes into the package-level local variables that
-		// InitLocalVariables allocates; this early boot returns before the
-		// shared InitLocalVariables call below, so it must allocate them
-		// itself. The initializer constructs the in-memory struct only and
-		// touches no external service, so the bare inference container stays
-		// free of MySQL/Redis.
-		if err = server.InitLocalVariables(); err != nil {
-			fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
-			os.Exit(1)
-		}
-		logLevel := bootstrap.SelectedLogLevel(arguments, "")
-		if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
-			logLevel = "info"
-		}
-		if err = common.InitLogger(logLevel, common.FileOutput{}, bootstrap.TempServerName(st, arguments.Name)); err != nil {
-			panic("failed to initialize logger: " + err.Error())
-		}
-		finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, 0)
-		if nameErr != nil {
-			common.Error("invalid server mode", nameErr)
-			os.Exit(1)
-		}
-		server.SetServerName(finalName)
-		// The regular pprof block sits after the infrastructure init this
-		// path skips, so --profile must be honored here or the flag the
-		// --deepdoc help text advertises would be silently ignored.
-		if arguments.EnablePProf {
-			if err := startPProf(pprofAddr()); err != nil {
-				common.Error("pprof server failed", err)
-			}
-		}
-		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
-			os.Exit(1)
-		}
-		return
-	}
-
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
@@ -518,6 +475,20 @@ func main() {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
 		}
+	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
+		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
+			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Start pprof server if requested
+		if arguments.EnablePProf {
+			err = startPProf(pprofAddr())
+			if err != nil {
+				common.Error("pprof server failed", err)
+			}
+		}
+		return
 	default:
 	}
 
@@ -525,18 +496,7 @@ func main() {
 	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
-	// Start pprof server if requested
-	if arguments.EnablePProf {
-		err = startPProf(pprofAddr())
-		if err != nil {
-			common.Error("pprof server failed", err)
-		}
-	}
-
-	// Initialize database. The migrate mode stops here: it needs neither the
-	// downgrade check nor any of the engines started below, so it can run
-	// before any server mode boots (see docker/entrypoint.sh and
-	// docker/launch_backend_service.sh).
+	// Initialize database.
 	migrate := serverType == common.ServerTypeMigrate
 	if migrate {
 		common.Info("Running database migrations")
