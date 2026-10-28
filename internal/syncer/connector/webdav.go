@@ -321,9 +321,19 @@ func (s *webdavSyncSession) Close() error {
 }
 
 // Fetch downloads a selected WebDAV file. SyncRunner calls it only for a
-// document whose fingerprint differs from the stored one.
+// document whose fingerprint differs from the stored one. A download failure
+// is a per-document skip, not a task failure: before fetching became lazy this
+// file was dropped from the listing and the run still completed, and one
+// unreadable file must not fail every later retry of the task.
 func (s *webdavSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
-	return s.download(ctx, ref.Key)
+	blob, err := s.download(ctx, ref.Key)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrDocumentSkipped, ref.Key, err)
+	}
+	if len(blob) == 0 {
+		return nil, fmt.Errorf("%w: %s returned an empty body", ErrDocumentSkipped, ref.Key)
+	}
+	return blob, nil
 }
 
 // applyResume advances past the last committed WebDAV document when retrying a task.

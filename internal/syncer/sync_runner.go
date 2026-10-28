@@ -416,6 +416,9 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 			return service.DocumentUpsertResult{}, fmt.Errorf("connector session cannot fetch %s", sourceDocument.FetchRef.Key)
 		}
 		blob, err := fetcher.Fetch(ctx, *sourceDocument.FetchRef)
+		if errors.Is(err, syncerconnector.ErrDocumentSkipped) {
+			return service.DocumentUpsertResult{DocID: resolved.DocID, Action: service.DocumentActionSkipped}, nil
+		}
 		if err != nil {
 			return service.DocumentUpsertResult{}, err
 		}
