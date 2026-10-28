@@ -683,6 +683,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			if err != nil {
 				continue
 			}
+			if htmlParser, ok := np.(*HTMLParser); ok {
+				htmlParser.textOnly = true
+			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))
 			})

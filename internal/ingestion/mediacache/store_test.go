@@ -38,6 +38,7 @@ type fakeStore struct {
 	expireFails bool
 	setCalls    int
 	addCalls    int
+	deleteFails map[string]bool
 }
 
 func newFakeStore() *fakeStore {
@@ -84,6 +85,9 @@ func (f *fakeStore) SMembers(_ context.Context, key string) ([]string, error) {
 }
 
 func (f *fakeStore) Delete(_ context.Context, key string) bool {
+	if f.deleteFails[key] {
+		return false
+	}
 	delete(f.kv, key)
 	delete(f.sets, key)
 	return true
@@ -290,5 +294,57 @@ func TestPutAllowsMoreThan256DistinctImages(t *testing.T) {
 		if _, err := store.Put(ctx, "html", "image/png", []byte(fmt.Sprintf("image-%d", i))); err != nil {
 			t.Fatalf("image %d: %v", i, err)
 		}
+	}
+}
+
+func TestPurgeTaskRetriesAfterPartialDeleteFailure(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	ref, err := store.Put(ctx, "html", "image/png", []byte("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("second")); err != nil {
+		t.Fatal(err)
+	}
+	key := store.key(ref.SHA256)
+	backend.deleteFails = map[string]bool{key: true}
+	if err := PurgeTask(ctx, backend, "task-1"); err == nil {
+		t.Fatal("expected delete failure")
+	}
+	if len(backend.sets[manifestKey("task-1")]) != 2 {
+		t.Fatal("manifest lost after failed purge")
+	}
+	delete(backend.deleteFails, key)
+	if err := PurgeTask(ctx, backend, "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.kv) != 0 || len(backend.sets) != 0 {
+		t.Fatal("retry did not clear media")
+	}
+}
+
+func TestRetryRepopulatesMediaAfterCacheMiss(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	ref, err := New(backend, "task-1").Put(ctx, "html", "image/png", []byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key := range backend.kv {
+		delete(backend.kv, key)
+	}
+	if _, err := New(backend, "task-1").Get(ctx, ref); !errors.Is(err, media.ErrMediaNotFound) {
+		t.Fatalf("miss = %v", err)
+	}
+	retry := New(backend, "task-1")
+	retryRef, err := retry.Put(ctx, "html", "image/png", []byte("hello"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := retry.Get(ctx, retryRef)
+	if err != nil || string(got) != "hello" {
+		t.Fatalf("retry read = %q, %v", got, err)
 	}
 }

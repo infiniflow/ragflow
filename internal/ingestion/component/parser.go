@@ -462,12 +462,6 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if err != nil {
 		return nil, err
 	}
-	// readParserBinary may have loaded the document from storage. Publish the
-	// bytes under "binary" so vision enhancement resolves media references
-	// from the same source this invocation parsed instead of finding nothing.
-	if len(binary) > 0 {
-		inputs["binary"] = binary
-	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
 	setups := c.setups
@@ -551,7 +545,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	if enhanceOn && !handledMedia && !handledImage && !handledAudio && dispatched.Err == nil && ctx.Err() == nil {
 		// PDF dispatch and ordinary parsers share enhancement after normalization.
-		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+		var enhanceErr error
+		dispatched, _, enhanceErr = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+		if enhanceErr != nil {
+			return nil, enhanceErr
+		}
 	} else {
 		// Enhancement skipped entirely (disabled or non-PDF media handled):
 		// still strip the transient backend-description marker so it never

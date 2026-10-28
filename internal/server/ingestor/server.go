@@ -162,7 +162,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		KV:     kvrocks.Get(),
 	}
 	// Fail fast at the assembly point: a misconfigured ingestor (missing doc
-	// engine, database, or message queue) must never reach Start as a "healthy"
+	// engine, database, message queue, or Kvrocks) must never reach Start as a "healthy"
 	// service that silently cannot consume.
 	if err = ingestorDeps.Validate(); err != nil {
 		common.Error("Invalid ingestor dependencies", err)

@@ -33,6 +33,7 @@ import (
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
+	textOnly           bool
 }
 
 func NewHTMLParser() *HTMLParser {
@@ -85,6 +86,9 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		refOnly:    true,
 		ctx:        ctx,
 		mediaCache: media.CacheFromContext(ctx),
+	}
+	if p.textOnly {
+		state.resolveImage = func(string) (string, bool) { return "", false }
 	}
 	walkHTMLBlocksWithState(doc, &items, state)
 	if state.err != nil {

@@ -1298,3 +1298,21 @@ func TestDefaultVisionChatInvoker_AppliesDeadline(t *testing.T) {
 		t.Fatal("non-Ollama vision chat must preserve provider thinking default")
 	}
 }
+
+func TestParserComponent_VisionMediaCacheMissFails(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	cache := &materializeCache{err: media.ErrMediaNotFound}
+	ctx := media.WithCache(t.Context(), cache)
+	component, err := NewParserComponent(map[string]any{"enable_vision_enhancement": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = component.Invoke(ctx, nil, map[string]any{
+		"binary":    []byte(`<img alt="figure" src="data:image/png;base64,` + visionTestPNGBase64(t) + `">`),
+		"file_type": "html", "name": "figure.html", "tenant_id": "tenant-1",
+	})
+	if !errors.Is(err, media.ErrMediaNotFound) {
+		t.Fatalf("Invoke error = %v, want cache miss", err)
+	}
+}
