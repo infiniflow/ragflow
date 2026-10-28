@@ -15,11 +15,7 @@
  */
 
 import { lazy, memo, Suspense } from 'react';
-import {
-  createBrowserRouter,
-  Navigate,
-  type RouteObject,
-} from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 
