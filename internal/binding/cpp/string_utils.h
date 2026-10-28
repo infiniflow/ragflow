@@ -181,7 +181,10 @@ inline void ToLowerUTF8(char* data, size_t len)
     }
 }
 
-inline void ToLowerUTF8(const char* data, size_t len, char* out, size_t out_limit)
+// Copies `len` bytes into `out`, folds them and terminates the result. Callers
+// must provide len + 1 bytes: byte length is preserved, so that is the only
+// space the fold needs.
+inline void ToLowerUTF8(const char* data, size_t len, char* out)
 {
     memcpy(out, data, len);
     ToLowerUTF8(out, len);
