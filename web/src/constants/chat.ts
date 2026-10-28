@@ -64,6 +64,7 @@ export enum WebSearchProvider {
   Keirolabs = 'keirolabs',
   Linkup = 'linkup',
   Parallel = 'parallel',
+  Perplexity = 'perplexity',
   Querit = 'querit',
   Search1API = 'search1api',
   SearchApi = 'searchapi',

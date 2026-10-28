@@ -52,6 +52,7 @@ export interface PromptConfig {
   keirolabs_api_key?: string;
   linkup_api_key?: string;
   parallel_api_key?: string;
+  perplexity_api_key?: string;
   querit_api_key?: string;
   search1api_api_key?: string;
   searchapi_api_key?: string;
