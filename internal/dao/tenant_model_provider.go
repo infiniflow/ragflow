@@ -75,15 +75,6 @@ func (dao *TenantModelProviderDAO) ListByTenantIDAndUserID(ctx context.Context, 
 	return providers, nil
 }
 
-// ListByID list tenant model providers by ID
-func (dao *TenantModelProviderDAO) ListByID(ctx context.Context, db *gorm.DB, id string) ([]string, error) {
-	var providerNames []string
-	err := db.WithContext(ctx).Model(&entity.TenantModelProvider{}).
-		Where("tenant_id = ?", id).
-		Pluck("provider_name", &providerNames).Error
-	return providerNames, err
-}
-
 // GetByTenantID returns all TenantModelProvider rows for a tenant.
 // Mirrors Python's TenantModelProviderService.get_by_tenant_id and is the
 // entry point for /api/v1/models ("list all added models"). The Go port
