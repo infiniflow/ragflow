@@ -3139,10 +3139,10 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
         share: 'Partage',
       },
 
-      serviceStatus: 'État des services',
-      userManagement: 'Gestion des utilisateurs',
-      sandboxSettings: 'Paramètres du bac à sable',
-      registrationWhitelist: "Liste blanche d'inscription",
+      serviceStatus: 'Services',
+      userManagement: 'Utilisateurs',
+      sandboxSettings: 'Bac à sable',
+      registrationWhitelist: 'Liste blanche',
       roles: 'Rôles',
       monitoring: 'Surveillance',
 
@@ -3249,7 +3249,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       importWhitelist: 'Importer la liste blanche (Excel)',
       importSelectExcelFile: 'Fichier Excel (.xlsx)',
       importOverwriteExistingEmails: 'Écraser les e-mails existants',
-      importInvalidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
+      importValidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
       importFileRequired: 'Veuillez sélectionner un fichier à importer',
       importFileTips:
         "Le fichier doit contenir une seule colonne d'en-tête nommée <code>email</code>.",

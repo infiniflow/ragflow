@@ -4066,10 +4066,10 @@ Temel Talimatlar:
         write: 'Yaz',
         share: 'Paylaş',
       },
-      serviceStatus: 'Servis durumu',
-      userManagement: 'Kullanıcı yönetimi',
-      sandboxSettings: 'Sandbox ayarları',
-      registrationWhitelist: 'Kayıt beyaz listesi',
+      serviceStatus: 'Hizmetler',
+      userManagement: 'Kullanıcılar',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Beyaz liste',
       roles: 'Roller',
       monitoring: 'İzleme',
       sandboxSettingsPage: {
@@ -4155,7 +4155,7 @@ Temel Talimatlar:
       importWhitelist: 'Beyaz listeyi içe aktar (Excel)',
       importSelectExcelFile: 'Excel dosyası (.xlsx)',
       importOverwriteExistingEmails: 'Mevcut e-postaların üzerine yaz',
-      importInvalidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
+      importValidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
       importFileRequired: 'Lütfen içe aktarmak için bir dosya seçin',
       importFileTips:
         'Dosya, <code>email</code> adında tek bir başlık sütunu içermelidir.',

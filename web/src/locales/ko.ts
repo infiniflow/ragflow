@@ -3025,10 +3025,10 @@ Important structured information may include: names, dates, locations, events, k
         write: '쓰기',
         share: '공유',
       },
-      serviceStatus: '서비스 상태',
-      userManagement: '사용자 관리',
-      sandboxSettings: '샌드박스 설정',
-      registrationWhitelist: '등록 화이트리스트',
+      serviceStatus: '서비스',
+      userManagement: '사용자',
+      sandboxSettings: '샌드박스',
+      registrationWhitelist: '화이트리스트',
       roles: '역할',
       monitoring: '모니터링',
       sandboxSettingsPage: {
@@ -3114,7 +3114,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: '화이트리스트 가져오기 (Excel)',
       importSelectExcelFile: 'Excel 파일 (.xlsx)',
       importOverwriteExistingEmails: '기존 이메일 덮어쓰기',
-      importInvalidExcelFile: '유효한 Excel 파일을 선택해 주세요',
+      importValidExcelFile: '유효한 Excel 파일을 선택해 주세요',
       importFileRequired: '가져올 파일을 선택해 주세요',
       importFileTips:
         '파일에는 <code>email</code>이라는 단일 헤더 열이 있어야 합니다.',

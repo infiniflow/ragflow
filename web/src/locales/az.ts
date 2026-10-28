@@ -4009,10 +4009,10 @@ Vacib strukturlaşdırılmış məlumatlara adlar, tarixlər, məkanlar, hadisə
         write: 'Yaz',
         share: 'Paylaş',
       },
-      serviceStatus: 'Xidmətin vəziyyəti',
-      userManagement: 'İstifadəçilərin idarə edilməsi',
-      sandboxSettings: 'Təcrid olunmuş mühitin parametrləri',
-      registrationWhitelist: 'Qeydiyyata icazə verilənlərin siyahısı',
+      serviceStatus: 'Xidmətlər',
+      userManagement: 'İstifadəçilər',
+      sandboxSettings: 'Qum qutusu',
+      registrationWhitelist: 'Ağ siyahı',
       roles: 'Rollar',
       monitoring: 'Monitorinq',
       sandboxSettingsPage: {
@@ -4099,7 +4099,7 @@ Vacib strukturlaşdırılmış məlumatlara adlar, tarixlər, məkanlar, hadisə
       importWhitelist: 'İcazə verilənlərin siyahısını idxal et (Excel)',
       importSelectExcelFile: 'Excel faylı (.xlsx)',
       importOverwriteExistingEmails: 'Mövcud e-poçt ünvanlarının üzərinə yaz',
-      importInvalidExcelFile: 'Düzgün Excel faylı seçin',
+      importValidExcelFile: 'Düzgün Excel faylı seçin',
       importFileRequired: 'İdxal etmək üçün fayl seçin',
       importFileTips:
         'Faylda başlığı <code>email</code> olan yalnız bir sütun olmalıdır.',

@@ -3038,10 +3038,10 @@ export default {
         share: '共有',
       },
 
-      serviceStatus: 'サービスステータス',
-      userManagement: 'ユーザー管理',
-      sandboxSettings: 'サンドボックス設定',
-      registrationWhitelist: '登録ホワイトリスト',
+      serviceStatus: 'サービス',
+      userManagement: 'ユーザー',
+      sandboxSettings: 'サンドボックス',
+      registrationWhitelist: 'ホワイトリスト',
       roles: 'ロール',
       monitoring: 'モニタリング',
 
@@ -3131,7 +3131,7 @@ export default {
       importWhitelist: 'ホワイトリストをインポート（Excel）',
       importSelectExcelFile: 'Excelファイル（.xlsx）',
       importOverwriteExistingEmails: '既存のメールアドレスを上書き',
-      importInvalidExcelFile: '有効なExcelファイルを選択してください',
+      importValidExcelFile: '有効なExcelファイルを選択してください',
       importFileRequired: 'インポートするファイルを選択してください',
       importFileTips:
         'ファイルには、<code>email</code>という名前のヘッダー列を1つだけ含める必要があります。',
