@@ -1547,6 +1547,9 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	if lastMessage["role"] != "user" {
 		return nil, "", errors.New("the last content of this conversation is not from user")
 	}
+	if _, err := NormalizeOpenAIMessageContent(lastMessage["content"]); err != nil {
+		return nil, "", err
+	}
 	if storeHistoryMessages {
 		messages = messages[len(messages)-1:]
 	}
