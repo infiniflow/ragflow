@@ -170,4 +170,13 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
 		}
 	})
+
+	t.Run("fishaudio stream error body read failure", func(t *testing.T) {
+		srv := truncatedError(t)
+		m := NewFishAudioModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
+		}
+	})
 }
