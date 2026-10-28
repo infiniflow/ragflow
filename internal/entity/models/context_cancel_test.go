@@ -143,9 +143,10 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 				return
 			}
 			defer conn.Close()
-			// Promise a body and send none: the first read fails, so a driver that
-			// swallows the read error can only report the status line.
-			buf.WriteString("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 64\r\n\r\n")
+			// Promise 64 bytes and send 7: the first read succeeds and only a read
+			// that runs to EOF sees the truncation, so a single-read driver reports
+			// the status line as if the body were complete.
+			buf.WriteString("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 64\r\n\r\npartial")
 			buf.Flush()
 		}))
 		t.Cleanup(srv.Close)

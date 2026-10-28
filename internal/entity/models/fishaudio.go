@@ -296,12 +296,13 @@ func (f *FishAudioModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		buf := make([]byte, 1024)
-		n, err := resp.Body.Read(buf)
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("FishAudio stream API error: %d - %s: %w", resp.StatusCode, string(buf[:n]), err)
+		// Read to EOF so a body that is cut short reports the failure: one Read can
+		// return bytes with a nil error and only fail on the next call.
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if err != nil {
+			return fmt.Errorf("FishAudio stream API error: %d - %s: %w", resp.StatusCode, string(body), err)
 		}
-		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(body))
 	}
 
 	if _, err := ParseSSEStream[struct {
