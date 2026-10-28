@@ -14,7 +14,14 @@
  *  limitations under the License.
  */
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 
 jest.mock('react-i18next', () => {
   const actual = jest.requireActual('react-i18next');
@@ -42,7 +49,9 @@ jest.mock('@xyflow/react', () => ({
 
 const mockUpdateVersion = jest.fn();
 
-const mockVersions = [
+// Both versions are released: the dialog only lists published versions.
+// `let` so pagination tests can swap in a larger list before rendering.
+let mockVersions = [
   {
     id: 'v-latest',
     title: 'Latest',
@@ -54,7 +63,7 @@ const mockVersions = [
     id: 'v-old',
     title: 'Old Snapshot',
     created_at: '2024-01-01',
-    release: false,
+    release: true,
     alias: 'old',
   },
 ];
@@ -78,66 +87,49 @@ jest.mock('@/hooks/use-agent-request', () => ({
 
 import { VersionDialog } from './index';
 
-describe('VersionDialog outdated marker (D1/D2/D3, T21)', () => {
-  it('marks non-latest versions with the ! outdated indicator but not the latest', () => {
-    render(<VersionDialog hideModal={jest.fn()} />);
+// TooltipProvider lives at the app root in production; tests must supply it.
+const renderDialog = () =>
+  render(
+    <TooltipProvider>
+      <VersionDialog hideModal={jest.fn()} />
+    </TooltipProvider>,
+  );
 
-    expect(screen.getByText('Latest')).toBeInTheDocument();
-    expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
-    // Exactly one ! marker: the non-latest list entry. The latest is selected by
-    // default, so the detail panel shows no marker.
-    expect(screen.getAllByText('!')).toHaveLength(1);
+const getRow = (title: string) => screen.getByText(title).closest('li')!;
+
+describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
+  it('renders an edit-alias button for every version', () => {
+    renderDialog();
+    // Two mock versions => one edit-alias button per row.
+    expect(within(getRow('Latest')).getByRole('button')).toBeInTheDocument();
+    expect(
+      within(getRow('Old Snapshot')).getByRole('button'),
+    ).toBeInTheDocument();
   });
-});
 
-describe('VersionDialog editable alias input (G2/section 4.4, T35)', () => {
-  it('renders an editable alias input for every version', () => {
-    render(<VersionDialog hideModal={jest.fn()} />);
-    // Two mock versions => two alias inputs (design G2/section 4.4).
-    expect(screen.getAllByPlaceholderText('flow.version.alias')).toHaveLength(
-      2,
+  it('opens the alias dialog with the current alias when the button is clicked', () => {
+    renderDialog();
+
+    fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
+
+    expect(screen.getByPlaceholderText('flow.version.alias')).toHaveValue(
+      'old',
     );
   });
-});
 
-describe('VersionDialog alias filter (A2/F1, T19)', () => {
-  it('narrows the list to aliases matching the query', () => {
-    render(<VersionDialog hideModal={jest.fn()} />);
-
-    const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
-    fireEvent.change(filter, { target: { value: 'prod' } });
-
-    expect(screen.queryByText('Old Snapshot')).not.toBeInTheDocument();
-    expect(screen.getByText('Latest')).toBeInTheDocument();
-    expect(screen.queryByText('!')).not.toBeInTheDocument();
-  });
-
-  it('shows every version when the alias filter is cleared', () => {
-    render(<VersionDialog hideModal={jest.fn()} />);
-
-    const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
-    fireEvent.change(filter, { target: { value: 'prod' } });
-    fireEvent.change(filter, { target: { value: '' } });
-
-    expect(screen.getByText('Latest')).toBeInTheDocument();
-    expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
-    expect(screen.getAllByText('!')).toHaveLength(1);
-  });
-});
-
-describe('VersionDialog alias edit commits on blur (G2/section 4.4, T35)', () => {
-  it('PATCHes the trimmed new alias when the input loses focus', () => {
+  it('PATCHes the trimmed new alias on confirm', async () => {
     mockUpdateVersion.mockClear();
-    render(<VersionDialog hideModal={jest.fn()} />);
+    renderDialog();
 
-    // mockVersions order: [v-latest (alias prod), v-old (alias old)].
-    const inputs = screen.getAllByPlaceholderText('flow.version.alias');
-    const oldInput = inputs[1];
+    fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
+    fireEvent.change(screen.getByPlaceholderText('flow.version.alias'), {
+      target: { value: '  renamed  ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }));
 
-    fireEvent.change(oldInput, { target: { value: '  renamed  ' } });
-    fireEvent.blur(oldInput);
-
-    expect(mockUpdateVersion).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(mockUpdateVersion).toHaveBeenCalledTimes(1);
+    });
     expect(mockUpdateVersion).toHaveBeenCalledWith({
       canvasId: 'canvas-1',
       versionId: 'v-old',
@@ -145,16 +137,70 @@ describe('VersionDialog alias edit commits on blur (G2/section 4.4, T35)', () =>
     });
   });
 
-  it('does not PATCH when the alias is unchanged', () => {
+  it('does not PATCH when the dialog is cancelled', () => {
     mockUpdateVersion.mockClear();
-    render(<VersionDialog hideModal={jest.fn()} />);
+    renderDialog();
 
-    const inputs = screen.getAllByPlaceholderText('flow.version.alias');
-    const oldInput = inputs[1]; // alias old
-
-    fireEvent.change(oldInput, { target: { value: 'old' } });
-    fireEvent.blur(oldInput);
+    fireEvent.click(within(getRow('Old Snapshot')).getByRole('button'));
+    fireEvent.click(screen.getByRole('button', { name: 'common.cancel' }));
 
     expect(mockUpdateVersion).not.toHaveBeenCalled();
+    expect(
+      screen.queryByPlaceholderText('flow.version.alias'),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('VersionDialog alias filter (A2/F1, T19)', () => {
+  it('narrows the list to aliases matching the query', () => {
+    renderDialog();
+
+    const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
+    fireEvent.change(filter, { target: { value: 'prod' } });
+
+    expect(screen.queryByText('Old Snapshot')).not.toBeInTheDocument();
+    expect(screen.getByText('Latest')).toBeInTheDocument();
+  });
+
+  it('shows every version when the alias filter is cleared', () => {
+    renderDialog();
+
+    const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
+    fireEvent.change(filter, { target: { value: 'prod' } });
+    fireEvent.change(filter, { target: { value: '' } });
+
+    expect(screen.getByText('Latest')).toBeInTheDocument();
+    expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
+  });
+
+  it('jumps back to page 1 when filtering shrinks the list', () => {
+    const originalVersions = mockVersions;
+    // 12 released versions overfill one 10-row page; only the last (page-2)
+    // row carries an alias, so filtering must surface it from page 1.
+    mockVersions = Array.from({ length: 12 }, (_, i) => ({
+      id: `v-${i}`,
+      title: `Version ${i}`,
+      created_at: '2024-01-01',
+      release: true,
+      alias: i === 11 ? 'special' : '',
+    }));
+
+    try {
+      renderDialog();
+
+      fireEvent.click(screen.getByText('2'));
+      expect(screen.queryByText('Version 0')).not.toBeInTheDocument();
+      expect(screen.getByText('Version 11')).toBeInTheDocument();
+
+      const filter = screen.getByPlaceholderText('flow.version.filterByAlias');
+      fireEvent.change(filter, { target: { value: 'special' } });
+
+      // Without the page reset, page 2 would slice past the single match and
+      // render an empty list.
+      expect(screen.getByText('Version 11')).toBeInTheDocument();
+      expect(screen.queryByText('2')).not.toBeInTheDocument();
+    } finally {
+      mockVersions = originalVersions;
+    }
   });
 });
