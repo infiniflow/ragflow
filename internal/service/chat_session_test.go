@@ -167,7 +167,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, _ int, _ ...bool) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...bool) ([]*entity.ChatSession, int64, error) {
 	allowedIDs := make(map[string]struct{}, len(sessionIDs))
 	for _, id := range sessionIDs {
 		allowedIDs[id] = struct{}{}
@@ -194,7 +194,11 @@ func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chat
 		}
 		result = append(result, s)
 	}
-	return result, nil
+	total := int64(len(result))
+	if pageSize == 0 {
+		result = []*entity.ChatSession{}
+	}
+	return result, total, nil
 }
 
 func (f *fakeSessionStore) GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error) {
@@ -479,8 +483,8 @@ func TestListChatSessions_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Sessions) != 30 || len(store.filteredRefs) != 30 || store.scopeCalls != 0 {
-		t.Fatalf("expected 30 sessions checked without a full scope scan, got sessions=%d checked=%d scope=%d", len(resp.Sessions), len(store.filteredRefs), store.scopeCalls)
+	if resp.Total != 41 || len(resp.Sessions) != 30 || len(store.filteredRefs) != 30 || store.scopeCalls != 0 {
+		t.Fatalf("expected total=41 and 30 sessions checked without a full scope scan, got total=%d sessions=%d checked=%d scope=%d", resp.Total, len(resp.Sessions), len(store.filteredRefs), store.scopeCalls)
 	}
 	for i, session := range resp.Sessions {
 		if want := fmt.Sprintf("session-%02d", 40-i); session.ID != want || store.filteredRefs[i].ID != want {
@@ -492,9 +496,17 @@ func TestListChatSessions_Success(t *testing.T) {
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
-		if len(resp.Sessions) != wantCount {
-			t.Fatalf("page %d: got %d sessions, want %d", page, len(resp.Sessions), wantCount)
+		if resp.Total != 41 || len(resp.Sessions) != wantCount {
+			t.Fatalf("page %d: got total=%d and %d sessions, want total=41 and %d sessions", page, resp.Total, len(resp.Sessions), wantCount)
 		}
+	}
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, false)
+	if err != nil || resp.Total != 41 || len(resp.Sessions) != 0 {
+		t.Fatalf("zero page size: got response=%+v err=%v, want total=41 and no sessions", resp, err)
+	}
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, false)
+	if err != nil || resp.Total != 1 || len(resp.Sessions) != 1 {
+		t.Fatalf("ID filter: got response=%+v err=%v, want total=1 and one session", resp, err)
 	}
 }
 

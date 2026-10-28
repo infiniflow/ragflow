@@ -148,12 +148,12 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByResourceIDs lists sessions for a chat, optionally restricted to sessionIDs.
-func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, int64, error) {
 	if sessionIDs != nil && len(sessionIDs) == 0 {
-		return []*entity.ChatSession{}, nil
+		return []*entity.ChatSession{}, 0, nil
 	}
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ?", chatID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Model(&entity.ChatSession{}).Where("dialog_id = ?", chatID)
 	if sessionIDs != nil {
 		query = query.Where("id IN ?", sessionIDs)
 	}
@@ -162,6 +162,13 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	}
 	if name != "" {
 		query = query.Where("name = ?", name)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if pageSize == 0 {
+		return []*entity.ChatSession{}, total, nil
 	}
 	query = query.Order(chatSessionOrderClause(terms)).Order("id DESC")
 	if pageSize > 0 {
@@ -172,14 +179,14 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	}
 	err := query.Find(&chatSessions).Error
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(includeHistory) == 0 || includeHistory[0] {
 		if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
-	return chatSessions, nil
+	return chatSessions, total, nil
 }
 
 // GetDialogByID gets dialog by ID

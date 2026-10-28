@@ -4,7 +4,7 @@ import { UIEvent, useCallback, useMemo } from 'react';
 
 type SessionPage<T> = {
   items: T[];
-  total?: number;
+  total: number;
 };
 
 export function useSessionList<T extends { id: string }>({
@@ -43,10 +43,7 @@ export function useSessionList<T extends { id: string }>({
         (count, page) => count + page.items.length,
         0,
       );
-      if (
-        lastPage.items.length < pageSize ||
-        (lastPage.total !== undefined && loadedCount >= lastPage.total)
-      ) {
+      if (lastPage.items.length < pageSize || loadedCount >= lastPage.total) {
         return undefined;
       }
       return offset + pageSize;
@@ -74,7 +71,7 @@ export function useSessionList<T extends { id: string }>({
 
   return {
     data: sessions,
-    total: data?.pages[0]?.total ?? sessions.length,
+    total: data?.pages.at(-1)?.total ?? 0,
     loading: isFetching,
     loadingMore: isFetchingNextPage,
     hasMore: !!hasNextPage,

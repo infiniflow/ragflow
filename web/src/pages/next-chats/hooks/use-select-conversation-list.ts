@@ -28,6 +28,7 @@ export const useSelectDerivedConversationList = () => {
   const [list, setList] = useState<Array<IConversation>>([]);
   const {
     data: conversationList,
+    total,
     loading,
     loadingMore,
     handleScroll,
@@ -98,6 +99,7 @@ export const useSelectDerivedConversationList = () => {
 
   return {
     list,
+    total,
     addTemporaryConversation,
     removeTemporaryConversation,
     loading,

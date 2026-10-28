@@ -337,7 +337,7 @@ export const useFetchSessionList = () => {
         { chatId: id, params: { ...params, include_history: false } },
         true,
       );
-      return { items: data?.data ?? [] };
+      return { items: data?.data ?? [], total: data?.total ?? 0 };
     },
   });
 

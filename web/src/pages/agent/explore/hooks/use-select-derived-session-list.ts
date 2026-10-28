@@ -10,6 +10,7 @@ export const useSelectDerivedSessionList = () => {
 
   const {
     data: sessions,
+    total,
     loading,
     loadingMore,
     handleScroll,
@@ -60,6 +61,7 @@ export const useSelectDerivedSessionList = () => {
 
   return {
     sessions: list,
+    total,
     loading,
     loadingMore,
     handleScroll,

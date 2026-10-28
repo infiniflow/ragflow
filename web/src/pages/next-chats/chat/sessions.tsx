@@ -45,6 +45,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
+    total,
     addTemporaryConversation,
     removeTemporaryConversation,
     handleInputChange,
@@ -247,11 +248,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
       <div className="flex justify-between items-center mb-4 pt-10">
         <div className="flex items-center gap-3">
           <span className="text-base font-bold">{t('chat.conversations')}</span>
-          <data
-            className="text-text-secondary text-xs"
-            value={conversationList.length}
-          >
-            {conversationList.length}
+          <data className="text-text-secondary text-xs" value={total}>
+            {total}
           </data>
         </div>
 
