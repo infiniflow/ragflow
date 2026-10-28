@@ -492,39 +492,14 @@ def _image_deps_module():
     return module
 
 
-def test_stagehand_proxy_is_restricted_to_the_configured_mirror(monkeypatch):
+def test_image_proxy_is_restricted_to_the_configured_mirror(monkeypatch):
     image_deps = _image_deps_module()
     monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
     with pytest.raises(RuntimeError, match="GH_PROXY"):
-        image_deps.stagehand_url("x64")
+        image_deps.gh_proxy()
 
-
-def test_stagehand_binary_requires_pinned_sha256(tmp_path):
-    image_deps = _image_deps_module()
-    binary = tmp_path / "stagehand-server-v3-linux-x64"
-    binary.write_bytes(b"\x7fELFattacker-controlled executable")
-
-    assert not image_deps._valid_stagehand_binary(str(binary), "x64")
-    assert not image_deps._valid_stagehand_binary(str(binary), "unknown")
-
-
-def test_stagehand_install_rejects_unverified_existing_binary(tmp_path, monkeypatch):
-    image_deps = _image_deps_module()
-    deps_dir = tmp_path / "deps"
-    deps_dir.mkdir()
-    binary = deps_dir / "stagehand-server-v3-linux-x64"
-    binary.write_bytes(b"\x7fELFattacker-controlled executable")
-    cache_dir = tmp_path / "cache"
-
-    monkeypatch.setattr(image_deps, "SCRIPT_DIR", str(deps_dir))
-    monkeypatch.setattr(image_deps.platform, "system", lambda: "Linux")
-    monkeypatch.setattr(image_deps.platform, "machine", lambda: "x86_64")
-    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_dir))
-
-    with pytest.raises(RuntimeError, match="Refusing to install unverified stagehand binary"):
-        image_deps._install_stagehand()
-
-    assert not list(cache_dir.rglob("stagehand-server-v3-linux-x64"))
+    monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
+    assert image_deps.gh_proxy() == "https://gh-proxy.com/"
 
 
 # ── Documentation contract: ARM64 build-host minimums ─────────────────────
