@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type webdavTestFile struct {
@@ -460,6 +461,63 @@ func TestWebDAVConnectorOpenSyncExcludesFilesOlderThanMtimeTolerance(t *testing.
 		if batch.Documents[i].SemanticIdentifier != identifier {
 			t.Fatalf("documents[%d] = %q, want %q", i, batch.Documents[i].SemanticIdentifier, identifier)
 		}
+	}
+}
+
+func TestWebDAVConnectorOpenSyncSelectsFilesByFingerprint(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":           {isDir: true},
+		"/band.txt":   {content: "band body", size: 9, hasSize: true, modified: "Sat, 03 Jan 2026 12:00:00 GMT"},
+		"/new.txt":    {content: "new body", size: 8, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT"},
+		"/stable.txt": {content: "stable body", size: 11, hasSize: true, modified: "Thu, 01 Jan 2026 00:00:00 GMT"},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	// The stored value is spelled out instead of calling webdavFingerprint so a
+	// format change that would silently re-download every document fails here.
+	storedFingerprint := func(size int64, modified string) string {
+		parsed, err := time.Parse(time.RFC1123, modified)
+		if err != nil {
+			t.Fatalf("parse modified %q: %v", modified, err)
+		}
+		return stableFingerprint(map[string]any{
+			"size":     size,
+			"modified": parsed.UTC().Format(time.RFC3339Nano),
+		})
+	}
+	sourceID := func(name string) string { return "webdav:" + server.URL + ":" + server.URL + "/" + name }
+
+	// Every mtime here sits below the watermark, the shape a lagging server
+	// clock produces, and band.txt is additionally inside the tolerance band.
+	// A matching fingerprint must exclude the file, so neither band.txt nor
+	// stable.txt costs a download, while new.txt has no stored fingerprint.
+	start := mustTime(t, "2026-01-03T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+		Fingerprints: map[string]string{
+			sourceID("band.txt"):   storedFingerprint(9, "Sat, 03 Jan 2026 12:00:00 GMT"),
+			sourceID("stable.txt"): storedFingerprint(11, "Thu, 01 Jan 2026 00:00:00 GMT"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	}
+	if batch.Documents[0].SemanticIdentifier != "new.txt" {
+		t.Fatalf("document = %q, want new.txt", batch.Documents[0].SemanticIdentifier)
+	}
+	if len(*getRequests) != 1 || (*getRequests)[0] != "/new.txt" {
+		t.Fatalf("download requests = %v, want [/new.txt]", *getRequests)
 	}
 }
 
