@@ -1,6 +1,13 @@
 import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { IngestionEventItem } from './ingestion';
 
+export interface IApplyDatasetParserConfigResult {
+  dataset_id: string;
+  total_documents: number;
+  updated_documents: number;
+  unchanged_documents: number;
+}
+
 export interface IDocumentInfo {
   // chunk_num: number;
   create_date: string;

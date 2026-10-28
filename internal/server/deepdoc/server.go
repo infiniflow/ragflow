@@ -34,7 +34,6 @@ import (
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
-	"ragflow/internal/server/ingestor"
 )
 
 // inferenceTotalCores returns the CPU budget the DeepDoc inference config is
@@ -134,7 +133,7 @@ func RegisterNativeDeepDoc(arguments *bootstrap.ServerArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := ingestor.ResolveIngestorPageConcurrency(arguments, server.GetConfig().GetIngestorConfig().PageConcurrency)
+	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency(arguments.IngestorPageConcurrency)
 	if err != nil {
 		return err
 	}

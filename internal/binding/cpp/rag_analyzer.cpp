@@ -1889,7 +1889,7 @@ std::string RAGAnalyzer::Tokenize(const std::string &line) {
             for (unsigned i = 0; i < term_list.size(); ++i) {
                 lowercase_string_buffer_.resize(term_list[i].size() + 1);
                 char *lowercase_term = lowercase_string_buffer_.data();
-                ToLower(term_list[i].c_str(), term_list[i].size(), lowercase_term, lowercase_string_buffer_.size());
+                ToLowerUTF8(term_list[i].c_str(), term_list[i].size(), lowercase_term);
                 std::string term_to_stem;
                 if (use_lemmatizer_) {
                     term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);
@@ -2038,7 +2038,7 @@ std::pair<std::vector<std::string>, std::vector<std::pair<unsigned, unsigned>>> 
                         // Apply lowercase before lemmatization to match Python NLTK behavior
                         lowercase_string_buffer_.resize(term.size() + 1);
                         char *lowercase_term = lowercase_string_buffer_.data();
-                        ToLower(term.c_str(), term.size(), lowercase_term, lowercase_string_buffer_.size());
+                        ToLowerUTF8(term.c_str(), term.size(), lowercase_term);
                         std::string term_to_stem;
                         if (use_lemmatizer_) {
                             term_to_stem = wordnet_lemma_->Lemmatize(lowercase_term);

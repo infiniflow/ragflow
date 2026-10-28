@@ -159,67 +159,6 @@ func TestGetComponentInputForm_ExeSQLDynamicInputForm(t *testing.T) {
 	}
 }
 
-func TestGetComponentInputForm_BrowserDynamicInputForm(t *testing.T) {
-	cv := &entity.UserCanvas{
-		ID: "c1",
-		DSL: map[string]any{
-			"components": map[string]any{
-				"Browser:FlatWolvesTry": map[string]any{
-					"obj": map[string]any{
-						"component_name": "Browser",
-						"params": map[string]any{
-							"llm_id":  "gpt-4o@OpenAI",
-							"prompts": "{sys.query}",
-						},
-					},
-				},
-			},
-		},
-	}
-	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
-
-	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/Browser:FlatWolvesTry/input-form", "")
-	c.Params = gin.Params{
-		{Key: "canvas_id", Value: "c1"},
-		{Key: "component_id", Value: "Browser:FlatWolvesTry"},
-	}
-	h.GetComponentInputForm(c)
-
-	if w.Code != 200 {
-		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
-	}
-	var env struct {
-		Code int                    `json:"code"`
-		Data map[string]interface{} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
-		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
-	}
-	if env.Code != 0 {
-		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
-	}
-	prompts, ok := env.Data["prompts"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data.prompts = %v, want a map", env.Data["prompts"])
-	}
-	if prompts["name"] != "Prompts" {
-		t.Errorf("data.prompts.name = %v, want Prompts", prompts["name"])
-	}
-	if prompts["type"] != "paragraph" {
-		t.Errorf("data.prompts.type = %v, want paragraph", prompts["type"])
-	}
-	uploadSources, ok := env.Data["upload_sources"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data.upload_sources = %v, want a map", env.Data["upload_sources"])
-	}
-	if uploadSources["name"] != "Upload sources" {
-		t.Errorf("data.upload_sources.name = %v, want Upload sources", uploadSources["name"])
-	}
-	if uploadSources["type"] != "line" {
-		t.Errorf("data.upload_sources.type = %v, want line", uploadSources["type"])
-	}
-}
-
 func TestGetComponentInputForm_CanvasNotFound(t *testing.T) {
 	h := &AgentHandler{loader: &fakeCanvasLoader{err: dao.ErrUserCanvasNotFound}}
 

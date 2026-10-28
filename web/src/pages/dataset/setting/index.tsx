@@ -9,7 +9,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
-import { Modal } from '@/components/ui/modal/modal';
 import {
   Form,
   FormField,
@@ -49,6 +48,7 @@ import { PipelineVersionSelect } from '@/components/pipeline-version-select';
 import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
+import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -79,6 +79,7 @@ export default function DatasetSetting() {
     sourceData,
   } = useFetchDatasetSettingOnMount(form);
   const { handleSave, loading: saveLoading } = useSaveDatasetSetting();
+  const [applyParserConfigOpen, setApplyParserConfigOpen] = useState(false);
 
   const [sourceDataState, setSourceDataState] =
     useState<IDataSourceNodeProps[]>();
@@ -207,27 +208,19 @@ export default function DatasetSetting() {
         data.parse_type !== savedValues?.parse_type ||
         (data.parser_id || '') !== (savedValues?.parser_id || '') ||
         (data.pipeline_id || '') !== (savedValues?.pipeline_id || '') ||
+        (data.pipeline_version_id || '') !==
+          (savedValues?.pipeline_version_id || '') ||
         !isEqual(parserConfig, savedParserConfig);
-
-      if (knowledgeDetails.chunk_count > 0 && parserSettingsChanged) {
-        await new Promise<void>((resolve) => {
-          Modal.warning({
-            title: t('common.warn'),
-            content: t('knowledgeConfiguration.parserSettingsChangeWarning'),
-            okText: t('common.ok'),
-            closable: false,
-            showCancel: false,
-            onOk: resolve,
-          });
-        });
-      }
 
       const result = await handleSave(data);
       if (result.code === 0) {
         form.reset(data);
+        if (knowledgeDetails.document_count > 0 && parserSettingsChanged) {
+          setApplyParserConfigOpen(true);
+        }
       }
     },
-    [form, handleSave, knowledgeDetails.chunk_count, operatorNodes, t],
+    [form, handleSave, knowledgeDetails.document_count, operatorNodes, t],
   );
 
   const { errors } = useFormState({
@@ -269,6 +262,11 @@ export default function DatasetSetting() {
 
   return (
     <div className="pr-5 pb-5">
+      <ApplyParserConfigDialog
+        datasetId={knowledgeDetails.id}
+        open={applyParserConfigOpen}
+        onOpenChange={setApplyParserConfigOpen}
+      />
       <Card className="p-0 h-full flex flex-col bg-transparent shadow-none">
         <CardHeader className="p-5 border-b-0.5 border-border-button">
           <header>

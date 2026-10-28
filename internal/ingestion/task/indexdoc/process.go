@@ -105,6 +105,21 @@ func ProcessChunksForPipeline(
 	return metadata, nil
 }
 
+// StampDatasetPagerank writes the dataset's pagerank onto every chunk a run is
+// about to index. Python's index-time doc template carries it
+// (`if task["pagerank"]: doc[PAGERANK_FLD] = int(...)`), which is what makes a
+// pagerank configured before parsing apply to the chunks it produces. Without
+// it only the chunks that already existed when the setting was saved carry the
+// value, since the dataset-level update rewrites rows rather than future ones.
+func StampDatasetPagerank(chunks []map[string]any, pagerank int64) {
+	if pagerank == 0 {
+		return
+	}
+	for _, chunk := range chunks {
+		chunk[common.PAGERANK_FLD] = pagerank
+	}
+}
+
 // requireStringText enforces the pre-index wire contract: every chunk must
 // carry a string "text" field before chunk-id generation or persistence mapping.
 func requireStringText(ck map[string]any) (string, error) {

@@ -120,7 +120,7 @@ func NewPDFParser() *PDFParser {
 		ParseMethod:                    "deepdoc",
 		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		OpenDataLoaderTimeout:          600,
+		OpenDataLoaderTimeout:          openDataLoaderTimeoutSeconds,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
@@ -364,7 +364,7 @@ func (p *PDFParser) validateParseMethod() error {
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
 	if result.Err == nil {
-		return p.NormalizeResult(ctx, filename, result)
+		return AttachPDFOutlines(p.NormalizeResult(ctx, filename, result), data)
 	}
 	return result
 }

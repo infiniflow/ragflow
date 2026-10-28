@@ -8,9 +8,15 @@ export const useSelectDerivedSessionList = () => {
     Array<IAgentLogResponse & { is_new?: boolean }>
   >([]);
 
-  const { data: sessions = [], loading } = useFetchSessionsByCanvasId();
+  const {
+    data: sessions,
+    total,
+    loading,
+    loadingMore,
+    handleScroll,
+  } = useFetchSessionsByCanvasId();
 
-  const { setSessionId } = useExploreUrlParams();
+  const { setSessionId, isNew, canvasId } = useExploreUrlParams();
 
   const addTemporarySession = useCallback(() => {
     const now = Date.now() / 1000;
@@ -47,12 +53,18 @@ export const useSelectDerivedSessionList = () => {
 
   // Sync server data to local state
   useEffect(() => {
-    setList(sessions);
-  }, [sessions]);
+    setList((previous) => [
+      ...previous.filter((session) => session.is_new && isNew === 'true'),
+      ...sessions,
+    ]);
+  }, [sessions, isNew, canvasId]);
 
   return {
     sessions: list,
+    total,
     loading,
+    loadingMore,
+    handleScroll,
     addTemporarySession,
     removeTemporarySession,
   };
