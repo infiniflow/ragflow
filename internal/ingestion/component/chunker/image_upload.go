@@ -20,6 +20,7 @@
 // of carrying every image across the component boundary, matching the
 // pdfcrop_cgo sliding-window philosophy. Mirrors Python image2id +
 // upload_to_minio (rag/utils/base64_image.py, rag/svr/task_executor.py).
+// It also re-acquires the source document for deferred media references.
 package chunker
 
 import (
@@ -32,6 +33,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
@@ -176,4 +178,37 @@ func resolveImageUploadContext(ctx context.Context, inputs map[string]any) (kbID
 	kbID = globals.GlobalOrInput(ctx, inputs, "kb_id", "")
 	docID = globals.GlobalOrInput(ctx, inputs, "doc_id", "")
 	return kbID, docID
+}
+
+// --- deferred media source ---
+
+// chunkMediaSourceFactory resolves the source document for deferred media_refs.
+// Tests override it with an in-memory source.
+var chunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+	return chunkMediaSource(db, inputs)
+}
+
+// chunkMediaSource re-acquires the source document for a deferred media_ref.
+// It prefers the explicit bucket/path pair the Parser forwards and falls back
+// to resolving the same reference from doc_id.
+func chunkMediaSource(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+	return parser.MediaSourceFunc(func(ctx context.Context) ([]byte, error) {
+		bucket := globals.GlobalOrInput(ctx, inputs, "bucket", "")
+		path := globals.GlobalOrInput(ctx, inputs, "path", "")
+		if bucket != "" && path != "" {
+			return component.FetchBinary(ctx, bucket, path)
+		}
+		docID := globals.GlobalOrInput(ctx, inputs, "doc_id", "")
+		if docID == "" || db == nil {
+			return nil, errors.New("chunker: no source document reference for media_ref")
+		}
+		ref, err := component.ResolveDocumentStorage(ctx, db, docID)
+		if err != nil {
+			return nil, err
+		}
+		if ref == nil || ref.Bucket == "" || ref.Path == "" {
+			return nil, fmt.Errorf("chunker: document %s has no storage reference", docID)
+		}
+		return component.FetchBinary(ctx, ref.Bucket, ref.Path)
+	})
 }
