@@ -37,18 +37,6 @@ func holdRequest(t *testing.T) (*httptest.Server, *atomic.Int64, chan struct{}, 
 	return server, &hits, entered, release
 }
 
-// cancelInFlight cancels while the held request is open, then lets the server
-// finish so the test never waits on it. The fallback covers the case where the
-// request never reached the server at all.
-func cancelInFlight(cancel context.CancelFunc, entered chan struct{}, release chan struct{}) {
-	select {
-	case <-entered:
-		cancel()
-	case <-time.After(3 * time.Second):
-	}
-	close(release)
-}
-
 func TestParsePDFWithSoMark_CancelledContextStopsBeforeSubmit(t *testing.T) {
 	withSSRFBypass(t)
 	var hits int
@@ -79,12 +67,38 @@ func TestParsePDFWithSoMark_CancelledContextStopsBeforeSubmit(t *testing.T) {
 func TestSoMarkSubmit_CancelDuringRequestAbortsIt(t *testing.T) {
 	withSSRFBypass(t)
 	server, hits, entered, release := holdRequest(t)
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandler()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	go cancelInFlight(cancel, entered, release)
 	defer cancel()
 
-	_, err := soMarkSubmit(ctx, server.URL, "sample.pdf", []byte("%PDF-1.4"), NewPDFParser(), "key")
+	// The call must return on cancellation before the server writes its
+	// response: releasing first would let a context-ignoring client read the
+	// 503 instead of failing with context.Canceled, hiding the regression.
+	done := make(chan error, 1)
+	go func() {
+		_, err := soMarkSubmit(ctx, server.URL, "sample.pdf", []byte("%PDF-1.4"), NewPDFParser(), "key")
+		done <- err
+	}()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the SoMark submit request never reached the server")
+	}
+	cancel()
+
+	var err error
+	select {
+	case err = <-done:
+	case <-time.After(2 * time.Second):
+		releaseHandler()
+		t.Fatal("soMarkSubmit returned nothing after cancellation: the in-flight request kept running")
+	}
+	releaseHandler()
+
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled in chain", err)
 	}
@@ -116,13 +130,34 @@ func TestParsePDFWithSoMark_CancelDuringPollAbortsPollRequest(t *testing.T) {
 	defer server.Close()
 
 	ctx, cancel := context.WithCancel(t.Context())
-	go cancelInFlight(cancel, entered, release)
 	defer cancel()
+
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandler()
 
 	p := NewPDFParser()
 	p.SoMarkBaseURL = server.URL
 	p.SoMarkAPIKey = "key"
-	res := parsePDFWithSoMark(ctx, "sample.pdf", []byte("%PDF-1.4"), p)
+	done := make(chan ParseResult, 1)
+	go func() { done <- parsePDFWithSoMark(ctx, "sample.pdf", []byte("%PDF-1.4"), p) }()
+
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the SoMark poll request never reached the server")
+	}
+	cancel()
+
+	var res ParseResult
+	select {
+	case res = <-done:
+	case <-time.After(2 * time.Second):
+		releaseHandler()
+		t.Fatal("parsePDFWithSoMark returned nothing after cancellation: the in-flight poll kept running")
+	}
+	releaseHandler()
+
 	if !errors.Is(res.Err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled from the in-flight poll", res.Err)
 	}
