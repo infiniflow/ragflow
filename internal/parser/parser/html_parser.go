@@ -32,13 +32,10 @@ import (
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
-	// MediaMode selects whether inline images carry bytes, a media_ref, or
-	// both. It defaults to the deployment configuration.
-	MediaMode MediaMode
 }
 
 func NewHTMLParser() *HTMLParser {
-	return &HTMLParser{MediaMode: mediaModeFromEnv()}
+	return &HTMLParser{}
 }
 
 func (p *HTMLParser) String() string {
@@ -83,7 +80,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{mediaMode: p.MediaMode}
+	state := &htmlWalkState{refOnly: true}
 	walkHTMLBlocksWithState(doc, &items, state)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -117,8 +114,12 @@ type htmlWalkState struct {
 	mediaOrder          int
 	skippedInlineImages int
 	mediaBudget         *embeddedMediaBudget
-	mediaMode           MediaMode
-	resolveImage        func(string) (string, bool)
+	// refOnly defers image bytes to content-addressed references. HTML is
+	// ref-only, matching the PDF parser; the EPUB/SoMark/Markdown walkers
+	// still inline until their resolvers land. The zero value keeps the
+	// historical inline representation.
+	refOnly      bool
+	resolveImage func(string) (string, bool)
 }
 
 func (s *htmlWalkState) warnings() []string {
@@ -144,11 +145,14 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		return "", nil, false
 	}
 	normalized, size, digest, ok := normalizeHTMLImageSource(src)
-	if !ok || !s.mediaBudget.includeReservedSize(int(size)) {
+	if !ok {
+		return "", nil, false
+	}
+	if !s.refOnly && !s.mediaBudget.includeReservedSize(int(size)) {
 		return "", nil, false
 	}
 	var ref *entity.MediaRef
-	if s.mediaMode.EmitsRefs() {
+	if s.refOnly {
 		ref = newHTMLMediaRef(dataURIMediaType(normalized), size, digest)
 	}
 	return normalized, ref, true
@@ -560,10 +564,10 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string
 		"doc_type_kwd": "image",
 		"media_order":  state.mediaOrder,
 	}
-	if state.mediaMode.EmitsBytes() {
+	if !state.refOnly {
 		item["image"] = src
 	}
-	if state.mediaMode.EmitsRefs() && ref != nil {
+	if state.refOnly && ref != nil {
 		item["media_ref"] = ref
 	}
 	if parentTableID != "" {

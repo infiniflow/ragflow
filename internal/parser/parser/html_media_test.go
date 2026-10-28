@@ -14,7 +14,7 @@ import (
 
 const htmlMediaDataURI = "data:image/png;base64,aGVsbG8="
 
-func TestHTMLParser_EmitsInlineImagesInDocumentOrder(t *testing.T) {
+func TestHTMLParser_EmitsMediaRefsInDocumentOrder(t *testing.T) {
 	input := `<p>before <img alt="figure alt" src="` + htmlMediaDataURI + `"> after</p>`
 	result := NewHTMLParser().ParseWithResult(context.Background(), "inline.html", []byte(input))
 	if result.Err != nil {
@@ -30,8 +30,14 @@ func TestHTMLParser_EmitsInlineImagesInDocumentOrder(t *testing.T) {
 		t.Errorf("before item = %+v", result.JSON[0])
 	}
 	imageItem := result.JSON[1].ToMap()
-	if imageItem["doc_type_kwd"] != "image" || imageItem["image"] != htmlMediaDataURI || imageItem["text"] != "figure alt" || imageItem["media_order"] != 1 {
+	if imageItem["doc_type_kwd"] != "image" || imageItem["text"] != "figure alt" || imageItem["media_order"] != 1 {
 		t.Errorf("image item = %+v", imageItem)
+	}
+	if _, ok := imageItem["image"]; ok {
+		t.Errorf("image bytes retained: %+v", imageItem)
+	}
+	if entity.MediaRefFromAny(imageItem["media_ref"]) == nil {
+		t.Errorf("image item without media_ref: %+v", imageItem)
 	}
 	if result.JSON[2].ToMap()["text"] != "after" || result.JSON[2].ToMap()["doc_type_kwd"] != "text" {
 		t.Errorf("after item = %+v", result.JSON[2])
@@ -57,10 +63,13 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	if !strings.Contains(tableText, "A") {
 		t.Errorf("table text lost the cell text: %q", tableText)
 	}
-	if result.JSON[1].ToMap()["image"] != htmlMediaDataURI {
-		t.Errorf("inline image payload = %v, want data URI", result.JSON[1].ToMap()["image"])
-	}
 	item := result.JSON[1].ToMap()
+	if _, ok := item["image"]; ok {
+		t.Errorf("image bytes retained: %+v", item)
+	}
+	if entity.MediaRefFromAny(item["media_ref"]) == nil {
+		t.Errorf("image item without media_ref: %+v", item)
+	}
 	if item["doc_type_kwd"] != "image" || item["parent_table_id"] != "html-table-1" {
 		t.Errorf("inline image item = %+v", item)
 	}
@@ -108,14 +117,13 @@ func TestHTMLParser_DocumentImageLimit(t *testing.T) {
 
 func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeBoth
 	result := p.ParseWithResult(context.Background(), "ref.html", []byte(`<p><img alt="figure" src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
 	item := result.JSON[0].ToMap()
-	if item["image"] != htmlMediaDataURI {
-		t.Fatalf("image = %v, want inline payload in both mode", item["image"])
+	if _, ok := item["image"]; ok {
+		t.Fatalf("image bytes retained: %+v", item)
 	}
 	ref := entity.MediaRefFromAny(item["media_ref"])
 	if ref == nil {
@@ -130,35 +138,18 @@ func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	}
 }
 
-func TestHTMLParser_RefModeOmitsImageBytes(t *testing.T) {
+func TestHTMLParser_OmitsImageBytes(t *testing.T) {
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "ref-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
 	item := result.JSON[0].ToMap()
 	if _, ok := item["image"]; ok {
-		t.Fatalf("ref mode retained image bytes: %+v", item)
+		t.Fatalf("parser retained image bytes: %+v", item)
 	}
 	if entity.MediaRefFromAny(item["media_ref"]) == nil {
-		t.Fatalf("ref mode dropped media_ref: %+v", item)
-	}
-}
-
-func TestHTMLParser_InlineModeOmitsMediaRef(t *testing.T) {
-	p := NewHTMLParser()
-	p.MediaMode = MediaModeInline
-	result := p.ParseWithResult(context.Background(), "inline-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
-	if result.Err != nil {
-		t.Fatalf("ParseWithResult: %v", result.Err)
-	}
-	item := result.JSON[0].ToMap()
-	if item["image"] != htmlMediaDataURI {
-		t.Fatalf("image = %v, want inline payload", item["image"])
-	}
-	if _, ok := item["media_ref"]; ok {
-		t.Fatalf("inline mode emitted media_ref: %+v", item)
+		t.Fatalf("parser dropped media_ref: %+v", item)
 	}
 }
 
@@ -166,7 +157,6 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
 		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "match.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -226,14 +216,13 @@ func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
 }
 
 // TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes pins the core
-// goal: in ref mode the parse result no longer scales with image payloads.
-func TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes(t *testing.T) {
+// goal: the parse result no longer scales with image payloads.
+func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 	const imageCount = 64
 	payload := base64.StdEncoding.EncodeToString(make([]byte, 64<<10))
 	input := strings.Repeat(`<img src="data:image/png;base64,`+payload+`">`, imageCount)
 
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "large.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)

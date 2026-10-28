@@ -133,7 +133,6 @@ func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
 			p := NewHTMLParser()
-			p.MediaMode = MediaModeRef
 			result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
 			if result.Err != nil {
 				t.Fatal(result.Err)
@@ -178,7 +177,6 @@ func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
 	}
 
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "script.html", []byte(input))
 	if result.Err != nil {
 		t.Fatal(result.Err)
@@ -249,7 +247,6 @@ func TestMediaResolverReportsTruncatedMissingImage(t *testing.T) {
 func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
 	t.Helper()
 	p := NewHTMLParser()
-	p.MediaMode = MediaModeRef
 	result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
 	if result.Err != nil {
 		t.Fatal(result.Err)

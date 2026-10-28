@@ -15,38 +15,16 @@
 package chunker
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/parser/parser"
 )
-
-// EnvMediaRefShadow enables the both-mode shadow check. With the flag on, the
-// chunker resolves every media_ref and verifies it against the inline payload
-// that is actually uploaded. It changes no output; it measures whether the
-// resolver reproduces the parser's bytes before a deployment flips to ref
-// mode.
-const EnvMediaRefShadow = "RAGFLOW_MEDIA_REF_SHADOW"
-
-func mediaRefShadowEnabled() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(EnvMediaRefShadow))) {
-	case "1", "true", "yes":
-		return true
-	default:
-		return false
-	}
-}
 
 // ChunkMediaSourceFactory resolves the source document for deferred media_refs.
 // Tests override it with an in-memory source.
@@ -77,35 +55,4 @@ func chunkMediaSource(db *gorm.DB, inputs map[string]any) parser.MediaSource {
 		}
 		return component.FetchBinary(ctx, ref.Bucket, ref.Path)
 	})
-}
-
-// verifyChunkMedia resolves each reference and compares the result with the
-// bytes the parser inlined. Mismatches mean the source changed after parsing
-// or the reference locator is wrong; both are worth a warning, neither
-// changes the chunk.
-func verifyChunkMedia(ctx context.Context, chunks []map[string]any, resolver parser.MediaResolver, src parser.MediaSource) {
-	for _, ck := range chunks {
-		ref := entity.MediaRefFromAny(ck["media_ref"])
-		if ref == nil {
-			continue
-		}
-		img, _ := ck["image"].(string)
-		if img == "" {
-			continue
-		}
-		inline, err := decodeChunkImage(img)
-		if err != nil {
-			common.Warn("media_ref shadow check: decode inline image failed", zap.String("sha256", ref.SHA256), zap.Error(err))
-			continue
-		}
-		resolved, err := resolver.Resolve(ctx, *ref, src)
-		if err != nil {
-			common.Warn("media_ref shadow check: resolve failed", zap.String("sha256", ref.SHA256), zap.Error(err))
-			continue
-		}
-		if !bytes.Equal(inline, resolved) {
-			common.Warn("media_ref shadow check: resolved image differs from the inline payload",
-				zap.String("sha256", ref.SHA256))
-		}
-	}
 }

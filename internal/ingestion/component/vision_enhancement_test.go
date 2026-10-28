@@ -222,13 +222,12 @@ func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
 	uri := "data:image/png;base64," + visionTestPNGBase64(t)
 	html := `<p><img alt="figure" src="` + uri + `"></p>`
 	p := parser.NewHTMLParser()
-	p.MediaMode = parser.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "ref.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
 	}
 	if _, ok := parsed.JSON[0].ToMap()["image"]; ok {
-		t.Fatal("parser retained image bytes in ref mode")
+		t.Fatal("parser retained image bytes")
 	}
 
 	res, handled, err := maybeDispatchVisionEnhancement(

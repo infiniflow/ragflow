@@ -2,8 +2,10 @@ package parser
 
 import (
 	"context"
-	"strings"
+	"encoding/base64"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestParsersNormalizeInlineImagePayload(t *testing.T) {
@@ -31,12 +33,15 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 		for _, format := range []string{"html", "html_table", "markdown"} {
 			t.Run(tc.name+"/"+format, func(t *testing.T) {
 				uri := "data:image/png;base64," + tc.payload
+				var source []byte
 				var result ParseResult
 				switch format {
 				case "html":
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", []byte(`<p><img alt="caption" src="`+uri+`"></p>`))
+					source = []byte(`<p><img alt="caption" src="` + uri + `"></p>`)
+					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", source)
 				case "html_table":
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", []byte(`<table><tr><td><img alt="caption" src="`+uri+`"></td></tr></table>`))
+					source = []byte(`<table><tr><td><img alt="caption" src="` + uri + `"></td></tr></table>`)
+					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", source)
 				case "markdown":
 					result = markdown.ParseWithResult(context.Background(), "image.md", []byte("![caption](<"+uri+">)"))
 				}
@@ -45,14 +50,27 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 				}
 				images := 0
 				for _, item := range result.JSON {
-					image, _ := item.ToMap()["image"].(string)
+					m := item.ToMap()
+					var image string
+					if format == "markdown" {
+						image, _ = m["image"].(string)
+					} else {
+						ref := entity.MediaRefFromAny(m["media_ref"])
+						if ref == nil {
+							continue
+						}
+						data, err := NewMediaResolver().Resolve(context.Background(), *ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+							return source, nil
+						}))
+						if err != nil {
+							t.Fatalf("resolve: %v", err)
+						}
+						image = base64.StdEncoding.EncodeToString(data)
+					}
 					if image == "" {
 						continue
 					}
 					images++
-					if format != "markdown" {
-						image = strings.TrimPrefix(image, "data:image/png;base64,")
-					}
 					if image != tc.want {
 						t.Errorf("image payload = %q, want %q", image, tc.want)
 					}

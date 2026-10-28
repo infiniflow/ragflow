@@ -146,9 +146,6 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if kbID != "" {
 		resolver := parser.NewMediaResolver()
 		source := ChunkMediaSourceFactory(db, inputs)
-		if mediaRefShadowEnabled() {
-			verifyChunkMedia(ctx, chunks, resolver, source)
-		}
 		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID, resolver, source)
 		if err != nil {
 			return nil, err

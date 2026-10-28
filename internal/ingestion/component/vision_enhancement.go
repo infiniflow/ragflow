@@ -296,7 +296,7 @@ func maybeDispatchVisionEnhancement(
 	// a deferred Close as a panic/early-return safety net: Close is idempotent
 	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
-	// A parser in ref mode leaves the bytes out of the result. Materialize
+	// A parser that emits references leaves the bytes out of the result. Materialize
 	// each referenced image from the bytes this invocation parsed, so the VLM
 	// path neither re-reads storage nor loses descriptions on those formats.
 	var resolver parser.MediaResolver

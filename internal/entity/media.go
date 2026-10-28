@@ -27,10 +27,11 @@ const (
 )
 
 // MediaRef is a parser-emitted reference to an image in the source document.
-// In ref mode the parse result carries only the reference; in both mode it
-// accompanies the inline bytes. It lets the ingestion chunker (or any later
-// consumer) re-materialize exactly one image from the source instead of
-// carrying every image in memory for the whole parse.
+// A parser that defers image bytes emits only this reference; formats that
+// still inline the payload carry it alongside the bytes. It lets the
+// ingestion chunker (or any later consumer) re-materialize exactly one image
+// from the source instead of carrying every image in memory for the whole
+// parse.
 //
 // The reference is intentionally source-relative: it carries no DocID. The
 // parser does not know the document ID, and every consumer already resolves

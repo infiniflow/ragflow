@@ -15,10 +15,7 @@
 package chunker
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"errors"
 	"testing"
 
 	"gorm.io/gorm"
@@ -36,7 +33,6 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	html := `<p>before</p><p><img alt="figure" src="` + uri + `"></p><p>after</p>`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "deck.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -93,64 +89,6 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	}
 }
 
-// TestMediaRefShadowDoesNotChangeOutput pins the shadow contract: a resolver
-// failure during verification must not alter the chunk or block the inline
-// upload.
-func TestMediaRefShadowDoesNotChangeOutput(t *testing.T) {
-	t.Setenv(EnvMediaRefShadow, "1")
-	want, err := base64.StdEncoding.DecodeString(pngBase64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	uri := "data:image/png;base64," + pngBase64
-	html := `<img alt="figure" src="` + uri + `">`
-
-	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeBoth
-	parsed := p.ParseWithResult(t.Context(), "shadow.html", []byte(html))
-	if parsed.Err != nil {
-		t.Fatal(parsed.Err)
-	}
-
-	var uploaded []byte
-	prevUploader := ChunkImageUploader
-	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, data []byte) (string, error) {
-		uploaded = append([]byte(nil), data...)
-		return kbID + "-" + chunkID, nil
-	}
-	t.Cleanup(func() { ChunkImageUploader = prevUploader })
-
-	prevSource := ChunkMediaSourceFactory
-	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
-			return nil, errors.New("source unavailable")
-		})
-	}
-	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
-
-	comp, err := NewOneChunker(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
-		"name": "shadow.html", "kb_id": testKBID,
-		"output_format": "json", "json": parsed.JSON,
-	})
-	if err != nil {
-		t.Fatalf("decorator: %v", err)
-	}
-	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
-	if len(chunks) != 1 {
-		t.Fatalf("chunks = %d, want 1", len(chunks))
-	}
-	if imgID, ok := chunks[0]["img_id"].(string); !ok || imgID == "" {
-		t.Fatal("shadow failure blocked the inline upload")
-	}
-	if !bytes.Equal(uploaded, want) {
-		t.Fatalf("uploaded %d bytes, want the inline image", len(uploaded))
-	}
-}
-
 // TestTitleChunkerCarriesMediaRef covers the group/title path, which builds
 // chunks from lineRecord values instead of ChunkDoc conversions.
 func TestTitleChunkerCarriesMediaRef(t *testing.T) {
@@ -158,7 +96,6 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	html := `<h1>Heading</h1><p>body</p><img alt="figure" src="` + uri + `">`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "title.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -213,7 +150,6 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	html := `<p>before</p><img alt="figure" src="` + uri + `"><p>after</p>`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "general.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -333,7 +269,6 @@ func TestImageUploadDecorator_ResolvesSelfClosingImage(t *testing.T) {
 	html := `<img alt="figure" src="` + uri + `" />`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "self-closing.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)

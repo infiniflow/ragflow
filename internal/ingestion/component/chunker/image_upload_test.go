@@ -56,7 +56,13 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 			uri := "data:image/png;base64," + pngBase64[:len(pngBase64)-2]
 			var parsed parserlib.ParseResult
 			if format == "html" {
-				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", []byte(`<img alt="caption" src="`+uri+`">`))
+				source := []byte(`<img alt="caption" src="` + uri + `">`)
+				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", source)
+				prevSource := ChunkMediaSourceFactory
+				ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+					return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
+				}
+				t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
 			} else {
 				p, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
 				if err != nil {
@@ -484,7 +490,6 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	html := `<img src="` + uri + `">`
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -548,7 +553,6 @@ func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 	uri := "data:image/png;base64," + pngBase64
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(`<img src="`+uri+`">`))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
@@ -587,7 +591,6 @@ func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
 	uri := "data:image/png;base64," + pngBase64
 
 	p := parserlib.NewHTMLParser()
-	p.MediaMode = parserlib.MediaModeRef
 	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(`<img src="`+uri+`">`))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
