@@ -51,15 +51,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: MinerU cloud: %w", err)}
 		}
-		content := ""
-		if parsed != nil {
-			content = parsed.Markdown
-		}
-		pageCount := 0
-		if strings.TrimSpace(content) != "" {
-			pageCount = 1
-		}
-		return pdfMarkdownToResult(ctx, filename, content, pageCount)
+		return minerUMarkdownResult(ctx, filename, parsed)
 	}
 	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
 	if err != nil {
@@ -73,15 +65,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
 		}
-		content := ""
-		if parsed != nil {
-			content = parsed.Markdown
-		}
-		pageCount := 0
-		if strings.TrimSpace(content) != "" {
-			pageCount = 1
-		}
-		return pdfMarkdownToResult(ctx, filename, content, pageCount)
+		return minerUMarkdownResult(ctx, filename, parsed)
 	}
 	timeout := parser.MinerUPollTimeout
 	if timeout <= 0 {
@@ -113,6 +97,17 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		pageCount = 1
 	}
 	return pdfMarkdownToResult(ctx, filename, content, pageCount)
+}
+
+func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.MinerUV1Result) ParseResult {
+	content := ""
+	if parsed != nil {
+		content = parsed.Markdown
+	}
+	if strings.TrimSpace(content) == "" {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU result is empty")}
+	}
+	return pdfMarkdownToResult(ctx, filename, content, 1)
 }
 
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {

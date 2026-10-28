@@ -270,6 +270,22 @@ func TestMinerUMarkdownFromZip(t *testing.T) {
 	}
 }
 
+func TestMinerUMarkdownFromStructuredContentZip(t *testing.T) {
+	buf := minerUTestZip(t, "structured_content.json", `{"pages":[{"blocks":[
+		{"type":"header","content":"HEADER"},
+		{"type":"paragraph_title","content":"章节"},
+		{"type":"text","content":"正文"},
+		{"type":"table","content":"单元格","captions":[{"content":"表1"}]}
+	]}]}`)
+	md, err := minerUMarkdownFromZip(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md, "章节") || !strings.Contains(md, "正文") || !strings.Contains(md, "表1") || strings.Contains(md, "HEADER") {
+		t.Fatalf("md = %q", md)
+	}
+}
+
 func TestMinerULocalCheckConnectionPrefersV1Health(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
