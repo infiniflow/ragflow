@@ -519,6 +519,32 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 	return FillMissingModelTypes(models)
 }
 
+const (
+	// streamTTSErrorBodyBytes caps the part of a non-200 streaming-TTS response
+	// that is quoted in the error message, so a large error page cannot inflate
+	// the error string.
+	streamTTSErrorBodyBytes = 1024
+	// streamTTSErrorBodyDrainBytes bounds the follow-up read that lets a short
+	// error page release its connection for reuse.
+	streamTTSErrorBodyDrainBytes = 4 << 10
+)
+
+// readStreamTTSErrorBody captures the head of a failed streaming-TTS response
+// for the error message, then drains a bounded remainder so the transport can
+// reuse the connection. A read failure in either phase is returned with what was
+// captured so far: reading only the head can succeed on a body that is later
+// cut short.
+func readStreamTTSErrorBody(body io.Reader) ([]byte, error) {
+	head, err := io.ReadAll(io.LimitReader(body, streamTTSErrorBodyBytes))
+	if err != nil {
+		return head, err
+	}
+	if _, err := io.Copy(io.Discard, io.LimitReader(body, streamTTSErrorBodyDrainBytes)); err != nil {
+		return head, err
+	}
+	return head, nil
+}
+
 // PostJSONRequest marshals body to JSON, creates a POST request to url
 func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string, body map[string]interface{}) (*http.Response, error) {
 	data, err := json.Marshal(body)

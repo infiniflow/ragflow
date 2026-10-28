@@ -296,9 +296,7 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Bounded so a large error page cannot be buffered whole, but still read to
-		// EOF so a truncated body reports the failure.
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		body, err := readStreamTTSErrorBody(resp.Body)
 		if err != nil {
 			return fmt.Errorf("StepFun stream TTS API error: %d (body: %q): %w", resp.StatusCode, string(body), err)
 		}
