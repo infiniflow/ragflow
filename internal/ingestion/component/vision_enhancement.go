@@ -190,7 +190,9 @@ func parserSourceBytes(inputs map[string]any) []byte {
 
 // maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
 // resources and table regions. PDF OCR remains in the PDF parser; non-PDF
-// image text comes from this optional enhancement.
+// image text comes from this optional enhancement. It is best-effort per
+// item: a failed image is counted in a warning and the rest of the parse
+// result is still returned.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
