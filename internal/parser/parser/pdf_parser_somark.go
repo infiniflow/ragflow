@@ -38,7 +38,7 @@ func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parse
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	items, pageCount, warnings := soMarkItems(ctx, result, parser.SoMarkKeepHeaderFooter)
+	items, pageCount, warnings := soMarkItems(ctx, result, soMarkKeepHeaderFooter(parser))
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -48,6 +48,13 @@ func parsePDFWithSoMark(ctx context.Context, filename string, data []byte, parse
 	parsed := pdfItemsToResult(filename, items, pageCount)
 	parsed.Warnings = warnings
 	return parsed
+}
+
+func soMarkKeepHeaderFooter(parser *PDFParser) bool {
+	if parser.RemoveHeaderFooter {
+		return false
+	}
+	return parser.SoMarkKeepHeaderFooter
 }
 
 // soMarkSubmit uploads a PDF with the supplied credentials and parser options,
@@ -76,7 +83,7 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 		"enable_inline_image":            parser.envOrBool(common.EnvSOMarkEnableInlineImage, parser.SoMarkEnableInlineImage),
 		"enable_table_image":             parser.envOrBool(common.EnvSOMarkEnableTableImage, parser.SoMarkEnableTableImage),
 		"enable_image_understanding":     parser.envOrBool(common.EnvSOMarkEnableImageUnderstanding, parser.SoMarkEnableImageUnderstanding),
-		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, parser.SoMarkKeepHeaderFooter),
+		"keep_header_footer":             parser.envOrBool(common.EnvSOMarkKeepHeaderFooter, soMarkKeepHeaderFooter(parser)),
 	})
 	_ = writer.WriteField("element_formats", string(elementFormats))
 	_ = writer.WriteField("feature_config", string(featureConfig))

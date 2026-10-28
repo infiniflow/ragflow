@@ -366,10 +366,11 @@ func (p *PDFParser) validateParseMethod() error {
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
-	if result.Err == nil {
-		return p.NormalizeResult(ctx, filename, result)
+	if result.Err != nil {
+		return result
 	}
-	return result
+	result = p.NormalizeResult(ctx, filename, result)
+	return p.FinalizePDFResult(data, result)
 }
 
 func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
