@@ -16,6 +16,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
@@ -52,11 +53,11 @@ func decodeHTMLSource(data []byte) []byte {
 //
 // The truncated flag reports that the span cap was reached. A missing digest
 // in that state means the index is incomplete, not that the image is absent.
-func scanHTMLMediaSpans(data []byte) ([]htmlMediaSpan, bool) {
+func scanHTMLMediaSpans(ctx context.Context, data []byte) ([]htmlMediaSpan, bool) {
 	const maxSpans = 4096
 	spans := make([]htmlMediaSpan, 0, 8)
 	truncated := false
-	walkHTMLMediaSpans(data, func(span htmlMediaSpan) bool {
+	walkHTMLMediaSpans(ctx, data, func(span htmlMediaSpan) bool {
 		if len(spans) >= maxSpans {
 			truncated = true
 			return false
@@ -69,10 +70,13 @@ func scanHTMLMediaSpans(data []byte) ([]htmlMediaSpan, bool) {
 
 // walkHTMLMediaSpans tokenizes data and visits every <img src> whose value is
 // an accepted data URI. Returning false from visit stops the walk.
-func walkHTMLMediaSpans(data []byte, visit func(htmlMediaSpan) bool) {
+func walkHTMLMediaSpans(ctx context.Context, data []byte, visit func(htmlMediaSpan) bool) {
 	tokenizer := html.NewTokenizer(bytes.NewReader(data))
 	offset := 0
-	for {
+	for tokens := 0; ; tokens++ {
+		if tokens%256 == 0 && ctx.Err() != nil {
+			return
+		}
 		tokenType := tokenizer.Next()
 		if tokenType == html.ErrorToken {
 			return

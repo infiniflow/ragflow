@@ -82,6 +82,9 @@ type mediaResolver struct {
 }
 
 func (r *mediaResolver) Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if !ref.Valid() {
 		return nil, errors.New("media: invalid reference")
 	}
@@ -106,7 +109,13 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 	if err := r.loadHTML(ctx, src); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if span, ok := r.htmlSpans[ref.SHA256]; ok {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		data, sum, err := decodeHTMLImagePayload(r.htmlData[span.TagStart:span.TagEnd])
 		if err != nil {
 			return nil, err
@@ -117,8 +126,14 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 	// example <svg><title>) and other tree-construction edge cases. Fall back
 	// to the parser's actual DOM walk, which is the source of truth for what
 	// the parser emitted.
-	if data, sum, found := r.findMediaPayloadInDOM(ref.SHA256); found {
+	if data, sum, found := r.findMediaPayloadInDOM(ctx, ref.SHA256); found {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return validateMediaPayload(data, sum, ref)
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
 	}
 	if r.htmlTruncated {
 		return nil, fmt.Errorf("media: html media index was truncated before image %s", shortMediaDigest(ref.SHA256))
@@ -141,27 +156,37 @@ func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byt
 	return data, nil
 }
 
-// findMediaPayloadInDOM resolves a tokenizer miss from the same tree the
-// parser walks. The tree is built once per resolver: a document with several
-// foreign-content images pays for one parse, and later misses only walk it.
-// The fallback only runs after the low-memory tokenizer index misses.
-func (r *mediaResolver) findMediaPayloadInDOM(digest string) ([]byte, [32]byte, bool) {
+// findMediaPayloadInDOM resolves a tokenizer miss by rebuilding a tree with
+// the same HTML parser the parser uses. The tree is built once per resolver:
+// a document with several foreign-content images pays for one parse, and
+// later misses only walk it. The fallback only runs after the low-memory
+// tokenizer index misses.
+func (r *mediaResolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]byte, [32]byte, bool) {
 	r.domOnce.Do(func() {
+		if err := ctx.Err(); err != nil {
+			r.domErr = err
+			return
+		}
 		r.dom, r.domErr = html.Parse(bytes.NewReader(r.htmlData))
 	})
 	if r.domErr != nil {
 		return nil, [32]byte{}, false
 	}
-	return findHTMLMediaPayloadInNode(r.dom, digest)
+	return findHTMLMediaPayloadInNode(ctx, r.dom, digest)
 }
 
-func findHTMLMediaPayloadInNode(doc *html.Node, digest string) ([]byte, [32]byte, bool) {
+func findHTMLMediaPayloadInNode(ctx context.Context, doc *html.Node, digest string) ([]byte, [32]byte, bool) {
 	var sum [32]byte
 	var payload []byte
 	found := false
+	nodes := 0
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if found {
+			return
+		}
+		nodes++
+		if nodes%256 == 0 && ctx.Err() != nil {
 			return
 		}
 		if n.Type == html.ElementNode && strings.EqualFold(n.Data, "img") {
@@ -192,16 +217,32 @@ func findHTMLMediaPayloadInNode(doc *html.Node, digest string) ([]byte, [32]byte
 // first call completes.
 func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
 	r.once.Do(func() {
+		if err := ctx.Err(); err != nil {
+			r.err = err
+			return
+		}
 		data, err := src.Bytes(ctx)
 		if err != nil {
+			r.err = err
+			return
+		}
+		if err := ctx.Err(); err != nil {
 			r.err = err
 			return
 		}
 		// Scan the same UTF-8 form the parser walked; the raw bytes of a
 		// UTF-16 document would not contain the ASCII data-URI marker.
 		data = decodeHTMLSource(data)
+		if err := ctx.Err(); err != nil {
+			r.err = err
+			return
+		}
 		r.htmlData = data
-		spans, truncated := scanHTMLMediaSpans(data)
+		spans, truncated := scanHTMLMediaSpans(ctx, data)
+		if err := ctx.Err(); err != nil {
+			r.err = err
+			return
+		}
 		r.htmlTruncated = truncated
 		r.htmlSpans = make(map[string]htmlMediaSpan, len(spans))
 		for _, span := range spans {

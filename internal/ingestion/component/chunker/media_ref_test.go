@@ -312,3 +312,54 @@ func TestImageUploadDecorator_ResolvesSelfClosingImage(t *testing.T) {
 		t.Fatalf("image chunks = %d, want 1", images)
 	}
 }
+
+// TestQAChunkerCarriesMediaRef covers an image item whose alt text is a QA
+// pair: the QA extractor must keep the reference so the upload pass can still
+// materialize the attachment.
+func TestQAChunkerCarriesMediaRef(t *testing.T) {
+	uri := "data:image/png;base64," + pngBase64
+	html := `<img alt="question&#9;answer" src="` + uri + `">`
+
+	parsed := parserlib.NewHTMLParser().ParseWithResult(t.Context(), "qa.html", []byte(html))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+
+	prevUploader := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, _ []byte) (string, error) {
+		return kbID + "-" + chunkID, nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prevUploader })
+
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	}
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
+
+	comp, err := NewQAChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+		"name": "qa.html", "kb_id": testKBID,
+		"output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("decorator: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	chunk := chunks[0]
+	if chunk["doc_type_kwd"] != "image" {
+		t.Fatalf("doc_type = %v, want image", chunk["doc_type_kwd"])
+	}
+	if imgID, ok := chunk["img_id"].(string); !ok || imgID == "" {
+		t.Fatalf("QA image not uploaded: %#v", chunk)
+	}
+	if _, ok := chunk["media_ref"]; ok {
+		t.Fatal("media_ref retained after upload")
+	}
+}

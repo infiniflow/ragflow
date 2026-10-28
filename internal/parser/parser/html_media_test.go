@@ -173,7 +173,7 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 		}
 		want = append(want, ref.SHA256)
 	}
-	spans, _ := scanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
 	if len(spans) != len(want) {
 		t.Fatalf("scanned %d images, parser emitted %d", len(spans), len(want))
 	}
@@ -196,7 +196,7 @@ func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
 
 func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
 	input := `<img src='DATA:IMAGE/PNG;BASE64,aGVsbG8'>`
-	spans, _ := scanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want 1", len(spans))
 	}
@@ -249,7 +249,7 @@ func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 func TestScanHTMLMediaSpansDecodesCharacterReferences(t *testing.T) {
 	// aGVsbG8+ decodes to "hello>"; &#43; is the HTML-escaped '+'.
 	input := `<img src="data:image/png;base64,aGVsbG8&#43;">`
-	spans, _ := scanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want 1", len(spans))
 	}
@@ -270,7 +270,7 @@ func TestScanHTMLMediaSpansSkipsHeadersBeyondTheParserLimit(t *testing.T) {
 	// look past that window for a comma, and must still find the next image.
 	input := `<img src="data:image/png;` + strings.Repeat("x", 200) + `">` +
 		`<img src="data:image/png;base64,aGVsbG8=">`
-	spans, _ := scanHTMLMediaSpans([]byte(input))
+	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
 	if len(spans) != 1 {
 		t.Fatalf("spans = %d, want the valid image only", len(spans))
 	}

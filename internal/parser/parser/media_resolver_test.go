@@ -29,7 +29,7 @@ import (
 func mediaRefFixture(t *testing.T) (string, entity.MediaRef) {
 	t.Helper()
 	html := `<p>before</p><p><img alt="figure" src="data:image/png;base64,aGVsbG8="></p>`
-	spans, _ := scanHTMLMediaSpans([]byte(html))
+	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(html))
 	if len(spans) != 1 {
 		t.Fatalf("fixture images = %d, want 1", len(spans))
 	}
@@ -168,7 +168,7 @@ func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
 	img := `<img src="data:image/png;base64,aGVsbG8=">`
 	input := "<script>" + strings.Repeat(img, 5000) + "</script>" + img
 
-	spans, truncated := scanHTMLMediaSpans([]byte(input))
+	spans, truncated := scanHTMLMediaSpans(context.Background(), []byte(input))
 	if truncated {
 		t.Fatal("script text consumed the span cap")
 	}
@@ -205,7 +205,7 @@ func TestMediaResolverFindsImageAfterSpanCap(t *testing.T) {
 	last := `<img src="data:image/png;base64,aGVsbG8+">`
 	input := []byte(strings.Repeat(img, 4096) + last)
 
-	spans, truncated := scanHTMLMediaSpans(input)
+	spans, truncated := scanHTMLMediaSpans(context.Background(), input)
 	if !truncated {
 		t.Fatal("scan did not report truncation")
 	}
@@ -289,10 +289,45 @@ func TestMediaResolverFallsBackToTheParserDOM(t *testing.T) {
 	// misses it; the DOM fallback must recover the image.
 	input := `<svg><title><img src="data:image/png;base64,aGVsbG8="></title></svg>`
 	ref := mediaRefFromHTML(t, input)
-	if spans, _ := scanHTMLMediaSpans([]byte(input)); len(spans) != 0 {
+	if spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input)); len(spans) != 0 {
 		t.Fatalf("tokenizer unexpectedly indexed %d span(s)", len(spans))
 	}
 	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
 		t.Fatalf("data = %q, want hello", data)
+	}
+}
+
+func TestMediaResolverHonorsCancelledContextOnCacheHit(t *testing.T) {
+	html, ref := mediaRefFixture(t)
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	resolver := NewMediaResolver()
+	if _, err := resolver.Resolve(context.Background(), ref, src); err != nil {
+		t.Fatalf("warm resolve: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := resolver.Resolve(ctx, ref, src); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cached resolve err = %v, want context.Canceled", err)
+	}
+}
+
+func TestMediaResolverHonorsCancellationDuringSourceRead(t *testing.T) {
+	html, ref := mediaRefFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	src := MediaSourceFunc(func(context.Context) ([]byte, error) {
+		cancel()
+		return []byte(html), nil
+	})
+	if _, err := NewMediaResolver().Resolve(ctx, ref, src); !errors.Is(err, context.Canceled) {
+		t.Fatalf("resolve err = %v, want context.Canceled", err)
+	}
+}
+
+func TestScanHTMLMediaSpansHonorsCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	spans, _ := scanHTMLMediaSpans(ctx, []byte(`<img src="data:image/png;base64,aGVsbG8=">`))
+	if len(spans) != 0 {
+		t.Fatalf("cancelled scan returned %d spans", len(spans))
 	}
 }
