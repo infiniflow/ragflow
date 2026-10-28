@@ -498,13 +498,19 @@ type AgentFiltersResponse struct {
 
 // ListAgentFilters returns the owner/category aggregations backing the
 // agents page filter bar. Mirrors the ?type=filter branch of Python
-// agent_api.list_agents.
-func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
+// agent_api.list_agents. A non-empty canvasCategory scopes the owner counts
+// to one tab: canvas categories aggregate only that category's canvases,
+// while CompilationTemplateGroupCategory reports the tenant's groups.
+func (s *AgentService) ListAgentFilters(ctx context.Context, userID, canvasCategory string) (*AgentFiltersResponse, common.ErrorCode, error) {
+	if canvasCategory == CompilationTemplateGroupCategory {
+		return s.listCompilationGroupFilters(ctx, userID)
+	}
+
 	canvasIDs, err := AccessibleCanvasIDs(ctx, permission.Subject{UserID: userID}, permission.OperationRead)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to scope accessible canvases: %w", err)
 	}
-	owners, err := s.canvasDAO.GetOwnerFilterByCanvasIDs(ctx, dao.DB, canvasIDs)
+	owners, err := s.canvasDAO.GetOwnerFilterByCanvasIDs(ctx, dao.DB, canvasIDs, canvasCategory)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent owners: %w", err)
 	}
@@ -512,9 +518,14 @@ func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*Ag
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to aggregate agent categories: %w", err)
 	}
-	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+	// Compilation groups only belong in the unscoped aggregation; a scoped
+	// canvas-category request never includes them.
+	groupCount := int64(0)
+	if canvasCategory == "" {
+		groupCount, err = s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+		}
 	}
 
 	ownerFilters := make([]AgentOwnerFilter, 0, len(owners)+1)
@@ -560,6 +571,29 @@ func (s *AgentService) ListAgentFilters(ctx context.Context, userID string) (*Ag
 	resp := &AgentFiltersResponse{Total: total}
 	resp.Filter.Owner = ownerFilters
 	resp.Filter.CanvasCategory = categoryFilters
+	return resp, common.CodeSuccess, nil
+}
+
+// listCompilationGroupFilters reports the tenant's compilation template groups
+// as the only owner/category option: groups are tenant-owned and carry neither
+// canvas categories nor per-canvas owners.
+func (s *AgentService) listCompilationGroupFilters(ctx context.Context, userID string) (*AgentFiltersResponse, common.ErrorCode, error) {
+	groupCount, err := s.compilationTemplateGroupDAO.CountSavedByTenant(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to count compilation template groups: %w", err)
+	}
+
+	resp := &AgentFiltersResponse{Total: groupCount}
+	resp.Filter.Owner = []AgentOwnerFilter{}
+	resp.Filter.CanvasCategory = []AgentCategoryFilter{}
+	if groupCount > 0 {
+		nickname, nerr := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
+		if nerr != nil {
+			nickname = ""
+		}
+		resp.Filter.Owner = append(resp.Filter.Owner, AgentOwnerFilter{ID: userID, Label: nickname, Count: groupCount})
+		resp.Filter.CanvasCategory = append(resp.Filter.CanvasCategory, AgentCategoryFilter{ID: CompilationTemplateGroupCategory, Count: groupCount})
+	}
 	return resp, common.CodeSuccess, nil
 }
 
@@ -2274,11 +2308,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if c.Globals != nil {
 			for k, v := range c.Globals {
 				if strings.HasPrefix(k, "sys.") {
-					state.Sys[strings.TrimPrefix(k, "sys.")] = v
+					state.SetSys(strings.TrimPrefix(k, "sys."), v)
 				} else if strings.HasPrefix(k, "env.") {
-					state.Env[strings.TrimPrefix(k, "env.")] = v
+					state.SetEnv(strings.TrimPrefix(k, "env."), v)
 				} else {
-					state.Globals[k] = v
+					state.SetGlobal(k, v)
 				}
 			}
 		}
@@ -2289,7 +2323,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		query := agentRunQuery(userInput)
-		state.Sys["query"] = query
+		state.SetSys("query", query)
 		state.AppendCurrentUser(query)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(query))
 		// Trusted caller identity is seeded through the same entry the debug
@@ -2298,10 +2332,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		seedTenantID, _ := root["tenant_id"].(string)
 		state.SeedIdentity(seedUserID, seedTenantID)
 		if canvasID != "" {
-			state.Sys["canvas_id"] = canvasID
+			state.SetSys("canvas_id", canvasID)
 		}
 		if sessionID != "" {
-			state.Sys["session_id"] = sessionID
+			state.SetSys("session_id", sessionID)
 		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
@@ -2313,7 +2347,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
-			state.Sys["files"] = files
+			state.SetSys("files", files)
 		}
 		state.IncrementConversationTurns()
 		ctx2 = runtime.WithState(ctx2, state)
@@ -2336,7 +2370,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			resumeData := root["__resume_data__"]
 			delete(root, "__resume_interrupt_id__")
 			delete(root, "__resume_data__")
-			state.Sys["query"] = ""
+			state.SetSys("query", "")
 			ctx2 = compose.ResumeWithData(ctx2, resumeID, resumeData)
 		}
 

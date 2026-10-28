@@ -101,7 +101,8 @@ type AgentParam struct {
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
 	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
+	Meta            AgentMeta
+	toolInvocations *toolInvocationRecorder
 	// Cite enables post-stream citation grounding. When true,
 	// the Agent reads the chunks recorded in
 	// state.Retrieval["chunks"] (populated by the Retrieval tool),
@@ -180,6 +181,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
 	tools = wrapReferenceRecordingTools(tools)
+	if p.toolInvocations != nil {
+		tools = wrapToolInvocationRecording(tools, p.toolInvocations)
+	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -996,6 +1000,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	p.toolInvocations = &toolInvocationRecorder{}
 	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -1086,12 +1091,20 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
+		invocations := p.toolInvocations.snapshot()
 		// Only step exhaustion is an _ERROR output. Model/tool failures must
 		// stop execution before downstream nodes read an absent content output.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
+			if len(invocations) > 0 {
+				return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
+			}
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
+		out := map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
+		if len(invocations) > 0 {
+			out["tool_invocations"] = invocations
+		}
+		return out, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -1142,6 +1155,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
+	}
+	if invocations := p.toolInvocations.snapshot(); len(invocations) > 0 {
+		out["tool_invocations"] = invocations
 	}
 	if len(p.OutputStructure) > 0 {
 		if parsed, ok := matchOutputStructure(cleanFormattedAnswer(content), p.OutputStructure); ok {
@@ -1566,7 +1582,7 @@ func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
 	if state == nil {
 		return "", false
 	}
-	v, ok := state.Sys[name].(string)
+	v, ok := state.GetSysString(name)
 	if !ok || strings.TrimSpace(v) == "" {
 		return "", false
 	}

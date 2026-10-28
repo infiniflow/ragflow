@@ -20,7 +20,6 @@ package parser
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -223,55 +222,5 @@ func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 	}
 	if got, _ := sections[0]["text"].(string); got != "Only this matters" {
 		t.Errorf("text = %q, want %q", got, "Only this matters")
-	}
-}
-
-func TestDocxIRTableToHTML_Empty(t *testing.T) {
-	el := docxIRElement{Type: "table", Rows: []docxIRRow{}}
-	html := docxIRTableToHTML(el, "")
-	if html != "<table></table>" {
-		t.Errorf("empty table html = %q, want %q", html, "<table></table>")
-	}
-}
-
-func TestDocxIRTableToHTML_Single(t *testing.T) {
-	el := docxIRElement{
-		Type: "table",
-		Rows: []docxIRRow{{
-			Cells: []docxIRCell{{
-				Content: []docxIRElement{{
-					Type:    "paragraph",
-					Content: json.RawMessage(`[{"type":"text","text":"hello"}]`),
-				}},
-			}},
-		}},
-	}
-	html := docxIRTableToHTML(el, "")
-	want := "<table><tr><td>hello</td></tr></table>"
-	if html != want {
-		t.Errorf("single cell html = %q, want %q", html, want)
-	}
-}
-
-func TestDocxIRTableToHTML_MultiRowCol(t *testing.T) {
-	cell := func(text string) docxIRCell {
-		return docxIRCell{
-			Content: []docxIRElement{{
-				Type:    "paragraph",
-				Content: rawJSON([]docxIRRun{{Type: "text", Text: text}}),
-			}},
-		}
-	}
-	el := docxIRElement{
-		Type: "table",
-		Rows: []docxIRRow{
-			{Cells: []docxIRCell{cell("A1"), cell("B1")}},
-			{Cells: []docxIRCell{cell("A2"), cell("B2")}},
-		},
-	}
-	html := docxIRTableToHTML(el, "")
-	want := "<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>"
-	if html != want {
-		t.Errorf("multi cell html = %q, want %q", html, want)
 	}
 }

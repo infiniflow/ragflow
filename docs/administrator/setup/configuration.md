@@ -183,9 +183,12 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 ### `S3` (Tigris)
 
-To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
+To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `general.storage_engine: s3` in `service_conf.yaml`, set `STORAGE_IMPL=AWS_S3` in `.env`, and configure the `s3:` section:
 
 ```yaml
+general:
+  storage_engine: s3
+
 s3:
   access_key: 'tid_YOUR_ACCESS_KEY'
   secret_key: 'tsec_YOUR_SECRET_KEY'
@@ -202,6 +205,8 @@ s3:
 - `endpoint_url`: `https://t3.storage.dev`, or `https://fly.storage.tigris.dev` on Fly.io.
 - `addressing_style`: Must be `virtual`.
 - `bucket` / `prefix_path`: Optional. Enables single-bucket mode. Before changing the storage layout, create a recovery point by following [Backup and Restore (v1.x)](../upgrade_and_migration/backup_and_restore_v1.md).
+
+`STORAGE_IMPL` must match `general.storage_engine`. Go refuses a mismatch because selecting another backend does not migrate existing object keys. For an existing deployment, copy and verify its stored objects in the target backend before changing `general.storage_engine`.
 
 When using an external storage backend, you can remove the `minio` service from `docker-compose-base.yml`.
 

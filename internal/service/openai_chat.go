@@ -249,6 +249,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		return
 	}
 	dialog := dialogResp.Chat
+	if err := validateChatDatasetAccess(ctx, userID, dialog.KBIDs); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+		return
+	}
 	resolvedModel := req.Model
 	if req.Model == "model" {
 		resolvedModel = dialog.LLMID

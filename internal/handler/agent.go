@@ -176,7 +176,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// GET /api/v1/agents?type=filter and expects
 	// {filter: {owner, canvas_category}, total} instead of a canvas list.
 	if c.Query("type") == "filter" {
-		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID)
+		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID, strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
@@ -1341,6 +1341,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		emitted := false
 		doneSent := false
 		for ev := range events {
+			h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
 			if ev.Type == "error" {
 				ev = convertAgentRunErrorToMessage(ev)
 			}
@@ -1404,6 +1405,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	var finalAns *canvas.RunEvent
 	hasEvents := false
 	for ev := range events {
+		h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
 		hasEvents = true
 		if ev.Type == "error" {
 			ev = convertAgentRunErrorToMessage(ev)
@@ -1548,6 +1550,66 @@ func parseAgentLogs(payload string) interface{} {
 		return map[string]interface{}{}
 	}
 	return data
+}
+
+func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID string, ev canvas.RunEvent) {
+	if h.redisStore == nil || ev.Type != "node_finished" || ev.MessageID == "" {
+		return
+	}
+	var event struct {
+		ComponentID   string `json:"component_id"`
+		ComponentName string `json:"component_name"`
+		Outputs       struct {
+			Invocations []map[string]any `json:"tool_invocations"`
+		} `json:"outputs"`
+	}
+	if json.Unmarshal([]byte(ev.Data), &event) != nil || len(event.Outputs.Invocations) == 0 {
+		return
+	}
+	key := fmt.Sprintf("%s-%s-logs", canvasID, ev.MessageID)
+	var entries []map[string]any
+	if h.redisGet != nil {
+		if payload, err := h.redisGet(key); err == nil {
+			_ = json.Unmarshal([]byte(payload), &entries)
+		}
+	}
+	if entries == nil {
+		entries = make([]map[string]any, 0, 1)
+	}
+	var traces []any
+	for _, invocation := range event.Outputs.Invocations {
+		trace := map[string]any{
+			"path":         event.ComponentName,
+			"tool_name":    invocation["tool_name"],
+			"arguments":    invocation["arguments"],
+			"result":       invocation["result"],
+			"elapsed_time": invocation["elapsed_time"],
+			"timestamp":    invocation["started_at"],
+			"status":       invocation["status"],
+		}
+		if invocation["error"] != nil {
+			trace["error"] = invocation["error"]
+		}
+		traces = append(traces, trace)
+	}
+	for _, entry := range entries {
+		if entry["component_id"] == event.ComponentID {
+			if old, ok := entry["trace"].([]any); ok {
+				entry["trace"] = append(old, traces...)
+			} else {
+				entry["trace"] = traces
+			}
+			payload, err := json.Marshal(entries)
+			if err == nil {
+				h.redisStore.Set(ctx, key, string(payload), task.DebugLogTTL)
+			}
+			return
+		}
+	}
+	entries = append(entries, map[string]any{"component_id": event.ComponentID, "trace": traces})
+	if payload, err := json.Marshal(entries); err == nil {
+		h.redisStore.Set(ctx, key, string(payload), task.DebugLogTTL)
+	}
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id

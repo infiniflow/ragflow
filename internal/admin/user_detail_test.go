@@ -18,12 +18,14 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 
@@ -31,8 +33,59 @@ import (
 )
 
 type adminTestResponse struct {
-	Code int             `json:"code"`
-	Data json.RawMessage `json:"data"`
+	Code  int             `json:"code"`
+	Data  json.RawMessage `json:"data"`
+	Total *int64          `json:"total"`
+}
+
+func TestListUsersReturnsTotalForEachPage(t *testing.T) {
+	handler := setupAdminUserDetailTest(t)
+	for i := 0; i < 11; i++ {
+		user := entity.User{ID: fmt.Sprintf("user-%02d", i), Email: fmt.Sprintf("user-%02d@example.com", i), Nickname: "User", IsActive: "1"}
+		if err := dao.DB.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		query string
+		want  int
+	}{
+		{"?page=1&page_size=10", 10},
+		{"?page=2&page_size=10", 2},
+		{"?page=3&page_size=10", 0},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users"+tt.query, nil)
+			handler.ListUsers(ctx)
+			var response adminTestResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			var users []map[string]interface{}
+			if err := json.Unmarshal(response.Data, &users); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != http.StatusOK || response.Code != int(common.CodeSuccess) || response.Total == nil || *response.Total != 12 || len(users) != tt.want {
+				t.Fatalf("unexpected response: %s", recorder.Body.String())
+			}
+		})
+	}
+	if err := dao.DB.Where("id <> ?", "").Delete(&entity.User{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	handler.ListUsers(ctx)
+	var response adminTestResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Total == nil || *response.Total != 0 {
+		t.Fatalf("empty list missing total: %s", recorder.Body.String())
+	}
 }
 
 func setupAdminUserDetailTest(t *testing.T) *Handler {

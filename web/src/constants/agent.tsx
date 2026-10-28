@@ -79,6 +79,7 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
+  CanvasCategory = 'canvas_category',
 }
 
 export enum Operator {

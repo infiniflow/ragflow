@@ -27,6 +27,13 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 
 Run the Go release deployment from the repository checkout:
 
+Before first startup, replace `ADMIN_DEFAULT_PASSWORD` in `docker/.env` with a
+deployment-specific secret if the Admin Service can be reached by other hosts.
+The checked-in value is `admin`, and Docker publishes the Admin port `9381` on
+the host by default. Restrict access to that port to trusted administrators.
+The password setting is used only when the first superuser is created; changing
+it later does not change an existing account's password.
+
 ```bash
 # Enter the Docker deployment directory.
 cd ragflow/docker

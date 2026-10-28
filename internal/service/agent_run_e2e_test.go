@@ -548,20 +548,21 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 					"component_name": "Begin",
 					"params":         map[string]any{},
 				},
-				"downstream": []any{"message_0"},
+				"downstream": []any{"user_fill_up_0"},
 			},
 			"message_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "Message",
 					"params":         map[string]any{"text": "got: {{user_fill_up_0@user_input}}"},
 				},
-				"upstream": []any{"begin_0", "user_fill_up_0"},
+				"upstream": []any{"user_fill_up_0"},
 			},
 			"user_fill_up_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "UserFillUp",
 					"params":         map[string]any{"enable_tips": true},
 				},
+				"upstream":   []any{"begin_0"},
 				"downstream": []any{"message_0"},
 			},
 		},
@@ -782,6 +783,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 					"component_name": "UserFillUp",
 					"params":         map[string]any{"enable_tips": true},
 				},
+				"upstream":   []any{"begin_0"},
 				"downstream": []any{"message_0"},
 			},
 			"message_0": map[string]any{
@@ -789,7 +791,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 					"component_name": "Message",
 					"params":         map[string]any{"text": "got: {{user_fill_up_0@user_input}}"},
 				},
-				"upstream": []any{"begin_0", "user_fill_up_0"},
+				"upstream": []any{"user_fill_up_0"},
 			},
 		},
 		"path": []any{"begin_0", "user_fill_up_0", "message_0"},

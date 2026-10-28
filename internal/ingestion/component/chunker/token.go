@@ -247,9 +247,9 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
 	// Fast path: the parser emits typed []parser.DocItem. Convert it to
-	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
-	// item's typed fields and never calls DocItem.ToMap), then let the JSON
-	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which projects each
+	// item through its canonical ToMap wire shape), then let the JSON marshal
+	// below serialize the already-typed ChunkDoc. This keeps the
 	// chunker free of the historical map intermediate for the in-memory
 	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
 	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
