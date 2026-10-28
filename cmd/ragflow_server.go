@@ -384,72 +384,79 @@ func main() {
 	// runtime and MODEL_DIR, never the full RAGFlow infrastructure
 	// (DB/engine/cache/storage/MQ). Boot it and return before the heavy
 	// infrastructure init, so a bare inference container needs no MySQL/Redis.
-	if st := bootstrap.GetServerType(arguments); isStandaloneDeepDocServer(st) {
-		// SetServerName writes into the package-level local variables that
-		// InitLocalVariables allocates; this early boot returns before the
-		// shared InitLocalVariables call below, so it must allocate them
-		// itself. The initializer constructs the in-memory struct only and
-		// touches no external service, so the bare inference container stays
-		// free of MySQL/Redis.
-		if err = server.InitLocalVariables(); err != nil {
-			fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
-			os.Exit(1)
-		}
-		logLevel := bootstrap.SelectedLogLevel(arguments, "")
-		if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
-			logLevel = "info"
-		}
-		if err = common.InitLogger(logLevel, common.FileOutput{}, bootstrap.TempServerName(st, arguments.Name)); err != nil {
-			panic("failed to initialize logger: " + err.Error())
-		}
-		finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, 0)
-		if nameErr != nil {
-			common.Error("invalid server mode", nameErr)
-			os.Exit(1)
-		}
-		server.SetServerName(finalName)
-		// The regular pprof block sits after the infrastructure init this
-		// path skips, so --profile must be honored here or the flag the
-		// --deepdoc help text advertises would be silently ignored.
-		if arguments.EnablePProf {
-			if err := startPProf(pprofAddr()); err != nil {
-				common.Error("pprof server failed", err)
-			}
-		}
-		if err = runDeepDoc(ctx, finalName, arguments); err != nil {
-			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
-			os.Exit(1)
-		}
+	st := bootstrap.GetServerType(arguments)
+	if isStandaloneDeepDocServer(st) {
+		runStandaloneDeepDoc(ctx, st, arguments)
 		return
 	}
+	runFullServer(ctx, cancel, st, arguments)
+}
 
-	// Initialize local variables (runtime variables from Redis)
-	err = server.InitLocalVariables()
-	if err != nil {
-		fmt.Printf("Failed to start %s server: %v\n", *arguments.Mode, err)
+// runStandaloneDeepDoc boots the DeepDoc HTTP inference server and returns. It
+// reuses the shared initRuntimeBasics bootstrap, then hands off to runDeepDoc.
+// It runs before the heavy infrastructure init, so a bare inference container
+// needs no MySQL/Redis.
+func runStandaloneDeepDoc(ctx context.Context, st common.ServerType, args *bootstrap.ServerArgs) {
+	if err := initRuntimeBasics(args, bootstrap.TempServerName(st, args.Name)); err != nil {
+		fmt.Printf("Failed to start %s server: %v\n", *args.Mode, err)
 		os.Exit(1)
 	}
+	finalName, nameErr := bootstrap.ResolveServerName(*args.Mode, args.Name, 0)
+	if nameErr != nil {
+		common.Error("invalid server mode", nameErr)
+		os.Exit(1)
+	}
+	server.SetServerName(finalName)
+	if err := runDeepDoc(ctx, finalName, args); err != nil {
+		fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	serverType := bootstrap.GetServerType(arguments)
-
-	// Temporary logger name (pre-config): explicit --name wins, else
-	// "<mode>_server". The final name (with the resolved port for api/admin)
-	// is derived below after the configuration is loaded.
-	serverName := bootstrap.TempServerName(serverType, arguments.Name)
-
-	logLevel := bootstrap.SelectedLogLevel(arguments, "")
-	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+// initRuntimeBasics performs the logger/name/pprof bootstrap shared by every
+// server mode. The DeepDoc standalone path (runStandaloneDeepDoc) and the
+// full-infrastructure path (runFullServer) both call it; the only difference is
+// the (pre-config, port-free) name passed. It returns the InitLocalVariables
+// error so callers can format the failure; the logger init panic matches the
+// original main() behavior.
+func initRuntimeBasics(args *bootstrap.ServerArgs, name string) error {
+	if err := server.InitLocalVariables(); err != nil {
+		return err
+	}
+	logLevel := bootstrap.SelectedLogLevel(args, "")
+	if common.LogLevelHigherThanInfo(logLevel) {
 		logLevel = "info"
 	}
-
-	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
+	if err := common.InitLogger(logLevel, common.FileOutput{}, name); err != nil {
 		panic("failed to initialize logger: " + err.Error())
+	}
+	if args.EnablePProf {
+		if err := startPProf(pprofAddr()); err != nil {
+			common.Error("pprof server failed", err)
+		}
+	}
+	return nil
+}
+
+// runFullServer boots every non-standalone RAGFlow server mode (api/admin/
+// ingestor/syncer/migrate) after the full infrastructure stack is initialized.
+func runFullServer(ctx context.Context, cancel context.CancelFunc, st common.ServerType, args *bootstrap.ServerArgs) {
+	serverType := st
+	var err error
+
+	// Shared bootstrap: local variables + logger + pprof. The DeepDoc
+	// standalone path reuses this via initRuntimeBasics; only the name
+	// (pre-config, port-free) differs, and the final name is re-derived below
+	// once the config and port are known.
+	if err = initRuntimeBasics(args, bootstrap.TempServerName(serverType, args.Name)); err != nil {
+		fmt.Printf("Failed to start %s server: %v\n", *args.Mode, err)
+		os.Exit(1)
 	}
 
 	// Initialize configuration
 	var configPath string
-	if arguments.ConfigPath != nil {
-		configPath = *arguments.ConfigPath
+	if args.ConfigPath != nil {
+		configPath = *args.ConfigPath
 	}
 
 	if err = server.Init(configPath); err != nil {
@@ -464,7 +471,7 @@ func main() {
 	// environment must abort startup instead of being silently downgraded by
 	// the logger. The early logger above stays CLI-only because the config is
 	// not loaded yet at that point.
-	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.LogLevel)
+	resolvedLogLevel, err := globalConfig.ResolveLogLevel(args.LogLevel)
 	if err != nil {
 		fmt.Printf("Failed to resolve log level: %v\n", err)
 		os.Exit(1)
@@ -477,13 +484,13 @@ func main() {
 	// while only the temporary stdout-only logger exists, so anything it logs is
 	// lost from the file. Side effects that log (DeepDoc registration) move
 	// below, after the real file-backed logger is up. The dead UUID branch for
-	// ingestor/syncer/deepdoc (serverName was already pre-filled above) is
+	// ingestor/syncer/deepdoc (the temp name was already pre-filled above) is
 	// dropped: ResolveServerName resolves them to "<mode>_server", matching the
 	// original no-name behavior.
 	var resolvedPort int
 	switch serverType {
 	case common.ServerTypeAPI:
-		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
+		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, args.Port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
 			os.Exit(1)
@@ -491,7 +498,7 @@ func main() {
 		globalConfig.SetAPIServerHTTPPort(port)
 		resolvedPort = port
 	case common.ServerTypeAdmin:
-		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
+		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, args.Port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
 			os.Exit(1)
@@ -508,15 +515,12 @@ func main() {
 	// Final server name: explicit --name wins; api/admin embed the resolved
 	// port; ingestor/syncer/deepdoc/migrate use their fixed forms. An unknown
 	// mode is rejected by the switch above.
-	finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, resolvedPort)
+	finalName, nameErr := bootstrap.ResolveServerName(*args.Mode, args.Name, resolvedPort)
 	if nameErr != nil {
 		common.Error("invalid server mode", nameErr)
 		os.Exit(1)
 	}
-	serverName = finalName
-
-	// set server name and log file path
-	server.SetServerName(serverName)
+	server.SetServerName(finalName)
 
 	// Wire the in-process DeepDoc backend only after the REAL file-backed
 	// logger exists: its registration lines (and the Fatal abort on a missing
@@ -524,7 +528,7 @@ func main() {
 	// stdout-only window.
 	switch serverType {
 	case common.ServerTypeAPI, common.ServerTypeIngestion:
-		if err = deepdocpkg.RegisterNativeDeepDoc(arguments); err != nil {
+		if err = deepdocpkg.RegisterNativeDeepDoc(args); err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
 		}
@@ -532,20 +536,14 @@ func main() {
 	}
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, serverName, globalConfig.GetMode()))
+	common.Info(fmt.Sprintf("Starting %v server: %s, mode: %s", serverType, finalName, globalConfig.GetMode()))
 	server.PrintAll()
-
-	// Start pprof server if requested
-	if arguments.EnablePProf {
-		if err := startPProf(pprofAddr()); err != nil {
-			common.Error("pprof server failed", err)
-		}
-	}
 
 	// Initialize database. The migrate mode stops here: it needs neither the
 	// downgrade check nor any of the engines started below, so it can run
 	// before any server mode boots (see docker/entrypoint.sh and
-	// docker/launch_backend_service.sh).
+	// docker/launch_backend_service.sh). pprof is already started by
+	// initRuntimeBasics above.
 	migrate := serverType == common.ServerTypeMigrate
 	if migrate {
 		common.Info("Running database migrations")
@@ -589,34 +587,34 @@ func main() {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
 	}
 
-	if err = server.StartServer(ctx, cancel, serverName, serverType); err != nil {
+	if err = server.StartServer(ctx, cancel, finalName, serverType); err != nil {
 		common.Error("Failed to start EE server", err)
 		os.Exit(1)
 	}
 	defer server.ShutdownServer(ctx)
 
-	if arguments.Name == nil {
-		arguments.Name = &serverName
+	if args.Name == nil {
+		args.Name = &finalName
 	}
 
 	switch serverType {
 	case common.ServerTypeAPI:
-		if err = apipkg.Run(ctx, serverName, arguments); err != nil {
+		if err = apipkg.Run(ctx, finalName, args); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeAdmin:
-		if err = admin.Run(ctx, serverName, arguments); err != nil {
+		if err = admin.Run(ctx, finalName, args); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeIngestion:
-		if err = ingestorpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		if err = ingestorpkg.Run(ctx, cancel, finalName, args); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case common.ServerTypeFileSyncer:
-		if err = syncerpkg.Run(ctx, cancel, serverName, arguments); err != nil {
+		if err = syncerpkg.Run(ctx, cancel, finalName, args); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
