@@ -56,14 +56,8 @@ import (
 	"unsafe"
 
 	pdfsync "ragflow/internal/deepdoc/parser/pdf/pdfsync"
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
-
-// Outline represents one entry in a PDF document outline (table of contents).
-type Outline struct {
-	Title      string
-	Level      int
-	PageNumber int // 1-indexed, matching Python
-}
 
 var initOnce sync.Once
 
@@ -248,11 +242,11 @@ func openPage(pdfData []byte, pageIdx int) (
 // Traversal is iterative with an explicit stack to avoid stack overflow on deep
 // outline trees. pdfium is not thread-safe; all FPDF_* calls are serialized by
 // the shared pdfsync.Mu.
-func ExtractOutlines(pdfData []byte) []Outline {
+func ExtractOutlines(pdfData []byte) []doctype.Outline {
 	if len(pdfData) == 0 {
 		return nil
 	}
-	var out []Outline
+	var out []doctype.Outline
 	pdfsync.With(func() {
 		Init()
 
@@ -270,7 +264,7 @@ func ExtractOutlines(pdfData []byte) []Outline {
 			level int
 		}
 
-		var result []Outline
+		var result []doctype.Outline
 		stack := []frame{{bm: C.FPDFBookmark_GetFirstChild(doc, nil), level: 0}}
 
 		for len(stack) > 0 {
@@ -292,7 +286,7 @@ func ExtractOutlines(pdfData []byte) []Outline {
 				}
 			}
 
-			result = append(result, Outline{Title: title, Level: top.level, PageNumber: pageNum})
+			result = append(result, doctype.Outline{Title: title, Level: top.level, PageNumber: pageNum})
 
 			// Push siblings after children so children are processed first (pre-order).
 			if sibling := C.FPDFBookmark_GetNextSibling(doc, top.bm); sibling != nil {

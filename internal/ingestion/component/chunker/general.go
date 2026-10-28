@@ -1084,6 +1084,19 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, do
 	if td == nil {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
+	// Parser positions align with the structured grid until splitting is done.
+	// Emitted chunks use preview order: first data row, then remaining ranges.
+	var matrix [][]float64
+	aligned := false
+	if unit.SheetIndex != nil && json.Unmarshal(unit.Positions, &matrix) == nil && len(matrix) == len(td.Grid) {
+		aligned = true
+		for _, tuple := range matrix {
+			if len(tuple) != 5 {
+				aligned = false
+				break
+			}
+		}
+	}
 	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr, docID)
 	if ranges == nil {
 		// The whole table fits one chunk: render it as HTML on Text so the
@@ -1092,29 +1105,10 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, do
 		out := cloneChunkDoc(unit)
 		out.Text = tableutil.RenderTableHTML(td)
 		out.TableData = nil
+		if aligned {
+			out.Positions = spreadsheetPreviewPositions(matrix, td.HeaderRows)
+		}
 		return []schema.ChunkDoc{out}
-	}
-	var matrix [][]float64
-	// Spreadsheet items only: PDF items write layout boxes into the same
-	// field, and those must never be sliced into sub-tables as row tuples.
-	if unit.SheetIndex != nil && len(unit.Positions) > 0 {
-		if err := json.Unmarshal(unit.Positions, &matrix); err != nil {
-			matrix = nil
-		}
-	}
-	// The matrix carries one five-field tuple per row; the splitter cut those
-	// same rows, so its last range end is the total data-row count.
-	aligned := false
-	if len(ranges) > 0 {
-		if expected := headerRows + ranges[len(ranges)-1][1]; expected > 0 && len(matrix) == expected {
-			aligned = true
-			for _, tuple := range matrix {
-				if len(tuple) != 5 {
-					aligned = false
-					break
-				}
-			}
-		}
 	}
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
@@ -1132,13 +1126,23 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, do
 			sub := make([][]float64, 0, headerRows+hi-lo)
 			sub = append(sub, matrix[:headerRows]...)
 			sub = append(sub, matrix[lo:hi]...)
-			if encoded, err := json.Marshal(sub); err == nil {
-				piece.Positions = encoded
-			}
+			piece.Positions = spreadsheetPreviewPositions(sub, headerRows)
 		}
 		out = append(out, piece)
 	}
 	return out
+}
+
+// spreadsheetPreviewPositions chooses the first data row as the scroll target
+// after row-aligned slicing is complete. Header-only chunks keep their order.
+func spreadsheetPreviewPositions(matrix [][]float64, headerRows int) json.RawMessage {
+	if headerRows > 0 && headerRows < len(matrix) {
+		first := matrix[headerRows]
+		copy(matrix[1:headerRows+1], matrix[:headerRows])
+		matrix[0] = first
+	}
+	encoded, _ := json.Marshal(matrix)
+	return encoded
 }
 
 func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
@@ -1253,6 +1257,9 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 	}
 	if dst.ImgID == "" {
 		dst.ImgID = src.ImgID
+	}
+	if dst.MediaRef == nil {
+		dst.MediaRef = src.MediaRef
 	}
 	if dst.Layout == "" {
 		dst.Layout = src.Layout
@@ -1450,7 +1457,7 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// media chunk (text may be only a position tag, or empty) must be
 		// retained via its ImgID — otherwise the already-uploaded image is
 		// dropped and its MinIO object orphaned.
-		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" && chunk.ImgID == "" {
+		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)

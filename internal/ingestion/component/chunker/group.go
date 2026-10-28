@@ -340,6 +340,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			if first.image != "" {
 				chunk["image"] = first.image
 			}
+			if first.mediaRef != nil {
+				chunk["media_ref"] = first.mediaRef
+			}
 			if first.sheet != "" {
 				chunk["sheet"] = first.sheet
 			}
@@ -627,7 +630,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		// (materializeTableText); an image item legitimately carries no text —
 		// its payload may be positions for on-demand cropping rather than inline
 		// image bytes. Only a truly empty item is skipped.
-		if text == "" && it.Image == "" && it.ImgID == "" &&
+		if text == "" && !hasMediaPayload(it) &&
 			mergePositionMatrix(it.PDFPositions, it.Positions) == nil {
 			continue
 		}
@@ -662,6 +665,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				docType:       dt,
 				imgID:         imgID,
 				image:         image,
+				mediaRef:      it.MediaRef,
 				layout:        it.Layout,
 				pdfPositions:  it.PDFPositions,
 				positions:     it.Positions,

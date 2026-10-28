@@ -245,16 +245,17 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           common.GenerateUUID(),
-				KbID:         kb.ID,
-				ParserID:     parserID,
-				PipelineID:   pipelineID,
-				ParserConfig: parserConfig,
-				CreatedBy:    userID,
-				Type:         file.Type,
-				Name:         &docName,
-				Suffix:       suffix,
-				Size:         file.Size,
+				ID:                common.GenerateUUID(),
+				KbID:              kb.ID,
+				ParserID:          parserID,
+				PipelineID:        pipelineID,
+				PipelineVersionID: kb.PipelineVersionID,
+				ParserConfig:      parserConfig,
+				CreatedBy:         userID,
+				Type:              file.Type,
+				Name:              &docName,
+				Suffix:            suffix,
+				Size:              file.Size,
 			}
 			if file.Location != nil {
 				doc.Location = file.Location

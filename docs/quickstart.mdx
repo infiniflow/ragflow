@@ -47,13 +47,13 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    ```bash
    # Enter the Docker deployment directory.
    cd ragflow/docker
-   # Check out the release tag you want to deploy.
-   git checkout <release-tag>
+   # Check out the latest release tag; replace it with another version if needed.
+   git checkout v1.0.0-rc2
    # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
 
-   Replace `<release-tag>` with the version you want to deploy from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
+   To deploy another version, replace `v1.0.0-rc2` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
@@ -92,18 +92,12 @@ RAGFlow also supports deploying models locally using Ollama or vLLM, but this pa
 
 To add and configure an LLM:
 
-1. Click on your logo on the top right of the page **>** **Model providers**.
+1. Open **User settings** from your avatar, then select **Model providers**.
+2. In **Available models**, select a provider and create a provider instance.
+3. Enter the instance name and required connection information, such as **API Key** and **Base URL**. Select or add the models you need, verify them, and save the instance.
+4. Under **Set default models**, select a Chat model and an Embedding model. Configure other model types as needed.
 
-2. Click on the desired LLM and update the API key accordingly.
-
-3. Click **Set default models** to select the default models:
-
-   - Chat model,
-   - Embedding model,
-   - Image-to-text model,
-   - and more.
-
-> Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models.
+See [Configure Model Providers](./guides/models/llm_api_key_setup.md) for provider-specific fields and screenshots.
 
 ## Create your first dataset
 
@@ -111,29 +105,20 @@ You can upload files to a dataset in RAGFlow and parse them into chunks. A datas
 
 To create your first dataset:
 
-1. Click the **Dataset** tab in the top middle of the page **>** **Create dataset**.
+1. Select **Datasets** in the navigation bar, then click **Create dataset**.
+2. Enter **Name**, select **Embedding model**, and choose **Parse type**. For a first dataset, select **Built-in** and a parsing method suitable for your files. To use **Pipeline**, first create an **Ingestion Pipeline** in **Agent > Ingestion Pipeline**, then select it in the creation dialog.
+3. Click **Save**, open the dataset, and review its **Configuration** before uploading files.
 
-2. Input the name of your dataset and click **OK** to confirm your changes.
+   See [Dataset List and Creation](./guides/dataset/dataset_list_and_creation.md) and [Dataset Configuration](./guides/dataset/configuration.md) for details.
 
-   _You are taken to the **Configuration** page of your dataset._
-
-   ![dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
-
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your dataset.
-
-   :::danger IMPORTANT
-   Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific dataset are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space).
+   :::caution IMPORTANT
+   Choose the embedding model before parsing files. Before the dataset contains chunks, you can change the model directly. Once chunks exist, selecting a different model on the configuration page triggers a compatibility check against sampled existing vectors. The vector dimensions must match, and the average cosine similarity must be at least 0.9. If the check fails, the previous selection is restored. Saving a model change does not automatically re-embed existing chunks.
    :::
 
-   _You are taken to the **Dataset** page of your dataset._
+4. Open the dataset's **Files** page. Click **Add file > Upload file**, select local files, and confirm the upload. Enable **Parse on creation** to start parsing automatically.
+5. If parsing was not started during upload, select the uploaded documents and click **Run**. Wait for parsing to complete before using them in Chat.
 
-4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the dataset.
-
-5. In the uploaded file entry, click the play button to start file parsing:
-
-   ![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
-
-   If parsing stalls, check the `ragflow-cpu` service logs with the Compose command above for ingestion errors.
+   See [Files: Dataset Document Management](./guides/dataset/files_dataset_document_management.md) for upload and parsing options. If parsing stalls, check the document's **Logs** and the `ragflow-cpu` service logs for ingestion errors.
 
 ## Intervene with file parsing
 
@@ -165,25 +150,13 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
 Conversations in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset and finished file parsing, you can go ahead and start an AI conversation.
 
-1. Click the **Chat** tab in the middle top of the page **>** **Create chat** to create a chat assistant.
-2. Click the created chat app to enter its configuration page.
-   > RAGFlow lets you choose a chat model for each dialogue. You can configure the defaults under **Set default models**.
+1. Select **Chat** in the navigation bar, then click **Create chat**.
+2. Enter a name and confirm creation.
+3. Open **Chat setting**, select the dataset you parsed, and choose a chat model. You can configure model defaults under **User settings > Model providers > Set default models**.
+4. Review the **System prompt** and retrieval settings. Set **Empty response** to the message you want returned when no answer can be found, or leave it blank to allow the model to generate a response without matching dataset content.
+5. Save the settings, open the chat window, and ask a question about your documents. Select **Naive** for straightforward questions or **Agentic** for questions requiring deeper investigation.
 
-3. Update **Chat setting** on the right of the configuration page:
-
-   - Name your assistant and specify your datasets.
-   - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
-
-4. Update **System prompt** or leave it as is for the beginning.
-
-5. Select a chat model in the **Model** dropdown list.
-
-6. Now, let's start the show:
-
-   ![chat_thermal_solution](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_thermal_solution.jpg)
-
+See [Feature Overview and Creation](./guides/chat/feature_overview_and_creation.md) for Chat creation screenshots and [Chat Configuration](./guides/chat/chat_configuration.md) for the available settings.
 
 :::tip NOTE
 RAGFlow also offers an HTTP API for integrating its capabilities into your applications:

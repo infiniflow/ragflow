@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/parser/tableutil"
@@ -223,6 +224,15 @@ func isMediaChunk(ck schema.ChunkDoc) bool {
 	return typ == "image" || typ == "table"
 }
 
+// hasMediaPayload reports whether a chunk still carries retrievable media:
+// inline bytes, an uploaded reference, or a deferred media_ref that the
+// upload pass will materialize. A present but unusable reference counts:
+// dropping the item here would silently lose the image instead of letting
+// the materializer reject it.
+func hasMediaPayload(ck schema.ChunkDoc) bool {
+	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
+}
+
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
@@ -364,18 +374,21 @@ func chunkIDSource(ck schema.ChunkDoc) string {
 	if text := canonicalChunkText(ck); text != "" {
 		return text
 	}
-	return mediaChunkIdentity(ck.Image, ck.ImgID)
+	return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
 }
 
 // mediaChunkIdentity returns the stable identity of a text-less media chunk:
 // a digest of the image payload when present (identical images collapse onto
-// one id, which is harmless — they carry identical bytes), else the image
-// reference. Empty when the chunk has neither, leaving the id the plain
-// empty-text hash.
-func mediaChunkIdentity(image, imgID string) string {
+// one id, which is harmless — they carry identical bytes), else the
+// content-addressed media reference, else the uploaded image id. Empty when
+// the chunk has none of them, leaving the id the plain empty-text hash.
+func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 	if image != "" {
 		sum := sha256.Sum256([]byte(image))
 		return mediaChunkIDPrefix + hex.EncodeToString(sum[:])
+	}
+	if ref.Valid() {
+		return mediaChunkIDPrefix + "sha256:" + ref.SHA256
 	}
 	if imgID != "" {
 		return mediaChunkIDPrefix + imgID

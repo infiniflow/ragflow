@@ -137,6 +137,10 @@ func envIntDefault(name string, def int) int {
 const (
 	filterSideDeepRead = "deep_read"
 	filterSideSnippet  = "snippet"
+	// filterSideClaim is the third exit: compiled claims, judged one statement at
+	// a time. It is a separate side because the unit is different - a claim is
+	// not a passage, and a threshold fitted on passages is not portable to it.
+	filterSideClaim = "claim"
 )
 
 // passage identifies one member of one result set across the filter's layers.
@@ -696,4 +700,216 @@ func exemptFields(p passage, text string) []zap.Field {
 		zap.Bool("kept", true),
 		zap.Bool("exempt", true),
 	}
+}
+
+// claimFilterEnabled gates the claim exit. On by default, like the other two: the
+// claim page is the one model-visible block with no length bound of its own, so a
+// deployment that only sets RAGFLOW_DECISION_DIR gets the bound as well.
+func claimFilterEnabled() bool {
+	return envBoolDefault(common.EnvDecisionFilterClaim, true)
+}
+
+// claimRelativeFloor is the share of the page's BEST probability a claim must
+// keep before the absolute threshold may drop it. The absolute threshold is
+// fitted on one judge and one passage length; a claim is a short statement, so
+// its probabilities sit lower as a class and the two scales are not comparable.
+// Measured on the Bamboo judge over real claim rows: median 0.113 on a question
+// the page did answer, against a 0.30 absolute threshold - i.e. the absolute
+// threshold alone would have dropped 83% of a page that was mostly on topic.
+const claimRelativeFloor = 0.4
+
+// claimFloorEnabled gates the per-chunk floor and the relative threshold. With it
+// off the exit is the plain absolute gate it was before.
+func claimFloorEnabled() bool {
+	return envBoolDefault(common.EnvDecisionClaimFloor, true)
+}
+
+// claimJudgeCapDefault bounds how many statements ONE claim page may send to the
+// judge. The page itself is unbounded by design - a chunk is on it whole - and
+// that is fine for the prompt but not for the judge: measured over a tag-along
+// debug run, a single page carried 372 statements, which at the judge's batch of
+// 8 is 47 round trips for ONE retrieval round. That is the dominant cost of the
+// turn, and it is what kept tripping the shared-key rate limit, whose breaker
+// then turned the filter off and let the whole page into the prompt (measured:
+// 43k-59k tokens per question against a 197k baseline average for the run).
+const claimJudgeCapDefault = 16
+
+// claimJudgeCap is the per-page judge bound, env-tunable so a deployment with a
+// fast local judge can raise it and one on a rate-limited key can lower it.
+func claimJudgeCap() int {
+	return envIntDefault(common.EnvDecisionClaimJudgeCap, claimJudgeCapDefault)
+}
+
+// claimMinProbDefault is the P(relevant) a statement must reach to survive.
+//
+// It is NOT the passage threshold. A statement is one fact with a short quote -
+// thirty to eighty tokens - while the threshold in RAGFLOW_DECISION_MIN_PROB was
+// calibrated on chunk passages several times that size. Measured on identical
+// irrelevant evidence the two shapes do not even share a scale (the same passage
+// scored 0.0 on one judge and 0.042 on another), so borrowing the passage
+// threshold for statements is how a correctly recalled statement gets dropped:
+// the claim page is exactly where the recall that matters is weakest.
+const claimMinProbDefault = 0.25
+
+// claimMinProb is the statement threshold, env-tunable so the two exits can be
+// tuned against their own evidence instead of a shared guess.
+func claimMinProb() float64 {
+	return envFloatDefault(common.EnvDecisionClaimMinProb, claimMinProbDefault)
+}
+
+// capClaimPage returns the statements a page may send to the judge, in page order:
+// the leading limit entries, plus the first claim of every chunk those entries did
+// not cover. A chunk is on the page because the retrieval ranked it, so it keeps
+// one voice even when all of its claims sit past the bound. Everything else is
+// DROPPED, not carried un-judged: an un-judged tail is exactly what let a page
+// reach 372 statements, and a bound that only bounds the judge still pays the
+// prompt cost of the rest.
+func capClaimPage(claims []claimHit, limit int) []claimHit {
+	if limit <= 0 || len(claims) <= limit {
+		return claims
+	}
+	keep := make([]bool, len(claims))
+	covered := make(map[string]struct{}, limit)
+	for i := 0; i < limit; i++ {
+		keep[i] = true
+		covered[claims[i].chunkID] = struct{}{}
+	}
+	for i := limit; i < len(claims); i++ {
+		id := claims[i].chunkID
+		if _, ok := covered[id]; ok {
+			continue
+		}
+		covered[id] = struct{}{}
+		keep[i] = true
+	}
+	out := make([]claimHit, 0, limit+len(covered))
+	for i, c := range claims {
+		if keep[i] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// claimJudgeQuoteRunes bounds the verbatim evidence attached to a claim before
+// the model is asked about it. A statement alone is often too terse to judge -
+// "the port closed in 1902" says nothing about whether it answers the question -
+// so the quote travels with it, trimmed: the question is whether the claim earns
+// its line, and a 1200-rune quote costs more to judge than the line it saves.
+const claimJudgeQuoteRunes = 400
+
+// claimJudgeText is the text the filter asks about for one claim: the statement,
+// plus the head of its verbatim evidence when it has one.
+func claimJudgeText(c claimHit) string {
+	text := strings.TrimSpace(c.name)
+	if q := strings.TrimSpace(c.quote); q != "" {
+		text += "\n" + snippetRunes(q, claimJudgeQuoteRunes)
+	}
+	return text
+}
+
+// filterClaims drops the compiled claims the sufficiency model does not find
+// useful for the question this call is asking.
+//
+// The claim page carries no budget of any kind - a chunk is on it whole, with
+// every claim it carries, or not at all - so a chunk with many claims can cost
+// more than the chunk itself. Judging the lines is what bounds that: the page
+// stays whole as an assembly, and the statements the question does not need are
+// removed one at a time.
+//
+// Every degraded path keeps the claim: no model deployed, no question in the
+// context, the exit disabled, a claim the model never ruled on (budget spent,
+// cancelled run, failed forward pass). A filter that cannot run must not cost the
+// page its evidence. The one exception is a page the model judged entirely
+// useless: the single best-ranked claim is kept so the page stays non-empty -
+// an empty page makes the callers serve the raw chunk instead, which is more
+// text than the claim it replaced.
+func filterClaims(ctx context.Context, question string, claims []claimHit) []claimHit {
+	if len(claims) == 0 || !claimFilterEnabled() {
+		return claims
+	}
+	question = strings.TrimSpace(question)
+	// Bound the page BEFORE the judge is consulted, and on every path below it -
+	// including the degraded ones. The page is ordered (chunk rank, then closeness
+	// to the question), so the bound removes the statements furthest from the
+	// question first, and no chunk that made the page is left voiceless.
+	requested := len(claims)
+	claims = capClaimPage(claims, claimJudgeCap())
+	if len(claims) != requested {
+		common.DebugCtx(ctx, "agentic_rag: claim page capped for the judge",
+			zap.Int("claims_in", requested),
+			zap.Int("cap", claimJudgeCap()),
+			zap.Int("claims_kept", len(claims)))
+	}
+	if question == "" || !decisionAvailable(ctx) {
+		return claims
+	}
+	texts := make([]string, len(claims))
+	for i, c := range claims {
+		texts[i] = claimJudgeText(c)
+	}
+	verdicts := decisionJudge(ctx, question, texts)
+	// The floor is per CHUNK: a chunk's claims are one chunk's representation, so
+	// the most question-like statement it produced is kept whatever the absolute
+	// threshold says about it. The relative threshold is the same idea for the
+	// page: a statement close to the page's own best is on topic even when the
+	// absolute scale says otherwise.
+	floor := claimFloorEnabled()
+	best := make(map[string]float64, 8)
+	pageMax := 0.0
+	if floor {
+		for i, c := range claims {
+			if i >= len(verdicts) || !verdicts[i].Judged {
+				continue
+			}
+			p := verdicts[i].Probability
+			if cur, ok := best[c.chunkID]; !ok || p > cur {
+				best[c.chunkID] = p
+			}
+			if p > pageMax {
+				pageMax = p
+			}
+		}
+	}
+	kept := make([]claimHit, 0, len(claims))
+	judged, dropped, floored := 0, 0, 0
+	for i, c := range claims {
+		if i >= len(verdicts) {
+			kept = append(kept, c)
+			continue
+		}
+		v := verdicts[i]
+		if !v.Judged {
+			kept = append(kept, c)
+			continue
+		}
+		judged++
+		p := passage{side: filterSideClaim, tool: "compiled_claim", chunkID: c.chunkID, docID: c.docID, pos: i}
+		logDecision(ctx, p, 0, v)
+		// The statement threshold, not the passage one: v.Useful was computed
+		// against RAGFLOW_DECISION_MIN_PROB, which is calibrated on chunk passages.
+		if v.Probability < claimMinProb() {
+			if floor && pageMax > 0 && (v.Probability >= pageMax*claimRelativeFloor || v.Probability >= best[c.chunkID]) {
+				floored++
+				kept = append(kept, c)
+				continue
+			}
+			dropped++
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if len(kept) == 0 {
+		common.InfoCtx(ctx, "agentic_rag: decision dropped every claim, keeping the best-ranked one",
+			zap.Int("claims_in", len(claims)),
+			zap.Int("judged", judged))
+		return claims[:1]
+	}
+	common.InfoCtx(ctx, "agentic_rag: decision filtered claims",
+		zap.Int("claims_in", len(claims)),
+		zap.Int("judged", judged),
+		zap.Int("dropped", dropped),
+		zap.Int("kept_by_floor", floored),
+		zap.Int("claims_out", len(kept)))
+	return kept
 }

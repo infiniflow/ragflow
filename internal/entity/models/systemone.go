@@ -26,7 +26,8 @@ import (
 	"ragflow/internal/common"
 )
 
-// systemOneDefaultSuffix is the decision endpoint declared as url_suffix.decision.
+// systemOneDefaultSuffix is the decision endpoint this protocol uses, declared
+// in the provider catalog as url_suffix.decision. Decide builds its URL from it.
 const systemOneDefaultSuffix = "systemone"
 
 // systemOneDefaultModelsSuffix lists the models the configured deployment
@@ -36,8 +37,13 @@ const systemOneDefaultModelsSuffix = "models"
 // SystemOneModel implements ModelDriver for endpoints speaking TypeSafe System
 // One: one request carrying several questions, answered in a single round trip.
 //
-// Decide supplies the shared request path for workflow classification and
-// retrieval judging. Chat completions are not supported by this protocol.
+// It embeds OpenAIAPICompatibleModel only to satisfy the rest of the (wide)
+// ModelDriver interface. Decide is one of the two methods it implements itself:
+// a probe of the decision endpoint, which is what verification calls.
+//
+// What this driver is for is REGISTRATION: making the provider appear in the
+// picker, making its model appear once a base URL has been shown to work, and
+// making that model pass the verification the model form runs before saving.
 type SystemOneModel struct {
 	*OpenAIAPICompatibleModel
 }

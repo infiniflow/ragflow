@@ -158,9 +158,9 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
-    {
-      fileFormat: FileType.Video,
-    },
+    // {
+    //   fileFormat: FileType.Video,
+    // },
     {
       fileFormat: FileType.Audio,
       vlm: { llm_id: '' },

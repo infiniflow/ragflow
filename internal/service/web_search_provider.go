@@ -33,8 +33,8 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (brave, exa, firecrawl, linkup, parallel, querit, search1api, serply, tavily,
-// youcom) so a new provider has exactly one obvious place in each list.
+// (brave, exa, firecrawl, linkup, parallel, querit, search1api, searchapi, serply,
+// tavily, youcom) so a new provider has exactly one obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
 // why it has no entry here.
 const (
@@ -45,6 +45,7 @@ const (
 	webSearchProviderParallel   = "parallel"
 	webSearchProviderQuerit     = "querit"
 	webSearchProviderSearch1API = "search1api"
+	webSearchProviderSearchAPI  = "searchapi"
 	webSearchProviderSerply     = "serply"
 	webSearchProviderTavily     = "tavily"
 	webSearchProviderYouCom     = "youcom"
@@ -57,6 +58,7 @@ const (
 	parallelWebSearchEndpoint   = "https://api.parallel.ai/v1/search"
 	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
 	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
+	searchapiWebSearchEndpoint  = "https://www.searchapi.io/api/v1/search"
 	serplyWebSearchEndpoint     = "https://api.serply.io/v1/search/"
 	// webSearchResultCount is how many hits every provider is asked for. Six
 	// keeps the web block in a prompt the size of one corpus chunk set — the
@@ -79,6 +81,7 @@ var (
 	parallelWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
 	queritWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	search1apiWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	searchapiWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	serplyWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	youComWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	// Tavily is reached from two call sites (the chat pipeline and the deep
@@ -132,6 +135,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "querit_api_key"
 	case webSearchProviderSearch1API:
 		apiKeyField = "search1api_api_key"
+	case webSearchProviderSearchAPI:
+		apiKeyField = "searchapi_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
 	case webSearchProviderTavily:
@@ -242,6 +247,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			search1apiWebSearchHTTPClient,
 			search1apiWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderSearchAPI:
+		return retrieveSearchAPIWebSearch(
+			ctx,
+			searchapiWebSearchHTTPClient,
+			searchapiWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -894,6 +907,78 @@ func decodeSearch1APIWebSearchResults(responseBody []byte) ([]search1apiWebSearc
 	var results []search1apiWebSearchResult
 	if err := json.Unmarshal(resultsValue, &results); err != nil {
 		return nil, fmt.Errorf("search1api: response field results must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type searchapiWebSearchResult struct {
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveSearchAPIWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	parameters := url.Values{}
+	// SearchApi fronts several engines behind one endpoint; google is the web
+	// search one, and the parameter is mandatory.
+	parameters.Set("engine", "google")
+	parameters.Set("q", query)
+	parameters.Set("num", strconv.Itoa(webSearchResultCount))
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodGet,
+		endpoint+"?"+parameters.Encode(), map[string]string{
+			"Accept":        "application/json",
+			"Authorization": "Bearer " + apiKey,
+			"User-Agent":    "ragflow-web-search",
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("searchapi: %w", err)
+	}
+	results, err := decodeSearchAPIWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.Link,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("searchapi", hits), nil
+}
+
+// decodeSearchAPIWebSearchResults reads the organic hits. The response also
+// carries knowledge graph, answer box and ads sections; only organic_results is
+// a plain list of pages with a snippet the model can quote.
+func decodeSearchAPIWebSearchResults(responseBody []byte) ([]searchapiWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("searchapi: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("searchapi: response must be an object")
+	}
+
+	resultsValue, exists := envelope["organic_results"]
+	if !exists {
+		return []searchapiWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("searchapi: response field organic_results must be an array")
+	}
+
+	var results []searchapiWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("searchapi: response field organic_results must be an array: %w", err)
 	}
 	return results, nil
 }

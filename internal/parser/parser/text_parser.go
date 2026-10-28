@@ -30,6 +30,8 @@ package parser
 import (
 	"context"
 	"strings"
+
+	"ragflow/internal/parser/charset"
 )
 
 // TextParser is the text&code family parser. It implements the
@@ -45,7 +47,7 @@ func NewTextParser() *TextParser {
 // output format is "json" to mirror the parser component boundary. No fixed
 // delimiter or token budget is applied here.
 func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	decoded, encName := DecodeToUTF8(data, "text/plain")
+	decoded, encName := charset.DecodeToUTF8(data, "text/plain")
 	return ParseResult{
 		File: map[string]any{
 			"name":     filename,

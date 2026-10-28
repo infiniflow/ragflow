@@ -27,6 +27,13 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 
 Run the Go release deployment from the repository checkout:
 
+Before first startup, replace `ADMIN_DEFAULT_PASSWORD` in `docker/.env` with a
+deployment-specific secret if the Admin Service can be reached by other hosts.
+The checked-in value is `admin`, and Docker publishes the Admin port `9381` on
+the host by default. Restrict access to that port to trusted administrators.
+The password setting is used only when the first superuser is created; changing
+it later does not change an existing account's password.
+
 ```bash
 # Enter the Docker deployment directory.
 cd ragflow/docker
@@ -225,21 +232,6 @@ In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
   - `signature_version`: Optional. The version of the signature to use for authenticating requests. Common versions include `v4`.
   - `addressing_style`: Optional. The style of addressing to use for the S3 endpoint. This can be `path` or `virtual`.
   - `prefix_path`: Optional. A prefix path to prepend to file names in the S3 bucket, which can help organize files within the bucket.
-
-- `oauth`
-  The OAuth configuration for signing up or signing in to RAGFlow using a third-party account.
-  - `<channel>`: Custom channel ID.
-    - `type`: Authentication type, options include `oauth2`, `oidc`, `github`. Default is `oauth2`, when `issuer` parameter is provided, defaults to `oidc`.
-    - `icon`: Icon ID, options include `github`, `sso`, default is `sso`.
-    - `display_name`: Channel name, defaults to the Title Case format of the channel ID.
-    - `client_id`: Required, unique identifier assigned to the client application.
-    - `client_secret`: Required, secret key for the client application, used for communication with the authentication server.
-    - `authorization_url`: Base URL for obtaining user authorization.
-    - `token_url`: URL for exchanging authorization code and obtaining access token.
-    - `userinfo_url`: URL for obtaining user information (username, email, etc.).
-    - `issuer`: Base URL of the identity provider. OIDC clients can dynamically obtain the identity provider's metadata (`authorization_url`, `token_url`, `userinfo_url`) through `issuer`.
-    - `scope`: Requested permission scope, a space-separated string. For example, `openid profile email`.
-    - `redirect_uri`: Required, URI to which the authorization server redirects during the authentication flow to return results. Must match the callback URI registered with the authentication server. Format: `https://your-app.com/api/v1/auth/oauth/<channel>/callback`. For local configuration, you can directly use `http://127.0.0.1:80/api/v1/auth/oauth/<channel>/callback`.
 
 ## 📋 Setup Examples
 
