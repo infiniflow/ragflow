@@ -152,3 +152,36 @@ func TestAnnotateBoxLayouts_KeepsTextAfterSingleGarbageDrop(t *testing.T) {
 		t.Fatalf("a single garbage drop must not cascade to other boxes: got %+v", got)
 	}
 }
+
+func TestAnnotateBoxLayouts_KeepsNonTableBoxOverlappingTable(t *testing.T) {
+	// A box inside a table region can lose the layout pass's table label to a
+	// higher-priority label (title) when both regions cover it.
+	// MatchTableRegions still consumes every overlapping box, so cleanup must
+	// not remove it: dropping it loses a cell value.
+	text := "1"
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 940, Bottom: 960, Text: text},
+		{X0: 0, X1: 100, Top: 965, Bottom: 985, Text: text},
+		{X0: 420, X1: 450, Top: 950, Bottom: 970, Text: text},
+	}
+	regions := []pdf.DLARegion{
+		footerRegion(940, 990),
+		{
+			X0: 420 * repeatedGarbageTestScale, Y0: 950 * repeatedGarbageTestScale,
+			X1: 450 * repeatedGarbageTestScale, Y1: 970 * repeatedGarbageTestScale,
+			Label:      pdf.LayoutTypeTitle,
+			Confidence: 0.9,
+		},
+		{
+			X0: 400 * repeatedGarbageTestScale, Y0: 900 * repeatedGarbageTestScale,
+			X1: 700 * repeatedGarbageTestScale, Y1: 990 * repeatedGarbageTestScale,
+			Label:      pdf.LayoutTypeTable,
+			Confidence: 0.9,
+		},
+	}
+
+	got := AnnotateBoxLayouts(boxes, regions, repeatedGarbageTestScale, repeatedGarbageTestPageImgHeight)
+	if !keptText(got, text) {
+		t.Fatalf("table-overlapping box %q matching discarded footer text was dropped", text)
+	}
+}

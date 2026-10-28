@@ -469,7 +469,7 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	// Page decoration that the layout pass discarded can still survive as a
 	// second box elsewhere on the same page. Drop those copies so the text
 	// does not reach indexing twice.
-	boxes = dropRepeatedGarbageText(boxes, discardedGarbage, pageImgHeight/scale)
+	boxes = dropRepeatedGarbageText(boxes, discardedGarbage, pageImgHeight/scale, regions, scale)
 
 	// Keep one geometry box per figure/equation, independently of its text.
 	// ConsolidateFigures combines it with matching labels after text cleanup.
@@ -504,8 +504,11 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 //   - the survivor sits in the same page-edge band that made the layout pass
 //     discard the other copies, so it is a decoration in its own right;
 //   - it is not a caption, preserving the caption handling fixed in #20767;
-//   - it is not a table box, because table matching needs every cell and a
-//     short cell value commonly equals a page number or header string.
+//   - it does not overlap a table region, because MatchTableRegions consumes
+//     every overlapping box regardless of its label and table reconstruction
+//     needs every cell. Checking the label alone would miss a cell that lost
+//     the table label to a higher-priority region covering the same spot
+//     (title is annotated before table).
 //
 // The pass is page-scoped because AnnotateBoxLayouts owns exactly one page.
 const (
@@ -525,7 +528,7 @@ type discardedGarbageText struct {
 // dropRepeatedGarbageText removes surviving boxes that repeat a string the
 // layout pass discarded on the same page and that sit in the decoration band
 // of the discarding layout type.
-func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discardedGarbageText, pageHeight float64) []pdf.TextBox {
+func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discardedGarbageText, pageHeight float64, regions []pdf.DLARegion, scale float64) []pdf.TextBox {
 	if len(discarded) == 0 || pageHeight <= 0 {
 		return boxes
 	}
@@ -537,7 +540,7 @@ func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discarde
 				evidence.count >= repeatedGarbageMinDrops &&
 				utf8.RuneCountInString(key) <= repeatedGarbageMaxRunes &&
 				!IsCaptionBox(b.Text, b.LayoutType) &&
-				b.LayoutType != pdf.LayoutTypeTable &&
+				!overlapsTableRegion(b, regions, scale) &&
 				inGarbageBand(b, evidence.types, pageHeight) {
 				continue
 			}
@@ -545,6 +548,17 @@ func dropRepeatedGarbageText(boxes []pdf.TextBox, discarded map[string]*discarde
 		kept = append(kept, b)
 	}
 	return kept
+}
+
+// overlapsTableRegion reports whether b would be consumed by
+// MatchTableRegions, which uses the same overlap test.
+func overlapsTableRegion(b pdf.TextBox, regions []pdf.DLARegion, scale float64) bool {
+	for _, r := range regions {
+		if r.Label == pdf.LayoutTypeTable && regionOverlapsBox(r, b, scale) {
+			return true
+		}
+	}
+	return false
 }
 
 // inGarbageBand reports whether b lies in a page-edge band that the given
