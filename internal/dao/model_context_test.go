@@ -291,7 +291,6 @@ func seedChatModel(t *testing.T, db *gorm.DB, providerID, providerName, modelNam
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           providerID,
 		ProviderName: providerName,
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
@@ -366,7 +365,6 @@ func TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance(t 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
 		ProviderName: "OpenAI",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
@@ -414,7 +412,6 @@ func TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInsta
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
 		ProviderName: "OpenAI",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)

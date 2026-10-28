@@ -99,7 +99,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 		if tenantID == "" {
 			return nil
 		}
-		provider, err := NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, tenantID, providerName)
+		provider, err := NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 		if err != nil || provider == nil {
 			return nil
 		}

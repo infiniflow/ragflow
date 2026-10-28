@@ -115,7 +115,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		return code, normalizedErr
 	}
 
-	existing, err := m.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, tenantID, userID, providerName)
+	existing, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.CodeServerError, err
 	}
@@ -277,7 +277,7 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 		}
 	}
 
-	_, err = m.modelProviderDAO.DeleteByTenantIDAndUserIDAndProviderName(ctx, dao.DB, provider.TenantID, provider.UserID, provider.ProviderName)
+	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(ctx, dao.DB, provider.TenantID, provider.ProviderName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -428,28 +428,19 @@ func NormalizeAPIKey(raw json.RawMessage) string {
 	return compact.String()
 }
 
-// findProviderByIDOrNameInTenantAndUser resolves a provider row owned by userID inside
-// tenantID. The primary-key branch validates both tenant and owner, and the name
-// branch only sees rows owned by userID, so a same-named provider owned by
-// another member never resolves.
-func (m *ModelProviderService) findProviderByIDOrNameInTenantAndUser(ctx context.Context, tenantID, userID, providerIDOrName string) (*entity.TenantModelProvider, error) {
+func (m *ModelProviderService) findProviderByIDOrNameInTenant(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 	if providerIDOrName == "" {
 		return nil, gorm.ErrRecordNotFound
 	}
-	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
-	if err == nil {
-		if provider.TenantID != tenantID || provider.UserID != userID {
-			return nil, gorm.ErrRecordNotFound
-		}
-		return provider, nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	providers, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, userID)
+	providers, err := m.modelProviderDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
+	}
+	for _, provider := range providers {
+		if provider.ID == providerIDOrName {
+			return provider, nil
+		}
 	}
 	for _, provider := range providers {
 		if strings.EqualFold(provider.ProviderName, providerIDOrName) {
@@ -462,15 +453,15 @@ func (m *ModelProviderService) findProviderByIDOrNameInTenantAndUser(ctx context
 // resolveProviderInTenant resolves the provider addressed by a route inside the
 // request's active tenant and authorizes operation on that row.
 //
-// Provider names are only unique per tenant and owner user
-// (idx_tenant_provider_user_unique), so a lookup across every tenant a user
-// belongs to can select a same-named provider owned by another tenant.
+// Provider names are only unique per tenant (idx_tenant_provider_user_unique),
+// so a lookup across every tenant a user belongs to can select a same-named
+// provider owned by another tenant.
 func (m *ModelProviderService) resolveProviderInTenant(ctx context.Context, userID, providerIDOrName string, operation permission.Operation) (*entity.TenantModelProvider, error) {
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	provider, err := m.findProviderByIDOrNameInTenantAndUser(ctx, tenantID, userID, providerIDOrName)
+	provider, err := m.findProviderByIDOrNameInTenant(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return nil, err
 	}
@@ -1968,7 +1959,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, use
 	}
 
 	// 1. Find or create the provider.
-	provider, err := m.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, tenantID, userID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {
 			return fmt.Errorf("failed to get provider %s: %w", providerName, err)
@@ -2612,7 +2603,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	providerEntity, err := m.findProviderByIDOrNameInTenantAndUser(ctx, tenantID, userID, *providerName)
+	providerEntity, err := m.findProviderByIDOrNameInTenant(ctx, tenantID, *providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, permission.ErrResourceNotFound

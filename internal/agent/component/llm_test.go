@@ -275,7 +275,6 @@ func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-comp-1",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -338,7 +337,6 @@ func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-2",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -402,7 +400,6 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-1",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -462,7 +459,6 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "DeepSeek",
 	}).Error; err != nil {

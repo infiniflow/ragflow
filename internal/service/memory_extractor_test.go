@@ -264,7 +264,6 @@ func TestExtractByLLMMarksInvalidModelConfigPermanent(t *testing.T) {
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
 		ProviderName: "OpenAI",
-		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create model provider: %v", err)

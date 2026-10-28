@@ -24,9 +24,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
-
 	"ragflow/internal/common"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -116,8 +115,7 @@ var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
 // another model.
 func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	providerDAO := dao.NewTenantModelProviderDAO()
-
-	provider, err := providerDAO.GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, tenantID, providerName)
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
 		// Some OCR capabilities are registered under sibling provider names
 		// (cloud vs. local). Tolerate the alternate spelling before giving up
@@ -126,7 +124,7 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 			if alias == providerName {
 				continue
 			}
-			if p, aerr := providerDAO.GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, tenantID, alias); aerr == nil {
+			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
 				provider, err = p, nil
 				break
 			}
@@ -329,7 +327,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, tenantID, providerName)
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
