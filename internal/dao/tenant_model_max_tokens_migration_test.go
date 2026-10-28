@@ -52,6 +52,7 @@ func seedLegacyTenantModelMaxTokens(t *testing.T, db *gorm.DB, maxTokens int64) 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
 		ProviderName: "Ollama",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("failed to seed provider: %v", err)

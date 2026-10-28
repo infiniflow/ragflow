@@ -143,7 +143,7 @@ func seedDecisionModel(t *testing.T, db *gorm.DB, tenantID, modelName string, mo
 	instanceID = fmt.Sprintf("inst-%s-%s", tag, modelName)
 	modelID = fmt.Sprintf("model-%s-%s", tag, modelName)
 	rows := []any{
-		&entity.TenantModelProvider{ID: providerID, ProviderName: "SystemOne-" + modelName, TenantID: tenantID},
+		&entity.TenantModelProvider{ID: providerID, ProviderName: "SystemOne-" + modelName, UserID: tenantID, TenantID: tenantID},
 		&entity.TenantModelInstance{ID: instanceID, InstanceName: "qwen", ProviderID: providerID, APIKey: "key-" + modelName, Extra: `{"base_url":"https://host.example/v1"}`},
 		&entity.TenantModel{ID: modelID, ModelName: modelName, ProviderID: providerID, InstanceID: instanceID, ModelType: modelType, Status: "active"},
 	}

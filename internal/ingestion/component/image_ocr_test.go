@@ -149,7 +149,7 @@ func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *image
 	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
 	}
-	rows := []any{&entity.TenantModelProvider{ID: "provider", TenantID: "tenant-1", ProviderName: provider}}
+	rows := []any{&entity.TenantModelProvider{ID: "provider", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: provider}}
 	for _, instance := range []struct{ id, url string }{{"a", decoy.URL}, {"b", server.URL}} {
 		rows = append(rows,
 			&entity.TenantModelInstance{ID: "instance-" + instance.id, ProviderID: "provider", InstanceName: instance.id,

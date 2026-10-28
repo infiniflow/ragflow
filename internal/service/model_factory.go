@@ -803,7 +803,12 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		}
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
+	// Background work may carry only a tenant scope; OSS keeps tenant_id == user_id.
+	ownerUserID := access.UserID
+	if ownerUserID == "" {
+		ownerUserID = access.TenantID
+	}
+	provider, err := s.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, access.TenantID, ownerUserID, providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
@@ -988,7 +993,12 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
+	// Background work may carry only a tenant scope; OSS keeps tenant_id == user_id.
+	ownerUserID := access.UserID
+	if ownerUserID == "" {
+		ownerUserID = access.TenantID
+	}
+	provider, err := s.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, access.TenantID, ownerUserID, providerName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
 	}

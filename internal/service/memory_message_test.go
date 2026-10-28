@@ -473,6 +473,7 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 		if err := dao.DB.Create(&entity.TenantModelProvider{
 			ID:           row.providerID,
 			ProviderName: "OpenAI",
+			UserID:       row.tenantID,
 			TenantID:     row.tenantID,
 		}).Error; err != nil {
 			t.Fatalf("seed provider %s: %v", row.providerID, err)
@@ -524,6 +525,7 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 	if err := dao.DB.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
 		ProviderName: "OpenAI",
+		UserID:       "user-1",
 		TenantID:     "user-1",
 	}).Error; err != nil {
 		t.Fatalf("seed provider: %v", err)

@@ -208,7 +208,7 @@ func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, row := range []any{
-					&entity.TenantModelProvider{ID: "provider-mineru", TenantID: "tenant", ProviderName: "MinerU"},
+					&entity.TenantModelProvider{ID: "provider-mineru", UserID: "tenant", TenantID: "tenant", ProviderName: "MinerU"},
 					&entity.TenantModelInstance{ID: "instance-mineru", ProviderID: "provider-mineru", InstanceName: "default", APIKey: "synthetic-mineru-key", Status: "active", Extra: string(extra)},
 					&entity.TenantModel{ID: "model-mineru", ProviderID: "provider-mineru", InstanceID: "instance-mineru", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 				} {

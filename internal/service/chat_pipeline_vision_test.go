@@ -43,7 +43,7 @@ func setupChatPipelineVisionTestDB(t *testing.T) *gorm.DB {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelProvider{ID: "provider-zhipu", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
 		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-flash-chat", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active"},
 		&entity.TenantModel{ID: "model-4v", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v", ModelType: int(entity.ModelTypeChat | entity.ModelTypeImage2Text), Status: "active"},

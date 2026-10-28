@@ -45,20 +45,34 @@ func (dao *TenantModelProviderDAO) GetByID(ctx context.Context, db *gorm.DB, id 
 	return &provider, nil
 }
 
-// GetByTenantIDAndProviderName get the providers by tenant ID and provider name
-func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
+// GetByTenantIDAndUserIDAndProviderName get the providers by tenant ID, owner user ID
+// and provider name. The three columns are exactly idx_tenant_provider_user_unique,
+// so the lookup addresses at most one row.
+func (dao *TenantModelProviderDAO) GetByTenantIDAndUserIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, userID, providerName string) (*entity.TenantModelProvider, error) {
 	var provider entity.TenantModelProvider
-	err := db.WithContext(ctx).Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).First(&provider).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND user_id = ? AND provider_name = ?", tenantID, userID, providerName).First(&provider).Error
 	if err != nil {
 		return nil, err
 	}
 	return &provider, nil
 }
 
-// DeleteByTenantIDAndProviderName DeleteByTenantID deletes all providers by tenant ID (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
+// DeleteByTenantIDAndUserIDAndProviderName deletes the provider row addressed by tenant
+// ID, owner user ID and provider name (hard delete).
+func (dao *TenantModelProviderDAO) DeleteByTenantIDAndUserIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, userID, providerName string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND user_id = ? AND provider_name = ?", tenantID, userID, providerName).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
+}
+
+// ListByTenantIDAndUserID returns the provider rows a single user owns inside
+// one tenant.
+func (dao *TenantModelProviderDAO) ListByTenantIDAndUserID(ctx context.Context, db *gorm.DB, tenantID, userID string) ([]*entity.TenantModelProvider, error) {
+	var providers []*entity.TenantModelProvider
+	err := db.WithContext(ctx).Where("tenant_id = ? AND user_id = ?", tenantID, userID).Find(&providers).Error
+	if err != nil {
+		return nil, err
+	}
+	return providers, nil
 }
 
 // ListByID list tenant model providers by ID

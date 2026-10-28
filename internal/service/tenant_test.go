@@ -262,6 +262,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	providerID := "provider-1"
 	err = db.Create(&entity.TenantModelProvider{
 		ID:           providerID,
+		UserID:       tenantID,
 		TenantID:     tenantID,
 		ProviderName: "OpenAI",
 	}).Error

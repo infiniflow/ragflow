@@ -71,7 +71,7 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 	}
 	const storedKey = `{"MISTRAL_OCR_API_KEY": "sk-env"}`
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: storedKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	} {
@@ -367,7 +367,7 @@ func openDispatchModelTestDB(t *testing.T) *gorm.DB {
 func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
 	db := openDispatchModelTestDB(t)
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", APIKey: `{"OPENAI_API_KEY": "sk-inactive"}`, Status: "inactive"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	} {
@@ -403,7 +403,7 @@ func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
 func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T) {
 	db := openDispatchModelTestDB(t)
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", Status: "active"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	} {
