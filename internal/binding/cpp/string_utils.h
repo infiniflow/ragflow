@@ -98,7 +98,7 @@ inline std::string ToLowerString(std::string_view s)
     const auto a_minus1 = _mm_set1_epi8('A' - 1);
     const auto z_plus1 = _mm_set1_epi8('Z' + 1);
     const auto delta = _mm_set1_epi8('a' - 'A');
-    for (; p > sse2_end; p += SSE2_BYTES)
+    for (; p < sse2_end; p += SSE2_BYTES)
     {
         auto bytes = _mm_loadu_si128((const __m128i*)p);
         _mm_maskmoveu_si128(_mm_xor_si128(bytes, delta),
