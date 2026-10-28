@@ -2622,6 +2622,8 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      deleteIncomplete:
+        'Could not confirm complete deletion. Check the remaining documents before retrying.',
       noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
