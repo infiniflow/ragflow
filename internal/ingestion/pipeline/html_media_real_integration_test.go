@@ -8,10 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -69,6 +67,19 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	stg, err := storage.NewMinioStorage(cfg.GetMinioConfig())
 	if err != nil {
 		t.Fatal(err)
+	}
+	readyCtx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	for {
+		_, err := stg.BucketExistsWithError(readyCtx, "ragflow-html-media-probe")
+		if err == nil {
+			break
+		}
+		select {
+		case <-readyCtx.Done():
+			t.Fatalf("MinIO S3 not ready: %v", err)
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
 	originalDB := dao.DB
 	originalStorage := storage.GetStorageFactory().GetStorage()
@@ -201,67 +212,20 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	}
 }
 
-// loadHTMLMediaIntegrationConfig uses CI's published service addresses when
-// supplied, while leaving the checked-in configuration untouched.
+// loadHTMLMediaIntegrationConfig uses the CI service addresses when set.
 func loadHTMLMediaIntegrationConfig(t *testing.T) *config.Config {
 	t.Helper()
 	kvAddr := os.Getenv("RAGFLOW_TEST_KVROCKS_ADDR")
 	if kvAddr == "" {
 		return mustLoadRealIntegrationConfig(t)
 	}
-	mysqlAddr := os.Getenv("RAGFLOW_TEST_MYSQL_ADDR")
-	minioAddr := os.Getenv("RAGFLOW_TEST_MINIO_ADDR")
-	host, portString, err := net.SplitHostPort(mysqlAddr)
-	if err != nil {
-		t.Fatalf("invalid mysql address: %v", err)
+	cfg := map[string]any{
+		"general": map[string]any{"cache_engine": "kvrocks"},
+		"mysql":   map[string]any{"host": os.Getenv("RAGFLOW_MYSQL_HOST"), "port": os.Getenv("RAGFLOW_MYSQL_PORT"), "password": os.Getenv("MYSQL_PASSWORD")},
+		"minio":   map[string]any{"host": os.Getenv("RAGFLOW_MINIO_HOST"), "user": os.Getenv("MINIO_USER"), "password": os.Getenv("MINIO_PASSWORD")},
+		"kvrocks": map[string]any{"host": kvAddr, "password": os.Getenv("REDIS_PASSWORD"), "db": 1},
 	}
-	port, err := strconv.Atoi(portString)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := net.SplitHostPort(kvAddr); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := net.SplitHostPort(minioAddr); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "conf", "service_conf.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cfg map[string]any
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	mysql, ok := cfg["mysql"].(map[string]any)
-	if !ok {
-		t.Fatal("missing mysql config")
-	}
-	minio, ok := cfg["minio"].(map[string]any)
-	if !ok {
-		t.Fatal("missing minio config")
-	}
-	kvrocks, ok := cfg["kvrocks"].(map[string]any)
-	if !ok {
-		t.Fatal("missing kvrocks config")
-	}
-	mysql["host"], mysql["port"] = host, port
-	minio["host"], kvrocks["host"] = minioAddr, kvAddr
-	for _, entry := range []struct {
-		env     string
-		section map[string]any
-		key     string
-	}{
-		{"RAGFLOW_TEST_MYSQL_PASSWORD", mysql, "password"},
-		{"RAGFLOW_TEST_MINIO_USER", minio, "user"},
-		{"RAGFLOW_TEST_MINIO_PASSWORD", minio, "password"},
-		{"RAGFLOW_TEST_KVROCKS_PASSWORD", kvrocks, "password"},
-	} {
-		if value, ok := os.LookupEnv(entry.env); ok {
-			entry.section[entry.key] = value
-		}
-	}
-	data, err = yaml.Marshal(cfg)
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

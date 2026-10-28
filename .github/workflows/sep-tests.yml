@@ -1892,18 +1892,12 @@ jobs:
             | grep -v '/test/api' \
             | grep -v '^ragflow/internal/deepdoc' \
             | grep -v '/internal/storage$')
-          ./build.sh --test-integration-go $PKGS
-          # Exercise HTML media with the real published services.
-          KVROCKS_PORT=$(_port KVROCKS_PORT)
+          # Run HTML media integration against the same services.
           export RAGFLOW_REAL_HTML_MEDIA_TEST=1
-          export RAGFLOW_TEST_MYSQL_ADDR="host.docker.internal:${EXPOSE_MYSQL_PORT}"
-          export RAGFLOW_TEST_MINIO_ADDR="host.docker.internal:${MINIO_PORT}"
-          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
-          export RAGFLOW_TEST_MYSQL_PASSWORD="$(_port MYSQL_PASSWORD)"
-          export RAGFLOW_TEST_MINIO_USER="$(_port MINIO_USER)"
-          export RAGFLOW_TEST_MINIO_PASSWORD="$(_port MINIO_PASSWORD)"
-          export RAGFLOW_TEST_KVROCKS_PASSWORD="$(_port REDIS_PASSWORD)"
-          ./build.sh --test-integration-go -run "^TestHTMLMediaRealServices$" ./internal/ingestion/pipeline
+          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:$(_port KVROCKS_PORT)"
+          export MYSQL_PASSWORD="$(_port MYSQL_PASSWORD)" MINIO_USER="$(_port MINIO_USER)"
+          export MINIO_PASSWORD="$(_port MINIO_PASSWORD)" REDIS_PASSWORD="$(_port REDIS_PASSWORD)"
+          ./build.sh --test-integration-go $PKGS
 
       - name: Tear down
         if: always()
