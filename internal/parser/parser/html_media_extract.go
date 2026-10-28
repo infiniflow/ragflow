@@ -67,22 +67,6 @@ func scanHTMLMediaSpans(data []byte) ([]htmlMediaSpan, bool) {
 	return spans, truncated
 }
 
-// findHTMLMediaSpan performs an uncapped, targeted pass for one digest. It is
-// used only when the capped index was truncated, so a real image after the cap
-// is still resolved without retaining every payload.
-func findHTMLMediaSpan(data []byte, digest string) (htmlMediaSpan, bool) {
-	var found htmlMediaSpan
-	ok := false
-	walkHTMLMediaSpans(data, func(span htmlMediaSpan) bool {
-		if span.Ref.SHA256 == digest {
-			found, ok = span, true
-			return false
-		}
-		return true
-	})
-	return found, ok
-}
-
 // walkHTMLMediaSpans tokenizes data and visits every <img src> whose value is
 // an accepted data URI. Returning false from visit stops the walk.
 func walkHTMLMediaSpans(data []byte, visit func(htmlMediaSpan) bool) {
@@ -94,7 +78,7 @@ func walkHTMLMediaSpans(data []byte, visit func(htmlMediaSpan) bool) {
 			return
 		}
 		raw := tokenizer.Raw()
-		if tokenType == html.StartTagToken {
+		if tokenType == html.StartTagToken || tokenType == html.SelfClosingTagToken {
 			if name, _ := tokenizer.TagName(); strings.EqualFold(string(name), "img") {
 				if src, ok := htmlTagAttr(tokenizer, "src"); ok {
 					if ref, ok := htmlDataURIRef(src); ok {
@@ -140,8 +124,8 @@ func htmlDataURIRef(src []byte) (entity.MediaRef, bool) {
 func decodeHTMLImagePayload(tag []byte) ([]byte, [sha256.Size]byte, error) {
 	var sum [sha256.Size]byte
 	tokenizer := html.NewTokenizer(bytes.NewReader(tag))
-	if tokenType := tokenizer.Next(); tokenType != html.StartTagToken {
-		return nil, sum, errors.New("html media: span is not a start tag")
+	if tokenType := tokenizer.Next(); tokenType != html.StartTagToken && tokenType != html.SelfClosingTagToken {
+		return nil, sum, errors.New("html media: span is not an img start tag")
 	}
 	src, ok := htmlTagAttr(tokenizer, "src")
 	if !ok {
@@ -151,13 +135,23 @@ func decodeHTMLImagePayload(tag []byte) ([]byte, [sha256.Size]byte, error) {
 	if !ok {
 		return nil, sum, errors.New("html media: invalid image payload")
 	}
+	data, err := decodeNormalizedMediaURI(normalized)
+	if err != nil {
+		return nil, sum, err
+	}
+	return data, sum, nil
+}
+
+// decodeNormalizedMediaURI decodes the payload of a normalized
+// "data:<mime>;base64,..." URI.
+func decodeNormalizedMediaURI(normalized string) ([]byte, error) {
 	separator := strings.IndexByte(normalized, ',')
 	if separator < 0 {
-		return nil, sum, errors.New("html media: malformed data URI")
+		return nil, errors.New("html media: malformed data URI")
 	}
 	data, err := base64.StdEncoding.DecodeString(normalized[separator+1:])
 	if err != nil {
-		return nil, sum, fmt.Errorf("html media: decode payload: %w", err)
+		return nil, fmt.Errorf("html media: decode payload: %w", err)
 	}
-	return data, sum, nil
+	return data, nil
 }

@@ -325,3 +325,55 @@ func TestChunkMediaSourceFactoryResolvesStorage(t *testing.T) {
 		t.Fatalf("doc_id source = %q, %v", data, err)
 	}
 }
+
+// TestImageUploadDecorator_ResolvesSelfClosingImage covers the upload path
+// for the common <img ... /> form.
+func TestImageUploadDecorator_ResolvesSelfClosingImage(t *testing.T) {
+	uri := "data:image/png;base64," + pngBase64
+	html := `<img alt="figure" src="` + uri + `" />`
+
+	p := parserlib.NewHTMLParser()
+	p.MediaMode = parserlib.MediaModeRef
+	parsed := p.ParseWithResult(t.Context(), "self-closing.html", []byte(html))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+
+	prevUploader := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, _ []byte) (string, error) {
+		return kbID + "-" + chunkID, nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prevUploader })
+
+	prevSource := ChunkMediaSourceFactory
+	ChunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	}
+	t.Cleanup(func() { ChunkMediaSourceFactory = prevSource })
+
+	comp, err := NewOneChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+		"name": "self-closing.html", "kb_id": testKBID,
+		"output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("decorator: %v", err)
+	}
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	images := 0
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] != "image" {
+			continue
+		}
+		images++
+		if imgID, ok := ck["img_id"].(string); !ok || imgID == "" {
+			t.Fatalf("self-closing image not uploaded: %#v", ck)
+		}
+	}
+	if images != 1 {
+		t.Fatalf("image chunks = %d, want 1", images)
+	}
+}

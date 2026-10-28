@@ -20,11 +20,15 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
+
+	"golang.org/x/net/html"
 
 	"ragflow/internal/entity"
 )
@@ -96,22 +100,29 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 	if err := r.loadHTML(ctx, src); err != nil {
 		return nil, err
 	}
-	span, ok := r.htmlSpans[ref.SHA256]
-	if !ok && r.htmlTruncated {
-		// The capped index stopped early. Do a targeted uncapped pass so a
-		// real image after the cap is not mistaken for an absent one.
-		span, ok = findHTMLMediaSpan(r.htmlData, ref.SHA256)
-		if !ok {
-			return nil, fmt.Errorf("media: html media index was truncated before image %s", shortMediaDigest(ref.SHA256))
+	if span, ok := r.htmlSpans[ref.SHA256]; ok {
+		data, sum, err := decodeHTMLImagePayload(r.htmlData[span.TagStart:span.TagEnd])
+		if err != nil {
+			return nil, err
 		}
+		return validateMediaPayload(data, sum, ref)
 	}
-	if !ok {
-		return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortMediaDigest(ref.SHA256))
+	// The streaming tokenizer does not model foreign-content contexts (for
+	// example <svg><title>) and other tree-construction edge cases. Fall back
+	// to the parser's actual DOM walk, which is the source of truth for what
+	// the parser emitted.
+	if data, sum, found := findHTMLMediaPayloadInDOM(r.htmlData, ref.SHA256); found {
+		return validateMediaPayload(data, sum, ref)
 	}
-	data, sum, err := decodeHTMLImagePayload(r.htmlData[span.TagStart:span.TagEnd])
-	if err != nil {
-		return nil, err
+	if r.htmlTruncated {
+		return nil, fmt.Errorf("media: html media index was truncated before image %s", shortMediaDigest(ref.SHA256))
 	}
+	return nil, fmt.Errorf("%w: image %s not found in html source", ErrMediaNotFound, shortMediaDigest(ref.SHA256))
+}
+
+// validateMediaPayload applies the integrity and size checks shared by the
+// tokenizer path and the DOM fallback.
+func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byte, error) {
 	if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
 		return nil, fmt.Errorf("media: image digest mismatch: reference %s, source %s", shortMediaDigest(ref.SHA256), shortMediaDigest(got))
 	}
@@ -122,6 +133,47 @@ func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef,
 		return nil, fmt.Errorf("media: image size mismatch: reference %d bytes, source %d bytes", ref.Size, len(data))
 	}
 	return data, nil
+}
+
+// findHTMLMediaPayloadInDOM re-parses the source with the HTML tree builder
+// and returns the payload for digest when the streaming tokenizer missed it.
+// It walks the same DOM the parser walks, so foreign-content contexts and
+// other tree-construction rules are honoured without a second attribute
+// parser. The DOM briefly holds the attribute strings; the fallback only runs
+// after the low-memory tokenizer index misses.
+func findHTMLMediaPayloadInDOM(data []byte, digest string) ([]byte, [32]byte, bool) {
+	var sum [32]byte
+	doc, err := html.Parse(bytes.NewReader(data))
+	if err != nil {
+		return nil, sum, false
+	}
+	var payload []byte
+	found := false
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if found {
+			return
+		}
+		if n.Type == html.ElementNode && strings.EqualFold(n.Data, "img") {
+			for _, attr := range n.Attr {
+				if !strings.EqualFold(attr.Key, "src") {
+					continue
+				}
+				normalized, _, candidate, ok := normalizeHTMLImageSource(attr.Val)
+				if ok && hex.EncodeToString(candidate[:]) == digest {
+					if decoded, err := decodeNormalizedMediaURI(normalized); err == nil {
+						payload, sum, found = decoded, candidate, true
+					}
+				}
+				break
+			}
+		}
+		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(doc)
+	return payload, sum, found
 }
 
 // loadHTML reads and indexes the source once. The source bytes stay resident

@@ -200,9 +200,9 @@ func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
 	}
 }
 
-// TestScanHTMLMediaSpansTruncationFindsTargetedImage pins the fallback used
-// when the capped index stops before a real image.
-func TestScanHTMLMediaSpansTruncationFindsTargetedImage(t *testing.T) {
+// TestMediaResolverFindsImageAfterSpanCap pins the DOM fallback used when
+// the capped tokenizer index stops before a real image.
+func TestMediaResolverFindsImageAfterSpanCap(t *testing.T) {
 	img := `<img src="data:image/png;base64,aGVsbG8=">`
 	last := `<img src="data:image/png;base64,aGVsbG8+">`
 	input := []byte(strings.Repeat(img, 4096) + last)
@@ -218,13 +218,11 @@ func TestScanHTMLMediaSpansTruncationFindsTargetedImage(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture ref was rejected")
 	}
-	span, found := findHTMLMediaSpan(input, want.SHA256)
-	if !found {
-		t.Fatal("targeted pass did not find the image after the cap")
-	}
-	data, _, err := decodeHTMLImagePayload(input[span.TagStart:span.TagEnd])
+	data, err := NewMediaResolver().Resolve(context.Background(), want, MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return input, nil
+	}))
 	if err != nil || string(data) != "hello>" {
-		t.Fatalf("targeted decode = %q, %v", data, err)
+		t.Fatalf("resolved = %q, %v", data, err)
 	}
 }
 
@@ -245,5 +243,59 @@ func TestMediaResolverReportsTruncatedMissingImage(t *testing.T) {
 	}
 	if errors.Is(err, ErrMediaNotFound) {
 		t.Fatal("truncated scan was reported as a confirmed absent image")
+	}
+}
+
+func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
+	t.Helper()
+	p := NewHTMLParser()
+	p.MediaMode = MediaModeRef
+	result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var ref *entity.MediaRef
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] == DocTypeImage {
+			ref = entity.MediaRefFromAny(m["media_ref"])
+		}
+	}
+	if ref == nil {
+		t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
+	}
+	return ref
+}
+
+func resolveMediaInput(t *testing.T, input string, ref entity.MediaRef) []byte {
+	t.Helper()
+	data, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	}))
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	return data
+}
+
+func TestMediaResolverHandlesSelfClosingImg(t *testing.T) {
+	input := `<img src="data:image/png;base64,aGVsbG8=" />`
+	ref := mediaRefFromHTML(t, input)
+	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", data)
+	}
+}
+
+func TestMediaResolverFallsBackToTheParserDOM(t *testing.T) {
+	// In the HTML tree builder <svg><title> is foreign content, so the <img>
+	// becomes an element. The streaming tokenizer treats <title> as RCDATA and
+	// misses it; the DOM fallback must recover the image.
+	input := `<svg><title><img src="data:image/png;base64,aGVsbG8="></title></svg>`
+	ref := mediaRefFromHTML(t, input)
+	if spans, _ := scanHTMLMediaSpans([]byte(input)); len(spans) != 0 {
+		t.Fatalf("tokenizer unexpectedly indexed %d span(s)", len(spans))
+	}
+	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", data)
 	}
 }
