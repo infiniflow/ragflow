@@ -81,8 +81,15 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{refOnly: true}
+	state := &htmlWalkState{
+		refOnly:    true,
+		ctx:        ctx,
+		mediaCache: media.CacheFromContext(ctx),
+	}
 	walkHTMLBlocksWithState(doc, &items, state)
+	if state.err != nil {
+		return ParseResult{Err: state.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -119,7 +126,10 @@ type htmlWalkState struct {
 	// carrying the normalized data URI on the item. HTML sets it; formats
 	// that still inline image bytes leave it false.
 	refOnly      bool
+	ctx          context.Context
+	mediaCache   media.Cache
 	resolveImage func(string) (string, bool)
+	err          error
 }
 
 func (s *htmlWalkState) warnings() []string {
@@ -131,6 +141,9 @@ func (s *htmlWalkState) warnings() []string {
 }
 
 func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
+	if s.err != nil {
+		return "", nil, false
+	}
 	if s.resolveImage != nil {
 		normalized, ok := s.resolveImage(src)
 		return normalized, nil, ok
@@ -138,34 +151,45 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	if !media.IsHTMLDataImageSource(src) {
 		return "", nil, false
 	}
+	if s.refOnly {
+		mime, data, ok := media.DecodeHTMLImageSource(src)
+		if !ok {
+			return "", nil, false
+		}
+		if s.mediaCache == nil {
+			s.err = fmt.Errorf("html media cache is not configured")
+			return "", nil, false
+		}
+		ref, err := s.mediaCache.Put(s.ctx, "html", mime, data)
+		if err != nil {
+			s.err = fmt.Errorf("html media cache write: %w", err)
+			return "", nil, false
+		}
+		return "", &ref, true
+	}
 	if s.mediaBudget == nil {
 		s.mediaBudget = newEmbeddedMediaBudget()
 	}
-	// The reference-only path has no parser-side per-document budget, matching
-	// the PDF parser. The single-image ceiling is enforced by
-	// media.NormalizeHTMLImageSource; formats that inline image bytes still
-	// apply the document budget.
-	if !s.refOnly && !s.mediaBudget.reserveItem() {
+	if !s.mediaBudget.reserveItem() {
 		return "", nil, false
 	}
-	normalized, size, digest, ok := media.NormalizeHTMLImageSource(src)
+	normalized, size, _, ok := media.NormalizeHTMLImageSource(src)
 	if !ok {
 		return "", nil, false
 	}
-	if !s.refOnly && !s.mediaBudget.includeReservedSize(int(size)) {
+	if !s.mediaBudget.includeReservedSize(int(size)) {
 		return "", nil, false
 	}
-	var ref *entity.MediaRef
-	if s.refOnly {
-		ref = media.NewHTMLMediaRef(media.DataURIMediaType(normalized), size, digest)
-	}
-	return normalized, ref, true
+	return normalized, nil, true
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
 // order. Inline formatting is collapsed into its parent text; script, style,
 // and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	// Text and inline elements directly under <body> are one run of text, as
 	// a browser lays them out, so they are collected into one item. Emitted
 	// one item per text node and per inline element, "Hello <b>world</b>!"
@@ -179,6 +203,9 @@ func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *html
 	}
 	defer flushRun()
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		if state.err != nil {
+			return
+		}
 		// Invisible nodes neither show up nor end the run around them.
 		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
 			(child.Data == "script" || child.Data == "style" || child.Data == "noscript" || child.Data == "template")) {
@@ -398,6 +425,9 @@ func flushLeafText(w *leafWriter, out *[]map[string]any, layout string, trim boo
 }
 
 func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout string, trim bool, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
@@ -429,6 +459,9 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
+				if state.err != nil {
+					return
+				}
 				walkHTMLLeaf(child, w, out, layout, trim, state)
 			}
 			w.pre = false
@@ -455,6 +488,9 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			w.hardBreak()
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			if state.err != nil {
+				return
+			}
 			walkHTMLLeaf(child, w, out, layout, trim, state)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
@@ -472,6 +508,9 @@ type htmlTableImage struct {
 }
 
 func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	images, skippedInlineImages := htmlTableImages(n, state)
 	state.skippedInlineImages += skippedInlineImages
 	markup := renderTableHTML(n)
@@ -508,6 +547,9 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
 	walk = func(node *html.Node, row, column int) {
+		if state.err != nil {
+			return
+		}
 		if node.Type == html.ElementNode {
 			switch node.Data {
 			case "tr":
@@ -521,6 +563,9 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 				src := htmlAttribute(node, "src")
 				normalized, ref, ok := state.imageSource(src)
 				if !ok {
+					if state.err != nil {
+						return
+					}
 					if state.resolveImage != nil {
 						alt := htmlAttribute(node, "alt")
 						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
@@ -544,6 +589,9 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if state.err != nil {
+				return
+			}
 			walk(child, row, column)
 		}
 	}

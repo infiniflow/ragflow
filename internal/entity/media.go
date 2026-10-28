@@ -21,33 +21,28 @@ import (
 	"strings"
 )
 
-// MediaKind names how a MediaRef locates its image in the source document.
+// MediaKind names how a MediaRef locates its image bytes.
 type MediaKind string
 
 const (
-	// MediaKindDataURI locates an inline data URI inside the source document.
-	// The reference is content-addressed: SHA256 identifies the image, so a
-	// re-extraction that walks the source in a different order still finds it.
-	MediaKindDataURI MediaKind = "data-uri"
+	// MediaKindKV locates an image in the run-scoped Kvrocks media cache.
+	MediaKindKV MediaKind = "kvrocks"
 )
 
-// MediaRef is a parser-emitted reference to an image in the source document.
-// A parser that defers image bytes emits only this reference; formats that
-// still inline the payload carry it alongside the bytes. It lets the
-// ingestion chunker (or any later consumer) re-materialize exactly one image
-// from the source instead of carrying every image in memory for the whole
-// parse.
-//
-// The reference is intentionally source-relative: it carries no DocID. The
-// parser does not know the document ID, and every consumer already resolves
-// the source document from the ingestion payload.
+// MediaRef is a parser-emitted reference to deferred image bytes. A parser
+// that emits one keeps image payloads out of its structured result. The
+// ingestion run materializes the bytes through the reference's media cache.
 type MediaRef struct {
 	// Format is the parser family that produced the reference ("html", ...).
 	Format string `json:"format"`
 	// Kind is the locating scheme; see the MediaKind constants.
 	Kind MediaKind `json:"kind"`
+	// Scope binds the reference to one ingestion run. A cache lookup from a
+	// different run is rejected instead of resolving a same-content image from
+	// another task.
+	Scope string `json:"scope,omitempty"`
 	// SHA256 is the lowercase hex digest of the decoded image bytes. It is
-	// both the lookup key and the integrity check after re-materialization.
+	// both the lookup key and the integrity check after materialization.
 	SHA256 string `json:"sha256"`
 	// MIME is the image media type from the source ("image/png", ...).
 	MIME string `json:"mime,omitempty"`
@@ -74,7 +69,7 @@ func (r *MediaRef) Valid() bool {
 // decodes into a non-nil zero value; consumers normalize it back to nil so an
 // empty object keeps meaning "no reference".
 func (r *MediaRef) IsZero() bool {
-	return r == nil || (r.Format == "" && r.Kind == "" && r.SHA256 == "" && r.MIME == "" && r.Size == 0)
+	return r == nil || (r.Format == "" && r.Kind == "" && r.Scope == "" && r.SHA256 == "" && r.MIME == "" && r.Size == 0)
 }
 
 // MediaRefFromAny decodes a media_ref value from either its typed form or a

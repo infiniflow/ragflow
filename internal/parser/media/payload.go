@@ -34,7 +34,7 @@ const (
 // decoded byte limit and returns standard base64 with padding, no CR/LF, the
 // decoded byte count, and the digest of the decoded bytes. Validation streams
 // the payload instead of retaining a decoded image buffer, so the parser's
-// index path can hash every image without holding the decoded bytes.
+// normalization path can hash every image without holding the decoded bytes.
 func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, [sha256.Size]byte, bool) {
 	var sum [sha256.Size]byte
 	payload, ok := cleanBase64ImagePayload(payload, maxDecodedBytes)
@@ -60,20 +60,18 @@ func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, i
 }
 
 // decodeBase64ImagePayload validates and decodes one payload in a single
-// pass, for callers that need the bytes anyway. The parser's index path keeps
-// using NormalizeBase64ImagePayload so it never retains every decoded image.
-func decodeBase64ImagePayload(payload string, maxDecodedBytes int) ([]byte, [sha256.Size]byte, bool) {
-	var sum [sha256.Size]byte
+// pass, for callers that need the bytes. Digest calculation belongs to the
+// media cache that stores those bytes.
+func decodeBase64ImagePayload(payload string, maxDecodedBytes int) ([]byte, bool) {
 	payload, ok := cleanBase64ImagePayload(payload, maxDecodedBytes)
 	if !ok {
-		return nil, sum, false
+		return nil, false
 	}
 	data, err := base64.StdEncoding.DecodeString(payload)
 	if err != nil || len(data) == 0 || len(data) > maxDecodedBytes {
-		return nil, sum, false
+		return nil, false
 	}
-	sum = sha256.Sum256(data)
-	return data, sum, true
+	return data, true
 }
 
 // cleanBase64ImagePayload applies the shared length/padding validation and

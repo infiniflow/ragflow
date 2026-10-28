@@ -450,6 +450,46 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 }
 
+func TestEmailParser_HTMLAttachmentInheritsRunMediaCache(t *testing.T) {
+	const boundary = "html-media-boundary"
+	attachment := `<html><body><p>Embedded figure</p><img alt="attachment image" src="` +
+		htmlMediaDataURI + `"></body></html>`
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Outer body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte(attachment)),
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "body", "attachments"},
+	})
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 {
+		t.Fatalf("media cache Put calls = %d/%d, want 1/1", cache.putCalls, len(cache.puts))
+	}
+	if got := cache.puts[0]; got.format != "html" || got.mime != "image/png" || string(got.data) != "hello" {
+		t.Fatalf("cached attachment image = %+v", got)
+	}
+}
+
 func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 	ctx := t.Context()
 	// Simulates the original test email structure:

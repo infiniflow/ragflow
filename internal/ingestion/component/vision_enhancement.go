@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
-	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
@@ -175,19 +174,6 @@ type visionImage struct {
 	VLMDataValidated bool
 }
 
-// parserSourceBytes returns the source document bytes this Parser invocation
-// read. The text path forwards a string, so both forms are accepted.
-func parserSourceBytes(inputs map[string]any) []byte {
-	switch v := inputs["binary"].(type) {
-	case []byte:
-		return v
-	case string:
-		return []byte(v)
-	default:
-		return nil
-	}
-}
-
 // maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
 // resources and table regions. PDF OCR remains in the PDF parser; non-PDF
 // image text comes from this optional enhancement. It is best-effort per
@@ -299,16 +285,10 @@ func maybeDispatchVisionEnhancement(
 	// a deferred Close as a panic/early-return safety net: Close is idempotent
 	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
-	// A parser that emits references leaves the bytes out of the result. Materialize
-	// each referenced image from the bytes this invocation parsed, so the VLM
-	// path neither re-reads storage nor loses descriptions on those formats.
-	var resolver *media.Resolver
-	if source := parserSourceBytes(inputs); len(source) > 0 {
-		resolver = media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil }))
-	}
 	modified := false
 	descriptions := make([]string, len(items))
 	failures := make([]string, len(items))
+	mediaFailures := make([]error, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
 	var settled atomic.Int64
@@ -366,8 +346,9 @@ func maybeDispatchVisionEnhancement(
 			// Materialize under the same admission as the crop: the decode
 			// and re-encode of a deferred image must not bypass the shared
 			// image memory limit.
-			if err := MaterializeMediaItem(itemCtx, item, resolver); err != nil {
-				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
+			if err := MaterializeMediaItem(itemCtx, item); err != nil {
+				mediaFailures[slot] = err
+				return
 			}
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
@@ -449,6 +430,11 @@ func maybeDispatchVisionEnhancement(
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return stripBackendDescribedResult(dispatched), modified, err
+	}
+	for _, err := range mediaFailures {
+		if err != nil {
+			return stripBackendDescribedResult(dispatched), modified, fmt.Errorf("vision enhancement: materialize media: %w", err)
+		}
 	}
 	w.Report(ctx, 1.0)
 	failedItems := 0

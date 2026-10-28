@@ -24,7 +24,8 @@ import (
 func TestChunkDocMediaRefRoundTrip(t *testing.T) {
 	ref := &entity.MediaRef{
 		Format: "html",
-		Kind:   entity.MediaKindDataURI,
+		Kind:   entity.MediaKindKV,
+		Scope:  "run-1",
 		SHA256: strings.Repeat("a", 64),
 		MIME:   "image/png",
 		Size:   5,
@@ -44,7 +45,7 @@ func TestChunkDocMediaRefRoundTrip(t *testing.T) {
 		t.Fatal("media_ref leaked into Extra")
 	}
 	got := entity.MediaRefFromAny(doc.ToMap()["media_ref"])
-	if got == nil || got.SHA256 != ref.SHA256 || got.Format != "html" || got.Kind != entity.MediaKindDataURI {
+	if got == nil || got.SHA256 != ref.SHA256 || got.Format != "html" || got.Kind != entity.MediaKindKV || got.Scope != "run-1" {
 		t.Fatalf("media_ref lost in encode: %+v", doc.ToMap()["media_ref"])
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -30,12 +31,10 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	medialib "ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
-	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
 )
@@ -58,14 +57,12 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 			// The same PNG with its optional base64 padding omitted.
 			uri := "data:image/png;base64," + pngBase64[:len(pngBase64)-2]
 			var parsed parserlib.ParseResult
+			ctx := t.Context()
 			if format == "html" {
 				source := []byte(`<img alt="caption" src="` + uri + `">`)
-				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", source)
-				prevSource := chunkMediaSourceFactory
-				chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
-					return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
-				}
-				t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
+				cache := &chunkerMediaCache{}
+				ctx = medialib.WithCache(ctx, cache)
+				parsed = parserlib.NewHTMLParser().ParseWithResult(ctx, "image.html", source)
 			} else {
 				p, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
 				if err != nil {
@@ -87,7 +84,7 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+			out, err := (&imageUploadDecorator{inner: comp}).Invoke(ctx, nil, map[string]any{
 				"name": "image." + format, "kb_id": testKBID, "doc_id": testDocID,
 				"output_format": "json", "json": parsed.JSON,
 			})
@@ -152,7 +149,7 @@ func TestUploadChunkImages_WritesImgIDAndDropsImage(t *testing.T) {
 	chunkID := common.ChunkID(testDocID, "caption")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "caption", "image": "data:image/png;base64," + pngBase64}
 
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	wantImgID := testKBID + "-" + chunkID
@@ -181,7 +178,7 @@ func TestUploadChunkImages_SkipsWhenImgIDPresent(t *testing.T) {
 	}
 	chunkID := common.ChunkID(testDocID, "x")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "x", "img_id": "preset-img", "image": "data:image/png;base64," + pngBase64}
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	if called {
@@ -205,7 +202,7 @@ func TestUploadChunkImages_NoImage(t *testing.T) {
 	}
 	chunkID := common.ChunkID(testDocID, "text only")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "text only"}
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	if called {
@@ -226,7 +223,7 @@ func TestUploadChunkImage_ErrorOnMissingID(t *testing.T) {
 		return "should-not-be-called", nil
 	}
 	ck := map[string]any{"content_with_weight": "x", "image": "data:image/png;base64," + pngBase64}
-	_, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil)
+	_, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID)
 	if err == nil {
 		t.Fatal("expected error when chunk missing id")
 	}
@@ -481,9 +478,9 @@ func TestImageUploadDecorator_NoCapKeepsAll(t *testing.T) {
 	}
 }
 
-// TestImageUploadDecorator_ResolvesMediaRef pins the ref-mode path: the
-// parser emits no bytes, the chunk id derives from the reference digest, and
-// the upload pass materializes the image from the source document.
+// TestImageUploadDecorator_ResolvesMediaRef pins the ref-mode path: the parser
+// writes decoded bytes to the run cache, emits only a reference, and the upload
+// pass materializes that reference without rescanning the source document.
 func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	want, err := base64.StdEncoding.DecodeString(pngBase64)
 	if err != nil {
@@ -493,7 +490,9 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	html := `<img src="` + uri + `">`
 
 	p := parserlib.NewHTMLParser()
-	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(html))
+	cache := &chunkerMediaCache{}
+	ctx := medialib.WithCache(t.Context(), cache)
+	parsed := p.ParseWithResult(ctx, "image.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
 	}
@@ -510,17 +509,11 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	}
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
-	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
-		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
-	}
-	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
-
 	comp, err := NewOneChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+	out, err := (&imageUploadDecorator{inner: comp}).Invoke(ctx, nil, map[string]any{
 		"name": "image.html", "kb_id": testKBID, "doc_id": testDocID,
 		"output_format": "json", "json": parsed.JSON,
 	})
@@ -549,73 +542,58 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	}
 }
 
-// TestImageUploadDecoratorDropsUnresolvedCaptionlessImage pins the not-found
-// path: a readable source that does not contain the reference must not leave
-// an empty chunk in the index.
-func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
+// TestImageUploadDecoratorFailsOnCacheMiss pins that a valid parser reference
+// must remain materializable at upload time. A cache miss is a task failure,
+// including for a captionless image that would otherwise look droppable.
+func TestImageUploadDecoratorFailsOnCacheMiss(t *testing.T) {
 	uri := "data:image/png;base64," + pngBase64
 
 	p := parserlib.NewHTMLParser()
-	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(`<img src="`+uri+`">`))
+	cache := &chunkerMediaCache{}
+	ctx := medialib.WithCache(t.Context(), cache)
+	parsed := p.ParseWithResult(ctx, "image.html", []byte(`<img src="`+uri+`">`))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
 	}
-
-	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
-		// Readable source, but the referenced image is absent.
-		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
-			return []byte("<p>no image here</p>"), nil
-		})
-	}
-	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
+	cache.getErr = medialib.ErrMediaNotFound
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+	_, err = (&imageUploadDecorator{inner: comp}).Invoke(ctx, nil, map[string]any{
 		"name": "image.html", "kb_id": testKBID, "doc_id": testDocID,
 		"output_format": "json", "json": parsed.JSON,
 	})
-	if err != nil {
-		t.Fatalf("decorator: %v", err)
-	}
-	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
-	if len(chunks) != 0 {
-		t.Fatalf("unresolved captionless image kept %d chunk(s): %#v", len(chunks), chunks)
+	if !errors.Is(err, medialib.ErrMediaNotFound) {
+		t.Fatalf("decorator error = %v, want ErrMediaNotFound", err)
 	}
 }
 
-// TestImageUploadDecoratorFailsOnSourceError pins the distinction between a
-// missing image and an unreadable source: a transient source failure must
-// abort the invocation instead of silently dropping every deferred image.
-func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
+// TestImageUploadDecoratorFailsOnCacheReadError pins that a backend failure is
+// not converted into a missing-image skip.
+func TestImageUploadDecoratorFailsOnCacheReadError(t *testing.T) {
 	uri := "data:image/png;base64," + pngBase64
 
 	p := parserlib.NewHTMLParser()
-	parsed := p.ParseWithResult(t.Context(), "image.html", []byte(`<img src="`+uri+`">`))
+	cache := &chunkerMediaCache{}
+	ctx := medialib.WithCache(t.Context(), cache)
+	parsed := p.ParseWithResult(ctx, "image.html", []byte(`<img src="`+uri+`">`))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
 	}
-
-	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
-		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
-			return nil, context.DeadlineExceeded
-		})
-	}
-	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
+	backendErr := errors.New("kvrocks unavailable")
+	cache.getErr = backendErr
 
 	comp, err := NewOneChunker(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+	if _, err := (&imageUploadDecorator{inner: comp}).Invoke(ctx, nil, map[string]any{
 		"name": "image.html", "kb_id": testKBID,
 		"output_format": "json", "json": parsed.JSON,
-	}); err == nil {
-		t.Fatal("source read failure was turned into a silent image drop")
+	}); !errors.Is(err, backendErr) {
+		t.Fatalf("decorator error = %v, want backend failure", err)
 	}
 }
 
@@ -625,7 +603,8 @@ func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
 func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 	ref := entity.MediaRef{
 		Format: "html",
-		Kind:   entity.MediaKindDataURI,
+		Kind:   entity.MediaKindKV,
+		Scope:  "run-1",
 		SHA256: strings.Repeat("a", 64),
 		MIME:   "image/png",
 		Size:   5,
@@ -638,15 +617,11 @@ func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 		"image":        "data:image/png;base64," + pngBase64,
 		"media_ref":    ref,
 	}
-	src := medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
-		t.Fatal("materialization must not read the source when img_id exists")
-		return nil, nil
-	})
 	up := func(context.Context, string, string, []byte) (string, error) {
 		t.Fatal("upload must not run when img_id exists")
 		return "", nil
 	}
-	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewResolver(src))
+	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID)
 	if err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
@@ -675,43 +650,7 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 		"media_ref":    map[string]any{"format": "html"},
 	}
 	up := func(context.Context, string, string, []byte) (string, error) { return "", nil }
-	src := medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
-		t.Fatal("resolver must not run for an invalid reference")
-		return nil, nil
-	})
-	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewResolver(src)); err == nil {
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID); err == nil {
 		t.Fatal("invalid media_ref was treated as absent")
-	}
-}
-
-// TestChunkMediaSourceResolvesStorage covers both source locations the
-// chunker accepts: the forwarded bucket/path pair and doc_id-driven lookup.
-func TestChunkMediaSourceResolvesStorage(t *testing.T) {
-	ctx := t.Context()
-	payload := []byte("<p>source</p>")
-	mem := storage.NewMemoryStorage()
-	if err := mem.Put(ctx, "kb-1", "docs/a.html", payload); err != nil {
-		t.Fatal(err)
-	}
-	prevStorage := component.SetStorageFactoryOverride
-	component.SetStorageFactoryOverride = func() storage.Storage { return mem }
-	t.Cleanup(func() { component.SetStorageFactoryOverride = prevStorage })
-
-	src := chunkMediaSourceFactory(nil, map[string]any{"bucket": "kb-1", "path": "docs/a.html"})
-	data, err := src.Bytes(ctx)
-	if err != nil || string(data) != string(payload) {
-		t.Fatalf("bucket/path source = %q, %v", data, err)
-	}
-
-	prevResolve := component.ResolveDocumentStorageOverride
-	component.ResolveDocumentStorageOverride = func(string) (*component.DocumentStorageRef, error) {
-		return &component.DocumentStorageRef{Bucket: "kb-1", Path: "docs/a.html"}, nil
-	}
-	t.Cleanup(func() { component.ResolveDocumentStorageOverride = prevResolve })
-
-	src = chunkMediaSourceFactory(&gorm.DB{}, map[string]any{"doc_id": "doc-1"})
-	data, err = src.Bytes(ctx)
-	if err != nil || string(data) != string(payload) {
-		t.Fatalf("doc_id source = %q, %v", data, err)
 	}
 }

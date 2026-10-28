@@ -140,7 +140,7 @@ type ChunkDoc struct {
 	// re-parsed from Text markup. It must stay out of Extra (see the
 	// deletion list in UnmarshalJSON).
 	TableData *entity.TableData `json:"table,omitempty"`
-	// MediaRef points at the image in the source document. Image carries
+	// MediaRef points at the image in the run-scoped media cache. Image carries
 	// bytes only for formats that still inline; otherwise the chunker
 	// materializes the reference before upload.
 	MediaRef *entity.MediaRef           `json:"media_ref,omitempty"`

@@ -26,29 +26,48 @@ import (
 // MaterializeMediaItem fills m["image"] from m["media_ref"] when the item
 // carries a reference and no inline bytes. The item map is the parser/chunker
 // wire shape, so the upload pass and vision enhancement share one seam.
-func MaterializeMediaItem(ctx context.Context, m map[string]any, resolver *media.Resolver) error {
+func MaterializeMediaItem(ctx context.Context, m map[string]any) error {
 	if m == nil {
 		return nil
 	}
 	if img, _ := m["image"].(string); img != "" {
 		return nil
 	}
-	ref := entity.MediaRefFromAny(m["media_ref"])
-	if ref == nil {
-		if mediaRefPresent(m["media_ref"]) {
-			return errors.New("media: media_ref is present but has no usable format/kind/digest")
-		}
-		return nil
-	}
-	if resolver == nil {
-		return errors.New("media: reference present but no resolver")
-	}
-	data, err := resolver.Resolve(ctx, *ref)
-	if err != nil {
+	data, ref, err := ResolveMediaRef(ctx, m)
+	if err != nil || ref == nil {
 		return err
 	}
 	m["image"] = encodeMediaDataURI(ref.MIME, data)
 	return nil
+}
+
+// ResolveMediaRef reads the item's run-scoped media reference from the cache.
+// It returns (nil, nil, nil) when no reference is present so callers can keep
+// their existing inline-image path. A malformed reference, unsupported source
+// kind, cache failure, or payload integrity failure is returned to the caller.
+func ResolveMediaRef(ctx context.Context, m map[string]any) ([]byte, *entity.MediaRef, error) {
+	if m == nil {
+		return nil, nil, nil
+	}
+	ref := entity.MediaRefFromAny(m["media_ref"])
+	if ref == nil {
+		if mediaRefPresent(m["media_ref"]) {
+			return nil, nil, errors.New("media: media_ref is present but has no usable format/kind/digest")
+		}
+		return nil, nil, nil
+	}
+	if ref.Kind != entity.MediaKindKV {
+		return nil, nil, errors.New("media: only run-cache media references are supported")
+	}
+	cache := media.CacheFromContext(ctx)
+	if cache == nil {
+		return nil, nil, errors.New("media: reference present but no run cache")
+	}
+	data, err := cache.Get(ctx, *ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data, ref, nil
 }
 
 // mediaRefPresent reports whether a media_ref value claims to be a reference.

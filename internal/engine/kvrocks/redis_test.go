@@ -166,6 +166,18 @@ func TestClientSetNXDistinguishesContention(t *testing.T) {
 	}
 }
 
+func TestClientGetReturnsEmptyValueForMissingKey(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+
+	got, err := r.Get(t.Context(), "missing")
+	if err != nil {
+		t.Fatalf("Get missing key returned error: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("Get missing key = %q, want empty string", got)
+	}
+}
+
 func TestClientSetNXReturnsTransportError(t *testing.T) {
 	r, mr := newStrictTestClient(t)
 	mr.Close()

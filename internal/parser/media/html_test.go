@@ -15,70 +15,54 @@
 package media
 
 import (
-	"context"
-	"encoding/hex"
+	"crypto/sha256"
 	"strings"
 	"testing"
 )
 
-func TestScanHTMLMediaSpansHonorsCancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	spans, _ := scanHTMLMediaSpans(ctx, []byte(`<img src="data:image/png;base64,aGVsbG8=">`))
-	if len(spans) != 0 {
-		t.Fatalf("cancelled scan returned %d spans", len(spans))
+func TestDecodeHTMLImageSourceCaseAndPadding(t *testing.T) {
+	mime, data, ok := DecodeHTMLImageSource("DATA:IMAGE/PNG;BASE64,aGVsbG8")
+	if !ok {
+		t.Fatal("DecodeHTMLImageSource rejected a valid case-insensitive data URI")
 	}
-}
-
-func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
-	input := `<img src='DATA:IMAGE/PNG;BASE64,aGVsbG8'>`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want 1", len(spans))
-	}
-	if spans[0].Ref.MIME != "image/png" {
-		t.Errorf("mime = %q, want image/png", spans[0].Ref.MIME)
-	}
-	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	if mime != "image/png" {
+		t.Errorf("mime = %q, want image/png", mime)
 	}
 	if string(data) != "hello" {
 		t.Errorf("data = %q, want hello", data)
 	}
-	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
-		t.Errorf("scan digest and decode digest differ")
+}
+
+func TestDecodeHTMLImageSourceRejectsInvalidAndOversizedHeaders(t *testing.T) {
+	for _, src := range []string{
+		"data:image/png;base64,",
+		"data:image/png;base64,YQ=",
+		"data:image/png;base64,YQ===",
+		"data:image/png;base64,G0==JbjQ",
+		"data:image/png;" + strings.Repeat("x", 200) + ",aGVsbG8=",
+	} {
+		if _, _, ok := DecodeHTMLImageSource(src); ok {
+			t.Errorf("DecodeHTMLImageSource(%q) succeeded", src)
+		}
 	}
 }
 
-// TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes pins the core
-// goal: the parse result no longer scales with image payloads.
-func TestScanHTMLMediaSpansDecodesCharacterReferences(t *testing.T) {
-	// aGVsbG8+ decodes to "hello>"; &#43; is the HTML-escaped '+'.
-	input := `<img src="data:image/png;base64,aGVsbG8&#43;">`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want 1", len(spans))
+func TestNormalizeHTMLImageSourceMatchesDecode(t *testing.T) {
+	src := "data:image/png;base64,aGVs\nbG8"
+	normalized, size, normalizedSum, ok := NormalizeHTMLImageSource(src)
+	if !ok {
+		t.Fatal("NormalizeHTMLImageSource rejected a valid payload")
 	}
-	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
-	if err != nil {
-		t.Fatalf("decode: %v", err)
+	mime, data, ok := DecodeHTMLImageSource(src)
+	if !ok {
+		t.Fatal("DecodeHTMLImageSource rejected a valid payload")
 	}
-	if string(data) != "hello>" {
-		t.Fatalf("data = %q, want hello>", data)
+	if normalized != "data:image/png;base64,aGVsbG8=" {
+		t.Fatalf("normalized = %q", normalized)
 	}
-	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
-		t.Fatal("scan and decode digests differ")
-	}
-}
-
-func TestScanHTMLMediaSpansSkipsHeadersBeyondTheParserLimit(t *testing.T) {
-	// The parser rejects headers longer than 128 bytes; the scan must not
-	// look past that window for a comma, and must still find the next image.
-	input := `<img src="data:image/png;` + strings.Repeat("x", 200) + `">` +
-		`<img src="data:image/png;base64,aGVsbG8=">`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want the valid image only", len(spans))
+	decodeSum := sha256.Sum256(data)
+	if size != int64(len(data)) || normalizedSum != decodeSum || mime != "image/png" {
+		t.Fatalf("normalize/decode disagree: size=%d decodeSize=%d sum=%x decodeSum=%x mime=%q",
+			size, len(data), normalizedSum, decodeSum, mime)
 	}
 }

@@ -35,7 +35,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/media"
 
 	"gorm.io/gorm"
 )
@@ -154,15 +153,8 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// persist run); in debug we drop the raw bytes so they are not held in
 	// memory until a persist stage that will never run.
 	if kbID != "" {
-		source := chunkMediaSourceFactory(db, inputs)
-		resolver := media.NewResolver(source)
-		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID, resolver)
-		if err != nil {
+		if _, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID); err != nil {
 			return nil, err
-		}
-		if len(kept) != len(chunks) {
-			chunks = kept
-			out["chunks"] = kept
 		}
 	} else {
 		for _, ck := range chunks {

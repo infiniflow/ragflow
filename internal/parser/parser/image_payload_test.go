@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/media"
 )
 
 func TestParsersNormalizeInlineImagePayload(t *testing.T) {
@@ -36,13 +35,14 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 				uri := "data:image/png;base64," + tc.payload
 				var source []byte
 				var result ParseResult
+				ctx, cache := recordingMediaContext()
 				switch format {
 				case "html":
 					source = []byte(`<p><img alt="caption" src="` + uri + `"></p>`)
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", source)
+					result = NewHTMLParser().ParseWithResult(ctx, "image.html", source)
 				case "html_table":
 					source = []byte(`<table><tr><td><img alt="caption" src="` + uri + `"></td></tr></table>`)
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", source)
+					result = NewHTMLParser().ParseWithResult(ctx, "image.html", source)
 				case "markdown":
 					result = markdown.ParseWithResult(context.Background(), "image.md", []byte("![caption](<"+uri+">)"))
 				}
@@ -60,10 +60,7 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 						if ref == nil {
 							continue
 						}
-						resolver := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-							return source, nil
-						}))
-						data, err := resolver.Resolve(context.Background(), *ref)
+						data, err := cache.Get(ctx, *ref)
 						if err != nil {
 							t.Fatalf("resolve: %v", err)
 						}

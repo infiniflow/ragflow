@@ -14,31 +14,22 @@
 //  limitations under the License.
 //
 
-// Chunk image upload: at the moment a chunk's raw image is produced, upload it
+// Chunk image upload: materialize deferred media from the run cache, upload it
 // to object storage, record the img_id reference, and drop the in-memory bytes.
-// This bounds peak memory to a single chunk's image lifetime instead
-// of carrying every image across the component boundary, matching the
-// pdfcrop_cgo sliding-window philosophy. Mirrors Python image2id +
-// upload_to_minio (rag/utils/base64_image.py, rag/svr/task_executor.py).
-// It also re-acquires the source document for deferred media references.
+// This bounds peak memory to a single chunk's image lifetime instead of
+// carrying every image across component boundaries.
 package chunker
 
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
-	"gorm.io/gorm"
-
-	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	"ragflow/internal/parser/media"
 )
 
 // imageUploadSem caps concurrent object-storage uploads process-wide. Default
@@ -60,46 +51,57 @@ func imageUploadConcurrency() int {
 	return 10
 }
 
-// uploadChunkMedia is the caller-side image pass for a chunker's output. For
-// each chunk it mirrors Python's upload_to_minio + image2id, running at the
-// chunker stage (not in the Tokenizer) so bytes are dropped as soon as they
-// are produced:
+// uploadChunkMedia is the caller-side image pass for a chunker's output. It
+// runs at the chunker stage (not in the Tokenizer) so bytes are dropped as soon
+// as they are uploaded:
 //   - img_id already set → keep it, skip upload (Python bypass).
 //   - no image or ref    → img_id="", nothing to upload.
-//   - media_ref only     → resolve one image from the source document.
+//   - media_ref only     → materialize one image from the run media cache.
 //   - otherwise          → decode the image, upload the bytes via
 //     uploadOneImage at key=ck["id"], set img_id="<kb_id>-<chunk_id>", and
 //     delete the raw image field (用完即弃).
 //
-// Resolving inside the loop keeps peak memory at one image instead of the
-// whole document. A captionless chunk whose reference is confirmed absent
-// from a readable source is dropped; a source read failure or a corrupt
-// reference aborts the invocation instead of silently losing images.
+// Materializing inside the loop keeps peak memory at one image instead of the
+// whole document. Every cache, integrity, scope, or transport failure aborts
+// the invocation; an image is never silently dropped.
 //
 // A chunk that already carries img_id skips resolution entirely: the image is
 // already stored, so a reconstructed copy would only leak into the index.
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
-func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver *media.Resolver) ([]map[string]any, error) {
-	kept := make([]map[string]any, 0, len(chunks))
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string) ([]map[string]any, error) {
 	for _, ck := range chunks {
 		imgID, _ := ck["img_id"].(string)
 		if imgID != "" {
 			// The image was already uploaded. A materialized copy would not
 			// be uploaded again, so it must not survive into the index.
 			delete(ck, "image")
-		} else if err := component.MaterializeMediaItem(ctx, ck, resolver); err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
+			delete(ck, "media_ref")
+			continue
+		}
+
+		image, _ := ck["image"].(string)
+		if image == "" {
+			data, ref, err := component.ResolveMediaRef(ctx, ck)
+			if err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, ctxErr
+				}
+				return nil, fmt.Errorf("materialize media for document %s: %w", docID, err)
 			}
-			if !errors.Is(err, media.ErrMediaNotFound) {
-				return nil, err
-			}
-			chunkID, _ := ck["id"].(string)
-			common.Warn("chunker: media reference not found",
-				zap.String("doc_id", docID), zap.String("chunk_id", chunkID), zap.Error(err))
-			if text, _ := requireChunkText(ck); strings.TrimSpace(text) == "" {
+			if ref != nil {
+				chunkID, _ := ck["id"].(string)
+				if chunkID == "" {
+					return nil, fmt.Errorf("uploadChunkMedia: chunk missing id")
+				}
+				imgID, err := uploadOneImage(ctx, up, kbID, chunkID, data)
+				if err != nil {
+					return nil, err
+				}
+				ck["img_id"] = imgID
+				delete(ck, "image")
+				delete(ck, "media_ref")
 				continue
 			}
 		}
@@ -107,9 +109,8 @@ func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component
 			return nil, err
 		}
 		delete(ck, "media_ref")
-		kept = append(kept, ck)
 	}
-	return kept, nil
+	return chunks, nil
 }
 
 // uploadChunkImage handles a single chunk map: reads ck["id"] (required),
@@ -178,37 +179,4 @@ func resolveImageUploadContext(ctx context.Context, inputs map[string]any) (kbID
 	kbID = globals.GlobalOrInput(ctx, inputs, "kb_id", "")
 	docID = globals.GlobalOrInput(ctx, inputs, "doc_id", "")
 	return kbID, docID
-}
-
-// --- deferred media source ---
-
-// chunkMediaSourceFactory resolves the source document for deferred media_refs.
-// Tests override it with an in-memory source.
-var chunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) media.MediaSource {
-	return chunkMediaSource(db, inputs)
-}
-
-// chunkMediaSource re-acquires the source document for a deferred media_ref.
-// It prefers the explicit bucket/path pair the Parser forwards and falls back
-// to resolving the same reference from doc_id.
-func chunkMediaSource(db *gorm.DB, inputs map[string]any) media.MediaSource {
-	return media.MediaSourceFunc(func(ctx context.Context) ([]byte, error) {
-		bucket := globals.GlobalOrInput(ctx, inputs, "bucket", "")
-		path := globals.GlobalOrInput(ctx, inputs, "path", "")
-		if bucket != "" && path != "" {
-			return component.FetchBinary(ctx, bucket, path)
-		}
-		docID := globals.GlobalOrInput(ctx, inputs, "doc_id", "")
-		if docID == "" || db == nil {
-			return nil, errors.New("chunker: no source document reference for media_ref")
-		}
-		ref, err := component.ResolveDocumentStorage(ctx, db, docID)
-		if err != nil {
-			return nil, err
-		}
-		if ref == nil || ref.Bucket == "" || ref.Path == "" {
-			return nil, fmt.Errorf("chunker: document %s has no storage reference", docID)
-		}
-		return component.FetchBinary(ctx, ref.Bucket, ref.Path)
-	})
 }

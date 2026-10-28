@@ -16,6 +16,7 @@ package media
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"testing"
 )
@@ -54,7 +55,7 @@ func TestDecodeBase64ImagePayloadMatchesNormalize(t *testing.T) {
 		"", "Y?==", "YQ=", "YQ===", "Y=Q=", "Y", "G0==JbjQ",
 	} {
 		normalized, size, wantSum, ok := NormalizeBase64ImagePayload(payload, 16)
-		data, gotSum, decodeOK := decodeBase64ImagePayload(payload, 16)
+		data, decodeOK := decodeBase64ImagePayload(payload, 16)
 		if ok != decodeOK {
 			t.Errorf("payload %q: normalize ok=%v, decode ok=%v", payload, ok, decodeOK)
 			continue
@@ -72,7 +73,7 @@ func TestDecodeBase64ImagePayloadMatchesNormalize(t *testing.T) {
 		if int64(len(data)) != size {
 			t.Errorf("payload %q: size = %d, want %d", payload, len(data), size)
 		}
-		if gotSum != wantSum {
+		if sha256.Sum256(data) != wantSum {
 			t.Errorf("payload %q: digest mismatch", payload)
 		}
 	}

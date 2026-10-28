@@ -37,6 +37,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -174,12 +175,13 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 			"tenant_id": "tenant-1",
 		}
 	}
+	ctx := media.WithCache(t.Context(), &materializeCache{data: picturePNG(t)})
 
 	defaultComponent, err := NewParserComponent(nil)
 	if err != nil {
 		t.Fatalf("NewParserComponent(nil): %v", err)
 	}
-	withoutVision, err := defaultComponent.Invoke(t.Context(), nil, inputs())
+	withoutVision, err := defaultComponent.Invoke(ctx, nil, inputs())
 	if err != nil {
 		t.Fatalf("default Invoke: %v", err)
 	}
@@ -196,7 +198,7 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewParserComponent(enabled): %v", err)
 	}
-	withVision, err := enabledComponent.Invoke(t.Context(), nil, inputs())
+	withVision, err := enabledComponent.Invoke(ctx, nil, inputs())
 	if err != nil {
 		t.Fatalf("enabled Invoke: %v", err)
 	}
@@ -221,8 +223,14 @@ func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
 
 	uri := "data:image/png;base64," + visionTestPNGBase64(t)
 	html := `<p><img alt="figure" src="` + uri + `"></p>`
+	imageBytes, err := base64.StdEncoding.DecodeString(visionTestPNGBase64(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := &materializeCache{data: imageBytes}
+	ctx := media.WithCache(t.Context(), cache)
 	p := parser.NewHTMLParser()
-	parsed := p.ParseWithResult(t.Context(), "ref.html", []byte(html))
+	parsed := p.ParseWithResult(ctx, "ref.html", []byte(html))
 	if parsed.Err != nil {
 		t.Fatal(parsed.Err)
 	}
@@ -231,8 +239,8 @@ func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
 	}
 
 	res, handled, err := maybeDispatchVisionEnhancement(
-		t.Context(), dao.DB, utility.FileTypeHTML, parsed,
-		map[string]any{"tenant_id": "t1", "binary": []byte(html)},
+		ctx, dao.DB, utility.FileTypeHTML, parsed,
+		map[string]any{"tenant_id": "t1"},
 		visionSettings{}, progress.Window{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
@@ -246,6 +254,31 @@ func TestVisionEnhancement_MaterializesMediaRef(t *testing.T) {
 	text, _ := res.JSON[0].ToMap()["text"].(string)
 	if !strings.Contains(text, "a diagram of a pipeline") {
 		t.Fatalf("enhanced text = %q, missing the VLM description", text)
+	}
+}
+
+func TestVisionEnhancement_MediaCacheMissFailsTask(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	cache := &materializeCache{err: media.ErrMediaNotFound}
+	ctx := media.WithCache(t.Context(), cache)
+	dispatched := parser.ParseResult{
+		JSON: parser.MapsToItems([]map[string]any{{
+			"text":         "figure",
+			"doc_type_kwd": "image",
+			"media_ref":    cacheMediaRef(),
+		}}),
+	}
+	_, _, err := maybeDispatchVisionEnhancement(
+		ctx, dao.DB, utility.FileTypeHTML, dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, progress.Window{})
+	if !errors.Is(err, media.ErrMediaNotFound) {
+		t.Fatalf("maybeDispatchVisionEnhancement error = %v, want cache miss", err)
+	}
+	if len(invoker.images) != 0 {
+		t.Fatalf("VLM calls = %d, want none after cache miss", len(invoker.images))
 	}
 }
 

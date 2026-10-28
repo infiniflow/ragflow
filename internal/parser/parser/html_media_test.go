@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -15,9 +16,102 @@ import (
 
 const htmlMediaDataURI = "data:image/png;base64,aGVsbG8="
 
+type recordingMediaCache struct {
+	puts     []recordingMediaPut
+	putErr   error
+	getData  map[string][]byte
+	putCalls int
+}
+
+type recordingMediaPut struct {
+	format string
+	mime   string
+	data   []byte
+}
+
+func (c *recordingMediaCache) Put(_ context.Context, format, mime string, data []byte) (entity.MediaRef, error) {
+	c.putCalls++
+	c.puts = append(c.puts, recordingMediaPut{format: format, mime: mime, data: append([]byte(nil), data...)})
+	if c.putErr != nil {
+		return entity.MediaRef{}, c.putErr
+	}
+	sum := sha256.Sum256(data)
+	ref := entity.MediaRef{
+		Format: format,
+		Kind:   entity.MediaKindKV,
+		Scope:  "run-1",
+		SHA256: hex.EncodeToString(sum[:]),
+		MIME:   mime,
+		Size:   int64(len(data)),
+	}
+	if c.getData == nil {
+		c.getData = map[string][]byte{}
+	}
+	c.getData[ref.SHA256] = append([]byte(nil), data...)
+	return ref, nil
+}
+
+func (c *recordingMediaCache) Get(_ context.Context, ref entity.MediaRef) ([]byte, error) {
+	data, ok := c.getData[ref.SHA256]
+	if !ok {
+		return nil, media.ErrMediaNotFound
+	}
+	return append([]byte(nil), data...), nil
+}
+
+func recordingMediaContext() (context.Context, *recordingMediaCache) {
+	cache := &recordingMediaCache{}
+	return media.WithCache(context.Background(), cache), cache
+}
+
+func TestHTMLParser_WritesImageToRunScopedMediaCache(t *testing.T) {
+	cache := &recordingMediaCache{}
+	ctx := media.WithCache(context.Background(), cache)
+	result := NewHTMLParser().ParseWithResult(ctx, "cached.html", []byte(`<img alt="figure" src="`+htmlMediaDataURI+`">`))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 {
+		t.Fatalf("cache Put calls = %d/%d, want 1/1", cache.putCalls, len(cache.puts))
+	}
+	if cache.puts[0].format != "html" || cache.puts[0].mime != "image/png" || string(cache.puts[0].data) != "hello" {
+		t.Fatalf("cache Put = %+v", cache.puts[0])
+	}
+	item := result.JSON[0].ToMap()
+	ref := entity.MediaRefFromAny(item["media_ref"])
+	if ref == nil || ref.Kind != entity.MediaKindKV || ref.Scope != "run-1" {
+		t.Fatalf("media_ref = %+v", ref)
+	}
+	if _, ok := item["image"]; ok {
+		t.Fatalf("image bytes retained: %+v", item)
+	}
+	encoded, err := json.Marshal(result.JSON)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"scope":"run-1"`) {
+		t.Fatalf("serialized media_ref lost scope: %s", encoded)
+	}
+}
+
+func TestHTMLParser_FailsWhenMediaCacheWriteFails(t *testing.T) {
+	writeErr := errors.New("kvrocks unavailable")
+	cache := &recordingMediaCache{putErr: writeErr}
+	ctx := media.WithCache(context.Background(), cache)
+	input := `<img src="` + htmlMediaDataURI + `"><img src="` + htmlMediaDataURI + `">`
+	result := NewHTMLParser().ParseWithResult(ctx, "failed.html", []byte(input))
+	if !errors.Is(result.Err, writeErr) {
+		t.Fatalf("ParseWithResult error = %v, want %v", result.Err, writeErr)
+	}
+	if cache.putCalls != 1 {
+		t.Fatalf("cache Put calls = %d, want traversal to stop after the first failure", cache.putCalls)
+	}
+}
+
 func TestHTMLParser_EmitsMediaRefsInDocumentOrder(t *testing.T) {
 	input := `<p>before <img alt="figure alt" src="` + htmlMediaDataURI + `"> after</p>`
-	result := NewHTMLParser().ParseWithResult(context.Background(), "inline.html", []byte(input))
+	ctx, _ := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "inline.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -47,7 +141,8 @@ func TestHTMLParser_EmitsMediaRefsInDocumentOrder(t *testing.T) {
 
 func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	input := `<table><tr><td>A<img alt="first" src="` + htmlMediaDataURI + `"></td><td><img src="https://example.com/second.png"></td></tr></table>`
-	result := NewHTMLParser().ParseWithResult(context.Background(), "table.html", []byte(input))
+	ctx, _ := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "table.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -99,7 +194,8 @@ func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
 func TestHTMLParser_HasNoParserSideImageCountLimit(t *testing.T) {
 	const count = maxEmbeddedMediaItems + 44
 	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, count) + "</p>"
-	result := NewHTMLParser().ParseWithResult(context.Background(), "many.html", []byte(input))
+	ctx, _ := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "many.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -119,7 +215,8 @@ func TestHTMLParser_HasNoParserSideImageCountLimit(t *testing.T) {
 
 func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "ref.html", []byte(`<p><img alt="figure" src="`+htmlMediaDataURI+`"></p>`))
+	ctx, _ := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "ref.html", []byte(`<p><img alt="figure" src="`+htmlMediaDataURI+`"></p>`))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -131,7 +228,7 @@ func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	if ref == nil {
 		t.Fatalf("missing media_ref: %+v", item)
 	}
-	if ref.Format != "html" || ref.Kind != entity.MediaKindDataURI || ref.MIME != "image/png" || ref.Size != int64(len("hello")) {
+	if ref.Format != "html" || ref.Kind != entity.MediaKindKV || ref.Scope != "run-1" || ref.MIME != "image/png" || ref.Size != int64(len("hello")) {
 		t.Fatalf("media_ref = %+v", ref)
 	}
 	sum := sha256.Sum256([]byte("hello"))
@@ -140,16 +237,14 @@ func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	}
 }
 
-func TestParserMediaRefsResolveFromSource(t *testing.T) {
+func TestParserMediaRefsResolveFromRunCache(t *testing.T) {
 	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
 		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
-	result := NewHTMLParser().ParseWithResult(context.Background(), "match.html", []byte(input))
+	ctx, cache := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "match.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
-	resolver := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-		return []byte(input), nil
-	}))
 	images := 0
 	for _, item := range result.JSON {
 		m := item.ToMap()
@@ -161,7 +256,7 @@ func TestParserMediaRefsResolveFromSource(t *testing.T) {
 		if ref == nil {
 			t.Fatalf("image item without ref: %+v", m)
 		}
-		data, err := resolver.Resolve(context.Background(), *ref)
+		data, err := cache.Get(ctx, *ref)
 		if err != nil {
 			t.Fatalf("resolve image %d: %v", images, err)
 		}
@@ -181,7 +276,8 @@ func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 	input := strings.Repeat(`<img src="data:image/png;base64,`+payload+`">`, imageCount)
 
 	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "large.html", []byte(input))
+	ctx, _ := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "large.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -204,11 +300,11 @@ func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 	}
 }
 
-// TestMediaResolverMatchesParserAttributeSemantics pins the cases where a
-// byte-level scanner used to disagree with the HTML parser: entities in the
-// media type, an encoded comma, a semicolon-less numeric reference, and an
-// unquoted value ending in "/>".
-func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
+// TestHTMLMediaCacheMatchesParserAttributeSemantics pins that the bytes sent to
+// Kvrocks come from the parser's decoded attribute value: entities in the media
+// type, an encoded comma, a semicolon-less numeric reference, and an unquoted
+// value ending in "/>".
+func TestHTMLMediaCacheMatchesParserAttributeSemantics(t *testing.T) {
 	cases := map[string]string{
 		"entity in header":        `<img src="data:image&#47;png;base64,aGVsbG8=">`,
 		"entity comma":            `<img src="data:image/png;base64&#44;aGVsbG8=">`,
@@ -218,7 +314,8 @@ func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
 	for name, input := range cases {
 		t.Run(name, func(t *testing.T) {
 			p := NewHTMLParser()
-			result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+			ctx, cache := recordingMediaContext()
+			result := p.ParseWithResult(ctx, "case.html", []byte(input))
 			if result.Err != nil {
 				t.Fatal(result.Err)
 			}
@@ -233,9 +330,7 @@ func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
 			if ref == nil {
 				t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
 			}
-			data, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-				return []byte(input), nil
-			})).Resolve(context.Background(), *ref)
+			data, err := cache.Get(ctx, *ref)
 			if err != nil {
 				t.Fatalf("resolver lost the parser's image: %v", err)
 			}
@@ -247,14 +342,15 @@ func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
 	}
 }
 
-// TestMediaResolverIgnoresScriptDataURIs pins that image-like text inside a
-// script cannot exhaust the span index and hide a real image.
-func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
+// TestHTMLMediaCacheIgnoresScriptDataURIs pins that image-like text inside a
+// script is not written to the cache.
+func TestHTMLMediaCacheIgnoresScriptDataURIs(t *testing.T) {
 	img := `<img src="data:image/png;base64,aGVsbG8=">`
 	input := "<script>" + strings.Repeat(img, 5000) + "</script>" + img
 
 	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "script.html", []byte(input))
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "script.html", []byte(input))
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -268,18 +364,16 @@ func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
 	if ref == nil {
 		t.Fatal("parser emitted no media_ref")
 	}
-	if _, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-		return []byte(input), nil
-	})).Resolve(context.Background(), *ref); err != nil {
+	if _, err := cache.Get(ctx, *ref); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 }
 
 // mediaRefFromHTML returns the first image reference the HTML parser emits.
-func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
+func mediaRefFromHTML(t *testing.T, input string, cache *recordingMediaCache) *entity.MediaRef {
 	t.Helper()
 	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+	result := p.ParseWithResult(media.WithCache(context.Background(), cache), "case.html", []byte(input))
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -296,11 +390,9 @@ func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
 	return ref
 }
 
-func resolveMediaInput(t *testing.T, input string, ref entity.MediaRef) []byte {
+func resolveMediaInput(t *testing.T, ref entity.MediaRef, cache *recordingMediaCache) []byte {
 	t.Helper()
-	data, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-		return []byte(input), nil
-	})).Resolve(context.Background(), ref)
+	data, err := cache.Get(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -309,19 +401,21 @@ func resolveMediaInput(t *testing.T, input string, ref entity.MediaRef) []byte {
 
 func TestMediaResolverHandlesSelfClosingImg(t *testing.T) {
 	input := `<img src="data:image/png;base64,aGVsbG8=" />`
-	ref := mediaRefFromHTML(t, input)
-	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+	cache := &recordingMediaCache{}
+	ref := mediaRefFromHTML(t, input, cache)
+	if data := resolveMediaInput(t, *ref, cache); string(data) != "hello" {
 		t.Fatalf("data = %q, want hello", data)
 	}
 }
 
-func TestMediaResolverFallsBackToTheParserDOM(t *testing.T) {
+func TestHTMLMediaCacheUsesParserDOM(t *testing.T) {
 	// In the HTML tree builder <svg><title> is foreign content, so the <img>
-	// becomes an element. The streaming tokenizer treats <title> as RCDATA and
-	// misses it; the DOM fallback must recover the image.
+	// becomes an element. The parser writes the image from its own DOM walk;
+	// there is no second tokenizer or fallback scan.
 	input := `<svg><title><img src="data:image/png;base64,aGVsbG8="></title></svg>`
-	ref := mediaRefFromHTML(t, input)
-	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+	cache := &recordingMediaCache{}
+	ref := mediaRefFromHTML(t, input, cache)
+	if data := resolveMediaInput(t, *ref, cache); string(data) != "hello" {
 		t.Fatalf("data = %q, want hello", data)
 	}
 }
