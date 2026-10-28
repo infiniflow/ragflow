@@ -2719,20 +2719,6 @@ export default {
       toolTimeout: 'Vosita timeouti',
       toolTimeoutTip:
         'Bitta vosita chaqiruvi (MCP vositalari ham) uchun soniyadagi timeout. Uzoq ishlaydigan vositalar uchun oshiring.',
-      maxSteps: 'Maksimal qadamlar',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Standart kengaytmalarni yoqish',
-      enableDefaultExtensionsTip:
-        'browser-use standart kengaytmalarini (uBlock, cookie ishlov berish, ClearURLs) yoqing. Ish vaqti kengaytma yuklanishlaridan qochish uchun o‘chiring.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Chromium sandbox yoqilsinmi. Docker root muhitlarida odatda o‘chiriladi; oddiy hostlarda yoqish tavsiya etiladi.',
-      persistSession: 'Sessiyani saqlash',
-      persistSessionTip:
-        'Yoqilganda, bu Brauzer tuguni takroriy kirishlardan qochish uchun brauzer sessiyasini qayta ishlatadi.',
-      uploadSources: 'Manbalarni yuklash',
-      uploadSourcesTip:
-        'Fayl ID’lari, fayl URL’lari yoki o‘zgaruvchilar qo‘llab-quvvatlanadi. Bir nechta qiymatni vergul bilan ajratishingiz yoki JSON massiv formatidan foydalanishingiz mumkin (masalan ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Qo‘shimcha sozlamalar',
       addTools: 'Vositalar qo‘shish',
       sysPromptDefaultValue:
@@ -2868,9 +2854,6 @@ export default {
       sofyaApiKeyTip: 'Talab qilinadi. sofya.co’da API Key yarating.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: 'Markdown kontentidan fayl generatsiya qilish.',
-      browser: 'Brauzer',
-      browserDescription:
-        'Brauzer vazifalarini avtomatlashtiring. Model sozlamasi va prompt asosidagi amallar qo‘llab-quvvatlanadi. Yuklash manbalari fayl ID’lari va URL’larni qo‘llaydi, yuklab olingan fayllar maqsadli papkaga saqlanishi mumkin.',
       subtitle: 'Subtitr',
       logoImage: 'Logo rasmi',
       logoPosition: 'Logo joylashuvi',

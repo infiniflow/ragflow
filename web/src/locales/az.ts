@@ -2817,20 +2817,6 @@ Nümunə: Virtual host üslubu`,
       toolTimeout: 'Alət üçün vaxt limiti',
       toolTimeoutTip:
         'Tək alət çağırışı üçün saniyə ilə vaxt limiti (MCP alətləri daxil olmaqla). Uzun müddət işləyən alətlər üçün bu dəyəri artırın.',
-      maxSteps: 'Maksimum addım sayı',
-      headless: 'Qrafik interfeyssiz',
-      enableDefaultExtensions: 'Standart genişlənmələri aktivləşdir',
-      enableDefaultExtensionsTip:
-        'browser-use-un standart genişlənmələrini (uBlock, kukilərin idarə olunması, ClearURLs) aktivləşdirir. İcra zamanı genişlənmələrin endirilməməsi üçün bunu söndürün.',
-      chromiumSandbox: 'Chromium-un təcrid mühiti',
-      chromiumSandboxTip:
-        'Chromium-un təcrid mühitinin aktivləşdirilib-aktivləşdirilməyəcəyini müəyyən edir. Docker-in root mühitlərində bu, adətən söndürülür; adi kompüterlərdə aktivləşdirilməsi tövsiyə olunur.',
-      persistSession: 'Sessiyanı saxla',
-      persistSessionTip:
-        'Aktivləşdirildikdə bu brauzer düyünü təkrar girişlərin qarşısını almaq üçün öz brauzer sessiyasından yenidən istifadə edir.',
-      uploadSources: 'Mənbələri yüklə',
-      uploadSourcesTip:
-        'Fayl ID-lərini, fayl URL-lərini və ya dəyişənləri dəstəkləyir. Bir neçə dəyəri vergüllə ayıra və ya JSON massivi formatından istifadə edə bilərsiniz (məsələn, ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Genişləndirilmiş parametrlər',
       addTools: 'Alətlər əlavə et',
       sysPromptDefaultValue: `
@@ -2976,9 +2962,6 @@ Nümunə: Virtual host üslubu`,
       sofyaApiKeyTip: 'Tələb olunur. sofya.co saytında API açarı yaradın.',
       docGenerator: 'Sənəd yaradıcısı',
       docGeneratorDescription: 'Markdown məzmunundan fayl yaradın.',
-      browser: 'Brauzer',
-      browserDescription:
-        'Brauzer tapşırıqlarını avtomatlaşdırın. Model konfiqurasiyasını və təlimatla idarə olunan əməliyyatları dəstəkləyir. Yükləmə mənbələri fayl ID-lərini və URL-ləri dəstəkləyir, endirilmiş fayllar isə hədəf qovluqda saxlanıla bilər.',
       subtitle: 'Alt başlıq',
       logoImage: 'Loqo şəkli',
       logoPosition: 'Loqonun mövqeyi',

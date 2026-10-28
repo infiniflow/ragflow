@@ -2576,20 +2576,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       maxRounds: 'Nombre maximum de cycles de réflexion',
       delayAfterError: 'Délai après une erreur',
       maxRetries: 'Nombre maximum de tentatives',
-      maxSteps: "Nombre maximum d'étapes",
-      headless: 'Mode sans interface',
-      enableDefaultExtensions: 'Activer les extensions par défaut',
-      enableDefaultExtensionsTip:
-        "Active les extensions par défaut de browser-use (uBlock, gestion des cookies, ClearURLs). Désactivez cette option pour éviter les téléchargements d'extensions au moment de l'exécution.",
-      chromiumSandbox: 'Bac à sable Chromium',
-      chromiumSandboxTip:
-        "Indique si le bac à sable Chromium doit être activé. Dans les environnements Docker root, il est généralement désactivé ; sur les hôtes normaux, il est recommandé de l'activer.",
-      persistSession: 'Conserver la session',
-      persistSessionTip:
-        'Lorsque cette option est activée, ce nœud Browser réutilise sa session de navigateur pour éviter les connexions répétées.',
-      uploadSources: 'Sources de téléversement',
-      uploadSourcesTip:
-        'Prend en charge les IDs de fichiers, les URLs de fichiers ou des variables. Vous pouvez séparer plusieurs valeurs par des virgules ou utiliser un tableau JSON (par exemple ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Paramètres avancés',
       addTools: 'Ajouter des outils',
       sysPromptDefaultValue: `
@@ -2924,9 +2910,6 @@ Les informations structurées importantes peuvent inclure : noms, dates, lieux, 
       variableAggregatorDescription: `
 Ce processus agrège des variables de plusieurs branches en une seule variable pour obtenir une configuration unifiée pour les nœuds en aval.`,
       userFillUpDescription: `Met en pause le workflow et attend le message de l'utilisateur avant de continuer.`,
-      browser: 'Navigateur',
-      browserDescription:
-        'Automatise les tâches de navigation. Prend en charge la configuration du modèle et les actions pilotées par invite. Les sources de téléversement acceptent les IDs de fichiers et les URLs, et les fichiers téléchargés peuvent être enregistrés dans un dossier cible.',
       channel: 'Canal',
       channelTip:
         "Effectuer une recherche textuelle ou une recherche d'actualités sur l'entrée du composant",
