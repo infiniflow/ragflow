@@ -2532,53 +2532,46 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	if providerName == nil || instanceName == nil || modelName == nil {
 		return nil, errors.New("provider name, instance name and model name are required when model id is absent")
 	}
-	providerIDs, err := accessibleModelResourceIDs(ctx, userID, permission.ResourceKindModelProvider, permission.ResourceRef{}, permission.OperationRead, nil, "")
+
+	// Provider and instance names are only unique inside one tenant, so a
+	// composite reference resolves inside the request's active tenant.
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
+	providerEntity, err := m.findProviderByIDOrNameInTenant(ctx, tenantID, *providerName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, permission.ErrResourceNotFound
+		}
+		return nil, err
+	}
+	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, providerEntity.ID, permission.OperationRead); err != nil {
+		return nil, err
+	}
 
-	var providerEntity *entity.TenantModelProvider
-	var instanceEntity *entity.TenantModelInstance
-	var modelEntity *entity.TenantModel
-	for _, providerID := range providerIDs {
-		candidateProvider, providerErr := m.modelProviderDAO.GetByID(ctx, dao.DB, providerID)
-		if providerErr != nil {
-			return nil, providerErr
+	instanceEntity, err := m.resolveInstance(ctx, providerEntity, *instanceName)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, errInstanceProviderMismatch) {
+			return nil, permission.ErrResourceNotFound
 		}
-		if !strings.EqualFold(candidateProvider.ProviderName, *providerName) {
-			continue
-		}
-		candidateInstance, instanceErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, candidateProvider.ID, *instanceName)
-		if instanceErr != nil {
-			if errors.Is(instanceErr, gorm.ErrRecordNotFound) {
-				continue
-			}
-			return nil, instanceErr
-		}
-		if checkErr := checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, candidateInstance.ID, permission.OperationUse); checkErr != nil {
-			if errors.Is(checkErr, permission.ErrPermissionDenied) || errors.Is(checkErr, permission.ErrResourceNotFound) {
-				continue
-			}
-			return nil, checkErr
-		}
-		providerEntity = candidateProvider
-		instanceEntity = candidateInstance
-		modelEntity, err = m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, providerEntity.ID, instanceEntity.ID, *modelName)
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
+		return nil, err
+	}
+
+	modelEntity, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, providerEntity.ID, instanceEntity.ID, *modelName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		modelEntity = nil
+	}
+	if modelEntity != nil {
+		if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
 			return nil, err
 		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			modelEntity = nil
-		}
-		if modelEntity != nil {
-			if checkErr := checkModelPermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); checkErr != nil {
-				return nil, checkErr
-			}
-		}
-		break
-	}
-	if providerEntity == nil || instanceEntity == nil {
-		return nil, permission.ErrResourceNotFound
 	}
 
 	catalogName := modelModule.CatalogProviderName(providerEntity.ProviderName)
