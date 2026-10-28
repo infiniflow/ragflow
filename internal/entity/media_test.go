@@ -19,32 +19,94 @@ import (
 	"testing"
 )
 
-func TestMediaRefValidDigestShape(t *testing.T) {
-	base := MediaRef{
+func validMediaRef() *MediaRef {
+	return &MediaRef{
 		Format: "html",
 		Kind:   MediaKindDataURI,
 		SHA256: strings.Repeat("a", 64),
+		MIME:   "image/png",
+		Size:   5,
 	}
-	if !base.Valid() {
-		t.Fatal("well-formed reference is invalid")
-	}
+}
 
-	for _, digest := range []string{
-		"",
-		strings.Repeat("a", 63),
-		strings.Repeat("a", 65),
-		strings.Repeat("A", 64),
-		strings.Repeat("z", 64),
+func TestMediaRefValid(t *testing.T) {
+	valid := validMediaRef()
+	for _, tc := range []struct {
+		name string
+		ref  *MediaRef
+		want bool
+	}{
+		{"valid", valid, true},
+		{"nil", nil, false},
+		{"missing format", &MediaRef{Kind: MediaKindDataURI, SHA256: valid.SHA256}, false},
+		{"missing kind", &MediaRef{Format: "html", SHA256: valid.SHA256}, false},
+		{"missing digest", &MediaRef{Format: "html", Kind: MediaKindDataURI}, false},
+		{"short digest", &MediaRef{Format: "html", Kind: MediaKindDataURI, SHA256: valid.SHA256[:63]}, false},
+		{"long digest", &MediaRef{Format: "html", Kind: MediaKindDataURI, SHA256: valid.SHA256 + "a"}, false},
+		{"uppercase digest", &MediaRef{Format: "html", Kind: MediaKindDataURI, SHA256: strings.ToUpper(valid.SHA256)}, false},
+		{"non-hex digest", &MediaRef{Format: "html", Kind: MediaKindDataURI, SHA256: strings.Repeat("z", 64)}, false},
 	} {
-		ref := base
-		ref.SHA256 = digest
-		if ref.Valid() {
-			t.Errorf("digest %q accepted, want invalid", digest)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.ref.Valid(); got != tc.want {
+				t.Fatalf("Valid() = %v, want %v", got, tc.want)
+			}
+		})
 	}
+}
 
-	var nilRef *MediaRef
-	if nilRef.Valid() {
-		t.Fatal("nil reference is valid")
+func TestMediaRefIsZero(t *testing.T) {
+	valid := validMediaRef()
+	for _, tc := range []struct {
+		name string
+		ref  *MediaRef
+		want bool
+	}{
+		{"nil", nil, true},
+		{"empty", &MediaRef{}, true},
+		{"format only", &MediaRef{Format: "html"}, false},
+		{"size only", &MediaRef{Size: 1}, false},
+		{"valid", valid, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.ref.IsZero(); got != tc.want {
+				t.Fatalf("IsZero() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMediaRefFromAny(t *testing.T) {
+	valid := validMediaRef()
+	wire := map[string]any{
+		"format": "html",
+		"kind":   string(MediaKindDataURI),
+		"sha256": valid.SHA256,
+		"mime":   "image/png",
+		"size":   float64(5),
+	}
+	for _, tc := range []struct {
+		name string
+		in   any
+		want bool
+	}{
+		{"nil", nil, false},
+		{"empty string", "", false},
+		{"empty map", map[string]any{}, false},
+		{"typed pointer", valid, true},
+		{"typed value", *valid, true},
+		{"wire map", wire, true},
+		{"partial map", map[string]any{"format": "html"}, false},
+		{"unknown fields", map[string]any{"unknown": "value"}, false},
+		{"wrong type", "not-a-ref", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := MediaRefFromAny(tc.in)
+			if (got != nil) != tc.want {
+				t.Fatalf("MediaRefFromAny() = %+v, want present=%v", got, tc.want)
+			}
+			if got != nil && got.SHA256 != valid.SHA256 {
+				t.Fatalf("MediaRefFromAny() digest = %q, want %q", got.SHA256, valid.SHA256)
+			}
+		})
 	}
 }
