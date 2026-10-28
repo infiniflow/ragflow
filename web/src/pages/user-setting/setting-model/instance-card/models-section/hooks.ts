@@ -29,6 +29,12 @@ import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { modelNameKey } from '@/utils/llm-util';
+import { hasProviderCredentialInput } from '../../provider-schema/field-config/utils';
+import {
+  applySavedCredentialEdits,
+  buildApiKeyValue,
+  SAVED_CREDENTIAL_MASK,
+} from '../hooks';
 import {
   Dispatch,
   SetStateAction,
@@ -118,6 +124,8 @@ export const buildModelInfo = (
 export type ResolvedCreds = {
   apiKey: string | object;
   baseUrl: string | undefined;
+  hasStoredCredentials?: boolean;
+  credentialChanged?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -133,9 +141,17 @@ export function useResolveCreds(
   // back to the persisted instance fields when no form getter is wired up.
   const resolveCreds = useCallback((): ResolvedCreds => {
     const fv = getFormValues?.() ?? {};
+    const credentialStatus = instance?.credential_status ?? {};
     return {
-      apiKey: (fv.api_key as string | object) ?? instance?.api_key ?? '',
+      apiKey: (buildApiKeyValue(fv, credentialStatus) as string | object) ?? '',
       baseUrl: (fv.base_url as string) ?? instance?.base_url,
+      hasStoredCredentials: instance?.api_key_configured === true,
+      credentialChanged: Object.entries(credentialStatus).some(
+        ([field, configured]) =>
+          configured &&
+          fv[field] !== undefined &&
+          fv[field] !== SAVED_CREDENTIAL_MASK,
+      ),
     };
   }, [getFormValues, instance]);
 
@@ -245,21 +261,33 @@ export function useModelsCatalog({
   // The result is merged into `catalog`; the displayed list then becomes
   // the union of catalog + instance models.
   const handleListModels = async () => {
-    const { apiKey, baseUrl } = resolveCreds();
-    if (providerName === LLMFactory.VolcEngine && !apiKey) {
+    const { apiKey, baseUrl, hasStoredCredentials, credentialChanged } =
+      resolveCreds();
+    if (
+      providerName === LLMFactory.VolcEngine &&
+      !hasProviderCredentialInput(apiKey) &&
+      (!hasStoredCredentials || credentialChanged)
+    ) {
       setHasFetched(true);
       return;
     }
     setManualListLoading(true);
     try {
+      const useStoredCredentials =
+        instanceName &&
+        instanceName !== DRAFT_INSTANCE_SENTINEL &&
+        !hasProviderCredentialInput(apiKey) &&
+        !credentialChanged;
+      if (credentialChanged && !hasProviderCredentialInput(apiKey)) {
+        setHasFetched(true);
+        return;
+      }
       const ret = await listProviderModels({
         provider_name: providerName,
-        api_key: apiKey as any,
-        base_url: baseUrl,
-        // The saved instance never hands its key back to the browser, but it
-        // does hand back its base URL — so without this the request would go
-        // out unauthenticated and the upstream would answer 401 "no API key".
-        // With the name, the server lists using the stored credential. A draft
+        api_key: useStoredCredentials ? '' : (apiKey as any),
+        base_url: useStoredCredentials ? '' : baseUrl,
+        // For an unchanged saved instance, its name lets the server load both
+        // the stored credential and URL. The browser sends neither. A draft
         // has no stored credential, so it is not named here.
         ...(instanceName && instanceName !== DRAFT_INSTANCE_SENTINEL
           ? { instance_name: instanceName }
@@ -315,9 +343,8 @@ export function useModelsCatalog({
       (providerName === LLMFactory.Bedrock &&
         apiKeyConfig?.auth_mode === 'bedrock_api_key');
     const hasApiKey =
-      providerName === LLMFactory.Bedrock && requiresApiKey
-        ? Boolean(apiKeyConfig?.bedrock_api_key && apiKeyConfig?.bedrock_region)
-        : Boolean(creds.apiKey);
+      hasProviderCredentialInput(creds.apiKey) ||
+      (creds.hasStoredCredentials && !creds.credentialChanged);
     const waitingForInstanceDetails =
       providerName === LLMFactory.Bedrock &&
       instanceName !== DRAFT_INSTANCE_SENTINEL &&
@@ -495,7 +522,7 @@ export function useModelsDerived({
   // save payload can include `model_info`.
   useEffect(() => {
     onChangeRef.current?.(buildModelInfo(instanceItems, isDraftInstance));
-  }, [instanceItems]);
+  }, [instanceItems, isDraftInstance]);
 
   // Saved instance models come from the backend, both after the initial
   // query and after mutation-driven refetches. Once that authoritative
@@ -580,10 +607,22 @@ function buildVerifyArgs(
   let apiKey: string | object;
   let baseUrl: string | undefined;
   let region: string | undefined;
+  const formValues = getFormValues?.() ?? {};
 
+  const credentialStatus = instance?.credential_status ?? {};
+  const verifyValues = { ...formValues };
+  for (const [field, configured] of Object.entries(credentialStatus)) {
+    if (configured && verifyValues[field] === SAVED_CREDENTIAL_MASK) {
+      verifyValues[field] = '';
+    }
+  }
   if (verifyTransform) {
-    const transformed = verifyTransform(getFormValues?.() ?? {});
-    apiKey = transformed.apiKey;
+    const transformed = verifyTransform(verifyValues);
+    apiKey = applySavedCredentialEdits(
+      transformed.apiKey,
+      formValues,
+      credentialStatus,
+    ) as string | object;
     baseUrl = transformed.baseUrl;
     region = transformed.region;
   } else {
@@ -592,6 +631,22 @@ function buildVerifyArgs(
     baseUrl = creds.baseUrl;
   }
 
+  const credentialChanged = Object.entries(credentialStatus).some(
+    ([field, configured]) =>
+      configured &&
+      formValues[field] !== undefined &&
+      formValues[field] !== SAVED_CREDENTIAL_MASK,
+  );
+
+  const isSavedEndpoint =
+    instance != null &&
+    (!baseUrl || baseUrl === instance.base_url) &&
+    (!region || region === instance.region);
+  const useSavedCredentials =
+    Boolean(instance?.id && isSavedEndpoint) &&
+    !credentialChanged &&
+    !hasProviderCredentialInput(apiKey);
+
   // `api_key` is typed `string` on the service signature, but
   // providers with a `verifyTransform` may legitimately produce an
   // object (e.g. PaddleOCR's nested config). The backend accepts
@@ -599,11 +654,12 @@ function buildVerifyArgs(
   // verify path in `useVerifyProvider`.
   return {
     provider_name: providerName,
-    api_key: apiKey as any,
-    base_url: baseUrl,
+    api_key: useSavedCredentials ? '' : (apiKey as any),
+    ...(useSavedCredentials ? {} : { base_url: baseUrl }),
     model_info: modelInfo,
-    ...(region ? { region } : {}),
+    ...(!useSavedCredentials && region ? { region } : {}),
     ...(instance?.id ? { instance_id: instance.id } : {}),
+    ...(useSavedCredentials ? { use_saved_credentials: true } : {}),
   };
 }
 

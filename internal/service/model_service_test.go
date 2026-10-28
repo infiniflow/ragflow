@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -25,6 +26,7 @@ type remoteModelProbeDriver struct {
 	embedCalls   int
 	checkCalls   int
 	checkErr     error
+	checkConfig  *modelModule.APIConfig
 }
 
 func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
@@ -36,8 +38,9 @@ func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.Emb
 	return nil, nil
 }
 
-func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.APIConfig) error {
+func (d *remoteModelProbeDriver) CheckConnection(_ context.Context, apiConfig *modelModule.APIConfig) error {
 	d.checkCalls++
+	d.checkConfig = apiConfig
 	return d.checkErr
 }
 
@@ -534,7 +537,8 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 		"Bedrock",
 		"api-key-instance",
 		"api-key-instance",
-		apiKey,
+		json.RawMessage(apiKey),
+		false,
 		"",
 		"default",
 		[]CreateInstanceModelInfo{{
@@ -734,12 +738,88 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 	if instance["id"] != "instance-1" || instance["provider_id"] != "provider-1" {
 		t.Fatalf("ShowProviderInstance() = %v, want user-1's own-tenant instance", instance)
 	}
-	if instance["api_key"] != "sk-test" {
-		t.Fatalf("ShowProviderInstance() api_key = %v, want owner credential", instance["api_key"])
+	if _, exists := instance["api_key"]; exists {
+		t.Fatalf("ShowProviderInstance() returned the stored API key: %v", instance["api_key"])
+	}
+	if instance["api_key_configured"] != true {
+		t.Fatalf("ShowProviderInstance() api_key_configured = %v, want true", instance["api_key_configured"])
+	}
+	if status, ok := instance["credential_status"].(map[string]bool); !ok || status["api_key"] != true {
+		t.Fatalf("ShowProviderInstance() credential_status = %v, want api_key configured", instance["credential_status"])
 	}
 
 	if _, code, err = service.ShowProviderInstance(ctx, "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeNotFound {
 		t.Fatalf("ShowProviderInstance() for another tenant's provider = (%v, %v), want hidden provider", code, err)
+	}
+}
+
+func TestProviderInstanceCredentialMetadataDoesNotExposeSecrets(t *testing.T) {
+	apiKey := `{"api_key":"sk-secret","group_id":"group-1","auth_mode":"bedrock_api_key","bedrock_api_key":"br-secret","bedrock_region":"us-east-1","google_service_account_key":"google-secret","unknown_secret":"hidden"}`
+	configured, config, status := providerInstanceCredentialMetadata(apiKey)
+	if !configured {
+		t.Fatal("providerInstanceCredentialMetadata() configured = false, want true")
+	}
+	if config["group_id"] != "group-1" || config["auth_mode"] != "bedrock_api_key" || config["bedrock_region"] != "us-east-1" {
+		t.Fatalf("safe config = %v, missing expected fields", config)
+	}
+	for _, secret := range []string{"api_key", "bedrock_api_key", "unknown_secret"} {
+		if _, exists := config[secret]; exists {
+			t.Fatalf("safe config contains secret field %q: %v", secret, config)
+		}
+	}
+	if status["api_key"] != true || status["bedrock_api_key"] != true || status["google_service_account_key"] != true || status["unknown_secret"] != true {
+		t.Fatalf("credential status = %v, want configured secret field names", status)
+	}
+}
+
+func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing.T) {
+	tests := []struct {
+		name      string
+		existing  string
+		submitted string
+		clear     bool
+		want      map[string]string
+	}{
+		{
+			name:      "blank plain key keeps existing",
+			existing:  "sk-existing",
+			submitted: `""`,
+			want:      map[string]string{"api_key": "sk-existing"},
+		},
+		{
+			name:      "structured update keeps blank secrets and updates metadata",
+			existing:  `{"api_key":"sk-existing","group_id":"old-group","bedrock_sk":"aws-secret"}`,
+			submitted: `{"api_key":"","group_id":"new-group"}`,
+			want:      map[string]string{"api_key": "sk-existing", "group_id": "new-group", "bedrock_sk": "aws-secret"},
+		},
+		{
+			name:      "null removes one credential and keeps the rest",
+			existing:  `{"api_key":"sk-existing","bedrock_api_key":"br-secret","bedrock_region":"us-east-1"}`,
+			submitted: `{"bedrock_api_key":null}`,
+			want:      map[string]string{"api_key": "sk-existing", "bedrock_region": "us-east-1"},
+		},
+		{
+			name:      "clear removes old secret fields before applying new config",
+			existing:  `{"api_key":"sk-existing","bedrock_sk":"aws-secret"}`,
+			submitted: `{"auth_mode":"iam_role","aws_role_arn":"arn:aws:iam::1:role/model"}`,
+			clear:     true,
+			want:      map[string]string{"auth_mode": "iam_role", "aws_role_arn": "arn:aws:iam::1:role/model"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := mergeProviderAPIKey(tt.existing, json.RawMessage(tt.submitted), tt.clear)
+			if err != nil {
+				t.Fatalf("mergeProviderAPIKey() error = %v", err)
+			}
+			var gotMap map[string]string
+			if err = json.Unmarshal([]byte(got), &gotMap); err != nil {
+				gotMap = map[string]string{"api_key": got}
+			}
+			if !reflect.DeepEqual(gotMap, tt.want) {
+				t.Fatalf("mergeProviderAPIKey() = %v, want %v", gotMap, tt.want)
+			}
+		})
 	}
 }
 
@@ -768,12 +848,67 @@ func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
 	provider.ModelDriver = probe
 	t.Cleanup(func() { provider.ModelDriver = originalDriver })
 
-	code, err := NewModelProviderService().CheckConnection(serviceTestContext(t, "member-1", "tenant-1", "user-1"), "OpenAI", "sk-test", "default", "", "instance-1", "member-1", nil)
+	code, err := NewModelProviderService().CheckConnection(serviceTestContext(t, "member-1", "tenant-1", "user-1"), "OpenAI", "sk-test", false, false, "default", "", "instance-1", "member-1", nil)
 	if err == nil || code != common.CodeNotFound {
 		t.Fatalf("CheckConnection() = (%v, %v), want hidden update denial", code, err)
 	}
 	if probe.checkCalls != 0 {
 		t.Fatalf("provider was contacted %d times before authorization", probe.checkCalls)
+	}
+}
+
+func TestCheckConnectionUsesStoredCredentialsOnlyForSavedEndpoint(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "instance-1").Updates(map[string]interface{}{
+		"api_key": "sk-stored-secret",
+		"extra":   `{"region":"us-east-1","base_url":"https://stored.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("update saved instance: %v", err)
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	service := NewModelProviderService()
+	ctx := serviceTestContext(t, "user-1", "tenant-1", "user-1")
+	modelInfo := []CheckConnectionModelInfo{{ModelName: "gpt-test", ModelTypes: []string{"doc_parse"}}}
+	code, err := service.CheckConnection(ctx, "OpenAI", "", false, true, "", "", "instance-1", "user-1", modelInfo)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection(saved) = (%v, %v), want success", code, err)
+	}
+	if probe.checkConfig == nil || probe.checkConfig.ApiKey == nil || *probe.checkConfig.ApiKey != "sk-stored-secret" {
+		t.Fatalf("saved API key = %+v, want stored credential", probe.checkConfig)
+	}
+	if probe.checkConfig.BaseURL == nil || *probe.checkConfig.BaseURL != "https://stored.example" || probe.checkConfig.Region == nil || *probe.checkConfig.Region != "us-east-1" {
+		t.Fatalf("saved endpoint config = %+v, want persisted endpoint settings", probe.checkConfig)
+	}
+
+	code, err = service.CheckConnection(ctx, "OpenAI", "", false, false, "", "https://attacker.example", "instance-1", "user-1", modelInfo)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection(custom endpoint) = (%v, %v), want provider probe success", code, err)
+	}
+	if probe.checkConfig == nil || probe.checkConfig.ApiKey == nil || *probe.checkConfig.ApiKey != "" {
+		t.Fatalf("custom endpoint received saved credential: %+v", probe.checkConfig)
+	}
+	if probe.checkConfig.BaseURL == nil || *probe.checkConfig.BaseURL != "https://attacker.example" {
+		t.Fatalf("custom endpoint = %+v, want caller-supplied URL", probe.checkConfig)
+	}
+
+	before := probe.checkCalls
+	code, err = service.CheckConnection(ctx, "OpenAI", "", false, true, "", "https://attacker.example", "instance-1", "user-1", modelInfo)
+	if err == nil || code != common.CodeBadRequest {
+		t.Fatalf("CheckConnection(saved with custom endpoint) = (%v, %v), want bad request", code, err)
+	}
+	if probe.checkCalls != before {
+		t.Fatalf("provider called %d times after rejecting mixed saved/custom config, want %d", probe.checkCalls, before)
 	}
 }
 

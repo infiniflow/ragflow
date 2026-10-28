@@ -180,7 +180,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 
 	apiKey := strings.TrimSpace(c.Query("api_key"))
 	baseURL := strings.TrimSpace(c.Query("base_url"))
-	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
+	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && apiKey == "" && baseURL == "" {
 		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
 		if err == nil {
 			for _, model := range instanceModels {
@@ -589,7 +589,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.ClearAPIKey, req.UseSavedCredentials, req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -619,12 +619,9 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	apikey, _ := instanceInfo["api_key"].(string)
-	region, _ := instanceInfo["region"].(string)
-	baseURL, _ := instanceInfo["base_url"].(string)
 	instanceID, _ := instanceInfo["id"].(string)
 
-	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, apikey, region, baseURL, instanceID, userID, nil)
+	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, "", false, true, "", "", instanceID, userID, nil)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -717,7 +714,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, service.NormalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey, req.ClearAPIKey, req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

@@ -96,11 +96,13 @@ type CheckConnectionModelInfo struct {
 }
 
 type CheckConnectionRequest struct {
-	APIKey     json.RawMessage            `json:"api_key"`
-	Region     string                     `json:"region"`
-	BaseURL    string                     `json:"base_url"`
-	InstanceID string                     `json:"instance_id"`
-	ModelInfo  []CheckConnectionModelInfo `json:"model_info"`
+	APIKey              json.RawMessage            `json:"api_key"`
+	ClearAPIKey         bool                       `json:"clear_api_key"`
+	UseSavedCredentials bool                       `json:"use_saved_credentials"`
+	Region              string                     `json:"region"`
+	BaseURL             string                     `json:"base_url"`
+	InstanceID          string                     `json:"instance_id"`
+	ModelInfo           []CheckConnectionModelInfo `json:"model_info"`
 }
 
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
@@ -396,6 +398,7 @@ type CreateProviderInstanceRequest struct {
 type AlterProviderInstanceRequest struct {
 	InstanceName string                     `json:"instance_name"`
 	APIKey       json.RawMessage            `json:"api_key"`
+	ClearAPIKey  bool                       `json:"clear_api_key"`
 	BaseURL      string                     `json:"base_url"`
 	Region       string                     `json:"region"`
 	ModelInfo    *[]CreateInstanceModelInfo `json:"model_info" binding:"required"`
@@ -431,6 +434,150 @@ func NormalizeAPIKey(raw json.RawMessage) string {
 		return trimmed
 	}
 	return compact.String()
+}
+
+var safeProviderAPIKeyConfigFields = map[string]struct{}{
+	"api_version":              {},
+	"auth_mode":                {},
+	"aws_role_arn":             {},
+	"bedrock_region":           {},
+	"fish_audio_refid":         {},
+	"google_project_id":        {},
+	"google_region":            {},
+	"group_id":                 {},
+	"mineru_apiserver":         {},
+	"mineru_backend":           {},
+	"mineru_delete_output":     {},
+	"mineru_output_dir":        {},
+	"mineru_server_url":        {},
+	"opendataloader_apiserver": {},
+	"paddleocr_algorithm":      {},
+	"paddleocr_api_url":        {},
+	"provider_order":           {},
+}
+
+func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interface{}, map[string]bool) {
+	apiKey = strings.TrimSpace(apiKey)
+	config := make(map[string]interface{})
+	status := make(map[string]bool)
+	if apiKey == "" {
+		return false, config, status
+	}
+
+	var values map[string]interface{}
+	if err := json.Unmarshal([]byte(apiKey), &values); err != nil || values == nil {
+		status["api_key"] = true
+		return true, config, status
+	}
+
+	configured := false
+	for key, value := range values {
+		if _, safe := safeProviderAPIKeyConfigFields[key]; safe {
+			config[key] = value
+		}
+		if isProviderCredentialField(key) && hasProviderCredentialValue(value) {
+			status[key] = true
+			configured = true
+		}
+		if key == "auth_mode" && value == "assume_role" {
+			configured = true
+		}
+	}
+	if roleARN, ok := values["aws_role_arn"].(string); ok && strings.TrimSpace(roleARN) != "" {
+		configured = true
+		status["aws_role_arn"] = true
+	}
+	return configured, config, status
+}
+
+func isProviderCredentialField(name string) bool {
+	name = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(name, "-", "_"), ".", "_"))
+	for _, marker := range []string{"api_key", "apikey", "secret", "token", "password", "credential", "private", "access_key"} {
+		if strings.Contains(name, marker) {
+			return true
+		}
+	}
+	return strings.HasSuffix(name, "_ak") || strings.HasSuffix(name, "_sk") || strings.HasSuffix(name, "_sid") || strings.HasSuffix(name, "_key")
+}
+
+func hasProviderCredentialValue(value interface{}) bool {
+	switch value := value.(type) {
+	case string:
+		return strings.TrimSpace(value) != ""
+	case []interface{}:
+		for _, item := range value {
+			if hasProviderCredentialValue(item) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		return len(value) > 0
+	case bool:
+		return value
+	case float64:
+		return value != 0
+	}
+	return false
+}
+
+func mergeProviderAPIKey(existing string, submitted json.RawMessage, clear bool) (string, error) {
+	if clear {
+		existing = ""
+	}
+
+	trimmed := bytes.TrimSpace(submitted)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return existing, nil
+	}
+
+	var submittedString string
+	if err := json.Unmarshal(trimmed, &submittedString); err == nil {
+		if strings.TrimSpace(submittedString) == "" {
+			return existing, nil
+		}
+		return submittedString, nil
+	}
+
+	var submittedConfig map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &submittedConfig); err != nil || submittedConfig == nil {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, trimmed); err != nil {
+			return "", fmt.Errorf("invalid api_key value: %w", err)
+		}
+		return compact.String(), nil
+	}
+
+	merged := make(map[string]json.RawMessage)
+	if !clear && strings.TrimSpace(existing) != "" {
+		var existingConfig map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(existing), &existingConfig); err == nil && existingConfig != nil {
+			for key, value := range existingConfig {
+				merged[key] = value
+			}
+		} else {
+			plainKey, _ := json.Marshal(existing)
+			merged["api_key"] = plainKey
+		}
+	}
+	for key, value := range submittedConfig {
+		if bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			delete(merged, key)
+			continue
+		}
+		var textValue string
+		if err := json.Unmarshal(value, &textValue); err == nil && textValue == "" {
+			continue
+		}
+		merged[key] = value
+	}
+	if len(merged) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(merged)
+	if err != nil {
+		return "", fmt.Errorf("marshal api_key configuration: %w", err)
+	}
+	return string(encoded), nil
 }
 
 func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, userID, providerIDOrName string, operation permission.Operation) (*entity.TenantModelProvider, error) {
@@ -855,8 +1002,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"base_url":      extraFields["base_url"],
 		"status":        instance.Status,
 	}
-	if access.Source == permission.AccessSourceOwner {
-		result["api_key"] = instance.APIKey
+	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
+		configured, config, credentialStatus := providerInstanceCredentialMetadata(instance.APIKey)
+		result["api_key_configured"] = configured
+		result["api_key_config"] = config
+		result["credential_status"] = credentialStatus
 	}
 
 	return result, common.CodeSuccess, nil
@@ -913,8 +1063,9 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey string, clearAPIKey, useSavedCredentials bool, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
+	var savedInstance *entity.TenantModelInstance
 	if instanceID != "" {
 		instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceID)
 		if err != nil {
@@ -941,6 +1092,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 			code, normalizedErr := normalizeModelPermissionError(err)
 			return code, normalizedErr
 		}
+		savedInstance = instance
 		providerName = provider.ProviderName
 	}
 
@@ -952,6 +1104,31 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	apiKey = strings.TrimSpace(apiKey)
 	region = strings.TrimSpace(region)
 	baseURL = strings.TrimSpace(baseURL)
+	if savedInstance != nil {
+		extra := make(map[string]interface{})
+		if savedInstance.Extra != "" {
+			if err := json.Unmarshal([]byte(savedInstance.Extra), &extra); err != nil {
+				return common.CodeServerError, err
+			}
+		}
+		if useSavedCredentials {
+			if clearAPIKey || apiKey != "" || region != "" || baseURL != "" {
+				return common.CodeBadRequest, errors.New("saved credentials cannot be combined with submitted credentials or endpoint settings")
+			}
+			apiKey = savedInstance.APIKey
+			region, _ = extra["region"].(string)
+			baseURL, _ = extra["base_url"].(string)
+		} else {
+			if region == "" {
+				region, _ = extra["region"].(string)
+			}
+			if baseURL == "" {
+				baseURL, _ = extra["base_url"].(string)
+			}
+		}
+	} else if useSavedCredentials {
+		return common.CodeBadRequest, errors.New("saved credentials require an existing model instance")
+	}
 	if region == "" {
 		region = "default"
 	}
@@ -2015,8 +2192,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, use
 	return nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
-	apiKey = strings.TrimSpace(apiKey)
+func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName string, apiKey json.RawMessage, clearAPIKey bool, baseURL, region string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	region = strings.TrimSpace(region)
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
@@ -2085,9 +2261,16 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		}
 	}
 
-	// Update instance record.
-	instanceUpdates := map[string]interface{}{
-		"api_key": apiKey,
+	// Update instance record. Empty or omitted credentials keep the existing
+	// value; clear_api_key explicitly clears the stored credentials. Structured
+	// credential objects merge non-empty submitted fields into the saved config.
+	instanceUpdates := make(map[string]interface{})
+	if clearAPIKey || len(bytes.TrimSpace(apiKey)) > 0 {
+		updatedAPIKey, mergeErr := mergeProviderAPIKey(instance.APIKey, apiKey, clearAPIKey)
+		if mergeErr != nil {
+			return common.CodeBadRequest, mergeErr
+		}
+		instanceUpdates["api_key"] = updatedAPIKey
 	}
 	if newInstanceName != "" && newInstanceName != instance.InstanceName {
 		instanceUpdates["instance_name"] = newInstanceName

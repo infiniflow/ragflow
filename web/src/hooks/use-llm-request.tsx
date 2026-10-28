@@ -359,6 +359,8 @@ export const useVerifyProviderConnection = () => {
     mutationFn: async (params: {
       provider_name: string;
       api_key: string;
+      clear_api_key?: boolean;
+      use_saved_credentials?: boolean;
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
