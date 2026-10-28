@@ -40,6 +40,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"ragflow/internal/channels/core"
 	"ragflow/internal/common"
 )
 
@@ -48,16 +49,12 @@ const (
 	weComWebhookShutdownTimeout = 5 * time.Second
 	weComPKCS7BlockSize         = 32
 	weComReplayWindow           = 5 * time.Minute
-	weComNonceTTL               = 10 * time.Minute
 )
 
 type wecomCrypto struct {
 	token     string
 	aesKey    []byte
 	receiveID string
-
-	nonceMu sync.Mutex
-	nonces  map[string]time.Time
 }
 
 type wecomEncryptedXML struct {
@@ -110,7 +107,6 @@ func newWeComCrypto(token, encodingAESKey, receiveID string) (*wecomCrypto, erro
 		token:     token,
 		aesKey:    aesKey,
 		receiveID: receiveID,
-		nonces:    map[string]time.Time{},
 	}, nil
 }
 
@@ -174,36 +170,6 @@ func parseWeComTimestamp(value string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid WeCom timestamp %q: %w", value, err)
 	}
 	return time.Unix(seconds, 0), nil
-}
-
-// claimNonce records the callback nonce before the message is handled, so a
-// retry that arrives while the first delivery is still being processed is
-// dropped instead of running the handler twice.
-func (c *wecomCrypto) claimNonce(nonce string, now time.Time) bool {
-	c.nonceMu.Lock()
-	defer c.nonceMu.Unlock()
-	c.pruneNoncesLocked(now)
-	if _, ok := c.nonces[nonce]; ok {
-		return false
-	}
-	c.nonces[nonce] = now
-	return true
-}
-
-// forgetNonce drops the claim after a failed attempt, so the platform's retry
-// of the same delivery is handled instead of being refused as a replay.
-func (c *wecomCrypto) forgetNonce(nonce string) {
-	c.nonceMu.Lock()
-	defer c.nonceMu.Unlock()
-	delete(c.nonces, nonce)
-}
-
-func (c *wecomCrypto) pruneNoncesLocked(now time.Time) {
-	for key, seenAt := range c.nonces {
-		if now.Sub(seenAt) > weComNonceTTL {
-			delete(c.nonces, key)
-		}
-	}
 }
 
 func removeWeComPKCS7Padding(payload []byte) ([]byte, error) {
@@ -349,28 +315,24 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		// Claim the nonce before handling: a retry that arrives while this
-		// delivery is still being processed must not run the handler again.
-		if !channel.crypto.claimNonce(nonce, time.Now()) {
-			common.Warn("wecom: dropping duplicate callback", zap.String("account_id", accountID), zap.String("msg_id", message.MsgID), zap.String("nonce", nonce))
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		if err := channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
-			"to_user_name":   message.ToUserName,
-			"from_user_name": message.FromUserName,
-			"create_time":    message.CreateTime,
-			"msg_type":       message.MsgType,
-			"content":        message.Content,
-			"msg_id":         message.MsgID,
-			"xml":            string(plaintext),
-		}); err != nil {
-			// Give the claim back so the platform's retry of this delivery is
-			// handled instead of being refused as a replay.
-			channel.crypto.forgetNonce(nonce)
-			http.Error(w, "message handling failed", http.StatusInternalServerError)
-			return
-		}
+		channel.enqueueIncoming(core.IncomingMessage{
+			Channel:   channel.ChannelID(),
+			AccountID: channel.AccountID(),
+			ChatID:    message.FromUserName,
+			ChatType:  "p2p",
+			MessageID: message.MsgID,
+			SenderID:  message.FromUserName,
+			Text:      message.Content,
+			Raw: map[string]any{
+				"to_user_name":   message.ToUserName,
+				"from_user_name": message.FromUserName,
+				"create_time":    message.CreateTime,
+				"msg_type":       message.MsgType,
+				"content":        message.Content,
+				"msg_id":         message.MsgID,
+				"xml":            string(plaintext),
+			},
+		})
 	}
 	w.WriteHeader(http.StatusOK)
 }

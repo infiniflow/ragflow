@@ -249,16 +249,7 @@ func (c *lineChannel) handleWebhook(body []byte, signature string) (int, string)
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return http.StatusBadRequest, "bad request"
 	}
-	now := time.Now()
 	for _, event := range payload.Events {
-		// The signature covers the body only, so the event timestamp is the sole
-		// freshness signal available. It uses the same retention as the message
-		// dedup below, so a delivery delayed by a slow endpoint is still handled.
-		eventAt := time.UnixMilli(event.Timestamp)
-		if event.Timestamp == 0 || eventAt.After(now.Add(lineMessageTTL)) || eventAt.Before(now.Add(-lineMessageTTL)) {
-			common.Warn("line: skipping stale event", zap.String("account_id", c.account.AccountID), zap.String("message_id", event.Message.ID), zap.Int64("timestamp", event.Timestamp))
-			continue
-		}
 		incoming, ok := c.normalizeEvent(event)
 		if !ok {
 			continue
@@ -563,7 +554,6 @@ type lineWebhookPayload struct {
 
 type lineEvent struct {
 	Type       string      `json:"type"`
-	Timestamp  int64       `json:"timestamp"`
 	ReplyToken string      `json:"replyToken"`
 	Source     lineSource  `json:"source"`
 	Message    lineMessage `json:"message"`

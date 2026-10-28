@@ -113,31 +113,6 @@ func TestLineWebhookDispatchesTextMessage(t *testing.T) {
 	}
 }
 
-func TestLineWebhookSkipsStaleEvent(t *testing.T) {
-	stale := time.Now().Add(-lineMessageTTL - time.Minute).UnixMilli()
-	body := lineWebhookTestBody(t, "message-1", stale)
-	ch := newLineChannel(lineAccount{AccountID: "account-1", ChannelSecret: "secret", ChannelAccessToken: "token"})
-	server := &lineWebhookServer{channels: map[string]*lineChannel{"account-1": ch}}
-
-	handled := make(chan struct{}, 1)
-	ch.SetMessageHandler(func(context.Context, core.IncomingMessage) error {
-		handled <- struct{}{}
-		return nil
-	})
-
-	if rec := postLineWebhook(t, server, body); rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if token := ch.takeReplyToken("message-1"); token != "" {
-		t.Fatalf("stale event stored reply token %q", token)
-	}
-	select {
-	case <-handled:
-		t.Fatal("stale event was handled")
-	default:
-	}
-}
-
 func TestLineWebhookIgnoresReplay(t *testing.T) {
 	body := lineWebhookTestBody(t, "message-1", time.Now().UnixMilli())
 	ch := newLineChannel(lineAccount{AccountID: "account-1", ChannelSecret: "secret", ChannelAccessToken: "token"})

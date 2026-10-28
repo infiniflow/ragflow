@@ -27,7 +27,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
-	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -224,11 +223,11 @@ func TestWeComWebhookRejectsOutOfWindowTimestamp(t *testing.T) {
 	}
 }
 
-func TestWeComWebhookDropsReplayedNonce(t *testing.T) {
+func TestWeComWebhookIgnoresDuplicateMessage(t *testing.T) {
 	encodingAESKey, aesKey := testWeComAESKey()
-	calls := 0
-	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
-		calls++
+	handled := make(chan core.IncomingMessage, 2)
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(_ context.Context, msg core.IncomingMessage) error {
+		handled <- msg
 		return nil
 	})
 	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
@@ -242,16 +241,24 @@ func TestWeComWebhookDropsReplayedNonce(t *testing.T) {
 	if response := request(); response.Code != http.StatusOK {
 		t.Fatalf("first delivery status = %d, body=%q", response.Code, response.Body.String())
 	}
-	if calls != 1 {
-		t.Fatalf("handler calls = %d, want 1", calls)
+	select {
+	case msg := <-handled:
+		if msg.MessageID != "message-1" {
+			t.Fatalf("message id = %q, want message-1", msg.MessageID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the first delivery")
 	}
-	// A duplicate of a handled delivery is acknowledged so the platform stops
-	// retrying, and is not handled again.
+
+	// A retry of the same platform message is acknowledged so the platform stops
+	// retrying, and it is not handled a second time.
 	if response := request(); response.Code != http.StatusOK {
 		t.Fatalf("replayed delivery status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if calls != 1 {
-		t.Fatalf("handler calls after replay = %d, want 1", calls)
+	select {
+	case msg := <-handled:
+		t.Fatalf("replayed delivery was handled again: %+v", msg)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -310,31 +317,54 @@ func TestWeComWebhookDropsRetryWhileHandling(t *testing.T) {
 	}
 }
 
-func TestWeComWebhookRetriesAfterFailedHandling(t *testing.T) {
+func TestWeComWebhookHandlesOneChatInOrder(t *testing.T) {
 	encodingAESKey, aesKey := testWeComAESKey()
-	calls := 0
-	server := newWeComTestWebhookServer(t, encodingAESKey, func(context.Context, core.IncomingMessage) error {
-		calls++
-		return errors.New("transient failure")
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	server := newWeComTestWebhookServer(t, encodingAESKey, func(_ context.Context, msg core.IncomingMessage) error {
+		entered <- msg.MessageID
+		if msg.MessageID == "message-1" {
+			<-release
+		}
+		return nil
 	})
-	plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>message-1</MsgId></xml>`
 	timestamp := currentWeComTimestamp()
-	request := func() *httptest.ResponseRecorder {
+	post := func(messageID string) {
+		plaintext := `<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><MsgType>text</MsgType><Content>hello</Content><MsgId>` + messageID + `</MsgId></xml>`
 		response := httptest.NewRecorder()
-		server.handleRequest(response, weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext))
-		return response
+		server.handleRequest(response, weComTestMessageRequest(t, aesKey, timestamp, "nonce-"+messageID, plaintext))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status = %d, want %d", messageID, response.Code, http.StatusOK)
+		}
 	}
 
-	if response := request(); response.Code != http.StatusInternalServerError {
-		t.Fatalf("failed attempt status = %d, want %d", response.Code, http.StatusInternalServerError)
+	post("message-1")
+	select {
+	case id := <-entered:
+		if id != "message-1" {
+			t.Fatalf("first handled message = %q, want message-1", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("first message was not handled")
 	}
-	// The failed attempt must not record the nonce, otherwise the platform's
-	// retry of the same callback is refused as a replay.
-	if response := request(); response.Code != http.StatusInternalServerError {
-		t.Fatalf("retried delivery status = %d, want %d", response.Code, http.StatusInternalServerError)
+
+	// One chat is served by one worker, so the second message waits for the
+	// first even though both deliveries were accepted immediately.
+	post("message-2")
+	select {
+	case id := <-entered:
+		t.Fatalf("%q was handled while message-1 was still running", id)
+	case <-time.After(100 * time.Millisecond):
 	}
-	if calls != 2 {
-		t.Fatalf("handler calls = %d, want 2", calls)
+
+	close(release)
+	select {
+	case id := <-entered:
+		if id != "message-2" {
+			t.Fatalf("second handled message = %q, want message-2", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("second message was not handled")
 	}
 }
 
@@ -596,7 +626,7 @@ func TestWeComWebSocketMessagePreservesWhitespaceAndFallsBackToSender(t *testing
 		messages <- msg
 		return nil
 	})
-	channel.handleWebSocketMessage(context.Background(), map[string]any{
+	channel.handleWebSocketMessage(map[string]any{
 		"headers": map[string]any{"req_id": "request-1"},
 		"body": map[string]any{
 			"msgtype": "text",
