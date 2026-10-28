@@ -90,10 +90,10 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
 
-// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// ProviderResponseHeaderTimeout lets a deployment shorten the wait for response
 // headers, which is what a hung provider endpoint spends on every retry. Each
 // client keeps its own default while the override is unset.
-func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+func ProviderResponseHeaderTimeout(def time.Duration) time.Duration {
 	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
 }
 
@@ -109,7 +109,7 @@ func GetSSRFHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
+		t.ResponseHeaderTimeout = ProviderResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
@@ -132,7 +132,7 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
+		t.ResponseHeaderTimeout = ProviderResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
