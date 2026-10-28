@@ -91,9 +91,13 @@ When a user forgets their password or must be forced to change it, administrator
 
 When a user no longer needs system access and related resources have been handed over, administrators can delete the user from **Actions** in the user list. Before deletion, the page displays a confirmation dialog and shows the `Email` of the user to be deleted.
 
-1. Find the target user on the **User management** page. Hover over the user row to display **Actions**, then click the delete button.
-2. Check the user's `Email` in the confirmation dialog.
-3. Click **Delete** to delete the user.
+Before deleting a user, set their account status to **Inactive**. If their user type is **Superuser**, change it to **Normal** first. The backend rejects deletion of active accounts and Superuser accounts.
+
+1. Find the target user on the **User management** page and set **Status** to **Inactive**.
+2. If **User type** is **Superuser**, change it to **Normal**.
+3. Hover over the user row to display **Actions**, then click the delete button.
+4. Check the user's `Email` in the confirmation dialog.
+5. Click **Delete** to delete the user.
 
 ![Delete Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_users.jpg)
 
