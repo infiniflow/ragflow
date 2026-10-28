@@ -663,8 +663,11 @@ var resolveMonkeyOCRModelForDispatch = defaultResolveMonkeyOCRModelForDispatch
 func defaultResolveMonkeyOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	modelID = strings.TrimSpace(modelID)
 	if modelID != "" && !strings.Contains(modelID, "@") {
-		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		return driver, modelName, apiConfig, err
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
 	}
 	if modelID != "" {
 		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
@@ -1045,6 +1048,75 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 		return nil, fmt.Errorf("MinerU zip contained no usable content_list items")
 	}
 	return out, nil
+}
+
+// mineruExtractSections reads MinerU content_list.json from a zip archive
+// and extracts plain text blocks, mirroring Python's _transfer_to_sections.
+// Used by MonkeyOCR v1 /file_parse dispatch when returning markdown sections.
+func mineruExtractSections(zipBytes []byte) ([]string, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("open zip: %w", err)
+	}
+
+	var contentList []byte
+	for _, f := range zipReader.File {
+		if strings.HasSuffix(f.Name, "content_list.json") {
+			rc, openErr := f.Open()
+			if openErr != nil {
+				continue
+			}
+			contentList, _ = io.ReadAll(rc)
+			_ = rc.Close()
+			break
+		}
+	}
+	if len(contentList) == 0 {
+		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
+	}
+
+	var items []map[string]any
+	if err = json.Unmarshal(contentList, &items); err != nil {
+		return nil, fmt.Errorf("parse content_list.json: %w", err)
+	}
+
+	var sections []string
+	for _, item := range items {
+		typ, _ := item["type"].(string)
+		switch typ {
+		case "text":
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		case "table":
+			if tb, ok := item["table_body"].(string); ok {
+				sections = append(sections, tb)
+			}
+			for _, caption := range stringSlice(item["table_caption"]) {
+				sections = append(sections, caption)
+			}
+		case "image":
+			for _, caption := range stringSlice(item["image_caption"]) {
+				sections = append(sections, caption)
+			}
+			if desc, ok := item["vlm_description"].(string); ok && desc != "" {
+				sections = append(sections, desc)
+			}
+		case "equation", "code":
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		case "list":
+			for _, li := range stringSlice(item["list_items"]) {
+				sections = append(sections, li)
+			}
+		default:
+			if text, ok := item["text"].(string); ok {
+				sections = append(sections, text)
+			}
+		}
+	}
+	return sections, nil
 }
 
 // mineruPageSizes parses the per-page page_size ([width, height] in PDF
