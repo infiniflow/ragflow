@@ -34,6 +34,8 @@ import (
 	mdhtml "github.com/gomarkdown/markdown/html"
 	mdparser "github.com/gomarkdown/markdown/parser"
 	"golang.org/x/net/html"
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -102,7 +104,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 // parseWithState keeps media identity and budget across fragments of one document.
 // Its warnings describe this fragment; the caller adds state.warnings once.
 func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
-	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	decoded, _ := charset.DecodeToUTF8(data, "text/markdown")
 	// The final blank line also terminates a raw HTML block at EOF.
 	rawText := string(decoded) + "\n\n"
 	blockParser := markdownNew()
@@ -643,7 +645,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, _, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		encoded, decodedSize, _, resolved = media.NormalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
 		if !resolved {
 			return "", nil, false, false
 		}

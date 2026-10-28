@@ -20,13 +20,13 @@ import (
 	"errors"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/media"
 )
 
 // MaterializeMediaItem fills m["image"] from m["media_ref"] when the item
 // carries a reference and no inline bytes. The item map is the parser/chunker
 // wire shape, so the upload pass and vision enhancement share one seam.
-func MaterializeMediaItem(ctx context.Context, m map[string]any, resolver parser.MediaResolver, src parser.MediaSource) error {
+func MaterializeMediaItem(ctx context.Context, m map[string]any, resolver media.MediaResolver, src media.MediaSource) error {
 	if m == nil || resolver == nil || src == nil {
 		return nil
 	}

@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package parser
+package media
 
 import (
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -26,6 +27,7 @@ import (
 	"golang.org/x/net/html"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/charset"
 )
 
 // htmlMediaSpan locates one inline image tag in an HTML source document.
@@ -43,7 +45,7 @@ type htmlMediaSpan struct {
 // parser does before walking it. A resolver that tokenizes raw bytes must
 // apply it first: a UTF-16 source contains no ASCII markup until this step.
 func decodeHTMLSource(data []byte) []byte {
-	decoded, _ := decodeHTMLToUTF8(data)
+	decoded, _ := charset.DecodeToUTF8(data, "text/html")
 	return decoded
 }
 
@@ -115,11 +117,11 @@ func htmlTagAttr(tokenizer *html.Tokenizer, key string) ([]byte, bool) {
 // reference. It reuses the parser's normalization so both sides accept the
 // same payloads and compute the same digest.
 func htmlDataURIRef(src []byte) (entity.MediaRef, bool) {
-	normalized, size, sum, ok := normalizeHTMLImageSource(string(src))
+	normalized, size, sum, ok := NormalizeHTMLImageSource(string(src))
 	if !ok {
 		return entity.MediaRef{}, false
 	}
-	return *newHTMLMediaRef(dataURIMediaType(normalized), size, sum), true
+	return *NewHTMLMediaRef(DataURIMediaType(normalized), size, sum), true
 }
 
 // decodeHTMLImagePayload re-tokenizes one <img ...> start tag and decodes its
@@ -135,7 +137,7 @@ func decodeHTMLImagePayload(tag []byte) ([]byte, [sha256.Size]byte, error) {
 	if !ok {
 		return nil, sum, errors.New("html media: span has no src attribute")
 	}
-	normalized, _, sum, ok := normalizeHTMLImageSource(string(src))
+	normalized, _, sum, ok := NormalizeHTMLImageSource(string(src))
 	if !ok {
 		return nil, sum, errors.New("html media: invalid image payload")
 	}
@@ -158,4 +160,51 @@ func decodeNormalizedMediaURI(normalized string) ([]byte, error) {
 		return nil, fmt.Errorf("html media: decode payload: %w", err)
 	}
 	return data, nil
+}
+
+func NormalizeHTMLImageSource(src string) (string, int64, [sha256.Size]byte, bool) {
+	var sum [sha256.Size]byte
+	src = strings.TrimSpace(src)
+	if !IsHTMLDataImageSource(src) {
+		return "", 0, sum, false
+	}
+	separator := strings.IndexByte(src, ',')
+	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
+		return "", 0, sum, false
+	}
+	payload, size, sum, ok := NormalizeBase64ImagePayload(src[separator+1:], MaxImagePayloadBytes)
+	if !ok {
+		return "", 0, sum, false
+	}
+	return strings.ToLower(src[:separator+1]) + payload, size, sum, true
+}
+
+// newHTMLMediaRef content-addresses one inline HTML image. The digest is the
+// lookup key the chunker uses to re-extract the image from the source
+// document, so a later walker change cannot shift the reference.
+func NewHTMLMediaRef(mime string, size int64, digest [sha256.Size]byte) *entity.MediaRef {
+	return &entity.MediaRef{
+		Format: "html",
+		Kind:   entity.MediaKindDataURI,
+		SHA256: hex.EncodeToString(digest[:]),
+		MIME:   mime,
+		Size:   size,
+	}
+}
+
+// dataURIMediaType returns the media type of a normalized "data:<mime>;base64,"
+// URI.
+func DataURIMediaType(uri string) string {
+	colon := strings.IndexByte(uri, ':')
+	semi := strings.IndexByte(uri, ';')
+	if colon < 0 || semi <= colon+1 {
+		return ""
+	}
+	return strings.ToLower(uri[colon+1 : semi])
+}
+
+func IsHTMLDataImageSource(src string) bool {
+	const dataPrefix = "data:image/"
+	src = strings.TrimSpace(src)
+	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
 }

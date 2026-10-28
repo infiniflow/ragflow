@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"ragflow/internal/parser/charset"
 	"strings"
 	"unicode/utf8"
 )
@@ -111,7 +112,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	decoded, encName := DecodeToUTF8(data, "text/csv")
+	decoded, encName := charset.DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{

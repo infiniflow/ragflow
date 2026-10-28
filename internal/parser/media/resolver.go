@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package parser: this file materializes MediaRefs emitted by parsers. A
+// Package media: this file materializes MediaRefs emitted by parsers. A
 // parser that emits MediaRef keeps image bytes out of its result. Whoever
 // needs an actual image (the chunker's upload pass, the vision enhancement
 // path) hands the reference and a MediaSource to a MediaResolver, which reads
 // the source once per invocation and returns exactly one image.
-package parser
+package media
 
 import (
 	"bytes"
@@ -194,7 +194,7 @@ func findHTMLMediaPayloadInNode(ctx context.Context, doc *html.Node, digest stri
 				if !strings.EqualFold(attr.Key, "src") {
 					continue
 				}
-				normalized, _, candidate, ok := normalizeHTMLImageSource(attr.Val)
+				normalized, _, candidate, ok := NormalizeHTMLImageSource(attr.Val)
 				if ok && hex.EncodeToString(candidate[:]) == digest {
 					if decoded, err := decodeNormalizedMediaURI(normalized); err == nil {
 						payload, sum, found = decoded, candidate, true

@@ -14,7 +14,7 @@
 // limitations under the License.
 //
 
-package parser
+package media
 
 import (
 	"crypto/sha256"
@@ -23,12 +23,17 @@ import (
 	"strings"
 )
 
-// normalizeBase64ImagePayload validates an external image payload within its
+const (
+	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
+	MaxImagePayloadBytes = 32 << 20
+)
+
+// NormalizeBase64ImagePayload validates an external image payload within its
 // decoded byte limit and returns standard base64 with padding, no CR/LF, the
 // decoded byte count, and the digest of the decoded bytes. Validation streams
 // the payload instead of retaining a decoded image buffer; the digest is
 // computed from the same stream so callers do not decode twice.
-func normalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, [sha256.Size]byte, bool) {
+func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, [sha256.Size]byte, bool) {
 	var sum [sha256.Size]byte
 	if maxDecodedBytes < 0 {
 		return "", 0, sum, false

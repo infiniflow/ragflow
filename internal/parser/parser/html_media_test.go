@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 )
 
 const htmlMediaDataURI = "data:image/png;base64,aGVsbG8="
@@ -154,70 +155,41 @@ func TestHTMLParser_OmitsImageBytes(t *testing.T) {
 	}
 }
 
-func TestScanHTMLMediaSpansMatchesParserRefs(t *testing.T) {
+func TestParserMediaRefsResolveFromSource(t *testing.T) {
 	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
 		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
-	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "match.html", []byte(input))
+	result := NewHTMLParser().ParseWithResult(context.Background(), "match.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
-	var want []string
+	resolver := media.NewMediaResolver()
+	images := 0
 	for _, item := range result.JSON {
 		m := item.ToMap()
-		if m["doc_type_kwd"] != "image" {
+		if m["doc_type_kwd"] != DocTypeImage {
 			continue
 		}
+		images++
 		ref := entity.MediaRefFromAny(m["media_ref"])
 		if ref == nil {
 			t.Fatalf("image item without ref: %+v", m)
 		}
-		want = append(want, ref.SHA256)
-	}
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != len(want) {
-		t.Fatalf("scanned %d images, parser emitted %d", len(spans), len(want))
-	}
-	for i := range want {
-		if spans[i].Ref.SHA256 != want[i] {
-			t.Fatalf("image %d digest = %s, want %s", i, spans[i].Ref.SHA256, want[i])
-		}
-		data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[i].TagStart:spans[i].TagEnd])
+		data, err := resolver.Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+			return []byte(input), nil
+		}))
 		if err != nil {
-			t.Fatalf("image %d decode: %v", i, err)
+			t.Fatalf("resolve image %d: %v", images, err)
 		}
-		if string(data) != "hello" {
-			t.Fatalf("image %d = %q, want hello", i, data)
+		sum := sha256.Sum256(data)
+		if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
+			t.Fatalf("image %d digest = %s, want %s", images, got, ref.SHA256)
 		}
-		if hex.EncodeToString(sum[:]) != want[i] {
-			t.Fatalf("image %d decoded digest = %x", i, sum)
-		}
+	}
+	if images != 2 {
+		t.Fatalf("image items = %d, want 2", images)
 	}
 }
 
-func TestScanHTMLMediaSpansHandlesCaseQuotesAndPadding(t *testing.T) {
-	input := `<img src='DATA:IMAGE/PNG;BASE64,aGVsbG8'>`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want 1", len(spans))
-	}
-	if spans[0].Ref.MIME != "image/png" {
-		t.Errorf("mime = %q, want image/png", spans[0].Ref.MIME)
-	}
-	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if string(data) != "hello" {
-		t.Errorf("data = %q, want hello", data)
-	}
-	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
-		t.Errorf("scan digest and decode digest differ")
-	}
-}
-
-// TestHTMLParser_RefModeKeepsResultIndependentOfImageBytes pins the core
-// goal: the parse result no longer scales with image payloads.
 func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 	const imageCount = 64
 	payload := base64.StdEncoding.EncodeToString(make([]byte, 64<<10))
@@ -244,35 +216,5 @@ func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 	// 64 refs are a few KB; the inline form would be over 4 MB.
 	if len(encoded) > 256<<10 {
 		t.Fatalf("ref-mode result is %d bytes; it must not scale with image payloads", len(encoded))
-	}
-}
-
-func TestScanHTMLMediaSpansDecodesCharacterReferences(t *testing.T) {
-	// aGVsbG8+ decodes to "hello>"; &#43; is the HTML-escaped '+'.
-	input := `<img src="data:image/png;base64,aGVsbG8&#43;">`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want 1", len(spans))
-	}
-	data, sum, err := decodeHTMLImagePayload([]byte(input)[spans[0].TagStart:spans[0].TagEnd])
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if string(data) != "hello>" {
-		t.Fatalf("data = %q, want hello>", data)
-	}
-	if hex.EncodeToString(sum[:]) != spans[0].Ref.SHA256 {
-		t.Fatal("scan and decode digests differ")
-	}
-}
-
-func TestScanHTMLMediaSpansSkipsHeadersBeyondTheParserLimit(t *testing.T) {
-	// The parser rejects headers longer than 128 bytes; the scan must not
-	// look past that window for a comma, and must still find the next image.
-	input := `<img src="data:image/png;` + strings.Repeat("x", 200) + `">` +
-		`<img src="data:image/png;base64,aGVsbG8=">`
-	spans, _ := scanHTMLMediaSpans(context.Background(), []byte(input))
-	if len(spans) != 1 {
-		t.Fatalf("spans = %d, want the valid image only", len(spans))
 	}
 }

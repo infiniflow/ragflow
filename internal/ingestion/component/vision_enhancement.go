@@ -45,6 +45,7 @@ import (
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
+	"ragflow/internal/parser/media"
 )
 
 var (
@@ -299,11 +300,11 @@ func maybeDispatchVisionEnhancement(
 	// A parser that emits references leaves the bytes out of the result. Materialize
 	// each referenced image from the bytes this invocation parsed, so the VLM
 	// path neither re-reads storage nor loses descriptions on those formats.
-	var resolver parser.MediaResolver
-	var mediaSource parser.MediaSource
+	var resolver media.MediaResolver
+	var mediaSource media.MediaSource
 	if source := parserSourceBytes(inputs); len(source) > 0 {
-		resolver = parser.NewMediaResolver()
-		mediaSource = parser.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
+		resolver = media.NewMediaResolver()
+		mediaSource = media.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
 	}
 	modified := false
 	descriptions := make([]string, len(items))

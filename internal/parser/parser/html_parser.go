@@ -19,13 +19,13 @@ package parser
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"golang.org/x/net/html"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -106,7 +106,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 // decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
 // encoding label used. It delegates to the shared DecodeToUTF8 helper.
 func decodeHTMLToUTF8(data []byte) ([]byte, string) {
-	return DecodeToUTF8(data, "text/html")
+	return charset.DecodeToUTF8(data, "text/html")
 }
 
 type htmlWalkState struct {
@@ -135,7 +135,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		normalized, ok := s.resolveImage(src)
 		return normalized, nil, ok
 	}
-	if !isHTMLDataImageSource(src) {
+	if !media.IsHTMLDataImageSource(src) {
 		return "", nil, false
 	}
 	if s.mediaBudget == nil {
@@ -143,11 +143,11 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	}
 	// The reference-only path has no parser-side per-document budget, matching
 	// the PDF parser. The single-image ceiling is still enforced by
-	// normalizeHTMLImageSource. Inline formats keep the historical budget.
+	// media.NormalizeHTMLImageSource. Inline formats keep the historical budget.
 	if !s.refOnly && !s.mediaBudget.reserveItem() {
 		return "", nil, false
 	}
-	normalized, size, digest, ok := normalizeHTMLImageSource(src)
+	normalized, size, digest, ok := media.NormalizeHTMLImageSource(src)
 	if !ok {
 		return "", nil, false
 	}
@@ -156,7 +156,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	}
 	var ref *entity.MediaRef
 	if s.refOnly {
-		ref = newHTMLMediaRef(dataURIMediaType(normalized), size, digest)
+		ref = media.NewHTMLMediaRef(media.DataURIMediaType(normalized), size, digest)
 	}
 	return normalized, ref, true
 }
@@ -415,7 +415,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			if !ok {
 				if state.resolveImage != nil {
 					w.writeText(htmlAttribute(n, "alt"))
-				} else if isHTMLDataImageSource(src) {
+				} else if media.IsHTMLDataImageSource(src) {
 					state.skippedInlineImages++
 				}
 				return
@@ -523,7 +523,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 					if state.resolveImage != nil {
 						alt := htmlAttribute(node, "alt")
 						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
-					} else if isHTMLDataImageSource(src) {
+					} else if media.IsHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
 					}
@@ -579,53 +579,6 @@ func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string
 		item["column_index"] = column
 	}
 	*out = append(*out, item)
-}
-
-func normalizeHTMLImageSource(src string) (string, int64, [sha256.Size]byte, bool) {
-	var sum [sha256.Size]byte
-	src = strings.TrimSpace(src)
-	if !isHTMLDataImageSource(src) {
-		return "", 0, sum, false
-	}
-	separator := strings.IndexByte(src, ',')
-	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return "", 0, sum, false
-	}
-	payload, size, sum, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
-	if !ok {
-		return "", 0, sum, false
-	}
-	return strings.ToLower(src[:separator+1]) + payload, size, sum, true
-}
-
-// newHTMLMediaRef content-addresses one inline HTML image. The digest is the
-// lookup key the chunker uses to re-extract the image from the source
-// document, so a later walker change cannot shift the reference.
-func newHTMLMediaRef(mime string, size int64, digest [sha256.Size]byte) *entity.MediaRef {
-	return &entity.MediaRef{
-		Format: "html",
-		Kind:   entity.MediaKindDataURI,
-		SHA256: hex.EncodeToString(digest[:]),
-		MIME:   mime,
-		Size:   size,
-	}
-}
-
-// dataURIMediaType returns the media type of a normalized "data:<mime>;base64,"
-// URI.
-func dataURIMediaType(uri string) string {
-	colon := strings.IndexByte(uri, ':')
-	semi := strings.IndexByte(uri, ';')
-	if colon < 0 || semi <= colon+1 {
-		return ""
-	}
-	return strings.ToLower(uri[colon+1 : semi])
-}
-
-func isHTMLDataImageSource(src string) bool {
-	const dataPrefix = "data:image/"
-	src = strings.TrimSpace(src)
-	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
 }
 
 func htmlAttribute(n *html.Node, key string) string {

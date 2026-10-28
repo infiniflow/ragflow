@@ -25,11 +25,13 @@ import (
 	"sync"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	"ragflow/internal/parser/media"
 )
 
 const (
-	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
-	MaxImagePayloadBytes = 32 << 20
+	// MaxImagePayloadBytes is retained for callers outside the parser package;
+	// the canonical limit lives in parser/media.
+	MaxImagePayloadBytes = media.MaxImagePayloadBytes
 )
 
 // EnvImageRasterMaxBytes names the environment variable that sets the

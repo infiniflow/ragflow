@@ -22,6 +22,7 @@ import (
 
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+	medialib "ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 )
@@ -45,8 +46,8 @@ func TestTokenChunkerResolvesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
@@ -108,8 +109,8 @@ func TestTitleChunkerCarriesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
@@ -162,8 +163,8 @@ func TestGeneralChunkerCarriesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
@@ -221,11 +222,11 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 		"media_ref":    map[string]any{"format": "html"},
 	}
 	up := func(context.Context, string, string, []byte) (string, error) { return "", nil }
-	src := parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
+	src := medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 		t.Fatal("resolver must not run for an invalid reference")
 		return nil, nil
 	})
-	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, parserlib.NewMediaResolver(), src); err == nil {
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewMediaResolver(), src); err == nil {
 		t.Fatal("invalid media_ref was treated as absent")
 	}
 }
@@ -281,8 +282,8 @@ func TestImageUploadDecorator_ResolvesSelfClosingImage(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
@@ -332,8 +333,8 @@ func TestQAChunkerCarriesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 

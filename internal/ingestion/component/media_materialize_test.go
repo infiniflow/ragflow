@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/media"
 )
 
 func TestEncodeMediaDataURIRoundTrip(t *testing.T) {
@@ -42,8 +42,8 @@ func TestEncodeMediaDataURIRoundTrip(t *testing.T) {
 
 func TestMaterializeMediaItemRejectsInvalidMediaRef(t *testing.T) {
 	m := map[string]any{"media_ref": map[string]any{"format": "html"}}
-	src := parser.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-	if err := MaterializeMediaItem(context.Background(), m, parser.NewMediaResolver(), src); err == nil {
+	src := media.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+	if err := MaterializeMediaItem(context.Background(), m, media.NewMediaResolver(), src); err == nil {
 		t.Fatal("a present but unusable media_ref was treated as absent")
 	}
 }
@@ -53,8 +53,8 @@ func TestMaterializeMediaItemTreatsAbsentMediaRefAsNoop(t *testing.T) {
 	zero := &entity.MediaRef{}
 	for _, value := range []any{nil, "", map[string]any{}, nilRef, zero, entity.MediaRef{}} {
 		m := map[string]any{"media_ref": value}
-		src := parser.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-		if err := MaterializeMediaItem(context.Background(), m, parser.NewMediaResolver(), src); err != nil {
+		src := media.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
+		if err := MaterializeMediaItem(context.Background(), m, media.NewMediaResolver(), src); err != nil {
 			t.Errorf("media_ref %#v: %v", value, err)
 		}
 	}

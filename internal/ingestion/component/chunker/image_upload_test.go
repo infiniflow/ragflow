@@ -35,6 +35,7 @@ import (
 	parserlib "ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
+	medialib "ragflow/internal/parser/media"
 )
 
 const (
@@ -59,8 +60,8 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 				source := []byte(`<img alt="caption" src="` + uri + `">`)
 				parsed = parserlib.NewHTMLParser().ParseWithResult(t.Context(), "image.html", source)
 				prevSource := chunkMediaSourceFactory
-				chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-					return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
+				chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+					return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
 				}
 				t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 			} else {
@@ -508,8 +509,8 @@ func TestImageUploadDecorator_ResolvesMediaRef(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = prevUploader })
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	}
 	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
 
@@ -559,9 +560,9 @@ func TestImageUploadDecoratorDropsUnresolvedCaptionlessImage(t *testing.T) {
 	}
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
 		// Readable source, but the referenced image is absent.
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return []byte("<p>no image here</p>"), nil
 		})
 	}
@@ -597,8 +598,8 @@ func TestImageUploadDecoratorFailsOnSourceError(t *testing.T) {
 	}
 
 	prevSource := chunkMediaSourceFactory
-	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) parserlib.MediaSource {
-		return parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 			return nil, context.DeadlineExceeded
 		})
 	}
@@ -635,7 +636,7 @@ func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 		"image":        "data:image/png;base64," + pngBase64,
 		"media_ref":    ref,
 	}
-	src := parserlib.MediaSourceFunc(func(context.Context) ([]byte, error) {
+	src := medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
 		t.Fatal("materialization must not read the source when img_id exists")
 		return nil, nil
 	})
@@ -643,7 +644,7 @@ func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 		t.Fatal("upload must not run when img_id exists")
 		return "", nil
 	}
-	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, parserlib.NewMediaResolver(), src)
+	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewMediaResolver(), src)
 	if err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}

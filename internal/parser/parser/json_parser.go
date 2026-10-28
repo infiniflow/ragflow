@@ -37,6 +37,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"ragflow/internal/parser/charset"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func (p *JSONParser) String() string {
 // shape (array, single object, or line-delimited) and emits one JSON
 // item per logical record, with {text, doc_type_kwd:"text"}.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	decoded, encName := DecodeToUTF8(data, "application/json")
+	decoded, encName := charset.DecodeToUTF8(data, "application/json")
 	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{

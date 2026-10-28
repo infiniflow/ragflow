@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"ragflow/internal/parser/charset"
 )
 
 // EPUBParser extracts text from EPUB archives.
@@ -222,7 +223,7 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 			continue
 		}
 		read++
-		decoded, enc := DecodeToUTF8(raw, "application/xhtml+xml")
+		decoded, enc := charset.DecodeToUTF8(raw, "application/xhtml+xml")
 		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
 			detectedEncoding = enc
 		}

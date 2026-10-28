@@ -38,7 +38,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/media"
 )
 
 // imageUploadSem caps concurrent object-storage uploads process-wide. Default
@@ -81,7 +81,7 @@ func imageUploadConcurrency() int {
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
-func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver parser.MediaResolver, src parser.MediaSource) ([]map[string]any, error) {
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver media.MediaResolver, src media.MediaSource) ([]map[string]any, error) {
 	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
 		imgID, _ := ck["img_id"].(string)
@@ -93,7 +93,7 @@ func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			if !errors.Is(err, parser.ErrMediaNotFound) {
+			if !errors.Is(err, media.ErrMediaNotFound) {
 				return nil, err
 			}
 			chunkID, _ := ck["id"].(string)
@@ -184,15 +184,15 @@ func resolveImageUploadContext(ctx context.Context, inputs map[string]any) (kbID
 
 // chunkMediaSourceFactory resolves the source document for deferred media_refs.
 // Tests override it with an in-memory source.
-var chunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) parser.MediaSource {
+var chunkMediaSourceFactory = func(db *gorm.DB, inputs map[string]any) media.MediaSource {
 	return chunkMediaSource(db, inputs)
 }
 
 // chunkMediaSource re-acquires the source document for a deferred media_ref.
 // It prefers the explicit bucket/path pair the Parser forwards and falls back
 // to resolving the same reference from doc_id.
-func chunkMediaSource(db *gorm.DB, inputs map[string]any) parser.MediaSource {
-	return parser.MediaSourceFunc(func(ctx context.Context) ([]byte, error) {
+func chunkMediaSource(db *gorm.DB, inputs map[string]any) media.MediaSource {
+	return media.MediaSourceFunc(func(ctx context.Context) ([]byte, error) {
 		bucket := globals.GlobalOrInput(ctx, inputs, "bucket", "")
 		path := globals.GlobalOrInput(ctx, inputs, "path", "")
 		if bucket != "" && path != "" {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 )
 
 func TestParsersNormalizeInlineImagePayload(t *testing.T) {
@@ -59,7 +60,7 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 						if ref == nil {
 							continue
 						}
-						data, err := NewMediaResolver().Resolve(context.Background(), *ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+						data, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
 							return source, nil
 						}))
 						if err != nil {
@@ -87,33 +88,5 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
-	for _, tc := range []struct {
-		name, payload string
-		limit         int
-		want          string
-		wantSize      int64
-	}{
-		{"negative_limit", "YQ", -1, "", 0},
-		{"zero_limit", "YQ", 0, "", 0},
-		{"exact_limit_padded", "YWI=", 2, "YWI=", 2},
-		{"exact_limit_unpadded", "YWI", 2, "YWI=", 2},
-		{"exact_limit_wrapped", "YW\r\nI", 2, "YWI=", 2},
-		{"over_limit_padded", "YWI=", 1, "", 0},
-		{"over_limit_unpadded", "YWI", 1, "", 0},
-		{"over_encoded_limit", "YWJjZA==", 2, "", 0},
-		{"data_after_padding", "G0==JbjQ", 16, "", 0},
-		{"data_after_padding_long", "aMRFPqfZALtY6rw50P==Pn5d", 16, "", 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, size, _, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
-			if got != tc.want || ok != (tc.want != "") || size != tc.wantSize {
-				t.Errorf("normalizeBase64ImagePayload(%q, %d) = (%q, %d, %v), want (%q, %d, %v)",
-					tc.payload, tc.limit, got, size, ok, tc.want, tc.wantSize, tc.want != "")
-			}
-		})
 	}
 }
