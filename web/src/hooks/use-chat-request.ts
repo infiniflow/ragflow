@@ -39,7 +39,7 @@ import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { has } from 'lodash';
-import { useCallback, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import {
@@ -47,6 +47,7 @@ import {
   useHandleSearchChange,
 } from './logic-hooks';
 import { useHandleSearchStrChange } from './logic-hooks/use-change-search';
+import { useSessionList } from './use-session-list';
 
 export const enum ChatApiAction {
   FetchChatList = 'fetchChatList',
@@ -74,6 +75,11 @@ export const AgenticRagKeys = {
   all: ['agenticRag'] as const,
   config: (chatId?: string) =>
     [...AgenticRagKeys.all, 'config', chatId] as const,
+};
+
+export const ChatSessionKeys = {
+  all: [ChatApiAction.FetchSessionList] as const,
+  list: (chatId?: string) => [...ChatSessionKeys.all, chatId] as const,
 };
 
 export const useGetChatSearchParams = () => {
@@ -323,34 +329,29 @@ export const useFetchSessionList = () => {
   const { searchString, handleInputChange, setSearchString } =
     useHandleSearchStrChange();
 
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery<IConversation[]>({
-    queryKey: [ChatApiAction.FetchSessionList, id],
-    initialData: [],
-    gcTime: 0,
-    refetchOnWindowFocus: false,
+  const result = useSessionList<IConversation>({
+    queryKey: ChatSessionKeys.list(id),
     enabled: !!id,
-    select(data) {
-      return searchString
-        ? data.filter((x) => x.name.includes(searchString))
-        : data;
-    },
-    queryFn: async () => {
+    fetchPage: async (params) => {
       const { data } = await chatService.listSessions(
-        { url: api.listSessions(id!) },
+        { chatId: id, params: { ...params, include_history: false } },
         true,
       );
-      return data?.data;
+      return { items: data?.data ?? [], total: data?.total ?? 0 };
     },
   });
 
+  const data = useMemo(
+    () =>
+      searchString
+        ? result.data.filter((session) => session.name.includes(searchString))
+        : result.data,
+    [result.data, searchString],
+  );
+
   return {
+    ...result,
     data,
-    loading,
-    refetch,
     searchString,
     handleInputChange,
     setSearchString,
@@ -397,7 +398,7 @@ export const useCreateSession = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
       }
       return data;
@@ -431,7 +432,7 @@ export const useUpdateSession = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
         message.success(t(`message.modified`));
       }
@@ -459,7 +460,7 @@ export const useRemoveSessions = () => {
       );
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [ChatApiAction.FetchSessionList],
+          queryKey: ChatSessionKeys.all,
         });
       }
       return data.code;

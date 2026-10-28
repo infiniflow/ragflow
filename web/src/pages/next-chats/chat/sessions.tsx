@@ -21,6 +21,7 @@ import {
 import {
   LucideCopyX,
   LucideListChecks,
+  LucideLoader2,
   LucidePanelLeftClose,
   LucidePlus,
   LucideSend,
@@ -44,10 +45,13 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
+    total,
     addTemporaryConversation,
     removeTemporaryConversation,
     handleInputChange,
     searchString,
+    loadingMore,
+    handleScroll,
   } = useSelectDerivedConversationList();
   const { data } = useFetchChat();
   const { visible, switchVisible } = useSetModalState(true);
@@ -244,11 +248,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
       <div className="flex justify-between items-center mb-4 pt-10">
         <div className="flex items-center gap-3">
           <span className="text-base font-bold">{t('chat.conversations')}</span>
-          <data
-            className="text-text-secondary text-xs"
-            value={conversationList.length}
-          >
-            {conversationList.length}
+          <data className="text-text-secondary text-xs" value={total}>
+            {total}
           </data>
         </div>
 
@@ -322,7 +323,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         ></SearchInput>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" onScroll={handleScroll}>
         {selectionMode ? (
           <ul className="space-y-2" role="listbox" aria-multiselectable>
             {conversationList.map((x) => (
@@ -381,6 +382,13 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               ))}
             </ul>
           </nav>
+        )}
+        {loadingMore && (
+          <LucideLoader2
+            className="mx-auto size-4 animate-spin"
+            role="status"
+            aria-label={t('common.loading')}
+          />
         )}
       </div>
     </aside>

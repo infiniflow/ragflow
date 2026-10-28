@@ -38,6 +38,10 @@ func (emptyChatSessionScopeChecker) Scope(context.Context, permission.Subject, p
 	return permission.Scope{Mode: permission.ScopeNone}, nil
 }
 
+func (c emptyChatSessionScopeChecker) FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error) {
+	return nil, c.checkErr
+}
+
 // ---------------------------------------------------------------------------
 // CreateSession contract — mirrors the assertions in
 // test_session_create_validation_and_deleted_chat_contract that exercise the
