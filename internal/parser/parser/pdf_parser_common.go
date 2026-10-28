@@ -120,7 +120,7 @@ func NewPDFParser() *PDFParser {
 		ParseMethod:                    "deepdoc",
 		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		OpenDataLoaderTimeout:          600,
+		OpenDataLoaderTimeout:          openDataLoaderTimeoutSeconds,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
