@@ -351,7 +351,7 @@ Perplexity searches the web through the Perplexity Search API and returns ranked
 | search_recency_filter | string | No | any | Limit results by publication time: `hour`, `day`, `week`, `month`, `year`, or `any`. The Agent can override the node value. |
 | search_domain_filter | string | No | Empty | Up to 20 domains, comma separated. Use one mode per request: either only the domains to search, or only the domains to exclude with a `-` prefix. Mixing the two is rejected. |
 | country | string | No | Empty | ISO 3166-1 alpha-2 country code, such as `US`, to prefer results from that country. |
-| top_n | integer | No | 10 | Maximum number of results, from 1 to 20. The Agent can request fewer with `max_results`. |
+| top_n | integer | No | 10 | Default number of results, from 1 to 20 (default 10). The model can override it with max_results, clamped to 1 to 20. |
 
 #### Supported Parameter Values
 

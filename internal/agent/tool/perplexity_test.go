@@ -498,3 +498,33 @@ func TestBuildPerplexityTool_Params(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildPerplexityTool_CanvasFixtureParams builds the same params the
+// PerplexitySearch component fixture in
+// internal/agent/component/tool_component_test.go uses, including the
+// "outputs" key the Canvas factory forwards, so the two fixtures cannot drift.
+func TestBuildPerplexityTool_CanvasFixtureParams(t *testing.T) {
+	t.Parallel()
+	built, err := buildPerplexityTool(map[string]any{
+		"api_key":               "stored-key",
+		"search_type":           "fast",
+		"search_recency_filter": "week",
+		"search_domain_filter":  "ragflow.io, docs.perplexity.ai",
+		"country":               "us",
+		"top_n":                 float64(3),
+		"outputs":               map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("buildPerplexityTool: %v", err)
+	}
+	tool, ok := built.(*PerplexityTool)
+	if !ok {
+		t.Fatalf("built %T, want *PerplexityTool", built)
+	}
+	if tool.defaults.TopN != 3 || tool.defaults.Country != "US" {
+		t.Errorf("defaults = %#v", tool.defaults)
+	}
+	if got := tool.defaults.SearchDomainFilter; len(got) != 2 || got[0] != "ragflow.io" || got[1] != "docs.perplexity.ai" {
+		t.Errorf("domain filter = %v", got)
+	}
+}

@@ -217,7 +217,7 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 		{
 			name:      "PerplexitySearch",
 			toolName:  "PerplexitySearch",
-			params:    map[string]any{"api_key": "stored-key", "search_type": "fast", "search_recency_filter": "week", "search_domain_filter": "ragflow.io, -example.com", "country": "us", "top_n": float64(3), "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
+			params:    map[string]any{"api_key": "stored-key", "search_type": "fast", "search_recency_filter": "week", "search_domain_filter": "ragflow.io, docs.perplexity.ai", "country": "us", "top_n": float64(3), "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
 			outputKey: "json",
 			inputKey:  "query",
 		},

@@ -107,7 +107,8 @@ const ApiKeyRequiredOperators: string[] = [
 ];
 
 // Perplexity is also reachable under its backend registry name and canvas
-// alias (`perplexity`, `perplexitysearch`, `perplexity_search`), so match the
+// alias (`perplexity`, `perplexitysearch`, `perplexity_search`), and the
+// backend trims component names before resolving them, so match the trimmed,
 // normalized spelling rather than the canonical operator alone.
 function isApiKeyRequiredOperator(value: unknown): boolean {
   if (typeof value !== 'string') {
@@ -117,8 +118,25 @@ function isApiKeyRequiredOperator(value: unknown): boolean {
     return true;
   }
   return ['perplexity', 'perplexitysearch'].includes(
-    value.replace(/_/g, '').toLowerCase(),
+    value.trim().replace(/_/g, '').toLowerCase(),
   );
+}
+
+// Mirrors agentToolObject on the backend: an embedded tool record is named by
+// component_name, then tool_name, then name, and a blank value falls through
+// to the next field.
+function embeddedToolName(tool: unknown): string | undefined {
+  if (!tool || typeof tool !== 'object') {
+    return undefined;
+  }
+  const record = tool as Record<string, unknown>;
+  for (const field of ['component_name', 'tool_name', 'name']) {
+    const candidate = record[field];
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return undefined;
 }
 
 function collectStrings(value: unknown): string[] {
@@ -777,7 +795,7 @@ export function collectCanvasIssues({
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
           const isRetrieval = tool?.component_name === Operator.Retrieval;
-          const needsApiKey = isApiKeyRequiredOperator(tool?.component_name);
+          const needsApiKey = isApiKeyRequiredOperator(embeddedToolName(tool));
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool

@@ -842,6 +842,8 @@ describe('collectCanvasIssues: required tool API key', () => {
     ['perplexitysearch', 'PerplexitySearch:p2'],
     ['perplexity', 'PerplexitySearch:p3'],
     ['perplexity_search', 'PerplexitySearch:p4'],
+    [' PerplexitySearch ', 'PerplexitySearch:p5'],
+    [' perplexity ', 'PerplexitySearch:p6'],
   ])('flags a standalone %s node without an API key', (label, id) => {
     const issues = collect({
       nodes: [makeNode(id, label, { api_key: '' })],
@@ -922,7 +924,13 @@ describe('collectCanvasIssues: required tool API key', () => {
     );
   });
 
-  it.each([['perplexity'], ['perplexity_search'], ['PerplexitySearch']])(
+  it.each([
+    ['perplexity'],
+    ['perplexity_search'],
+    ['PerplexitySearch'],
+    [' PerplexitySearch '],
+    [' perplexity '],
+  ])(
     'flags an agent-embedded %s tool without an API key on the Tool node',
     (componentName) => {
       const agent = makeNode('Agent:a1', 'Agent', {
@@ -953,6 +961,64 @@ describe('collectCanvasIssues: required tool API key', () => {
       );
     },
   );
+
+  it.each([
+    ['tool_name', { tool_name: 'PerplexitySearch' }],
+    ['name', { name: ' perplexity ' }],
+    [
+      'blank component_name then tool_name',
+      { component_name: '', tool_name: 'perplexity_search' },
+    ],
+    [
+      'blank component_name and tool_name then name',
+      { component_name: ' ', tool_name: '', name: 'perplexitysearch' },
+    ],
+  ])(
+    'flags an agent-embedded Perplexity tool named through %s without an API key',
+    (_label, discriminator) => {
+      const agent = makeNode('Agent:a1', 'Agent', {
+        llm_id: 'model-1',
+        tools: [{ ...discriminator, id: 'tool-4', params: { api_key: '' } }],
+      });
+
+      const issues = collect({
+        nodes: [agent, makeNode('Tool:t1', 'Tool')],
+        edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+      });
+
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          nodeId: 'Tool:t1',
+          toolId: 'tool-4',
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.apiKeyMissing',
+        }),
+      );
+    },
+  );
+
+  it('does not flag a tool whose component_name is another tool even if name says Perplexity', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'TavilySearch',
+          name: 'perplexity',
+          id: 'tool-5',
+          params: { api_key: '' },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).not.toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.apiKeyMissing' }),
+    );
+  });
 
   it('passes an agent-embedded tool with an API key and skips other tools', () => {
     const agent = makeNode('Agent:a1', 'Agent', {
