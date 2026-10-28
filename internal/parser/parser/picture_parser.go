@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"ragflow/internal/parser/media"
 )
 
 // imageExtensions mirrors Python's visual extensions used in
@@ -69,8 +71,8 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 			Err: fmt.Errorf("picture: unsupported extension %q (filename: %s); accepted: .jpg/.jpeg/.png/.gif/.bmp/.tiff/.tif/.webp/.svg/.ico/.avif/.heic/...", ext, filename),
 		}
 	}
-	if len(data) == 0 || len(data) > MaxImagePayloadBytes {
-		return ParseResult{Err: fmt.Errorf("picture: image payload size %d is outside the %d-byte limit", len(data), MaxImagePayloadBytes)}
+	if len(data) == 0 || len(data) > media.MaxImagePayloadBytes {
+		return ParseResult{Err: fmt.Errorf("picture: image payload size %d is outside the %d-byte limit", len(data), media.MaxImagePayloadBytes)}
 	}
 
 	release, err := AcquireImageMedia(ctx)
