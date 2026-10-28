@@ -210,14 +210,28 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, d
 	return rowsAffected, err
 }
 
-func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string) ([]map[string]interface{}, error) {
+func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string, page, pageSize int) (int64, []map[string]interface{}, error) {
+	query := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
 	var rows []map[string]interface{}
-	err := db.WithContext(ctx).Model(&entity.API4Conversation{}).
+	err := query.
 		Select("id", "name").
-		Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID).
-		Order("create_date DESC").
+		Order("create_date DESC, id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
 		Find(&rows).Error
-	return rows, err
+	return total, rows, err
 }
 
 func normalizeAgentSessionOrderBy(orderBy string) string {
