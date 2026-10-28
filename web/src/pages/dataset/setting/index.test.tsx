@@ -177,7 +177,21 @@ it('saves before prompting, including existing files without chunks, and default
 
   await act(async () => finishSave({ code: 0 }));
   await screen.findByRole('alertdialog');
+  expect(
+    Array.from(screen.getByRole('alertdialog').querySelectorAll('button')),
+  ).toEqual([
+    screen.getByRole('button', { name: 'common.yes' }),
+    screen.getByRole('button', { name: 'common.no' }),
+  ]);
   expect(screen.getByRole('button', { name: 'common.no' })).toHaveFocus();
+  expect(screen.getByRole('button', { name: 'common.no' })).toHaveClass(
+    'bg-text-primary',
+    'text-bg-base',
+  );
+  expect(screen.getByRole('button', { name: 'common.yes' })).toHaveClass(
+    'bg-bg-input',
+    'text-text-secondary',
+  );
   fireEvent.click(screen.getByRole('button', { name: 'common.no' }));
   await waitFor(() =>
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument(),

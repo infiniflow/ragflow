@@ -7,7 +7,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ButtonLoading } from '@/components/ui/button';
+import { ButtonLoading, buttonVariants } from '@/components/ui/button';
 import message from '@/components/ui/message';
 import { useApplyDatasetParserConfig } from '@/hooks/use-apply-dataset-parser-config';
 import { useTranslation } from 'react-i18next';
@@ -61,17 +61,21 @@ export function ApplyParserConfigDialog({
           </p>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isPending}>
-            {t('common.no')}
-          </AlertDialogCancel>
           <ButtonLoading
             type="button"
+            variant="outline"
             loading={isPending}
             disabled={isPending}
             onClick={handleApply}
           >
             {t('common.yes')}
           </ButtonLoading>
+          <AlertDialogCancel
+            className={buttonVariants({ variant: 'default' })}
+            disabled={isPending}
+          >
+            {t('common.no')}
+          </AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
