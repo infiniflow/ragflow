@@ -264,13 +264,13 @@ func (r *Resolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]
 	if err := ctx.Err(); err != nil {
 		return nil, [32]byte{}, false, err
 	}
-	normalized, _, sum, ok := NormalizeHTMLImageSource(src)
+	_, payload, ok := splitHTMLImageSource(src)
 	if !ok {
 		return nil, [32]byte{}, false, errors.New("media: fallback image is not a data URI")
 	}
-	data, err := decodeNormalizedMediaURI(normalized)
-	if err != nil {
-		return nil, [32]byte{}, false, err
+	data, sum, ok := decodeBase64ImagePayload(payload, MaxImagePayloadBytes)
+	if !ok {
+		return nil, [32]byte{}, false, errors.New("media: fallback image is invalid")
 	}
 	return data, sum, true, nil
 }

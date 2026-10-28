@@ -18,10 +18,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -125,8 +123,8 @@ func htmlDataURIRef(src []byte) (entity.MediaRef, bool) {
 }
 
 // decodeHTMLImagePayload re-tokenizes one <img ...> start tag and decodes its
-// src payload. The returned digest lets callers verify the payload against the
-// reference without hashing it twice.
+// src payload. The payload is decoded once and hashed from the same bytes, so
+// materialization does not pay a separate streaming decode for the digest.
 func decodeHTMLImagePayload(tag []byte) ([]byte, [sha256.Size]byte, error) {
 	var sum [sha256.Size]byte
 	tokenizer := html.NewTokenizer(bytes.NewReader(tag))
@@ -137,46 +135,43 @@ func decodeHTMLImagePayload(tag []byte) ([]byte, [sha256.Size]byte, error) {
 	if !ok {
 		return nil, sum, errors.New("html media: span has no src attribute")
 	}
-	normalized, _, sum, ok := NormalizeHTMLImageSource(string(src))
+	_, payload, ok := splitHTMLImageSource(string(src))
 	if !ok {
 		return nil, sum, errors.New("html media: invalid image payload")
 	}
-	data, err := decodeNormalizedMediaURI(normalized)
-	if err != nil {
-		return nil, sum, err
+	data, sum, ok := decodeBase64ImagePayload(payload, MaxImagePayloadBytes)
+	if !ok {
+		return nil, sum, errors.New("html media: invalid image payload")
 	}
 	return data, sum, nil
 }
 
-// decodeNormalizedMediaURI decodes the payload of a normalized
-// "data:<mime>;base64,..." URI.
-func decodeNormalizedMediaURI(normalized string) ([]byte, error) {
-	separator := strings.IndexByte(normalized, ',')
-	if separator < 0 {
-		return nil, errors.New("html media: malformed data URI")
+// splitHTMLImageSource validates the data-URI header and returns the
+// normalized prefix and base64 payload. Both the index and decode paths use
+// it so they accept exactly the same src values.
+func splitHTMLImageSource(src string) (prefix, payload string, ok bool) {
+	src = strings.TrimSpace(src)
+	if !IsHTMLDataImageSource(src) {
+		return "", "", false
 	}
-	data, err := base64.StdEncoding.DecodeString(normalized[separator+1:])
-	if err != nil {
-		return nil, fmt.Errorf("html media: decode payload: %w", err)
+	separator := strings.IndexByte(src, ',')
+	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
+		return "", "", false
 	}
-	return data, nil
+	return strings.ToLower(src[:separator+1]), src[separator+1:], true
 }
 
 func NormalizeHTMLImageSource(src string) (string, int64, [sha256.Size]byte, bool) {
 	var sum [sha256.Size]byte
-	src = strings.TrimSpace(src)
-	if !IsHTMLDataImageSource(src) {
-		return "", 0, sum, false
-	}
-	separator := strings.IndexByte(src, ',')
-	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return "", 0, sum, false
-	}
-	payload, size, sum, ok := NormalizeBase64ImagePayload(src[separator+1:], MaxImagePayloadBytes)
+	prefix, payload, ok := splitHTMLImageSource(src)
 	if !ok {
 		return "", 0, sum, false
 	}
-	return strings.ToLower(src[:separator+1]) + payload, size, sum, true
+	normalized, size, sum, ok := NormalizeBase64ImagePayload(payload, MaxImagePayloadBytes)
+	if !ok {
+		return "", 0, sum, false
+	}
+	return prefix + normalized, size, sum, true
 }
 
 // newHTMLMediaRef content-addresses one inline HTML image. The digest is the

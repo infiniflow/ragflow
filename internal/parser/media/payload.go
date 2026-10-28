@@ -33,21 +33,13 @@ const (
 // NormalizeBase64ImagePayload validates an external image payload within its
 // decoded byte limit and returns standard base64 with padding, no CR/LF, the
 // decoded byte count, and the digest of the decoded bytes. Validation streams
-// the payload instead of retaining a decoded image buffer; the digest is
-// computed from the same stream so callers do not decode twice.
+// the payload instead of retaining a decoded image buffer, so the parser's
+// index path can hash every image without holding the decoded bytes.
 func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, int64, [sha256.Size]byte, bool) {
 	var sum [sha256.Size]byte
-	if maxDecodedBytes < 0 {
-		return "", 0, sum, false
-	}
-	encodedBytes, ok := scanBase64ImagePayload(payload, base64.StdEncoding.EncodedLen(maxDecodedBytes))
+	payload, ok := cleanBase64ImagePayload(payload, maxDecodedBytes)
 	if !ok {
 		return "", 0, sum, false
-	}
-	payload = strings.ReplaceAll(payload, "\r", "")
-	payload = strings.ReplaceAll(payload, "\n", "")
-	if remainder := encodedBytes % 4; remainder != 0 {
-		payload += strings.Repeat("=", 4-remainder)
 	}
 	decoder := base64.NewDecoder(base64.StdEncoding, strings.NewReader(payload))
 	hasher := sha256.New()
@@ -65,6 +57,42 @@ func NormalizeBase64ImagePayload(payload string, maxDecodedBytes int) (string, i
 	}
 	copy(sum[:], hasher.Sum(nil))
 	return payload, decodedBytes, sum, true
+}
+
+// decodeBase64ImagePayload validates and decodes one payload in a single
+// pass, for callers that need the bytes anyway. The parser's index path keeps
+// using NormalizeBase64ImagePayload so it never retains every decoded image.
+func decodeBase64ImagePayload(payload string, maxDecodedBytes int) ([]byte, [sha256.Size]byte, bool) {
+	var sum [sha256.Size]byte
+	payload, ok := cleanBase64ImagePayload(payload, maxDecodedBytes)
+	if !ok {
+		return nil, sum, false
+	}
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil || len(data) == 0 || len(data) > maxDecodedBytes {
+		return nil, sum, false
+	}
+	sum = sha256.Sum256(data)
+	return data, sum, true
+}
+
+// cleanBase64ImagePayload applies the shared length/padding validation and
+// returns the payload in the form both the streaming and one-shot decoders
+// accept.
+func cleanBase64ImagePayload(payload string, maxDecodedBytes int) (string, bool) {
+	if maxDecodedBytes < 0 {
+		return "", false
+	}
+	encodedBytes, ok := scanBase64ImagePayload(payload, base64.StdEncoding.EncodedLen(maxDecodedBytes))
+	if !ok {
+		return "", false
+	}
+	payload = strings.ReplaceAll(payload, "\r", "")
+	payload = strings.ReplaceAll(payload, "\n", "")
+	if remainder := encodedBytes % 4; remainder != 0 {
+		payload += strings.Repeat("=", 4-remainder)
+	}
+	return payload, true
 }
 
 // scanBase64ImagePayload counts the base64 characters of an image payload

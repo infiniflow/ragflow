@@ -14,7 +14,11 @@
 
 package media
 
-import "testing"
+import (
+	"bytes"
+	"encoding/base64"
+	"testing"
+)
 
 func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
 	for _, tc := range []struct {
@@ -41,5 +45,35 @@ func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
 					tc.payload, tc.limit, got, size, ok, tc.want, tc.wantSize, tc.want != "")
 			}
 		})
+	}
+}
+
+func TestDecodeBase64ImagePayloadMatchesNormalize(t *testing.T) {
+	for _, payload := range []string{
+		"YQ==", "YQ", "YWJj", "YW\r\nJj", "YWI=",
+		"", "Y?==", "YQ=", "YQ===", "Y=Q=", "Y", "G0==JbjQ",
+	} {
+		normalized, size, wantSum, ok := NormalizeBase64ImagePayload(payload, 16)
+		data, gotSum, decodeOK := decodeBase64ImagePayload(payload, 16)
+		if ok != decodeOK {
+			t.Errorf("payload %q: normalize ok=%v, decode ok=%v", payload, ok, decodeOK)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		want, err := base64.StdEncoding.DecodeString(normalized)
+		if err != nil {
+			t.Fatalf("normalized payload %q does not decode: %v", normalized, err)
+		}
+		if !bytes.Equal(data, want) {
+			t.Errorf("payload %q: decoded %q, want %q", payload, data, want)
+		}
+		if int64(len(data)) != size {
+			t.Errorf("payload %q: size = %d, want %d", payload, len(data), size)
+		}
+		if gotSum != wantSum {
+			t.Errorf("payload %q: digest mismatch", payload)
+		}
 	}
 }
