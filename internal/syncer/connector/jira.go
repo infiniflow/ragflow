@@ -238,7 +238,7 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 		clauses = append(clauses, fmt.Sprintf("updated >= %q", c.formatJQLTime(adjusted)))
 	}
 	if !end.IsZero() {
-		clauses = append(clauses, fmt.Sprintf("updated <= %q", c.formatJQLTime(end)))
+		clauses = append(clauses, fmt.Sprintf("updated < %q", c.formatJQLTime(end.Add(time.Minute))))
 	}
 	jql := strings.Join(clauses, " AND ")
 	if orderBy == "" {
@@ -636,6 +636,9 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			}
 			updatedAt := issue.Fields.Updated.Time()
 			if s.windowStart != nil && !s.fromBeginning && !updatedAt.IsZero() && !updatedAt.After(*s.windowStart) {
+				continue
+			}
+			if !s.windowEnd.IsZero() && !updatedAt.IsZero() && updatedAt.After(s.windowEnd) {
 				continue
 			}
 			doc, ok := s.connector.issueDocument(issue)
