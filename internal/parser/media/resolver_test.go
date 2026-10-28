@@ -46,9 +46,9 @@ func TestMediaResolverResolvesHTMLDataURI(t *testing.T) {
 		return []byte(html), nil
 	})
 
-	resolver := NewMediaResolver()
+	resolver := NewResolver(src)
 	for i := 0; i < 2; i++ {
-		data, err := resolver.Resolve(context.Background(), ref, src)
+		data, err := resolver.Resolve(context.Background(), ref)
 		if err != nil {
 			t.Fatalf("Resolve: %v", err)
 		}
@@ -64,9 +64,9 @@ func TestMediaResolverResolvesHTMLDataURI(t *testing.T) {
 func TestMediaResolverRejectsUnknownDigest(t *testing.T) {
 	html, ref := mediaRefFixture(t)
 	ref.SHA256 = strings.Repeat("0", 64)
-	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+	_, err := NewResolver(MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(html), nil
-	}))
+	})).Resolve(context.Background(), ref)
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("err = %v, want not found", err)
 	}
@@ -76,7 +76,7 @@ func TestMediaResolverRejectsUnsupportedReference(t *testing.T) {
 	html, ref := mediaRefFixture(t)
 	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
 	ref.Kind = "zip-entry"
-	if _, err := NewMediaResolver().Resolve(context.Background(), ref, src); err == nil {
+	if _, err := NewResolver(src).Resolve(context.Background(), ref); err == nil {
 		t.Fatal("unsupported kind resolved without an error")
 	}
 }
@@ -86,7 +86,7 @@ func TestMediaResolverReportsSourceFailure(t *testing.T) {
 	src := MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return nil, context.DeadlineExceeded
 	})
-	if _, err := NewMediaResolver().Resolve(context.Background(), ref, src); err == nil {
+	if _, err := NewResolver(src).Resolve(context.Background(), ref); err == nil {
 		t.Fatal("source failure was ignored")
 	}
 }
@@ -101,10 +101,10 @@ func TestMediaRefDigestIsStable(t *testing.T) {
 
 func TestMediaResolverRejectsOversizedReference(t *testing.T) {
 	_, ref := mediaRefFixture(t)
-	ref.Size = maxMediaImageBytes + 1
-	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+	ref.Size = MaxImagePayloadBytes + 1
+	_, err := NewResolver(MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte("<p>no image needed before the size check</p>"), nil
-	}))
+	})).Resolve(context.Background(), ref)
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("err = %v, want size rejection", err)
 	}
@@ -113,9 +113,9 @@ func TestMediaResolverRejectsOversizedReference(t *testing.T) {
 func TestMediaResolverRejectsSizeMismatch(t *testing.T) {
 	html, ref := mediaRefFixture(t)
 	ref.Size = 4
-	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+	_, err := NewResolver(MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(html), nil
-	}))
+	})).Resolve(context.Background(), ref)
 	if err == nil || !strings.Contains(err.Error(), "size mismatch") {
 		t.Fatalf("err = %v, want size mismatch", err)
 	}
@@ -139,9 +139,9 @@ func TestMediaResolverFindsImageAfterSpanCap(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture ref was rejected")
 	}
-	data, err := NewMediaResolver().Resolve(context.Background(), want, MediaSourceFunc(func(context.Context) ([]byte, error) {
+	data, err := NewResolver(MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return input, nil
-	}))
+	})).Resolve(context.Background(), want)
 	if err != nil || string(data) != "hello>" {
 		t.Fatalf("resolved = %q, %v", data, err)
 	}
@@ -156,9 +156,9 @@ func TestMediaResolverReportsTruncatedMissingImage(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture ref was rejected")
 	}
-	_, err := NewMediaResolver().Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
+	_, err := NewResolver(MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(input), nil
-	}))
+	})).Resolve(context.Background(), ref)
 	if err == nil || !strings.Contains(err.Error(), "truncated") {
 		t.Fatalf("err = %v, want a truncation error", err)
 	}
@@ -170,13 +170,13 @@ func TestMediaResolverReportsTruncatedMissingImage(t *testing.T) {
 func TestMediaResolverHonorsCancelledContextOnCacheHit(t *testing.T) {
 	html, ref := mediaRefFixture(t)
 	src := MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
-	resolver := NewMediaResolver()
-	if _, err := resolver.Resolve(context.Background(), ref, src); err != nil {
+	resolver := NewResolver(src)
+	if _, err := resolver.Resolve(context.Background(), ref); err != nil {
 		t.Fatalf("warm resolve: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := resolver.Resolve(ctx, ref, src); !errors.Is(err, context.Canceled) {
+	if _, err := resolver.Resolve(ctx, ref); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cached resolve err = %v, want context.Canceled", err)
 	}
 }
@@ -196,12 +196,12 @@ func TestMediaResolverRetriesIndexAfterCancellation(t *testing.T) {
 		return []byte(html), nil
 	})
 
-	resolver := NewMediaResolver()
-	if _, err := resolver.Resolve(ctx, ref, src); !errors.Is(err, context.Canceled) {
+	resolver := NewResolver(src)
+	if _, err := resolver.Resolve(ctx, ref); !errors.Is(err, context.Canceled) {
 		t.Fatalf("resolve err = %v, want context.Canceled", err)
 	}
 
-	data, err := resolver.Resolve(context.Background(), ref, src)
+	data, err := resolver.Resolve(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("retry after cancellation: %v", err)
 	}
@@ -224,9 +224,9 @@ func TestMediaResolverCachesSourceFailure(t *testing.T) {
 		calls.Add(1)
 		return nil, storageDown
 	})
-	resolver := NewMediaResolver()
+	resolver := NewResolver(src)
 	for i := 0; i < 2; i++ {
-		if _, err := resolver.Resolve(context.Background(), ref, src); !errors.Is(err, storageDown) {
+		if _, err := resolver.Resolve(context.Background(), ref); !errors.Is(err, storageDown) {
 			t.Fatalf("resolve %d err = %v, want source failure", i, err)
 		}
 	}
@@ -243,7 +243,7 @@ func TestMediaResolverRetriesDOMFallbackAfterCancellation(t *testing.T) {
 	if !ok {
 		t.Fatal("fixture ref was rejected")
 	}
-	resolver := &mediaResolver{
+	resolver := &Resolver{
 		indexLoaded: true,
 		htmlData:    []byte(input),
 		htmlSpans:   map[string]htmlMediaSpan{},
@@ -302,7 +302,7 @@ func BenchmarkMediaResolverDOMFallback(b *testing.B) {
 	b.Run("cold-index", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			resolver := &mediaResolver{
+			resolver := &Resolver{
 				indexLoaded: true,
 				htmlData:    html,
 				htmlSpans:   map[string]htmlMediaSpan{},
@@ -315,7 +315,7 @@ func BenchmarkMediaResolverDOMFallback(b *testing.B) {
 
 	for _, count := range []int{1, 8, misses} {
 		b.Run(fmt.Sprintf("misses=%d", count), func(b *testing.B) {
-			resolver := &mediaResolver{
+			resolver := &Resolver{
 				indexLoaded: true,
 				htmlData:    html,
 				htmlSpans:   map[string]htmlMediaSpan{},

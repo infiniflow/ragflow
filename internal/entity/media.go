@@ -78,8 +78,9 @@ func (r *MediaRef) IsZero() bool {
 }
 
 // MediaRefFromAny decodes a media_ref value from either its typed form or a
-// JSON-round-tripped map. It returns nil for absent or unusable values so
-// callers can treat "no reference" and "bad reference" the same way.
+// JSON-round-tripped map. It returns nil for absent or unusable values;
+// callers that must reject a malformed reference check whether a value is
+// present before calling it.
 func MediaRefFromAny(v any) *MediaRef {
 	switch ref := v.(type) {
 	case nil:

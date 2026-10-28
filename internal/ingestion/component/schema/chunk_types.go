@@ -18,6 +18,7 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"ragflow/internal/entity"
@@ -204,7 +205,7 @@ func validateEmptyMediaRef(raw json.RawMessage) error {
 		return fmt.Errorf("chunk media_ref: %w", err)
 	}
 	if len(fields) > 0 {
-		return fmt.Errorf("chunk media_ref: object has no recognized fields")
+		return errors.New("chunk media_ref: object has no recognized fields")
 	}
 	return nil
 }

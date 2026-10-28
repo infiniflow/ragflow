@@ -37,8 +37,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"ragflow/internal/parser/charset"
 	"strings"
+
+	"ragflow/internal/parser/charset"
 )
 
 // JSONParser handles JSON / JSONL / LDJSON files.

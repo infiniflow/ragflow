@@ -95,11 +95,13 @@ func (i ImageItem) ToMap() map[string]any {
 		DocTypeKey: DocTypeImage,
 	}
 	// A ref-only image must not resurrect an empty "image" key: consumers use
-	// the key's absence to tell deferred bytes from an inline payload.
-	if i.Image != "" || !i.Media.Valid() {
+	// the key's absence to tell deferred bytes from an inline payload. Any
+	// present reference is emitted even when malformed, so the materializer
+	// can reject it instead of the conversion dropping it.
+	if i.Image != "" || i.Media == nil {
 		m["image"] = i.Image
 	}
-	if i.Media.Valid() {
+	if i.Media != nil {
 		m["media_ref"] = i.Media
 	}
 	if i.Sheet != "" {

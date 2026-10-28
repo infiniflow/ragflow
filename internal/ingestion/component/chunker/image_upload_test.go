@@ -33,11 +33,11 @@ import (
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	medialib "ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
+	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
-	medialib "ragflow/internal/parser/media"
-	"ragflow/internal/storage"
 )
 
 const (
@@ -152,7 +152,7 @@ func TestUploadChunkImages_WritesImgIDAndDropsImage(t *testing.T) {
 	chunkID := common.ChunkID(testDocID, "caption")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "caption", "image": "data:image/png;base64," + pngBase64}
 
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	wantImgID := testKBID + "-" + chunkID
@@ -181,7 +181,7 @@ func TestUploadChunkImages_SkipsWhenImgIDPresent(t *testing.T) {
 	}
 	chunkID := common.ChunkID(testDocID, "x")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "x", "img_id": "preset-img", "image": "data:image/png;base64," + pngBase64}
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	if called {
@@ -205,7 +205,7 @@ func TestUploadChunkImages_NoImage(t *testing.T) {
 	}
 	chunkID := common.ChunkID(testDocID, "text only")
 	ck := map[string]any{"id": chunkID, "content_with_weight": "text only"}
-	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil, nil); err != nil {
+	if _, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil); err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
 	if called {
@@ -226,7 +226,7 @@ func TestUploadChunkImage_ErrorOnMissingID(t *testing.T) {
 		return "should-not-be-called", nil
 	}
 	ck := map[string]any{"content_with_weight": "x", "image": "data:image/png;base64," + pngBase64}
-	_, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil, nil)
+	_, err := uploadChunkMedia(context.Background(), []map[string]any{ck}, up, testKBID, testDocID, nil)
 	if err == nil {
 		t.Fatal("expected error when chunk missing id")
 	}
@@ -646,7 +646,7 @@ func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 		t.Fatal("upload must not run when img_id exists")
 		return "", nil
 	}
-	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewMediaResolver(), src)
+	kept, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewResolver(src))
 	if err != nil {
 		t.Fatalf("uploadChunkMedia: %v", err)
 	}
@@ -679,7 +679,7 @@ func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
 		t.Fatal("resolver must not run for an invalid reference")
 		return nil, nil
 	})
-	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewMediaResolver(), src); err == nil {
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewResolver(src)); err == nil {
 		t.Fatal("invalid media_ref was treated as absent")
 	}
 }

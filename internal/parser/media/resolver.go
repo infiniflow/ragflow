@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package media: this file materializes MediaRefs emitted by parsers. A
-// parser that emits MediaRef keeps image bytes out of its result. Whoever
-// needs an actual image (the chunker's upload pass, the vision enhancement
-// path) hands the reference and a MediaSource to a MediaResolver, which reads
-// the source once and returns exactly one image per call. An index build
-// cancelled by the caller's context is retried instead of cached.
+// Package media materializes the MediaRefs parsers emit. A parser that emits
+// a MediaRef keeps image bytes out of its result. Whoever needs an actual
+// image (the chunker's upload pass, the vision enhancement path) hands the
+// reference and a MediaSource to a Resolver, which reads the source once
+// and returns exactly one image per call. An index build cancelled by the
+// caller's context is retried instead of cached.
 package media
 
 import (
@@ -33,11 +33,6 @@ import (
 
 	"ragflow/internal/entity"
 )
-
-// maxMediaImageBytes bounds one materialized image. It reuses the inline
-// payload ceiling so a reference can never resolve to something the inline
-// path would have rejected.
-const maxMediaImageBytes = int64(MaxImagePayloadBytes)
 
 // MediaSource supplies the raw bytes of the document a MediaRef points into.
 // A completed read is reused for every image in that document, so
@@ -59,18 +54,12 @@ func (f MediaSourceFunc) Bytes(ctx context.Context) ([]byte, error) { return f(c
 // failure that must not be turned into a silent image drop.
 var ErrMediaNotFound = errors.New("media: reference not found")
 
-// MediaResolver materializes image bytes for a MediaRef. One resolver serves
-// exactly one source document: the first source passed to Resolve supplies
-// the cached index, and every later call must pass that same document.
-type MediaResolver interface {
-	Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error)
-}
+// Resolver materializes image bytes for a MediaRef. One resolver serves
+// exactly one source document, bound at construction, so a call can never
+// resolve against a different document than the cached index.
+type Resolver struct {
+	src MediaSource
 
-// NewMediaResolver returns a resolver that caches the extracted media index
-// for the first source it sees. Create one per document/invocation.
-func NewMediaResolver() MediaResolver { return &mediaResolver{} }
-
-type mediaResolver struct {
 	// indexMu guards the source index. A cancellation is never cached as an
 	// index failure: Resolve may be called once per image with a per-image
 	// deadline, and one expired call must not hide the document from the
@@ -82,9 +71,9 @@ type mediaResolver struct {
 	htmlData      []byte
 	htmlTruncated bool
 
-	// domMu caches the tree and the digest-to-src index built for the rare
-	// fallback path. The tree is read-only after parsing, so concurrent
-	// Resolve calls can walk it.
+	// domMu caches the digest-to-src index built for the rare fallback path.
+	// The tree is read-only after parsing and is released once the index is
+	// built; the index's src strings keep the payload storage alive.
 	domMu     sync.Mutex
 	domLoaded bool
 	dom       *html.Node
@@ -92,32 +81,35 @@ type mediaResolver struct {
 	domErr    error
 }
 
-func (r *mediaResolver) Resolve(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
+// NewResolver returns a resolver bound to src. Create one per document.
+func NewResolver(src MediaSource) *Resolver { return &Resolver{src: src} }
+
+func (r *Resolver) Resolve(ctx context.Context, ref entity.MediaRef) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if !ref.Valid() {
 		return nil, errors.New("media: invalid reference")
 	}
-	if src == nil {
+	if r == nil || r.src == nil {
 		return nil, errors.New("media: no source document")
 	}
-	if ref.Size > maxMediaImageBytes {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), maxMediaImageBytes)
+	if ref.Size > MaxImagePayloadBytes {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), MaxImagePayloadBytes)
 	}
 	switch ref.Kind {
 	case entity.MediaKindDataURI:
-		return r.resolveDataURI(ctx, ref, src)
+		return r.resolveDataURI(ctx, ref)
 	default:
 		return nil, fmt.Errorf("media: unsupported kind %q", ref.Kind)
 	}
 }
 
-func (r *mediaResolver) resolveDataURI(ctx context.Context, ref entity.MediaRef, src MediaSource) ([]byte, error) {
+func (r *Resolver) resolveDataURI(ctx context.Context, ref entity.MediaRef) ([]byte, error) {
 	if ref.Format != "html" {
 		return nil, fmt.Errorf("media: unsupported data-uri format %q", ref.Format)
 	}
-	if err := r.loadHTML(ctx, src); err != nil {
+	if err := r.loadHTML(ctx); err != nil {
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -162,8 +154,8 @@ func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byt
 	if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
 		return nil, fmt.Errorf("media: image digest mismatch: reference %s, source %s", shortMediaDigest(ref.SHA256), shortMediaDigest(got))
 	}
-	if int64(len(data)) > maxMediaImageBytes {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), maxMediaImageBytes)
+	if int64(len(data)) > MaxImagePayloadBytes {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), MaxImagePayloadBytes)
 	}
 	if ref.Size > 0 && int64(len(data)) != ref.Size {
 		return nil, fmt.Errorf("media: image size mismatch: reference %d bytes, source %d bytes", ref.Size, len(data))
@@ -179,7 +171,7 @@ func validateMediaPayload(data []byte, sum [32]byte, ref entity.MediaRef) ([]byt
 // A call cancelled before the map is published caches nothing: this is
 // document-level state, and a per-image deadline must not disable the
 // fallback for later images.
-func (r *mediaResolver) loadDOMImages(ctx context.Context) (map[string]string, error) {
+func (r *Resolver) loadDOMImages(ctx context.Context) (map[string]string, error) {
 	r.domMu.Lock()
 	defer r.domMu.Unlock()
 	if r.domImages != nil {
@@ -205,6 +197,11 @@ func (r *mediaResolver) loadDOMImages(ctx context.Context) (map[string]string, e
 		return nil, err
 	}
 	r.domImages = images
+	// The map's src strings share the tree's payload storage, so the node
+	// tree itself is no longer needed. Drop it to keep steady-state fallback
+	// memory at the index instead of the index plus the whole DOM.
+	r.dom = nil
+	r.domLoaded = false
 	return images, nil
 }
 
@@ -252,7 +249,7 @@ func collectHTMLMediaSources(ctx context.Context, doc *html.Node, out map[string
 // the same HTML parser the parser uses. The tree and its digest index are
 // built once per resolver: a document with several foreign-content images
 // pays for one parse and one walk, and later misses only decode their entry.
-func (r *mediaResolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]byte, [32]byte, bool, error) {
+func (r *Resolver) findMediaPayloadInDOM(ctx context.Context, digest string) ([]byte, [32]byte, bool, error) {
 	images, err := r.loadDOMImages(ctx)
 	if err != nil {
 		return nil, [32]byte{}, false, err
@@ -288,7 +285,7 @@ func (r *mediaResolver) findMediaPayloadInDOM(ctx context.Context, digest string
 // that expires while the index is being built must not be returned to every
 // later image. Other failures are cached because they describe the source,
 // not the caller's deadline.
-func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
+func (r *Resolver) loadHTML(ctx context.Context) error {
 	r.indexMu.Lock()
 	defer r.indexMu.Unlock()
 	if r.indexLoaded {
@@ -297,7 +294,7 @@ func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
 	if r.indexErr != nil {
 		return r.indexErr
 	}
-	if err := r.buildHTMLIndex(ctx, src); err != nil {
+	if err := r.buildHTMLIndex(ctx); err != nil {
 		if ctx.Err() == nil {
 			r.indexErr = err
 		}
@@ -307,11 +304,11 @@ func (r *mediaResolver) loadHTML(ctx context.Context, src MediaSource) error {
 	return nil
 }
 
-func (r *mediaResolver) buildHTMLIndex(ctx context.Context, src MediaSource) error {
+func (r *Resolver) buildHTMLIndex(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	data, err := src.Bytes(ctx)
+	data, err := r.src.Bytes(ctx)
 	if err != nil {
 		return err
 	}

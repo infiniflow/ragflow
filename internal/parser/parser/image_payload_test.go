@@ -60,9 +60,10 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 						if ref == nil {
 							continue
 						}
-						data, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+						resolver := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
 							return source, nil
 						}))
+						data, err := resolver.Resolve(context.Background(), *ref)
 						if err != nil {
 							t.Fatalf("resolve: %v", err)
 						}

@@ -27,9 +27,10 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"ragflow/internal/parser/charset"
 	"strings"
 	"unicode/utf8"
+
+	"ragflow/internal/parser/charset"
 )
 
 const csvSheetName = "Data"

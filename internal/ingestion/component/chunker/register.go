@@ -35,9 +35,9 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 
 	"gorm.io/gorm"
-	"ragflow/internal/parser/media"
 )
 
 // MustRegisterChunker registers a single chunker component under
@@ -154,9 +154,9 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// persist run); in debug we drop the raw bytes so they are not held in
 	// memory until a persist stage that will never run.
 	if kbID != "" {
-		resolver := media.NewMediaResolver()
 		source := chunkMediaSourceFactory(db, inputs)
-		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID, resolver, source)
+		resolver := media.NewResolver(source)
+		kept, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID, resolver)
 		if err != nil {
 			return nil, err
 		}

@@ -40,12 +40,12 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
-	"ragflow/internal/parser/media"
 )
 
 var (
@@ -302,11 +302,9 @@ func maybeDispatchVisionEnhancement(
 	// A parser that emits references leaves the bytes out of the result. Materialize
 	// each referenced image from the bytes this invocation parsed, so the VLM
 	// path neither re-reads storage nor loses descriptions on those formats.
-	var resolver media.MediaResolver
-	var mediaSource media.MediaSource
+	var resolver *media.Resolver
 	if source := parserSourceBytes(inputs); len(source) > 0 {
-		resolver = media.NewMediaResolver()
-		mediaSource = media.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil })
+		resolver = media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) { return source, nil }))
 	}
 	modified := false
 	descriptions := make([]string, len(items))
@@ -368,7 +366,7 @@ func maybeDispatchVisionEnhancement(
 			// Materialize under the same admission as the crop: the decode
 			// and re-encode of a deferred image must not bypass the shared
 			// image memory limit.
-			if err := MaterializeMediaItem(itemCtx, item, resolver, mediaSource); err != nil {
+			if err := MaterializeMediaItem(itemCtx, item, resolver); err != nil {
 				common.Warn("vision enhancement: media_ref resolution failed", zap.Error(err))
 			}
 			resource, err = cropper.Crop(itemCtx, item)

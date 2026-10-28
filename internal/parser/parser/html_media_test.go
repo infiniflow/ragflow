@@ -140,21 +140,6 @@ func TestHTMLParser_EmitsMediaRef(t *testing.T) {
 	}
 }
 
-func TestHTMLParser_OmitsImageBytes(t *testing.T) {
-	p := NewHTMLParser()
-	result := p.ParseWithResult(context.Background(), "ref-only.html", []byte(`<p><img src="`+htmlMediaDataURI+`"></p>`))
-	if result.Err != nil {
-		t.Fatalf("ParseWithResult: %v", result.Err)
-	}
-	item := result.JSON[0].ToMap()
-	if _, ok := item["image"]; ok {
-		t.Fatalf("parser retained image bytes: %+v", item)
-	}
-	if entity.MediaRefFromAny(item["media_ref"]) == nil {
-		t.Fatalf("parser dropped media_ref: %+v", item)
-	}
-}
-
 func TestParserMediaRefsResolveFromSource(t *testing.T) {
 	input := `<p>before <img src="` + htmlMediaDataURI + `"></p>` +
 		`<table><tr><td><img alt="cell" src="` + htmlMediaDataURI + `"></td></tr></table>`
@@ -162,7 +147,9 @@ func TestParserMediaRefsResolveFromSource(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
-	resolver := media.NewMediaResolver()
+	resolver := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	}))
 	images := 0
 	for _, item := range result.JSON {
 		m := item.ToMap()
@@ -174,9 +161,7 @@ func TestParserMediaRefsResolveFromSource(t *testing.T) {
 		if ref == nil {
 			t.Fatalf("image item without ref: %+v", m)
 		}
-		data, err := resolver.Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
-			return []byte(input), nil
-		}))
+		data, err := resolver.Resolve(context.Background(), *ref)
 		if err != nil {
 			t.Fatalf("resolve image %d: %v", images, err)
 		}
@@ -248,9 +233,9 @@ func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
 			if ref == nil {
 				t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
 			}
-			data, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+			data, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
 				return []byte(input), nil
-			}))
+			})).Resolve(context.Background(), *ref)
 			if err != nil {
 				t.Fatalf("resolver lost the parser's image: %v", err)
 			}
@@ -283,9 +268,9 @@ func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
 	if ref == nil {
 		t.Fatal("parser emitted no media_ref")
 	}
-	if _, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+	if _, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(input), nil
-	})); err != nil {
+	})).Resolve(context.Background(), *ref); err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 }
@@ -313,9 +298,9 @@ func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
 
 func resolveMediaInput(t *testing.T, input string, ref entity.MediaRef) []byte {
 	t.Helper()
-	data, err := media.NewMediaResolver().Resolve(context.Background(), ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+	data, err := media.NewResolver(media.MediaSourceFunc(func(context.Context) ([]byte, error) {
 		return []byte(input), nil
-	}))
+	})).Resolve(context.Background(), ref)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}

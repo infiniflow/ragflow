@@ -81,7 +81,7 @@ func imageUploadConcurrency() int {
 //
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
 // function.
-func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver media.MediaResolver, src media.MediaSource) ([]map[string]any, error) {
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string, resolver *media.Resolver) ([]map[string]any, error) {
 	kept := make([]map[string]any, 0, len(chunks))
 	for _, ck := range chunks {
 		imgID, _ := ck["img_id"].(string)
@@ -89,7 +89,7 @@ func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component
 			// The image was already uploaded. A materialized copy would not
 			// be uploaded again, so it must not survive into the index.
 			delete(ck, "image")
-		} else if err := component.MaterializeMediaItem(ctx, ck, resolver, src); err != nil {
+		} else if err := component.MaterializeMediaItem(ctx, ck, resolver); err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}

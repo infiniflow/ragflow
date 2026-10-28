@@ -43,7 +43,7 @@ func TestEncodeMediaDataURIRoundTrip(t *testing.T) {
 func TestMaterializeMediaItemRejectsInvalidMediaRef(t *testing.T) {
 	m := map[string]any{"media_ref": map[string]any{"format": "html"}}
 	src := media.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-	if err := MaterializeMediaItem(context.Background(), m, media.NewMediaResolver(), src); err == nil {
+	if err := MaterializeMediaItem(context.Background(), m, media.NewResolver(src)); err == nil {
 		t.Fatal("a present but unusable media_ref was treated as absent")
 	}
 }
@@ -54,8 +54,19 @@ func TestMaterializeMediaItemTreatsAbsentMediaRefAsNoop(t *testing.T) {
 	for _, value := range []any{nil, "", map[string]any{}, nilRef, zero, entity.MediaRef{}} {
 		m := map[string]any{"media_ref": value}
 		src := media.MediaSourceFunc(func(context.Context) ([]byte, error) { return nil, nil })
-		if err := MaterializeMediaItem(context.Background(), m, media.NewMediaResolver(), src); err != nil {
+		if err := MaterializeMediaItem(context.Background(), m, media.NewResolver(src)); err != nil {
 			t.Errorf("media_ref %#v: %v", value, err)
 		}
+	}
+}
+
+func TestMaterializeMediaItemRequiresSourceForPresentRef(t *testing.T) {
+	m := map[string]any{"media_ref": map[string]any{
+		"format": "html",
+		"kind":   "data-uri",
+		"sha256": strings.Repeat("a", 64),
+	}}
+	if err := MaterializeMediaItem(context.Background(), m, nil); err == nil {
+		t.Fatal("a present reference without a resolver or source was treated as absent")
 	}
 }

@@ -29,8 +29,9 @@ package parser
 
 import (
 	"context"
-	"ragflow/internal/parser/charset"
 	"strings"
+
+	"ragflow/internal/parser/charset"
 )
 
 // TextParser is the text&code family parser. It implements the

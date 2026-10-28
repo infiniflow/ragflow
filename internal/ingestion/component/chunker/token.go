@@ -667,8 +667,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// without duplicating the fold. Inline bytes, an uploaded ID or a
 		// deferred reference also make the chunk retrievable; dropping it here
 		// would lose the image before the materializer can resolve or reject it.
-		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" &&
-			m.Image == "" && m.ImgID == "" && m.MediaRef == nil {
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) {
 			continue
 		}
 		materialized = append(materialized, materializeMediaContext(m))
