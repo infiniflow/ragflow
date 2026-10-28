@@ -24,12 +24,19 @@ import (
 )
 
 type DocEngineConfig struct {
-	ES        ElasticsearchConfig `mapstructure:"es"`
-	Infinity  InfinityConfig      `mapstructure:"infinity"`
-	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
-	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
-	SereneDB  SereneDBConfig      `mapstructure:"serenedb"`
-	Vastbase  VastbaseConfig      `mapstructure:"vastbase"`
+	ES         ElasticsearchConfig `mapstructure:"es"`
+	OpenSearch OpenSearchConfig    `mapstructure:"opensearch"`
+	Infinity   InfinityConfig      `mapstructure:"infinity"`
+	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
+	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
+	SereneDB   SereneDBConfig      `mapstructure:"serenedb"`
+	Vastbase   VastbaseConfig      `mapstructure:"vastbase"`
+}
+
+type OpenSearchConfig struct {
+	Hosts    string `mapstructure:"hosts"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -103,6 +110,7 @@ type VastbaseConfig struct {
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOpenSearchConfig(v)
 	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
@@ -368,6 +376,45 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 	esConfigs["username"] = e.Username
 	esConfigs["password"] = e.Password
 	return esConfigs
+}
+
+func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
+	c.docEngine.OpenSearch.Hosts = "http://localhost:1201"
+	c.docEngine.OpenSearch.Username = "admin"
+	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
+
+	if !v.IsSet("opensearch") {
+		return
+	}
+	sub := v.Sub("opensearch")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("hosts") {
+		c.docEngine.OpenSearch.Hosts = sub.GetString("hosts")
+	}
+
+	if sub.IsSet("username") {
+		c.docEngine.OpenSearch.Username = sub.GetString("username")
+	}
+
+	if sub.IsSet("password") {
+		c.docEngine.OpenSearch.Password = sub.GetString("password")
+	}
+}
+
+func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
+	return c.docEngine.OpenSearch
+}
+
+func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
+	var osConfigs map[string]interface{}
+	osConfigs = make(map[string]interface{})
+	osConfigs["hosts"] = o.Hosts
+	osConfigs["username"] = o.Username
+	osConfigs["password"] = o.Password
+	return osConfigs
 }
 
 func (c *Config) IsElasticConfigured() bool {

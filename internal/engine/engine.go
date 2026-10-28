@@ -31,6 +31,7 @@ type EngineType string
 
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
+	EngineOpenSearch    EngineType = "opensearch"
 	EngineInfinity      EngineType = "infinity"
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
