@@ -75,7 +75,7 @@ func fullChunk() map[string]interface{} {
 	}
 }
 
-func TestRerankStandardIncludesQuestionTks(t *testing.T) {
+func TestRerankStandardScoresQuestionOnlyMatch(t *testing.T) {
 	chunks := []map[string]interface{}{
 		{"content_ltks": "alpha", "question_tks": "quux"},
 		{"content_ltks": "alpha"},

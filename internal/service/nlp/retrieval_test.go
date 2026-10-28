@@ -178,7 +178,7 @@ func TestRetrievalRejectsPageBeyondCandidateWindow(t *testing.T) {
 	}
 }
 
-func TestRetrievalRejectsPaginationWithRerankModel(t *testing.T) {
+func TestRetrievalRejectsPaginationWithRerankModelBeforeSearch(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()

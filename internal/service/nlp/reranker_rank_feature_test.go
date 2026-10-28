@@ -21,7 +21,6 @@ import (
 	"ragflow/internal/common"
 )
 
-
 // rankFeatureCase drives the same document shape through both rank-feature
 // entry points. The document PageRank is fixed at 0.25 by chunk(); the query
 // weight for common.PAGERANK_FLD is deliberately large (7.0) so using it as a
@@ -430,4 +429,3 @@ func TestApplyRankFeatureScoresForIDs_LengthMismatch(t *testing.T) {
 		t.Fatalf("got %v, want [2 7] (trailing score preserved)", got)
 	}
 }
-
