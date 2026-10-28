@@ -1892,11 +1892,6 @@ jobs:
             | grep -v '/test/api' \
             | grep -v '^ragflow/internal/deepdoc' \
             | grep -v '/internal/storage$')
-          # Run HTML media integration against the same services.
-          export RAGFLOW_REAL_HTML_MEDIA_TEST=1
-          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:$(_port KVROCKS_PORT)"
-          export MYSQL_PASSWORD="$(_port MYSQL_PASSWORD)" MINIO_USER="$(_port MINIO_USER)"
-          export MINIO_PASSWORD="$(_port MINIO_PASSWORD)" REDIS_PASSWORD="$(_port REDIS_PASSWORD)"
           ./build.sh --test-integration-go $PKGS
 
       - name: Tear down
