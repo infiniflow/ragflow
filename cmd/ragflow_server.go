@@ -438,11 +438,13 @@ func main() {
 	serverName := bootstrap.TempServerName(serverType, arguments.Name)
 
 	logLevel := bootstrap.SelectedLogLevel(arguments, "")
-	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
+	higherThanInfo := common.LogLevelHigherThanInfo(logLevel)
+	if higherThanInfo {
 		logLevel = "info"
 	}
 
-	if err = common.InitLogger(logLevel, common.FileOutput{}, serverName); err != nil {
+	err = common.InitLogger(logLevel, common.FileOutput{}, serverName)
+	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -471,33 +473,22 @@ func main() {
 	}
 	globalConfig.SetLogLevel(resolvedLogLevel)
 
-	// Resolve the effective server port (CLI > config/env > default) and set it
-	// on the config so the server binds the right port. This block must stay
-	// side-effect-free on the LOG (no registerNativeDeepDoc here): it runs
-	// while only the temporary stdout-only logger exists, so anything it logs is
-	// lost from the file. Side effects that log (DeepDoc registration) move
-	// below, after the real file-backed logger is up. The dead UUID branch for
-	// ingestor/syncer/deepdoc (serverName was already pre-filled above) is
-	// dropped: ResolveServerName resolves them to "<mode>_server", matching the
-	// original no-name behavior.
-	var resolvedPort int
+	var port int
 	switch serverType {
 	case common.ServerTypeAPI:
-		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
-		if portErr != nil {
-			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
+		port, err = globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
+		if err != nil {
+			fmt.Printf("Failed to resolve API server port: %v\n", port)
 			os.Exit(1)
 		}
 		globalConfig.SetAPIServerHTTPPort(port)
-		resolvedPort = port
 	case common.ServerTypeAdmin:
-		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
-		if portErr != nil {
-			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
+		port, err = globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
+		if err != nil {
+			fmt.Printf("Failed to resolve admin server port: %v\n", err)
 			os.Exit(1)
 		}
 		globalConfig.SetAdminHTTPPort(port)
-		resolvedPort = port
 	case common.ServerTypeIngestion, common.ServerTypeFileSyncer, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend, common.ServerTypeDeepDocCPU, common.ServerTypeMigrate:
 		// No port embedding; the final name is derived below.
 	default:
@@ -508,12 +499,11 @@ func main() {
 	// Final server name: explicit --name wins; api/admin embed the resolved
 	// port; ingestor/syncer/deepdoc/migrate use their fixed forms. An unknown
 	// mode is rejected by the switch above.
-	finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, resolvedPort)
-	if nameErr != nil {
-		common.Error("invalid server mode", nameErr)
+	serverName, err = bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, port)
+	if err != nil {
+		common.Error("invalid server mode", err)
 		os.Exit(1)
 	}
-	serverName = finalName
 
 	// set server name and log file path
 	server.SetServerName(serverName)
@@ -537,7 +527,8 @@ func main() {
 
 	// Start pprof server if requested
 	if arguments.EnablePProf {
-		if err := startPProf(pprofAddr()); err != nil {
+		err = startPProf(pprofAddr())
+		if err != nil {
 			common.Error("pprof server failed", err)
 		}
 	}
