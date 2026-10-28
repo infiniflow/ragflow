@@ -179,17 +179,14 @@ const ChatCard = forwardRef(function ChatCard(
     });
   }, [dialogId, form, updateChat, findLlmByUuid]);
 
-  useImperativeHandle(
-    ref,
-    (): HandlePressEnterType => (params) => {
-      return handlePressEnter({
-        ...params,
-        ...removeUselessFieldsFromValues(form.getValues(), ''),
-        storeHistoryMessages: false,
-        omitSessionId: true,
-      });
-    },
-  );
+  useImperativeHandle(ref, (): HandlePressEnterType => (params) => {
+    return handlePressEnter({
+      ...params,
+      ...removeUselessFieldsFromValues(form.getValues(), ''),
+      storeHistoryMessages: false,
+      omitSessionId: true,
+    });
+  });
 
   useEffect(() => {
     setLoading(id, sendLoading);
