@@ -141,7 +141,7 @@
     "unist-util-visit-parents": "^6.0.1",
     "uuid": "^9.0.1",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8",
+    "zod": "^4.6.6",
     "zustand": "^4.5.2"
   },
   "devDependencies": {
