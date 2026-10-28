@@ -21,6 +21,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	medialib "ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
@@ -255,5 +256,62 @@ func TestQAChunkerCarriesMediaRef(t *testing.T) {
 	}
 	if images := uploadedMediaChunks(t, chunks); len(images) != 1 {
 		t.Fatalf("image chunks = %d, want 1", len(images))
+	}
+}
+
+// TestOneChunkerRejectsInvalidMediaRefRegardlessOfOrder pins the merge
+// invariant: only the first media attachment is kept, so every present
+// reference must be validated before the merge. Otherwise a valid first
+// reference hides a malformed later one and the run succeeds.
+func TestOneChunkerRejectsInvalidMediaRefRegardlessOfOrder(t *testing.T) {
+	html := `<img alt="figure" src="data:image/png;base64,` + pngBase64 + `">`
+	parsed := parserlib.NewHTMLParser().ParseWithResult(t.Context(), "order.html", []byte(html))
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	var validRef *entity.MediaRef
+	for _, item := range parsed.JSON {
+		if m := item.ToMap(); m["doc_type_kwd"] == "image" {
+			validRef = entity.MediaRefFromAny(m["media_ref"])
+		}
+	}
+	if validRef == nil {
+		t.Fatal("fixture emitted no valid media_ref")
+	}
+
+	valid := map[string]any{"text": "figure", "media_ref": validRef}
+	invalid := map[string]any{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}}
+
+	prevSource := chunkMediaSourceFactory
+	chunkMediaSourceFactory = func(*gorm.DB, map[string]any) medialib.MediaSource {
+		return medialib.MediaSourceFunc(func(context.Context) ([]byte, error) { return []byte(html), nil })
+	}
+	t.Cleanup(func() { chunkMediaSourceFactory = prevSource })
+
+	prevUploader := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, _ []byte) (string, error) {
+		return kbID + "-" + chunkID, nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prevUploader })
+
+	for _, tc := range []struct {
+		name  string
+		items []map[string]any
+	}{
+		{"invalid first", []map[string]any{invalid, valid}},
+		{"invalid last", []map[string]any{valid, invalid}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, err := NewOneChunker(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
+				"name": "order.html", "kb_id": testKBID,
+				"output_format": "json", "json": tc.items,
+			}); err == nil {
+				t.Fatal("invalid media_ref was accepted")
+			}
+		})
 	}
 }

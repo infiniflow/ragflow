@@ -271,9 +271,28 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
+	if err := validateUpstreamMediaRefs(out.JSONResult); err != nil {
+		return out, err
+	}
+	if err := validateUpstreamMediaRefs(out.Chunks); err != nil {
+		return out, err
+	}
 	materializeTableText(out.JSONResult)
 	materializeTableText(out.Chunks)
 	return out, nil
+}
+
+// validateUpstreamMediaRefs rejects any present but unusable reference at the
+// chunker input boundary. Chunkers merge items and keep only the first media
+// attachment, so validating when an item is consumed would make the failure
+// depend on input order; every present reference must be checked first.
+func validateUpstreamMediaRefs(items []schema.ChunkDoc) error {
+	for i := range items {
+		if ref := items[i].MediaRef; ref != nil && !ref.Valid() {
+			return fmt.Errorf("chunker: item %d has an invalid media_ref", i)
+		}
+	}
+	return nil
 }
 
 func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
