@@ -39,7 +39,7 @@ func DecodeHTMLImageSource(src string) (string, []byte, bool) {
 
 // HTMLImageMaxBytes is the per-image limit for HTML media.
 func HTMLImageMaxBytes() int {
-	const defaultLimit = 256 << 20
+	const defaultLimit = 32 << 20
 	if n, err := strconv.Atoi(os.Getenv("RAGFLOW_HTML_IMAGE_MAX_BYTES")); err == nil && n > 0 && n <= int(^uint(0)>>1)/4*3 {
 		return n
 	}

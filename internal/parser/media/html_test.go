@@ -86,11 +86,11 @@ func TestHTMLImageExceedsConfiguredLimit(t *testing.T) {
 
 func TestHTMLImageLimitDefaultsAndConfiguration(t *testing.T) {
 	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "")
-	if got := HTMLImageMaxBytes(); got != 256<<20 {
+	if got := HTMLImageMaxBytes(); got != 32<<20 {
 		t.Fatalf("default = %d", got)
 	}
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "12")
-	if got := HTMLImageMaxBytes(); got != 12 {
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "67108864")
+	if got := HTMLImageMaxBytes(); got != 64<<20 {
 		t.Fatalf("configured = %d", got)
 	}
 }
