@@ -27,7 +27,6 @@ import { useHandleRunDocumentByIds } from './use-run-document';
 import {
   getDocumentParserLabel,
   getDocumentRunningStatus,
-  isAutoMetadataEnabled,
   isDocumentProcessing,
   isDocumentStopping,
 } from './utils';
@@ -143,12 +142,10 @@ export function ParsingStatusCell({
     handleRunDocumentByIds(record, isRunning, option);
   };
 
-  const autoMetadataEnabled = isAutoMetadataEnabled(record?.parser_config);
-
-  // The confirmation only offers real choices when there are existing chunks to
-  // drop or auto-metadata to re-apply. Otherwise, and always when cancelling a
-  // run, the action fires straight away.
-  const needsParseConfirm = !isRunning && (!isZeroChunk || autoMetadataEnabled);
+  // Existing chunks are always dropped server-side on re-ingest, so the
+  // confirmation is only needed when there are existing chunks; otherwise, and
+  // always when cancelling a run, the action fires straight away.
+  const needsParseConfirm = !isRunning && !isZeroChunk;
 
   const handleParseClick = () => {
     if (needsParseConfirm) {
@@ -272,8 +269,6 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          chunk_num={chunk_count}
-          enable_metadata={autoMetadataEnabled}
           handleOperationIconClick={handleOperationIconClick}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}
