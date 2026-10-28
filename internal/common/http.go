@@ -94,10 +94,10 @@ var (
 	schemeSafeLongCallHTTPClient = sync.OnceValue(newSchemeSafeLongCallHTTPClient)
 )
 
-// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// ProviderResponseHeaderTimeout lets a deployment shorten the wait for response
 // headers, which is what a hung provider endpoint spends on every retry. Each
 // client keeps its own default while the override is unset.
-func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+func ProviderResponseHeaderTimeout(def time.Duration) time.Duration {
 	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
 }
 
@@ -116,7 +116,7 @@ func newSSRFHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
+	t.ResponseHeaderTimeout = ProviderResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 	t.TLSHandshakeTimeout = 30 * time.Second
 
 	var rt http.RoundTripper = t
@@ -130,7 +130,7 @@ func GetSchemeSafeHTTPClient() *http.Client {
 }
 
 func newSchemeSafeHTTPClient() *http.Client {
-	return buildSchemeSafeHTTPClient(llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault))
+	return buildSchemeSafeHTTPClient(ProviderResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault))
 }
 
 // GetSchemeSafeLongCallHTTPClient returns the scheme-safe client for endpoints
