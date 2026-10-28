@@ -46,12 +46,31 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), false)
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(sections) != 2 || sections[0] != "Heading" || sections[1] != "x^2" {
 		t.Fatalf("sections=%v", sections)
+	}
+}
+
+func TestMonkeyOCRv2ExtractSectionsKeepsPageHeaderWhenNotRemoving(t *testing.T) {
+	var buffer bytes.Buffer
+	writer := zip.NewWriter(&buffer)
+	file, err := writer.Create("sample/sample.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "Running head"}, {"label": "Title", "content": "Heading"}}})
+	_, _ = file.Write(payload)
+	_ = writer.Close()
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sections) != 2 || sections[0] != "Running head" || sections[1] != "Heading" {
+		t.Fatalf("sections=%v, want Running head + Heading when remove_header_footer is off", sections)
 	}
 }
 
