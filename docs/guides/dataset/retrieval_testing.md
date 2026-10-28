@@ -22,7 +22,7 @@ Retrieval testing can also help troubleshoot Q&A result problems. If the correct
 The **Setting** area on the **Retrieval testing** page is used to adjust retrieval parameters for the current test. You can modify parameters and run tests repeatedly to compare recall results under different configurations. The main parameters include:
 
 - **Similarity threshold**: Candidate chunks below this threshold are filtered out. Raising the threshold narrows the recall range and makes results stricter; lowering the threshold expands the recall range. The default value is `0.2`.
-- **Vector similarity weight**: The weight of vector similarity in the comprehensive similarity calculation. The other part of the weight is used for full-text or keyword similarity. For example, when this is set to `0.3`, the other part is `0.7`.
+- **Keyword similarity weight**: Sets the full-text weight in hybrid retrieval. For example, `0.7` means full-text weight `0.7` and vector weight `0.3`. Increase it for keyword matching; decrease it for semantic matching.
 - **Rerank model**: The reranking model used to further calculate relevance and sort candidate results. If no rerank model is selected, retrieval results combine keyword similarity and vector cosine similarity. If selected, reranking results participate in the comprehensive score. Using a rerank model may increase retrieval latency.
 - **Cross-language search**: Select one or more target languages so a query can match related content in other languages in the dataset. If no language is selected, retrieval is mainly performed in the current language.
 - **Metadata**: Restricts the retrieval range by metadata conditions. After it is set, retrieval is performed only in content that meets the metadata conditions.
@@ -53,13 +53,15 @@ The upper-right corner of **Results** provides a **File** filter. You can select
 
 The focus of retrieval testing is not to compare a single score in isolation, but to confirm whether the needed chunks can be accurately recalled and reasonably ranked under the current retrieval configuration.
 
+![Retrieval results and file filter](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_retrieval_test.jpg)
+
 ## Adjust Retrieval Results
 
 If retrieval results do not meet expectations, first determine whether the problem is a content problem or a retrieval configuration problem, then adjust accordingly.
 
 If the target content does not appear in retrieval results at all, check whether the document was parsed successfully, whether the target content has generated corresponding chunks, and whether metadata conditions exclude the related content.
 
-If the target chunk can be recalled but many irrelevant results also appear, raise **Similarity threshold** appropriately to narrow the recall range. If retrieval results rely more on semantic expression or keyword matching, adjust **Vector similarity weight** to rebalance vector retrieval and full-text retrieval. If the target chunk can already be recalled but ranking is unsatisfactory, try configuring **Rerank model** to rerank candidate results.
+If the target chunk can be recalled but many irrelevant results also appear, raise **Similarity threshold** appropriately to narrow the recall range. If retrieval results rely more on semantic expression or keyword matching, adjust **Keyword similarity weight** to rebalance vector retrieval and full-text retrieval. If the target chunk can already be recalled but ranking is unsatisfactory, try configuring **Rerank model** to rerank candidate results.
 
 If you need to see more or fewer candidate results, adjust **Top**. For cross-language datasets, also check whether **Cross-language search** includes the target languages to retrieve. It is recommended to use multiple representative queries for repeated testing and determine final parameters based on the overall recall result instead of adjusting configuration based only on a single test.
 

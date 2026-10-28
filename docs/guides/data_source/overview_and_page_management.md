@@ -28,8 +28,8 @@ Select the system you need to connect from the available data sources. The syste
 
 1. Fill in the connection name, which is used to identify the connection on the data source page and in the knowledge base.
 2. Fill in connection information such as the account, token, address, path, or storage scope.
-3. Set synchronization parameters as needed, such as sync deletion, refresh interval, cleanup interval, and timeout.
-4. Click **Save** to create the data source connection.
+3. Set the synchronization options available in the window, then click **Test connection**.
+4. Click **Confirm** to create the connection.
 
 Different data source creation windows display different fields. Users only need to fill in the fields in the current window. Credentials, addresses, spaces, buckets, database tables, and other information should be based on the actual configuration in the corresponding external system.
 
@@ -51,7 +51,7 @@ Click the settings button on the right side of a connected data source to enter 
 
 Common fields on the settings page include:
 
-- **Name**: The name displayed for the current data source connection in RAGFlow.
+- **Name**: The connection name, displayed as read-only after creation.
 - **Authentication information**: The account, token, key, or authorization file used to access the external system.
 - **Synchronization scope**: The pages, folders, buckets, database tables, channels, or project scope that need to be read.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index during subsequent synchronization or cleanup tasks.
@@ -60,7 +60,7 @@ Common fields on the settings page include:
 - **Timeout**: The maximum time that a single connection or synchronization task is allowed to wait.
 - **Test connection**: Verifies whether the current configuration can successfully connect to the external data source. It is recommended to test the connection before saving the configuration or starting a sync task.
 
-After completing the modification, click **Save**. The new configuration is used for subsequent synchronization tasks. Content that has already been synchronized to the knowledge base is gradually updated according to the next synchronization or cleanup task.
+After changing settings, click **Test connection**, then **Save**. With no unsaved changes, the primary button may show **Stop** or **Resume**, depending on the connection status. Updated settings apply to subsequent synchronization tasks.
 
 ![Set a Connected Data Source](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Set_a_Connected_Data_Source.jpg)
 
@@ -73,7 +73,7 @@ Log fields are described as follows:
 - **Start time**: The time when the synchronization task started.
 - **Status**: The execution result of the synchronization task, such as successful, failed, or in progress.
 - **Knowledge base**: The knowledge base that the synchronization task writes to.
-- **Task type**: For example, initial synchronization, incremental synchronization, or cleanup task.
+- **Task type**: `sync` synchronizes source content; `prune` removes content deleted from the source.
 - **Summary**: The synchronization summary or error description, used to troubleshoot permissions, fields, networks, rate limits, and other issues.
 
 If the log is empty, it usually means that the data source has not been used by any knowledge base, or that no synchronization task has been triggered.

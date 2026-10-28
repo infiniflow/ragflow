@@ -23,7 +23,7 @@ The configuration page is used to maintain the core configuration of a dataset. 
 
 ## Parsing Method
 
-The parsing method determines how a dataset processes uploaded documents and how documents are converted into chunks. **Parse type** in configuration provides two entries: **Built-in** and **Pipeline**.
+The parsing method determines how uploaded documents are processed into chunks. In **Parse mode**, select a built-in template or a saved ingestion pipeline from the same drop-down list.
 
 ### Built-in Parsing
 
@@ -338,6 +338,8 @@ If no pipeline is currently available, you can use the entry provided in the pip
 
 After saving, the system generates corresponding metadata from document content during subsequent document parsing based on these field definitions.
 
+![Configure a generated metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_2.jpg)
+
 #### Built-in: Built-in Metadata
 
 **Built-in** provides system-predefined metadata fields. You do not need to manually create or configure field rules. Use the switch on the right side of each corresponding field to choose whether to generate that metadata during document parsing. The following built-in fields are currently supported:
@@ -346,6 +348,8 @@ After saving, the system generates corresponding metadata from document content 
 - **file_name**: Records the document file name.
 
 Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, [**Metadata management**](../dataset/metadata_management.md).
+
+![Enable built-in metadata fields](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_3.jpg)
 
 ### Table Column Role Configuration
 

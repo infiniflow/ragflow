@@ -16,6 +16,8 @@ sidebar_custom_props: {
 2. Enter **Name** and upload one Agent JSON file under **DSL**.
 3. Click **Save**, then open the imported Agent to check its configuration.
 
+![Open the Import JSON file action](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_2.jpg)
+
 ![Upload Agent JSON file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_3.jpg)
 
 ## Export Agent
