@@ -124,6 +124,7 @@ const svgIcons = [
   LLMFactory.Runcrate,
   LLMFactory.WorldRouter,
   LLMFactory.CloudGPU,
+  LLMFactory.Cheapaimodel,
 ];
 
 export const LlmIcon = ({
