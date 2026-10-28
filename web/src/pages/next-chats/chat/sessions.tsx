@@ -36,6 +36,7 @@ import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 import { ConversationDropdown } from './conversation-dropdown';
+import { cn } from '@/lib/utils';
 
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
@@ -374,6 +375,9 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                     removeTemporaryConversation={removeTemporaryConversation}
                   >
                     <MoreButton
+                      className={cn(
+                        conversationId === x.id ? 'block' : 'hidden',
+                      )}
                       data-testid="chat-detail-session-actions"
                       data-session-id={x.id}
                     ></MoreButton>
