@@ -125,6 +125,14 @@ Interface types are split between two folders:
 
 Model-related endpoints (LLM provider / factory / my LLM, etc.) are consolidated in `src/services/llm-service.ts` rather than scattered across hooks. For GET endpoints, register with `method: 'get'` in the service, and on the call site pass `true` as the second argument to use the native axios config (e.g., `service.listProviders({ params: { available: true } }, true)`).
 
+### Module Dependency Direction
+
+`src/components/`, `src/hooks/`, `src/services/`, and `src/utils/` are shared layers: **they must not import from `src/pages/`**. A page may import from shared layers, never the reverse. (Legacy exceptions exist, e.g. `src/components/pipeline-operator-tabs/`; do not add new ones, and prefer lifting when you touch such code.)
+
+When page code gains a second consumer (e.g. a page form reused inside a dialog), lift the **whole self-contained subtree** — its `components/`, `hooks/`, `schema.ts`, `constant.ts`, `utils.ts` — into a feature folder under `src/components/` (precedent: `compilation-template-group/`, `pipeline-operator-tabs/`) using `git mv` to preserve history. Keep the subtree's internal structure and relative imports unchanged, and slim the route page down to a thin wrapper (route params, navigation, header). Never lift a single file out of a subtree — that multiplies cross-layer imports instead of removing them. Page-only logic (route params, return-navigation helpers) stays in the page directory.
+
+`src/utils/` is for pure functions only — shared React components and hooks live in `src/components/` and `src/hooks/`, never in `src/utils/`.
+
 ### Shared UI Component Lock
 
 The folder `src/components/ui/` is the project's **shared UI library** — it contains both official shadcn/ui primitives and project-authored common components built on top of shadcn. Both kinds are intended to be reused across the app and **must not be modified casually**.

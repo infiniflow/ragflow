@@ -1360,7 +1360,7 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
-      canvasCategory: '畫布分類',
+      agentCategory: '畫布分類',
       tags: '標籤',
       created: '建立於',
       id: 'ID',

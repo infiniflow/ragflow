@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -227,6 +230,143 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 	}
 	if driver.embedCalls != 0 {
 		t.Fatalf("Embed calls = %d, want 0 after metadata validation failure", driver.embedCalls)
+	}
+}
+
+// A decision model has no verification except the decision endpoint, so the
+// type must be dispatched to Decide; falling through the switch leaves nothing
+// passing and the model fails to add even though it works.
+// decisionProbeDriver stands in for a driver whose decision endpoint is the only
+// thing worth verifying. It records what Decide was asked, because the point of
+// the decision case in verifyProviderModel is which call it dispatches to.
+type decisionProbeDriver struct {
+	*modelModule.DummyModel
+	decideCalls  int
+	decidedModel string
+	decideErr    error
+}
+
+func (d *decisionProbeDriver) Decide(_ context.Context, modelName *string, _ *modelModule.DecideRequest, _ *modelModule.APIConfig, _ *common.ModelUsage) (*modelModule.DecideResponse, error) {
+	d.decideCalls++
+	if modelName != nil {
+		d.decidedModel = *modelName
+	}
+	if d.decideErr != nil {
+		return nil, d.decideErr
+	}
+	return &modelModule.DecideResponse{}, nil
+}
+
+func TestVerifyProviderModelVerifiesDecisionModels(t *testing.T) {
+	driver := &decisionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "decision-model-preview", ModelTypes: []string{entity.ModelTypeDecision.String()}}},
+		&modelModule.APIConfig{}, nil)
+	if err != nil {
+		t.Fatalf("verifyProviderModel() error = %v", err)
+	}
+	if driver.decideCalls != 1 {
+		t.Fatalf("Decide calls = %d, want 1", driver.decideCalls)
+	}
+	if driver.decidedModel != "decision-model-preview" {
+		t.Fatalf("Decide model = %q, want decision-model-preview", driver.decidedModel)
+	}
+	if result["decision-model-preview"] != entity.ModelVerifySuccess {
+		t.Fatalf("verification result = %#v, want success", result)
+	}
+}
+
+// A type falling through the switch collects no error, so the failure must name
+// it: joining no errors returns nil, which %w renders as "%!w(<nil>)" — the
+// message that hid this very case while decision had no verifier.
+func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
+	driver := modelModule.NewDummyModel(nil, modelModule.URLSuffix{})
+
+	_, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "hypothetical-model", ModelTypes: []string{"quantum"}}},
+		&modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want a failure")
+	}
+	if strings.Contains(err.Error(), "%!w") {
+		t.Fatalf("verifyProviderModel() leaked a formatting error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "quantum") {
+		t.Fatalf("verifyProviderModel() error = %v, want it to name the unverifiable type", err)
+	}
+}
+
+// Verification builds the request Decide sends, so it needs exercising against
+// a real driver. The stand-in used above accepts any request — including one the
+// endpoint would refuse — so it cannot catch verification asking for nothing.
+func TestVerifyProviderModelAsksSystemOneDecisionEndpoint(t *testing.T) {
+	prev := common.AllowAnyHostForTest
+	common.AllowAnyHostForTest = true
+	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+
+	asked := false
+	var request struct {
+		Model     string            `json:"model"`
+		State     map[string]string `json:"state"`
+		Questions map[string]struct {
+			Type         string `json:"type"`
+			Instructions string `json:"instructions"`
+		} `json:"questions"`
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = true
+		if r.URL.Path != "/v1/systemone" {
+			t.Errorf("path=%s, want /v1/systemone", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("undecodable request body: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"answers":{"verification":{"type":"noul","noul":0.5}}}`))
+	}))
+	defer srv.Close()
+
+	apiKey := "sk-test"
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"),
+		modelModule.NewSystemOneModel(map[string]string{"default": srv.URL + "/v1"},
+			modelModule.URLSuffix{Decision: "systemone", Models: "models"}),
+		[]*modelModule.Model{{Name: "decision-model-preview", ModelTypes: []string{entity.ModelTypeDecision.String()}}},
+		&modelModule.APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("verifyProviderModel() error = %v", err)
+	}
+	if !asked {
+		t.Fatal("verification never reached the decision endpoint")
+	}
+	if result["decision-model-preview"] != entity.ModelVerifySuccess {
+		t.Fatalf("verification result = %#v, want success", result)
+	}
+	question, ok := request.Questions["verification"]
+	if !ok {
+		t.Fatalf("request questions = %#v, want the verification question", request.Questions)
+	}
+	if question.Type != "noul" || question.Instructions == "" {
+		t.Errorf("verification question = %+v, want a noul question with instructions", question)
+	}
+}
+
+func TestVerifyProviderModelReportsFailingDecisionModels(t *testing.T) {
+	driver := &decisionProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		decideErr:  errors.New("endpoint answered 404"),
+	}
+
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "decision-model-preview", ModelTypes: []string{entity.ModelTypeDecision.String()}}},
+		&modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want the endpoint failure")
+	}
+	if !strings.Contains(err.Error(), "endpoint answered 404") {
+		t.Fatalf("verifyProviderModel() error = %v, want the endpoint failure", err)
+	}
+	if result["decision-model-preview"] != entity.ModelVerifyFail {
+		t.Fatalf("verification result = %#v, want fail", result)
 	}
 }
 

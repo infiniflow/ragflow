@@ -1494,6 +1494,8 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	var audioBinary interface{}
 	var prompt string
 	var createdAt float64
+	var usage *ChatTurnUsage
+	var elapsedMs float64
 	for result := range resultChan {
 		if result.Final {
 			// The final event carries the complete (decorated) answer;
@@ -1505,6 +1507,8 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 			audioBinary = result.AudioBinary
 			prompt = result.Prompt
 			createdAt = result.CreatedAt
+			usage = result.Usage
+			elapsedMs = result.ElapsedMs
 		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
@@ -1523,6 +1527,14 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	}
 	if createdAt != 0 {
 		ans["created_at"] = createdAt
+	}
+	// The SSE final event carries the turn's cost; the non-stream reply has to
+	// carry it too, or a caller comparing runs has no way to read it at all.
+	if usage != nil {
+		ans["usage"] = usage
+	}
+	if elapsedMs > 0 {
+		ans["elapsed_ms"] = elapsedMs
 	}
 	return ans
 }

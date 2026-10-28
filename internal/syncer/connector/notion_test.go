@@ -202,11 +202,49 @@ func TestNotionConnectorFileRejectsOversizedBody(t *testing.T) {
 	}))
 	defer server.Close()
 
+	withConnectorLoopbackTestHook(t)
 	connector := newTestNotionConnector(t)
 	connector.fileMaxBytes = 4
 	_, err := connector.file(t.Context(), server.URL)
 	if err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
 		t.Fatalf("file err = %v, want maximum size error", err)
+	}
+}
+
+func TestNotionConnectorFileRejectsPrivateURL(t *testing.T) {
+	previous := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = previous })
+
+	requests := make(chan struct{}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- struct{}{}
+		_, _ = io.WriteString(w, "internal response")
+	}))
+	defer server.Close()
+
+	connector := newTestNotionConnector(t)
+	_, err := connector.file(t.Context(), server.URL)
+	if err == nil {
+		t.Fatal("file accepted a private URL, want SSRF rejection")
+	}
+	select {
+	case <-requests:
+		t.Fatal("private URL received a request, want none")
+	default:
+	}
+}
+
+func TestNotionConnectorFileRejectsPrivateRedirect(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data/", http.StatusFound)
+	}))
+	defer server.Close()
+
+	connector := newTestNotionConnector(t)
+	if _, err := connector.file(t.Context(), server.URL); err == nil {
+		t.Fatal("file followed a redirect to a private metadata address, want SSRF rejection")
 	}
 }
 

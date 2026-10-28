@@ -89,7 +89,7 @@ func TestPDFParser_ParseWithResult_SoMarkRequiresBaseURL(t *testing.T) {
 }
 
 func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
-	if item := soMarkBlockToItem(map[string]any{"type": "header", "content": "x"}, false); item != nil {
+	if item, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{}); item != nil {
 		t.Fatalf("item = %#v, want nil", item)
 	}
 }

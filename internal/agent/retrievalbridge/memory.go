@@ -82,7 +82,7 @@ func (a *MemoryAdapter) Search(
 	}
 	actorID := strings.TrimSpace(req.TenantID)
 	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-		if userID, _ := state.Sys["user_id"].(string); strings.TrimSpace(userID) != "" {
+		if userID, _ := state.GetSysString("user_id"); strings.TrimSpace(userID) != "" {
 			actorID = strings.TrimSpace(userID)
 		}
 	}

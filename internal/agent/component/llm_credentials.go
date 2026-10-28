@@ -28,7 +28,7 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 		common.Debug("llm credentials: no canvas state in ctx")
 		return apiKey, baseURL
 	}
-	tid, _ := state.Sys["tenant_id"].(string)
+	tid, _ := state.GetSysString("tenant_id")
 	if tid == "" {
 		common.Debug("llm credentials: state.Sys has no tenant_id")
 		return apiKey, baseURL
@@ -197,7 +197,7 @@ func resolveTenantModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, 
 	if err != nil || state == nil {
 		return "", "", apiKey, baseURL, false, nil
 	}
-	tid, _ := state.Sys["tenant_id"].(string)
+	tid, _ := state.GetSysString("tenant_id")
 	if tid == "" {
 		return "", "", apiKey, baseURL, false, nil
 	}

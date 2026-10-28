@@ -213,7 +213,11 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		return nil, common.CodeDataError, err
 	}
 
-	if datasetIDsValue, ok := req["dataset_ids"]; ok {
+	datasetIDsValue, hasDatasetIDs := req["dataset_ids"]
+	if !hasDatasetIDs {
+		datasetIDsValue, hasDatasetIDs = req["kb_ids"]
+	}
+	if hasDatasetIDs {
 		kbIDs, err := s.validateCreateDatasetIDs(ctx, datasetIDsValue, userID)
 		if err != nil {
 			return nil, common.CodeDataError, err
@@ -405,6 +409,20 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 		return nil, err
 	}
 	return normalizedIDs, nil
+}
+
+func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.JSONSlice) error {
+	for _, rawID := range kbIDs {
+		datasetID, ok := rawID.(string)
+		if !ok || strings.TrimSpace(datasetID) == "" {
+			continue
+		}
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
+		}
+	}
+	return nil
 }
 
 func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
@@ -862,7 +880,11 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		}
 	}
 
-	if value, ok := req["dataset_ids"]; ok {
+	value, hasDatasetIDs := req["dataset_ids"]
+	if !hasDatasetIDs {
+		value, hasDatasetIDs = req["kb_ids"]
+	}
+	if hasDatasetIDs {
 		kbIDs, err := s.validateRESTDatasetIDs(ctx, value, userID)
 		if err != nil {
 			return nil, err
@@ -1046,7 +1068,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 	if value == nil {
 		return entity.JSONSlice{}, nil
 	}
-	items, ok := value.([]interface{})
+	items, ok := listFromValue(value)
 	if !ok {
 		return nil, errors.New("`dataset_ids` should be a list")
 	}

@@ -10,12 +10,77 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
 
-func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface{} {
+// pipelineVersionOutdated reports whether a dataset pinned pipeline version is
+// still the latest of its canvas (design section 6.3 D1/D2/D3). It is purely
+// informational: a non-latest version remains fully usable. BuiltIn datasets or
+// datasets without a pinned version are never outdated.
+func pipelineVersionOutdated(ctx context.Context, pipelineID, versionID *string) bool {
+	if pipelineID == nil || strings.TrimSpace(*pipelineID) == "" || versionID == nil {
+		return false
+	}
+	latest, err := dao.NewUserCanvasVersionDAO().GetLatest(ctx, dao.DB, strings.TrimSpace(*pipelineID))
+	if err != nil || latest == nil {
+		return false
+	}
+	return latest.ID != *versionID
+}
+
+// pipelineVersionOutdatedBatch is the list-endpoint variant of
+// pipelineVersionOutdated. It resolves the latest version id from a precomputed
+// {canvasID: latestVersionID} map (one query for the whole page) instead of a
+// GetLatest per row. A canvas absent from the map has no versions, so a pinned
+// version there is treated as not-outdated (matches the single-row fallback,
+// which returns false when GetLatest finds nothing).
+func pipelineVersionOutdatedBatch(latestByCanvas map[string]string, pipelineID, versionID *string) bool {
+	if pipelineID == nil || strings.TrimSpace(*pipelineID) == "" || versionID == nil {
+		return false
+	}
+	latestID, ok := latestByCanvas[strings.TrimSpace(*pipelineID)]
+	if !ok {
+		return false
+	}
+	return latestID != *versionID
+}
+
+// latestVersionIDsByCanvas resolves the latest version id per canvas for the
+// given knowledgebases in one query, so a dataset list page computes every
+// row's outdated flag without an N+1 of GetLatest calls. Returns nil on error
+// or when no dataset pins a pipeline, letting the mapper treat everything as
+// not-outdated.
+func latestVersionIDsByCanvas(ctx context.Context, kbs []*entity.KnowledgebaseListItem) map[string]string {
+	ids := make([]string, 0, len(kbs))
+	seen := make(map[string]struct{}, len(kbs))
+	for _, kb := range kbs {
+		if kb == nil || kb.PipelineID == nil {
+			continue
+		}
+		id := strings.TrimSpace(*kb.PipelineID)
+		if id == "" {
+			continue
+		}
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	m, err := dao.NewUserCanvasVersionDAO().LatestIDsByCanvasIDs(ctx, dao.DB, ids)
+	if err != nil {
+		return nil
+	}
+	return m
+}
+
+func datasetListItemToMap(latestByCanvas map[string]string, kb *entity.KnowledgebaseListItem) map[string]interface{} {
 	// avatar/language/description keys are always present (null when unset),
 	// matching Python's full-row dict response.
 	item := map[string]interface{}{
@@ -43,10 +108,19 @@ func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface
 	if kb.UpdateTime != nil {
 		item["update_time"] = *kb.UpdateTime
 	}
+	if kb.PipelineID != nil {
+		item["pipeline_id"] = *kb.PipelineID
+	}
+	if kb.PipelineVersionID != nil {
+		item["pipeline_version_id"] = *kb.PipelineVersionID
+	}
+	// Design section 6.3 (! indicator): true when a pinned version is no longer
+	// the latest of its canvas. Purely informational; never blocks parsing.
+	item["pipeline_version_outdated"] = pipelineVersionOutdatedBatch(latestByCanvas, kb.PipelineID, kb.PipelineVersionID)
 	return item
 }
 
-func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
+func datasetToMap(ctx context.Context, kb *entity.Knowledgebase) map[string]interface{} {
 	item := map[string]interface{}{
 		"id":                         kb.ID,
 		"tenant_id":                  kb.TenantID,
@@ -76,6 +150,12 @@ func datasetToMap(kb *entity.Knowledgebase) map[string]interface{} {
 	if kb.PipelineID != nil {
 		item["pipeline_id"] = *kb.PipelineID
 	}
+	if kb.PipelineVersionID != nil {
+		item["pipeline_version_id"] = *kb.PipelineVersionID
+	}
+	// Design section 6.3 (! indicator): true when a pinned version is no longer
+	// the latest of its canvas. Purely informational; never blocks parsing.
+	item["pipeline_version_outdated"] = pipelineVersionOutdated(ctx, kb.PipelineID, kb.PipelineVersionID)
 	if kb.GraphragTaskID != nil {
 		item["graphrag_task_id"] = *kb.GraphragTaskID
 	}

@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -80,18 +81,20 @@ func ensureDatasetTestMembership(t *testing.T, userID, tenantID, role string) {
 		Count(&count).Error; err != nil {
 		t.Fatalf("count test tenant memberships: %v", err)
 	}
-	if count > 0 {
-		return
+	if count == 0 {
+		if err := dao.DB.Create(&entity.UserTenant{
+			ID:        userID + "-" + tenantID,
+			UserID:    userID,
+			TenantID:  tenantID,
+			Role:      role,
+			InvitedBy: tenantID,
+			Status:    sptr(string(entity.StatusValid)),
+		}).Error; err != nil {
+			t.Fatalf("insert test tenant membership: %v", err)
+		}
 	}
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        userID + "-" + tenantID,
-		UserID:    userID,
-		TenantID:  tenantID,
-		Role:      role,
-		InvitedBy: tenantID,
-		Status:    sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert test tenant membership: %v", err)
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare test tenant permission fixture: %v", err)
 	}
 }
 

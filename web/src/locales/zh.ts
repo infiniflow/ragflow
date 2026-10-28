@@ -708,8 +708,12 @@ export default {
       parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      applyParserSettingsTitle: '将解析设置应用到现有文件？',
       parserSettingsChangeWarning:
-        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
+        '默认情况下，更新后的解析设置仅应用于新上传的文件。选择“是”可将设置同时应用于此知识库中的所有现有文件，并替换各文件的自定义解析设置。您仍需手动重新解析这些文件，设置才会对其内容生效。选择“否”可保留现有文件的解析设置。',
+      parserSettingsApplied: '解析设置已应用。请手动重新解析文件以更新其内容。',
+      parserSettingsApplyFailed:
+        '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -972,7 +976,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
-      applyModelConfigs: '应用模型配置',
+      applyModelConfigs: '在单模型对话中使用此模型及其设置',
       conversations: '会话',
       chatApps: '聊天',
       createChat: '创建聊天',
@@ -1043,7 +1047,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
-        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
+        '在将检索到的文本块传递给大语言模型（LLM）之前，评估其与用户问题的相关性。要启用此功能，请先在“设置 → 模型供应商”中配置决策模型，然后在此处选择。默认情况下不使用决策模型。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
@@ -1192,6 +1196,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1apiApiKeyTip:
         '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
       search1apiApiKeyMessage: '请输入 Search1API API Key',
+      searchapiApiKeyTip:
+        '选择 SearchApi 后，将使用 SearchApi 的 Google 网络搜索结果补充知识库检索。',
+      searchapiApiKeyMessage: '请输入 SearchApi API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
@@ -2256,7 +2263,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         author: '作者',
         sectionTitle: '章节标题',
       },
-      canvasCategory: '画布分类',
+      agentCategory: '智能体分类',
       created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
@@ -2474,6 +2481,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         download: '下载',
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
+        label: '流水线版本',
+        latest: '最新版本',
+        filterByAlias: '按别名筛选',
+        alias: '别名',
+        pinnedTooltip:
+          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
+        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        delete: '删除版本',
+        deleteConfirmTitle: '删除该版本？',
+        deleteConfirmContent:
+          '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        restore: '恢复为当前版本',
+        restoreConfirmTitle: '恢复此版本为当前智能体？',
+        restoreConfirmContent:
+          '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
+        missingContent:
+          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -2966,6 +2990,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      jsonUploadCategoryMismatch:
+        'JSON 文件类型与当前分类不符，请切换到对应分类后再导入',
       nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
@@ -3098,12 +3124,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
-      duplicate: '复制',
       copyOfAgentName: '{{name}} (副本)',
-      chooseAgentType: '选择智能体类型',
       createPipeline: '数据管道',
       createIngestionPipeline: '创建数据管道',
       createWorkflow: '创建工作流',
+      createCompilationOperator: '创建编译算子',
       tabList: {
         ingestionPipeline: '数据管道',
         compilationOperator: '编译算子',
@@ -3135,9 +3160,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalDatasetRequired: '请先选择知识库',
       retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
@@ -3524,18 +3549,14 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
 
     explore: {
       title: '探索',
-      canvasList: '画布列表',
       sessions: '会话列表',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',
       deleteSession: '删除会话',
-      searchCanvas: '搜索画布...',
       searchSessions: '搜索会话...',
-      noCanvasSelected: '请选择一个画布',
       noSessionSelected: '请选择一个会话或创建新会话',
       noSessionsFound: '未找到会话',
       createFirstSession: '创建您的第一个会话',
-      noCanvasFound: '未找到画布',
       deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
       batchDeleteSessions: '删除会话',
     },
