@@ -157,7 +157,7 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 	t.Run("stepfun stream error body read failure", func(t *testing.T) {
 		srv := truncatedError(t)
 		m := NewStepFunModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
-		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), &APIConfig{ApiKey: ptr("test-key")}, nil, nil, noopSender)
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
 		}
@@ -166,7 +166,7 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 	t.Run("togetherai stream error body read failure", func(t *testing.T) {
 		srv := truncatedError(t)
 		m := NewTogetherAIModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
-		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), &APIConfig{ApiKey: ptr("test-key")}, nil, nil, noopSender)
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
 		}
@@ -175,9 +175,68 @@ func TestDriverRequestsHonourContextCancellation(t *testing.T) {
 	t.Run("fishaudio stream error body read failure", func(t *testing.T) {
 		srv := truncatedError(t)
 		m := NewFishAudioModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
-		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), apiConfig(), nil, nil, noopSender)
+		err := m.AudioSpeechWithSender(t.Context(), ptr("voice"), ptr("hello"), &APIConfig{ApiKey: ptr("test-key")}, nil, nil, noopSender)
 		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Fatalf("err = %v, want io.ErrUnexpectedEOF", err)
 		}
 	})
+}
+
+// TestStreamTTSErrorBodyReadIsBounded pins that a non-200 streaming-TTS body
+// that stalls mid-read cannot pin the call. The transport only interrupts a
+// body read when the request context ends, so the drivers carry
+// streamCallTimeout; without it the read blocks until the caller cancels.
+func TestStreamTTSErrorBodyReadIsBounded(t *testing.T) {
+	withSSRFBypass(t)
+
+	stalledError := func(t *testing.T) *httptest.Server {
+		t.Helper()
+		release := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, buf, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				t.Errorf("hijack: %v", err)
+				return
+			}
+			defer conn.Close()
+			// Promise a body and send none: the header block completes, so the
+			// following read can only end when the request context does.
+			buf.WriteString("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 64\r\n\r\n")
+			buf.Flush()
+			<-release
+		}))
+		t.Cleanup(srv.Close)
+		t.Cleanup(func() { close(release) })
+		return srv
+	}
+	noopSender := func(*string, *string) error { return nil }
+
+	cases := map[string]func(t *testing.T) error{
+		"stepfun": func(t *testing.T) error {
+			srv := stalledError(t)
+			m := NewStepFunModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
+			return m.AudioSpeechWithSender(context.Background(), ptr("voice"), ptr("hello"), &APIConfig{ApiKey: ptr("test-key")}, nil, nil, noopSender)
+		},
+		"togetherai": func(t *testing.T) error {
+			srv := stalledError(t)
+			m := NewTogetherAIModel(map[string]string{"default": srv.URL}, URLSuffix{TTS: "tts"})
+			return m.AudioSpeechWithSender(context.Background(), ptr("voice"), ptr("hello"), &APIConfig{ApiKey: ptr("test-key")}, nil, nil, noopSender)
+		},
+	}
+
+	withTestTimeouts(t, time.Minute, 100*time.Millisecond)
+	for name, call := range cases {
+		t.Run(name, func(t *testing.T) {
+			done := make(chan error, 1)
+			go func() { done <- call(t) }()
+			select {
+			case err := <-done:
+				if err == nil {
+					t.Fatal("want an error from the stalled error body")
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("stalled error body outlived the stream deadline")
+			}
+		})
+	}
 }

@@ -281,6 +281,13 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// The transport only interrupts a response-body read when the request
+	// context ends, so a non-200 page that stalls mid-body would otherwise pin
+	// this call until the caller cancels. FishAudio's streaming TTS already
+	// carries the same deadline.
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
