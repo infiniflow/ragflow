@@ -2198,6 +2198,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      deleteIncomplete: '无法确认删除已全部完成。请检查剩余文档后重试。',
       noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
