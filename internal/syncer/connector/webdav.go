@@ -188,12 +188,11 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		return nil, err
 	}
 	// A WebDAV server's Last-Modified clock can lag ours, typically from a
-	// timezone misconfiguration. A skewed mtime sits permanently below the
-	// watermark, so a window-only filter skips the file on every poll. Stored
-	// fingerprints therefore decide which files changed; the window below is
-	// only the fallback for a knowledge base with no stored fingerprint yet,
-	// widened by a day so a skewed newcomer is not dropped on its first
-	// appearance.
+	// timezone misconfiguration. The previous cycle's end is the lower bound,
+	// so a skewed mtime sits permanently below the watermark and the file is
+	// skipped on every poll. Widen the bound by a day so such files are
+	// selected again; the metadata fingerprint lets SyncRunner drop the ones
+	// that did not change without downloading them.
 	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 	start := epoch
 	if request.WindowStart != nil {
@@ -213,21 +212,17 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		if !file.hasModified {
 			file.modified = end
 		}
+		if file.modified.Before(start) || file.modified.After(end) {
+			continue
+		}
 		if !c.isAcceptedExtension(file) || !file.hasSize || file.size > c.sizeThreshold {
 			continue
 		}
-		if !webdavFileSelected(request.Fingerprints, c.sourceID(file.url), file, start, end) {
-			continue
-		}
-		blob, err := c.downloadFile(ctx, file.url)
-		if err != nil || len(blob) == 0 {
-			continue
-		}
-		documents = append(documents, c.buildDocument(file, blob, nameCounts))
+		documents = append(documents, c.buildDocument(file, nameCounts))
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
-	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize}
+	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize, download: c.downloadFile}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -251,42 +246,23 @@ func (c *WebDAVConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 	return &webdavPruneSession{documents: documents, batchSize: c.batchSize}, nil
 }
 
-func (c *WebDAVConnector) buildDocument(file webdavFile, blob []byte, nameCounts map[string]int) SourceDocument {
-	fingerprint := webdavFingerprint(file)
-	if fingerprint == "" {
-		fingerprint = contentFingerprint(blob)
-	}
+func (c *WebDAVConnector) buildDocument(file webdavFile, nameCounts map[string]int) SourceDocument {
 	return SourceDocument{
 		SourceID:           c.sourceID(file.url),
 		SemanticIdentifier: webdavSemanticIdentifier(file, c.remotePath, nameCounts),
 		Extension:          webdavExtension(file.url),
-		Blob:               blob,
+		FetchRef:           &FetchReference{Key: file.url, SizeHint: file.size},
 		UpdatedAt:          file.modified,
 		SizeBytes:          file.size,
-		Fingerprint:        fingerprint,
+		Fingerprint:        webdavFingerprint(file),
 	}
 }
 
-// webdavFileSelected reports whether the file must be downloaded again.
-// A stored fingerprint decides on its own, because the mtime it was built from
-// is exactly the signal that may be skewed; a file that has none is included so
-// a never-ingested or failed file is retried instead of being lost below the
-// watermark. Only a knowledge base without any stored fingerprint falls back to
-// the window.
-func webdavFileSelected(stored map[string]string, sourceID string, file webdavFile, start, end time.Time) bool {
-	if len(stored) > 0 {
-		fingerprint := webdavFingerprint(file)
-		previous := stored[sourceID]
-		return fingerprint == "" || previous == "" || previous != fingerprint
-	}
-	return !file.modified.Before(start) && !file.modified.After(end)
-}
-
-// webdavFingerprint identifies one revision from the PROPFIND metadata. It
-// costs no download, unlike a hash of the body, so a poll that finds nothing
-// new transfers no file content at all. Servers that omit Last-Modified get an
-// empty fingerprint and are re-downloaded, because nothing else can tell their
-// revisions apart.
+// webdavFingerprint identifies one revision from the PROPFIND metadata, which
+// is already in hand. SyncRunner compares it with the stored value before it
+// fetches a body, so an unchanged file costs no download. Servers that omit
+// Last-Modified get an empty fingerprint and are fetched on every poll, because
+// nothing in the listing can tell their revisions apart.
 func webdavFingerprint(file webdavFile) string {
 	if !file.hasModified {
 		return ""
@@ -321,6 +297,7 @@ type webdavSyncSession struct {
 	documents []SourceDocument
 	batchSize int
 	index     int
+	download  func(ctx context.Context, fileURL string) ([]byte, error)
 }
 
 // NextBatch returns the next WebDAV document batch.
@@ -341,6 +318,12 @@ func (s *webdavSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 // Close closes the WebDAV sync session.
 func (s *webdavSyncSession) Close() error {
 	return nil
+}
+
+// Fetch downloads a selected WebDAV file. SyncRunner calls it only for a
+// document whose fingerprint differs from the stored one.
+func (s *webdavSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
+	return s.download(ctx, ref.Key)
 }
 
 // applyResume advances past the last committed WebDAV document when retrying a task.

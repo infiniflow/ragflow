@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 type webdavTestFile struct {
@@ -352,8 +351,21 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	if alphaDocs.Extension != ".txt" {
 		t.Fatalf("docs alpha extension = %q", alphaDocs.Extension)
 	}
-	if string(alphaDocs.Blob) != "hello alpha docs" || alphaDocs.SizeBytes != 15 {
-		t.Fatalf("docs alpha blob/size = %q/%d", alphaDocs.Blob, alphaDocs.SizeBytes)
+	if alphaDocs.FetchRef == nil || alphaDocs.FetchRef.Key != server.URL+"/docs/alpha.txt" || alphaDocs.FetchRef.SizeHint != 15 {
+		t.Fatalf("docs alpha fetch ref = %+v", alphaDocs.FetchRef)
+	}
+	if alphaDocs.SizeBytes != 15 {
+		t.Fatalf("docs alpha size = %d", alphaDocs.SizeBytes)
+	}
+	if alphaDocs.Blob != nil {
+		t.Fatalf("docs alpha blob = %q, want lazy fetch", alphaDocs.Blob)
+	}
+	alphaBlob, err := session.(Fetcher).Fetch(context.Background(), *alphaDocs.FetchRef)
+	if err != nil {
+		t.Fatalf("docs alpha fetch failed: %v", err)
+	}
+	if string(alphaBlob) != "hello alpha docs" {
+		t.Fatalf("docs alpha blob = %q", alphaBlob)
 	}
 	if !alphaDocs.UpdatedAt.Equal(mustTime(t, "2026-01-02T00:00:00Z")) {
 		t.Fatalf("docs alpha updated at = %v", alphaDocs.UpdatedAt)
@@ -379,8 +391,15 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	if notesAlpha.SemanticIdentifier != "notes / alpha.txt" {
 		t.Fatalf("notes alpha semantic identifier = %q", notesAlpha.SemanticIdentifier)
 	}
-	if string(second.Documents[1].Blob) != "hello beta" {
-		t.Fatalf("beta blob = %q", second.Documents[1].Blob)
+	if second.Documents[1].FetchRef == nil || second.Documents[1].FetchRef.Key != server.URL+"/notes/beta.md" {
+		t.Fatalf("beta fetch ref = %+v", second.Documents[1].FetchRef)
+	}
+	betaBlob, err := session.(Fetcher).Fetch(context.Background(), *second.Documents[1].FetchRef)
+	if err != nil {
+		t.Fatalf("beta fetch failed: %v", err)
+	}
+	if string(betaBlob) != "hello beta" {
+		t.Fatalf("beta blob = %q", betaBlob)
 	}
 
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
@@ -464,60 +483,65 @@ func TestWebDAVConnectorOpenSyncExcludesFilesOlderThanMtimeTolerance(t *testing.
 	}
 }
 
-func TestWebDAVConnectorOpenSyncSelectsFilesByFingerprint(t *testing.T) {
+// TestWebDAVConnectorOpenSyncFingerprintsWithoutDownloading pins the contract
+// SyncRunner relies on: a selected document carries a fingerprint from the
+// listing, so an unchanged poll costs no GET.
+func TestWebDAVConnectorOpenSyncFingerprintsWithoutDownloading(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
 		"/":           {isDir: true},
 		"/band.txt":   {content: "band body", size: 9, hasSize: true, modified: "Sat, 03 Jan 2026 12:00:00 GMT"},
-		"/new.txt":    {content: "new body", size: 8, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT"},
-		"/stable.txt": {content: "stable body", size: 11, hasSize: true, modified: "Thu, 01 Jan 2026 00:00:00 GMT"},
+		"/stable.txt": {content: "stable body", size: 11, hasSize: true, modified: "Fri, 02 Jan 2026 06:00:00 GMT"},
 	})
 	connector := webDAVTestConnector(t, server.URL, false, 10)
 
-	// The stored value is spelled out instead of calling webdavFingerprint so a
-	// format change that would silently re-download every document fails here.
-	storedFingerprint := func(size int64, modified string) string {
-		parsed, err := time.Parse(time.RFC1123, modified)
-		if err != nil {
-			t.Fatalf("parse modified %q: %v", modified, err)
-		}
-		return stableFingerprint(map[string]any{
-			"size":     size,
-			"modified": parsed.UTC().Format(time.RFC3339Nano),
-		})
-	}
-	sourceID := func(name string) string { return "webdav:" + server.URL + ":" + server.URL + "/" + name }
-
-	// Every mtime here sits below the watermark, the shape a lagging server
-	// clock produces, and band.txt is additionally inside the tolerance band.
-	// A matching fingerprint must exclude the file, so neither band.txt nor
-	// stable.txt costs a download, while new.txt has no stored fingerprint.
+	// Both mtimes sit below the watermark, the shape a lagging server clock
+	// produces, and inside the day of tolerance the connector rechecks.
 	start := mustTime(t, "2026-01-03T00:00:00Z")
-	session, err := connector.OpenSync(t.Context(), SyncRequest{
-		WindowStart: &start,
-		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
-		Fingerprints: map[string]string{
-			sourceID("band.txt"):   storedFingerprint(9, "Sat, 03 Jan 2026 12:00:00 GMT"),
-			sourceID("stable.txt"): storedFingerprint(11, "Thu, 01 Jan 2026 00:00:00 GMT"),
-		},
-	})
-	if err != nil {
-		t.Fatalf("OpenSync failed: %v", err)
+	request := SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")}
+	collect := func() map[string]string {
+		t.Helper()
+		session, err := connector.OpenSync(t.Context(), request)
+		if err != nil {
+			t.Fatalf("OpenSync failed: %v", err)
+		}
+		defer session.Close()
+		fingerprints := map[string]string{}
+		for {
+			batch, batchErr := session.NextBatch(context.Background())
+			if errors.Is(batchErr, io.EOF) {
+				return fingerprints
+			}
+			if batchErr != nil {
+				t.Fatalf("NextBatch failed: %v", batchErr)
+			}
+			for _, doc := range batch.Documents {
+				if doc.Blob != nil {
+					t.Fatalf("%s was downloaded during OpenSync", doc.SourceID)
+				}
+				if doc.FetchRef == nil {
+					t.Fatalf("%s has no fetch reference", doc.SourceID)
+				}
+				if doc.Fingerprint == "" {
+					t.Fatalf("%s has no fingerprint", doc.SourceID)
+				}
+				fingerprints[doc.SemanticIdentifier] = doc.Fingerprint
+			}
+		}
 	}
-	defer session.Close()
 
-	batch, err := session.NextBatch(context.Background())
-	if err != nil {
-		t.Fatalf("NextBatch failed: %v", err)
+	first := collect()
+	if len(first) != 2 || first["band.txt"] == "" || first["stable.txt"] == "" {
+		t.Fatalf("fingerprints = %v, want band.txt and stable.txt", first)
 	}
-	if len(batch.Documents) != 1 {
-		t.Fatalf("batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	if len(*getRequests) != 0 {
+		t.Fatalf("download requests = %v, want none", *getRequests)
 	}
-	if batch.Documents[0].SemanticIdentifier != "new.txt" {
-		t.Fatalf("document = %q, want new.txt", batch.Documents[0].SemanticIdentifier)
-	}
-	if len(*getRequests) != 1 || (*getRequests)[0] != "/new.txt" {
-		t.Fatalf("download requests = %v, want [/new.txt]", *getRequests)
+	second := collect()
+	for name, fingerprint := range first {
+		if second[name] != fingerprint {
+			t.Fatalf("%s fingerprint = %q, want stable %q", name, second[name], fingerprint)
+		}
 	}
 }
 
@@ -562,6 +586,14 @@ func TestWebDAVConnectorMountedUnderNonRootPath(t *testing.T) {
 	}
 	if !foundMountedSourceID {
 		t.Fatalf("missing mounted source id %q in %+v", mountedSourceID, batch.Documents)
+	}
+	if len(*getRequests) != 0 {
+		t.Fatalf("download requests during OpenSync = %v, want none", *getRequests)
+	}
+	for _, doc := range batch.Documents {
+		if _, err := session.(Fetcher).Fetch(context.Background(), *doc.FetchRef); err != nil {
+			t.Fatalf("fetch %s failed: %v", doc.SourceID, err)
+		}
 	}
 	if len(*getRequests) != 4 {
 		t.Fatalf("download requests = %d, want 4: %v", len(*getRequests), *getRequests)
@@ -617,15 +649,22 @@ func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.
 	if batch.Documents[0].SourceID != unsetBatch.Documents[0].SourceID {
 		t.Fatalf("unset window source id = %q", unsetBatch.Documents[0].SourceID)
 	}
-	if string(unsetBatch.Documents[0].Blob) != "no modified" {
-		t.Fatalf("unset window blob = %q", unsetBatch.Documents[0].Blob)
+	if unsetBatch.Documents[0].Fingerprint != "" {
+		t.Fatalf("fingerprint without Last-Modified = %q, want empty so every poll refetches", unsetBatch.Documents[0].Fingerprint)
+	}
+	nomodBlob, err := unsetSession.(Fetcher).Fetch(context.Background(), *unsetBatch.Documents[0].FetchRef)
+	if err != nil {
+		t.Fatalf("unset window fetch failed: %v", err)
+	}
+	if string(nomodBlob) != "no modified" {
+		t.Fatalf("unset window blob = %q", nomodBlob)
 	}
 	if unsetBatch.Documents[0].UpdatedAt.IsZero() {
 		t.Fatalf("unset window updated at is zero")
 	}
 }
 
-func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
+func TestWebDAVConnectorFetchRejectsOversizedResponse(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", fmt.Sprintf("%d", maxWebDAVResponseSize+1))
 	content := strings.Repeat("x", maxWebDAVResponseSize+1)
 	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
@@ -640,8 +679,15 @@ func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	defer session.Close()
-	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("NextBatch = %v, want EOF", err)
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	}
+	if _, err := session.(Fetcher).Fetch(context.Background(), *batch.Documents[0].FetchRef); err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("fetch oversized = %v, want size error", err)
 	}
 	if len(*getRequests) != 1 {
 		t.Fatalf("download requests = %d, want 1", len(*getRequests))
@@ -786,6 +832,8 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" {
 			getPaths = append(getPaths, r.URL.Path)
+			_, _ = io.WriteString(w, "hello")
+			return
 		}
 		if r.Method != "PROPFIND" {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -831,6 +879,9 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 		for _, doc := range batch.Documents {
 			if strings.Contains(doc.SourceID, externalHost) {
 				t.Fatalf("external href leaked into sync results: %s", doc.SourceID)
+			}
+			if _, err := session.(Fetcher).Fetch(context.Background(), *doc.FetchRef); err != nil {
+				t.Fatalf("fetch %s failed: %v", doc.SourceID, err)
 			}
 		}
 	}
