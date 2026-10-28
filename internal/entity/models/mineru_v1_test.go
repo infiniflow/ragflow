@@ -275,7 +275,7 @@ func TestMinerULocalCheckConnectionPrefersV1Health(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if r.URL.Path == "/v1/health" {
-			w.WriteHeader(http.StatusOK)
+			writeMinerUHealth(w)
 			return
 		}
 		http.NotFound(w, r)

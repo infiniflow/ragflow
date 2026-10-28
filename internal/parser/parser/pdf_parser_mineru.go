@@ -40,8 +40,48 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 
 	backend := models.ResolveMinerUBackend(parser.MinerUBackend, parser.MinerUAPIKey)
 	serverURL := models.ResolveMinerUServerURL(parser.MinerUServerURL, parser.MinerUAPIKey)
-	if err := models.ValidateMinerUConfig(backend, serverURL); err != nil {
+	if _, ok := models.ValidMinerUBackends[backend]; !ok {
+		return ParseResult{Err: models.ValidateMinerUConfig(backend, serverURL)}
+	}
+	if models.IsMinerUCloudBase(apiServer) {
+		if err := models.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
+			return ParseResult{Err: err}
+		}
+		parsed, err := models.ParseMinerUCloud(ctx, apiServer, apiKey, filename, data, backend, "", "")
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU cloud: %w", err)}
+		}
+		content := ""
+		if parsed != nil {
+			content = parsed.Markdown
+		}
+		pageCount := 0
+		if strings.TrimSpace(content) != "" {
+			pageCount = 1
+		}
+		return pdfMarkdownToResult(ctx, filename, content, pageCount)
+	}
+	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU probe: %w", err)}
+	}
+	if err := models.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return ParseResult{Err: err}
+	}
+	if v1 {
+		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", 0)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
+		}
+		content := ""
+		if parsed != nil {
+			content = parsed.Markdown
+		}
+		pageCount := 0
+		if strings.TrimSpace(content) != "" {
+			pageCount = 1
+		}
+		return pdfMarkdownToResult(ctx, filename, content, pageCount)
 	}
 	timeout := parser.MinerUPollTimeout
 	if timeout <= 0 {

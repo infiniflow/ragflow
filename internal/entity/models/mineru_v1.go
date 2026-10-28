@@ -130,20 +130,8 @@ func minerUV1SupportCacheKey(baseURL, apiKey string) string {
 }
 
 func minerUProbeGET(ctx context.Context, client *http.Client, rawURL, token string) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return 0, err
-	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode, nil
+	code, _, err := minerUGET(ctx, client, rawURL, token)
+	return code, err
 }
 
 // MinerUSupportsV1 reports whether baseURL speaks MinerU 4's /v1 HTTP API.

@@ -280,6 +280,8 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 					}
 				} else if bedrockAPIKeyAuth {
 					return nil, common.NewCodedError(common.CodeServerError, err.Error())
+				} else if strings.EqualFold(providerName, "MinerU") {
+					return nil, common.NewCodedError(common.CodeDataError, err.Error())
 				} else {
 					remoteFetchErr = err
 				}
