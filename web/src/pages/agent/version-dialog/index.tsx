@@ -93,11 +93,6 @@ export function VersionDialog({
   // what was published. Rows predating that change are filtered out here.
   const released = useMemo(() => data.filter((x) => x.release), [data]);
 
-  // Backend returns the list newest-first (design section 7/E1); the first
-  // entry is therefore the latest version. Restoring the latest version is a
-  // no-op, so the restore button is disabled for it.
-  const latestId = released[0]?.id;
-
   // A2/F1: alias filtering is a pure front-end filter over the returned set.
   const filtered = useMemo(() => {
     const q = aliasFilter.trim().toLowerCase();
@@ -308,11 +303,7 @@ export function VersionDialog({
                           })
                         }
                         title={t('flow.version.restore')}
-                        disabled={
-                          selectedId === latestId ||
-                          !selectedId ||
-                          applyRestoring
-                        }
+                        disabled={!selectedId || applyRestoring}
                       >
                         <RotateCcw />
                       </Button>
