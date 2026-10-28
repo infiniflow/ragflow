@@ -187,25 +187,29 @@ func TestMediaResolverHonorsCancelledContextOnCacheHit(t *testing.T) {
 // must not be cached and replayed to the next image.
 func TestMediaResolverRetriesIndexAfterCancellation(t *testing.T) {
 	html, ref := mediaRefFixture(t)
-	resolver := NewMediaResolver()
-
+	var calls atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
 	src := MediaSourceFunc(func(context.Context) ([]byte, error) {
-		cancel()
+		if calls.Add(1) == 1 {
+			cancel()
+		}
 		return []byte(html), nil
 	})
+
+	resolver := NewMediaResolver()
 	if _, err := resolver.Resolve(ctx, ref, src); !errors.Is(err, context.Canceled) {
 		t.Fatalf("resolve err = %v, want context.Canceled", err)
 	}
 
-	data, err := resolver.Resolve(context.Background(), ref, MediaSourceFunc(func(context.Context) ([]byte, error) {
-		return []byte(html), nil
-	}))
+	data, err := resolver.Resolve(context.Background(), ref, src)
 	if err != nil {
 		t.Fatalf("retry after cancellation: %v", err)
 	}
 	if string(data) != "hello" {
 		t.Fatalf("data = %q, want hello", data)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("source reads = %d, want the cancelled build to be retried", calls.Load())
 	}
 }
 
