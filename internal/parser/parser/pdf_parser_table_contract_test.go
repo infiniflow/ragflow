@@ -49,16 +49,20 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 		wantDocType string
 	}{
 		{"opendataloader html", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "html": tableHTML})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": tableHTML}, nil)
+			return items
 		}, "table"},
 		{"opendataloader content only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText}, nil)
+			return items
 		}, "text"},
 		{"opendataloader cells only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "cells": cells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "cells": cells}, nil)
+			return items
 		}, "table"},
 		{"opendataloader blank cells keep content", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText, "cells": blankCells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText, "cells": blankCells}, nil)
+			return items
 		}, "text"},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
