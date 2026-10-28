@@ -30,12 +30,14 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	parserlib "ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 	medialib "ragflow/internal/parser/media"
+	"ragflow/internal/storage"
 )
 
 const (
@@ -659,5 +661,57 @@ func TestUploadChunkMediaSkipsMaterializationWhenImgIDExists(t *testing.T) {
 	}
 	if ck["img_id"] != testKBID+"-chunk-1" {
 		t.Errorf("img_id = %v", ck["img_id"])
+	}
+}
+
+// TestUploadChunkMediaRejectsInvalidMediaRef pins the malformed-reference
+// path: a present ref that does not decode must fail the run, not persist a
+// chunk without its image.
+func TestUploadChunkMediaRejectsInvalidMediaRef(t *testing.T) {
+	ck := map[string]any{
+		"id":           "chunk-1",
+		"text":         "",
+		"doc_type_kwd": "image",
+		"media_ref":    map[string]any{"format": "html"},
+	}
+	up := func(context.Context, string, string, []byte) (string, error) { return "", nil }
+	src := medialib.MediaSourceFunc(func(context.Context) ([]byte, error) {
+		t.Fatal("resolver must not run for an invalid reference")
+		return nil, nil
+	})
+	if _, err := uploadChunkMedia(t.Context(), []map[string]any{ck}, up, testKBID, testDocID, medialib.NewMediaResolver(), src); err == nil {
+		t.Fatal("invalid media_ref was treated as absent")
+	}
+}
+
+// TestChunkMediaSourceResolvesStorage covers both source locations the
+// chunker accepts: the forwarded bucket/path pair and doc_id-driven lookup.
+func TestChunkMediaSourceResolvesStorage(t *testing.T) {
+	ctx := t.Context()
+	payload := []byte("<p>source</p>")
+	mem := storage.NewMemoryStorage()
+	if err := mem.Put(ctx, "kb-1", "docs/a.html", payload); err != nil {
+		t.Fatal(err)
+	}
+	prevStorage := component.SetStorageFactoryOverride
+	component.SetStorageFactoryOverride = func() storage.Storage { return mem }
+	t.Cleanup(func() { component.SetStorageFactoryOverride = prevStorage })
+
+	src := chunkMediaSourceFactory(nil, map[string]any{"bucket": "kb-1", "path": "docs/a.html"})
+	data, err := src.Bytes(ctx)
+	if err != nil || string(data) != string(payload) {
+		t.Fatalf("bucket/path source = %q, %v", data, err)
+	}
+
+	prevResolve := component.ResolveDocumentStorageOverride
+	component.ResolveDocumentStorageOverride = func(string) (*component.DocumentStorageRef, error) {
+		return &component.DocumentStorageRef{Bucket: "kb-1", Path: "docs/a.html"}, nil
+	}
+	t.Cleanup(func() { component.ResolveDocumentStorageOverride = prevResolve })
+
+	src = chunkMediaSourceFactory(&gorm.DB{}, map[string]any{"doc_id": "doc-1"})
+	data, err = src.Bytes(ctx)
+	if err != nil || string(data) != string(payload) {
+		t.Fatalf("doc_id source = %q, %v", data, err)
 	}
 }

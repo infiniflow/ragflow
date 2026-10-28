@@ -119,10 +119,8 @@ func TestMediaResolverRejectsSizeMismatch(t *testing.T) {
 	}
 }
 
-// TestMediaResolverMatchesParserAttributeSemantics pins the cases where a
-// byte-level scanner used to disagree with the HTML parser: entities in the
-// media type, an encoded comma, a semicolon-less numeric reference, and an
-// unquoted value ending in "/>".
+// TestMediaResolverFindsImageAfterSpanCap pins the DOM fallback used when
+// the capped tokenizer index stops before a real image.
 func TestMediaResolverFindsImageAfterSpanCap(t *testing.T) {
 	img := `<img src="data:image/png;base64,aGVsbG8=">`
 	last := `<img src="data:image/png;base64,aGVsbG8+">`

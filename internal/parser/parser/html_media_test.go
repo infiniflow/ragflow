@@ -218,3 +218,125 @@ func TestHTMLParser_ResultIndependentOfImageBytes(t *testing.T) {
 		t.Fatalf("ref-mode result is %d bytes; it must not scale with image payloads", len(encoded))
 	}
 }
+
+// TestMediaResolverMatchesParserAttributeSemantics pins the cases where a
+// byte-level scanner used to disagree with the HTML parser: entities in the
+// media type, an encoded comma, a semicolon-less numeric reference, and an
+// unquoted value ending in "/>".
+func TestMediaResolverMatchesParserAttributeSemantics(t *testing.T) {
+	cases := map[string]string{
+		"entity in header":        `<img src="data:image&#47;png;base64,aGVsbG8=">`,
+		"entity comma":            `<img src="data:image/png;base64&#44;aGVsbG8=">`,
+		"semicolonless entity":    `<img src="data:image/png;base64,aGVsbG8&#43">`,
+		"unquoted trailing slash": `<img src=data:image/png;base64,aGVsbG8/>`,
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			p := NewHTMLParser()
+			result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			var ref *entity.MediaRef
+			for _, item := range result.JSON {
+				m := item.ToMap()
+				if m["doc_type_kwd"] != DocTypeImage {
+					continue
+				}
+				ref = entity.MediaRefFromAny(m["media_ref"])
+			}
+			if ref == nil {
+				t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
+			}
+			data, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+				return []byte(input), nil
+			}))
+			if err != nil {
+				t.Fatalf("resolver lost the parser's image: %v", err)
+			}
+			sum := sha256.Sum256(data)
+			if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {
+				t.Fatalf("digest = %s, want %s", got, ref.SHA256)
+			}
+		})
+	}
+}
+
+// TestMediaResolverIgnoresScriptDataURIs pins that image-like text inside a
+// script cannot exhaust the span index and hide a real image.
+func TestMediaResolverIgnoresScriptDataURIs(t *testing.T) {
+	img := `<img src="data:image/png;base64,aGVsbG8=">`
+	input := "<script>" + strings.Repeat(img, 5000) + "</script>" + img
+
+	p := NewHTMLParser()
+	result := p.ParseWithResult(context.Background(), "script.html", []byte(input))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var ref *entity.MediaRef
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] == DocTypeImage {
+			ref = entity.MediaRefFromAny(m["media_ref"])
+		}
+	}
+	if ref == nil {
+		t.Fatal("parser emitted no media_ref")
+	}
+	if _, err := media.NewMediaResolver().Resolve(context.Background(), *ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	})); err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+}
+
+// mediaRefFromHTML returns the first image reference the HTML parser emits.
+func mediaRefFromHTML(t *testing.T, input string) *entity.MediaRef {
+	t.Helper()
+	p := NewHTMLParser()
+	result := p.ParseWithResult(context.Background(), "case.html", []byte(input))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var ref *entity.MediaRef
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] == DocTypeImage {
+			ref = entity.MediaRefFromAny(m["media_ref"])
+		}
+	}
+	if ref == nil {
+		t.Fatalf("parser emitted no media_ref: %+v", result.JSON)
+	}
+	return ref
+}
+
+func resolveMediaInput(t *testing.T, input string, ref entity.MediaRef) []byte {
+	t.Helper()
+	data, err := media.NewMediaResolver().Resolve(context.Background(), ref, media.MediaSourceFunc(func(context.Context) ([]byte, error) {
+		return []byte(input), nil
+	}))
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	return data
+}
+
+func TestMediaResolverHandlesSelfClosingImg(t *testing.T) {
+	input := `<img src="data:image/png;base64,aGVsbG8=" />`
+	ref := mediaRefFromHTML(t, input)
+	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", data)
+	}
+}
+
+func TestMediaResolverFallsBackToTheParserDOM(t *testing.T) {
+	// In the HTML tree builder <svg><title> is foreign content, so the <img>
+	// becomes an element. The streaming tokenizer treats <title> as RCDATA and
+	// misses it; the DOM fallback must recover the image.
+	input := `<svg><title><img src="data:image/png;base64,aGVsbG8="></title></svg>`
+	ref := mediaRefFromHTML(t, input)
+	if data := resolveMediaInput(t, input, *ref); string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", data)
+	}
+}
