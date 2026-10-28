@@ -59,7 +59,12 @@ import agentService, {
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, isEmpty, set } from 'lodash';
 import { useCallback, useState } from 'react';
@@ -800,30 +805,43 @@ export const useFetchVersionList = () => {
   return { data, loading };
 };
 
+// Row shape of a published canvas version, newest-first (design section 7/E1),
+// including the free-text alias (A2/F1).
+export interface ICanvasVersionRow {
+  id: string;
+  title: string;
+  created_at: string;
+  release?: boolean;
+  alias?: string;
+}
+
+// Shared query key/options for a canvas's published version list. The raw
+// 'canvasVersionList' key predates the AgentKeys factory; both the single- and
+// multi-canvas hooks must keep using it verbatim so the version delete/alias
+// mutations below invalidate every observer.
+const canvasVersionListQuery = (canvasId: string) => ({
+  queryKey: ['canvasVersionList', canvasId] as const,
+  queryFn: async (): Promise<ICanvasVersionRow[]> => {
+    const { data } = await agentService.fetchVersionList(canvasId);
+    return data?.data ?? [];
+  },
+});
+
 // useFetchCanvasVersionList lists the published versions of an arbitrary canvas
 // (dataflow or agent) by id. Unlike useFetchVersionList it takes the canvas id
 // explicitly (not from route params) so the document pipeline dialog can load
-// versions for the currently selected dataflow canvas. The backend returns them
-// newest-first (design section 7/E1) and includes the free-text alias (A2/F1).
+// versions for the currently selected dataflow canvas.
 export const useFetchCanvasVersionList = (canvasId?: string) => {
   const {
     data,
     isFetching: loading,
     isError,
-  } = useQuery<
-    Array<{
-      id: string;
-      title: string;
-      created_at: string;
-      release?: boolean;
-      alias?: string;
-    }>
-  >({
+  } = useQuery({
     queryKey: ['canvasVersionList', canvasId],
     initialData: [],
     gcTime: 0,
     enabled: !!canvasId,
-    queryFn: async () => {
+    queryFn: async (): Promise<ICanvasVersionRow[]> => {
       if (!canvasId) return [];
       const { data } = await agentService.fetchVersionList(canvasId);
       return data?.data ?? [];
@@ -831,6 +849,20 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
   });
 
   return { data, loading, isError };
+};
+
+// useFetchCanvasVersions lazily loads the published versions of several
+// canvases at once (the parser tree select fetches a canvas's versions only
+// when the user expands it). Unlike useFetchCanvasVersionList it sets no
+// initialData, so `isSuccess` distinguishes "loaded and empty" from "still
+// loading". The returned array aligns index-by-index with `canvasIds`.
+export const useFetchCanvasVersions = (canvasIds: string[]) => {
+  return useQueries({
+    queries: canvasIds.map((canvasId) => ({
+      ...canvasVersionListQuery(canvasId),
+      gcTime: 0,
+    })),
+  });
 };
 
 // useDeleteVersion removes a single canvas version (design section 7/B2). The
