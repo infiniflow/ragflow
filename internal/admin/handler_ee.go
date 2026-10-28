@@ -270,6 +270,7 @@ func (h *Handler) SetRoleDefaultModel(c *gin.Context) {
 	var request SetRoleDefaultModelRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		return
 	}
 
 	ctx := c.Request.Context()
@@ -1375,6 +1376,7 @@ func (h *Handler) ListUsersStorage(c *gin.Context) {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
+			return
 		}
 	}
 	ctx := c.Request.Context()
@@ -1416,6 +1418,7 @@ func (h *Handler) ListUsersDocuments(c *gin.Context) {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
+			return
 		}
 	}
 	ctx := c.Request.Context()
@@ -1457,6 +1460,7 @@ func (h *Handler) ListUsersIndex(c *gin.Context) {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
+			return
 		}
 	}
 	ctx := c.Request.Context()
@@ -1510,6 +1514,7 @@ func (h *Handler) ListUsersQuota(c *gin.Context) {
 		top, err = strconv.Atoi(topStr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, "Top must be an integer")
+			return
 		}
 	}
 	ctx := c.Request.Context()
