@@ -21,6 +21,7 @@ import (
 )
 
 func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	for _, tc := range []struct {
 		name         string
 		page         int
@@ -63,6 +64,7 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 			for i := range rows {
 				rows[i] = map[string]interface{}{
 					"id":                  fmt.Sprintf("chunk-%02d", i),
+					"doc_id":              "doc-1",
 					"content_ltks":        "alpha",
 					"content_with_weight": "alpha",
 					"_score":              0.9,
@@ -269,13 +271,14 @@ func TestRetrievalRerankCandidatesGuardPrecedesPaginationGuard(t *testing.T) {
 }
 
 func TestRetrievalFirstPageWithRerankModelCallsReranker(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	driver := &captureDriver{}
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+		{"id": "chunk-1", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	top := 10
@@ -303,13 +306,14 @@ func TestRetrievalFirstPageWithRerankModelCallsReranker(t *testing.T) {
 }
 
 func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
-		{"id": "ordinary", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+		{"id": "compiled", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
+		{"id": "ordinary", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
@@ -347,12 +351,13 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 // reranker reads pagerank_fea and tag_feas off Field, and Field is the engine's
 // projection of exactly SelectFields, so both must be requested.
 func TestRetrievalProjectsRankFeatureFields(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+		{"id": "chunk-1", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
@@ -385,12 +390,13 @@ func TestRetrievalProjectsRankFeatureFields(t *testing.T) {
 // "questions", but both are read off Field — the engine's projection of exactly
 // SelectFields — so omitting them scores those tokens as absent.
 func TestRetrievalProjectsQuestionTokenFields(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "question_tks": "beta", "_score": 0.9},
+		{"id": "chunk-1", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "question_tks": "beta", "_score": 0.9},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
@@ -421,13 +427,14 @@ func TestRetrievalProjectsQuestionTokenFields(t *testing.T) {
 // only pagerank_fea differs, so the boosted chunk must win and its similarity
 // must carry the pagerank on top of the hybrid score.
 func TestRetrievalPagerankBoostsRanking(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "plain", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5},
-		{"id": "boosted", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(4)},
+		{"id": "plain", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5},
+		{"id": "boosted", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(4)},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
@@ -463,12 +470,13 @@ func TestRetrievalPagerankBoostsRanking(t *testing.T) {
 // rank_feature clause and the similarity must pick pagerank up locally.
 // vector_similarity keeps the engine's raw kNN score (asserted below).
 func TestRetrievalVectorOnlyKeepsPagerank(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(3)},
+		{"id": "chunk-1", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(3)},
 	}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
@@ -502,13 +510,14 @@ func TestRetrievalVectorOnlyKeepsPagerank(t *testing.T) {
 }
 
 func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	rows := []map[string]interface{}{
-		{"id": "highlighted", "content_ltks": "alpha", "content_with_weight": "alpha élève", "_score": 0.9},
-		{"id": "unmatched", "content_ltks": "alpha", "content_with_weight": "plain content", "_score": 0.8},
+		{"id": "highlighted", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha élève", "_score": 0.9},
+		{"id": "unmatched", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "plain content", "_score": 0.8},
 	}
 	docEngine := &retrievalCountEngine{
 		rows:       rows,
@@ -1209,13 +1218,14 @@ func (e *perIndexEngine) Search(ctx context.Context, req *types.SearchRequest) (
 }
 
 func TestRetrievalSearchesEachTenantIndexOnce(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &perIndexEngine{retrievalCountEngine: retrievalCountEngine{rows: []map[string]interface{}{
-		{"id": "chunk-a", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
-		{"id": "chunk-b", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+		{"id": "chunk-a", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+		{"id": "chunk-b", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
 	}}}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 	threshold := 0.0
