@@ -157,7 +157,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_512": {
           "match": "*_512_vec",
           "mapping": {
             "type": "knn_vector",
@@ -168,7 +168,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_768": {
           "match": "*_768_vec",
           "mapping": {
             "type": "knn_vector",
@@ -179,7 +179,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_1024": {
           "match": "*_1024_vec",
           "mapping": {
             "type": "knn_vector",
@@ -190,7 +190,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_1536": {
           "match": "*_1536_vec",
           "mapping": {
             "type": "knn_vector",
@@ -201,7 +201,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_2048": {
           "match": "*_2048_vec",
           "mapping": {
             "type": "knn_vector",
@@ -212,7 +212,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_4096": {
           "match": "*_4096_vec",
           "mapping": {
             "type": "knn_vector",
@@ -223,7 +223,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_6144": {
           "match": "*_6144_vec",
           "mapping": {
             "type": "knn_vector",
@@ -234,7 +234,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_8192": {
           "match": "*_8192_vec",
           "mapping": {
             "type": "knn_vector",
@@ -245,7 +245,7 @@
         }
       },
       {
-        "knn_vector": {
+        "knn_vector_10240": {
           "match": "*_10240_vec",
           "mapping": {
             "type": "knn_vector",

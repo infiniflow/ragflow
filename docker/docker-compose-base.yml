@@ -38,17 +38,17 @@ services:
     restart: unless-stopped
 
 
-  opensearch01:
+  opensearch39:
     profiles:
       - opensearch
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:3.9.0
     volumes:
-      - osdata01:/usr/share/opensearch/data
+      - osdata39:/usr/share/opensearch/data
     ports:
       - ${OS_PORT}:9201
     env_file: .env
     environment:
-      - node.name=opensearch01
+      - node.name=opensearch39
       - OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_PASSWORD}
       - bootstrap.memory_lock=false
@@ -56,9 +56,6 @@ services:
       - plugins.security.disabled=false
       - plugins.security.ssl.http.enabled=false
       - plugins.security.ssl.transport.enabled=true
-      - cluster.routing.allocation.disk.watermark.low=5gb
-      - cluster.routing.allocation.disk.watermark.high=3gb
-      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -508,7 +505,7 @@ services:
 volumes:
   esdata01:
     driver: local
-  osdata01:
+  osdata39:
     driver: local
   infinity_data:
     driver: local
