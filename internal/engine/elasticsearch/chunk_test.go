@@ -20,9 +20,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/elastic/go-elasticsearch/v8"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 )
@@ -397,17 +400,45 @@ func TestBuildBoolQueryFromConditionUsesLegacyGraphFallback(t *testing.T) {
 // `should: [{...}, {...}]`. ES rejects the nested form as malformed.
 // This test pins down the flat shape for the list, string, and int
 // branches.
+//
+// The id restriction must also stay out of the top-level bool.should:
+// Search appends rank_feature clauses to that slot, and a top-level
+// minimum_should_match=1 then let any rank-feature-carrying document satisfy
+// the id scope. id is emitted as a mandatory filter clause whose nested bool
+// keeps the id/_id alternative, exactly as the Python reference does
+// (rag/utils/es_conn.py: scalar id -> term, list -> terms).
 func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
-	check := func(name string, cond map[string]interface{}, wantFields []string) {
+	check := func(name string, cond map[string]interface{}, wantFields []string, wantOp string) {
 		t.Helper()
 		got := buildBoolQueryFromCondition(cond, nil, false, false)
 		outer, ok := got["bool"].(map[string]interface{})
 		if !ok {
 			t.Fatalf("%s: missing bool wrapper: %v", name, got)
 		}
-		should, ok := outer["should"].([]interface{})
+		if _, exists := outer["should"]; exists {
+			t.Fatalf("%s: id leaked into the top-level should slot: %v", name, outer["should"])
+		}
+		if _, exists := outer["minimum_should_match"]; exists {
+			t.Fatalf("%s: top-level minimum_should_match would also bind rank_feature clauses", name)
+		}
+		filter, ok := outer["filter"].([]interface{})
+		if !ok || len(filter) != 1 {
+			t.Fatalf("%s: filter = %v, want the single id restriction", name, outer["filter"])
+		}
+		wrapper, ok := filter[0].(map[string]interface{})
 		if !ok {
-			t.Fatalf("%s: should is not []interface{}: %T", name, outer["should"])
+			t.Fatalf("%s: filter[0] is %T, want map[string]interface{}", name, filter[0])
+		}
+		inner, ok := wrapper["bool"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s: filter[0] carries no bool: %v", name, wrapper)
+		}
+		if inner["minimum_should_match"] != 1 {
+			t.Fatalf("%s: id bool minimum_should_match = %v, want 1", name, inner["minimum_should_match"])
+		}
+		should, ok := inner["should"].([]interface{})
+		if !ok {
+			t.Fatalf("%s: should is not []interface{}: %T", name, inner["should"])
 		}
 		if len(should) != len(wantFields) {
 			t.Fatalf("%s: should length = %d, want %d (raw=%v)", name, len(should), len(wantFields), should)
@@ -420,19 +451,13 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 			if !ok {
 				t.Fatalf("%s: should[%d] is %T, want map[string]interface{} (nested array bug) — raw=%v", name, i, el, el)
 			}
-			if inner, ok := m["term"].(map[string]interface{}); ok {
-				for f := range inner {
-					seenFields[f] = true
-				}
-				continue
+			clause, ok := m[wantOp].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s: should[%d] = %v, want %q clause", name, i, m, wantOp)
 			}
-			if terms, ok := m["terms"].(map[string]interface{}); ok {
-				for f := range terms {
-					seenFields[f] = true
-				}
-				continue
+			for f := range clause {
+				seenFields[f] = true
 			}
-			t.Fatalf("%s: should[%d] missing term/terms: %v", name, i, m)
 		}
 		for _, want := range wantFields {
 			if !seenFields[want] {
@@ -443,19 +468,19 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 
 	check("list_value", map[string]interface{}{
 		"id": []interface{}{"a", "b", "c"},
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "terms")
 
 	check("string_list_value", map[string]interface{}{
 		"id": []string{"a", "b", "c"},
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "terms")
 
 	check("string_value", map[string]interface{}{
 		"id": "doc-42",
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "term")
 
 	check("int_value", map[string]interface{}{
 		"id": 42,
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "term")
 
 	// A typed []string must be handled too: callers built from typed helpers
 	// (e.g. list_chunks' ChunkScope) pass []string, and the generic loop below
@@ -464,7 +489,69 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 	// window returned 3.8MB instead of ~17KB).
 	check("string_slice_value", map[string]interface{}{
 		"id": []string{"a", "b", "c"},
-	}, []string{"id", "_id"})
+	}, []string{"id", "_id"}, "terms")
+}
+
+// TestRankFeatureDoesNotWidenChunkIDScope pins why id must be a filter clause:
+// Search appends rank_feature queries to bool.should, so an id restriction
+// living in that slot is satisfied by the rank feature alone once
+// minimum_should_match=1 is set, and a chunk-id-scoped read returns unrelated
+// chunks.
+func TestRankFeatureDoesNotWidenChunkIDScope(t *testing.T) {
+	var captured map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Error(err)
+			http.Error(w, "bad query", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": map[string]interface{}{
+				"total": map[string]interface{}{"value": 0},
+				"hits":  []interface{}{},
+			},
+		}); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng := &Engine{client: client}
+	if _, err := eng.Search(context.Background(), &types.SearchRequest{
+		IndexNames:  []string{"ragflow_t1"},
+		KbIDs:       []string{"kb1"},
+		Limit:       10,
+		Filter:      map[string]interface{}{"id": []string{"chunk-a"}},
+		RankFeature: map[string]float64{common.PAGERANK_FLD: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	query, ok := captured["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("captured body carries no query: %v", captured)
+	}
+	boolMap, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query carries no bool: %v", query)
+	}
+	if _, exists := boolMap["minimum_should_match"]; exists {
+		t.Fatalf("top-level minimum_should_match also binds the rank_feature clauses: %v", boolMap)
+	}
+	encoded, err := json.Marshal(boolMap["filter"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"id":["chunk-a"]`) {
+		t.Fatalf("id restriction is not a mandatory filter clause: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), `"minimum_should_match":1`) {
+		t.Fatalf("id filter lost the id/_id alternative: %s", encoded)
+	}
 }
 
 // paginationGRID mirrors the (page_size, top) grid from
