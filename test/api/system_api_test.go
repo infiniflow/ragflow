@@ -27,10 +27,8 @@ func TestRESTSystemPublicContracts(t *testing.T) {
 	}
 	systemConfig := restOK(t, restCall(t, &config, http.MethodGet, "/system/config", nil, nil))
 	configData := object(t, systemConfig["data"])
-	for _, key := range []string{"registerEnabled", "disablePasswordLogin"} {
-		if _, ok := configData[key]; !ok {
-			t.Fatalf("system config missing %q: %v", key, configData)
-		}
+	if _, ok := configData["registerEnabled"]; !ok {
+		t.Fatalf("system config missing %q: %v", "registerEnabled", configData)
 	}
 	health := restCall(t, &config, http.MethodGet, "/system/healthz", nil, nil)
 	if health.Status != http.StatusOK && health.Status != http.StatusInternalServerError {

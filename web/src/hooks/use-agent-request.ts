@@ -68,6 +68,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useSessionList } from './use-session-list';
 
 export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
@@ -137,6 +138,8 @@ export const AgentKeys = {
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  inputForm: (agentId?: string, componentId?: string) =>
+    [AgentApiAction.FetchInputForm, agentId, componentId] as const,
   versionList: (agentId?: string) =>
     [AgentApiAction.FetchVersionList, agentId] as const,
   version: (agentId?: string, versionId?: string) =>
@@ -757,7 +760,7 @@ export const useFetchInputForm = (componentId?: string) => {
   const { id } = useParams();
 
   const { data } = useQuery<Record<string, any>>({
-    queryKey: [AgentApiAction.FetchInputForm],
+    queryKey: AgentKeys.inputForm(id, componentId),
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {
@@ -1002,35 +1005,28 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   return { data, loading, refetch };
 };
 
+export const AgentSessionKeys = {
+  all: [AgentApiAction.FetchSessionsByCanvasId] as const,
+  list: (canvasId?: string, tenantId?: string) =>
+    [...AgentSessionKeys.all, canvasId, tenantId] as const,
+};
+
 export const useFetchSessionsByCanvasId = () => {
   const { id: canvasId } = useParams();
   const { data: tenantInfo } = useFetchTenantInfo();
 
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
-    queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
-    initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
-    gcTime: 0,
+  return useSessionList<IAgentLogResponse>({
+    queryKey: AgentSessionKeys.list(canvasId, tenantInfo.tenant_id),
     enabled: !!canvasId && !isEmpty(tenantInfo),
-    queryFn: async () => {
-      if (!canvasId) {
-        return { total: 0, sessions: [] };
-      }
-
-      const { data } = await fetchAgentLogsByCanvasId(canvasId, {
-        page: 1,
-        page_size: 100,
+    fetchPage: async (params) => {
+      const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
+        ...params,
         exp_user_id: tenantInfo.tenant_id,
       });
 
-      return { total: data?.total ?? 0, sessions: data?.data ?? [] };
+      return { total: data?.total ?? 0, items: data?.data ?? [] };
     },
   });
-
-  return {
-    data: data?.sessions ?? [],
-    loading,
-    total: data?.total ?? 0,
-  };
 };
 
 export const useFetchExternalAgentInputs = () => {
@@ -1380,7 +1376,7 @@ export function useCreateAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
         return data.data;
       }
@@ -1412,7 +1408,7 @@ export function useDeleteAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
       }
 

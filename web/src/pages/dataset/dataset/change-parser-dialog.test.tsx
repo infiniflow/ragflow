@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { ChangeParserDialog } from './change-parser-dialog';
+import {
+  ChangeParserDialog,
+  ReparseConfirmDialog,
+} from './change-parser-dialog';
 import { useChangeDocumentParser } from './use-change-document-parser';
 
 const mockSave = jest.fn().mockResolvedValue(0);
@@ -136,6 +139,13 @@ function Harness({
           onOk={state.onChangeParserOk}
           hideModal={state.hideChangeParserModal}
           loading={state.changeParserLoading}
+        />
+      )}
+      {state.reparseVisible && (
+        <ReparseConfirmDialog
+          visible={state.reparseVisible}
+          onOk={state.confirmReparse}
+          onCancel={state.hideReparseModal}
         />
       )}
     </>

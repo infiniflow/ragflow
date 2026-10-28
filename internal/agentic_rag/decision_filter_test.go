@@ -18,6 +18,7 @@ package agentic_rag
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -97,7 +98,14 @@ func verdictsOf(useful ...bool) func(context.Context, string, []string) []decisi
 	return func(_ context.Context, _ string, segments []string) []decisionhead.Verdict {
 		out := make([]decisionhead.Verdict, len(segments))
 		for i, segment := range segments {
-			out[i] = decisionhead.Verdict{Segment: segment, Useful: useful[i], Judged: true}
+			// The claim exit reads Probability, so a stub that only sets Useful would
+			// look like a 0.0 verdict to it. 0.9 clears both thresholds, 0.1 clears
+			// neither.
+			p := 0.1
+			if useful[i] {
+				p = 0.9
+			}
+			out[i] = decisionhead.Verdict{Segment: segment, Useful: useful[i], Judged: true, Probability: p}
 		}
 		return out
 	}
@@ -517,5 +525,227 @@ func TestDroppedSnippetConsumesNoRefHandle(t *testing.T) {
 	}
 	if !strings.Contains(out, `count="1"`) {
 		t.Fatalf("count does not reflect the served hits: %q", out)
+	}
+}
+
+// The claim exit judges LINES, not pages: a claim is an atomic statement, so one
+// the question does not need leaves on its own without taking its neighbours with
+// it. This is the only length bound the claim page has.
+func TestClaimFilterDropsUnusefulClaimLines(t *testing.T) {
+	stubDecision(t, wholeText(), verdictsOf(true, false, true))
+	claims := []claimHit{
+		{name: "a", chunkID: "c1"},
+		{name: "b", chunkID: "c1"},
+		{name: "c", chunkID: "c1"},
+	}
+	got := filterClaims(context.Background(), "q", claims)
+	if len(got) != 2 || got[0].name != "a" || got[1].name != "c" {
+		t.Fatalf("kept %+v, want a and c", got)
+	}
+}
+
+func TestClaimFilterPassesThroughWhenDecisionUnavailable(t *testing.T) {
+	stubDecision(t, wholeText(), verdictsOf(false, false))
+	decisionAvailable = func(context.Context) bool { return false }
+	claims := []claimHit{{name: "a"}, {name: "b"}}
+	if got := filterClaims(context.Background(), "q", claims); len(got) != 2 {
+		t.Fatalf("kept %d claims with the judge unavailable, want 2", len(got))
+	}
+}
+
+func TestClaimFilterPassesThroughWhenDisabled(t *testing.T) {
+	t.Setenv(common.EnvDecisionFilterClaim, "0")
+	stubDecision(t, wholeText(), verdictsOf(false, false))
+	claims := []claimHit{{name: "a"}, {name: "b"}}
+	if got := filterClaims(context.Background(), "q", claims); len(got) != 2 {
+		t.Fatalf("kept %d claims with the exit disabled, want 2", len(got))
+	}
+}
+
+// Unjudged is not a verdict: a budget that ran out must not cost the page its
+// evidence.
+func TestClaimFilterKeepsUnjudgedLines(t *testing.T) {
+	stubDecision(t, wholeText(), func(context.Context, string, []string) []decisionhead.Verdict {
+		return []decisionhead.Verdict{{Segment: "a"}, {Segment: "b"}}
+	})
+	claims := []claimHit{{name: "a"}, {name: "b"}}
+	if got := filterClaims(context.Background(), "q", claims); len(got) != 2 {
+		t.Fatalf("kept %d claims, want both unjudged lines kept", len(got))
+	}
+}
+
+// claimPage builds a page whose first `head` statements belong to c1 and whose
+// tail spreads over c2..c4, which is the shape a real page has: one ranked chunk
+// contributing most of the statements and the rest contributing a few.
+func claimPage(head, tail int) []claimHit {
+	out := make([]claimHit, 0, head+tail)
+	for i := 0; i < head; i++ {
+		out = append(out, claimHit{name: fmt.Sprintf("head-%d", i), chunkID: "c1"})
+	}
+	chunks := []string{"c2", "c3", "c4"}
+	for i := 0; i < tail; i++ {
+		out = append(out, claimHit{name: fmt.Sprintf("tail-%d", i), chunkID: chunks[i%len(chunks)]})
+	}
+	return out
+}
+
+// The judge bound is enforced BEFORE the judge is asked: the page is cut to the
+// bound plus one statement per chunk the bound did not cover, and only that many
+// statements are sent. Without this, a 372-statement page is 47 judge round trips
+// for a single retrieval round - the cost that dominated the turn.
+func TestClaimPageCappedBeforeJudge(t *testing.T) {
+	t.Setenv(common.EnvDecisionClaimJudgeCap, "16")
+	var judged int
+	stubDecision(t, wholeText(), func(_ context.Context, _ string, segments []string) []decisionhead.Verdict {
+		judged = len(segments)
+		out := make([]decisionhead.Verdict, len(segments))
+		for i := range segments {
+			out[i] = decisionhead.Verdict{Segment: segments[i], Useful: true, Judged: true, Probability: 0.9}
+		}
+		return out
+	})
+	claims := claimPage(16, 4)
+	got := filterClaims(context.Background(), "q", claims)
+	// 16 leading + c2, c3, c4 (c2 repeats at tail-3 and must not be counted twice).
+	const want = 19
+	if judged != want {
+		t.Fatalf("judged %d statements, want the capped page of %d", judged, want)
+	}
+	if len(got) != want {
+		t.Fatalf("kept %d claims, want %d", len(got), want)
+	}
+	for _, chunk := range []string{"c1", "c2", "c3", "c4"} {
+		found := false
+		for _, c := range got {
+			if c.chunkID == chunk {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("chunk %s lost its representative: %+v", chunk, got)
+		}
+	}
+}
+
+// A dead judge must still not let an unbounded page into the prompt: the bound is
+// the page's contract, not the judge's convenience.
+func TestClaimPageCappedEvenWhenJudgeUnavailable(t *testing.T) {
+	t.Setenv(common.EnvDecisionClaimJudgeCap, "16")
+	prev := decisionAvailable
+	decisionAvailable = func(context.Context) bool { return false }
+	t.Cleanup(func() { decisionAvailable = prev })
+	got := filterClaims(context.Background(), "q", claimPage(16, 4))
+	if len(got) != 19 {
+		t.Fatalf("kept %d claims with the judge down, want the capped page of 19", len(got))
+	}
+}
+
+// A page inside the bound is passed through untouched - capping must never
+// reorder or drop a small page.
+func TestClaimPageUnderTheCapIsUntouched(t *testing.T) {
+	t.Setenv(common.EnvDecisionClaimJudgeCap, "16")
+	stubDecision(t, wholeText(), verdictsOf(true, true, true))
+	claims := []claimHit{
+		{name: "a", chunkID: "c1"},
+		{name: "b", chunkID: "c2"},
+		{name: "c", chunkID: "c3"},
+	}
+	got := filterClaims(context.Background(), "q", claims)
+	if len(got) != 3 || got[0].name != "a" || got[1].name != "b" || got[2].name != "c" {
+		t.Fatalf("kept %+v, want the page untouched", got)
+	}
+}
+
+// claimProbVerdicts hands every claim line the given probability and judges all
+// of them NOT useful, which is the case the floor exists for: nothing passes the
+// absolute threshold, yet the page still has to hold one statement per chunk.
+func claimProbVerdicts(probs ...float64) func(context.Context, string, []string) []decisionhead.Verdict {
+	return func(_ context.Context, _ string, segments []string) []decisionhead.Verdict {
+		out := make([]decisionhead.Verdict, len(segments))
+		for i := range segments {
+			p := 0.0
+			if i < len(probs) {
+				p = probs[i]
+			}
+			out[i] = decisionhead.Verdict{Segment: segments[i], Useful: false, Judged: true, Probability: p}
+		}
+		return out
+	}
+}
+
+// One statement per CHUNK survives, chosen two ways: the chunk's own best
+// probability (a chunk nobody scored well still gets to speak for itself) and the
+// page-relative threshold (a statement close to the page's best is on topic even
+// when the absolute scale says otherwise). A claim that is neither is dropped.
+func TestClaimFilterKeepsOnePerChunkByFloor(t *testing.T) {
+	t.Setenv(common.EnvDecisionClaimFloor, "1")
+	// pageMax = 0.35, so the relative threshold is 0.14.
+	stubDecision(t, wholeText(), claimProbVerdicts(0.10, 0.05, 0.35))
+	claims := []claimHit{
+		{name: "a", chunkID: "c1"},
+		{name: "b", chunkID: "c1"},
+		{name: "c", chunkID: "c2"},
+	}
+	got := filterClaims(context.Background(), "q", claims)
+	if len(got) != 2 || got[0].name != "a" || got[1].name != "c" {
+		t.Fatalf("kept %+v, want a (c1's best, below the relative threshold) and c (above it)", got)
+	}
+}
+
+// With the floor off the exit is the old absolute one: every line is dropped and
+// the page falls back to its single best-ranked claim.
+func TestClaimFilterWithoutFloorDropsTheWholePage(t *testing.T) {
+	t.Setenv(common.EnvDecisionClaimFloor, "0")
+	stubDecision(t, wholeText(), claimProbVerdicts(0.10, 0.05, 0.20))
+	claims := []claimHit{
+		{name: "a", chunkID: "c1"},
+		{name: "b", chunkID: "c1"},
+		{name: "c", chunkID: "c2"},
+	}
+	got := filterClaims(context.Background(), "q", claims)
+	if len(got) != 1 || got[0].name != "a" {
+		t.Fatalf("kept %+v, want only the best-ranked claim without the floor", got)
+	}
+}
+
+// A statement is not a passage. The claim exit rules on its own threshold because
+// a thirty-token fact and a thousand-token chunk do not share a score scale, and
+// borrowing the passage number is how a correctly recalled statement gets dropped.
+func TestClaimThresholdIsSeparateFromPassageThreshold(t *testing.T) {
+	t.Setenv(common.EnvDecisionMinProb, "0.30")
+	t.Setenv(common.EnvDecisionClaimMinProb, "0.25")
+	stubDecision(t, wholeText(), claimProbVerdicts(0.27))
+	got := filterClaims(context.Background(), "q", []claimHit{{name: "a", chunkID: "c1"}})
+	if len(got) != 1 || got[0].name != "a" {
+		t.Fatalf("kept %+v, want the 0.27 statement kept by the 0.25 claim threshold", got)
+	}
+}
+
+// ...and the defaults are the split the deployment expects: 0.30 for passages,
+// 0.25 for statements.
+func TestClaimMinProbDefaults(t *testing.T) {
+	t.Setenv(common.EnvDecisionMinProb, "")
+	t.Setenv(common.EnvDecisionClaimMinProb, "")
+	if got := claimMinProb(); got != 0.25 {
+		t.Fatalf("claim min prob = %v, want 0.25", got)
+	}
+	if defaultDecisionMinProb != 0.30 {
+		t.Fatalf("passage min prob = %v, want 0.30", defaultDecisionMinProb)
+	}
+}
+
+// A page the model judged entirely useless keeps its best-ranked claim: an empty
+// page makes the callers serve the raw chunk instead, which costs more text than
+// the claim it replaced.
+func TestClaimFilterKeepsBestRankedClaimWhenEveryLineDrops(t *testing.T) {
+	// Floor off: the floor exists to keep something, so the all-dropped fallback is
+	// only observable without it.
+	t.Setenv(common.EnvDecisionClaimFloor, "0")
+	stubDecision(t, wholeText(), verdictsOf(false, false))
+	claims := []claimHit{{name: "a"}, {name: "b"}}
+	got := filterClaims(context.Background(), "q", claims)
+	if len(got) != 1 || got[0].name != "a" {
+		t.Fatalf("kept %+v, want the best-ranked claim only", got)
 	}
 }

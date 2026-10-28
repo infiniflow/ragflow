@@ -20,8 +20,7 @@
 # ready — you do NOT also need download_deps.py for local development.
 #
 # The image-facing counterpart deps/download_deps.py fetches the same
-# runtime resources PLUS the stagehand server binary (used by the Browser
-# component) and skips the native `.a` files, because the build stage bakes
+# runtime resources and skips the native `.a` files, because the build stage bakes
 # those into the server binary. Both scripts land the shared runtime resources
 # at the SAME paths, so running one after the other never re-downloads an
 # already-present asset.
@@ -499,8 +498,7 @@ def _download_ort_archive(archive_path, goos, goarch):
 # RUN, parse documents and count tokens. Fetched here too so a developer runs
 # THIS script once and the environment is ready. Landing paths match
 # deps/download_deps.py, so re-running that image script never
-# re-downloads an already-present asset. stagehand is deliberately NOT fetched
-# here (Browser component only) — that is download_deps.py's job for images.
+# re-downloads an already-present asset.
 
 
 # cl100k BPE table. Hosted on Azure blob storage (NOT a GitHub release), so the
@@ -671,11 +669,7 @@ def main():
     resources (cl100k BPE table, DeepDoc .ort weights, embedding tokenizer assets)
     the local Go dev server needs to run, parse and count tokens.
 
-    This is the local-dev one-stop: one invocation readies the environment. The
-    Browser component's server binary is intentionally NOT fetched here — that
-    is the image script's job. Run `uv run deps/download_deps.py` for the
-    full image resources (it adds that binary and skips the native .a, which the
-    build stage bakes into the binary)."""
+    This is the local-dev one-stop: one invocation readies the environment."""
     parser = argparse.ArgumentParser(description="Download the native static libraries and runtime resources the local Go dev server needs")
     parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
     parser.add_argument(
@@ -773,8 +767,7 @@ def main():
     # DeepDoc .ort weights for in-process PDF/table parsing, the embedding
     # tokenizer assets for token counting) to actually RUN and ingest — not
     # just link. Fetch them here too so a local developer runs THIS script
-    # once and the environment is ready. The Browser component's server binary
-    # is fetched by the image script, not here.
+    # once and the environment is ready.
     print("== cl100k_base.tiktoken ==")
     download_cl100k()
     print("== DeepDoc models ==")

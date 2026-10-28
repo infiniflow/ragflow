@@ -464,13 +464,13 @@ func TestLocal_CollectArtifacts_AllowsCSVRoundTrip(t *testing.T) {
 
 func TestShq(t *testing.T) {
 	t.Parallel()
-	// shq replaces ' with \', wraps the result in single quotes.
-	// "o'clock" -> 'o\'clock' (raw bytes: ', o, \, ', c, l, o, c, k, ').
+	// shq uses the POSIX single-quote escape sequence for embedded apostrophes.
+	// "o'clock" -> 'o'\''clock'.
 	cases := []struct {
 		in, want string
 	}{
 		{"foo", "'foo'"},
-		{"o'clock", `'o\'clock'`},
+		{"o'clock", `'o'\''clock'`},
 		{"a b c", "'a b c'"},
 		{"", "''"},
 	}

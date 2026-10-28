@@ -187,7 +187,7 @@
     "simple-icons": "^16.23.0",
     "storybook": "^9.1.4",
     "tailwindcss": "^3",
-    "terser-webpack-plugin": "^5.3.11",
+    "terser-webpack-plugin": "^5.6.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.7",
