@@ -9,7 +9,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
 	"ragflow/internal/service"
-	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
 
@@ -36,10 +35,19 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
+// mcpDatasetService is the dataset surface mcpRetrieval depends on. It exists so
+// the MCP retrieval entry point can be tested against a recording fake without
+// standing up the full DatasetService.
+type mcpDatasetService interface {
+	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+	GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error)
+}
+
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}

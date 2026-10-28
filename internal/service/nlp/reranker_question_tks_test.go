@@ -75,6 +75,56 @@ func fullChunk() map[string]interface{} {
 	}
 }
 
+func TestRerankStandardIncludesQuestionTks(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"content_ltks": "alpha", "question_tks": "quux"},
+		{"content_ltks": "alpha"},
+	}
+
+	_, tsim, _ := RerankStandard(
+		chunks, []string{"quux"}, nil, "quux", 1, 0,
+		"content_ltks", NewQueryBuilder(), nil, "",
+	)
+
+	if len(tsim) != 2 {
+		t.Fatalf("term similarities = %v, want two scores", tsim)
+	}
+	if !(tsim[0] > 0.5 && tsim[0] <= 1) {
+		t.Errorf("question-only match term similarity = %v, want a positive match above 0.5", tsim[0])
+	}
+	if !(tsim[1] >= 0 && tsim[1] < 1e-6) {
+		t.Errorf("term similarity without question_tks = %v, want near zero", tsim[1])
+	}
+}
+
+func TestRerankWithKNNIncludesQuestionTks(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{"content_ltks": "alpha", "question_tks": "quux"},
+		{"content_ltks": "alpha"},
+	}
+	ids := []string{"with-question", "without-question"}
+	field := map[string]map[string]interface{}{
+		ids[0]: chunks[0],
+		ids[1]: chunks[1],
+	}
+
+	_, tsim, _ := RerankWithKNN(
+		t.Context(), chunks, ids, field,
+		map[string]float64{ids[0]: 0.5, ids[1]: 0.5},
+		"quux", 1, 0, "content_ltks", NewQueryBuilder(), nil, "",
+	)
+
+	if len(tsim) != 2 {
+		t.Fatalf("term similarities = %v, want two scores", tsim)
+	}
+	if !(tsim[0] > 0.5 && tsim[0] <= 1) {
+		t.Errorf("question-only match term similarity = %v, want a positive match above 0.5", tsim[0])
+	}
+	if !(tsim[1] >= 0 && tsim[1] < 1e-6) {
+		t.Errorf("term similarity without question_tks = %v, want near zero", tsim[1])
+	}
+}
+
 // TestRerankByModelIncludesQuestionTks pins the fix: RerankStandard and
 // RerankWithKNN both fold question_tks into their token lists, so a chunk
 // whose generated questions carry the match was scored on those tokens on
@@ -159,5 +209,78 @@ func TestRerankByModelFallsBackToTokensWithoutNaturalText(t *testing.T) {
 		if want := "alpha beta gamma delta epsilon zeta"; doc != want {
 			t.Errorf("%s: got %q, want %q", name, doc, want)
 		}
+	}
+}
+
+// TestRerankByModelUsesTokenizedFieldsForTermSimilarity pins the split between
+// the two consumers in RerankByModel: the cross-encoder scores the natural text,
+// while term similarity must keep reading the tokenized content_ltks. Both
+// chunks carry the same natural text containing the query term, so only the
+// tokenized field can separate them. Weights are pinned to term similarity
+// alone (tkWeight=1, vtWeight=0, no rank features) so neither the model score
+// nor pagerank can mask a wrong field choice.
+func TestRerankByModelUsesTokenizedFieldsForTermSimilarity(t *testing.T) {
+	const naturalText = "quux appears in the natural text"
+	chunks := []map[string]interface{}{
+		{"content_with_weight": naturalText, "content_ltks": "quux"},
+		{"content_with_weight": naturalText, "content_ltks": "alpha"},
+	}
+	ids := []string{"with-quux", "without-quux"}
+	field := map[string]map[string]interface{}{
+		ids[0]: chunks[0],
+		ids[1]: chunks[1],
+	}
+	driver := &captureDriver{}
+
+	sim, tsim, _, err := RerankByModel(
+		t.Context(),
+		models.NewRerankModel(driver, nil, nil, 0),
+		chunks,
+		ids,
+		field,
+		"quux",
+		1,
+		0,
+		"content_ltks",
+		NewQueryBuilder(),
+		nil,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("RerankByModel failed: %v", err)
+	}
+	if len(tsim) != 2 {
+		t.Fatalf("term similarities = %v, want two scores", tsim)
+	}
+	if len(sim) != 2 {
+		t.Fatalf("similarities = %v, want two scores", sim)
+	}
+	if len(driver.documents) != 2 {
+		t.Fatalf("model documents = %v, want two documents", driver.documents)
+	}
+	for i, doc := range driver.documents {
+		if doc != naturalText {
+			t.Errorf("model document[%d] = %q, want unchanged natural text %q", i, doc, naturalText)
+		}
+	}
+	if !(tsim[0] > 0.5 && tsim[0] <= 1) {
+		t.Errorf("term similarity for the matching content_ltks = %v, want a positive match above 0.5", tsim[0])
+	}
+	if !(tsim[1] >= 0 && tsim[1] < 1e-6) {
+		t.Errorf("term similarity for the non-matching content_ltks = %v, want near zero", tsim[1])
+	}
+}
+
+// TestRerankByModelCleansTokenizedFallback pins the fallback formatting: when no
+// natural text exists, the joined tokens are passed through
+// common.RemoveRedundantSpaces so punctuation does not keep the spaces its
+// tokenization introduced.
+func TestRerankByModelCleansTokenizedFallback(t *testing.T) {
+	doc := rerankOneChunk(t, map[string]interface{}{
+		"content_ltks": "( alpha ) beta !",
+	})
+
+	if want := "(alpha) beta!"; doc != want {
+		t.Errorf("got %q, want %q", doc, want)
 	}
 }

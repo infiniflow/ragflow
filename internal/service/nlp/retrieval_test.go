@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -20,6 +21,117 @@ import (
 )
 
 func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		page         int
+		candidates   int
+		wantChunkIDs []string
+		wantTotal    int64
+		pageSize     int
+	}{
+		{
+			name:         "first page of 64 candidates",
+			page:         1,
+			pageSize:     10,
+			candidates:   64,
+			wantChunkIDs: chunkIDs(0, 10),
+			wantTotal:    64,
+		},
+		{
+			name:         "sixth page of 64 candidates",
+			page:         6,
+			pageSize:     10,
+			candidates:   64,
+			wantChunkIDs: chunkIDs(50, 60),
+			wantTotal:    64,
+		},
+		{
+			name:         "seventh page of 70 candidates",
+			page:         7,
+			pageSize:     10,
+			candidates:   70,
+			wantChunkIDs: chunkIDs(60, 70),
+			wantTotal:    70,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldQueryBuilder := globalQueryBuilder
+			globalQueryBuilder = NewQueryBuilder()
+			defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+			rows := make([]map[string]interface{}, 75)
+			for i := range rows {
+				rows[i] = map[string]interface{}{
+					"id":                  fmt.Sprintf("chunk-%02d", i),
+					"content_ltks":        "alpha",
+					"content_with_weight": "alpha",
+					"_score":              0.9,
+				}
+			}
+			engine := &retrievalCountEngine{rows: rows}
+			service := NewRetrievalService(engine, &dao.DocumentDAO{})
+			top := 100
+			threshold := 0.5
+			vectorWeight := 1.0
+			aggs := false
+			rerankCandidatesCount := tc.candidates
+
+			result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+				Question:               "alpha",
+				TenantIDs:              []string{"tenant-1"},
+				Page:                   tc.page,
+				PageSize:               tc.pageSize,
+				KNNTopK:                &top,
+				SimilarityThreshold:    &threshold,
+				VectorSimilarityWeight: &vectorWeight,
+				Aggs:                   &aggs,
+				Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+				RerankCandidatesCount:  &rerankCandidatesCount,
+			})
+			if err != nil {
+				t.Fatalf("Retrieval failed: %v", err)
+			}
+			var gotChunkIDs []string
+			for _, chunk := range result.Chunks {
+				id, ok := chunk["chunk_id"].(string)
+				if !ok {
+					t.Fatalf("chunk without chunk_id: %#v", chunk)
+				}
+				gotChunkIDs = append(gotChunkIDs, id)
+			}
+			if !slices.Equal(gotChunkIDs, tc.wantChunkIDs) {
+				t.Fatalf("page chunk ids = %v, want %v", gotChunkIDs, tc.wantChunkIDs)
+			}
+			if result.Total != tc.wantTotal {
+				t.Fatalf("total = %d, want %d", result.Total, tc.wantTotal)
+			}
+			if len(engine.searchLimits) != 1 || engine.searchLimits[0] != rerankCandidatesCount {
+				t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, rerankCandidatesCount)
+			}
+			for _, filters := range engine.searchFilters {
+				mustNot, ok := filters["must_not"].(map[string]interface{})
+				if !ok || mustNot["exists"] != "compile_kwd" {
+					t.Fatalf("must_not filter = %#v", filters["must_not"])
+				}
+			}
+			if engine.highlightCalls != 0 {
+				t.Fatalf("GetHighlight calls = %d with highlighting disabled, want 0", engine.highlightCalls)
+			}
+		})
+	}
+}
+
+// chunkIDs returns the sequential chunk identifiers prepared by the pagination
+// tests for the half-open range [from, to).
+func chunkIDs(from, to int) []string {
+	ids := make([]string, 0, to-from)
+	for i := from; i < to; i++ {
+		ids = append(ids, fmt.Sprintf("chunk-%02d", i))
+	}
+	return ids
+}
+
+func TestRetrievalRejectsPageBeyondCandidateWindow(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
@@ -39,40 +151,78 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	threshold := 0.5
 	vectorWeight := 1.0
 	aggs := false
-	rerankCandidatesCount := 70
+	rerankCandidatesCount := 64
 
 	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
 		Question:               "alpha",
 		TenantIDs:              []string{"tenant-1"},
-		Page:                   1,
+		Page:                   7,
 		PageSize:               10,
 		KNNTopK:                &top,
 		SimilarityThreshold:    &threshold,
 		VectorSimilarityWeight: &vectorWeight,
 		Aggs:                   &aggs,
-		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
 		RerankCandidatesCount:  &rerankCandidatesCount,
 	})
-	if err != nil {
-		t.Fatalf("Retrieval failed: %v", err)
+	if err == nil {
+		t.Fatalf("Retrieval succeeded with page beyond the candidate window: %#v", result)
 	}
-	if len(result.Chunks) != 10 {
-		t.Fatalf("page chunk count = %d, want 10", len(result.Chunks))
+	if result != nil {
+		t.Fatalf("result = %#v, want nil on rejection", result)
 	}
-	if result.Total != 70 {
-		t.Fatalf("total = %d, want 70", result.Total)
+	if !strings.Contains(err.Error(), "rerank_candidates_count") || !strings.Contains(err.Error(), "page") {
+		t.Fatalf("error = %q, want candidate-window rejection mentioning rerank_candidates_count and page", err)
 	}
-	if len(engine.searchLimits) != 1 || engine.searchLimits[0] != rerankCandidatesCount {
-		t.Fatalf("search limits = %v, want [%d]", engine.searchLimits, rerankCandidatesCount)
+	if len(engine.searchLimits) != 0 {
+		t.Fatalf("engine Search calls = %v, want none before candidate-window validation", engine.searchLimits)
 	}
-	for _, filters := range engine.searchFilters {
-		mustNot, ok := filters["must_not"].(map[string]interface{})
-		if !ok || mustNot["exists"] != "compile_kwd" {
-			t.Fatalf("must_not filter = %#v", filters["must_not"])
+}
+
+func TestRetrievalRejectsPaginationWithRerankModel(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	rows := make([]map[string]interface{}, 75)
+	for i := range rows {
+		rows[i] = map[string]interface{}{
+			"id":                  fmt.Sprintf("chunk-%02d", i),
+			"content_ltks":        "alpha",
+			"content_with_weight": "alpha",
+			"_score":              0.9,
 		}
 	}
-	if engine.highlightCalls != 0 {
-		t.Fatalf("GetHighlight calls = %d with highlighting disabled, want 0", engine.highlightCalls)
+	engine := &retrievalCountEngine{rows: rows}
+	service := NewRetrievalService(engine, &dao.DocumentDAO{})
+	top := 100
+	threshold := 0.5
+	vectorWeight := 1.0
+	aggs := false
+	rerankCandidatesCount := 64
+
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   2,
+		PageSize:               10,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		RerankCandidatesCount:  &rerankCandidatesCount,
+		RerankModel:            &modelModule.RerankModel{},
+	})
+	if err == nil {
+		t.Fatalf("Retrieval succeeded with pagination and a rerank model: %#v", result)
+	}
+	if result != nil {
+		t.Fatalf("result = %#v, want nil on rejection", result)
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "pagination") || !strings.Contains(err.Error(), "rerank_mdl") {
+		t.Fatalf("error = %q, want reranker pagination rejection mentioning pagination and rerank_mdl", err)
+	}
+	if len(engine.searchLimits) != 0 {
+		t.Fatalf("engine Search calls = %v, want none before reranker pagination validation", engine.searchLimits)
 	}
 }
 
