@@ -95,8 +95,9 @@ func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
 	}
 }
 
-func TestHTMLParser_DocumentImageLimit(t *testing.T) {
-	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, maxEmbeddedMediaItems+44) + "</p>"
+func TestHTMLParser_HasNoParserSideImageCountLimit(t *testing.T) {
+	const count = maxEmbeddedMediaItems + 44
+	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, count) + "</p>"
 	result := NewHTMLParser().ParseWithResult(context.Background(), "many.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -107,11 +108,11 @@ func TestHTMLParser_DocumentImageLimit(t *testing.T) {
 			images++
 		}
 	}
-	if images != maxEmbeddedMediaItems {
-		t.Fatalf("images = %d, want document limit %d", images, maxEmbeddedMediaItems)
+	if images != count {
+		t.Fatalf("images = %d, want %d (no parser-side cap, matching PDF)", images, count)
 	}
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), "256-item document limit") {
-		t.Fatalf("missing document image limit warning: %v", result.Warnings)
+	if strings.Contains(strings.Join(result.Warnings, "\n"), "256-item") {
+		t.Fatalf("unexpected parser-side image cap warning: %v", result.Warnings)
 	}
 }
 

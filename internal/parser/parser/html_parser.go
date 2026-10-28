@@ -141,7 +141,10 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	if s.mediaBudget == nil {
 		s.mediaBudget = newEmbeddedMediaBudget()
 	}
-	if !s.mediaBudget.reserveItem() {
+	// The reference-only path has no parser-side per-document budget, matching
+	// the PDF parser. The single-image ceiling is still enforced by
+	// normalizeHTMLImageSource. Inline formats keep the historical budget.
+	if !s.refOnly && !s.mediaBudget.reserveItem() {
 		return "", nil, false
 	}
 	normalized, size, digest, ok := normalizeHTMLImageSource(src)
