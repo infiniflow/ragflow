@@ -3438,6 +3438,10 @@ This delimiter is used to split the input text into several text pieces echo of 
         latest: 'Latest version',
         filterByAlias: 'Filter by alias',
         alias: 'Alias',
+        addAlias: 'Add alias',
+        editAlias: 'Edit alias',
+        editAliasDescription:
+          'Give this version a memorable alias so you can find it quickly later.',
         pinnedTooltip:
           'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
@@ -3581,9 +3585,6 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      production: 'Production',
-      productionTooltip:
-        'This version is published to production. Access it via the API or the embedded page.',
       confirmPublish: 'Confirm publish',
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',

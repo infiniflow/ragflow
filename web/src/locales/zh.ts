@@ -2472,6 +2472,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         latest: '最新版本',
         filterByAlias: '按别名筛选',
         alias: '别名',
+        addAlias: '添加别名',
+        editAlias: '编辑别名',
+        editAliasDescription:
+          '为该版本设置一个便于识别的别名，方便后续快速查找。',
         pinnedTooltip:
           '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
         outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
@@ -3098,8 +3102,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
-      production: '正式版',
-      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
