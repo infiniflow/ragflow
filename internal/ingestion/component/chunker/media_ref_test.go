@@ -163,20 +163,27 @@ func TestTokenChunkerKeepsTextlessMediaRef(t *testing.T) {
 // filtered as empty.
 func TestImageUploadDecoratorRejectsUnusableMediaRef(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		item map[string]any
+		name  string
+		items []map[string]any
 	}{
 		{
-			name: "textless partial reference",
-			item: map[string]any{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}},
+			name:  "textless partial reference",
+			items: []map[string]any{{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}}},
 		},
 		{
-			name: "partial reference with text",
-			item: map[string]any{"text": "caption", "media_ref": map[string]any{"format": "html"}},
+			name:  "partial reference with text",
+			items: []map[string]any{{"text": "caption", "media_ref": map[string]any{"format": "html"}}},
 		},
 		{
-			name: "unknown reference fields",
-			item: map[string]any{"text": "caption", "media_ref": map[string]any{"unknown": "value"}},
+			name:  "unknown reference fields",
+			items: []map[string]any{{"text": "caption", "media_ref": map[string]any{"unknown": "value"}}},
+		},
+		{
+			name: "malformed reference in a merged item list",
+			items: []map[string]any{
+				{"text": "kept"},
+				{"doc_type_kwd": "image", "media_ref": map[string]any{"format": "html"}},
+			},
 		},
 	} {
 		for _, chunker := range []struct {
@@ -193,7 +200,7 @@ func TestImageUploadDecoratorRejectsUnusableMediaRef(t *testing.T) {
 				}
 				if _, err := (&imageUploadDecorator{inner: comp}).Invoke(t.Context(), nil, map[string]any{
 					"name": "bad.html", "kb_id": testKBID,
-					"output_format": "json", "json": []any{tc.item},
+					"output_format": "json", "json": tc.items,
 				}); err == nil {
 					t.Fatal("unusable media_ref was accepted")
 				}

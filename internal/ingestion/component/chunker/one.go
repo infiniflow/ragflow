@@ -167,7 +167,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		if img == "" && it.Image != "" {
 			img = it.Image
 		}
-		if mediaRef == nil && it.MediaRef.Valid() {
+		if mediaRef == nil && it.MediaRef != nil {
 			mediaRef = it.MediaRef
 		}
 	}

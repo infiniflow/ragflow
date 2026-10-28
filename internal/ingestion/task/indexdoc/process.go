@@ -153,9 +153,11 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
 // where they stop: Elasticsearch and Vastbase would add a field for each key,
-// and Infinity would drop each key at insert with a warning.
+// and Infinity would drop each key at insert with a warning. media_ref is the
+// deferred-image reference consumed by the upload pass; a chunk that still
+// carries one must not reach the index.
 var pipelineOnlyFields = []string{
-	"tk_nums", "layout", "layout_type", "layoutno", "image",
+	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
 	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",

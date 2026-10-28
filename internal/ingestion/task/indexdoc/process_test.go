@@ -677,6 +677,7 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
 		"tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"media_ref":     map[string]any{"format": "html"},
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
 		"headers": []string{"h"}, "cells": []string{"c"},

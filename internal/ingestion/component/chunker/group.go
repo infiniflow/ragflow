@@ -340,7 +340,7 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			if first.image != "" {
 				chunk["image"] = first.image
 			}
-			if first.mediaRef.Valid() {
+			if first.mediaRef != nil {
 				chunk["media_ref"] = first.mediaRef
 			}
 			if first.sheet != "" {

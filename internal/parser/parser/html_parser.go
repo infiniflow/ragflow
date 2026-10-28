@@ -114,10 +114,9 @@ type htmlWalkState struct {
 	mediaOrder          int
 	skippedInlineImages int
 	mediaBudget         *embeddedMediaBudget
-	// refOnly defers image bytes to content-addressed references. HTML is
-	// ref-only, matching the PDF parser; the EPUB/SoMark/Markdown walkers
-	// still inline until their resolvers land. The zero value keeps the
-	// historical inline representation.
+	// refOnly defers image bytes to content-addressed references instead of
+	// carrying the normalized data URI on the item. HTML sets it; formats
+	// that still inline image bytes leave it false.
 	refOnly      bool
 	resolveImage func(string) (string, bool)
 }
@@ -142,8 +141,9 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		s.mediaBudget = newEmbeddedMediaBudget()
 	}
 	// The reference-only path has no parser-side per-document budget, matching
-	// the PDF parser. The single-image ceiling is still enforced by
-	// media.NormalizeHTMLImageSource. Inline formats keep the historical budget.
+	// the PDF parser. The single-image ceiling is enforced by
+	// media.NormalizeHTMLImageSource; formats that inline image bytes still
+	// apply the document budget.
 	if !s.refOnly && !s.mediaBudget.reserveItem() {
 		return "", nil, false
 	}

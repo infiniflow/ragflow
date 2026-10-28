@@ -1258,7 +1258,7 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 	if dst.ImgID == "" {
 		dst.ImgID = src.ImgID
 	}
-	if !dst.MediaRef.Valid() {
+	if dst.MediaRef == nil {
 		dst.MediaRef = src.MediaRef
 	}
 	if dst.Layout == "" {

@@ -14,7 +14,12 @@
 
 package entity
 
-import "encoding/json"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"strings"
+)
 
 // MediaKind names how a MediaRef locates its image in the source document.
 type MediaKind string
@@ -51,8 +56,18 @@ type MediaRef struct {
 }
 
 // Valid reports whether the reference carries the fields a resolver needs.
+// The digest must be the lowercase hex form the parser emits: the resolver
+// compares it as a string, so another spelling would turn a corrupt reference
+// into a silent lookup miss.
 func (r *MediaRef) Valid() bool {
-	return r != nil && r.Format != "" && r.Kind != "" && r.SHA256 != ""
+	if r == nil || r.Format == "" || r.Kind == "" || len(r.SHA256) != sha256.Size*2 {
+		return false
+	}
+	if strings.ToLower(r.SHA256) != r.SHA256 {
+		return false
+	}
+	_, err := hex.DecodeString(r.SHA256)
+	return err == nil
 }
 
 // IsZero reports whether the reference carries no field at all. JSON `{}`

@@ -154,7 +154,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		if pair.RowNum >= 0 {
 			chunk.TopInt = []int{pair.RowNum}
 		}
-		if pair.Image != "" || pair.MediaRef.Valid() {
+		if pair.Image != "" || pair.MediaRef != nil {
 			chunk.Image = pair.Image
 			chunk.MediaRef = pair.MediaRef
 			chunk.DocType = "image"
