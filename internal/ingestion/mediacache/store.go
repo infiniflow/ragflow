@@ -46,8 +46,7 @@ type Store struct {
 	backend chunkcache.Store
 	scope   string
 
-	mu   sync.Mutex
-	seen map[string]int64
+	mu sync.Mutex
 }
 
 // New returns a cache bound to one ingestion run. A nil backend is a valid
@@ -57,7 +56,6 @@ func New(backend chunkcache.Store, scope string) *Store {
 	return &Store{
 		backend: backend,
 		scope:   strings.TrimSpace(scope),
-		seen:    make(map[string]int64),
 	}
 }
 
@@ -97,14 +95,6 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existingSize, exists := s.seen[digest]
-	if exists && existingSize != int64(len(data)) {
-		return entity.MediaRef{}, fmt.Errorf("mediacache: digest %s changed size from %d to %d", mediaShortDigest(digest), existingSize, len(data))
-	}
-	if exists {
-		return ref, nil
-	}
-
 	key := s.key(digest)
 	if !s.backend.Set(ctx, key, string(data), TTL) {
 		return entity.MediaRef{}, fmt.Errorf("mediacache: write image %s", mediaShortDigest(digest))
@@ -115,7 +105,6 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 		}
 		return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w", mediaShortDigest(digest), err)
 	}
-	s.seen[digest] = int64(len(data))
 	return ref, nil
 }
 

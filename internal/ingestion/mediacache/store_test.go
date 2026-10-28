@@ -348,3 +348,55 @@ func TestRetryRepopulatesMediaAfterCacheMiss(t *testing.T) {
 		t.Fatalf("retry read = %q, %v", got, err)
 	}
 }
+
+func TestPutRestoresMissingMediaInSameStore(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	data := []byte("hello")
+	ref, err := store.Put(ctx, "html", "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.Delete(ctx, store.key(ref.SHA256))
+	backend.Delete(ctx, manifestKey("task-1"))
+
+	restored, err := store.Put(ctx, "html", "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(ctx, restored)
+	if err != nil || string(got) != string(data) {
+		t.Fatalf("restored media = %q, %v", got, err)
+	}
+	if err := PurgeTask(ctx, backend, "task-1"); err != nil {
+		t.Fatal(err)
+	}
+	if len(backend.kv) != 0 || len(backend.sets) != 0 {
+		t.Fatal("restored media was not purged")
+	}
+}
+
+func TestPutDuplicateRefreshesTTLAndReportsWriteFailure(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	data := []byte("hello")
+	ref, err := store.Put(ctx, "html", "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := store.key(ref.SHA256)
+	backend.ttl[key] = time.Second
+	backend.ttl[manifestKey("task-1")] = time.Second
+	if _, err := store.Put(ctx, "html", "image/png", data); err != nil {
+		t.Fatal(err)
+	}
+	if backend.ttl[key] != TTL || backend.ttl[manifestKey("task-1")] != TTL {
+		t.Fatal("duplicate put did not refresh media and manifest TTLs")
+	}
+	backend.failSet = true
+	if _, err := store.Put(ctx, "html", "image/png", data); err == nil {
+		t.Fatal("duplicate put succeeded when the backend rejected the write")
+	}
+}
