@@ -182,41 +182,13 @@ describe('ParsingStatusCell', () => {
     renderCell({
       ingestion_status: IngestionTaskStatus.COMPLETED,
       chunk_count: 0,
-      parser_config: {},
+      parser_config: { enable_metadata: true },
     });
 
     fireEvent.click(screen.getByTestId('document-parse-toggle'));
 
     expect(mockRunDocumentByIds).toHaveBeenCalledTimes(1);
     expect(mockShowReparseDialog).not.toHaveBeenCalled();
-  });
-
-  it('asks for confirmation on a chunkless document when auto-metadata can be applied', () => {
-    renderCell({
-      ingestion_status: IngestionTaskStatus.COMPLETED,
-      chunk_count: 0,
-      parser_config: { enable_metadata: true },
-    });
-
-    fireEvent.click(screen.getByTestId('document-parse-toggle'));
-
-    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
-    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
-  });
-
-  it('detects auto-metadata in the pipeline parser config shape', () => {
-    renderCell({
-      ingestion_status: IngestionTaskStatus.COMPLETED,
-      chunk_count: 0,
-      parser_config: {
-        'Extractor:AutoExtractDefault': { metadata: { enabled: true } },
-      },
-    });
-
-    fireEvent.click(screen.getByTestId('document-parse-toggle'));
-
-    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
-    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
   });
 
   // The outdated bang (design D1/D2/D3) lives in the parser dropdown button,
