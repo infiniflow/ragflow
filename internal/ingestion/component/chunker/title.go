@@ -53,6 +53,13 @@
 //     the layout-title fallback. It never overrides an existing level
 //     assignment.
 //
+//   - Two Go-side guards narrow the regex branch: level patterns are
+//     compiled with Python's `{,n}` repetition rewritten to RE2's
+//     `{0,n}` (the shipped templates use it, and RE2 reads the braces
+//     literally), and a matched line that is too long to be a heading
+//     stays body text so include_heading_content cannot copy a body
+//     paragraph into every chunk below it (#21585).
+//
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels
 //     path with TitleChunker but their build_chunks logic differs.
@@ -150,7 +157,8 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 			}
 			// Mirror common.py:select_level_group — a bullet-looking
 			// line cannot count as a heading hit for any family.
-			if notBullet(text) {
+			// A long body paragraph does not count either.
+			if notHeadingCandidate(text) {
 				continue
 			}
 			for _, pattern := range group {
@@ -192,7 +200,7 @@ func matchRegexLevel(text string, group []string) int {
 	}
 	// Mirror common.py:match_regex_level — a bullet-looking line is not
 	// a heading regardless of the regex family.
-	if notBullet(stripped) {
+	if notHeadingCandidate(stripped) {
 		return 0
 	}
 	for lvl, pattern := range group {
@@ -224,6 +232,27 @@ func notBullet(s string) bool {
 		}
 	}
 	return false
+}
+
+// notHeadingCandidate reports whether a line matched by a level pattern must
+// still not be promoted to a heading.
+func notHeadingCandidate(s string) bool {
+	return notBullet(s) || headingTooLong(s)
+}
+
+// headingTooLong reports whether a line is too long to be a heading. A numbered
+// body paragraph that happens to start like a heading — "(1)社区口腔健康教育：
+// 是在社区范围内…" of ~300 runes — is not a heading: with
+// include_heading_content its text would be prepended to every chunk below it
+// (#21585). Only notTitle's length test applies here. Its punctuation test is
+// skipped because numbering families legitimately match headings carrying a
+// comma or colon ("Chapter 3: Methods, Results and Evaluation"), and an
+// explicit Markdown ATX marker is structural at any length.
+func headingTooLong(s string) bool {
+	if strings.HasPrefix(s, "#") || notTitleException.MatchString(s) {
+		return false
+	}
+	return len(strings.Fields(s)) > 12 || (!strings.Contains(s, " ") && utf8.RuneCountInString(s) >= 32)
 }
 
 // notTitlePatterns mirrors rag/nlp.not_title:
@@ -662,6 +691,13 @@ func trim(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// pythonRepetitionRe rewrites Python's `{,n}` repetition to RE2's `{0,n}`.
+// Python's re reads `{,2}` as "zero to two"; RE2 reads the braces literally,
+// so a pattern copied from a Python config compiled but never matched. The
+// Book, Paper, Laws and Manual templates all ship `[\(（][0-9]{,2}[\)）]`,
+// whose `(1)` level was silently dead.
+var pythonRepetitionRe = regexp.MustCompile(`\{,(\d+)\}`)
+
 // compileLevelPattern returns a compiled regex for `pattern`. Returns
 // nil on empty/error to skip the entry — same effect as a regex
 // mismatch in python (the row falls through to body).
@@ -674,6 +710,7 @@ func compileLevelPattern(pattern string) *regexp.Regexp {
 	if pattern == "" {
 		return nil
 	}
+	pattern = pythonRepetitionRe.ReplaceAllString(pattern, "{0,$1}")
 	anchored := pattern
 	if !strings.HasPrefix(pattern, "^") {
 		anchored = "^(?:" + pattern + ")"
