@@ -79,7 +79,7 @@ This setting controls the weight of vector similarity in the comprehensive simil
 
 #### Use Knowledge Graph
 
-Graph-based retrieval through **Use Knowledge Graph** (`use_kg`) is not implemented in the current Go backend. Setting `use_kg` to `true` does not add graph traversal, entity or relationship retrieval, or community-report retrieval. The request continues through the ordinary hybrid retrieval path.
+In dataset retrieval testing, **Use Knowledge Graph** (`use_kg`) does not currently enable graph-based retrieval. Setting `use_kg` to `true` does not add graph traversal, entity or relationship retrieval, or community-report retrieval. The request continues through the ordinary hybrid retrieval path.
 
 Knowledge graph generation and viewing are separate capabilities. You can still generate and view graph artifacts through Knowledge Compilation. Searchable compilation chunks may participate in ordinary retrieval according to the knowledge-compilation inclusion and scope settings; `use_kg` does not control their inclusion. See the [retrieval API reference](../../references/http_api_reference.md#retrieve-chunks) for these settings.
 
@@ -106,7 +106,7 @@ For example, hybrid retrieval combines weighted keyword similarity and weighted 
 
 #### Is an LLM Used When the Use Knowledge Graph Switch Is Enabled?
 
-The current Go backend skips the graph-retrieval step even when `use_kg` is `true`, so this option does not trigger additional LLM calls for graph retrieval. Other enabled features, such as cross-language search or keyword extraction, may still call an LLM independently.
+In dataset retrieval testing, `use_kg` does not trigger graph retrieval or additional LLM calls for that step, even when set to `true`. Other enabled features, such as cross-language search or keyword extraction, may still call an LLM independently.
 
 #### Why does it take longer for RAGFlow to parse a document than LangChain?
 

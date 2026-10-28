@@ -68,11 +68,13 @@ For different knowledge artifact types, focus on the following checks:
 
 ## Update Knowledge Artifacts
 
-The system automatically schedules knowledge-base-level artifact updates when documents finish compilation or documents with compilation results are deleted. No manual **Generate** or **Update** action on the Artifacts page is required.
+The system automatically schedules knowledge-base-level artifact updates when documents finish compilation or documents with compilation results are deleted directly through the knowledge base's document management operations. No manual **Generate** or **Update** action on the Artifacts page is required.
 
 - **New documents**: Upload the documents and run the Pipeline containing Compiler with the required templates. After document processing completes, the system automatically incorporates the compilation results into the corresponding knowledge-base-level artifacts. Uploading a file without running the Pipeline does not generate knowledge artifacts.
 - **Reparsed documents**: After a document completes the Pipeline again, the system automatically updates the corresponding knowledge-base-level artifacts from its latest compilation results.
-- **Deleted documents**: The system automatically schedules removal of the deleted document's contributions from the corresponding knowledge-base-level artifacts.
+- **Documents deleted from the knowledge base**: When you delete a compiled document directly from the knowledge base's **Files** page, the system automatically schedules removal of its contributions from the corresponding knowledge-base-level artifacts.
+
+Deleting a user account is a separate operation. Documents removed as part of account deletion may leave content in existing knowledge-base-level artifacts in knowledge bases that are retained. Do not assume that account deletion automatically removes those contributions.
 
 Updates run in the background and may take time to appear. Check the compilation status and knowledge-base-level logs to confirm completion or investigate a failure.
 
