@@ -40,9 +40,7 @@ class TestAddChunk:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"content": None}, "`content` is required"),
             ({"content": ""}, "`content` is required"),
-            ({"content": 1}, "`content` must be a string"),
             ({"content": "a"}, ""),
             ({"content": " "}, "`content` is required"),
             ({"content": "\n!?。；！？\"'"}, ""),
@@ -69,10 +67,7 @@ class TestAddChunk:
         [
             ({"content": "chunk test important_keywords 1", "important_keywords": ["a", "b", "c"]}, ""),
             ({"content": "chunk test important_keywords 2", "important_keywords": [""]}, ""),
-            ({"content": "chunk test important_keywords 3", "important_keywords": [1]}, "`important_keywords` must be a list of strings"),
             ({"content": "chunk test important_keywords 4", "important_keywords": ["a", "a"]}, ""),
-            ({"content": "chunk test important_keywords 5", "important_keywords": "abc"}, "`important_keywords` is required to be a list"),
-            ({"content": "chunk test important_keywords 6", "important_keywords": 123}, "`important_keywords` is required to be a list"),
         ],
     )
     def test_important_keywords(self, add_document, payload, expected_message):
@@ -96,10 +91,7 @@ class TestAddChunk:
         [
             ({"content": "chunk test test_questions 1", "questions": ["a", "b", "c"]}, ""),
             ({"content": "chunk test test_questions 2", "questions": [""]}, ""),
-            ({"content": "chunk test test_questions 3", "questions": [1]}, "`questions` must be a list of strings"),
             ({"content": "chunk test test_questions 4", "questions": ["a", "a"]}, ""),
-            ({"content": "chunk test test_questions 5", "questions": "abc"}, "`questions` is required to be a list"),
-            ({"content": "chunk test test_questions 6", "questions": 123}, "`questions` is required to be a list"),
         ],
     )
     def test_questions(self, add_document, payload, expected_message):
@@ -123,10 +115,7 @@ class TestAddChunk:
         [
             ({"content": "chunk test test_tag_kwd 1", "tag_kwd": ["tag1", "tag2"]}, ""),
             ({"content": "chunk test test_tag_kwd 2", "tag_kwd": [""]}, ""),
-            ({"content": "chunk test test_tag_kwd 3", "tag_kwd": [1]}, "`tag_kwd` must be a list of strings"),
             ({"content": "chunk test test_tag_kwd 4", "tag_kwd": ["tag", "tag"]}, ""),
-            ({"content": "chunk test test_tag_kwd 5", "tag_kwd": "abc"}, "`tag_kwd` is required to be a list"),
-            ({"content": "chunk test test_tag_kwd 6", "tag_kwd": 123}, "`tag_kwd` is required to be a list"),
         ],
     )
     def test_tag_kwd(self, add_document, payload, expected_message):

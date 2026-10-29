@@ -16,6 +16,7 @@
 from unittest.mock import Mock
 
 import pytest
+from beartype.roar import BeartypeCallHintParamViolation
 from test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest import add_document, raw_ids, wait_until
 from ragflow_sdk import Chunk, Document, RAGFlow
 from ragflow_sdk.modules.chunk import ChunkUpdateError
@@ -194,7 +195,7 @@ def test_fixture_cleanup_is_owned_and_errors_visible(delete_fails):
     else:
         with pytest.raises(StopIteration):
             next(fixture)
-        client.list_datasets.assert_called_once_with(id="owned-dataset")
+        client.list_datasets.assert_called_once_with(ids=["owned-dataset"])
     client.delete_datasets.assert_called_once_with(ids=["owned-dataset"])
 
 
@@ -205,4 +206,30 @@ def test_fixture_cleans_up_after_upload_error():
     client.list_datasets.return_value = []
     with pytest.raises(RuntimeError, match="upload failure"):
         next(add_document.__wrapped__(client))
+    client.delete_datasets.assert_called_once_with(ids=["owned-dataset"])
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "field,value",
+    [("content", None), ("content", 1)] + [(field, value) for field in ("important_keywords", "questions", "tag_kwd") for value in ([1], "abc", 123)],
+)
+def test_add_chunk_rejects_invalid_types_before_http(sdk, document, monkeypatch, field, value):
+    post = Mock()
+    monkeypatch.setattr(sdk, "post", post)
+    with pytest.raises(BeartypeCallHintParamViolation, match=f"parameter {field}="):
+        document.add_chunk(**{"content": "text", field: value})
+    post.assert_not_called()
+
+
+def test_fixture_cleanup_detects_surviving_dataset():
+    client = Mock()
+    dataset = client.create_dataset.return_value
+    dataset.id = "owned-dataset"
+    dataset.upload_documents.return_value = [Mock(id="owned-document")]
+    client.list_datasets.return_value = [dataset]
+    fixture = add_document.__wrapped__(client)
+    next(fixture)
+    with pytest.raises(AssertionError, match="Owned dataset cleanup failed"):
+        next(fixture)
     client.delete_datasets.assert_called_once_with(ids=["owned-dataset"])

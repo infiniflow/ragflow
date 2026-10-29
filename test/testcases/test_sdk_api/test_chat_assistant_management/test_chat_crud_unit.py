@@ -215,8 +215,8 @@ def test_fixture_cleanup_only_deletes_owned_resources(monkeypatch):
         def list_chats(self, id):
             return [id] if id in chats else []
 
-        def list_datasets(self, id):
-            return [id] if id in datasets else []
+        def list_datasets(self, *, ids):
+            return [dataset_id for dataset_id in ids if dataset_id in datasets]
 
         def delete_chats(self, ids):
             deleted.extend(ids)
