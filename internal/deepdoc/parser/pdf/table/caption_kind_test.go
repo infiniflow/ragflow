@@ -119,6 +119,10 @@ func TestCaptionKind_CJKCaptionMarkersStillMatch(t *testing.T) {
 // caption. Python's pattern-only is_caption classifies these as captions and
 // swallows them into the table; this Go path requires a caption boundary after
 // the number, so the sentence stays a standalone text section.
+//
+// IsCaptionBox deliberately keeps the pattern-only verdict: it decides cell
+// filling, no-merge marking, and caption-row stripping, all of which must keep
+// matching Python's is_caption.
 func TestCaptionKind_EnglishTableCrossReferenceNotCaption(t *testing.T) {
 	for _, text := range []string{
 		"Table 1, we present the F1 scores and success rates for KNOWAGENT.",
@@ -131,15 +135,16 @@ func TestCaptionKind_EnglishTableCrossReferenceNotCaption(t *testing.T) {
 		if got := CaptionKind(pdf.Section{Text: text, LayoutType: pdf.LayoutTypeText}); got != "" {
 			t.Errorf("CaptionKind(%q) = %q, want \"\" (cross-reference is body text)", text, got)
 		}
-		if IsCaptionBox(text, pdf.LayoutTypeText) {
-			t.Errorf("IsCaptionBox(%q) = true, want false (cross-reference is body text)", text)
+		if !IsCaptionBox(text, pdf.LayoutTypeText) {
+			t.Errorf("IsCaptionBox(%q) = false, want true (pattern-only contract)", text)
 		}
 	}
 }
 
 // TestCaptionKind_EnglishTableCaptionBoundaries pins the positive side of the
-// boundary rule: separators, title-like words, end of line, and parenthesised
-// continuations still classify as table captions.
+// boundary rule: separators, title-like words, end of line, letter-suffixed
+// numbers, and parenthesised continuations/panel labels still classify as table
+// captions.
 func TestCaptionKind_EnglishTableCaptionBoundaries(t *testing.T) {
 	for _, text := range []string{
 		"Table 2: Comparative Experiment of ReAct",
@@ -149,6 +154,10 @@ func TestCaptionKind_EnglishTableCaptionBoundaries(t *testing.T) {
 		"Table 2 (continued)",
 		"Table 2 (cont'd)",
 		"Table 2 (a) Confusion matrix",
+		"Table 1a. Results",
+		"Table 1b: Results",
+		"Table 1 (iv) Confusion matrix",
+		"Table 1 (12) Results",
 		"Table 1.5: Ablation results",
 		"Table 1\nRevenue by category",
 		"Table 1\u00a0Revenue by category",
@@ -164,17 +173,38 @@ func TestCaptionKind_EnglishTableCaptionBoundaries(t *testing.T) {
 }
 
 // TestCaptionKind_LabelKeepsDeclaredKind pins label precedence: a layout label
-// names the parent kind even when its text is a cross-reference the boundary
-// rule rejects, including non-canonical labels such as "table_caption".
+// names the parent kind even when its text carries no marker (a DLA caption
+// such as "Quarterly revenue breakdown"), including non-canonical labels such as
+// "table_caption".
 func TestCaptionKind_LabelKeepsDeclaredKind(t *testing.T) {
 	for _, tt := range []struct{ text, label, want string }{
-		{"Table 1, we present the F1 scores.", pdf.DLALabelTableCaption, pdf.LayoutTypeTable},
-		{"Table 1, we present the F1 scores.", "table_caption", pdf.LayoutTypeTable},
+		{"Quarterly revenue breakdown", pdf.DLALabelTableCaption, pdf.LayoutTypeTable},
+		{"Quarterly revenue breakdown", "table_caption", pdf.LayoutTypeTable},
+		{"Table 9: Fine-grained retrieval recall.", pdf.DLALabelTableCaption, pdf.LayoutTypeTable},
 		{"Figure 1 shows the architecture.", "figure_caption", pdf.LayoutTypeFigure},
-		{"Table 1, we present the F1 scores.", pdf.DLALabelFigureCaption, pdf.LayoutTypeFigure},
+		{"Figure 1 shows the architecture.", pdf.DLALabelFigureCaption, pdf.LayoutTypeFigure},
 	} {
 		if got := CaptionKind(pdf.Section{Text: tt.text, LayoutType: tt.label}); got != tt.want {
 			t.Errorf("CaptionKind(%q, label %q) = %q, want %q", tt.text, tt.label, got, tt.want)
+		}
+	}
+}
+
+// TestCaptionKind_LabeledCrossReferenceNotCaption covers the DLA half of
+// #20672: when the layout labels a CROSS-REFERENCE sentence as a caption, the
+// label must not override the boundary rule, or MergeCaptions injects the prose
+// into the table's <caption> (or deletes it when no table is near).
+func TestCaptionKind_LabeledCrossReferenceNotCaption(t *testing.T) {
+	const prose = "Table 1, we present the F1 scores and success rates."
+	for _, label := range []string{
+		pdf.DLALabelTableCaption,
+		"table_caption",
+		pdf.DLALabelFigureCaption,
+		"figure_caption",
+		"caption",
+	} {
+		if got := CaptionKind(pdf.Section{Text: prose, LayoutType: label}); got != "" {
+			t.Errorf("CaptionKind(labeled %q, %q) = %q, want \"\" (prose is not a caption)", prose, label, got)
 		}
 	}
 }

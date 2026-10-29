@@ -513,6 +513,40 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphKept(t *testing.T) {
 	}
 }
 
+// TestMergeCaptions_LabeledCrossReferenceStaysBodyText covers the DLA half of
+// #20672: a caption LABEL must not override the boundary rule, or MergeCaptions
+// injects the prose into the table's <caption> (sibling table present) or
+// deletes it outright (no table near).
+func TestMergeCaptions_LabeledCrossReferenceStaysBodyText(t *testing.T) {
+	const prose = "Table 1, we present the F1 scores and success rates for KNOWAGENT."
+	for _, label := range []string{pdf.DLALabelTableCaption, "table_caption"} {
+		withTable := []pdf.Section{
+			{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+			{Text: prose, LayoutType: label,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+		}
+		result := MergeCaptions(withTable)
+		if len(result) != 2 {
+			t.Fatalf("label %q: expected table + prose, got %d sections: %v", label, len(result), textsOf(result))
+		}
+		for _, s := range result {
+			if strings.Contains(s.Text, "<caption>") {
+				t.Errorf("label %q: prose injected into <caption>: %v", label, textsOf(result))
+			}
+		}
+
+		noTable := []pdf.Section{
+			{Text: prose, LayoutType: label,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+		}
+		result = MergeCaptions(noTable)
+		if len(result) != 1 || result[0].Text != prose {
+			t.Errorf("label %q: prose deleted when no table is near: %v", label, textsOf(result))
+		}
+	}
+}
+
 // TestMergeCaptions_ProperNounCrossReferenceLandsInCaption measures the cost of
 // the boundary rule's known limitation (see
 // TestCaptionKind_ProperNounContinuationIsCaption): the sentence is misread as a

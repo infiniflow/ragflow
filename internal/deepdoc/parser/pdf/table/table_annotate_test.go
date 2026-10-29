@@ -736,10 +736,10 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
 }
 
-// TestGarbageKeepFeat_ReferenceKeepsCrossReference pins the retention side of
-// #20672: a reference-labelled box is dropped unless it looks like a caption.
-// A body sentence that STARTS with "Table N" is no longer a caption, but it is
-// still text and must be kept.
+// TestGarbageKeepFeat_ReferenceKeepsCrossReference pins text retention: a
+// reference-labelled box is dropped unless it looks like a caption. IsCaptionBox
+// stays pattern-only, so a distinguishing noun phrase that starts with "Table N"
+// ("Table 1, we present …") is still kept as text, not dropped as a reference.
 func TestGarbageKeepFeat_ReferenceKeepsCrossReference(t *testing.T) {
 	for _, text := range []string{
 		"Table 1, we present the F1 scores and success rates.",

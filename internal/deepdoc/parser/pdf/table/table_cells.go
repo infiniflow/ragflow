@@ -418,15 +418,15 @@ func matchRowStrip(rowStrips []pdf.TSRCell, y0 float64) (float64, float64, bool)
 
 // IsCaptionBox checks if a text box is a table/figure caption. Captions should
 // not enter table cells. Start-anchored detection is shared with Python's
-// is_caption, but the English table marker additionally requires a caption
-// boundary (see captionBoundary): a line beginning "Table N, we present …"
-// cites the table and must stay body text.
+// is_caption. IsCaptionBox stays pattern-only on purpose: its other callers fill
+// table cells, mark cross-page no-merge tables, and strip caption rows, and none
+// of them may start treating a citing sentence as data. The boundary rule that
+// keeps cross-references out of <caption> belongs to CaptionKind.
 func IsCaptionBox(text string, layoutType string) bool {
 	if strings.Contains(layoutType, "caption") {
 		return true
 	}
-	t := strings.TrimSpace(text)
-	return tableCaptionText(t) || figureCaptionText(t)
+	return captionMarkerPrefix(strings.TrimSpace(text))
 }
 
 // reCJKTableCaptionText/reCJKFigureCaptionText mirror Python's
@@ -451,9 +451,11 @@ var (
 // misclassifies a body sentence that BEGINS with a cross-reference
 // ("Table 1, we present …", "Table 9 reports …"): MergeCaptions then moves the
 // sentence into the table's <caption> and deletes it as a standalone section.
-// The English table marker therefore also requires a caption boundary.
+// The English table marker therefore also requires a caption boundary. The
+// optional letter suffix keeps numbered captions ("Table 1a. Results") that the
+// pattern-only detection recognized.
 var (
-	reEnglishTableCaptionPrefix  = regexp.MustCompile(`(?i)^Table\s+\d+(?:\.\d+)*`)
+	reEnglishTableCaptionPrefix  = regexp.MustCompile(`(?i)^Table\s+\d+[A-Za-z]?(?:\.\d+)*`)
 	reEnglishFigureCaptionPrefix = regexp.MustCompile(`(?i)^(?:Fig\.?\s*|Figure\s+)\d+`)
 )
 
@@ -461,9 +463,11 @@ var (
 // caption rather than cite it.
 var reCaptionContinuation = regexp.MustCompile(`(?i)^\(\s*(?:continued(?:\s+on\s+next\s+page)?|cont(?:['’]?d|\.)?|续表|续)\s*\)`)
 
-// rePanelCaption matches a panel label such as "(a)" or "(2)" that introduces
-// the panel's title ("Table 2 (a) Confusion matrix").
-var rePanelCaption = regexp.MustCompile(`^\(\s*[A-Za-z0-9]\s*\)`)
+// rePanelCaption matches a panel label that introduces the panel's title
+// ("Table 2 (a) Confusion matrix", "Table 1 (iv) Confusion matrix",
+// "Table 1 (12) Results"). Panels are single letters, Roman numerals, short
+// numbers, or a letter+number combination.
+var rePanelCaption = regexp.MustCompile(`^\(\s*(?:[A-Za-z]|[ivxlcdmIVXLCDM]{2,4}|\d{1,3}|[A-Za-z]\d{1,2})\s*\)`)
 
 // captionBoundary reports whether the text following an English "Table N"
 // marker starts a caption rather than continuing the sentence that cited it.
@@ -493,12 +497,9 @@ func captionBoundary(rest string) bool {
 		unicode.Is(unicode.Katakana, r) || unicode.Is(unicode.Hangul, r)
 }
 
-// hasCaptionMarkerPrefix reports whether text starts with a caption marker,
-// ignoring the boundary rule. Callers use it to KEEP a possibly mislabelled
-// box (text retention), never to attach a caption: deleting a cross-reference
-// sentence because it was not a caption would lose content.
-func hasCaptionMarkerPrefix(text string) bool {
-	t := strings.TrimSpace(text)
+// captionMarkerPrefix reports whether text starts with a caption marker. It is
+// the pattern-only half of caption detection, shared by IsCaptionBox.
+func captionMarkerPrefix(t string) bool {
 	return reCJKTableCaptionText.MatchString(t) || reCJKFigureCaptionText.MatchString(t) ||
 		reEnglishTableCaptionPrefix.MatchString(t) || reEnglishFigureCaptionPrefix.MatchString(t)
 }
@@ -521,12 +522,27 @@ func figureCaptionText(t string) bool {
 	return reCJKFigureCaptionText.MatchString(t) || reEnglishFigureCaptionPrefix.MatchString(t)
 }
 
+// tableCaptionProse reports whether text starts with an English "Table N"
+// marker whose continuation makes it a sentence that CITES the table rather
+// than a caption ("Table 1, we present …").
+func tableCaptionProse(t string) bool {
+	loc := reEnglishTableCaptionPrefix.FindStringIndex(t)
+	return loc != nil && !captionBoundary(t[loc[1]:])
+}
+
 // CaptionKind returns "table" if the section is a table caption, "figure" if a
 // figure caption, or "" if not a caption. Layout-type hints keep precedence;
 // text patterns decide unlabeled boxes.
 func CaptionKind(s pdf.Section) string {
 	lt := s.LayoutType
 	t := strings.TrimSpace(s.Text)
+	// A citing sentence stays body text even when the layout labelled it a
+	// caption: MergeCaptions would otherwise inject the prose into the nearest
+	// table's <caption> (#20672) or delete it when no table is near. The label
+	// still decides for real captions, including ones without a marker.
+	if tableCaptionProse(t) {
+		return ""
+	}
 	// A layout label decides the kind even when the text does not verify, so
 	// MergeCaptions still searches the labeled parent kind first. A
 	// non-canonical label such as "table_caption" keeps the kind its name
