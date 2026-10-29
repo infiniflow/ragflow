@@ -1765,43 +1765,19 @@ func (c *CLI) AdminStatsSummaryCommand(commandCount int, cmd *Command) (Response
 	return HandleCommonDataResponse(resp, "get stats summary")
 }
 
-// ListUsers lists all users (admin mode only)
-// Returns (result_map, error) - result_map is non-nil for benchmark mode
-func (c *CLI) AdminListUsersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
-	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
-		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
-	}
-
-	resp, err := c.AdminServerClient.Request(commandCount, "GET", "/admin/users", "admin", nil, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list users: %w", err)
-	}
-
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("failed to list users: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
-	}
-
-	var result CommonResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("list users failed: invalid JSON (%w), body: %s", err, string(resp.Body))
-	}
-
-	if result.Code != 0 {
-		return nil, fmt.Errorf("%s", result.Message)
-	}
-
-	for _, user := range result.Data {
-		delete(user, "create_date")
-	}
-
-	result.Duration = resp.Duration
-	return &result, nil
+// adminUserReportRunner is implemented by *CLI in the EE file
+// internal/cli/admin_user_report_ee.go, enabled by the ee build tag.
+type adminUserReportRunner interface {
+	runAdminUserReport(int, *Command) (ResponseIf, error)
 }
 
 func (c *CLI) AdminListUsersConditionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+	if reports, ok := any(c).(adminUserReportRunner); ok {
+		return reports.runAdminUserReport(commandCount, cmd)
 	}
 
 	// Server-side ListUsers reads these via c.Query(), so GET parameters must
@@ -1825,6 +1801,11 @@ func (c *CLI) AdminListUsersConditionCommand(commandCount int, cmd *Command) (Re
 	}
 	if daysInt, ok := cmd.Params["days"].(int); ok {
 		q.Set("days", fmt.Sprintf("%d", daysInt))
+	}
+	for _, name := range []string{"page", "page_size"} {
+		if value, ok := cmd.Params[name].(int); ok {
+			q.Set(name, strconv.Itoa(value))
+		}
 	}
 
 	apiURL := "/admin/users"

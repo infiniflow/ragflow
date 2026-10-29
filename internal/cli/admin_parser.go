@@ -2787,17 +2787,20 @@ func (p *Parser) parseAdminShowUsersPlan() (*Command, error) {
 }
 
 // LIST USERS;
-// LIST USERS ACTIVE 30 DAYS; // default 7 days
-// LIST USERS INACTIVE 30 DAYS; // default 7 days
+// LIST USERS ACTIVE DAYS 30;
+// LIST USERS INACTIVE DAYS 30;
 // LIST USERS STORAGE TOP 10;
 // LIST USERS DOCUMENTS TOP 10;
 // LIST USERS INDEX TOP 10;
-// LIST USERS QUOTA TOP 10;
-// LIST USERS QUOTA OVER;
-// LIST USERS PLAN 'plan_name' QUOTA OVER DAYS 30; // default 7 days
-// LIST USERS PLAN 'plan_name' DAYS 30;            // default 7 days
+// LIST USERS STORAGE PAGE 2 PAGE_SIZE 10;
+// LIST USERS QUOTA 80 PAGE 1 PAGE_SIZE 10;
+// LIST USERS PLAN 'plan_name' QUOTA 80 DAYS 30;
+// LIST USERS PLAN 'plan_name' DAYS 30;
 func (p *Parser) parseAdminListUsersCommand() (*Command, error) {
 	p.nextToken() // consume USERS
+	if p.curToken.Type == TokenWith {
+		return p.parseAdminUserListOptions()
+	}
 
 	var orderBy string
 	var userStatus string
@@ -2805,6 +2808,7 @@ func (p *Parser) parseAdminListUsersCommand() (*Command, error) {
 	var plan *string
 	var quota *int
 	var days *int
+	pagination := make(map[string]interface{})
 	condition := false
 commandLoop:
 	for {
@@ -2816,7 +2820,7 @@ commandLoop:
 			if err != nil {
 				return nil, err
 			}
-			if topInt < 0 {
+			if topInt < 1 {
 				return nil, fmt.Errorf("invalid number of TOP")
 			}
 			p.nextToken()
@@ -2868,6 +2872,21 @@ commandLoop:
 			condition = true
 			userStatus = p.curToken.Value
 			p.nextToken()
+		case TokenIdentifier:
+			name := strings.ToLower(p.curToken.Value)
+			if name != "page" && name != "page_size" {
+				break commandLoop
+			}
+			if _, exists := pagination[name]; exists {
+				return nil, fmt.Errorf("duplicate %s", name)
+			}
+			p.nextToken()
+			value, err := p.parseNumber()
+			if err != nil || value < 1 {
+				return nil, fmt.Errorf("%s must be a positive integer", name)
+			}
+			pagination[name] = value
+			p.nextToken()
 		case TokenSemicolon:
 			p.nextToken()
 			break commandLoop // done
@@ -2881,12 +2900,18 @@ commandLoop:
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
-
-	if !condition {
-		return NewCommand("admin_list_users_command"), nil
+	if p.curToken.Type != TokenEOF {
+		return nil, fmt.Errorf("unexpected token after LIST USERS: %s", p.curToken.Value)
 	}
 
-	cmd := NewCommand("admin_list_users_condition_command")
+	commandType := "admin_list_users_command"
+	if condition {
+		commandType = "admin_list_users_condition_command"
+	}
+	cmd := NewCommand(commandType)
+	for name, value := range pagination {
+		cmd.Params[name] = value
+	}
 	if orderBy != "" {
 		cmd.Params["order_by"] = orderBy
 	}
@@ -2904,6 +2929,9 @@ commandLoop:
 	}
 	if days != nil {
 		cmd.Params["days"] = *days
+	}
+	if err := validateAdminUserListMode(cmd.Params); err != nil {
+		return nil, err
 	}
 
 	return cmd, nil

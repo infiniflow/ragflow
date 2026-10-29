@@ -847,6 +847,20 @@ Commands (User Mode):
   CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
                                                            (run chat completions -h for detailed options)
 
+Commands (Admin Mode):
+  LIST USERS;                                            - List the first page of users
+  LIST USERS WITH keyword 'alice' status 'active' order 'create_date' sort 'asc' page 1 page_size 10;
+                                                         - Search, filter, sort, and paginate users
+  User list sorting supports create_date and last_login_time.
+  LIST USERS WITH role 'Reader' plan 'Pro' quota 80 days 30 page 2 page_size 10;
+                                                         - Enterprise filters with pagination
+  LIST USERS STORAGE TOP 20;                             - Enterprise storage ranking, top results
+  LIST USERS DOCUMENTS PAGE 2 PAGE_SIZE 10;               - Enterprise document ranking, paginated
+  LIST USERS INDEX TOP 20;                               - Enterprise index ranking (individual indices)
+  Only storage, documents and index support top. Do not combine top with page or page_size.
+  In EE user filters, days limits recent logins.
+  WITH text values must be quoted. JSON output includes users and total.
+
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
                                  e.g., ls                   - List root (providers and folders)
