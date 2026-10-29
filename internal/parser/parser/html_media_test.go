@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -193,17 +194,21 @@ func TestHTMLParser_SkipsOversizedInlineImagePayload(t *testing.T) {
 			if !strings.Contains(renderedText(result.JSON[len(result.JSON)-2].ToMap()), "after") {
 				t.Fatalf("text after oversized image lost: %+v", result.JSON)
 			}
-			if !strings.Contains(strings.Join(result.Warnings, " "), "invalid or oversized inline image") {
-				t.Fatalf("missing skipped-image warning: %v", result.Warnings)
+			if !strings.Contains(strings.Join(result.Warnings, " "), "larger than the 4-byte per-image limit") {
+				t.Fatalf("missing oversized-image warning: %v", result.Warnings)
 			}
 		})
 	}
 }
 
-func TestHTMLParser_HasNoParserSideImageCountLimit(t *testing.T) {
-	const count = maxEmbeddedMediaItems + 44
+// TestHTMLParser_RepeatedDataURIsShareOneSource pins that an icon repeated
+// across a document does not exhaust the distinct-source budget: every
+// reference is emitted, matching the previous unlimited repeated-image
+// behavior.
+func TestHTMLParser_RepeatedDataURIsShareOneSource(t *testing.T) {
+	const count = 300
 	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, count) + "</p>"
-	ctx, _ := recordingMediaContext()
+	ctx, cache := recordingMediaContext()
 	result := NewHTMLParser().ParseWithResult(ctx, "many.html", []byte(input))
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
@@ -215,10 +220,74 @@ func TestHTMLParser_HasNoParserSideImageCountLimit(t *testing.T) {
 		}
 	}
 	if images != count {
-		t.Fatalf("images = %d, want %d (no parser-side cap, matching PDF)", images, count)
+		t.Fatalf("images = %d, want %d (one repeated source stays unbounded)", images, count)
 	}
-	if strings.Contains(strings.Join(result.Warnings, "\n"), "256-item") {
-		t.Fatalf("unexpected parser-side image cap warning: %v", result.Warnings)
+	if len(result.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", result.Warnings)
+	}
+	if cache.putCalls != count {
+		t.Fatalf("cache writes = %d, want one per reference", cache.putCalls)
+	}
+}
+
+// TestHTMLParser_DistinctDataURIsHitSourceLimit pins that distinct sources
+// remain bounded by the run budget and report the omission.
+func TestHTMLParser_DistinctDataURIsHitSourceLimit(t *testing.T) {
+	const limit = 256
+	var body strings.Builder
+	body.WriteString("<p>")
+	for i := 0; i <= limit; i++ {
+		body.WriteString(`<img src="data:image/png;base64,`)
+		body.WriteString(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("image-%d", i))))
+		body.WriteString(`">`)
+	}
+	body.WriteString("</p>")
+	ctx, cache := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "distinct.html", []byte(body.String()))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	images := 0
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != limit {
+		t.Fatalf("images = %d, want %d", images, limit)
+	}
+	if cache.putCalls != limit {
+		t.Fatalf("cache writes = %d, want %d", cache.putCalls, limit)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), fmt.Sprintf("%d-item document limit", limit)) {
+		t.Fatalf("missing source-count warning: %v", result.Warnings)
+	}
+}
+
+// TestHTMLParser_SkipsImagesAfterRunCacheLimit pins the parser-side behavior
+// for a cache that has exhausted its run caps: the image is skipped with a
+// warning and the rest of the document still parses.
+func TestHTMLParser_SkipsImagesAfterRunCacheLimit(t *testing.T) {
+	cache := &recordingMediaCache{putErr: fmt.Errorf("mediacache: run image count limit 1 exceeded: %w", media.ErrMediaLimitExceeded)}
+	ctx := media.WithCache(context.Background(), cache)
+	input := `<p>before</p><img src="` + htmlMediaDataURI + `"><img src="data:image/png;base64,YQ=="><p>after</p>`
+	result := NewHTMLParser().ParseWithResult(ctx, "limit.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 2 {
+		t.Fatalf("cache writes = %d, want both references attempted", cache.putCalls)
+	}
+	for _, item := range result.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			t.Fatalf("image item emitted after a cache-limit skip: %#v", item.ToMap())
+		}
+	}
+	if text := renderedText(result.JSON[len(result.JSON)-1].ToMap()); text != "after" {
+		t.Fatalf("text after skipped images = %q, want after", text)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "run media cache limit") {
+		t.Fatalf("missing run-limit warning: %v", result.Warnings)
 	}
 }
 
