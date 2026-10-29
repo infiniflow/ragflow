@@ -3456,10 +3456,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         editAlias: 'Edit alias',
         editAliasDescription:
           'Give this version a memorable alias so you can find it quickly later.',
-        pinnedTooltip:
-          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
-          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+          'The configured pipeline version is not the latest and will not be updated automatically.',
         delete: 'Delete version',
         deleteConfirmTitle: 'Delete this version?',
         deleteConfirmContent:
