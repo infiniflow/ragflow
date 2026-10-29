@@ -3452,7 +3452,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         deleteConfirmTitle: 'Delete this version?',
         deleteConfirmContent:
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
-        restore: 'Restore as current',
+        restore: 'Restore as current draft',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',

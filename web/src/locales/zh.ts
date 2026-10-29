@@ -2485,7 +2485,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
           '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
-        restore: '恢复为当前版本',
+        restore: '恢复为当前草稿',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
