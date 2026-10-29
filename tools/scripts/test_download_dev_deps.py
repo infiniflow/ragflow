@@ -218,6 +218,12 @@ def test_url_builders_honor_gh_proxy(monkeypatch):
     assert native.pdf_oxide_url("linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
 
 
+def test_dev_downloader_rejects_untrusted_gh_proxy(monkeypatch):
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        native.gh_proxy()
+
+
 @pytest.fixture
 def download_server():
     class Handler(BaseHTTPRequestHandler):
