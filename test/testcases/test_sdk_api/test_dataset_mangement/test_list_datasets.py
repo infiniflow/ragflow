@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,11 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from configs import HOST_ADDRESS, INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from beartype.roar import BeartypeCallHintParamViolation
 from ragflow_sdk import RAGFlow
 
 
@@ -27,17 +28,13 @@ class _ListDatasetsResponse:
 
 
 class TestListDatasetsArgumentValidation:
-    @pytest.fixture(autouse=True)
-    def set_tenant_info(self):
-        return None
-
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "params",
         [{"id": "dataset-id", "ids": ["dataset-id"]}, {"id": "dataset-id", "ids": [""]}],
     )
     def test_rejects_conflicting_id_and_ids_before_get(self, monkeypatch, params):
-        client = RAGFlow("token", HOST_ADDRESS)
+        client = RAGFlow("token", "http://sdk.invalid")
         get_calls = []
         monkeypatch.setattr(client, "get", lambda *_args, **_kwargs: get_calls.append((_args, _kwargs)))
 
@@ -52,7 +49,7 @@ class TestListDatasetsArgumentValidation:
         [{"id": "dataset-id"}, {"ids": ["dataset-id"]}, {"id": None, "ids": None}, {"id": "dataset-id", "ids": []}, {"id": "", "ids": ["dataset-id"]}],
     )
     def test_preserves_nonconflicting_id_and_ids(self, monkeypatch, params):
-        client = RAGFlow("token", HOST_ADDRESS)
+        client = RAGFlow("token", "http://sdk.invalid")
         get_calls = []
 
         def _get(path, params=None, json=None):
@@ -69,302 +66,204 @@ class TestListDatasetsArgumentValidation:
             )
         ]
 
+    @pytest.mark.p2
+    def test_get_dataset_not_found_raises(self, monkeypatch):
+        client = RAGFlow("token", "http://sdk.invalid")
+        monkeypatch.setattr(client, "list_datasets", lambda **_: [])
+        with pytest.raises(Exception, match="^Dataset missing-name-for-coverage not found$"):
+            client.get_dataset(name="missing-name-for-coverage")
 
-class TestAuthorization:
+    @pytest.mark.p3
+    def test_field_unsupported(self):
+        client = RAGFlow("token", "http://sdk.invalid")
+        with pytest.raises(TypeError, match="unexpected keyword argument 'unknown_field'"):
+            client.list_datasets(unknown_field="unknown_field")
+
     @pytest.mark.p2
     @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
+        "params",
+        [{"page": "a"}, {"page": None}, {"page_size": "a"}, {"page_size": None}, {"orderby": None}, {"desc": 3.14}, {"desc": "unknown"}, {"desc": None}],
     )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
+    def test_invalid_parameter_types_before_get(self, monkeypatch, params):
+        client = RAGFlow("token", "http://sdk.invalid")
+        get_calls = []
+        monkeypatch.setattr(client, "get", lambda *args, **kwargs: get_calls.append((args, kwargs)))
+        with pytest.raises(BeartypeCallHintParamViolation, match="not instance of"):
+            client.list_datasets(**params)
+        assert get_calls == []
+
+
+@pytest.mark.integration
+class TestAuthorization:
+    @pytest.mark.p2
+    @pytest.mark.parametrize("invalid_auth", [None, "invalid-api-key"])
+    def test_auth_invalid(self, integration_settings, invalid_auth):
+        client = RAGFlow(invalid_auth, integration_settings["base_url"])
+        with pytest.raises(Exception, match="^Invalid access token$"):
             client.list_datasets()
-        assert expected_message in str(exception_info.value)
+
+    @pytest.mark.p2
+    def test_auth_missing(self, integration_settings):
+        client = RAGFlow("unused", integration_settings["base_url"])
+        client.authorization_header = {}
+        with pytest.raises(Exception, match="^Missing Authorization header$"):
+            client.list_datasets()
 
 
+@pytest.mark.integration
 class TestCapability:
     @pytest.mark.p3
-    def test_concurrent_list(self, client):
-        count = 100
+    def test_concurrent_list(self, client, add_datasets):
+        expected_ids = {dataset.id for dataset in add_datasets}
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [
-                executor.submit(
-                    client.list_datasets,
-                )
-                for _ in range(count)
-            ]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+            futures = [executor.submit(client.list_datasets) for _ in range(100)]
+            for future in as_completed(futures):
+                assert {dataset.id for dataset in future.result()} == expected_ids
 
 
+@pytest.mark.integration
 @pytest.mark.usefixtures("add_datasets")
 class TestDatasetsList:
     @pytest.mark.p2
-    def test_params_unset(self, client):
+    def test_params_unset(self, client, add_datasets):
         datasets = client.list_datasets()
-        assert len(datasets) == 5, str(datasets)
-
-    @pytest.mark.p2
-    def test_params_empty(self, client):
-        datasets = client.list_datasets(**{})
-        assert len(datasets) == 5, str(datasets)
+        assert {dataset.id for dataset in datasets} == {dataset.id for dataset in add_datasets}
+        assert len(datasets) == len(add_datasets)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "params, expected_page_size",
-        [
-            ({"page": 2, "page_size": 2}, 2),
-            ({"page": 3, "page_size": 2}, 1),
-            ({"page": 4, "page_size": 2}, 0),
-            ({"page": 1, "page_size": 10}, 5),
-        ],
-        ids=["normal_middle_page", "normal_last_partial_page", "beyond_max_page", "full_data_single_page"],
+        [({"page": 2, "page_size": 2}, 2), ({"page": 3, "page_size": 2}, 1), ({"page": 4, "page_size": 2}, 0), ({"page": 1, "page_size": 10}, 5)],
+        ids=["middle", "last_partial", "beyond_last", "single_page"],
     )
-    def test_page(self, client, params, expected_page_size):
+    def test_page(self, client, add_datasets, params, expected_page_size):
         datasets = client.list_datasets(**params)
-        assert len(datasets) == expected_page_size, str(datasets)
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "params, expected_message",
-        [
-            ({"page": 0}, "Input should be greater than or equal to 1"),
-            ({"page": "a"}, "not instance of"),
-        ],
-        ids=["page_0", "page_a"],
-    )
-    def test_page_invalid(self, client, params, expected_message):
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert expected_message in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p2
-    def test_page_none(self, client):
-        params = {"page": None}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "not instance of" in str(exception_info.value), str(exception_info.value)
+        assert len(datasets) == expected_page_size
+        assert len({dataset.id for dataset in datasets}) == len(datasets)
+        assert {dataset.id for dataset in datasets} <= {dataset.id for dataset in add_datasets}
 
     @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "params, expected_page_size",
-        [
-            ({"page_size": 1}, 1),
-            ({"page_size": 3}, 3),
-            ({"page_size": 5}, 5),
-            ({"page_size": 6}, 5),
-        ],
-        ids=["min_valid_page_size", "medium_page_size", "page_size_equals_total", "page_size_exceeds_total"],
-    )
-    def test_page_size(self, client, params, expected_page_size):
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == expected_page_size, str(datasets)
+    def test_pages_partition_results(self, client, add_datasets):
+        datasets = [dataset for page in range(1, 4) for dataset in client.list_datasets(page=page, page_size=2)]
+        assert len(datasets) == len(add_datasets)
+        assert {dataset.id for dataset in datasets} == {dataset.id for dataset in add_datasets}
 
     @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "params, expected_message",
-        [
-            ({"page_size": 0}, "Input should be greater than or equal to 1"),
-            ({"page_size": "a"}, "not instance of"),
-        ],
-    )
-    def test_page_size_invalid(self, client, params, expected_message):
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert expected_message in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p2
-    def test_page_size_none(self, client):
-        params = {"page_size": None}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "not instance of" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params",
-        [
-            {"orderby": "create_time"},
-            {"orderby": "update_time"},
-        ],
-        ids=["orderby_create_time", "orderby_update_time"],
-    )
-    def test_orderby(self, client, params):
-        client.list_datasets(**params)
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params",
-        [
-            {"orderby": ""},
-            {"orderby": "unknown"},
-            {"orderby": "CREATE_TIME"},
-            {"orderby": "UPDATE_TIME"},
-            {"orderby": " create_time "},
-        ],
-        ids=["empty", "unknown", "orderby_create_time_upper", "orderby_update_time_upper", "whitespace"],
-    )
-    def test_orderby_invalid(self, client, params):
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "Input should be 'create_time' or 'update_time'" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_orderby_none(self, client):
-        params = {"orderby": None}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "not instance of" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params",
-        [
-            {"desc": True},
-            {"desc": False},
-        ],
-        ids=["desc=True", "desc=False"],
-    )
-    def test_desc(self, client, params):
-        client.list_datasets(**params)
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params",
-        [
-            {"desc": 3.14},
-            {"desc": "unknown"},
-        ],
-        ids=["float_value", "invalid_string"],
-    )
-    def test_desc_invalid(self, client, params):
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "not instance of" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p3
-    def test_desc_none(self, client):
-        params = {"desc": None}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "not instance of" in str(exception_info.value), str(exception_info.value)
+    def test_page_invalid(self, client):
+        with pytest.raises(Exception, match="greater than or equal to 1"):
+            client.list_datasets(page=0)
 
     @pytest.mark.p1
-    def test_name(self, client):
-        params = {"name": "dataset_1"}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == 1, str(datasets)
-        assert datasets[0].name == "dataset_1", str(datasets)
+    @pytest.mark.parametrize("page_size, expected_size", [(1, 1), (3, 3), (5, 5), (6, 5)])
+    def test_page_size(self, client, add_datasets, page_size, expected_size):
+        datasets = client.list_datasets(page_size=page_size)
+        assert len(datasets) == expected_size
+        assert len({dataset.id for dataset in datasets}) == len(datasets)
+        assert {dataset.id for dataset in datasets} <= {dataset.id for dataset in add_datasets}
+
+    @pytest.mark.p2
+    def test_page_size_invalid(self, client):
+        with pytest.raises(Exception, match="greater than or equal to 1"):
+            client.list_datasets(page_size=0)
+
+    @pytest.mark.p3
+    @pytest.mark.parametrize("orderby", ["create_time", "update_time"])
+    @pytest.mark.parametrize("desc", [True, False])
+    def test_orderby(self, client, add_datasets, orderby, desc):
+        # DataSet omits timestamps, so read persisted values through the detail API.
+        times = {}
+        for dataset in add_datasets:
+            response = client.get(f"/datasets/{dataset.id}").json()
+            assert response["code"] == 0, response
+            times[dataset.id] = response["data"][orderby]
+        datasets = client.list_datasets(orderby=orderby, desc=desc)
+        assert {dataset.id for dataset in datasets} == set(times)
+        values = [times[dataset.id] for dataset in datasets]
+        assert values == sorted(values, reverse=desc)
+
+    @pytest.mark.p3
+    @pytest.mark.parametrize("orderby", ["", "unknown", "CREATE_TIME", "UPDATE_TIME", " create_time "])
+    def test_orderby_invalid(self, client, orderby):
+        with pytest.raises(Exception, match="Input should be 'create_time' or 'update_time'"):
+            client.list_datasets(orderby=orderby)
+
+    @pytest.mark.p1
+    def test_name(self, client, add_datasets):
+        target = add_datasets[1]
+        datasets = client.list_datasets(name=target.name)
+        assert [(dataset.id, dataset.name) for dataset in datasets] == [(target.id, target.name)]
 
     @pytest.mark.p2
     def test_name_wrong(self, client):
-        params = {"name": "wrong name"}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
+        assert client.list_datasets(name=f"missing-{uuid.uuid4().hex}") == []
 
     @pytest.mark.p2
-    def test_get_dataset_not_found_raises(self, client, monkeypatch):
-        monkeypatch.setattr(client, "list_datasets", lambda **_: [])
-        with pytest.raises(Exception) as exception_info:
-            client.get_dataset(name="missing-name-for-coverage")
-        assert "Dataset missing-name-for-coverage not found" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p2
-    def test_name_empty(self, client):
-        params = {"name": ""}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == 5, str(datasets)
-
-    @pytest.mark.p2
-    def test_name_none(self, client):
-        params = {"name": None}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == 5, str(datasets)
+    @pytest.mark.parametrize("name", ["", None])
+    def test_name_empty(self, client, add_datasets, name):
+        assert {dataset.id for dataset in client.list_datasets(name=name)} == {dataset.id for dataset in add_datasets}
 
     @pytest.mark.p1
     def test_id(self, client, add_datasets):
-        dataset_ids = [dataset.id for dataset in add_datasets]
-        params = {"id": dataset_ids[0]}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == 1, str(datasets)
-        assert datasets[0].id == dataset_ids[0], str(datasets)
+        datasets = client.list_datasets(id=add_datasets[0].id)
+        assert [dataset.id for dataset in datasets] == [add_datasets[0].id]
 
     @pytest.mark.p2
     def test_id_not_uuid(self, client):
-        params = {"id": "not_uuid"}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
+        with pytest.raises(Exception, match="^Invalid UUID format$"):
+            client.list_datasets(id="not_uuid")
 
     @pytest.mark.p2
-    def test_id_not_uuid1(self, client):
-        params = {"id": uuid.uuid4().hex}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
-
-    @pytest.mark.p2
-    def test_id_wrong_uuid(self, client):
-        params = {"id": "d94a8dc02c9711f0930f7fbc369eab6d"}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
+    @pytest.mark.parametrize("dataset_id", [uuid.uuid4().hex, "d94a8dc02c9711f0930f7fbc369eab6d"], ids=["uuid4", "missing_uuid1"])
+    def test_id_wrong_uuid(self, client, dataset_id):
+        with pytest.raises(Exception, match="^Resource not found$"):
+            client.list_datasets(id=dataset_id)
 
     @pytest.mark.p2
     def test_id_empty(self, client):
-        params = {"id": ""}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "Invalid UUID format" in str(exception_info.value), str(exception_info.value)
+        with pytest.raises(Exception, match="^Invalid UUID format$"):
+            client.list_datasets(id="")
 
     @pytest.mark.p2
-    def test_id_none(self, client):
-        params = {"id": None}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == 5, str(datasets)
+    def test_id_none(self, client, add_datasets):
+        assert {dataset.id for dataset in client.list_datasets(id=None)} == {dataset.id for dataset in add_datasets}
 
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "func, name, expected_num",
-        [
-            (lambda r: r[0].id, "dataset_0", 1),
-            (lambda r: r[0].id, "dataset_1", 0),
-        ],
-        ids=["name_and_id_match", "name_and_id_mismatch"],
-    )
-    def test_name_and_id(self, client, add_datasets, func, name, expected_num):
-        params = None
-        if callable(func):
-            params = {"id": func(add_datasets), "name": name}
-        datasets = client.list_datasets(**params)
-        assert len(datasets) == expected_num, str(datasets)
+    @pytest.mark.p1
+    @pytest.mark.parametrize("matching_name", [True, False])
+    def test_name_and_id(self, client, add_datasets, matching_name):
+        target = add_datasets[0]
+        name = target.name if matching_name else add_datasets[1].name
+        datasets = client.list_datasets(id=target.id, name=name)
+        assert [dataset.id for dataset in datasets] == ([target.id] if matching_name else [])
 
     @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "dataset_id, name",
-        [
-            (lambda r: r[0].id, "wrong_name"),
-            (uuid.uuid1().hex, "dataset_0"),
-        ],
-        ids=["name", "id"],
-    )
-    def test_name_and_id_wrong(self, client, add_datasets, dataset_id, name):
-        if callable(dataset_id):
-            params = {"id": dataset_id(add_datasets), "name": name}
+    @pytest.mark.parametrize("missing_id", [False, True])
+    def test_name_and_id_wrong(self, client, add_datasets, missing_id):
+        if missing_id:
+            with pytest.raises(Exception, match="^Resource not found$"):
+                client.list_datasets(id=uuid.uuid4().hex, name=add_datasets[0].name)
         else:
-            params = {"id": dataset_id, "name": name}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "lacks permission for dataset" in str(exception_info.value), str(exception_info.value)
+            assert client.list_datasets(id=add_datasets[0].id, name=f"missing-{uuid.uuid4().hex}") == []
 
-    @pytest.mark.p3
-    def test_field_unsupported(self, client):
-        params = {"unknown_field": "unknown_field"}
-        with pytest.raises(Exception) as exception_info:
-            client.list_datasets(**params)
-        assert "got an unexpected keyword argument" in str(exception_info.value), str(exception_info.value)
+    @pytest.mark.p1
+    def test_ids_filter(self, client, add_datasets):
+        expected = {dataset.id for dataset in add_datasets[:2]}
+        datasets = client.list_datasets(ids=list(expected))
+        assert len(datasets) == len(expected)
+        assert {dataset.id for dataset in datasets} == expected
+
+    @pytest.mark.p2
+    def test_ids_missing_are_filtered(self, client, add_datasets):
+        datasets = client.list_datasets(ids=[add_datasets[0].id, uuid.uuid4().hex])
+        assert [dataset.id for dataset in datasets] == [add_datasets[0].id]
+        assert client.list_datasets(ids=[uuid.uuid4().hex]) == []
+
+    @pytest.mark.p2
+    def test_ids_invalid(self, client):
+        with pytest.raises(Exception, match="^Invalid UUID format$"):
+            client.list_datasets(ids=["not_uuid"])
+
+    @pytest.mark.p2
+    def test_ids_duplicates(self, client, add_datasets):
+        dataset_id = add_datasets[0].id
+        with pytest.raises(Exception, match="Duplicate ids:"):
+            client.list_datasets(ids=[dataset_id, dataset_id])

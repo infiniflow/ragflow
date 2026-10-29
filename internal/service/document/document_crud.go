@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -278,6 +279,13 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	doc, kb, err := s.resolveDocAndKB(ctx, docID)
 	if err != nil {
 		return err
+	}
+
+	// Release an uncommitted parse hold before the document disappears.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if releaseErr := billingService.ReleaseDocumentHold(ctx, docID); releaseErr != nil {
+			common.Warn(fmt.Sprintf("failed to release billing hold for doc %s: %v", docID, releaseErr))
+		}
 	}
 
 	// Delete tasks from DB

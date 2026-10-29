@@ -43,4 +43,5 @@ type Config struct {
 	// For EE
 	defaultModels DefaultModelsConfig
 	billing       BillingConfig
+	oAuth         OAuthConfig
 }

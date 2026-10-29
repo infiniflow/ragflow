@@ -18,6 +18,8 @@ package schema
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -137,8 +139,12 @@ type ChunkDoc struct {
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
 	// deletion list in UnmarshalJSON).
-	TableData *entity.TableData          `json:"table,omitempty"`
-	Extra     map[string]json.RawMessage `json:"-"`
+	TableData *entity.TableData `json:"table,omitempty"`
+	// MediaRef points at the image in the run-scoped media cache. Image carries
+	// bytes only for formats that still inline; otherwise the chunker
+	// materializes the reference before upload.
+	MediaRef *entity.MediaRef           `json:"media_ref,omitempty"`
+	Extra    map[string]json.RawMessage `json:"-"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -151,13 +157,17 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	// Keep the reference before the known-field deletion pass: the typed
+	// decode discards unknown keys, so the raw object is the only place an
+	// empty reference and a malformed one can be told apart.
+	mediaRefRaw := raw["media_ref"]
 	// Known ChunkDoc fields plus tag_kwd, which has no ChunkDoc field: Go's
 	// tagger emits tag_feas and the vocabulary comes from a tag source file,
 	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
 	// cannot fall through to Extra and be re-emitted by MarshalJSON.
 	for _, key := range []string{
 		"text", "doc_type_kwd", "mom", "img_id",
-		"tk_nums", "layout", "layout_type", "layoutno", "image",
+		"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
@@ -166,8 +176,36 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		delete(raw, key)
 	}
 	*d = ChunkDoc(decoded)
+	// A JSON `media_ref: {}` decodes into a non-nil zero value. Normalize it
+	// back to nil so an empty object keeps meaning "no reference"; partially
+	// filled references stay and are rejected by the materializer. A
+	// non-empty object that decodes to the zero value named no recognized
+	// field, and dropping it would let a malformed reference through.
+	if d.MediaRef.IsZero() {
+		if err := validateEmptyMediaRef(mediaRefRaw); err != nil {
+			return err
+		}
+		d.MediaRef = nil
+	}
 	if len(raw) > 0 {
 		d.Extra = raw
+	}
+	return nil
+}
+
+// validateEmptyMediaRef accepts the forms that legitimately mean "no
+// reference" (absent, null, or `{}`) and rejects an object whose keys are all
+// unknown to MediaRef.
+func validateEmptyMediaRef(raw json.RawMessage) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return fmt.Errorf("chunk media_ref: %w", err)
+	}
+	if len(fields) > 0 {
+		return errors.New("chunk media_ref: object has no recognized fields")
 	}
 	return nil
 }

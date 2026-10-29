@@ -30,6 +30,8 @@ import (
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/mediacache"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -43,6 +45,7 @@ type Pipeline struct {
 	canvas  *canvas.Canvas
 	tracker *canvas.RunTracker       // optional injected; nil -> resolve at Run
 	kv      *kvrocks.Client          // optional; nil -> no tracker fallback (unit/test runs)
+	media   media.Cache              // optional injected run media cache
 	factory runtime.ComponentFactory // optional instance-scoped component factory
 	sink    ProgressSink             // optional progress sink; nil -> drop events (DB-independent)
 }
@@ -186,8 +189,7 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 }
 
 // defaultTrackerTTL is the expiry applied to the RunTracker run-status hash.
-// It matches the per-chunk cache TTL (chunkcache.TTL) so both expire on the
-// same horizon.
+// It matches the model-result cache TTL; media has its own one-day TTL.
 var defaultTrackerTTL = 7 * 24 * time.Hour
 
 // Run executes the full ingestion graph described by the canonical DSL.
@@ -217,7 +219,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// MarkSucceeded/MarkFailed/MarkCancelled marks). Resume-from-checkpoint is
 	// intentionally not supported: the pipeline always runs the full graph
 	// from the entry node, and component-level replay decisions (e.g. serving
-	// prior LLM/embedding results from the per-chunk cache) belong to the
+	// prior LLM/embedding results from the run cache) belong to the
 	// components themselves.
 	tracker := p.resolveTracker()
 
@@ -262,10 +264,21 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// them mid-run.
 	globals.SeedIngestionGlobals(runCtx, current)
 	// Expose the task id on the run context so every component can register the
-	// per-chunk cache keys it writes into the task manifest (chunkcache). Without
+	// run-cache keys it writes into the task manifest (chunkcache). Without
 	// this the manifest is never populated and PurgeTask on success becomes a
 	// no-op, leaving orphaned cache entries until TTL expiry.
 	globals.SetTaskID(runCtx, p.taskID)
+	mediaCache := p.media
+	if mediaCache == nil && p.kv != nil {
+		scope := p.taskID
+		if scope == "" {
+			scope = p.documentID
+		}
+		mediaCache = mediacache.New(p.kv, scope)
+	}
+	if mediaCache != nil {
+		runCtx = media.WithCache(runCtx, mediaCache)
+	}
 
 	return p.runPlain(runCtx, current, compiled, tracker, runState)
 }

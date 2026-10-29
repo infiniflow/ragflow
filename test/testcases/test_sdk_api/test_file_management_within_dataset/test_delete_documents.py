@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,19 +16,19 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents, list_all_documents
 
 
 class TestDocumentsDeletion:
+    pytestmark = pytest.mark.integration
+
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
-            ({"ids": None}, "should either provide doc ids or set delete_all(true), dataset:", 3),
-            ({"ids": []}, "should either provide doc ids or set delete_all(true), dataset:", 3),
+            ({"ids": None}, "should either provide doc ids or set delete_all(true)", 3),
+            ({"ids": []}, "should either provide doc ids or set delete_all(true)", 3),
             ({"ids": ["invalid_id"]}, "These documents do not belong to dataset", 3),
             ({"ids": ["\n!?。；！？\"'"]}, "These documents do not belong to dataset", 3),
-            ("not json", "must be a mapping", 3),
             (lambda r: {"ids": r[:1]}, "", 2),
             (lambda r: {"ids": r}, "", 0),
         ],
@@ -41,6 +41,7 @@ class TestDocumentsDeletion:
         remaining,
     ):
         dataset, documents = add_documents_func
+        owned_ids = {document.id for document in documents}
         if callable(payload):
             payload = payload([document.id for document in documents])
 
@@ -51,8 +52,10 @@ class TestDocumentsDeletion:
         else:
             dataset.delete_documents(**payload)
 
-        documents = dataset.list_documents()
-        assert len(documents) == remaining, str(documents)
+        remaining_docs = dataset.list_documents()
+        assert len(remaining_docs) == remaining, str(remaining_docs)
+        expected_ids = owned_ids if expected_message else owned_ids - set(payload.get("ids") or [])
+        assert {document.id for document in remaining_docs} == expected_ids
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -71,8 +74,8 @@ class TestDocumentsDeletion:
             dataset.delete_documents(**payload)
         assert "These documents do not belong to dataset" in str(exception_info.value), str(exception_info.value)
 
-        documents = dataset.list_documents()
-        assert len(documents) == 3, str(documents)
+        remaining = dataset.list_documents()
+        assert {document.id for document in remaining} == {document.id for document in documents}
 
     @pytest.mark.p3
     def test_repeated_deletion(self, add_documents_func):
@@ -82,6 +85,7 @@ class TestDocumentsDeletion:
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(ids=document_ids)
         assert "Document not found" in str(exception_info.value), str(exception_info.value)
+        assert dataset.list_documents() == []
 
     @pytest.mark.p2
     def test_duplicate_deletion(self, add_documents_func):
@@ -90,14 +94,15 @@ class TestDocumentsDeletion:
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(ids=document_ids + document_ids)
         assert "Field: <ids> - Message: <Duplicate ids:" in str(exception_info.value), str(exception_info.value)
-        assert len(dataset.list_documents()) == 3, str(dataset.list_documents())
+        assert {doc.id for doc in dataset.list_documents()} == set(document_ids)
 
 
 @pytest.mark.p3
-def test_concurrent_deletion(add_dataset, tmp_path):
+@pytest.mark.integration
+def test_concurrent_deletion(add_dataset_func, upload_documents):
     count = 100
-    dataset = add_dataset
-    documents = bulk_upload_documents(dataset, count, tmp_path)
+    dataset = add_dataset_func
+    documents = upload_documents(dataset, count)
 
     def delete_doc(doc_id):
         dataset.delete_documents(ids=[doc_id])
@@ -105,16 +110,18 @@ def test_concurrent_deletion(add_dataset, tmp_path):
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(delete_doc, doc.id) for doc in documents]
 
-    responses = list(as_completed(futures))
-    assert len(responses) == count, responses
+    for future in as_completed(futures):
+        future.result()
+
+    assert dataset.list_documents() == []
 
 
 @pytest.mark.p3
-def test_delete_1k(add_dataset, tmp_path):
+@pytest.mark.integration
+def test_delete_1k(add_dataset_func, upload_documents):
     count = 1_000
-    dataset = add_dataset
-    documents = bulk_upload_documents(dataset, count, tmp_path)
-    assert len(list_all_documents(dataset, limit=count + 1)) == count
+    dataset = add_dataset_func
+    documents = upload_documents(dataset, count)
 
     dataset.delete_documents(ids=[doc.id for doc in documents])
     assert len(dataset.list_documents()) == 0

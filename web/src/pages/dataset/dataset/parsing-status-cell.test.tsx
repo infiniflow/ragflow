@@ -11,6 +11,7 @@ jest.mock('./reparse-dialog', () => ({
 
 const mockRunDocumentByIds = jest.fn();
 const mockShowReparseDialog = jest.fn();
+const mockUseDocumentPipelineVersion = jest.fn();
 
 jest.mock('./use-run-document', () => ({
   useHandleRunDocumentByIds: () => ({
@@ -19,6 +20,11 @@ jest.mock('./use-run-document', () => ({
     showModal: mockShowReparseDialog,
     hideModal: jest.fn(),
   }),
+}));
+
+jest.mock('./use-document-pipeline-version', () => ({
+  useDocumentPipelineVersion: (record: unknown) =>
+    mockUseDocumentPipelineVersion(record),
 }));
 
 import { IngestionTaskStatus } from './constant';
@@ -84,6 +90,8 @@ describe('ParsingStatusCell', () => {
   beforeEach(() => {
     mockRunDocumentByIds.mockClear();
     mockShowReparseDialog.mockClear();
+    mockUseDocumentPipelineVersion.mockReset();
+    mockUseDocumentPipelineVersion.mockReturnValue(undefined);
   });
 
   it('shows the queued chip for CREATED tasks', () => {
@@ -207,6 +215,41 @@ describe('ParsingStatusCell', () => {
       { wrapper: StrictMode },
     );
   }
+
+  it('labels a pipeline document by its version title and alias', () => {
+    mockUseDocumentPipelineVersion.mockReturnValue({
+      id: 'v1',
+      title: 'geek pipeline 2026-10-29 11:47:29',
+      alias: '111',
+    });
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_name: 'My pipeline',
+      pipeline_version_id: 'v1',
+    });
+
+    expect(
+      screen.getByText('geek pipeline 2026-10-29 11:47:29'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('111')).toBeInTheDocument();
+    expect(screen.queryByText('My pipeline')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the pipeline name while the version is unresolved', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_name: 'My pipeline',
+      pipeline_version_id: 'v1',
+    });
+
+    expect(screen.getByText('My pipeline')).toBeInTheDocument();
+  });
+
+  it('keeps the plain parser label for built-in parsers', () => {
+    renderDropdown({ pipeline_id: '', chunk_method: 'naive' });
+
+    expect(screen.getByText('General')).toBeInTheDocument();
+  });
 
   it('shows the outdated bang when the pinned pipeline version is not the latest', () => {
     renderDropdown({

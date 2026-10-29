@@ -45,21 +45,25 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	}
 }
 
-// authCookie carries the signed access token to the SPA after login so its
-// JavaScript can send it back as an Authorization header on later requests.
-// Not HttpOnly because the SPA has to read it; the server validates the token
-// signature and expiry on every request.
-const authCookie = "ragflow_auth"
+// oauthAuthCookie is the cookie the callback writes on success, so the SPA
+// can pick up the signed access token after the redirect. The frontend
+// reads it and either re-issues the value as an Authorization header on
+// subsequent API calls or hands it off to its own token store. Not
+// HttpOnly so the SPA's JS can read it.
+const oauthAuthCookie = "ragflow_auth"
 
-// setAuthCookie writes the signed access token so the SPA can send it back as
-// a bearer token. Not HttpOnly so the SPA can copy it into its Authorization
-// header. The server checks the token signature and expiry on each request.
-func setAuthCookie(c *gin.Context, token string) {
-	// codeql[go/cookie-httponly-not-set] Intentional: the SPA reads the cookie
-	// via document.cookie, and the API validates the token signature and
-	// expiry on each request.
+// setOAuthAuthCookie writes the signed access token so the SPA can pick it
+// up after the redirect. Not HttpOnly so the SPA can copy it into its
+// Authorization header on subsequent fetches. The server checks the token
+// signature and expiry on each request.
+func setOAuthAuthCookie(c *gin.Context, token string) {
+	// the SPA's bootstrap credential after the OAuth redirect. The
+	// SPA reads it via document.cookie and copies it into the
+	// Authorization header. Setting HttpOnly would break the login
+	// flow. The API validates the token signature and expiry on each request.
+	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     authCookie,
+		Name:     oauthAuthCookie,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   60 * 60 * 24 * 7,
@@ -106,7 +110,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	}
 
 	c.Header("Authorization", authToken)
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
 	c.Header("Access-Control-Allow-Headers", "*")
@@ -184,7 +188,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	// Set Authorization header with signed token
 	c.Header("Authorization", authToken)
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -275,7 +279,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -339,7 +343,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}()
 
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     authCookie,
+		Name:     oauthAuthCookie,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,

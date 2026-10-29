@@ -1332,7 +1332,13 @@ func (s *ChatSessionService) ChatCompletions(
 					}
 					s.appendAssistantToSession(session, content, messageID)
 					if ctx.Err() == nil {
-						s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
+						messages := s.getSessionMessagesAsSlice(session)
+						message := messages[len(messages)-1]
+						if result.Prompt != "" {
+							message["prompt"] = result.Prompt
+						}
+						attachTurnCost(message, result)
+						s.updateSessionMessages(ctx, session, messages, reference)
 					}
 				}
 				if result.AnswerIsAuthoritative {
@@ -1586,6 +1592,9 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	if lastMessage["role"] != "user" {
 		return nil, "", errors.New("the last content of this conversation is not from user")
 	}
+	if _, err := NormalizeOpenAIMessageContent(lastMessage["content"]); err != nil {
+		return nil, "", err
+	}
 	if storeHistoryMessages {
 		messages = messages[len(messages)-1:]
 	}
@@ -1593,6 +1602,9 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	for _, msg := range messages {
 		message := make(map[string]interface{}, len(msg))
 		for key, value := range msg {
+			if key == "prompt" || key == "usage" || key == "elapsed_ms" {
+				continue
+			}
 			message[key] = value
 		}
 		requestMsg = append(requestMsg, message)
@@ -1761,7 +1773,14 @@ func (s *ChatSessionService) filterSystemAndLeadingAssistant(session *entity.Cha
 		if role == "assistant" && len(result) == 0 {
 			continue
 		}
-		result = append(result, msg)
+		message := make(map[string]interface{}, len(msg))
+		for key, value := range msg {
+			if key == "prompt" || key == "usage" || key == "elapsed_ms" {
+				continue
+			}
+			message[key] = value
+		}
+		result = append(result, message)
 	}
 	return result
 }
@@ -2152,6 +2171,14 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		lastMsg["created_at"] = float64(time.Now().UnixNano()) / 1e9
 		lastMsg["id"] = messageID
 		messages[lastIdx] = lastMsg
+	}
+	if prompt, _ := ans["prompt"].(string); prompt != "" {
+		messages[len(messages)-1]["prompt"] = prompt
+	}
+	for _, key := range []string{"usage", "elapsed_ms"} {
+		if value, ok := ans[key]; ok {
+			messages[len(messages)-1][key] = value
+		}
 	}
 
 	session.Message, _ = json.Marshal(messages)
