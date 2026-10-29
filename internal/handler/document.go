@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
@@ -1020,6 +1021,15 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		return
 	}
 	files := form.File["file"]
+	var totalSize int64
+	for _, fh := range files {
+		if fh != nil {
+			totalSize += fh.Size
+		}
+	}
+	if !billingEnforceStorage(c, tenantID, totalSize) {
+		return
+	}
 	for _, fh := range files {
 		if fh == nil || fh.Filename == "" {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
@@ -1694,6 +1704,33 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Storage quota: reject the whole upload before any file is persisted.
+	if len(fileHeaders) > 0 {
+		var totalSize int64
+		for _, header := range fileHeaders {
+			totalSize += header.Size
+		}
+		if totalSize > 0 {
+			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+				if quotaErr := billingService.CheckResources(ctx, user.ID, billing.ResourceDelta{Storage: totalSize}); quotaErr != nil {
+					var insufficient *billing.InsufficientResourceError
+					if errors.As(quotaErr, &insufficient) {
+						common.ResponseWithDetail(c, common.CodeBillingStorageInsufficient, quotaErr.Error(), gin.H{
+							"resource": "storage",
+							"current":  insufficient.Current,
+							"limit":    insufficient.Limit,
+							"filename": fileHeaders[0].Filename,
+						})
+						return
+					}
+					common.ErrorWithCode(c, common.CodeServerError, quotaErr.Error())
+					return
+				}
+			}
+		}
+	}
+
 	if rawURL != "" {
 		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
 		if err != nil {

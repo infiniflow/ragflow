@@ -292,6 +292,14 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 // @Success 200 {object} entity.UserCanvas
 // @Router /api/v1/agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
