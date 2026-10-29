@@ -59,6 +59,12 @@ import { AliasFormDialog } from '../components/alias-form-dialog';
 import { CanvasSnapshot, CanvasSnapshotContext } from '../context';
 import { downloadDsl } from '../utils/download-dsl';
 
+function Dot() {
+  return (
+    <span className="w-2 h-2 inline-block rounded-full bg-accent-primary flex-shrink-0" />
+  );
+}
+
 type PendingAction =
   | { kind: 'delete'; versionId: string; title: string }
   | { kind: 'restore'; versionId: string; title: string }
@@ -87,17 +93,15 @@ export function VersionDialog({
   const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
 
-  // Only published versions are listed: draft saves (manual Save and
-  // auto-save) no longer write user_canvas_version rows, so this dialog shows
-  // what was published. Rows predating that change are filtered out here.
-  const released = useMemo(() => data.filter((x) => x.release), [data]);
-
+  // Every version row is listed, including unpublished snapshots saved before
+  // draft saves stopped writing user_canvas_version; published rows carry a
+  // Dot marker next to the title.
   // A2/F1: alias filtering is a pure front-end filter over the returned set.
   const filtered = useMemo(() => {
     const q = aliasFilter.trim().toLowerCase();
-    if (!q) return released;
-    return released.filter((x) => (x.alias ?? '').toLowerCase().includes(q));
-  }, [released, aliasFilter]);
+    if (!q) return data;
+    return data.filter((x) => (x.alias ?? '').toLowerCase().includes(q));
+  }, [data, aliasFilter]);
 
   const { page, pageSize, setPage, onPaginationChange, pagedList } =
     useClientPagination(filtered);
@@ -105,8 +109,8 @@ export function VersionDialog({
   // The version detail (IFlow) has no alias field, so the preview header
   // reads the alias from the list row for the selected version.
   const selectedAlias = useMemo(
-    () => released.find((x) => x.id === selectedId)?.alias,
-    [released, selectedId],
+    () => data.find((x) => x.id === selectedId)?.alias,
+    [data, selectedId],
   );
 
   // Snapshot handed to the preview so variable labels inside node components
@@ -219,10 +223,10 @@ export function VersionDialog({
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
   useEffect(() => {
-    if (released.length > 0 && !released.some((x) => x.id === selectedId)) {
-      setSelectedId(released[0].id);
+    if (data.length > 0 && !data.some((x) => x.id === selectedId)) {
+      setSelectedId(data[0].id);
     }
-  }, [released, selectedId]);
+  }, [data, selectedId]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -255,6 +259,7 @@ export function VersionDialog({
                     >
                       <div className="flex items-center gap-2">
                         <span className="truncate min-w-0">{x.title}</span>
+                        {x.release && <Dot></Dot>}
                         {x.alias && (
                           <span className="shrink-0 max-w-[20%] truncate text-accent-primary text-xs">
                             {x.alias}
@@ -306,12 +311,11 @@ export function VersionDialog({
                       <div className="flex min-w-0 items-center">
                         <span className="pb-1 truncate">{agent?.title}</span>
                         {selectedAlias && (
-                          <span
-                            className="ml-2 max-w-[30%] truncate text-accent-primary text-sm"
-                            title={selectedAlias}
-                          >
-                            {selectedAlias}
-                          </span>
+                          <RAGFlowTooltip asChild tooltip={selectedAlias}>
+                            <span className="ml-2 max-w-[30%] truncate text-accent-primary text-sm">
+                              {selectedAlias}
+                            </span>
+                          </RAGFlowTooltip>
                         )}
                       </div>
                       <p className="text-text-secondary text-xs">
