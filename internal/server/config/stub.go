@@ -87,6 +87,8 @@ func (c *Config) GetDefaultTTSModel() ModelConfig { return c.defaultModels.TTSMo
 // has no OAuth login.
 type OAuthConfig struct{}
 
+type OAuthChannel struct{}
+
 // ParseOAuthConfig ignores OAuth configuration: the OSS build has no OAuth
 // login.
 func (c *Config) ParseOAuthConfig(v *viper.Viper) error { return nil }
