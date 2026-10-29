@@ -651,7 +651,7 @@ func TestEPUBParserMissingZipEntryDoesNotConsumeImageBudget(t *testing.T) {
 // An image above the per-image limit is reported through the budget warning
 // without reading bytes, so it must not consume an image attempt either.
 func TestEPUBParserOversizedZipImageDoesNotConsumeImageBudget(t *testing.T) {
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "8")
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "8")
 	ctx, cache := recordingMediaContext()
 	content := epubTestHTML(strings.Repeat(`<img src="Images/huge.png">`, maxEmbeddedMediaItems) +
 		`<img src="Images/ok.png" alt="ok">`)

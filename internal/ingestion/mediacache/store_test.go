@@ -236,7 +236,7 @@ func TestPut_RejectsMissingStoreScopeAndOversizedImage(t *testing.T) {
 	if _, err := New(nil, "task-1").Put(ctx, "html", "image/png", []byte("hello")); err == nil {
 		t.Fatal("Put accepted an unavailable cache")
 	}
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "5")
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "5")
 	data := make([]byte, 6)
 	if _, err := New(backend, "task-1").Put(ctx, "html", "image/png", data); err == nil {
 		t.Fatal("Put accepted an oversized image")

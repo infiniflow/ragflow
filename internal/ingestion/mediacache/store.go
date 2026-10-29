@@ -77,8 +77,8 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	if strings.TrimSpace(mime) == "" {
 		return entity.MediaRef{}, errors.New("mediacache: media type is empty")
 	}
-	if len(data) == 0 || len(data) > media.HTMLImageMaxBytes() {
-		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.HTMLImageMaxBytes())
+	if len(data) == 0 || len(data) > media.ImageMaxBytes() {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.ImageMaxBytes())
 	}
 
 	sum := sha256.Sum256(data)
@@ -130,8 +130,8 @@ func (s *Store) Get(ctx context.Context, ref entity.MediaRef) ([]byte, error) {
 	if ref.Scope != s.scope {
 		return nil, fmt.Errorf("mediacache: reference scope %q does not match run scope %q", ref.Scope, s.scope)
 	}
-	if ref.Size > int64(media.HTMLImageMaxBytes()) {
-		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.HTMLImageMaxBytes())
+	if ref.Size > int64(media.ImageMaxBytes()) {
+		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.ImageMaxBytes())
 	}
 
 	value, err := s.backend.Get(ctx, s.key(ref.SHA256))

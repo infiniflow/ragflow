@@ -23,7 +23,6 @@ import (
 )
 
 const (
-	maxEmbeddedImageBytes         = media.MaxImagePayloadBytes
 	maxEmbeddedDocumentImageBytes = 64 << 20
 	maxEmbeddedMediaItems         = 256
 )
@@ -42,7 +41,7 @@ type embeddedMediaBudget struct {
 
 func newEmbeddedMediaBudget() *embeddedMediaBudget {
 	return &embeddedMediaBudget{
-		maxImageBytes: maxEmbeddedImageBytes,
+		maxImageBytes: media.ImageMaxBytes(),
 		maxTotalBytes: maxEmbeddedDocumentImageBytes,
 		maxItems:      maxEmbeddedMediaItems,
 	}

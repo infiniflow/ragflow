@@ -290,7 +290,7 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 	budget := newEmbeddedMediaBudget()
 	// mediacache.Put enforces the same per-image limit, so keep the parser
 	// budget aligned with it instead of the legacy fixed constant.
-	budget.maxImageBytes = media.HTMLImageMaxBytes()
+	budget.maxImageBytes = media.ImageMaxBytes()
 	state := &htmlWalkState{
 		refOnly:     true,
 		ctx:         ctx,
@@ -365,7 +365,7 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 			return nil, false
 		}
 		// Inline data URIs keep the shared HTML data-URI path.
-		if media.IsHTMLDataImageSource(src) {
+		if media.IsDataImageSource(src) {
 			return nil, false
 		}
 		if state.mediaCache == nil {

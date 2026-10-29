@@ -175,7 +175,7 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 }
 
 func TestHTMLParser_SkipsOversizedInlineImagePayload(t *testing.T) {
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "4")
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "4")
 	for name, oversized := range map[string]string{
 		"inline": `<p><img src="` + htmlMediaDataURI + `"></p>`,
 		"table":  `<table><tr><td><img src="` + htmlMediaDataURI + `"></td></tr></table>`,

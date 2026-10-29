@@ -309,8 +309,8 @@ export KVROCKS_PORT=6379
   process fails fast with `failed to connect to Kvrocks`.
   HTML ingestion uses Kvrocks to hand inline images from the parser to the
   chunker; the ingestor also validates the injected Kvrocks client at startup.
-  HTML image payloads default to a 32 MiB per-image limit; set
-  `RAGFLOW_HTML_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Inline image payloads default to a 32 MiB per-image limit; set
+  `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
 
 
 - Start RAGFlow

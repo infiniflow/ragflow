@@ -184,15 +184,15 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		normalized, ok := s.resolveImage(src)
 		return normalized, nil, ok
 	}
-	if !media.IsHTMLDataImageSource(src) {
+	if !media.IsDataImageSource(src) {
 		return "", nil, false
 	}
 	if s.refOnly {
 		// Validate and size the payload without allocating so budget admission
 		// happens before the decode. Malformed sources are never charged
 		// against the item budget.
-		size, ok := media.HTMLImageDecodedSize(src)
-		if !ok || size > media.HTMLImageMaxBytes() {
+		size, ok := media.DataImageDecodedSize(src)
+		if !ok || size > media.ImageMaxBytes() {
 			return "", nil, false
 		}
 		if s.mediaCache == nil {
@@ -207,7 +207,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 				return "", nil, false
 			}
 		}
-		mime, data, ok := media.DecodeHTMLImageSource(src)
+		mime, data, ok := media.DecodeDataImageSource(src)
 		if !ok {
 			return "", nil, false
 		}
@@ -224,7 +224,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	if !s.mediaBudget.reserveItem() {
 		return "", nil, false
 	}
-	normalized, size, _, ok := media.NormalizeHTMLImageSource(src)
+	normalized, size, _, ok := media.NormalizeDataImageSource(src)
 	if !ok {
 		return "", nil, false
 	}
@@ -497,7 +497,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			if !ok {
 				if state.resolveImage != nil {
 					w.writeText(htmlAttribute(n, "alt"))
-				} else if media.IsHTMLDataImageSource(src) {
+				} else if media.IsDataImageSource(src) {
 					state.skippedInlineImages++
 				}
 				return
@@ -626,7 +626,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 							replacement = "![" + alt + "](" + src + ")"
 						}
 						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
-					} else if media.IsHTMLDataImageSource(src) {
+					} else if media.IsDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
 					}
