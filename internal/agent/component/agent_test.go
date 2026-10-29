@@ -177,6 +177,67 @@ func TestMatchAgentOutputStructure_RejectsWrongType(t *testing.T) {
 	}
 }
 
+func TestMatchAgentOutputStructure_RejectsNullForObjectSchema(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+	}
+	if _, ok := matchAgentOutputStructure("null", schema); ok {
+		t.Fatal("null must fail an object schema")
+	}
+	if _, ok := matchAgentOutputStructure("null", map[string]any{
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+	}); !ok {
+		t.Fatal("omitted type must still accept null")
+	}
+	if _, ok := matchAgentOutputStructure("null", map[string]any{
+		"type":       []any{"object", "null"},
+		"properties": map[string]any{"id": map[string]any{"type": "integer"}},
+		"required":   []any{"id"},
+	}); !ok {
+		t.Fatal("type union that includes null must accept null")
+	}
+}
+
+func TestMatchAgentOutputStructure_RejectsAdditionalProperties(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+		"additionalProperties": false,
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":1,"unexpected":true}`, schema); ok {
+		t.Fatal("undeclared key must fail when additionalProperties is false")
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":1}`, schema); !ok {
+		t.Fatal("declared key should pass")
+	}
+}
+
+func TestMatchAgentOutputStructure_AcceptsTypeUnion(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"note": map[string]any{"type": []any{"string", "null"}},
+		},
+		"required": []any{"note"},
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":1}`, schema); ok {
+		t.Fatal("number must fail a string|null property")
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":"ok"}`, schema); !ok {
+		t.Fatal("string should pass a string|null property")
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":null}`, schema); !ok {
+		t.Fatal("null should pass a string|null property")
+	}
+}
+
 func TestAgent_StructuredDeferredEmitsCleanedContent(t *testing.T) {
 	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
 		runtime.EmitAgentMessage(ctx, "", "thinking")

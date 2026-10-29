@@ -581,6 +581,12 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 				delta = leadingWhitespace.String()
 				emitting = true
 			}
+			// Structured output is normalized once after grounding. Streaming
+			// these deltas would duplicate that final emission, and the raw
+			// chunks would not match the cleaned content.
+			if len(p.OutputStructure) > 0 {
+				return nil
+			}
 			emittedVisible = true
 			runtime.EmitAgentMessage(ctx, delta, "")
 			return nil
@@ -1139,7 +1145,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 	structuredHeld := len(p.OutputStructure) > 0
 	if structuredHeld {
-		cleaned := cleanFormattedAnswer(content)
+		cleaned := strings.TrimSpace(cleanFormattedAnswer(content))
 		parsed, ok := matchAgentOutputStructure(cleaned, p.OutputStructure)
 		if !ok {
 			parsed, ok = matchAgentOutputStructure(content, p.OutputStructure)
@@ -1706,9 +1712,26 @@ func agentOutputStructureFrom(inputs map[string]any) map[string]any {
 
 // matchAgentOutputStructure parses content against a flat key hint or a JSON
 // Schema object. Flat hints require every listed key. JSON Schema requires only
-// `required` keys (properties alone do not imply required) and checks declared
-// top-level property types when present.
+// `required` keys (properties alone do not imply required), checks declared
+// top-level property types, rejects a null document when the root type excludes
+// null, and rejects keys outside properties when additionalProperties is false.
 func matchAgentOutputStructure(content string, structure map[string]any) (map[string]any, bool) {
+	if strings.TrimSpace(content) == "null" {
+		types, hasType := schemaTypeNames(structure["type"])
+		if !hasType {
+			// An omitted type does not exclude null. required applies only to objects.
+			if isJSONSchemaObject(structure) {
+				return nil, true
+			}
+		} else {
+			for _, typ := range types {
+				if typ == "null" {
+					return nil, true
+				}
+			}
+			return nil, false
+		}
+	}
 	expected := structuredExpectedKeySet(structure)
 	parsed, ok := matchOutputStructure(content, expected)
 	if !ok {
@@ -1717,6 +1740,14 @@ func matchAgentOutputStructure(content string, structure map[string]any) (map[st
 	if props, ok := structure["properties"].(map[string]any); ok && len(props) > 0 {
 		if !matchStructuredPropertyTypes(parsed, props) {
 			return nil, false
+		}
+	}
+	if structure["additionalProperties"] == false {
+		props, _ := structure["properties"].(map[string]any)
+		for k := range parsed {
+			if _, declared := props[k]; !declared {
+				return nil, false
+			}
 		}
 	}
 	return parsed, true
@@ -1763,15 +1794,54 @@ func matchStructuredPropertyTypes(parsed map[string]any, props map[string]any) b
 		if !ok {
 			continue
 		}
-		typ, _ := ps["type"].(string)
-		if typ == "" {
+		types, ok := schemaTypeNames(ps["type"])
+		if !ok {
 			continue
 		}
-		if !jsonValueMatchesSchemaType(v, typ) {
+		matched := false
+		for _, typ := range types {
+			if jsonValueMatchesSchemaType(v, typ) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}
 	return true
+}
+
+// schemaTypeNames reads a JSON Schema type keyword. It is a single string or
+// an array of strings. An omitted or empty type reports ok=false.
+func schemaTypeNames(raw any) ([]string, bool) {
+	switch t := raw.(type) {
+	case string:
+		if t == "" {
+			return nil, false
+		}
+		return []string{t}, true
+	case []string:
+		if len(t) == 0 {
+			return nil, false
+		}
+		return t, true
+	case []any:
+		names := make([]string, 0, len(t))
+		for _, item := range t {
+			s, ok := item.(string)
+			if !ok || s == "" {
+				continue
+			}
+			names = append(names, s)
+		}
+		if len(names) == 0 {
+			return nil, false
+		}
+		return names, true
+	default:
+		return nil, false
+	}
 }
 
 func jsonValueMatchesSchemaType(v any, typ string) bool {

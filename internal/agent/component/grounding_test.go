@@ -132,6 +132,61 @@ func TestGrounding_Applied(t *testing.T) {
 	}
 }
 
+func TestGrounding_StructuredEmitsCleanedContentOnce(t *testing.T) {
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{
+		responses: []string{"```json\n{\"id\":1}\n```"},
+	}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "```json\n{\"id\":1}\n```"}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{
+		{"id": "0", "content": "the source content"},
+	})
+	ctx := runtime.WithState(t.Context(), state)
+	var streamed string
+	var deltas int
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		streamed += content
+		deltas++
+	})
+
+	c := NewAgentComponent(agentParamFromMap(map[string]any{
+		"model_id": "stub",
+		"cite":     true,
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id": map[string]any{"type": "integer"},
+				},
+				"required": []any{"id"},
+			},
+		},
+	}))
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, ok := out["structured"].(map[string]any); !ok {
+		t.Fatalf("structured=%T (%v)", out["structured"], out["structured"])
+	}
+	if deltas != 1 {
+		t.Fatalf("deltas=%d, want 1 (grounding must not emit before the cleaned answer)", deltas)
+	}
+	if streamed != out["content"] {
+		t.Fatalf("streamed=%q, content=%q", streamed, out["content"])
+	}
+	if strings.Contains(streamed, "```") {
+		t.Fatalf("streamed fenced JSON %q", streamed)
+	}
+}
+
 // TestGrounding_NoChunks: Cite=true but state has no chunks → no
 // grounding call, status reflects "no_chunks".
 func TestGrounding_NoChunks(t *testing.T) {
