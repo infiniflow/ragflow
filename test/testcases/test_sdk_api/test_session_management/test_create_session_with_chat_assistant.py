@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,11 +13,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from common import list_all_sessions
-from configs import HOST_ADDRESS, SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
 
@@ -40,66 +38,73 @@ class _DummyJsonResponse:
         return self._payload
 
 
-@pytest.mark.usefixtures("clear_session_with_chat_assistants")
+@pytest.mark.integration
 class TestSessionWithChatAssistantCreate:
-    @pytest.mark.p3
     @pytest.mark.parametrize(
-        "name, expected_message",
+        "name, expected",
         [
-            ("valid_name", ""),
-            pytest.param("a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` can not be empty"),
-            ("duplicated_name", ""),
-            ("case insensitive", ""),
+            ("valid_name", "valid_name"),
+            ("a" * 256, "a" * 255),
+            ("会" * 256, "会" * 255),
+            ("", None),
+            ("   ", None),
+            (1, None),
+            (None, None),
+            (True, None),
+            ([], None),
+            ("  trimmed name  ", "trimmed name"),
+            ("duplicated_name", "duplicated_name"),
+            ("case insensitive", "case insensitive"),
         ],
     )
-    def test_name(self, add_chat_assistants, name, expected_message):
-        _, _, chat_assistants = add_chat_assistants
-        chat_assistant = chat_assistants[0]
-
-        if name == "duplicated_name":
-            chat_assistant.create_session(name=name)
-        elif name == "case insensitive":
-            chat_assistant.create_session(name=name.upper())
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.create_session(name=name)
-            assert expected_message in str(exception_info.value)
+    def test_name(self, chat, name, expected):
+        previous = None
+        if name in ("duplicated_name", "case insensitive"):
+            previous = chat.create_session(name=name.upper() if name == "case insensitive" else name)
+        if expected is None:
+            with pytest.raises(Exception, match="`name` can not be empty"):
+                chat.create_session(name=name)
+            assert chat.list_sessions() == []
         else:
-            session = chat_assistant.create_session(name=name)
-            assert session.name == name, str(session)
-            assert session.chat_id == chat_assistant.id, str(session)
+            session = chat.create_session(name=name)
+            assert session.id
+            assert session.name == expected
+            assert session.chat_id == chat.id
+            persisted = chat.list_sessions(id=session.id)
+            assert len(persisted) == 1
+            assert persisted[0].name == expected
+            if previous:
+                assert session.id != previous.id
+                assert {item.id for item in chat.list_sessions()} == {session.id, previous.id}
 
-    @pytest.mark.p3
-    def test_concurrent_create_session(self, add_chat_assistants):
+    def test_default_name(self, chat):
+        session = chat.create_session()
+        assert session.name == "New session"
+        assert session.chat_id == chat.id
+        assert session.messages[0]["role"] == "assistant"
+        assert session.messages[0]["content"] == "session audit greeting"
+        assert [item.id for item in chat.list_sessions()] == [session.id]
+
+    def test_concurrent_create_session(self, chat):
         count = 1000
-        _, _, chat_assistants = add_chat_assistants
-        chat_assistant = chat_assistants[0]
-
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(chat_assistant.create_session, name=f"session with chat assistant test {i}") for i in range(count)]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+            futures = [executor.submit(chat.create_session, name=f"session-{i}") for i in range(count)]
+            sessions = [future.result() for future in futures]
+        assert len({session.id for session in sessions}) == count
+        assert {session.name for session in sessions} == {f"session-{i}" for i in range(count)}
+        assert all(session.chat_id == chat.id for session in sessions)
+        persisted = chat.list_sessions(page_size=count + 1)
+        assert {session.id for session in persisted} == {session.id for session in sessions}
 
-        updated_sessions = list_all_sessions(chat_assistant, limit=count + 1)
-        assert len(updated_sessions) == count
-
-    @pytest.mark.p3
-    def test_add_session_to_deleted_chat_assistant(self, client, add_chat_assistants):
-        _, _, chat_assistants = add_chat_assistants
-        chat_assistant = chat_assistants[0]
-
-        client.delete_chats(ids=[chat_assistant.id])
-        with pytest.raises(Exception) as exception_info:
-            chat_assistant.create_session(name="valid_name")
-        assert "no authorization" in str(exception_info.value)
+    def test_add_session_to_deleted_chat_assistant(self, client, chat):
+        client.delete_chats(ids=[chat.id])
+        with pytest.raises(Exception, match="^Resource not found$"):
+            chat.create_session(name="valid_name")
 
 
 @pytest.mark.p2
 def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
-    client = RAGFlow("token", HOST_ADDRESS)
+    client = RAGFlow("token", "http://unit.invalid")
     chat_session = Session(client, {"id": "session-chat", "chat_id": "chat-1"})
     chat_done_session = Session(client, {"id": "session-chat-done", "chat_id": "chat-1"})
     agent_session = Session(client, {"id": "session-agent", "agent_id": "agent-1"})
@@ -215,3 +220,123 @@ def test_agent_session_streams_all_message_references_without_duplicate_content(
 
     assert "".join(message.content for message in messages) == "first answersecond answer"
     assert [message.reference for message in messages if message.reference] == [[first_chunk], [second_chunk]]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("session_type", ["chat", "agent"])
+@pytest.mark.parametrize("stream", [False, True])
+def test_session_ask_forwards_request_and_message_identity(monkeypatch, session_type, stream):
+    session = Session(None, {"id": "saved-session", f"{session_type}_id": "parent"})
+    calls = []
+    answer = {"content": "answer", "reference": {"chunks": [{"id": "source"}]}}
+    event = {"event": "message", "message_id": "message-id", "data": answer}
+    if session_type == "chat":
+        event = {"data": {"id": "message-id", "answer": "answer", "reference": answer["reference"]}}
+    if stream:
+        import json
+
+        response = _DummyStreamResponse(["data: " + json.dumps(event), "data:[DONE]"])
+    else:
+        response = _DummyJsonResponse({"code": 0, "data": event if session_type == "agent" else event["data"]})
+
+    def post(path, payload, stream=False):
+        calls.append((path, payload, stream))
+        return response
+
+    monkeypatch.setattr(session, "post", post)
+    options = {"files": [{"id": "file-id"}], "user_id": "external-user", "session_id": "override-session"}
+    if session_type == "agent":
+        options.update(inputs={"topic": {"value": "SDK"}}, release=False, return_trace=True)
+    messages = list(session.ask("question", stream=stream, **options))
+    assert len(messages) == 1
+    assert messages[0].id == "message-id"
+    assert messages[0].content == "answer"
+    assert messages[0].role == "assistant"
+    assert messages[0].reference == [{"id": "source"}]
+    path, payload, transport_stream = calls[0]
+    expected = {"stream": stream, **options}
+    if session_type == "chat":
+        expected["question"] = "question"
+        assert path == "/chats/parent/completions"
+    else:
+        expected.update(agent_id="parent", query="question", **{"openai-compatible": False})
+        assert path == "/agents/chat/completions"
+    assert payload == expected
+    assert transport_stream is stream
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("session_type", ["chat", "agent"])
+@pytest.mark.parametrize("terminator", ["data: [DONE]", "data:[DONE]"])
+def test_session_stream_stops_before_trailing_messages(monkeypatch, session_type, terminator):
+    session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
+    if session_type == "chat":
+        frame = 'data:{"event":"message","data":{"id":"answer-id","answer":"answer"}}'
+    else:
+        frame = 'data:{"event":"message","message_id":"answer-id","data":{"content":"answer"}}'
+    response = _DummyStreamResponse(["", ": keepalive", "event: message", "data: {invalid json}", 'data:{"event":"node_finished","data":{}}', frame, terminator, frame])
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+    messages = list(session.ask("question", stream=True))
+    assert [(message.id, message.content) for message in messages] == [("answer-id", "answer")]
+
+
+@pytest.mark.p2
+def test_chat_stream_preserves_runtime_error_answer(monkeypatch):
+    session = Session(None, {"id": "session", "chat_id": "parent"})
+    response = _DummyStreamResponse(['data:{"code":500,"message":"Session not found!","data":{"answer":"**ERROR**: Session not found!","reference":[]}}'])
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+    messages = list(session.ask("question", stream=True))
+    assert len(messages) == 1
+    assert messages[0].content == "**ERROR**: Session not found!"
+    assert messages[0].reference is None
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("session_type", ["chat", "agent"])
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.skip(reason="Python SDK Session.ask ignores nonzero response codes: Go validation errors lose their message in KeyError('data') instead of raising the API error")
+def test_session_ask_preserves_api_error_message(monkeypatch, session_type, stream):
+    session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
+    error = {"code": 102, "message": "Session not found!"}
+    response = _DummyJsonResponse(error)
+    if stream:
+        response = _DummyStreamResponse(['{"code":102,"message":"Session not found!"}'])
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+    with pytest.raises(Exception, match="Session not found!"):
+        list(session.ask("question", stream=stream))
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("session_type", ["chat", "agent"])
+def test_session_non_stream_rejects_malformed_json(monkeypatch, session_type):
+    session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
+
+    class InvalidResponse:
+        def json(self):
+            raise ValueError("invalid JSON")
+
+        def __str__(self):
+            return "malformed response"
+
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: InvalidResponse())
+    with pytest.raises(Exception, match="Invalid response malformed response"):
+        list(session.ask("question", stream=False))
+
+
+@pytest.mark.p2
+def test_chat_stream_true_terminator_ignores_trailing_messages(monkeypatch):
+    session = Session(None, {"id": "session", "chat_id": "parent"})
+    frame = 'data:{"data":{"answer":"answer"}}'
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: _DummyStreamResponse([frame, 'data:{"data":true}', frame]))
+    assert [message.content for message in session.ask("question", stream=True)] == ["answer"]
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize("session_type", ["chat", "agent"])
+def test_session_stream_eof_returns_received_messages(monkeypatch, session_type):
+    session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
+    frame = 'data:{"data":{"answer":"answer"}}'
+    if session_type == "agent":
+        frame = 'data:{"event":"message","data":{"content":"answer"}}'
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: _DummyStreamResponse([frame]))
+    assert [message.content for message in session.ask("question", stream=True)] == ["answer"]
