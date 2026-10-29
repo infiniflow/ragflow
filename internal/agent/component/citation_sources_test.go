@@ -229,7 +229,7 @@ func TestApplyCitationGrounding_FiltersUnknownIDs(t *testing.T) {
 	if want := "answer [ID:good] "; got != want {
 		t.Fatalf("returned content = %q, want %q", got, want)
 	}
-	if streamed != got {
-		t.Fatalf("streamed = %q, want the filtered content %q", streamed, got)
+	if streamed != "" {
+		t.Fatalf("streamed = %q, want grounding deltas buffered (nothing emitted)", streamed)
 	}
 }
