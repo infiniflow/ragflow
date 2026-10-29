@@ -12,18 +12,19 @@ sidebar_custom_props: {
 
 ## Basic Information
 
-The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Embedding model**, **PageRank**.
+The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Permissions**, **Embedding model**, **PageRank**.
 
 - **Name**: The dataset name. It can still be modified after creation and is used in list cards and the detail page title.
 - **Language**: The primary language of the dataset. The language setting affects language assumptions during parsing and model processing.
 - **Avatar**: The dataset avatar. Image uploads are supported, and the maximum image size is 4 MB.
 - **Description**: The dataset description, used to describe the material scope, business purpose, or maintenance notes.
+- **Permissions**: Choose **Only me** for personal access or **Team** to share the dataset with workspace members.
 - **Embedding model**: The model used to vectorize chunks. Before the dataset contains chunks, you can change the model directly. Once chunks exist, selecting a different model on the configuration page triggers a compatibility check against sampled existing vectors. The vector dimensions must match, and the average cosine similarity must be at least 0.9. If the check fails, the previous selection is restored. Saving a model change does not automatically re-embed existing chunks.
 - **PageRank**: Sets the dataset's PageRank score. During retrieval, this score is added to the hybrid similarity score of matched chunks in the dataset, increasing their ranking weight. This is suitable when content from a specific dataset needs higher priority during retrieval across multiple datasets.
 
 ## Parsing Method
 
-The parsing method determines how a dataset processes uploaded documents and how documents are converted into chunks. **Parse type** in configuration provides two entries: **Built-in** and **Pipeline**.
+The parsing method determines how uploaded documents are processed into chunks. In **Parse mode**, select a built-in template or a saved ingestion pipeline from the same drop-down list.
 
 ### Built-in Parsing
 
@@ -47,7 +48,7 @@ The following built-in parsing methods are available:
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
-### Build-in Parsing Configuration
+### Built-in Parsing Configuration
 
 After selecting a built-in template parsing method, you can further configure document parsing, chunking, and content enhancement. Appropriate settings can improve the accuracy and recall of subsequent retrieval.
 
@@ -56,6 +57,12 @@ Different built-in methods display different configuration options. Refer to the
 #### Parser Configuration
 
 Parser configuration determines how different types of content are processed. You can configure parsing parameters for each format according to the document structure, layout complexity, and extraction requirements. This helps improve content extraction and the accuracy of subsequent chunk generation.
+
+##### Vision Enhancement
+
+- **Enable vision enhancement**: Uses a vision model to describe image and table blocks. This shared setting applies across document formats.
+- **Model**: Select an available vision model after enabling enhancement.
+- **System prompt**: Set instructions for the generated descriptions. Vision enhancement adds model calls and token usage.
 
 ##### PDF Parsing
 
@@ -76,69 +83,42 @@ Configure how PDF documents are parsed. You can select a parsing method based on
 
   External models are often better suited to complex layouts, scanned documents, images, borderless tables, and mixed text and images. However, they incur additional model calls and token usage. The available models depend on the configured model providers and their capabilities.
 - **Page range:** Specifies which PDF pages to parse. You can set a start and end page and add multiple page ranges to avoid processing unnecessary content.
-- **Disable vision model:** Controls whether a VLM is used during PDF parsing. When this option is enabled, no vision model assists with parsing. When disabled, a vision model can help interpret complex layouts or content combining text and images.
-- **Model:** Selects the vision model to use when PDF parsing requires one. A more capable vision model may provide a more complete understanding of complex layouts and visual content. Parsing quality and token usage depend on the selected model.
 
 ##### Table Parsing
 
-Configure how tables in documents are parsed. The system can use a built-in parser or a vision model to recognize table structure and extract text and cell information.
-
-- **Parsing method:** Selects a parser or model for tables. Methods differ in table structure recognition, cell content extraction, and handling of complex layouts. Built-in methods include:
-  - **DeepDOC:** RAGFlow's built-in document parser. It recognizes table structure and extracts cell content, making it suitable for most standard tables.
-  - **TCADP Parser:** An open-source parser from Tencent that can recognize and parse tables in documents.
-
-  You can also select an external model already configured in the system. Available models are grouped by model provider in the drop-down list. For complex tables, borderless tables, merged rows or columns, or tables that require visual interpretation, choose an external model with vision or document understanding capabilities as needed. External models may incur additional model calls and token usage.
-- **Disable vision model:** Controls whether a vision model is used for table parsing. Built-in parsers may be sufficient for regular tables with clear boundaries. A vision model can help with complex or borderless tables.
-- **Model:** Selects the vision model used for table parsing when vision support is enabled. Models may differ in their understanding of table structure and complex layouts, as well as in token usage.
-
-For ordinary text-based PDFs, consider starting with a built-in parser. For scanned documents, multi-column layouts, complex tables, and mixed text and images, a vision model may improve parsing quality. Because vision models incur additional calls and token usage, enable them according to the document type.
+Select **DeepDOC** or **TCADP Parser** from the **Parser** list to extract table content and structure. Vision models are configured through the shared **Enable vision enhancement** setting above.
 
 ##### Image Parsing
 
-Configure how image files are parsed so that text or visual content can be converted into text for subsequent chunking and retrieval.
+- **OCR**: Extracts text from images and is enabled by default.
+- **OCR model**: Select **DeepDoc** for local OCR or an available **PaddleOCR** model.
+- **Enable vision enhancement**: Adds visual descriptions using the shared model and prompt settings above. It can run together with OCR.
 
-- **Parsing method:** Selects how image files are processed.
-  - **OCR:** Uses optical character recognition to extract text from images. It is suitable for screenshots, scans, photographs, and other images containing readable text.
-  - **External model:** Uses a configured model with visual understanding capabilities. Compared with traditional OCR, such a model can recognize text and interpret layouts, charts, objects, and relationships between text and images. External models are grouped by model provider in the drop-down list. The available models depend on the configured providers and model capabilities.
-
-For images that mainly contain clear text, consider starting with OCR. For charts, complex layouts, interface screenshots, or content that requires visual understanding, select an external vision model. External models may incur additional model calls and token usage.
-
-Parsing quality also depends on image clarity, text size, layout, and overall image quality.
+Keep OCR or vision enhancement enabled so images can produce searchable text. To turn OCR off, first enable vision enhancement.
 
 ##### Markdown Parsing
 
 Parse Markdown documents while preserving their text and basic structure for subsequent chunking.
 
-- **Remove original table of contents:** Removes an existing table of contents during parsing to avoid repeating title links and body content.
-- **Disable vision model:** Controls whether a vision model assists with Markdown parsing. When enabled, no vision model is used. When disabled, the selected vision model can process images or other content in the Markdown document that requires visual understanding.
-- **Model:** Selects the vision model when one is needed. Available models depend on the configured model providers and their capabilities. External models may incur additional model calls and token usage.
-
 ##### HTML Parsing
 
 Parse HTML documents to extract useful text and structured content while filtering page elements that need not be included in knowledge base retrieval.
 
-- **Remove original table of contents:** Removes an existing table of contents or navigation list to reduce duplicated content.
 - **Remove headers and footers:** Attempts to remove repeated headers and footers, reducing the effect of navigation and copyright information on chunking and retrieval.
 
-For HTML files saved or exported from websites, decide whether to enable these options based on the page structure. Keep headers, footers, or tables of contents when they contain information you need.
+For HTML files saved or exported from websites, keep headers and footers if they contain information you need.
 
 ##### DOC Parsing
 
-Parse Word documents in `.doc` format. You can choose whether to remove the table of contents, headers, and footers, and whether to use an external vision model for complex content.
+Parse Word documents in `.doc` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
 
-- **Remove original table of contents:** Removes the existing table of contents to reduce duplication between the contents list and the document body.
 - **Remove headers and footers:** Attempts to remove repeated headers and footers so that page numbers, document titles, and copyright information do not repeatedly appear in chunks.
-- **Disable vision model:** Controls whether an external vision model assists with DOC parsing. When enabled, no vision model is called. When disabled, you can select a configured external model to further parse images, complex layouts, or other visual content.
-- **Model:** Selects an external model to assist with DOC parsing. Only models already configured in the system are available. The options depend on the connected providers and model capabilities. External models may incur additional model calls and token usage.
 
 ##### DOCX Parsing
 
-Parse Word documents in `.docx` format. You can choose whether to remove the table of contents, headers, and footers, and whether to use an external vision model for complex content.
+Parse Word documents in `.docx` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
 
-- **Remove original table of contents:** Removes the existing table of contents to avoid duplicating headings and body content.
 - **Remove headers and footers:** Removes repeated headers and footers to reduce irrelevant information in subsequent chunks and search results.
-- **Disable vision model:** Controls whether an external vision model is used for DOCX parsing. When enabled, no vision model is used. When disabled, an external model can help interpret images, complex layouts, and other visual content.
-- **Model:** Selects an external model to assist with DOCX parsing. This option only lists configured external models; it does not offer built-in parsing methods such as DeepDOC, Naive, or Docling. The available models depend on the configured model providers.
 
 ##### PPTX Parsing
 
@@ -338,6 +318,8 @@ If no pipeline is currently available, you can use the entry provided in the pip
 
 After saving, the system generates corresponding metadata from document content during subsequent document parsing based on these field definitions.
 
+![Configure a generated metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_2.jpg)
+
 #### Built-in: Built-in Metadata
 
 **Built-in** provides system-predefined metadata fields. You do not need to manually create or configure field rules. Use the switch on the right side of each corresponding field to choose whether to generate that metadata during document parsing. The following built-in fields are currently supported:
@@ -346,6 +328,8 @@ After saving, the system generates corresponding metadata from document content 
 - **file_name**: Records the document file name.
 
 Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, [**Metadata management**](../dataset/metadata_management.md).
+
+![Enable built-in metadata fields](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_3.jpg)
 
 ### Table Column Role Configuration
 

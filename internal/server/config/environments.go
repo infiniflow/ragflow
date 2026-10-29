@@ -30,7 +30,8 @@ type Environments struct {
 
 	SecretKey string `mapstructure:"secret_key"`
 
-	EnableRegister *bool `mapstructure:"enable_register"`
+	EnableRegister       *bool `mapstructure:"enable_register"`
+	DisablePasswordLogin *bool `mapstructure:"disable_password_login"`
 
 	DocumentEngineType string `mapstructure:"document_engine_type"`
 	DatabaseType       string `mapstructure:"database_type"`
@@ -140,6 +141,18 @@ func (c *Config) GetEnvironments() error {
 			*c.environments.EnableRegister = true
 		} else {
 			*c.environments.EnableRegister = false
+		}
+	}
+
+	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
+		if c.environments.DisablePasswordLogin == nil {
+			c.environments.DisablePasswordLogin = new(bool)
+		}
+		str := envVal
+		if str == "true" || str == "1" || str == "yes" {
+			*c.environments.DisablePasswordLogin = true
+		} else {
+			*c.environments.DisablePasswordLogin = false
 		}
 	}
 
@@ -585,6 +598,10 @@ func (c *Config) GetEnvLanguage() string {
 
 func (c *Config) GetEnvEnableRegister() bool {
 	return *c.environments.EnableRegister
+}
+
+func (c *Config) GetEnvDisablePasswordLogin() bool {
+	return *c.environments.DisablePasswordLogin
 }
 
 func (c *Config) GetEnvDocumentEngineType() string {

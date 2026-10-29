@@ -37,6 +37,9 @@ const mockDsl = {
 const mockBuiltinDsl =
   require('../../../../../internal/ingestion/pipeline/template/ingestion_pipeline_general.json').dsl;
 let mockCustomDsl = mockDsl;
+// Per-version DSLs for the mocked pipeline; versions not listed here fall
+// back to mockCustomDsl so existing single-version tests keep working.
+let mockCustomDslByVersion: Record<string, typeof mockDsl> = {};
 // Published versions of the mocked pipeline; a test can empty this to model a
 // pinned version that has been pruned since the document was saved.
 let mockVersions: { id: string; title: string; created_at: string }[] = [
@@ -44,8 +47,14 @@ let mockVersions: { id: string; title: string; created_at: string }[] = [
 ];
 
 jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchPipelineDslByPipelineId: (_id: string, isBuiltin: boolean) => ({
-    dsl: isBuiltin ? mockBuiltinDsl : mockCustomDsl,
+  useFetchPipelineDslByPipelineId: (
+    _id: string,
+    versionId: string | undefined,
+    isBuiltin: boolean,
+  ) => ({
+    dsl: isBuiltin
+      ? mockBuiltinDsl
+      : (mockCustomDslByVersion[versionId ?? ''] ?? mockCustomDsl),
     loading: false,
   }),
   // The mocked ParserTreeSelect below emits version-1 on every pipeline
@@ -87,12 +96,17 @@ jest.mock('@/components/parser-tree-select', () => ({
     // A pipeline-side choice always carries a concrete version id: only
     // version leaves are selectable in the merged parser tree select.
     const choosePipeline = () => onChange('pipeline', 'pipeline', 'version-1');
+    const choosePipelineV2 = () =>
+      onChange('pipeline', 'pipeline', 'version-2');
     const chooseBuiltin = () => onChange('builtin', 'general');
     const clearParser = () => onChange(null, '');
     return (
       <>
         <button type="button" onClick={choosePipeline}>
           Choose pipeline
+        </button>
+        <button type="button" onClick={choosePipelineV2}>
+          Choose pipeline v2
         </button>
         <button type="button" onClick={chooseBuiltin}>
           Choose builtin
@@ -196,6 +210,7 @@ beforeEach(() => {
   mockSave.mockReset().mockResolvedValue(0);
   mockRun.mockReset().mockResolvedValue(0);
   mockCustomDsl = mockDsl;
+  mockCustomDslByVersion = {};
   mockVersions = [{ id: 'version-1', title: 'v1', created_at: '' }];
 });
 
@@ -334,6 +349,72 @@ it('still rejects a pipeline selection without a pipeline ID', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
   expect(await screen.findByText('common.pleaseSelect')).toBeInTheDocument();
   expect(mockSave).not.toHaveBeenCalled();
+});
+
+it('resets parser_config to the new version defaults after a version switch', async () => {
+  mockVersions = [
+    { id: 'version-2', title: 'v2', created_at: '' },
+    { id: 'version-1', title: 'v1', created_at: '' },
+  ];
+  mockCustomDslByVersion = {
+    'version-1': mockDsl,
+    'version-2': {
+      graph: {
+        nodes: [
+          { id: 'File', data: { form: {} } },
+          {
+            id: 'Compiler:compile',
+            data: {
+              form: {
+                compilation_template_group_id: 'v2-template-group',
+                llm_id: 'v2-model',
+              },
+            },
+          },
+        ],
+        edges: [{ source: 'File', target: 'Compiler:compile' }],
+      },
+    },
+  };
+  renderHarness({ versionId: 'version-1' });
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Choose pipeline v2' }));
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+  expect(mockSave.mock.calls[0][0]).toEqual(
+    expect.objectContaining({
+      pipelineId: 'pipeline',
+      pipelineVersionId: 'version-2',
+      parserConfig: expect.objectContaining({
+        // The saved 'document-model' pin belongs to version-1; after the
+        // switch only version-2's DSL defaults remain.
+        'Compiler:compile': expect.objectContaining({
+          compilation_template_group_id: 'v2-template-group',
+          llm_id: 'v2-model',
+        }),
+      }),
+    }),
+  );
+});
+
+it('keeps the saved parser_config across the latest-version prefill', async () => {
+  // Unpinned document: the form opens with an empty version and the prefill
+  // adopts the latest one — the saved config must survive intact.
+  renderHarness({});
+  fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+  fireEvent.click(screen.getByRole('button', { name: 'common.save' }));
+  await waitFor(() => expect(mockSave).toHaveBeenCalledTimes(1));
+  expect(mockSave.mock.calls[0][0]).toEqual(
+    expect.objectContaining({
+      pipelineId: 'pipeline',
+      pipelineVersionId: 'version-1',
+      parserConfig: expect.objectContaining({
+        'Compiler:compile': expect.objectContaining({
+          llm_id: 'document-model',
+        }),
+      }),
+    }),
+  );
 });
 
 it('blocks saving when the pinned pipeline version no longer exists', async () => {

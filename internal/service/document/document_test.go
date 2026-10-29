@@ -552,7 +552,6 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	}
-	models = append(models, documentTestExtraModels()...)
 	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -583,7 +582,6 @@ func seedDocumentPreviewMemberAccess(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("insert Tenant member: %v", err)
 	}
-	seedDocumentPreviewMemberAccessEE(t, db)
 }
 
 func testDocumentService(t *testing.T) *DocumentService {
@@ -1277,7 +1275,6 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
-	assertUploadedDocumentOwnerGrant(t, ctx, doc["id"].(string))
 	cfg := doc["parser_config"].(map[string]interface{})
 	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
 		t.Fatalf("parser_config=%v", cfg)
@@ -3215,14 +3212,15 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 		present      map[string]bool
 		wantParser   string
 		wantPipeline string
-		// reset marks a pipeline switch, which (by design A3 整体重置) must reset
-		// parser_config to the canvas DSL defaults, discarding the submitted config.
-		reset bool
 	}{
 		{name: "config only", wantParser: "naive"},
 		{name: "same builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("naive")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "naive"},
 		{name: "different builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("manual")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "manual"},
-		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID, reset: true},
+		// A pipeline switch with a submitted parser_config keeps the submitted
+		// values, reconciled against the new pipeline's DSL (the form resets
+		// itself on a switch, so the submitted config is the user's edit of the
+		// new pipeline).
+		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID},
 		{name: "chunk method", request: UpdateDatasetDocumentRequest{ChunkMethod: sptr("manual")}, present: map[string]bool{"chunk_method": true}, wantParser: "manual"},
 	}
 	for _, tc := range cases {
@@ -3268,28 +3266,15 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			if doc.TokenNum != 10 || doc.ChunkNum != 5 || doc.Progress != 0.75 || doc.ProcessDuration != 42 {
 				t.Fatalf("persisted parse results changed: %+v", doc)
 			}
-			if tc.reset {
-				// A pipeline switch resets parser_config to the canvas DSL
-				// defaults (design A3 整体重置). The submitted
-				// Extractor keywords.top_n=5 must be discarded and replaced by the
-				// DSL default (0), proving the reset took effect.
-				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("canvas DSL default parser_config missing Extractor after pipeline switch: %#v", doc.ParserConfig)
-				}
-				keywords, ok := extractor["keywords"].(map[string]interface{})
-				if !ok || keywords["top_n"] != float64(0) {
-					t.Fatalf("submitted keywords.top_n should be reset to DSL default (0), got %#v (config=%#v)", keywords["top_n"], doc.ParserConfig)
-				}
-			} else {
-				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
-				}
-				keywords, ok := extractor["keywords"].(map[string]interface{})
-				if !ok || keywords["top_n"] != float64(5) {
-					t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
-				}
+			// The submitted Extractor keywords.top_n=5 must survive (reconciled
+			// onto the target DSL), including on a pipeline switch.
+			extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
+			}
+			keywords, ok := extractor["keywords"].(map[string]interface{})
+			if !ok || keywords["top_n"] != float64(5) {
+				t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 			if err != nil {

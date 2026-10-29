@@ -70,7 +70,11 @@ export function ModelsSection(props: ModelsSectionProps) {
     !instanceName || instanceName === DRAFT_INSTANCE_SENTINEL;
 
   // 1. Credentials for catalog / verify / batch calls.
-  const { resolveCreds } = useResolveCreds(instance, getFormValues);
+  const { resolveCreds } = useResolveCreds(
+    providerName,
+    instance,
+    getFormValues,
+  );
 
   // Snapshot of the current api_key so `useModelsCatalog` can gate the
   // auto-fetch for VolcEngine on the user actually having typed one.
@@ -147,8 +151,10 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions,
     resolveCreds,
     instanceModels,
+    instance,
     apiKeyValue: currentCreds.apiKey,
     baseUrlValue: currentCreds.baseUrl,
+    regionValue: currentCreds.region,
     instanceDetailsLoaded,
     onCatalogFetched: isDraftInstance ? mergeCatalogIntoDraft : undefined,
   });

@@ -11,9 +11,9 @@ sidebar_custom_props:
 
 ## Dataset Configuration
 
-dataset determine the data scope that Chat can retrieve and cite. Only dataset that contain successfully parsed, available chunks can serve as valid knowledge sources.
+Datasets determine the data scope that Chat can retrieve and cite. Only datasets that contain successfully parsed, available chunks can serve as valid knowledge sources.
 
-- **Select dataset**: Associate one or more dataset in the **dataset** field. New or empty dataset generally do not appear in the selection list.
+- **Select dataset**: Associate one or more datasets in the **dataset** field. New or empty datasets generally do not appear in the selection list.
 - **Unavailable dataset**: If a dataset has been deleted or contains no available chunks, Chat indicates that the selected dataset is unavailable. Select another dataset.
 
 :::tip NOTE
@@ -58,11 +58,12 @@ Clearer prompts produce more stable behavior. Refine the prompt continuously bas
 
 ## Retrieval Configuration
 
-Retrieval configuration controls how Chat recalls, filters, and ranks chunks from dataset. Tune these settings to balance retrieval scope, relevance, and response efficiency.
+Retrieval configuration controls how Chat recalls, filters, and ranks chunks from datasets. Tune these settings to balance retrieval scope, relevance, and response efficiency.
 
 - **Similarity threshold**: The minimum similarity score for retrieved content. A higher threshold is stricter and usually returns more relevant content, but may miss useful information. A lower threshold broadens recall but may introduce less relevant content.
-- **Vector similarity weight**: Controls the relative weight of vector semantic similarity and full-text matching in hybrid search. A higher vector weight favors semantic similarity; a higher full-text weight favors keyword and text matching. Tune it according to the dataset content and question style.
-- **Top N**: The number of candidate chunks returned by each retrieval. A larger value provides more context but increases context length, response time, and cost. Tune it according to document scale and retrieval results.
+- **Keyword similarity weight**: Sets the full-text weight in hybrid retrieval; the vector weight is `1` minus this value. Increase it for exact keyword matching and decrease it for semantic matching.
+- **Rerank candidates**: The candidate pool used for ranking or reranking, with a default of `64` and a range of `64–256`. This controls the pool from which the final results are selected.
+- **Top N**: The maximum number of retrieved chunks used to generate the answer. A larger value provides more context but increases context length, response time, and cost. Tune it according to document scale and retrieval results.
 - **Rerank model**: Reranks retrieval results, calculates the relevance between candidate chunks and the question, and moves more relevant content forward for answer generation. Configure an available rerank model before using this option.
 - **Metadata**: Uses document or chunk metadata to limit the retrieval scope, such as by document type, date, or source.
 
@@ -118,5 +119,4 @@ Retrieval augmentation options further optimize queries or expand information re
 Answer and display settings control how generated content is presented and output. They generally do not change the dataset retrieval scope, but affect how citations, metadata, and voice content are presented to users.
 
 - **Show citations**: When enabled, Chat displays the dataset content cited in the answer and its source, allowing users to inspect the evidence and trace it to the original document. When disabled, citation information is not shown.
-- **Show chunk metadata**: When enabled, citations display metadata for the corresponding chunk, such as the source, author, and date fields configured for the document. This supplements citation context and helps users understand the source and attributes of the cited content.
 - **Text-to-speech**: Select the model used to convert text answers to speech. Once configured, Chat can output generated text as speech. Leave it disabled if voice output is not needed. Before using this feature, configure an available text-to-speech (TTS) model.

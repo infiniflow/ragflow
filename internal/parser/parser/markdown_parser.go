@@ -880,10 +880,37 @@ func writeListItems(list *ast.List, buf *bytes.Buffer) {
 	}
 }
 
+// shouldPreserveImageReference reports whether an image source should be kept
+// as a Markdown reference in text. Resolved remote images already carry an
+// image payload / img_id, and data URIs must stay out of text.
+func shouldPreserveImageReference(s string) bool {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	return !strings.HasPrefix(lower, "data:") &&
+		!strings.HasPrefix(lower, "http://") &&
+		!strings.HasPrefix(lower, "https://")
+}
+
 func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 	switch t := n.(type) {
 	case *ast.Text:
 		buf.Write(t.Literal)
+	case *ast.Image:
+		// Preserve the source reference so an unresolved local path survives
+		// text extraction. Data URIs stay out of text to avoid indexing base64.
+		if !shouldPreserveImageReference(string(t.Destination)) {
+			for _, c := range t.GetChildren() {
+				walkLeaf(c, buf)
+			}
+			return
+		}
+		buf.WriteString("![")
+		for _, c := range t.GetChildren() {
+			walkLeaf(c, buf)
+		}
+		buf.WriteString("](")
+		buf.Write(t.Destination)
+		buf.WriteByte(')')
 	case *ast.Code:
 		buf.Write(t.Literal)
 	case *ast.CodeBlock:

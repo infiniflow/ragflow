@@ -13,159 +13,124 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import os
+
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from random import randint
 
 import pytest
+from conftest import raw_chunks, wait_until
+from ragflow_sdk.modules.chunk import ChunkUpdateError
+
+pytestmark = pytest.mark.integration
+
+
+def assert_updated(document, chunk, field, expected):
+    def persisted():
+        rows = raw_chunks(document)
+        row = next((row for row in rows if row["chunk_id"] == chunk.id), None)
+        return row is not None and row.get(field) == expected
+
+    wait_until(persisted)
 
 
 class TestUpdatedChunk:
-    @pytest.mark.p3
+    @pytest.mark.parametrize("content", ["update chunk", "\n!?。；！？\"'", "", " "])
+    def test_content(self, add_chunks, content):
+        _, document, chunks = add_chunks
+        chunk = chunks[0]
+        assert chunk.update({"content": content}) is None
+        assert_updated(document, chunk, "content_with_weight", content)
+
     @pytest.mark.parametrize(
-        "payload, expected_message",
+        "content",
         [
-            ({"content": None}, ""),
-            ({"content": ""}, "`content` is required"),
-            pytest.param(
-                {"content": 1},
-                "TypeError('expected string or bytes-like object')",
-                marks=pytest.mark.skip,
-            ),
-            ({"content": "update chunk"}, ""),
-            ({"content": " "}, "`content` is required"),
-            ({"content": "\n!?。；！？\"'"}, ""),
+            pytest.param(None, marks=pytest.mark.skip(reason="Go UpdateChunk silently ignores non-string content")),
+            pytest.param(1, marks=pytest.mark.skip(reason="Go UpdateChunk silently ignores non-string content")),
         ],
     )
-    def test_content(self, add_chunks, payload, expected_message):
+    def test_content_invalid(self, add_chunks, content):
         _, _, chunks = add_chunks
-        chunk = chunks[0]
+        with pytest.raises(ChunkUpdateError) as error:
+            chunks[0].update({"content": content})
+        assert error.value.code in (101, 102, 400)
+        assert "content" in error.value.message
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chunk.update(payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            chunk.update(payload)
+    @pytest.mark.parametrize("field, stored", [("important_keywords", "important_kwd"), ("questions", "question_kwd"), ("tag_kwd", "tag_kwd")])
+    @pytest.mark.parametrize("value", [["a", "b", "c"], [""], ["a", "a"], []])
+    def test_list_fields(self, add_chunks, field, stored, value):
+        _, document, chunks = add_chunks
+        # Seed first so [] must clear existing values rather than preserve defaults.
+        chunks[0].update({field: ["seed"]})
+        assert_updated(document, chunks[0], stored, ["seed"])
+        chunks[0].update({field: value})
+        expected = [item.strip() for item in value if item.strip()] if field == "questions" else value
+        assert_updated(document, chunks[0], stored, expected)
 
-    @pytest.mark.p3
     @pytest.mark.parametrize(
-        "payload, expected_message",
+        "field",
         [
-            ({"important_keywords": ["a", "b", "c"]}, ""),
-            ({"important_keywords": [""]}, ""),
-            ({"important_keywords": [1]}, "TypeError('sequence item 0: expected str instance, int found')"),
-            ({"important_keywords": ["a", "a"]}, ""),
-            ({"important_keywords": "abc"}, "`important_keywords` should be a list"),
-            ({"important_keywords": 123}, "`important_keywords` should be a list"),
+            pytest.param("important_keywords", marks=pytest.mark.skip(reason="Go UpdateChunk ignores invalid keyword types or replaces non-string elements with empty strings")),
+            pytest.param("questions", marks=pytest.mark.skip(reason="Go UpdateChunk ignores invalid question types or replaces non-string elements with empty strings")),
+            "tag_kwd",
         ],
     )
-    def test_important_keywords(self, add_chunks, payload, expected_message):
+    @pytest.mark.parametrize("value", [[1], "abc", 123, None])
+    def test_list_fields_invalid(self, add_chunks, field, value):
         _, _, chunks = add_chunks
-        chunk = chunks[0]
+        with pytest.raises(ChunkUpdateError) as error:
+            chunks[0].update({field: value})
+        assert error.value.code == 102
+        assert field in error.value.message
+        assert "list" in error.value.message
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chunk.update(payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            chunk.update(payload)
+    @pytest.mark.parametrize("available", [True, False])
+    def test_available(self, add_chunks, available):
+        _, document, chunks = add_chunks
+        chunks[0].update({"available": not available})
+        assert_updated(document, chunks[0], "available", not available)
+        chunks[0].update({"available": available})
+        assert_updated(document, chunks[0], "available", available)
 
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            ({"questions": ["a", "b", "c"]}, ""),
-            ({"questions": [""]}, ""),
-            ({"questions": [1]}, "TypeError('sequence item 0: expected str instance, int found')"),
-            ({"questions": ["a", "a"]}, ""),
-            ({"questions": "abc"}, "`questions` should be a list"),
-            ({"questions": 123}, "`questions` should be a list"),
-        ],
-    )
-    def test_questions(self, add_chunks, payload, expected_message):
+    @pytest.mark.skip(reason="Go UpdateChunk only reads bool availability and silently ignores other types")
+    @pytest.mark.parametrize("available", ["True", "False", 1, 0])
+    def test_available_invalid(self, add_chunks, available):
         _, _, chunks = add_chunks
-        chunk = chunks[0]
+        with pytest.raises(ChunkUpdateError) as error:
+            chunks[0].update({"available": available})
+        assert error.value.code in (101, 102, 400)
+        assert "available" in error.value.message
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chunk.update(payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            chunk.update(payload)
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            ({"tag_kwd": ["tag1", "tag2"]}, ""),
-            ({"tag_kwd": [""]}, ""),
-            ({"tag_kwd": [1]}, "`tag_kwd` must be a list of strings"),
-            ({"tag_kwd": ["tag", "tag"]}, ""),
-            ({"tag_kwd": "tag"}, "`tag_kwd` should be a list"),
-            ({"tag_kwd": 123}, "`tag_kwd` should be a list"),
-        ],
-    )
-    def test_tag_kwd(self, add_chunks, payload, expected_message):
-        _, _, chunks = add_chunks
-        chunk = chunks[0]
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chunk.update(payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            chunk.update(payload)
-
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            ({"available": True}, ""),
-            pytest.param({"available": "True"}, """ValueError("invalid literal for int() with base 10: \'True\'")""", marks=pytest.mark.skip),
-            ({"available": 1}, ""),
-            ({"available": False}, ""),
-            pytest.param({"available": "False"}, """ValueError("invalid literal for int() with base 10: \'False\'")""", marks=pytest.mark.skip),
-            ({"available": 0}, ""),
-        ],
-    )
-    def test_available(self, add_chunks, payload, expected_message):
-        _, _, chunks = add_chunks
-        chunk = chunks[0]
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chunk.update(payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            chunk.update(payload)
-
-    @pytest.mark.p3
     def test_repeated_update_chunk(self, add_chunks):
-        _, _, chunks = add_chunks
-        chunk = chunks[0]
+        _, document, chunks = add_chunks
+        for content in ("chunk test 1", "chunk test 2", "chunk test 2"):
+            chunks[0].update({"content": content})
+            assert_updated(document, chunks[0], "content_with_weight", content)
 
-        chunk.update({"content": "chunk test 1"})
-        chunk.update({"content": "chunk test 2"})
-
-    @pytest.mark.p3
-    @pytest.mark.skipif(os.getenv("DOC_ENGINE") == "infinity", reason="issues/6554")
     def test_concurrent_update_chunk(self, add_chunks):
-        count = 50
-        _, _, chunks = add_chunks
-
+        _, document, chunks = add_chunks
+        values = {chunk.id: set() for chunk in chunks}
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(chunks[randint(0, 3)].update, {"content": f"update chunk test {i}"}) for i in range(count)]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+            futures = []
+            for i in range(50):
+                chunk = chunks[i % len(chunks)]
+                content = f"concurrent update {i}"
+                values[chunk.id].add(content)
+                futures.append(executor.submit(chunk.update, {"content": content}))
+            for future in as_completed(futures):
+                assert future.result() is None
+        # Completion order is unspecified; each final value must be a submitted write.
+        wait_until(lambda: all(row["content_with_weight"] in values[row["chunk_id"]] for row in raw_chunks(document)))
+        assert len(raw_chunks(document)) == len(chunks)
 
-    @pytest.mark.p3
     def test_update_chunk_to_deleted_document(self, add_chunks):
         dataset, document, chunks = add_chunks
         dataset.delete_documents(ids=[document.id])
-
-        with pytest.raises(Exception) as exception_info:
+        with pytest.raises(ChunkUpdateError, match="document not found") as error:
             chunks[0].update({})
-        message = str(exception_info.value)
-        ownership_message = f"you don't own the document {chunks[0].document_id}"
-        assert message.rstrip(".") == ownership_message or message == f"Can't find this chunk {chunks[0].id}", message
+        assert error.value.code == 500
+
+    def test_unsupported_field(self, add_chunks):
+        _, _, chunks = add_chunks
+        with pytest.raises(ChunkUpdateError, match="not supported") as error:
+            chunks[0].update({"unknown": True})
+        assert error.value.code == 400

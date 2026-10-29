@@ -227,9 +227,89 @@ func TestJiraConnectorBuildJQLMovesUserOrderAfterFilters(t *testing.T) {
 	}
 
 	got := connector.buildJQL(&start, end)
-	want := `(status = "Done") AND updated >= "2026-01-02 12:00" AND updated <= "2026-01-04 00:00" ORDER BY priority DESC, updated ASC`
+	want := `(status = "Done") AND updated >= "2026-01-02 12:00" AND updated < "2026-01-04 00:01" ORDER BY priority DESC, updated ASC`
 	if got != want {
 		t.Fatalf("buildJQL() = %q, want %q", got, want)
+	}
+}
+
+// TestJiraConnectorBuildJQLUpperBoundCoversWholeMinute pins the exclusive upper
+// bound. JQL cannot express the seconds of the window end, so an inclusive `<=`
+// on the truncated value drops the rest of that minute and the next window's
+// lower bound skips those issues forever.
+func TestJiraConnectorBuildJQLUpperBoundCoversWholeMinute(t *testing.T) {
+	end := mustTime(t, "2026-01-04T00:00:30Z")
+	connector := &JiraConnector{
+		jqlQuery:       `status = "Done"`,
+		timezoneOffset: 0,
+	}
+
+	got := connector.buildJQL(nil, end)
+	if !strings.Contains(got, `updated < "2026-01-04 00:01"`) {
+		t.Fatalf("buildJQL() = %q, want an exclusive bound at the next minute tick", got)
+	}
+	if strings.Contains(got, `updated <=`) {
+		t.Fatalf("buildJQL() = %q, want no inclusive upper bound", got)
+	}
+}
+
+// TestJiraSyncSessionDropsIssuesPastWindowEnd covers the client half: the JQL
+// upper bound spans the whole minute holding the window end, so issues updated
+// after that end come back from the server and must be dropped locally. The next
+// window re-queries them from its own lower bound.
+func TestJiraSyncSessionDropsIssuesPastWindowEnd(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	var server *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/rest/api/3/project/RAG", func(w http.ResponseWriter, r *http.Request) {
+		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
+	})
+	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
+		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{
+			{"id": "10000"},
+			{"id": "10001"},
+		}})
+	})
+	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
+		inWindow := jiraFixtureIssue(server.URL)
+		inWindow["id"] = "10000"
+		inWindow["key"] = "RAG-7"
+		inWindow["fields"].(map[string]any)["updated"] = "2026-01-03T10:00:00.000+0000"
+		inWindow["fields"].(map[string]any)["attachment"] = []map[string]any{}
+
+		pastWindow := jiraFixtureIssue(server.URL)
+		pastWindow["id"] = "10001"
+		pastWindow["key"] = "RAG-8"
+		pastWindow["fields"].(map[string]any)["updated"] = "2026-01-03T10:00:45.000+0000"
+		pastWindow["fields"].(map[string]any)["attachment"] = []map[string]any{}
+
+		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{inWindow, pastWindow}})
+	})
+	server = httptest.NewServer(mux)
+	defer server.Close()
+
+	connector := mustJiraResumeConnector(t, server.URL)
+	start := mustTime(t, "2026-01-03T09:59:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-03T10:00:30Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("documents = %d, want 1 (only the issue updated at or before the window end)", len(batch.Documents))
+	}
+	if got := batch.Documents[0].SourceID; got != server.URL+"/browse/RAG-7" {
+		t.Fatalf("document source = %q, want the in-window issue", got)
+	}
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("second NextBatch = %v, want io.EOF", err)
 	}
 }
 
