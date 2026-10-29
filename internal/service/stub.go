@@ -78,3 +78,16 @@ func resolveDefaultTenantIDEE(context.Context, string) (string, bool, error) {
 func resolveUserAuthTenant(_ context.Context, _ *entity.User, tenantID string) (string, error) {
 	return tenantID, nil
 }
+
+// LoginChannel is one authentication channel advertised to the login page.
+type LoginChannel struct {
+	Channel     string `json:"channel"`
+	DisplayName string `json:"display_name"`
+	Icon        string `json:"icon"`
+}
+
+// GetLoginChannels returns no channel: the community edition only offers
+// password login.
+func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
+	return make([]*LoginChannel, 0), common.CodeSuccess, nil
+}

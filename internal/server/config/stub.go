@@ -82,3 +82,11 @@ func (c *Config) GetDefaultOCRModel() ModelConfig { return c.defaultModels.OCRMo
 
 // GetDefaultTTSModel returns the deployment TTS model, empty in the OSS build.
 func (c *Config) GetDefaultTTSModel() ModelConfig { return c.defaultModels.TTSModel }
+
+// OAuthConfig carries the OAuth/OIDC login provider settings. The OSS build
+// has no OAuth login.
+type OAuthConfig struct{}
+
+// ParseOAuthConfig ignores OAuth configuration: the OSS build has no OAuth
+// login.
+func (c *Config) ParseOAuthConfig(v *viper.Viper) error { return nil }
