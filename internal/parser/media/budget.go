@@ -102,6 +102,24 @@ func (b *Budget) Include(source string, size int) bool {
 	if b == nil {
 		return true
 	}
+	return b.admit(source, size, true)
+}
+
+// ReserveBytes checks a declared size before the caller reads or decodes the
+// source. It uses the same per-image and total-byte limits as Include, but
+// charges nothing on success: Include still owns the actual bytes. A source
+// rejected here is marked charged so repeated references do not read it again
+// or inflate the warning counters. ZIP callers use this with the declared
+// uncompressed size to avoid reading a large entry that the total budget will
+// reject.
+func (b *Budget) ReserveBytes(source string, size int) bool {
+	if b == nil {
+		return true
+	}
+	return b.admit(source, size, false)
+}
+
+func (b *Budget) admit(source string, size int, charge bool) bool {
 	entry, ok := b.sources[source]
 	if !ok {
 		entry = &budgetSource{}
@@ -116,34 +134,11 @@ func (b *Budget) Include(source string, size int) bool {
 	if !b.admitBytes(entry, size) {
 		return false
 	}
-	entry.included = true
-	b.totalBytes += int64(size)
+	if charge {
+		entry.included = true
+		b.totalBytes += int64(size)
+	}
 	return true
-}
-
-// ReserveBytes checks a declared size before the caller reads or decodes the
-// source. It uses the same per-image and total-byte limits as Include, but
-// charges nothing on success: Include still owns the actual bytes. A source
-// rejected here is marked charged so repeated references do not read it again
-// or inflate the warning counters. ZIP callers use this with the declared
-// uncompressed size to avoid reading a large entry that the total budget will
-// reject.
-func (b *Budget) ReserveBytes(source string, size int) bool {
-	if b == nil {
-		return true
-	}
-	entry, ok := b.sources[source]
-	if !ok {
-		entry = &budgetSource{}
-		if b.sources == nil {
-			b.sources = make(map[string]*budgetSource)
-		}
-		b.sources[source] = entry
-	}
-	if entry.included {
-		return true
-	}
-	return b.admitBytes(entry, size)
 }
 
 func (b *Budget) admitBytes(entry *budgetSource, size int) bool {
