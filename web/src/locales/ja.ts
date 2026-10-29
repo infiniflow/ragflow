@@ -1768,6 +1768,7 @@ export default {
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
 
       showToc: 'コンテンツを表示',
@@ -2393,7 +2394,7 @@ export default {
       promptMessage: 'プロンプトは必須です',
       runningHintText: '動作中です...🕞 ',
       tags: 'タグ',
-      canvasCategory: 'キャンバスカテゴリ',
+      agentCategory: 'キャンバスカテゴリ',
       created: '作成日',
       id: 'ID',
       logTitle: 'タイトル',
@@ -2505,20 +2506,6 @@ export default {
       maxRounds: '最大リフレクション回数',
       delayAfterError: 'エラー後の遅延',
       maxRetries: '最大リトライ回数',
-      maxSteps: '最大ステップ数',
-      headless: 'ヘッドレス',
-      enableDefaultExtensions: 'デフォルト拡張機能を有効化',
-      enableDefaultExtensionsTip:
-        'browser-useのデフォルト拡張機能(uBlock、Cookie処理、ClearURLs)を有効にします。実行時の拡張機能ダウンロードを避けたい場合は無効にしてください。',
-      chromiumSandbox: 'Chromiumサンドボックス',
-      chromiumSandboxTip:
-        'Chromiumサンドボックスを有効にするかどうかです。Dockerのroot環境では通常無効化されており、通常のホストでは有効化することを推奨します。',
-      persistSession: 'セッションを永続化',
-      persistSessionTip:
-        '有効にすると、このBrowserノードはブラウザセッションを再利用し、ログインの繰り返しを回避します。',
-      uploadSources: 'アップロードソース',
-      uploadSourcesTip:
-        'ファイルID、ファイルURL、または変数に対応しています。複数の値はカンマで区切るか、JSON配列形式(例: ["id1","https://example.com/a.pdf"])で指定できます。',
       advancedSettings: '詳細設定',
       addTools: 'ツールを追加',
       sysPromptDefaultValue:
@@ -2554,9 +2541,6 @@ export default {
       keenableSite: 'サイト',
       keenableApiKeyTip:
         '任意項目です。キー不要の無料プランを使用する場合は空欄のままにしてください。',
-      browser: 'ブラウザ',
-      browserDescription:
-        'ブラウザ操作を自動化します。モデル設定とプロンプト駆動のアクションに対応しています。アップロードソースはファイルIDとURLに対応しており、ダウンロードしたファイルは指定フォルダに保存できます。',
       channel: 'チャンネル',
       channelTip:
         'コンポーネントの入力に対してテキスト検索またはニュース検索を実行します',
@@ -3037,10 +3021,10 @@ export default {
         share: '共有',
       },
 
-      serviceStatus: 'サービスステータス',
-      userManagement: 'ユーザー管理',
-      sandboxSettings: 'サンドボックス設定',
-      registrationWhitelist: '登録ホワイトリスト',
+      serviceStatus: 'サービス',
+      userManagement: 'ユーザー',
+      sandboxSettings: 'サンドボックス',
+      registrationWhitelist: 'ホワイトリスト',
       roles: 'ロール',
       monitoring: 'モニタリング',
 
@@ -3130,7 +3114,7 @@ export default {
       importWhitelist: 'ホワイトリストをインポート（Excel）',
       importSelectExcelFile: 'Excelファイル（.xlsx）',
       importOverwriteExistingEmails: '既存のメールアドレスを上書き',
-      importInvalidExcelFile: '有効なExcelファイルを選択してください',
+      importValidExcelFile: '有効なExcelファイルを選択してください',
       importFileRequired: 'インポートするファイルを選択してください',
       importFileTips:
         'ファイルには、<code>email</code>という名前のヘッダー列を1つだけ含める必要があります。',
@@ -3142,7 +3126,6 @@ export default {
       updateDate: '更新日',
       permission: '権限',
       agentTitle: 'エージェントタイトル',
-      canvasCategory: 'キャンバスカテゴリー',
       newRole: '新規ロール',
       addNewRole: '新規ロールを追加',
       roleName: 'ロール名',
@@ -3494,18 +3477,14 @@ export default {
 
     explore: {
       title: '起動',
-      canvasList: 'キャンバス一覧',
       sessions: 'セッション',
       newSession: '新しいセッション',
       newSessionLabel: '新しい会話を開始',
       deleteSession: 'セッションを削除',
-      searchCanvas: 'キャンバスを検索...',
       searchSessions: 'セッションを検索...',
-      noCanvasSelected: 'キャンバスを選択してください',
       noSessionSelected: 'セッションを選択するか、新規作成してください',
       noSessionsFound: 'セッションが見つかりません',
       createFirstSession: '最初のセッションを作成',
-      noCanvasFound: 'キャンバスが見つかりません',
       deleteSelectedConfirm:
         '{{count}} 件のセッションを削除してもよろしいですか？',
       batchDeleteSessions: 'セッションを削除',

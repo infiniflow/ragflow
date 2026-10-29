@@ -27,7 +27,7 @@ func TestTenantPDFParserReferenceCleaning(t *testing.T) {
 	for _, ref := range []string{"model-b", "SoMark-model@b@SoMark", "OpenDataLoader-model@b@OpenDataLoader"} {
 		for _, field := range []string{"parse_method", "layout_recognizer"} {
 			t.Run(ref+"/"+field, func(t *testing.T) {
-				cleaned := CleanComponentParams(generalDSL(t), map[string]any{
+				cleaned := buildTestParserConfig(t, generalDSL(t), map[string]any{
 					"Parser:HipSignsRhyme": map[string]any{
 						"pdf": map[string]any{"parse_method": "deepdoc", field: ref},
 					},

@@ -1818,6 +1818,10 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 			return
 		}
 		switch {
+		// The parser tries standard conversions first (they carry page
+		// provenance) and falls back to chunked endpoints only when the
+		// server rejects the standard shape, so the third request is the
+		// chunked /v1 call and answers with a chunk list.
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/convert/source" && requestCount == 1:
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
@@ -1826,7 +1830,7 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 			_, _ = w.Write([]byte(`{"detail":"chunking unsupported"}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/convert/source" && requestCount == 3:
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"document":{"md_content":"# Docling Title\n\nDocling body.\n"}}`))
+			_, _ = w.Write([]byte(`[{"text":"# Docling Title\n\nDocling body.\n"}]`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -1959,6 +1963,14 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 		t.Fatalf("Close zip: %v", err)
 	}
 	return buf.Bytes()
+}
+
+func TestParserFileFamilyPresentationExtensions(t *testing.T) {
+	for _, ext := range []string{"ppt", "pptx", "pages", "dps", "dpt"} {
+		if got := ParserFileFamily(ext); got != "slides" {
+			t.Errorf("ParserFileFamily(%q) = %q, want slides", ext, got)
+		}
+	}
 }
 
 // TestPythonFamilyName_FileTypeConstants pins the contract that every

@@ -408,7 +408,7 @@ func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string
 	return s.GetDefaultModelNameForTenant(ctx, tenantID, modelType)
 }
 
-// GetDefaultModelNameForUser returns a user's setting in their personal tenant.
+// GetDefaultModelNameForUser returns the user's setting in the current Tenant.
 func (s *TenantService) GetDefaultModelNameForUser(ctx context.Context, userID string, modelType entity.ModelType) (string, error) {
 	membership, _, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
@@ -472,14 +472,6 @@ func isDefaultModelType(modelType entity.ModelType) bool {
 	default:
 		return false
 	}
-}
-
-func (s *TenantService) currentUserTenant(ctx context.Context, userID string) (*entity.UserTenant, string, error) {
-	membership, err := s.userTenantDAO.GetOwnerByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, "", err
-	}
-	return membership, membership.TenantID, nil
 }
 
 func (s *TenantService) defaultModelMembership(ctx context.Context, userID, tenantID string) (*entity.UserTenant, error) {
@@ -769,6 +761,21 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		modelTypeID:       defaultModel,
 		tenantModelTypeID: tenantModelID,
 	}).Error
+}
+
+func (s *TenantService) currentUserTenant(ctx context.Context, userID string) (*entity.UserTenant, string, error) {
+	membership, handled, err := resolveCurrentUserTenantEE(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if handled {
+		return membership, membership.TenantID, nil
+	}
+	membership, err = s.userTenantDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	return membership, membership.TenantID, nil
 }
 
 // Tenant member role constants.

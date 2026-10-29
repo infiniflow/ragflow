@@ -199,6 +199,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
+	case "runcrate":
+		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "worldrouter":
+		return NewWorldRouterModel(baseURL, urlSuffix), nil
+	case "cloudgpu":
+		return NewCloudGPUModel(baseURL, urlSuffix), nil
 	case "new api":
 		return NewNewAPIModel(baseURL, urlSuffix), nil
 	default:

@@ -247,9 +247,9 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
 	// Fast path: the parser emits typed []parser.DocItem. Convert it to
-	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
-	// item's typed fields and never calls DocItem.ToMap), then let the JSON
-	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which projects each
+	// item through its canonical ToMap wire shape), then let the JSON marshal
+	// below serialize the already-typed ChunkDoc. This keeps the
 	// chunker free of the historical map intermediate for the in-memory
 	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
 	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
@@ -271,9 +271,28 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
+	if err := validateUpstreamMediaRefs(out.JSONResult); err != nil {
+		return out, err
+	}
+	if err := validateUpstreamMediaRefs(out.Chunks); err != nil {
+		return out, err
+	}
 	materializeTableText(out.JSONResult)
 	materializeTableText(out.Chunks)
 	return out, nil
+}
+
+// validateUpstreamMediaRefs rejects any present but unusable reference at the
+// chunker input boundary. Chunkers merge items and keep only the first media
+// attachment, so validating when an item is consumed would make the failure
+// depend on input order; every present reference must be checked first.
+func validateUpstreamMediaRefs(items []schema.ChunkDoc) error {
+	for i := range items {
+		if ref := items[i].MediaRef; ref != nil && !ref.Valid() {
+			return fmt.Errorf("chunker: item %d has an invalid media_ref", i)
+		}
+	}
+	return nil
 }
 
 func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
@@ -664,8 +683,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// context_below) then .strip() — so a context that carries nothing but
 		// a position tag counts as empty. The context is folded into Text once,
 		// at chunkOutputs, so the decision is made on that merged text here
-		// without duplicating the fold.
-		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
+		// without duplicating the fold. Inline bytes, an uploaded ID or a
+		// deferred reference also make the chunk retrievable; dropping it here
+		// would lose the image before the materializer can resolve or reject it.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) {
 			continue
 		}
 		materialized = append(materialized, materializeMediaContext(m))
@@ -830,6 +851,7 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		PDFPositions: it.PDFPositions,
 		Positions:    it.Positions,
 		Image:        it.Image,
+		MediaRef:     it.MediaRef,
 		PageNumber:   it.PageNumber,
 		Sheet:        it.Sheet,
 		SheetIndex:   it.SheetIndex,

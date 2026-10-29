@@ -1,11 +1,14 @@
 package dataset
 
 import (
+	"context"
 	"net/url"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -27,7 +30,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		_ = sqlDB.Close()
 	})
-	if err = db.AutoMigrate(
+	models := []interface{}{
 		&entity.Document{},
 		&entity.Knowledgebase{},
 		&entity.Task{},
@@ -46,7 +49,9 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
 		&entity.UserCanvas{},
-	); err != nil {
+	}
+	models = append(models, datasetTestExtraModels()...)
+	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 	return db
@@ -62,25 +67,39 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 
 func ensureDatasetTestMembership(t *testing.T, userID, tenantID, role string) {
 	t.Helper()
+	user := entity.User{
+		ID: userID, Nickname: userID, Email: userID + "@test.local",
+		IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0",
+	}
+	if err := dao.DB.Where("id = ?", userID).FirstOrCreate(&user).Error; err != nil {
+		t.Fatalf("ensure test user: %v", err)
+	}
+	role = datasetTestMembershipRole(t, tenantID, role)
 	var count int64
 	if err := dao.DB.Model(&entity.UserTenant{}).
 		Where("user_id = ? AND tenant_id = ? AND status = ?", userID, tenantID, string(entity.StatusValid)).
 		Count(&count).Error; err != nil {
 		t.Fatalf("count test tenant memberships: %v", err)
 	}
-	if count > 0 {
-		return
+	if count == 0 {
+		if err := dao.DB.Create(&entity.UserTenant{
+			ID:        userID + "-" + tenantID,
+			UserID:    userID,
+			TenantID:  tenantID,
+			Role:      role,
+			InvitedBy: tenantID,
+			Status:    sptr(string(entity.StatusValid)),
+		}).Error; err != nil {
+			t.Fatalf("insert test tenant membership: %v", err)
+		}
 	}
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        userID + "-" + tenantID,
-		UserID:    userID,
-		TenantID:  tenantID,
-		Role:      role,
-		InvitedBy: tenantID,
-		Status:    sptr(string(entity.StatusValid)),
-	}).Error; err != nil {
-		t.Fatalf("insert test tenant membership: %v", err)
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
+		t.Fatalf("prepare test tenant permission fixture: %v", err)
 	}
+}
+
+func withDatasetTestContext(ctx context.Context, userID, tenantID string) context.Context {
+	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID})
 }
 
 func sptr(s string) *string { return &s }

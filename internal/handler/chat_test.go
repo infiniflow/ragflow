@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -46,6 +47,9 @@ func setupChatHandlerTestDB(t *testing.T) *gorm.DB {
 		LLMID: "model-a", EmbdID: "embd-a", ASRID: "asr-a", Img2TxtID: "img2txt-a", RerankID: "rerank-a",
 	}).Error; err != nil {
 		t.Fatalf("failed to create owner membership: %v", err)
+	}
+	if err = testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare chat permission fixture: %v", err)
 	}
 
 	return db
@@ -175,9 +179,13 @@ func TestPatchChatHandlerSuccess(t *testing.T) {
 func TestUpdateChatHandlerRejectsNonOwner(t *testing.T) {
 	db := setupChatHandlerTestDB(t)
 	createChatHandlerTestChat(t, db, "chat-1", "tenant-2")
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-2", "tenant-2", "user-1"); err != nil {
+		t.Fatalf("prepare non-owner chat permission fixture: %v", err)
+	}
 
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
 	c, w := setupGinContextWithUser("PUT", "/api/v1/chats/chat-1", `{"name":"updated"}`)
+	setGinContextSubject(c, "user-1", "tenant-2")
 	c.Params = []gin.Param{{Key: "chat_id", Value: "chat-1"}}
 
 	h.UpdateChat(c)

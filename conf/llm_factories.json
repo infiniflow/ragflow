@@ -3525,6 +3525,31 @@
             "url": "https://api.empiriolabs.ai/v1"
         },
         {
+            "name": "Runcrate",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.runcrate.ai/v1"
+        },
+        {
+            "name": "WorldRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "990",
+            "url": "https://inference-api.worldrouter.ai/v1"
+        },
+        {
+            "name": "CloudGPU",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://cloudgpu.app/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

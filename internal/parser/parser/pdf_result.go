@@ -158,6 +158,15 @@ func (p *PDFParser) normalizePDFMarkdown(ctx context.Context, filename, markdown
 	}
 	if converted.File == nil {
 		converted.File = fileMeta
+	} else {
+		// The markdown parser always sets File with at least the name, so a
+		// nil check alone would silently drop producer-seeded metadata like
+		// page_count. Merge any keys the parser did not supply.
+		for key, value := range fileMeta {
+			if _, ok := converted.File[key]; !ok {
+				converted.File[key] = value
+			}
+		}
 	}
 	return p.NormalizeResult(ctx, filename, converted)
 }

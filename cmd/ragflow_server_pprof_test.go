@@ -17,42 +17,32 @@
 package main
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
-	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 )
 
-// The DeepDoc early boot returns before the regular pprof block (which sits
-// after the infrastructure init that the early return skips), so the early
-// path must start the profiling endpoint itself. These tests pin that
-// contract end-to-end through main(), re-executing the test binary as a
-// subprocess (the pattern established by TestMainMigrateReachesConfiguration).
-
-const (
-	pprofProbeURL   = "http://localhost:6060/debug/pprof/"
-	pprofSkipExit   = 42               // child exit code: port 6060 held by a stray process
-	pprofBootWait   = 15 * time.Second // max time for main() to finish its early boot
-	pprofProbeWait  = 15 * time.Second // max time for the pprof endpoint to come up
-	pprofSettleWait = 5 * time.Second  // silence window for the negative case
-)
-
-// pprofProbeClient dials localhost directly: an ambient HTTP_PROXY must not
-// intercept the probe and fake a negative.
-var pprofProbeClient = &http.Client{
-	Timeout:   2 * time.Second,
-	Transport: &http.Transport{Proxy: nil},
+// freeLocalAddr returns a localhost TCP address on an OS-assigned ephemeral
+// port. The kernel reserves it until the returned listener is closed, so we
+// only use it to learn a free port and then close it so startPProf can bind it.
+func freeLocalAddr(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("freeLocalAddr: listen: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
 }
 
-// pprofReachable reports whether the pprof index endpoint answers with 200.
-func pprofReachable() bool {
-	resp, err := pprofProbeClient.Get(pprofProbeURL)
+// probeReachable reports whether the pprof index endpoint at url answers 200.
+// It dials directly (no proxy) so an ambient HTTP_PROXY cannot fake a negative.
+func probeReachable(url string) bool {
+	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{Proxy: nil}}
+	resp, err := client.Get(url)
 	if err != nil {
 		return false
 	}
@@ -60,10 +50,10 @@ func pprofReachable() bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// pprofChildBoot starts main() in the background inside a re-executed test
-// binary and returns a channel closed once main() returns. The OSS runDeepDoc
-// stub returns immediately, but a pprof goroutine started by main() outlives
-// it for the rest of this process, which is what the child assertions observe.
+// pprofChildBoot runs main() in the background and returns a channel closed
+// when main() returns. Used by the integration tier to drive the real server
+// boot path. The OSS runDeepDoc stub returns immediately, but the pprof
+// goroutine outlives it; the integration tests observe that from the parent.
 func pprofChildBoot() <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
@@ -73,115 +63,56 @@ func pprofChildBoot() <-chan struct{} {
 	return done
 }
 
-// runPProfChild re-executes this test binary as a subprocess with envVar set
-// so the named test takes its child branch, and maps the exit code:
-// 0 → pass, pprofSkipExit → skip (port 6060 held by a stray process),
-// anything else → fail with the combined child output. It returns the output
-// so callers can add secondary assertions.
-func runPProfChild(t *testing.T, testName, envVar string) string {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^"+testName+"$", "-test.v")
-	cmd.Dir = t.TempDir()
-	cmd.Env = append(os.Environ(), envVar+"=1")
-	out, err := cmd.CombinedOutput()
+// TestStartPProfOpensEndpointWhenEnabled pins the happy path: with a free
+// address, startPProf must actually bind and serve /debug/pprof/.
+func TestStartPProfOpensEndpointWhenEnabled(t *testing.T) {
+	addr := freeLocalAddr(t)
+	if err := startPProf(addr); err != nil {
+		t.Fatalf("startPProf(%q) unexpected error: %v", addr, err)
+	}
+	url := "http://" + addr + "/debug/pprof/"
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if probeReachable(url) {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("pprof endpoint %s not reachable after startPProf", url)
+}
+
+// TestStartPProfBindFailureIsNonFatal pins the error path (adversarial): when
+// the port is taken, startPProf must return ErrPProfBindFailed and must NOT
+// panic or exit the process. A wrong implementation that swallows the error or
+// calls os.Exit would fail (process dies / wrong error type).
+func TestStartPProfBindFailureIsNonFatal(t *testing.T) {
+	addr := freeLocalAddr(t)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == pprofSkipExit {
-			t.Skip("localhost:6060 is held by another process; cannot test pprof deterministically")
-		}
-		t.Fatalf("%s child failed: %v\n%s", testName, err, out)
+		t.Fatalf("pre-occupy listen: %v", err)
 	}
-	return string(out)
-}
-
-// TestMainDeepDocProfileStartsPProf pins the contract that a standalone
-// DeepDoc server booted with --profile serves pprof on localhost:6060. The
-// DeepDoc early boot returns before the regular pprof block, so without a
-// start in the early path, --deepdoc --profile silently ignores the flag the
-// --deepdoc help text advertises. The secondary assertion on the startup log
-// line proves the endpoint was opened by this boot path, not by a stray
-// listener that slipped past the child's pre-check.
-func TestMainDeepDocProfileStartsPProf(t *testing.T) {
-	const envVar = "RAGFLOW_TEST_DEEPDOC_PROFILE"
-	if os.Getenv(envVar) == "1" {
-		if pprofReachable() {
-			os.Exit(pprofSkipExit)
-		}
-		os.Args = []string{os.Args[0], "--deepdoc", "--profile"}
-		pprofChildBoot()
-		deadline := time.Now().Add(pprofProbeWait)
-		for time.Now().Before(deadline) {
-			if pprofReachable() {
-				os.Exit(0)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		fmt.Fprintln(os.Stderr, "pprof endpoint never became reachable")
-		os.Exit(1)
-	}
-	out := runPProfChild(t, "TestMainDeepDocProfileStartsPProf", envVar)
-	if !strings.Contains(out, "Starting pprof server") {
-		t.Fatalf("pprof startup line missing from child output:\n%s", out)
+	defer ln.Close()
+	if err := startPProf(addr); !errors.Is(err, ErrPProfBindFailed) {
+		t.Fatalf("startPProf on occupied %q = %v, want ErrPProfBindFailed", addr, err)
 	}
 }
 
-// TestMainDeepDocWithoutProfileDoesNotStartPProf is the adversarial guard for
-// the flag gate: --deepdoc WITHOUT --profile must not open the profiling
-// port. An implementation that starts pprof unconditionally (ignoring
-// arguments.EnablePProf) passes the positive test above but fails here. The
-// child waits for main() to finish its early boot first, so a pprof server
-// started by that path would already be listening when the silence window
-// opens.
-func TestMainDeepDocWithoutProfileDoesNotStartPProf(t *testing.T) {
-	const envVar = "RAGFLOW_TEST_DEEPDOC_PROFILE_NEGATIVE"
-	if os.Getenv(envVar) == "1" {
-		if pprofReachable() {
-			os.Exit(pprofSkipExit)
-		}
-		os.Args = []string{os.Args[0], "--deepdoc"}
-		select {
-		case <-pprofChildBoot():
-		case <-time.After(pprofBootWait):
-			fmt.Fprintln(os.Stderr, "main() did not return in time")
-			os.Exit(1)
-		}
-		deadline := time.Now().Add(pprofSettleWait)
-		for time.Now().Before(deadline) {
-			if pprofReachable() {
-				fmt.Fprintln(os.Stderr, "pprof endpoint reachable without --profile")
-				os.Exit(1)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		os.Exit(0)
+// TestPProfAddrDefault pins that pprofAddr() defaults to localhost:6060 when
+// RAGFLOW_PPROF_ADDR is unset.
+func TestPProfAddrDefault(t *testing.T) {
+	t.Setenv("RAGFLOW_PPROF_ADDR", "")
+	if got := pprofAddr(); got != "localhost:6060" {
+		t.Fatalf("pprofAddr() = %q, want localhost:6060", got)
 	}
-	runPProfChild(t, "TestMainDeepDocWithoutProfileDoesNotStartPProf", envVar)
 }
 
-// TestMainDeepDocProfilePProfBindFailureIsNonFatal pins the error path: when
-// the profiling port is already taken, the DeepDoc boot must log the failure
-// and keep running — the inference server matters more than profiling. The
-// child occupies localhost:6060 itself before booting main(), so main()'s
-// listener attempt is guaranteed to fail; the test passes only if main()
-// still returns without exiting the process.
-func TestMainDeepDocProfilePProfBindFailureIsNonFatal(t *testing.T) {
-	const envVar = "RAGFLOW_TEST_DEEPDOC_PROFILE_BINDFAIL"
-	if os.Getenv(envVar) == "1" {
-		ln, err := net.Listen("tcp", "localhost:6060")
-		if err != nil {
-			os.Exit(pprofSkipExit)
-		}
-		defer ln.Close()
-		os.Args = []string{os.Args[0], "--deepdoc", "--profile"}
-		select {
-		case <-pprofChildBoot():
-			os.Exit(0)
-		case <-time.After(pprofBootWait):
-			fmt.Fprintln(os.Stderr, "main() did not return in time")
-			os.Exit(1)
-		}
+// TestPProfAddrFromEnv pins that pprofAddr() honors RAGFLOW_PPROF_ADDR
+// (adversarial: a distinguishing override). The old hard-coded localhost:6060
+// would make this fail, proving the configurability is real.
+func TestPProfAddrFromEnv(t *testing.T) {
+	const want = "127.0.0.1:0"
+	t.Setenv("RAGFLOW_PPROF_ADDR", want)
+	if got := pprofAddr(); got != want {
+		t.Fatalf("pprofAddr() = %q, want %q", got, want)
 	}
-	runPProfChild(t, "TestMainDeepDocProfilePProfBindFailureIsNonFatal", envVar)
 }

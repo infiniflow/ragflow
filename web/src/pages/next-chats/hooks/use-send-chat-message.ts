@@ -198,12 +198,9 @@ export const useSendMessage = () => {
 
       const id = uuid();
 
-      // useUploadFile tracks files as loosely typed records; narrow once here.
-      const attachedFiles = files as IMessage['files'];
-
       const questionMessage: IMessage = {
         content: value,
-        files: attachedFiles,
+        files,
         id,
         role: MessageType.User,
         conversationId: targetConversationId,
@@ -233,7 +230,7 @@ export const useSendMessage = () => {
           id,
           content: value.trim(),
           role: MessageType.User,
-          files: attachedFiles,
+          files,
           conversationId: targetConversationId,
         },
         enableInternet,

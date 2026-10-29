@@ -44,12 +44,14 @@ import (
 	"sync"
 	"time"
 
+	excel "github.com/jloor/go-excel-reader"
 	"github.com/xuri/excelize/v2"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
@@ -358,7 +360,7 @@ func parseTagSourceByFilename(data []byte, filename string) ([]schema.TagLabel, 
 		delimiter := detectCSVDelimiterBytes(data)
 		return parseCSVTagSourceReader(bytes.NewReader(data), delimiter), nil
 	default:
-		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .txt and .csv are supported", filepath.Ext(filename))
+		return nil, fmt.Errorf("unsupported tag source extension %q: only .xlsx, .xls, .txt and .csv are supported", filepath.Ext(filename))
 	}
 }
 
@@ -494,7 +496,15 @@ func parseCSVQuoteAwareReader(r io.Reader, delimiter rune) []schema.TagLabel {
 // first and second non-empty cells. Single-cell rows are accumulated as body text
 // and prepended to the next tagged row, matching CSV parsing behavior.
 // The second cell holds comma-separated tags.
+//
+// A legacy BIFF .xls (OLE compound document) is detected by magic and routed
+// to parseBIFF8TagSource, which applies the same per-row rule via
+// go-excel-reader — mirroring internal/parser/parser/xls_parser.go. An .xls
+// that is actually OOXML (renamed .xlsx) falls through to the excelize path.
 func parseXLSXTagSource(data []byte) []schema.TagLabel {
+	if bytes.HasPrefix(data, parser.CompoundDocumentSignature) {
+		return parseBIFF8TagSource(data)
+	}
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: open xlsx tag source: %v", err))
@@ -510,13 +520,6 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 			continue
 		}
 		content := ""
-		appendLine := func(s string) {
-			if content == "" {
-				content = s
-			} else {
-				content += "\n" + s
-			}
-		}
 		for _, row := range rows {
 			var cells []string
 			for _, c := range row {
@@ -524,20 +527,69 @@ func parseXLSXTagSource(data []byte) []schema.TagLabel {
 					cells = append(cells, c)
 				}
 			}
-			if len(cells) == 0 {
-				continue
-			}
-			if len(cells) == 1 {
-				appendLine(cells[0])
-				continue
-			}
-			appendLine(cells[0])
-			tags := splitAndTrim(cells[1], ",")
-			result = append(result, schema.TagLabel{Content: content, Tags: tags})
-			content = ""
+			accumulateTagCells(cells, &content, &result)
 		}
 	}
 	return result
+}
+
+// parseBIFF8TagSource applies the parseXLSXTagSource row rule to a legacy
+// BIFF .xls workbook: every sheet is read with no header, each row's first
+// and second non-empty cells form a (content, tags) pair, and single-cell
+// rows accumulate as body text for the next tagged row. Cells beyond the
+// second are ignored, matching the xlsx path. The BIFF reader exposes no
+// merged ranges, so a vertical merge stays a dense row with an empty slave
+// cell — the same caveat as internal/parser/parser/xls_parser.go.
+func parseBIFF8TagSource(data []byte) []schema.TagLabel {
+	reader, err := excel.OpenXLS(bytes.NewReader(data), excel.WithErrorValues(true))
+	if err != nil {
+		common.Warn(fmt.Sprintf("extractor tags: open BIFF xls tag source: %v", err))
+		return nil
+	}
+	defer reader.Close()
+
+	result := make([]schema.TagLabel, 0)
+	for reader.NextSheet() {
+		content := ""
+		for reader.Read() {
+			var cells []string
+			for col := 0; col < reader.FieldCount(); col++ {
+				if c := strings.TrimSpace(parser.SpreadsheetCellString(reader.GetValue(col))); c != "" {
+					cells = append(cells, c)
+				}
+			}
+			accumulateTagCells(cells, &content, &result)
+		}
+	}
+	if err := reader.Err(); err != nil {
+		common.Warn(fmt.Sprintf("extractor tags: read BIFF xls tag source: %v", err))
+	}
+	return result
+}
+
+// accumulateTagCells applies the shared tag row rule: empty rows are skipped,
+// single-cell rows accumulate as body text for the next tagged row, and rows
+// with two or more non-empty cells emit a (content, tags) pair from the first
+// two cells. Extra cells are ignored.
+func accumulateTagCells(cells []string, content *string, result *[]schema.TagLabel) {
+	if len(cells) == 0 {
+		return
+	}
+	appendLine := func(s string) {
+		if *content == "" {
+			*content = s
+		} else {
+			*content += "\n" + s
+		}
+	}
+	if len(cells) == 1 {
+		appendLine(cells[0])
+		return
+	}
+	appendLine(cells[0])
+	tags := splitAndTrim(cells[1], ",")
+	*result = append(*result, schema.TagLabel{Content: *content, Tags: tags})
+	*content = ""
 }
 
 func stripEmptyFields(fields []string) []string {

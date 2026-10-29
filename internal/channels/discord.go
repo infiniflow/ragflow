@@ -145,7 +145,7 @@ func newDiscordChannel(account discordAccount) *discordChannel {
 	}
 	return &discordChannel{
 		account: account,
-		client:  &http.Client{Timeout: account.Timeout},
+		client:  newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"discord.com"}}),
 		seen:    map[string]time.Time{},
 		workers: map[string]*discordChatWorker{},
 	}
@@ -305,10 +305,10 @@ func (c *discordChannel) runGateway(ctx context.Context) error {
 
 	// set websocket connection
 	header := http.Header{}
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = discordHandshakeTimeout
-
-	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	conn, _, err := dialSafeChannelWebSocket(ctx, wsURL, header, discordHandshakeTimeout, channelURLPolicy{
+		exactHosts:   []string{"gateway.discord.gg"},
+		hostSuffixes: []string{"discord.gg"},
+	})
 	if err != nil {
 		return err
 	}
