@@ -36,9 +36,11 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -374,14 +376,17 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	// Persist is now fully durable: every failure-capable step above
 	// (index write, compiled-product reconcile, Wiki active-MAP state) has
-	// succeeded. Only now drop the per-chunk cache entries this task produced,
-	// so a failure in any of those steps leaves the cache intact for the retry —
-	// the retry resumes after the Parser checkpoint and would otherwise have to
-	// re-pay every embedding/LLM call, which is exactly the cost this cache
-	// exists to absorb. PurgeTask is best-effort and silent when no manifest
-	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	// succeeded. Only now drop the run-scoped cache entries this task produced,
+	// so a failure in any of those steps leaves chunk results and parser media
+	// intact for retry. Cleanup is best-effort; failed media cleanup is logged
+	// and the entries expire independently.
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+		if s.deps.KV != nil {
+			if err := mediacache.PurgeTask(ctx, s.deps.KV, s.taskCtx.IngestionTask.ID); err != nil {
+				common.Warn("failed to purge task media cache", zap.String("task_id", s.taskCtx.IngestionTask.ID), zap.Error(err))
+			}
+		}
 	}
 
 	return &PipelineResult{

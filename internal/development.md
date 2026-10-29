@@ -307,6 +307,10 @@ export KVROCKS_PORT=6379
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
+  HTML ingestion uses Kvrocks to hand inline images from the parser to the
+  chunker; the ingestor also validates the injected Kvrocks client at startup.
+  HTML image payloads default to a 32 MiB per-image limit; set
+  `RAGFLOW_HTML_IMAGE_MAX_BYTES` to a positive byte count to change it.
 
 
 - Start RAGFlow

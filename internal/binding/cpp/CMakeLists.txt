@@ -178,6 +178,17 @@ set_target_properties(rag_analyzer_c_test PROPERTIES
 )
 
 if(BUILD_TESTING)
+    add_executable(rag_analyzer_opencc_copy_test
+            rag_analyzer_opencc_copy_test.cpp
+    )
+    target_link_libraries(rag_analyzer_opencc_copy_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_include_directories(rag_analyzer_opencc_copy_test PUBLIC "${CMAKE_SOURCE_DIR}")
+    set_target_properties(rag_analyzer_opencc_copy_test PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME rag_analyzer_opencc_copy COMMAND rag_analyzer_opencc_copy_test)
+
     add_executable(wordnet_lemmatizer_missing_exceptions_test
             wordnet_lemmatizer_test.cpp
             wordnet_lemmatizer.cpp

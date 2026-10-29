@@ -1,4 +1,6 @@
-import { ParserSelect } from '@/components/parser-select';
+import { ParserTreeSelect } from '@/components/parser-tree-select';
+import { useParserTreeData } from '@/components/parser-tree-select/use-parser-tree-data';
+import { usePrefillLatestPipelineVersion } from '@/components/parser-tree-select/use-prefill-latest-pipeline-version';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
@@ -27,15 +29,14 @@ import {
 import { buildParserConfigFromNodes } from '@/utils/pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEqual } from 'lodash';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldErrors, useForm, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 import ChunkMethodLearnMore from './chunk-method-learn-more';
 import LinkDataSource, {
   IDataSourceNodeProps,
 } from './components/link-data-source';
-import { formSchema } from './form-schema';
+import { buildFormSchema, DatasetSettingFormValues } from './form-schema';
 import { GeneralForm } from './general-form';
 import {
   useConnectorHandlers,
@@ -44,8 +45,6 @@ import {
   useSaveDatasetSetting,
 } from './hooks';
 import { normalizeParserConfigForComparison } from './parser-config';
-import { PipelineVersionSelect } from '@/components/pipeline-version-select';
-import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
@@ -53,7 +52,16 @@ import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
 export default function DatasetSetting() {
   const { t } = useTranslation();
 
-  const form = useForm<z.infer<typeof formSchema>>({
+  // The missing verdict lives behind a ref because the schema must exist
+  // before useForm runs, while the verdict derives from the form's watched
+  // values — see buildFormSchema.
+  const parserOptionMissingRef = useRef(false);
+  const formSchema = useMemo(
+    () => buildFormSchema(() => parserOptionMissingRef.current),
+    [],
+  );
+
+  const form = useForm<DatasetSettingFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
       parse_type: ParseType.BuiltIn,
@@ -110,6 +118,40 @@ export default function DatasetSetting() {
     defaultValue: '',
   });
 
+  const parserSelectValue = buildParserSelectValue({
+    parseType,
+    parserId: builtinPipelineId,
+    pipelineId,
+    pipelineVersionId,
+  });
+
+  // The merged parser tree owns the option data; reusing its existence
+  // verdict (same React Query cache, no extra fetches) flags a saved parser
+  // or pinned pipeline version that has since been deleted.
+  const { selectedLeafExists, loading: parserOptionsLoading } =
+    useParserTreeData({ value: parserSelectValue });
+  const parserOptionMissing =
+    !!parserSelectValue && !parserOptionsLoading && !selectedLeafExists;
+
+  // Keep the schema's missing verdict current; declared before the
+  // revalidation effect below so trigger() reads the fresh value.
+  useEffect(() => {
+    parserOptionMissingRef.current = parserOptionMissing;
+  }, [parserOptionMissing]);
+
+  // A persisted value never fires onChange validation, so once the parser
+  // options have loaded, revalidate explicitly — the saved parser or pinned
+  // version may have been deleted, and the error should be visible before
+  // submit. Re-running on selection changes clears the error as soon as a
+  // valid option is picked. (Same pattern as ModelTreeSelectFormField.)
+  const trigger = form.trigger;
+  const parserFieldName =
+    parseType === ParseType.Pipeline ? 'pipeline_id' : 'parser_id';
+  useEffect(() => {
+    if (parserOptionsLoading || !parserSelectValue) return;
+    trigger(parserFieldName);
+  }, [trigger, parserOptionsLoading, parserSelectValue, parserFieldName]);
+
   const pipelineParserConfig = knowledgeDetails?.parser_config as
     | Record<string, any>
     | undefined;
@@ -129,7 +171,9 @@ export default function DatasetSetting() {
         : knowledgeDetails?.parser_id
       : undefined;
 
-  // Published versions of the selected dataflow canvas (design C1/C2).
+  // Published versions of the selected dataflow canvas, fetched here only to
+  // prefill the latest version for unpinned datasets (design C1/C2); the
+  // select itself lazy-loads whatever branches the user expands.
   const { data: canvasVersions } = useFetchCanvasVersionList(
     parseType === ParseType.Pipeline && pipelineId ? pipelineId : undefined,
   );
@@ -140,21 +184,13 @@ export default function DatasetSetting() {
     !!knowledgeDetails?.pipeline_version_outdated &&
     (pipelineVersionId ?? '') === (knowledgeDetails?.pipeline_version_id ?? '');
 
-  // Design section 8 (T37): an unpinned dataset must still pre-select the latest
-  // concrete canvas version instead of the "Latest version" placeholder. We only
-  // fill an empty field, so a saved pin or a user selection wins. This effect
-  // runs after the on-mount form.reset (which sets an unpinned dataset to ''),
-  // so the latest concrete id wins once the version list resolves.
-  useEffect(() => {
-    const savedPin = knowledgeDetails?.pipeline_version_id;
-    if (
-      !savedPin &&
-      canvasVersions?.length &&
-      !form.getValues('pipeline_version_id')
-    ) {
-      form.setValue('pipeline_version_id', canvasVersions[0].id);
-    }
-  }, [knowledgeDetails, canvasVersions, form]);
+  // Design section 8 (T37): an unpinned dataset still pre-selects the latest
+  // concrete canvas version once the version list resolves.
+  usePrefillLatestPipelineVersion(
+    form,
+    knowledgeDetails?.pipeline_version_id,
+    canvasVersions?.[0]?.id,
+  );
 
   const { operatorNodes, loading: operatorNodesLoading } =
     usePipelineOperatorNodes(
@@ -172,30 +208,13 @@ export default function DatasetSetting() {
     operatorNodes,
   );
 
-  // A pinned version belongs to the canvas it was pinned on (design section
-  // 5/B4 sticky snapshot). Switching the dataflow canvas invalidates any
-  // previously pinned version, so clear it; otherwise a version id from the
-  // old canvas would be submitted against the new pipeline. The initial load
-  // keeps the saved version (selected equals saved).
-  useEffect(() => {
-    if (selectedPipelineId !== savedPipelineId) {
-      form.setValue('pipeline_version_id', '');
-    }
-  }, [selectedPipelineId, savedPipelineId, form]);
-
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 
   const { scrollContainerRef, handleInvalidSubmit } =
     useRevealSubmitErrors(setActiveTab);
 
-  useEffect(() => {
-    if (parseType === ParseType.BuiltIn) {
-      form.setValue('pipeline_id', '');
-    }
-  }, [parseType, form]);
-
   const handleSubmit = useCallback(
-    async (data: z.infer<typeof formSchema>) => {
+    async (data: DatasetSettingFormValues) => {
       const savedValues = form.formState.defaultValues;
       const operatorDefaults = buildParserConfigFromNodes(operatorNodes);
       const [savedParserConfig, parserConfig] = [
@@ -312,15 +331,13 @@ export default function DatasetSetting() {
                               ? 'parser_id'
                               : 'pipeline_id'
                           }
-                          render={() => (
+                          render={({ fieldState }) => (
                             <FormItem className="space-y-1">
-                              <ParserSelect
-                                value={buildParserSelectValue({
-                                  parseType,
-                                  parserId: builtinPipelineId,
-                                  pipelineId,
-                                })}
+                              <ParserTreeSelect
+                                value={parserSelectValue}
                                 onChange={handleParserSelect}
+                                outdated={savedVersionOutdated}
+                                invalid={fieldState.invalid}
                               />
                               <FormMessage />
                             </FormItem>
@@ -329,42 +346,6 @@ export default function DatasetSetting() {
                       </div>
                     </div>
                   </FormItem>
-                  {parseType === ParseType.Pipeline && !!pipelineId && (
-                    <FormItem className="items-center space-y-0">
-                      <div className="flex items-center gap-1">
-                        <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
-                          {t('flow.version.label')}
-                        </FormLabel>
-                        <div className="text-muted-foreground w-3/4">
-                          <FormField
-                            control={form.control}
-                            name="pipeline_version_id"
-                            render={({ field }) => (
-                              <FormItem className="space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <PipelineVersionSelect
-                                    versions={canvasVersions}
-                                    value={field.value ?? ''}
-                                    onChange={field.onChange}
-                                  />
-                                  {savedVersionOutdated && (
-                                    <RAGFlowTooltip
-                                      tooltip={t('flow.version.outdated')}
-                                    >
-                                      <span className="text-destructive cursor-help font-bold">
-                                        !
-                                      </span>
-                                    </RAGFlowTooltip>
-                                  )}
-                                </div>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
-                      </div>
-                    </FormItem>
-                  )}
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}
