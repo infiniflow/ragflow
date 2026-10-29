@@ -948,11 +948,10 @@ func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: ptr(updateTime),
 			CreateDate: &updateDate,
@@ -1061,7 +1060,15 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
+	if err := dao.NewAPI4ConversationDAO().UpdateHistory(ctx, dao.DB, "session-1", "canvas-1", "user-1", nil, dao.ConversationHistoryUpdate{
+		Message: map[string]interface{}{"role": "assistant", "content": "answer", "reference": map[string]interface{}{
+			"chunks":   []interface{}{map[string]interface{}{"chunk_id": "chunk", "doc_id": "document", "content_with_weight": "evidence"}},
+			"doc_aggs": []interface{}{},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -1077,6 +1084,27 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	if session.DialogID != "canvas-1" {
 		t.Fatalf("expected dialog_id canvas-1, got %s", session.DialogID)
 	}
+	messages := parseMessages(session.Message)
+	reference, ok := messages[1]["reference"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("answer reference is not an object: %v", messages[1])
+	}
+	chunks := reference["chunks"].([]interface{})
+	if len(chunks) != 1 || chunks[0].(map[string]interface{})["document_id"] != "document" || chunks[0].(map[string]interface{})["id"] != "chunk" {
+		t.Fatalf("unexpected reference chunks: %v", chunks)
+	}
+	body, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["reference"]; ok {
+		t.Fatalf("session contains reference array: %s", body)
+	}
+
 }
 
 func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {

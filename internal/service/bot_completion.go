@@ -604,7 +604,14 @@ func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID strin
 		if role == "assistant" && len(msg) == 0 {
 			continue
 		}
-		msg = append(msg, m)
+		message := make(map[string]interface{}, len(m))
+		for key, value := range m {
+			if key == "prompt" || key == "usage" || key == "elapsed_ms" || key == "reference" {
+				continue
+			}
+			message[key] = value
+		}
+		msg = append(msg, message)
 	}
 	return msg
 }
@@ -638,7 +645,8 @@ func (s *BotService) persistChatbotTurn(
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
 	message := map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
-	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID, Reference: reference, AppendReference: true})
+	message["reference"] = reference
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID})
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

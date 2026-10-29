@@ -286,11 +286,10 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-history",
-		DialogID:  "canvas-history",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-history",
+		DialogID: "canvas-history",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -471,12 +470,11 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-session-owner", "user-1", "tenant-1", "v-session-owner", dsl)
 	foreignMessage := json.RawMessage(`[{"role":"assistant","content":"foreign"}]`)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-foreign",
-		DialogID:  "canvas-session-owner",
-		UserID:    "user-2",
-		Message:   foreignMessage,
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-foreign",
+		DialogID: "canvas-session-owner",
+		UserID:   "user-2",
+		Message:  foreignMessage,
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create foreign session: %v", err)
 	}
@@ -570,12 +568,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-fillup",
-		DialogID:  "canvas-fillup",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-fillup",
+		DialogID: "canvas-fillup",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -707,12 +704,11 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-partial", "user-1", "tenant-1", "v-partial", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-partial",
-		DialogID:  "canvas-partial",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-partial",
+		DialogID: "canvas-partial",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}

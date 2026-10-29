@@ -52,7 +52,7 @@ func newFakeSessionStore() *fakeSessionStore {
 	}
 }
 
-func (f *fakeSessionStore) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
+func (f *fakeSessionStore) GetByID(ctx context.Context, db *gorm.DB, id string, options ...dao.ConversationHistoryOptions) (*entity.ChatSession, error) {
 	if f.getByIDErr != nil {
 		return nil, f.getByIDErr
 	}
@@ -64,7 +64,7 @@ func (f *fakeSessionStore) GetByID(ctx context.Context, db *gorm.DB, id string) 
 	return &clone, nil
 }
 
-func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
+func (f *fakeSessionStore) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string, options ...dao.ConversationHistoryOptions) (*entity.ChatSession, error) {
 	s, err := f.GetByID(ctx, db, sessionID)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,6 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 	}
 	if history, ok := updates["history_update"].(dao.ConversationHistoryUpdate); ok {
 		messages := parseMessages(s.Message)
-		references := parseReferenceList(s.Reference)
 		if history.DeleteMessageID != "" {
 			for i, message := range messages {
 				if stringValue(message["id"]) != history.DeleteMessageID {
@@ -107,10 +106,6 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 				}
 				end := i + 1
 				if end < len(messages) && stringValue(messages[end]["role"]) == "assistant" && stringValue(messages[end]["id"]) == history.DeleteMessageID {
-					refIndex := sessionMessageReferenceIndex(messages, end)
-					if refIndex >= 0 && refIndex < len(references) {
-						references = append(references[:refIndex], references[refIndex+1:]...)
-					}
 					end++
 				}
 				messages = append(messages[:i], messages[end:]...)
@@ -131,12 +126,8 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 			}
 		} else if history.Message != nil {
 			messages = append(messages, history.Message)
-			if history.AppendReference {
-				references = append(references, history.Reference)
-			}
 		}
 		updates["message"], _ = json.Marshal(messages)
-		updates["reference"], _ = json.Marshal(references)
 		delete(updates, "history_update")
 	}
 	f.updateCalled = append(f.updateCalled, struct {
@@ -153,10 +144,6 @@ func (f *fakeSessionStore) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 			if raw, ok := v.([]byte); ok {
 				s.Message = append(json.RawMessage(nil), raw...)
 			}
-		case "reference":
-			if raw, ok := v.([]byte); ok {
-				s.Reference = append(json.RawMessage(nil), raw...)
-			}
 		}
 	}
 	return nil
@@ -167,7 +154,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...bool) ([]*entity.ChatSession, int64, error) {
+func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
 	allowedIDs := make(map[string]struct{}, len(sessionIDs))
 	for _, id := range sessionIDs {
 		allowedIDs[id] = struct{}{}
@@ -358,11 +345,11 @@ func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
 				store := newFakeSessionStore()
 				store.sessions["session-1"] = &entity.ChatSession{
 					ID: "session-1", DialogID: "chat-1", UserID: strPtr("user-1"),
-					Message: json.RawMessage(`[{"role":"assistant","content":"Welcome"},{"role":"user","content":"old question","id":"old"},{"role":"assistant","content":"old answer","id":"old","prompt":"old prompt","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"elapsed_ms":123}]`),
+					Message: json.RawMessage(`[{"role":"assistant","content":"Welcome"},{"role":"user","content":"old question","id":"old"},{"role":"assistant","content":"old answer","id":"old","prompt":"old prompt","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"elapsed_ms":123,"reference":{"chunks":[{"id":"old-chunk"}]}}]`),
 				}
 				store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", TenantID: "user-1", LLMID: "chat@factory"}
 				store.dialogExists["user-1|chat-1"] = true
-				final := AsyncChatResult{Answer: "new answer", Prompt: "system prompt", Final: true}
+				final := AsyncChatResult{Answer: "new answer", Prompt: "system prompt", Reference: map[string]interface{}{"chunks": []interface{}{map[string]interface{}{"id": "new-chunk"}}}, Final: true}
 				if mode.agentic {
 					final.Answer = "<think>agent reasoning</think>new answer"
 					final.Prompt = ""
@@ -384,13 +371,13 @@ func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
 					t.Fatalf("unexpected LLM history: %v", pipeline.messages)
 				}
 				for _, message := range pipeline.messages {
-					for _, key := range []string{"prompt", "usage", "elapsed_ms"} {
+					for _, key := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
 						if _, ok := message[key]; ok {
 							t.Fatalf("LLM history contains %s: %v", key, message)
 						}
 					}
 				}
-				payload, code, err := svc.GetSession(t.Context(), "user-1", "chat-1", "session-1")
+				payload, code, err := svc.GetSession(t.Context(), "user-1", "chat-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true, IncludePrompt: true})
 				if err != nil || code != common.CodeSuccess {
 					t.Fatalf("GetSession: code=%v err=%v", code, err)
 				}
@@ -400,6 +387,21 @@ func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
 				answer := payload.Messages[len(payload.Messages)-1]
 				if answer["content"] != final.Answer {
 					t.Fatalf("missing stored answer details: %v", answer)
+				}
+				ref, ok := answer["reference"].(map[string]interface{})
+				if !ok || len(ref["chunks"].([]FormattedChunk)) != 1 || ref["chunks"].([]FormattedChunk)[0].ID != "new-chunk" {
+					t.Fatalf("missing stored reference: %v", answer)
+				}
+				body, err := json.Marshal(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var data map[string]interface{}
+				if err := json.Unmarshal(body, &data); err != nil {
+					t.Fatal(err)
+				}
+				if _, ok := data["reference"]; ok {
+					t.Fatalf("session contains a reference array: %s", body)
 				}
 				if mode.agentic {
 					if _, ok := answer["prompt"]; ok {
@@ -427,7 +429,7 @@ func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
 
 func TestNormalizeCompletionMessagesExcludesAnswerDetails(t *testing.T) {
 	messages := []map[string]interface{}{
-		{"role": "assistant", "content": "answer", "prompt": "system prompt", "usage": map[string]int{"total_tokens": 3}, "elapsed_ms": 123.0},
+		{"role": "assistant", "content": "answer", "prompt": "system prompt", "usage": map[string]int{"total_tokens": 3}, "elapsed_ms": 123.0, "reference": map[string]interface{}{"chunks": []interface{}{}}},
 		{"role": "user", "content": "question", "id": "turn-1"},
 	}
 	svc := &ChatSessionService{}
@@ -583,7 +585,7 @@ func TestListChatSessions_Success(t *testing.T) {
 
 	ctx := t.Context()
 	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 30, false)
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -596,7 +598,7 @@ func TestListChatSessions_Success(t *testing.T) {
 		}
 	}
 	for page, wantCount := range map[int]int{4: 10, 5: 1, 6: 0} {
-		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, page, 10, false)
+		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, page, 10, dao.ConversationHistoryOptions{NoHistory: true})
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
@@ -604,11 +606,11 @@ func TestListChatSessions_Success(t *testing.T) {
 			t.Fatalf("page %d: got total=%d and %d sessions, want total=41 and %d sessions", page, resp.Total, len(resp.Sessions), wantCount)
 		}
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, false)
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 41 || len(resp.Sessions) != 0 {
 		t.Fatalf("zero page size: got response=%+v err=%v, want total=41 and no sessions", resp, err)
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, false)
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 1 || len(resp.Sessions) != 1 {
 		t.Fatalf("ID filter: got response=%+v err=%v, want total=1 and one session", resp, err)
 	}
@@ -640,12 +642,8 @@ func TestGetSession_Success(t *testing.T) {
 		ID:       "session-1",
 		DialogID: "chat-1",
 		Name:     strPtr("session"),
-		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
-		Reference: json.RawMessage(`[
-			{"chunks":[{"chunk_id":"chunk-1","content_with_weight":"hello","doc_id":"doc-1","docnm_kwd":"Doc 1","kb_id":"kb-1"}]},
-			[]
-		]`),
-		UserID: strPtr("user-1"),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello","reference":{"chunks":[{"chunk_id":"chunk-1","content_with_weight":"hello","doc_id":"doc-1","docnm_kwd":"Doc 1","kb_id":"kb-1"}]}}]`),
+		UserID:   strPtr("user-1"),
 	}
 	icon := "avatar.png"
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", Icon: &icon}
@@ -658,7 +656,7 @@ func TestGetSession_Success(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
+	resp, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true, IncludePrompt: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -674,12 +672,9 @@ func TestGetSession_Success(t *testing.T) {
 	if len(resp.Messages) != 1 || resp.Messages[0]["content"] != "hello" {
 		t.Fatalf("messages=%#v", resp.Messages)
 	}
-	if len(resp.Reference) != 2 {
-		t.Fatalf("reference len=%d", len(resp.Reference))
-	}
-	firstRef, ok := resp.Reference[0].(map[string]interface{})
+	firstRef, ok := resp.Messages[0]["reference"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("reference[0] type=%T", resp.Reference[0])
+		t.Fatalf("answer reference type=%T", resp.Messages[0]["reference"])
 	}
 	chunks, ok := firstRef["chunks"].([]FormattedChunk)
 	if !ok {
@@ -687,9 +682,6 @@ func TestGetSession_Success(t *testing.T) {
 	}
 	if len(chunks) != 1 || chunks[0].ID != "chunk-1" {
 		t.Fatalf("chunks=%#v", chunks)
-	}
-	if _, ok := resp.Reference[1].([]interface{}); !ok {
-		t.Fatalf("reference[1] changed unexpectedly: %T", resp.Reference[1])
 	}
 }
 
@@ -846,17 +838,7 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 		ID:       "session-1",
 		DialogID: "chat-1",
 		UserID:   strPtr("user-1"),
-		Message: json.RawMessage(`[
-			{"role":"assistant","content":"Welcome!"},
-			{"role":"user","content":"first","id":"msg-1"},
-			{"role":"assistant","content":"answer 1","id":"msg-1"},
-			{"role":"user","content":"second","id":"msg-2"},
-			{"role":"assistant","content":"answer 2","id":"msg-2"}
-		]`),
-		Reference: json.RawMessage(`[
-			{"chunks":[{"id":"chunk-1","kb_id":"kb-1"}]},
-			{"chunks":[{"id":"chunk-2","kb_id":"kb-2"}]}
-		]`),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"},{"role":"user","content":"first","id":"msg-1"},{"role":"assistant","content":"answer 1","id":"msg-1","reference":{"chunks":[{"id":"chunk-1","kb_id":"kb-1"}]}},{"role":"user","content":"second","id":"msg-2"},{"role":"assistant","content":"answer 2","id":"msg-2","reference":{"chunks":[{"id":"chunk-2","kb_id":"kb-2"}]}}]`),
 	}
 	store.dialogExists["tenant-1|chat-1"] = true
 
@@ -867,7 +849,7 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, code, err := svc.DeleteSessionMessage(ctx, "user-1", "chat-1", "session-1", "msg-1")
+	resp, code, err := svc.DeleteSessionMessage(ctx, "user-1", "chat-1", "session-1", "msg-1", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -880,12 +862,9 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	if resp.Messages[1]["id"] != "msg-2" || resp.Messages[2]["id"] != "msg-2" {
 		t.Fatalf("remaining pair=%#v", resp.Messages)
 	}
-	if len(resp.Reference) != 1 {
-		t.Fatalf("reference=%#v", resp.Reference)
-	}
-	ref, ok := resp.Reference[0].(map[string]interface{})
+	ref, ok := resp.Messages[2]["reference"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("reference type=%T", resp.Reference[0])
+		t.Fatalf("reference type=%T", resp.Messages[2]["reference"])
 	}
 	chunks, ok := ref["chunks"].([]FormattedChunk)
 	if !ok || len(chunks) != 1 || chunks[0].ID != "chunk-2" {
@@ -902,14 +881,7 @@ func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(
 		ID:       "session-1",
 		DialogID: "chat-1",
 		UserID:   strPtr("user-1"),
-		Message: json.RawMessage(`[
-			{"role":"assistant","content":"Welcome!"},
-			{"role":"user","content":"question","id":"msg-1"},
-			{"role":"assistant","content":"answer","id":"msg-1","feedback":"old"}
-		]`),
-		Reference: json.RawMessage(`[
-			{"chunks":[{"id":"chunk-1","kb_id":"kb-1","similarity":0.9}]}
-		]`),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"},{"role":"user","content":"question","id":"msg-1"},{"role":"assistant","content":"answer","id":"msg-1","feedback":"old","reference":{"chunks":[{"id":"chunk-1","kb_id":"kb-1","similarity":0.9}]}}]`),
 	}
 	store.dialogExists["tenant-owner|chat-1"] = true
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", TenantID: "tenant-owner"}
@@ -962,14 +934,7 @@ func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testin
 		ID:       "session-1",
 		DialogID: "chat-1",
 		UserID:   strPtr("user-1"),
-		Message: json.RawMessage(`[
-			{"role":"assistant","content":"Welcome!"},
-			{"role":"user","content":"question","id":"msg-1"},
-			{"role":"assistant","content":"answer","id":"msg-1","thumbup":true}
-		]`),
-		Reference: json.RawMessage(`[
-			{"chunks":[{"chunk_id":"chunk-1","dataset_id":"kb-1"}]}
-		]`),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"},{"role":"user","content":"question","id":"msg-1"},{"role":"assistant","content":"answer","id":"msg-1","thumbup":true,"reference":{"chunks":[{"chunk_id":"chunk-1","dataset_id":"kb-1"}]}}]`),
 	}
 	store.dialogExists["tenant-owner|chat-1"] = true
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", TenantID: "tenant-owner"}
@@ -1140,8 +1105,7 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 	store := newFakeSessionStore()
 	session := &entity.ChatSession{
 		ID: "session-1", DialogID: "dialog-1",
-		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
-		Reference: json.RawMessage(`[]`),
+		Message: json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 	}
 	store.dialogExists["user-1|dialog-1"] = true
 	store.sessions["session-1"] = session
@@ -1207,7 +1171,7 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 
 	t.Run("non-storing model tests", func(t *testing.T) {
 		stored := store.sessions["session-1"]
-		storedMessages, storedReference := string(stored.Message), string(stored.Reference)
+		storedMessages := string(stored.Message)
 		payload := []map[string]interface{}{
 			{"role": "system", "content": "client system prompt"},
 			{"role": "user", "content": "earlier question"},
@@ -1254,7 +1218,7 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 		}
 		wg.Wait()
 		stored = store.sessions["session-1"]
-		if len(store.updateCalled) != 2 || len(store.createCalled) != 0 || string(stored.Message) != storedMessages || string(stored.Reference) != storedReference {
+		if len(store.updateCalled) != 2 || len(store.createCalled) != 0 || string(stored.Message) != storedMessages {
 			t.Fatal("model tests changed stored history or created a session")
 		}
 		if _, err := svc.ChatCompletions(t.Context(), "user-1", "dialog-1", "", nil, "question without messages", nil, "", nil, map[string]interface{}{"store_history_messages": false}, false, false, nil); err == nil {
@@ -1266,11 +1230,10 @@ func TestChatCompletions_AppendOnly(t *testing.T) {
 func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
-		ID:        "session-1",
-		DialogID:  "dialog-1",
-		UserID:    strPtr("user-1"),
-		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-1",
+		DialogID: "dialog-1",
+		UserID:   strPtr("user-1"),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 	}
 	store.dialogs["dialog-1"] = &entity.Chat{
 		ID:         "dialog-1",
@@ -1324,11 +1287,10 @@ func TestChatCompletionsPassesRequestUserIDToPipeline(t *testing.T) {
 func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
-		ID:        "session-1",
-		DialogID:  "dialog-1",
-		UserID:    strPtr("user-1"),
-		Message:   json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-1",
+		DialogID: "dialog-1",
+		UserID:   strPtr("user-1"),
+		Message:  json.RawMessage(`[{"role":"assistant","content":"Welcome!"}]`),
 	}
 	store.dialogs["dialog-1"] = &entity.Chat{
 		ID:         "dialog-1",
@@ -1448,11 +1410,10 @@ func TestChatCompletionsStreamFinalCarriesDecoratedReference(t *testing.T) {
 func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	store := newFakeSessionStore()
 	store.sessions["session-1"] = &entity.ChatSession{
-		ID:        "session-1",
-		DialogID:  "dialog-1",
-		UserID:    strPtr("user-1"),
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-1",
+		DialogID: "dialog-1",
+		UserID:   strPtr("user-1"),
+		Message:  json.RawMessage(`[]`),
 	}
 	store.dialogs["dialog-1"] = &entity.Chat{
 		ID:           "dialog-1",
@@ -1540,17 +1501,13 @@ func TestParseMessages_LegacyWrappedObject(t *testing.T) {
 func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
 	svc := &ChatSessionService{}
 	payload := svc.buildSessionPayload(&entity.ChatSession{
-		ID:        "session-1",
-		DialogID:  "chat-1",
-		Message:   nil,
-		Reference: json.RawMessage(`null`),
+		ID:       "session-1",
+		DialogID: "chat-1",
+		Message:  nil,
 	}, nil, false)
 
 	if payload.Messages == nil {
 		t.Fatal("messages is nil")
-	}
-	if payload.Reference == nil {
-		t.Fatal("reference is nil")
 	}
 
 	body, err := json.Marshal(payload)
@@ -1560,8 +1517,8 @@ func TestBuildSessionPayload_EmptyCollectionsEncodeAsEmptyArrays(t *testing.T) {
 	if !strings.Contains(string(body), `"messages":[]`) {
 		t.Fatalf("messages did not encode as empty array: %s", string(body))
 	}
-	if !strings.Contains(string(body), `"reference":[]`) {
-		t.Fatalf("reference did not encode as empty array: %s", string(body))
+	if strings.Contains(string(body), `"reference":`) {
+		t.Fatalf("unexpected session reference: %s", string(body))
 	}
 }
 
@@ -1578,16 +1535,6 @@ func TestParseCollections_ReturnEmptySlicesForMissingOrNull(t *testing.T) {
 		}
 	}
 
-	referenceInputs := []json.RawMessage{
-		nil,
-		json.RawMessage(`null`),
-	}
-	for _, input := range referenceInputs {
-		got := parseReferenceList(input)
-		if got == nil || len(got) != 0 {
-			t.Fatalf("parseReferenceList(%s)=%#v", string(input), got)
-		}
-	}
 }
 
 func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
@@ -1601,15 +1548,6 @@ func TestParseCollections_ReturnNilForMalformedData(t *testing.T) {
 		}
 	}
 
-	referenceInputs := []json.RawMessage{
-		json.RawMessage(`not-json`),
-		json.RawMessage(`{"unexpected":[]}`),
-	}
-	for _, input := range referenceInputs {
-		if got := parseReferenceList(input); got != nil {
-			t.Fatalf("parseReferenceList(%s)=%#v, want nil", string(input), got)
-		}
-	}
 }
 
 // ===================================================================

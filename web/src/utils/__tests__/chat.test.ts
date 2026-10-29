@@ -1,4 +1,8 @@
+import { MessageType } from '@/constants/chat';
+import type { IReference } from '@/interfaces/database/chat';
 import {
+  buildMessageListWithUuid,
+  buildReferenceObject,
   decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   mergeAnswerChunk,
@@ -166,5 +170,41 @@ describe('replaceThinkToSection', () => {
 
   it('leaves text without think markers unchanged', () => {
     expect(replaceThinkToSection('plain answer')).toBe('plain answer');
+  });
+});
+
+describe('message references', () => {
+  it('preserves persisted references when assigning message ids', () => {
+    const reference: IReference = { chunks: [], doc_aggs: [], total: 0 };
+    const messages = buildMessageListWithUuid([
+      { role: MessageType.Assistant, content: 'answer', reference },
+    ]);
+    expect(messages[0].id).toBeTruthy();
+    expect(messages[0].reference).toBe(reference);
+  });
+
+  it('maps persisted citations and documents for the agent renderer', () => {
+    const chunk = {
+      id: 'chunk',
+      content: null,
+      citation_id: 'citation',
+      document_id: 'document',
+      document_name: 'Document',
+      dataset_id: 'dataset',
+      image_id: '',
+      similarity: 1,
+      vector_similarity: 1,
+      term_similarity: 1,
+      positions: [],
+    };
+    const document = { doc_id: 'document', doc_name: 'Document', count: 1 };
+    const reference = buildReferenceObject({
+      chunks: [chunk],
+      doc_aggs: [document],
+      total: 1,
+    });
+    expect(reference.chunks.citation).toBe(chunk);
+    expect(reference.doc_aggs.document).toBe(document);
+    expect(buildReferenceObject()).toEqual({ chunks: {}, doc_aggs: {} });
   });
 });
