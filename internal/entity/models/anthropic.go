@@ -95,7 +95,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	if err := applyAnthropicChatConfig(reqBody, chatModelConfig); err != nil {
+	if err := applyAnthropicChatConfig(reqBody, withClaudeSamplingPolicy(modelName, chatModelConfig)); err != nil {
 		return nil, err
 	}
 
@@ -596,7 +596,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	if err := applyAnthropicChatConfig(reqBody, modelConfig); err != nil {
+	if err := applyAnthropicChatConfig(reqBody, withClaudeSamplingPolicy(modelName, modelConfig)); err != nil {
 		return err
 	}
 
