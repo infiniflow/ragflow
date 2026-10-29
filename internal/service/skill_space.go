@@ -478,13 +478,13 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	// Detach from the caller's cancellation: the request context is canceled once
 	// the handler returns, which is before this goroutine reaches the database.
 	ctx = context.WithoutCancel(ctx)
-	bgCtx, bgCancel := context.WithTimeout(ctx, 120*time.Second)
-	defer bgCancel()
 
 	defer func() {
 		if r := recover(); r != nil {
 			common.Warn("Panic in asyncDeleteSpace, marking space as deleted", zap.Any("recover", r), zap.String("spaceID", spaceID))
-			_, _ = s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+			finalCtx, finalCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer finalCancel()
+			_, _ = s.spaceDAO.CASStatus(finalCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 		}
 	}()
 
@@ -504,14 +504,21 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 
 	// Step 2: Delete folder and storage via Go FileService
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
+	// DeleteFiles authorizes the folder tree against the creator's grant, and a
+	// tenant member can create the space while only the tenant owner may delete
+	// it, so tenantID is not the principal that owns the folder.
+	actingUserID := tenantID
+	if folder, err := s.fileDAO.GetByID(ctx, dao.DB, folderID); err == nil && folder != nil && folder.CreatedBy != "" {
+		actingUserID = folder.CreatedBy
+	}
 	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
 	defer cancelFS()
-	err := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID})
+	err := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID})
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
 		// Retry once with a delay (same ctxFS, still valid)
 		time.Sleep(5 * time.Second)
-		if retryErr := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID}); retryErr != nil {
+		if retryErr := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID}); retryErr != nil {
 			common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
 			// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
 		} else {
@@ -524,12 +531,16 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	// Step 3: Soft delete the space record (status "2" → "0")
 	// First, permanently remove any previously deleted spaces with the same tenant+name
 	// to avoid UNIQUE INDEX constraint violation when changing status from "2" to "0"
-	space, err := s.spaceDAO.GetByIDAnyStatus(bgCtx, dao.DB, spaceID)
+	// The index and folder steps can outlast one cleanup window, so the final status
+	// update gets its own budget; an expired context would strand the space at "2".
+	finalCtx, finalCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer finalCancel()
+	space, err := s.spaceDAO.GetByIDAnyStatus(finalCtx, dao.DB, spaceID)
 	if err == nil && space != nil {
-		_ = s.spaceDAO.DeletePermanentByName(bgCtx, dao.DB, space.TenantID, space.Name)
+		_ = s.spaceDAO.DeletePermanentByName(finalCtx, dao.DB, space.TenantID, space.Name)
 	}
 
-	swapped, err := s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+	swapped, err := s.spaceDAO.CASStatus(finalCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to update space status to deleted, spaceID=%s", spaceID), err)
 		return
