@@ -17,40 +17,26 @@
 package parser
 
 import (
-	"fmt"
+	"strconv"
 
 	"ragflow/internal/parser/media"
 )
 
-const (
-	maxEmbeddedDocumentImageBytes = 64 << 20
-	maxEmbeddedMediaItems         = 256
-)
-
 type embeddedMediaBudget struct {
-	maxImageBytes int
-	maxTotalBytes int
-	maxItems      int
-
-	items             int
-	totalBytes        int
-	oversizedImages   int
-	documentOverflows int
-	countExhausted    bool
+	budget        *media.Budget
+	items         int
+	nextSource    uint64
+	pendingSource string
 }
 
 func newEmbeddedMediaBudget() *embeddedMediaBudget {
-	return &embeddedMediaBudget{
-		maxImageBytes: media.ImageMaxBytes(),
-		maxTotalBytes: maxEmbeddedDocumentImageBytes,
-		maxItems:      maxEmbeddedMediaItems,
-	}
+	return &embeddedMediaBudget{budget: media.NewBudget()}
 }
 
-// include reserves budget for one image payload. The second result is false
-// when callers should stop walking images because the document item limit has
-// been reached. Byte-limit omissions can keep walking so later text and media
-// metadata remain available.
+// include reserves and charges one payload. The second result is false when
+// callers should stop walking images because the run item limit was reached.
+// Byte-limit omissions can keep walking so later text and media metadata
+// remain available.
 func (b *embeddedMediaBudget) include(data []byte) (bool, bool) {
 	if !b.reserveItem() {
 		return false, false
@@ -58,59 +44,44 @@ func (b *embeddedMediaBudget) include(data []byte) (bool, bool) {
 	return b.includeReservedSize(len(data)), true
 }
 
-// reserveItem caps the image fetch attempts for one document. Callers reserve
-// immediately before the I/O; skips that read no bytes are not charged.
+// reserveItem maps a sequential parser payload onto media.Budget's
+// source-aware admission. Each attempt gets a fresh source, so the shared
+// implementation enforces the count and byte caps without duplicate-source
+// collapsing changing the parser output count.
 func (b *embeddedMediaBudget) reserveItem() bool {
-	if b.countExhausted {
+	if b == nil {
+		return true
+	}
+	if b.budget == nil {
+		b.budget = media.NewBudget()
+	}
+	source := strconv.FormatUint(b.nextSource, 10)
+	b.nextSource++
+	if !b.budget.Reserve(source) {
 		return false
 	}
-	if b.items >= b.maxItems {
-		b.countExhausted = true
-		return false
-	}
+	b.pendingSource = source
 	b.items++
 	return true
 }
 
-// includeReservedSize charges a payload against the per-image and document
-// byte limits without retaining or decoding it just to measure its size.
+// includeReservedSize charges the payload reserved by the preceding
+// reserveItem call through the same byte admission used by source-aware media.
 func (b *embeddedMediaBudget) includeReservedSize(size int) bool {
-	if size > b.maxImageBytes {
-		b.oversizedImages++
+	if b == nil {
+		return true
+	}
+	if b.budget == nil || b.pendingSource == "" {
 		return false
 	}
-	if size > b.maxTotalBytes-b.totalBytes {
-		b.documentOverflows++
-		return false
-	}
-	b.totalBytes += size
-	return true
+	source := b.pendingSource
+	b.pendingSource = ""
+	return b.budget.Include(source, size)
 }
 
 func (b *embeddedMediaBudget) warnings() []string {
 	if b == nil {
 		return nil
 	}
-	var warnings []string
-	if b.oversizedImages > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"omitted %d embedded image payload(s) larger than the %d-byte per-image limit",
-			b.oversizedImages,
-			b.maxImageBytes,
-		))
-	}
-	if b.documentOverflows > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"omitted %d embedded image payload(s) after reaching the %d-byte document image budget",
-			b.documentOverflows,
-			b.maxTotalBytes,
-		))
-	}
-	if b.countExhausted {
-		warnings = append(warnings, fmt.Sprintf(
-			"stopped extracting embedded images after the %d-item document limit",
-			b.maxItems,
-		))
-	}
-	return warnings
+	return b.budget.Warnings()
 }

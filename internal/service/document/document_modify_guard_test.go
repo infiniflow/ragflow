@@ -80,6 +80,22 @@ func TestValidateDocumentModifiable_TaskStatuses(t *testing.T) {
 	}
 }
 
+func TestValidateDocumentModifiableRejectsHistoricalActiveTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskAt(t, "task-active", "user-1", "doc-1", "kb-1", common.RUNNING, 100)
+	insertTestIngestionTaskAt(t, "task-done", "user-1", "doc-1", "kb-1", common.COMPLETED, 200)
+
+	svc := testDocumentService(t)
+	code, err := svc.validateDocumentModifiable(documentTestContext(t.Context()), &entity.Document{ID: "doc-1"})
+	if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "cannot be modified") {
+		t.Fatalf("validateDocumentModifiable = (%v, %v), want an active-task rejection", code, err)
+	}
+}
+
 // updateDatasetDocumentRejected asserts that editing a document with the given
 // task status is rejected by the modifiable guard.
 func updateDatasetDocumentRejected(t *testing.T, status string, req *UpdateDatasetDocumentRequest, present map[string]bool) {

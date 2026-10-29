@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
@@ -1079,18 +1080,64 @@ func TestIngestionTaskServiceRemovePurgesTaskState(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
-	var purged []string
+	purged := make(chan string, 1)
 	svc := NewIngestionTaskService()
 	svc.purgeTaskState = func(_ context.Context, taskID string) error {
-		purged = append(purged, taskID)
+		purged <- taskID
 		return nil
 	}
 	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
-	if len(purged) != 1 || purged[0] != "task-1" {
-		t.Fatalf("purged = %v, want [task-1]", purged)
+	select {
+	case taskID := <-purged:
+		if taskID != "task-1" {
+			t.Fatalf("purged task = %q, want task-1", taskID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Remove did not schedule task-state purge")
 	}
+}
+
+func TestIngestionTaskServiceRemoveDoesNotWaitForTaskStatePurge(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-remove-async", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(ctx context.Context, _ string) error {
+		close(started)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.Remove(t.Context(), "task-remove-async", sptr("user-1"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Remove failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Remove blocked on task-state purge")
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background task-state purge did not start")
+	}
+	close(release)
 }
 
 func TestIngestionTaskServiceRemoveKeepsDeleteWhenPurgeFails(t *testing.T) {

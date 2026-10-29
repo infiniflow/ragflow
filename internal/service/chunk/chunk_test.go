@@ -301,7 +301,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "ingestion task is RUNNING") {
+	if !strings.Contains(err.Error(), "ingestion task task-1 is RUNNING") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -2771,6 +2771,45 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	}
 	if calledDocID != "doc-1" {
 		t.Fatalf("cancelIngestionTaskFunc called with doc %s, want doc-1", calledDocID)
+	}
+}
+
+func TestStopParsingRecognizesHistoricalActiveTask(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "user-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task index: %v", err)
+	}
+	oldTime, newTime := int64(100), int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID: "task-active", UserID: "user-1", DocumentID: "doc-1", DatasetID: "kb-1",
+			Status: common.RUNNING, BaseModel: entity.BaseModel{CreateTime: &oldTime},
+		},
+		{
+			ID: "task-done", UserID: "user-1", DocumentID: "doc-1", DatasetID: "kb-1",
+			Status: common.COMPLETED, BaseModel: entity.BaseModel{CreateTime: &newTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	svc := newParseTestService(t)
+	called := false
+	svc.cancelIngestionTaskFunc = func(context.Context, *entity.Document) error {
+		called = true
+		return nil
+	}
+	ctx := chunkTestContext(t, "user-1", "user-1")
+	if _, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}}); err != nil {
+		t.Fatalf("StopParsing: %v", err)
+	}
+	if !called {
+		t.Fatal("historical active task did not reach CancelDocParse")
 	}
 }
 

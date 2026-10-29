@@ -158,6 +158,44 @@ func TestBudgetReserveBytesRejectsBeforeRead(t *testing.T) {
 	}
 }
 
+func TestBudgetRejectedBytesDoNotConsumeSourceSlots(t *testing.T) {
+	budget := testBudget(2, 8, 5)
+	if budget.ReserveBytes("too-large-1.png", 6) {
+		t.Fatal("first oversized source was admitted")
+	}
+	if budget.ReserveBytes("too-large-2.png", 6) {
+		t.Fatal("second oversized source was admitted")
+	}
+	if !budget.ReserveBytes("small.png", 1) || !budget.Reserve("small.png") || !budget.Include("small.png", 1) {
+		t.Fatal("byte-rejected sources exhausted the source budget")
+	}
+	if budget.sourcesUsed != 1 || budget.totalBytes != 1 {
+		t.Fatalf("sources=%d bytes=%d, want 1 source and 1 byte", budget.sourcesUsed, budget.totalBytes)
+	}
+	if budget.totalOverflows != 2 {
+		t.Fatalf("total overflows = %d, want 2", budget.totalOverflows)
+	}
+}
+
+func TestBudgetReservePreservesExistingAdmissionState(t *testing.T) {
+	budget := testBudget(2, 8, 5)
+	if !budget.ReserveBytes("a.png", 3) {
+		t.Fatal("ReserveBytes rejected a valid source")
+	}
+	if !budget.Include("a.png", 3) {
+		t.Fatal("source was not admitted")
+	}
+	if !budget.Reserve("a.png") {
+		t.Fatal("second Reserve rejected an included source")
+	}
+	if !budget.Include("a.png", 3) {
+		t.Fatal("Reserve overwrote the included state")
+	}
+	if budget.totalBytes != 3 || budget.sourcesUsed != 1 {
+		t.Fatalf("sources=%d bytes=%d, want 1 source and 3 bytes", budget.sourcesUsed, budget.totalBytes)
+	}
+}
+
 func TestBudgetNoteOversizedDoesNotConsumeItem(t *testing.T) {
 	budget := testBudget(2, 4, 16)
 	if !budget.Reserve("a.png") {

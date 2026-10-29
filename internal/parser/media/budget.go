@@ -67,8 +67,14 @@ func (b *Budget) Reserve(source string) bool {
 	if b == nil {
 		return true
 	}
-	if entry, ok := b.sources[source]; ok && entry.reserved {
-		return true
+	entry, ok := b.sources[source]
+	if ok {
+		if entry.charged {
+			return false
+		}
+		if entry.reserved {
+			return true
+		}
 	}
 	if b.countExhausted {
 		return false
@@ -81,7 +87,11 @@ func (b *Budget) Reserve(source string) bool {
 		b.sources = make(map[string]*budgetSource)
 	}
 	b.sourcesUsed++
-	b.sources[source] = &budgetSource{reserved: true}
+	if entry == nil {
+		entry = &budgetSource{}
+		b.sources[source] = entry
+	}
+	entry.reserved = true
 	return true
 }
 
@@ -103,17 +113,7 @@ func (b *Budget) Include(source string, size int) bool {
 	if entry.included {
 		return true
 	}
-	if entry.charged {
-		return false
-	}
-	if size > b.maxImageBytes {
-		entry.charged = true
-		b.oversizedImages++
-		return false
-	}
-	if int64(size) > b.maxTotalBytes-b.totalBytes {
-		entry.charged = true
-		b.totalOverflows++
+	if !b.admitBytes(entry, size) {
 		return false
 	}
 	entry.included = true
@@ -143,6 +143,10 @@ func (b *Budget) ReserveBytes(source string, size int) bool {
 	if entry.included {
 		return true
 	}
+	return b.admitBytes(entry, size)
+}
+
+func (b *Budget) admitBytes(entry *budgetSource, size int) bool {
 	if entry.charged {
 		return false
 	}

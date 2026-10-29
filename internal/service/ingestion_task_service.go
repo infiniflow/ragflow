@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -29,6 +30,56 @@ const (
 	ingestionEventTerminal
 	ingestionEventSystem
 )
+
+const (
+	taskStateCleanupTimeout  = 5 * time.Second
+	taskStateCleanupCapacity = 1024
+)
+
+type taskStatePurgeRequest struct {
+	ctx       context.Context
+	taskID    string
+	purgeTask func(context.Context, string) error
+}
+
+var taskStateCleanupQueue = struct {
+	once  sync.Once
+	queue chan taskStatePurgeRequest
+}{
+	queue: make(chan taskStatePurgeRequest, taskStateCleanupCapacity),
+}
+
+func scheduleTaskStatePurge(req taskStatePurgeRequest) bool {
+	taskStateCleanupQueue.once.Do(func() {
+		go func() {
+			for req := range taskStateCleanupQueue.queue {
+				started := time.Now()
+				ctx, cancel := context.WithTimeout(context.WithoutCancel(req.ctx), taskStateCleanupTimeout)
+				err := req.purgeTask(ctx, req.taskID)
+				cancel()
+				elapsed := time.Since(started)
+				if err != nil {
+					common.Warn("purge task state after delete",
+						zap.String("task_id", req.taskID),
+						zap.Duration("elapsed", elapsed),
+						zap.Error(err),
+					)
+					continue
+				}
+				common.Debug("purged task state after delete",
+					zap.String("task_id", req.taskID),
+					zap.Duration("elapsed", elapsed),
+				)
+			}
+		}()
+	})
+	select {
+	case taskStateCleanupQueue.queue <- req:
+		return true
+	default:
+		return false
+	}
+}
 
 type InvalidTaskTransitionError struct {
 	TaskID string
@@ -296,6 +347,22 @@ func (s *IngestionTaskService) SupersedeUnstartedTask(ctx context.Context, taskI
 	}
 }
 
+// PrepareDocumentTasksForCleanup freezes every unstarted task for a document
+// in one database transaction and rejects the cleanup if any task is already
+// RUNNING or STOPPING. The service settles the run ledgers of tasks frozen by
+// that transaction before returning their complete task set.
+func (s *IngestionTaskService) PrepareDocumentTasksForCleanup(ctx context.Context, documentID string) ([]*entity.IngestionTask, error) {
+	batch, err := s.ingestionTaskDAO.FreezeForCleanup(ctx, dao.DB, documentID)
+	if err != nil {
+		return nil, err
+	}
+	for _, task := range batch.Frozen {
+		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
+		s.recordRunTerminal(ctx, task, "Task superseded by a new parse request.")
+	}
+	return batch.Tasks, nil
+}
+
 func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string) error {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
@@ -363,16 +430,21 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	if err != nil {
 		return nil, err
 	}
-	// The row is gone, so a purge failure cannot be retried by the caller;
-	// report it and let the cache TTL reclaim the entries.
+	// The row is gone, so purge failures cannot be retried by the caller and
+	// TTL remains the backstop. Keep backend I/O off the request path; RemoveMany
+	// may otherwise accumulate one slow Kvrocks round-trip per deleted task.
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
 		purgeTaskState = ingestionpipeline.PurgeTaskState
 	}
-	if err := purgeTaskState(ctx, taskID); err != nil {
-		common.Warn("purge task state after delete",
+	if !scheduleTaskStatePurge(taskStatePurgeRequest{
+		ctx:       ctx,
+		taskID:    taskID,
+		purgeTask: purgeTaskState,
+	}) {
+		common.Warn("task-state cleanup queue is full",
 			zap.String("task_id", taskID),
-			zap.Error(err),
+			zap.Int("capacity", taskStateCleanupCapacity),
 		)
 	}
 	return info, nil

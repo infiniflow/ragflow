@@ -817,6 +817,17 @@ func allowHistoricalIngestionTasks(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func assertNoIngestionTasks(t *testing.T, db *gorm.DB, documentID string) {
+	t.Helper()
+	tasks, err := dao.NewIngestionTaskDAO().ListByDocumentID(t.Context(), db, documentID)
+	if err != nil {
+		t.Fatalf("list ingestion tasks for %s: %v", documentID, err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("document %s still has ingestion tasks: %+v", documentID, tasks)
+	}
+}
+
 func insertTestFile2Document(t *testing.T, id, fileID, docID string) {
 	t.Helper()
 	f2d := &entity.File2Document{
@@ -982,6 +993,7 @@ func TestDeleteDocumentFullPurgesEveryTaskManifest(t *testing.T) {
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err == nil {
 		t.Fatal("document still exists after deletion")
 	}
+	assertNoIngestionTasks(t, db, "doc-1")
 }
 
 func TestRemoveDocumentKeepFilePurgesEveryTaskManifest(t *testing.T) {
@@ -1009,6 +1021,7 @@ func TestRemoveDocumentKeepFilePurgesEveryTaskManifest(t *testing.T) {
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err == nil {
 		t.Fatal("document still exists after removal")
 	}
+	assertNoIngestionTasks(t, db, "doc-1")
 }
 
 func TestClearDocumentParseResultsPurgesEveryTerminalTaskManifest(t *testing.T) {
@@ -1041,38 +1054,104 @@ func TestClearDocumentParseResultsPurgesEveryTerminalTaskManifest(t *testing.T) 
 	} else if remaining != nil {
 		t.Fatalf("terminal task survived cleanup: %+v", remaining)
 	}
+	assertNoIngestionTasks(t, db, "doc-1")
 }
 
-func TestClearDocumentParseResultsSkipsRunningTaskManifest(t *testing.T) {
+func TestDocumentCleanupRejectsActiveHistoricalTask(t *testing.T) {
+	for _, status := range []string{common.RUNNING, common.STOPPING} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			allowHistoricalIngestionTasks(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			insertTestIngestionTaskAt(t, "task-active", "user-1", "doc-1", "kb-1", status, 100)
+			insertTestIngestionTaskAt(t, "task-done", "user-1", "doc-1", "kb-1", common.COMPLETED, 200)
+
+			svc := testDocumentService(t)
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+
+			tests := []struct {
+				name string
+				run  func() error
+			}{
+				{
+					name: "delete document",
+					run:  func() error { return svc.deleteDocumentFull(t.Context(), "doc-1") },
+				},
+				{
+					name: "remove document keep file",
+					run:  func() error { return svc.RemoveDocumentKeepFile(t.Context(), "doc-1") },
+				},
+				{
+					name: "clear parse results",
+					run:  func() error { return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1") },
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					purged := map[string]bool{}
+					svc.purgeTaskState = func(_ context.Context, taskID string) error {
+						purged[taskID] = true
+						return nil
+					}
+					if err := tt.run(); err == nil {
+						t.Fatalf("cleanup succeeded with a historical %s task", status)
+					}
+					if len(purged) != 0 {
+						t.Fatalf("purged task state %v before rejecting an active task", purged)
+					}
+					for _, taskID := range []string{"task-active", "task-done"} {
+						if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, taskID); err != nil {
+							t.Fatalf("task %s was removed after rejected cleanup: %v", taskID, err)
+						}
+					}
+					stored, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatalf("document was removed after rejected cleanup: %v", err)
+					}
+					if stored.TokenNum != 10 || stored.ChunkNum != 5 {
+						t.Fatalf("document counters changed after rejected cleanup: token=%d chunk=%d", stored.TokenNum, stored.ChunkNum)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCancelDocParseStopsHistoricalActiveTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	allowHistoricalIngestionTasks(t, db)
-	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
-	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-	insertTestIngestionTaskAt(t, "task-running", "user-1", "doc-1", "kb-1", common.RUNNING, 100)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskAt(t, "task-active", "user-1", "doc-1", "kb-1", common.RUNNING, 100)
 	insertTestIngestionTaskAt(t, "task-done", "user-1", "doc-1", "kb-1", common.COMPLETED, 200)
 
 	svc := testDocumentService(t)
-	purged := map[string]bool{}
-	svc.purgeTaskState = func(_ context.Context, taskID string) error {
-		purged[taskID] = true
-		return nil
-	}
 	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
-		t.Fatalf("clearDocumentParseResults: %v", err)
+	if err := svc.CancelDocParse(t.Context(), doc); err != nil {
+		t.Fatalf("CancelDocParse: %v", err)
 	}
-	if purged["task-running"] {
-		t.Fatal("a RUNNING task's manifest must not be purged")
+	active, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-active")
+	if err != nil {
+		t.Fatalf("reload historical task: %v", err)
 	}
-	if !purged["task-done"] {
-		t.Fatal("the terminal task's manifest was not purged")
+	if active.Status != common.STOPPING {
+		t.Fatalf("historical task status = %q, want %q", active.Status, common.STOPPING)
 	}
-	if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-running"); err != nil {
-		t.Fatalf("RUNNING task was removed: %v", err)
+	latest, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-done")
+	if err != nil {
+		t.Fatalf("reload latest task: %v", err)
+	}
+	if latest.Status != common.COMPLETED {
+		t.Fatalf("latest task status = %q, want %q", latest.Status, common.COMPLETED)
 	}
 }
 
@@ -3745,8 +3824,10 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.RUNNING {
-		t.Fatalf("task status = %q, want %q", task.Status, common.RUNNING)
+	// The injected status change belongs to the rolled-back delete transaction,
+	// so the frozen task remains present in its pre-failure terminal state.
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPED)
 	}
 
 	updatedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")

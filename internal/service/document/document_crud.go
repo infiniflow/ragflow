@@ -280,30 +280,22 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
+
+	// Freeze and purge every task before any row is deleted. A purge failure
+	// leaves the document in place so a retry can still find the cache state.
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
+		return err
+	}
+	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {
+		return err
+	}
 
 	// Release an uncommitted parse hold before the document disappears.
 	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
 		if releaseErr := billingService.ReleaseDocumentHold(ctx, docID); releaseErr != nil {
 			common.Warn(fmt.Sprintf("failed to release billing hold for doc %s: %v", docID, releaseErr))
-		}
-	}
-
-	// Purge every task's run manifest before any task or document row is
-	// deleted. A purge failure must leave the document and its tasks in place
-	// so a retry can still find the state it needs.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
-		return err
-	}
-
-	// Delete tasks from DB
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", doc.ID), err)
-		return err
-	}
-	if ingestionTask != nil {
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
-			return err
 		}
 	}
 
@@ -332,22 +324,21 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
+
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
-	// Purge every task's run manifest before removing any task or the document.
+
+	// Freeze and purge every task before any task or document row is touched.
+	// Active workers must be stopped before this path can run.
 	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
 		return err
 	}
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
-	}
-	if ingestionTask != nil {
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
-			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
-		}
+	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {
+		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {

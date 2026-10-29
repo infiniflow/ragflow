@@ -228,7 +228,9 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		if s.runBudget != nil {
 			// Repeated sources share one admission, so a document made of one
 			// repeated data URI stays bounded without capping its references.
-			if !s.runBudget.Reserve(src) || !s.runBudget.Include(src, size) {
+			if !s.runBudget.ReserveBytes(src, int(size)) ||
+				!s.runBudget.Reserve(src) ||
+				!s.runBudget.Include(src, int(size)) {
 				s.memoizeDataURI(src, nil)
 				return "", nil, false
 			}

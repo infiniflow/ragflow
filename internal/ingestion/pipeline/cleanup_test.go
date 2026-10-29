@@ -35,6 +35,7 @@ type cleanupFakeStore struct {
 	sets     map[string]map[string]bool
 	ttl      map[string]time.Duration
 	failRead map[string]bool
+	bytes    map[string]int64
 }
 
 func newCleanupFakeStore() *cleanupFakeStore {
@@ -43,6 +44,7 @@ func newCleanupFakeStore() *cleanupFakeStore {
 		sets:     map[string]map[string]bool{},
 		ttl:      map[string]time.Duration{},
 		failRead: map[string]bool{},
+		bytes:    map[string]int64{},
 	}
 }
 
@@ -54,6 +56,55 @@ func (f *cleanupFakeStore) Set(_ context.Context, key, value string, exp time.Du
 	f.kv[key] = value
 	f.ttl[key] = exp
 	return true
+}
+
+func (f *cleanupFakeStore) MediaPut(
+	_ context.Context,
+	mediaKey, digestKey, stateKey, digest, value string,
+	manifestKey, manifestMember string,
+	maxImages int,
+	maxBytes int64,
+	ttl time.Duration,
+) (bool, bool, error) {
+	if f.sets[digestKey][digest] {
+		if f.kv[mediaKey] == "" {
+			f.kv[mediaKey] = value
+			f.ttl[mediaKey] = ttl
+			f.ttl[digestKey] = ttl
+			f.ttl[stateKey] = ttl
+			if manifestKey != "" {
+				if f.sets[manifestKey] == nil {
+					f.sets[manifestKey] = map[string]bool{}
+				}
+				f.sets[manifestKey][manifestMember] = true
+				f.ttl[manifestKey] = ttl
+			}
+		}
+		return true, false, nil
+	}
+	if maxImages > 0 && len(f.sets[digestKey]) >= maxImages {
+		return false, false, nil
+	}
+	if maxBytes > 0 && int64(len(value)) > maxBytes-f.bytes[stateKey] {
+		return false, false, nil
+	}
+	f.kv[mediaKey] = value
+	f.ttl[mediaKey] = ttl
+	if manifestKey != "" {
+		if f.sets[manifestKey] == nil {
+			f.sets[manifestKey] = map[string]bool{}
+		}
+		f.sets[manifestKey][manifestMember] = true
+		f.ttl[manifestKey] = ttl
+	}
+	if f.sets[digestKey] == nil {
+		f.sets[digestKey] = map[string]bool{}
+	}
+	f.sets[digestKey][digest] = true
+	f.bytes[stateKey] += int64(len(value))
+	f.ttl[digestKey] = ttl
+	f.ttl[stateKey] = ttl
+	return true, true, nil
 }
 
 func (f *cleanupFakeStore) SAdd(_ context.Context, key, member string) bool {
@@ -79,6 +130,7 @@ func (f *cleanupFakeStore) SMembers(_ context.Context, key string) ([]string, er
 func (f *cleanupFakeStore) Delete(_ context.Context, key string) bool {
 	delete(f.kv, key)
 	delete(f.sets, key)
+	delete(f.bytes, key)
 	return true
 }
 
@@ -100,8 +152,8 @@ func seedTaskManifests(t *testing.T, backend *cleanupFakeStore, taskID string) {
 	if _, err := mediacache.New(backend, taskID).Put(ctx, "html", "image/png", []byte("hello")); err != nil {
 		t.Fatalf("seed media cache: %v", err)
 	}
-	if len(backend.kv) != 2 || len(backend.sets) != 2 {
-		t.Fatalf("seeded state = %d values, %d manifests, want 2 and 2", len(backend.kv), len(backend.sets))
+	if len(backend.kv) != 2 || len(backend.sets) != 3 {
+		t.Fatalf("seeded state = %d values, %d sets, want 2 and 3", len(backend.kv), len(backend.sets))
 	}
 }
 

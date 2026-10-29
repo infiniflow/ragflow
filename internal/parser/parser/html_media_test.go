@@ -201,6 +201,28 @@ func TestHTMLParser_SkipsOversizedInlineImagePayload(t *testing.T) {
 	}
 }
 
+func TestHTMLParserByteRejectedDataURIsDoNotConsumeSourceSlots(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "8")
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
+	large1 := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("aaaaaa"))
+	large2 := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("bbbbbb"))
+	small := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("c"))
+	input := `<img src="` + large1 + `"><img src="` + large2 + `"><img src="` + small + `" alt="small">`
+
+	ctx, cache := recordingMediaContext()
+	result := NewHTMLParser().ParseWithResult(ctx, "byte-limit.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 || string(cache.puts[0].data) != "c" {
+		t.Fatalf("cache puts = %+v, want only the small image", cache.puts)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "5-byte run image budget") {
+		t.Fatalf("missing total-byte warning: %v", result.Warnings)
+	}
+}
+
 // TestHTMLParser_RepeatedDataURIsShareOneSource pins that an icon repeated
 // across a document is decoded and written once, while every reference is
 // still emitted with the same MediaRef.

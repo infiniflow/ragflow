@@ -59,17 +59,14 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeDocumentTaskStateForCleanup removes the run-scoped cache state for
-// every ingestion task of a document before its rows are deleted. The single
-// bounded context makes Redis outages and hung clients observable to the
-// caller instead of allowing a destructive task/document delete to proceed
-// with stale cache state. RUNNING and STOPPING tasks are skipped: an in-flight
-// worker still owns its cache, and DeleteIfTerminal leaves those rows in
-// place.
+// purgeDocumentTaskStateForCleanup freezes every queued task, rejects the
+// cleanup if any task is RUNNING or STOPPING, and only then removes the
+// run-scoped cache state for the complete task set. The bounded context makes
+// Redis outages and hung clients observable before a destructive cleanup.
 func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, docID string) error {
-	tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, docID)
+	tasks, err := s.ingestionTaskSvc.PrepareDocumentTasksForCleanup(ctx, docID)
 	if err != nil {
-		return fmt.Errorf("list ingestion tasks for document %s: %w", docID, err)
+		return fmt.Errorf("prepare ingestion tasks for document %s cleanup: %w", docID, err)
 	}
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
@@ -79,9 +76,6 @@ func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, 
 	defer cancel()
 	var errs []error
 	for _, task := range tasks {
-		if common.IsRunningOrStopping(task.Status) {
-			continue
-		}
 		if err := purgeTaskState(batchCtx, task.ID); err != nil {
 			errs = append(errs, fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err))
 		}
@@ -297,15 +291,14 @@ func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
 // up front instead of partially cleaning some docs then failing.
 func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
+		tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
-			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
+			return fmt.Errorf("check ingestion tasks for %s: %w", docID, err)
 		}
-		if task == nil {
-			continue
-		}
-		if common.IsRunningOrStopping(task.Status) {
-			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", docID, task.Status)
+		for _, task := range tasks {
+			if common.IsRunningOrStopping(task.Status) {
+				return fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before re-parsing", docID, task.ID, task.Status)
+			}
 		}
 	}
 	return nil
@@ -316,44 +309,17 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		return fmt.Errorf("document is nil")
 	}
 
-	// Refuse to clear a non-terminal ingestion task. An in-flight worker
-	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
-	// corrupt the new run's results. The caller must stop the task first
-	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
-	// SCHEDULED.
-	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
-	if err != nil {
-		return fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
-	}
-	taskExisted := task != nil
-	if task != nil {
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
-			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
-		}
-		if task.Status == common.CREATED || task.Status == common.SCHEDULED {
-			if err := s.ingestionTaskSvc.SupersedeUnstartedTask(ctx, task.ID); err != nil {
-				return fmt.Errorf("supersede queued ingestion task for document %s: %w", doc.ID, err)
-			}
-			task.Status = common.STOPPED
-		}
-		taskExisted = true
-	}
-	if task != nil {
-		if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID); err != nil {
-			return err
-		}
-	}
-
-	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
-	// RUNNING/STOPPING tasks untouched so the check-then-delete window
-	// between GetByDocumentID and the delete cannot delete a task that just
-	// transitioned to RUNNING. In that case, do not clear its parse results.
-	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID)
-	if err != nil {
+	// Freeze queued work and reject any active worker before cache or result
+	// cleanup. The lookup covers every task for the document, including
+	// historical duplicate rows left by pre-index deployments.
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID); err != nil {
 		return err
 	}
-	if taskExisted && deleted == 0 {
-		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
+
+	// Re-check and delete every frozen task in one transaction. Any task that
+	// appeared after the freeze keeps the document and its results intact.
+	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, doc.ID); err != nil {
+		return err
 	}
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
@@ -587,30 +553,32 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 // endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
 var errParseNotRunning = errors.New("parse task is not in running status")
 
-// CancelDocParse stops the ingestion task for the document by calling
-// RequestStop (STOPPING).
-// It returns errParseNotRunning if the document has neither an in-flight
-// ingestion task (CREATED/SCHEDULED/RUNNING/STOPPING) nor an already stopped
-// task (STOPPED).
+// CancelDocParse stops every active ingestion task for the document. Historical
+// duplicate rows must all reach STOPPING so no worker keeps writing after a
+// newer task has already finished. It returns errParseNotRunning when none is
+// active and the latest task is not already STOPPED.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
-	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
+		return fmt.Errorf("failed to list ingestion tasks for %s: %w", doc.ID, err)
 	}
-
-	inFlight := task != nil && common.IsActiveTaskStatus(task.Status)
-	isStopped := task != nil && task.Status == common.STOPPED
-	if !inFlight && !isStopped {
-		return errParseNotRunning
-	}
-
-	if inFlight {
-		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
+	var active []*entity.IngestionTask
+	for _, task := range tasks {
+		if common.IsActiveTaskStatus(task.Status) {
+			active = append(active, task)
 		}
 	}
-
-	return nil
+	latestStopped := len(tasks) > 0 && tasks[0].Status == common.STOPPED
+	if len(active) == 0 && !latestStopped {
+		return errParseNotRunning
+	}
+	var errs []error
+	for _, task := range active {
+		if _, stopErr := s.ingestionTaskSvc.RequestStop(ctx, task.ID); stopErr != nil {
+			errs = append(errs, fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, stopErr))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // deleteDocumentChunkImages removes source chunk image objects in bounded

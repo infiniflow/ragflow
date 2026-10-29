@@ -398,22 +398,22 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	if doc == nil || doc.ID == "" {
 		return common.CodeDataError, errors.New("document is nil or has empty ID")
 	}
-	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to get ingestion task for document %s: %w", doc.ID, err)
+		return common.CodeServerError, fmt.Errorf("failed to list ingestion tasks for document %s: %w", doc.ID, err)
 	}
-	if task == nil {
-		return common.CodeSuccess, nil
+	for _, task := range tasks {
+		switch {
+		case common.IsActiveTaskStatus(task.Status):
+			return common.CodeDataError, fmt.Errorf(
+				"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+		case common.IsTerminalTaskStatus(task.Status):
+			continue
+		default:
+			return common.CodeDataError, fmt.Errorf("document has unrecognized task status %q", task.Status)
+		}
 	}
-	switch {
-	case common.IsActiveTaskStatus(task.Status):
-		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
-	case common.IsTerminalTaskStatus(task.Status):
-		return common.CodeSuccess, nil
-	default:
-		return common.CodeDataError, fmt.Errorf("document has unrecognized task status %q", task.Status)
-	}
+	return common.CodeSuccess, nil
 }
 
 func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {

@@ -679,8 +679,9 @@ func TestEPUBParserMissingZipEntryDoesNotConsumeImageBudget(t *testing.T) {
 // without reading bytes, so it must not consume an image attempt either.
 func TestEPUBParserOversizedZipImageDoesNotConsumeImageBudget(t *testing.T) {
 	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "8")
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	ctx, cache := recordingMediaContext()
-	content := epubTestHTML(strings.Repeat(`<img src="Images/huge.png">`, maxEmbeddedMediaItems) +
+	content := epubTestHTML(strings.Repeat(`<img src="Images/huge.png">`, 256) +
 		`<img src="Images/ok.png" alt="ok">`)
 	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
 		name:    "ch1.xhtml",
@@ -697,6 +698,31 @@ func TestEPUBParserOversizedZipImageDoesNotConsumeImageBudget(t *testing.T) {
 	}
 	if !strings.Contains(epubTestWarningText(res), "larger than the 8-byte per-image limit") {
 		t.Fatalf("missing oversized-image warning: %v", res.Warnings)
+	}
+}
+
+func TestEPUBParserByteRejectedEntriesDoNotConsumeImageSlots(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "8")
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
+	ctx, cache := recordingMediaContext()
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name: "ch1.xhtml",
+		content: epubTestHTML(
+			`<img src="Images/large-1.png"><img src="Images/large-2.png"><img src="Images/small.png" alt="small">`),
+	}}, []epubTestImage{
+		{name: "Images/large-1.png", content: strings.Repeat("a", 6)},
+		{name: "Images/large-2.png", content: strings.Repeat("b", 6)},
+		{name: "Images/small.png", content: "c"},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 || string(cache.puts[0].data) != "c" {
+		t.Fatalf("cache puts = %+v, want only the small image", cache.puts)
+	}
+	if !strings.Contains(epubTestWarningText(res), "5-byte run image budget") {
+		t.Fatalf("missing total-byte warning: %v", res.Warnings)
 	}
 }
 
@@ -883,6 +909,52 @@ func TestEPUBParserRepeatedZipImageAcrossChaptersReadsAndWritesOnce(t *testing.T
 	}
 	if len(res.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", res.Warnings)
+	}
+}
+
+func TestEPUBParserRepeatedRejectedZipImageAcrossChaptersWarnsOnce(t *testing.T) {
+	tests := []struct {
+		name     string
+		maxImage string
+		maxTotal string
+		payload  string
+		wantWarn string
+	}{
+		{
+			name:     "oversized",
+			maxImage: "8",
+			maxTotal: "8",
+			payload:  strings.Repeat("x", 9),
+			wantWarn: "larger than the 8-byte per-image limit",
+		},
+		{
+			name:     "total bytes",
+			maxImage: "8",
+			maxTotal: "5",
+			payload:  strings.Repeat("x", 6),
+			wantWarn: "5-byte run image budget",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", tt.maxImage)
+			t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", tt.maxTotal)
+			ctx, cache := recordingMediaContext()
+			res := parseTestEPUBContext(t, ctx, []epubTestChapter{
+				{name: "ch1.xhtml", content: epubTestHTML(`<img src="Images/rejected.png">`)},
+				{name: "ch2.xhtml", content: epubTestHTML(`<img src="Images/rejected.png">`)},
+			}, []epubTestImage{{name: "Images/rejected.png", content: tt.payload}})
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			if cache.putCalls != 0 {
+				t.Fatalf("cache writes = %+v, want none", cache.puts)
+			}
+			warnings := epubTestWarningText(res)
+			if strings.Count(warnings, tt.wantWarn) != 1 {
+				t.Fatalf("warnings = %q, want one %q entry", warnings, tt.wantWarn)
+			}
+		})
 	}
 }
 

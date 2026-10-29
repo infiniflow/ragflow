@@ -251,10 +251,11 @@ func TestPipelineRunAttachesInjectedMediaCacheWithTaskScope(t *testing.T) {
 			"path": ["begin", "stage"],
 			"graph": {"nodes": []}
 		}
-	}`), taskID, WithDocumentID("doc-media-cache"), WithMediaCache(cache))
+	}`), taskID, WithDocumentID("doc-media-cache"))
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
+	pipe.media = cache
 
 	out, err := pipe.Run(t.Context(), map[string]any{"name": "image.html"}, nil)
 	if err != nil {

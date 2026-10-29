@@ -311,10 +311,14 @@ export KVROCKS_PORT=6379
   chunker; the ingestor also validates the injected Kvrocks client at startup.
   Inline image payloads default to a 32 MiB per-image limit; set
   `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  This replaces `RAGFLOW_HTML_IMAGE_MAX_BYTES`; update deployments that still
+  use the old name because the removed variable is ignored.
   The parser budget and the media cache share the same run-level limits: 1024
-  distinct images and 1 GiB of decoded image bytes per run (one run currently
-  handles one document task). Set `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and
-  `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to positive values to change them.
+  distinct images and 1 GiB of decoded image bytes per run. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Preview runs without a task ID use the document ID as their scope.
 
 
 - Start RAGFlow

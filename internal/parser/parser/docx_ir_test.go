@@ -234,7 +234,7 @@ func TestBuildDOCXJSONSections_BudgetKeepsInlineTextAroundOmittedImage(t *testin
 		{"type":"image","data":"YWJjZA=="},
 		{"type":"text","text":"after"}
 	]}]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+	budget := newTestEmbeddedMediaBudget(t, 3, 5, 10)
 
 	items := buildDOCXJSONSections(irJSON, budget)
 	if len(items) != 3 {
@@ -256,7 +256,7 @@ func TestBuildDOCXJSONSections_BudgetKeepsTableImageMetadata(t *testing.T) {
 		{"content":[{"type":"image","data":"YWJj"}]},
 		{"content":[{"type":"image","data":"ZGVm"}]}
 	]}]}]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 10}
+	budget := newTestEmbeddedMediaBudget(t, 4, 5, 10)
 
 	items := buildDOCXJSONSections(irJSON, budget)
 	if len(items) != 3 {
@@ -275,9 +275,11 @@ func TestBuildDOCXJSONSections_BudgetKeepsTableImageMetadata(t *testing.T) {
 }
 
 func TestBuildDOCXJSONSections_BudgetCapsMediaCount(t *testing.T) {
+	const countLimit = 8
+	budget := newTestEmbeddedMediaBudget(t, 8, 1024, countLimit)
 	var ir strings.Builder
 	ir.WriteString(`{"sections":[{"elements":[`)
-	for i := 0; i < 257; i++ {
+	for i := 0; i <= countLimit; i++ {
 		if i > 0 {
 			ir.WriteByte(',')
 		}
@@ -285,7 +287,6 @@ func TestBuildDOCXJSONSections_BudgetCapsMediaCount(t *testing.T) {
 	}
 	ir.WriteString(`]}]}`)
 
-	budget := newEmbeddedMediaBudget()
 	items := buildDOCXJSONSections(ir.String(), budget)
 	imageCount := 0
 	for _, item := range items {
@@ -293,8 +294,8 @@ func TestBuildDOCXJSONSections_BudgetCapsMediaCount(t *testing.T) {
 			imageCount++
 		}
 	}
-	if imageCount != budget.maxItems {
-		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
+	if imageCount != countLimit {
+		t.Fatalf("image items = %d, want count limit %d", imageCount, countLimit)
 	}
 	if len(budget.warnings()) == 0 {
 		t.Fatal("truncated media count should produce a parser warning")
@@ -306,7 +307,7 @@ func TestBuildPPTXJSONSections_BudgetKeepsSlideMetadata(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
 		{"type":"image","data":"YWJjZA=="}
 	]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+	budget := newTestEmbeddedMediaBudget(t, 3, 5, 10)
 
 	items, err := buildPPTXJSONSections(irJSON, budget)
 	if err != nil {
@@ -325,9 +326,11 @@ func TestBuildPPTXJSONSections_BudgetKeepsSlideMetadata(t *testing.T) {
 }
 
 func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
+	const countLimit = 8
+	budget := newTestEmbeddedMediaBudget(t, 8, 1024, countLimit)
 	var ir strings.Builder
 	ir.WriteString(`{"sections":[{"elements":[`)
-	for i := 0; i < 257; i++ {
+	for i := 0; i <= countLimit; i++ {
 		if i > 0 {
 			ir.WriteByte(',')
 		}
@@ -335,7 +338,6 @@ func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
 	}
 	ir.WriteString(`]}]}`)
 
-	budget := newEmbeddedMediaBudget()
 	items, err := buildPPTXJSONSections(ir.String(), budget)
 	if err != nil {
 		t.Fatalf("buildPPTXJSONSections: %v", err)
@@ -346,8 +348,8 @@ func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
 			imageCount++
 		}
 	}
-	if imageCount != budget.maxItems {
-		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
+	if imageCount != countLimit {
+		t.Fatalf("image items = %d, want count limit %d", imageCount, countLimit)
 	}
 	if len(budget.warnings()) == 0 {
 		t.Fatal("truncated media count should produce a parser warning")
@@ -355,7 +357,7 @@ func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
 }
 
 func TestEmbeddedMediaBudgetRejectsPerImageAndDocumentByteLimits(t *testing.T) {
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 4}
+	budget := newTestEmbeddedMediaBudget(t, 4, 5, 4)
 	if included, keepGoing := budget.include([]byte("abc")); !included || !keepGoing {
 		t.Fatalf("first image admission = (%v, %v), want (true, true)", included, keepGoing)
 	}
@@ -374,7 +376,7 @@ func TestBuildDOCXJSONSectionsEncodesOnlyAcceptedImageData(t *testing.T) {
 	data := []byte("text is not a valid image, but the parser preserves it")
 	encoded := base64.StdEncoding.EncodeToString(data)
 	irJSON := fmt.Sprintf(`{"sections":[{"elements":[{"type":"image","data":%q}]}]}`, encoded)
-	budget := &embeddedMediaBudget{maxImageBytes: 8, maxTotalBytes: 8, maxItems: 4}
+	budget := newTestEmbeddedMediaBudget(t, 8, 8, 4)
 	items := buildDOCXJSONSections(irJSON, budget)
 	if len(items) != 1 || items[0]["image"] != nil || items[0]["media_omitted"] != true {
 		t.Fatalf("oversized image items = %+v, want metadata without payload", items)
@@ -459,7 +461,7 @@ func TestExtractDOCXFiguresFromIR_BudgetKeepsContextWithoutPayload(t *testing.T)
 		{"type":"image","data":"YWJjZA=="},
 		{"type":"paragraph","content":[{"type":"text","text":"after"}]}
 	]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
+	budget := newTestEmbeddedMediaBudget(t, 3, 5, 10)
 
 	figures := extractDOCXFiguresFromIR(irJSON, budget)
 	if len(figures) != 1 {

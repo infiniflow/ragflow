@@ -107,13 +107,6 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 	return func(p *Pipeline) { p.sink = s }
 }
 
-// WithMediaCache injects the run-scoped media cache. When unset, the pipeline
-// builds one from the Kvrocks client and the task id; when both are absent,
-// parsers run without a media cache.
-func WithMediaCache(c media.Cache) PipelineOption {
-	return func(p *Pipeline) { p.media = c }
-}
-
 // NewPipelineFromDSL compiles the canonical ingestion canvas DSL.
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
@@ -277,6 +270,8 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	globals.SetTaskID(runCtx, p.taskID)
 	mediaCache := p.media
 	if mediaCache == nil && p.kv != nil {
+		// Task-backed ingestion uses the task id. Preview runs have no task and
+		// use the document id so their quota and TTL remain isolated per document.
 		scope := p.taskID
 		if scope == "" {
 			scope = p.documentID

@@ -38,14 +38,17 @@ type fakeStore struct {
 	expireFails bool
 	setCalls    int
 	addCalls    int
+	mediaPuts   int
 	deleteFails map[string]bool
+	quotaBytes  map[string]int64
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		kv:   map[string]string{},
-		sets: map[string]map[string]bool{},
-		ttl:  map[string]time.Duration{},
+		kv:         map[string]string{},
+		sets:       map[string]map[string]bool{},
+		ttl:        map[string]time.Duration{},
+		quotaBytes: map[string]int64{},
 	}
 }
 
@@ -64,6 +67,69 @@ func (f *fakeStore) Set(_ context.Context, key, value string, exp time.Duration)
 	f.kv[key] = value
 	f.ttl[key] = exp
 	return true
+}
+
+func (f *fakeStore) MediaPut(
+	_ context.Context,
+	mediaKey, digestKey, stateKey, digest, value string,
+	manifestKey, manifestMember string,
+	maxImages int,
+	maxBytes int64,
+	ttl time.Duration,
+) (bool, bool, error) {
+	f.mediaPuts++
+	if f.failSet {
+		return false, false, errors.New("fake media write failure")
+	}
+	if f.expireFails {
+		return false, false, errors.New("fake manifest expire failure")
+	}
+	if f.sets[digestKey][digest] {
+		if f.kv[mediaKey] == "" {
+			f.setCalls++
+			f.kv[mediaKey] = value
+			f.ttl[mediaKey] = ttl
+			f.ttl[digestKey] = ttl
+			f.ttl[stateKey] = ttl
+			if manifestKey != "" {
+				f.addCalls++
+				if f.sets[manifestKey] == nil {
+					f.sets[manifestKey] = map[string]bool{}
+				}
+				f.sets[manifestKey][manifestMember] = true
+				f.ttl[manifestKey] = ttl
+			}
+		}
+		return true, false, nil
+	}
+	if maxImages > 0 && len(f.sets[digestKey]) >= maxImages {
+		return false, false, nil
+	}
+	if maxBytes > 0 && int64(len(value)) > maxBytes-f.quotaBytes[stateKey] {
+		return false, false, nil
+	}
+
+	f.setCalls++
+	f.kv[mediaKey] = value
+	f.ttl[mediaKey] = ttl
+	if manifestKey != "" {
+		f.addCalls++
+		if f.sets[manifestKey] == nil {
+			f.sets[manifestKey] = map[string]bool{}
+		}
+		f.sets[manifestKey][manifestMember] = true
+	}
+	if f.sets[digestKey] == nil {
+		f.sets[digestKey] = map[string]bool{}
+	}
+	f.sets[digestKey][digest] = true
+	f.quotaBytes[stateKey] += int64(len(value))
+	f.ttl[digestKey] = ttl
+	f.ttl[stateKey] = ttl
+	if manifestKey != "" {
+		f.ttl[manifestKey] = ttl
+	}
+	return true, true, nil
 }
 
 func (f *fakeStore) SAdd(_ context.Context, key, member string) bool {
@@ -90,6 +156,7 @@ func (f *fakeStore) Delete(_ context.Context, key string) bool {
 	}
 	delete(f.kv, key)
 	delete(f.sets, key)
+	delete(f.quotaBytes, key)
 	return true
 }
 
@@ -369,16 +436,11 @@ func TestPutDuplicateWritesOnceAndReturnsCallerRef(t *testing.T) {
 	if duplicate.Format != "epub" || duplicate.MIME != "image/jpeg" || duplicate.SHA256 != ref.SHA256 || duplicate.Size != ref.Size {
 		t.Fatalf("duplicate ref = %+v, want the current caller's format/mime on the same digest", duplicate)
 	}
-	if backend.setCalls != 1 || backend.addCalls != 1 {
-		t.Fatalf("backend calls = %d Set, %d SAdd, want one each", backend.setCalls, backend.addCalls)
+	if backend.mediaPuts != 2 || backend.setCalls != 1 || backend.addCalls != 1 {
+		t.Fatalf("backend calls = %d atomic Put, %d Set, %d SAdd, want 2, 1, 1", backend.mediaPuts, backend.setCalls, backend.addCalls)
 	}
 	if backend.ttl[key] != time.Second || backend.ttl[manifestKey("task-1")] != time.Second {
 		t.Fatal("duplicate Put refreshed TTLs; dedupe must not touch the backend")
-	}
-
-	backend.failSet = true
-	if _, err := store.Put(ctx, "html", "image/png", data); err != nil {
-		t.Fatalf("duplicate Put touched the backend: %v", err)
 	}
 }
 
@@ -426,6 +488,45 @@ func TestPutEnforcesRunImageCountLimit(t *testing.T) {
 	}
 }
 
+func TestPutEnforcesRunLimitsAcrossStoreInstances(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	first := New(backend, "task-1")
+	second := New(backend, "task-1")
+
+	if _, err := first.Put(ctx, "html", "image/png", []byte("a")); err != nil {
+		t.Fatalf("first image: %v", err)
+	}
+	if _, err := second.Put(ctx, "html", "image/png", []byte("b")); err != nil {
+		t.Fatalf("second image from another Store: %v", err)
+	}
+	if _, err := first.Put(ctx, "html", "image/png", []byte("c")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("third image error = %v, want ErrMediaLimitExceeded", err)
+	}
+	if len(backend.kv) != 2 {
+		t.Fatalf("cached entries = %d, want 2", len(backend.kv))
+	}
+}
+
+func TestPutEnforcesRunBytesAcrossStoreInstances(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	first := New(backend, "task-1")
+	second := New(backend, "task-1")
+
+	if _, err := first.Put(ctx, "html", "image/png", []byte("abc")); err != nil {
+		t.Fatalf("first image: %v", err)
+	}
+	if _, err := second.Put(ctx, "html", "image/png", []byte("de")); err != nil {
+		t.Fatalf("second image from another Store: %v", err)
+	}
+	if _, err := first.Put(ctx, "html", "image/png", []byte("f")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("third image error = %v, want ErrMediaLimitExceeded", err)
+	}
+}
+
 func TestPutEnforcesRunByteLimitAtExactBoundary(t *testing.T) {
 	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
 	backend := newFakeStore()
@@ -441,6 +542,28 @@ func TestPutEnforcesRunByteLimitAtExactBoundary(t *testing.T) {
 	}
 	if len(backend.kv) != 2 {
 		t.Fatalf("cached entries = %d, want the 2 admitted images", len(backend.kv))
+	}
+}
+
+func TestPutRestoresLocallySeenDigestAfterBackendEviction(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	data := []byte("hello")
+	ref, err := store.Put(ctx, "html", "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := store.key(ref.SHA256)
+	delete(backend.kv, key)
+
+	restored, err := store.Put(ctx, "html", "image/png", data)
+	if err != nil {
+		t.Fatalf("restore Put: %v", err)
+	}
+	got, err := store.Get(ctx, restored)
+	if err != nil || string(got) != string(data) {
+		t.Fatalf("restored read = %q, %v; want %q, nil", got, err, data)
 	}
 }
 

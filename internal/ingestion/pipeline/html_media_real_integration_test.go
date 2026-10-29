@@ -204,11 +204,34 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	if got, err := retry.Get(t.Context(), retryRef); err != nil || !bytes.Equal(got, png) {
 		t.Fatalf("retry cache bytes: %v", err)
 	}
+	scopeHash := xxhash.Sum64String(taskID)
+	digestKey := fmt.Sprintf("mc:quota:%x:digests", scopeHash)
+	stateKey := fmt.Sprintf("mc:quota:%x:state", scopeHash)
+	manifestKey := fmt.Sprintf("mc:manifest:%x", scopeHash)
+	if member, err := kv.GetClient().SIsMember(t.Context(), digestKey, retryRef.SHA256).Result(); err != nil || !member {
+		t.Fatalf("quota digest membership = %v, %v; want true", member, err)
+	}
+	images, err := kv.GetClient().HGet(t.Context(), stateKey, "images").Result()
+	if err != nil || images != "1" {
+		t.Fatalf("quota images = %q, %v; want 1", images, err)
+	}
+	bytesUsed, err := kv.GetClient().HGet(t.Context(), stateKey, "bytes").Result()
+	if err != nil || bytesUsed != fmt.Sprint(len(png)) {
+		t.Fatalf("quota bytes = %q, %v; want %d", bytesUsed, err, len(png))
+	}
+	if member, err := kv.GetClient().SIsMember(t.Context(), manifestKey, key).Result(); err != nil || !member {
+		t.Fatalf("manifest membership = %v, %v; want true", member, err)
+	}
 	if err := mediacache.PurgeTask(t.Context(), kv, taskID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := retry.Get(t.Context(), retryRef); !errors.Is(err, media.ErrMediaNotFound) {
 		t.Fatalf("purged cache read: %v", err)
+	}
+	for _, purgedKey := range []string{key, digestKey, stateKey, manifestKey} {
+		if exists, err := kv.GetClient().Exists(t.Context(), purgedKey).Result(); err != nil || exists != 0 {
+			t.Fatalf("purged key %s exists=%d, err=%v", purgedKey, exists, err)
+		}
 	}
 }
 

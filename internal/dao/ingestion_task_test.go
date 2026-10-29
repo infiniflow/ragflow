@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
@@ -338,62 +337,105 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	}
 }
 
-func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
+func TestIngestionTaskDAOFreezeForCleanupRejectsAnyRunningTask(t *testing.T) {
 	db := setupTaskTestDB(t)
-	orig := DB
-	DB = db
-	t.Cleanup(func() { DB = orig })
-
-	// Create tasks in different statuses, each with a unique docID.
-	statuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
-	for i, status := range statuses {
-		docID := fmt.Sprintf("doc-%d", i)
-		task := &entity.IngestionTask{
-			ID:         fmt.Sprintf("task-%d", i),
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+	oldTime := int64(100)
+	newTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-running",
 			UserID:     "user-1",
-			DocumentID: docID,
+			DocumentID: "doc-cleanup",
 			DatasetID:  "kb-1",
-			Status:     status,
-		}
+			Status:     common.RUNNING,
+			BaseModel:  entity.BaseModel{CreateTime: &oldTime},
+		},
+		{
+			ID:         "task-completed",
+			UserID:     "user-1",
+			DocumentID: "doc-cleanup",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel:  entity.BaseModel{CreateTime: &newTime},
+		},
+	} {
 		if err := db.Create(task).Error; err != nil {
-			t.Fatalf("create task %s: %v", status, err)
+			t.Fatalf("create task %s: %v", task.ID, err)
 		}
 	}
 
-	ctx := t.Context()
-	// DeleteIfTerminal deletes everything except RUNNING and STOPPING.
-	// CREATED and SCHEDULED are safe to delete (no worker has claimed them yet);
-	// COMPLETED/STOPPED/FAILED are terminal.
-	// Call it for every doc and verify the negative cases survived.
-	for i := 0; i < len(statuses); i++ {
-		docID := fmt.Sprintf("doc-%d", i)
-		_, err := NewIngestionTaskDAO().DeleteIfTerminal(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("DeleteIfTerminal(doc-%d): %v", i, err)
+	_, err := NewIngestionTaskDAO().FreezeForCleanup(t.Context(), db, "doc-cleanup")
+	if !errors.Is(err, ErrActiveIngestionTask) {
+		t.Fatalf("FreezeForCleanup error = %v, want ErrActiveIngestionTask", err)
+	}
+	for _, taskID := range []string{"task-running", "task-completed"} {
+		if _, err := NewIngestionTaskDAO().GetByID(t.Context(), db, taskID); err != nil {
+			t.Fatalf("task %s changed after rejected freeze: %v", taskID, err)
+		}
+	}
+}
+
+func TestIngestionTaskDAOFreezeAndDeleteEveryTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+	oldTime := int64(100)
+	newTime := int64(200)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-queued",
+			UserID:     "user-1",
+			DocumentID: "doc-cleanup",
+			DatasetID:  "kb-1",
+			Status:     common.SCHEDULED,
+			BaseModel:  entity.BaseModel{CreateTime: &oldTime},
+		},
+		{
+			ID:         "task-failed",
+			UserID:     "user-1",
+			DocumentID: "doc-cleanup",
+			DatasetID:  "kb-1",
+			Status:     common.FAILED,
+			BaseModel:  entity.BaseModel{CreateTime: &newTime},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
 		}
 	}
 
-	// RUNNING and STOPPING must survive.
-	for _, i := range []int{2, 3} {
-		docID := fmt.Sprintf("doc-%d", i)
-		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("GetByDocumentID %s: %v", docID, err)
-		}
-		if task == nil {
-			t.Fatalf("%s task (doc=%d) must not be deleted", statuses[i], i)
-		}
+	batch, err := NewIngestionTaskDAO().FreezeForCleanup(t.Context(), db, "doc-cleanup")
+	if err != nil {
+		t.Fatalf("FreezeForCleanup: %v", err)
 	}
-	// CREATED, SCHEDULED, COMPLETED, STOPPED, FAILED must be gone.
-	for _, i := range []int{0, 1, 4, 5, 6} {
-		docID := fmt.Sprintf("doc-%d", i)
-		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("GetByDocumentID %s: %v", docID, err)
-		}
-		if task != nil {
-			t.Fatalf("%s task (doc=%d) should be deleted, still present", statuses[i], i)
-		}
+	if len(batch.Frozen) != 1 || batch.Frozen[0].ID != "task-queued" {
+		t.Fatalf("frozen tasks = %+v, want task-queued", batch.Frozen)
+	}
+	queued, err := NewIngestionTaskDAO().GetByID(t.Context(), db, "task-queued")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.Status != common.STOPPED {
+		t.Fatalf("queued status = %s, want STOPPED", queued.Status)
+	}
+
+	deleted, err := NewIngestionTaskDAO().DeleteByDocumentIDIfTerminal(t.Context(), db, "doc-cleanup")
+	if err != nil {
+		t.Fatalf("DeleteByDocumentIDIfTerminal: %v", err)
+	}
+	if deleted != 2 {
+		t.Fatalf("deleted rows = %d, want 2", deleted)
+	}
+	tasks, err := NewIngestionTaskDAO().ListByDocumentID(t.Context(), db, "doc-cleanup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
+		t.Fatalf("tasks after delete = %+v, want none", tasks)
 	}
 }
 
