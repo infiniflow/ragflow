@@ -115,6 +115,10 @@ type runSession struct {
 	events       []*eventWrapEntry
 	BranchEvents *branchEvents
 	TypedEvents  any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
+	// epoch changes whenever the event log is mutated in a way that is not a
+	// plain append (e.g. a parallel branch join or a rewind). It lets the
+	// incremental history cache detect state changes it cannot extend.
+	epoch uint64
 }
 
 func newRunSession() *runSession {
@@ -219,6 +223,16 @@ func (s *runSession) addEvent(event any) {
 	s.mu.Unlock()
 }
 
+// eventEpoch returns the current mutation epoch of the event log.
+func (s *runSession) eventEpoch() uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.epoch
+}
+
 func (s *runSession) getEvents() []any {
 	// If there are no in-flight lane events, return the main slice directly.
 	if s.BranchEvents == nil {
@@ -249,6 +263,43 @@ func (s *runSession) getEvents() []any {
 	return unwrapEvents(all)
 }
 
+// eventSnapshotSince returns the events from raw index onward without copying
+// the already processed prefix. total is the number of wrapped events in the
+// main log, and branchMode reports whether forked lanes are in flight.
+//
+// In branch mode the in-flight lane events are merged and sorted with the main
+// log, so there is no stable prefix to extend; the full snapshot is returned
+// and the caller must rebuild.
+func (s *runSession) eventSnapshotSince(index int) (events []any, total int, epoch uint64, branchMode bool) {
+	if s == nil {
+		return nil, 0, 0, false
+	}
+	s.mu.Lock()
+	branchMode = s.BranchEvents != nil
+	epoch = s.epoch
+	if !branchMode {
+		if index < 0 {
+			index = 0
+		}
+		if index > len(s.events) {
+			index = len(s.events)
+		}
+		out := make([]any, 0, len(s.events)-index)
+		for _, e := range s.events[index:] {
+			if e != nil {
+				out = append(out, e.Event)
+			}
+		}
+		total = len(s.events)
+		s.mu.Unlock()
+		return out, total, epoch, false
+	}
+	s.mu.Unlock()
+
+	all := s.getEvents()
+	return all, len(all), s.eventEpoch(), true
+}
+
 // unwrapEvents extracts the inner Event from eventWrapEntry slice.
 func unwrapEvents(entries []*eventWrapEntry) []any {
 	r := make([]any, 0, len(entries))
@@ -266,6 +317,9 @@ type runContext struct {
 	RootInput any
 	RunPath   []RunStep
 	Session   *runSession
+
+	historyMu sync.Mutex
+	history   [2]*historyCache // indexed by skipTransfer
 }
 
 // getRunPath safely returns a copy of RunPath under lock.
@@ -414,9 +468,12 @@ func commitEvents(rc *runContext, entries []*eventWrapEntry) {
 		// If committing to a lane, append to its event slice.
 		rc.Session.BranchEvents.Events = append(rc.Session.BranchEvents.Events, entries...)
 	} else {
-		// Otherwise, commit to main shared Events slice with lock.
+		// Otherwise, commit to main shared Events slice with lock. The commit
+		// reshuffles events from forked lanes, so bump the epoch to force the
+		// incremental history cache to rebuild.
 		rc.Session.mu.Lock()
 		rc.Session.events = append(rc.Session.events, entries...)
+		rc.Session.epoch++
 		rc.Session.mu.Unlock()
 	}
 }

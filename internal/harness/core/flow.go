@@ -32,12 +32,17 @@ type flowAgent struct {
 	parentAgent              *flowAgent
 	disallowTransferToParent bool
 	historyRewriter          HistoryRewriter
-	checkPointStore          CheckPointStore
+	// builtinHistory is set when historyRewriter is the built-in per-entry
+	// rewriter. Only then can rewritten messages be appended incrementally.
+	builtinHistory  bool
+	historyName     string
+	checkPointStore CheckPointStore
 }
 
 func (a *flowAgent) deepCopy() *flowAgent {
 	cp := &flowAgent{Agent: a.Agent, parentAgent: a.parentAgent,
 		disallowTransferToParent: a.disallowTransferToParent, historyRewriter: a.historyRewriter,
+		builtinHistory: a.builtinHistory, historyName: a.historyName,
 		checkPointStore: a.checkPointStore}
 	for _, sa := range a.subAgents {
 		cp.subAgents = append(cp.subAgents, sa.deepCopy())
@@ -52,7 +57,7 @@ func SetSubAgents(ctx context.Context, agent Agent, subs []Agent) (ResumableAgen
 		fa = &flowAgent{Agent: agent}
 	}
 	if fa.historyRewriter == nil {
-		fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx))
+		fa.useDefaultHistoryRewriter(agent.Name(ctx))
 	}
 	if len(fa.subAgents) > 0 {
 		return nil, errors.New("sub-agents already set")
@@ -73,7 +78,11 @@ func WithDisallowTransferToParent() AgentOption {
 	return func(fa *flowAgent) { fa.disallowTransferToParent = true }
 }
 func WithHistoryRewriter(h HistoryRewriter) AgentOption {
-	return func(fa *flowAgent) { fa.historyRewriter = h }
+	return func(fa *flowAgent) {
+		fa.historyRewriter = h
+		fa.builtinHistory = false
+		fa.historyName = ""
+	}
 }
 
 func toFlowAgent(ctx context.Context, agent Agent, opts ...AgentOption) *flowAgent {
@@ -88,9 +97,15 @@ func toFlowAgent(ctx context.Context, agent Agent, opts ...AgentOption) *flowAge
 		o(fa)
 	}
 	if fa.historyRewriter == nil {
-		fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx))
+		fa.useDefaultHistoryRewriter(agent.Name(ctx))
 	}
 	return fa
+}
+
+func (a *flowAgent) useDefaultHistoryRewriter(name string) {
+	a.historyRewriter = defaultHistoryRewriter(name)
+	a.builtinHistory = true
+	a.historyName = name
 }
 
 func (a *flowAgent) getAgent(ctx context.Context, name string) *flowAgent {
@@ -107,18 +122,31 @@ func (a *flowAgent) getAgent(ctx context.Context, name string) *flowAgent {
 
 func defaultHistoryRewriter(name string) HistoryRewriter {
 	return func(ctx context.Context, entries []*HistoryEntry) ([]Message, error) {
-		msgs := make([]Message, 0, len(entries))
-		for _, e := range entries {
-			m := e.Message
-			if !e.IsUserInput && e.AgentName != name {
-				m = rewriteMsg(m, e.AgentName)
-			}
-			if m != nil {
-				msgs = append(msgs, m)
-			}
-		}
+		msgs, _ := defaultRewriteEntries(name, entries)
 		return msgs, nil
 	}
+}
+
+// defaultRewriteEntries rewrites entries with the built-in per-entry rule.
+// The second result reports whether the message was freshly rewritten; the
+// incremental cache uses it to hand out independent copies on every transfer,
+// matching the allocation behavior of a full replay.
+func defaultRewriteEntries(name string, entries []*HistoryEntry) ([]Message, []bool) {
+	msgs := make([]Message, 0, len(entries))
+	fresh := make([]bool, 0, len(entries))
+	for _, e := range entries {
+		m := e.Message
+		rewritten := false
+		if !e.IsUserInput && e.AgentName != name {
+			m = rewriteMsg(m, e.AgentName)
+			rewritten = true
+		}
+		if m != nil {
+			msgs = append(msgs, m)
+			fresh = append(fresh, rewritten)
+		}
+	}
+	return msgs, fresh
 }
 
 func rewriteMsg(msg Message, agentName string) Message {
@@ -147,28 +175,86 @@ func rewriteMsg(msg Message, agentName string) Message {
 	return r
 }
 
-func deepCopyInput(ai *AgentInput) *AgentInput {
-	return &AgentInput{Messages: append([]Message(nil), ai.Messages...), EnableStreaming: ai.EnableStreaming}
+// historyCache incrementally reconstructs the history entries for one variant
+// (with or without skipped transfer messages) of a run.
+type historyCache struct {
+	sessionEpoch   uint64
+	branchMode     bool
+	entriesVersion uint64
+	lastEventIndex int
+	entries        []*HistoryEntry
+	rewritten      map[*flowAgent]*rewrittenHistory
+	// scannedEvents counts events examined by genInput. Tests use it to verify
+	// that transfers only process newly appended events.
+	scannedEvents int
 }
 
-// TODO: On every transfer, genInput replays ALL historical events to rebuild
-// conversation history. This is O(n) per transfer, where n grows with conversation
-// length. Consider caching the reconstructed history per agent and invalidating
-// on state changes rather than re-scanning the full event list.
-func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer bool) (*AgentInput, error) {
-	input := deepCopyInput(rc.RootInput.(*AgentInput))
-	entries := make([]*HistoryEntry, 0)
-	for _, m := range input.Messages {
-		entries = append(entries, &HistoryEntry{IsUserInput: true, Message: m})
+// rewrittenHistory caches the built-in rewriter output for a single agent.
+type rewrittenHistory struct {
+	entriesVersion uint64
+	lastEntryIndex int
+	msgs           []Message
+	fresh          []bool
+}
+
+func (rc *runContext) historyCacheFor(skipTransfer bool) *historyCache {
+	idx := 0
+	if skipTransfer {
+		idx = 1
 	}
-	for _, ev := range rc.Session.getEvents() {
+	if rc.history[idx] == nil {
+		rc.history[idx] = &historyCache{}
+	}
+	return rc.history[idx]
+}
+
+// syncHistoryEntriesLocked brings the cached entries up to date with the
+// session event log and returns them. The caller must hold rc.historyMu.
+//
+// Events only append in the common (non-branch) case, so the cache extends
+// from lastEventIndex instead of replaying the whole log. Any state mutation
+// that can reorder or truncate the log bumps the session epoch and forces a
+// rebuild.
+func (rc *runContext) syncHistoryEntriesLocked(root *AgentInput, skipTransfer bool) []*HistoryEntry {
+	c := rc.historyCacheFor(skipTransfer)
+	events, total, epoch, branchMode := rc.Session.eventSnapshotSince(c.lastEventIndex)
+
+	rebuild := c.entries == nil ||
+		c.sessionEpoch != epoch ||
+		c.branchMode != branchMode ||
+		c.lastEventIndex > total
+	if branchMode {
+		// getEvents merges and sorts in-flight lane events, so the cached
+		// prefix is not necessarily a prefix of the next snapshot.
+		rebuild = true
+	}
+	if rebuild {
+		if !branchMode && c.lastEventIndex != 0 {
+			// The log changed underneath the cached prefix; rewind and rebuild
+			// from the beginning.
+			events, total, epoch, branchMode = rc.Session.eventSnapshotSince(0)
+		}
+		c.entries = make([]*HistoryEntry, 0, len(root.Messages)+len(events))
+		for _, m := range root.Messages {
+			c.entries = append(c.entries, &HistoryEntry{IsUserInput: true, Message: m})
+		}
+		c.lastEventIndex = 0
+		c.entriesVersion++
+		c.rewritten = nil
+	}
+	c.sessionEpoch = epoch
+	c.branchMode = branchMode
+
+	for _, ev := range events {
+		c.scannedEvents++
 		ae, ok := ev.(*AgentEvent)
 		if !ok {
 			continue
 		}
 		if skipTransfer && ae.Action != nil && ae.Action.TransferToAgent != nil {
-			if ae.Output != nil && ae.Output.MessageOutput != nil && ae.Output.MessageOutput.Role == schema.RoleTool && len(entries) > 0 {
-				entries = entries[:len(entries)-1]
+			if ae.Output != nil && ae.Output.MessageOutput != nil && ae.Output.MessageOutput.Role == schema.RoleTool && len(c.entries) > 0 {
+				c.entries = c.entries[:len(c.entries)-1]
+				c.entriesVersion++
 			}
 			continue
 		}
@@ -176,14 +262,71 @@ func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer b
 		if msg == nil {
 			continue
 		}
-		entries = append(entries, &HistoryEntry{AgentName: ae.AgentName, Message: msg})
+		c.entries = append(c.entries, &HistoryEntry{AgentName: ae.AgentName, Message: msg})
 	}
-	msgs, err := a.historyRewriter(ctx, entries)
+	c.lastEventIndex = total
+	return c.entries
+}
+
+// syncRewrittenLocked returns the built-in rewriter output for a. Existing
+// messages are reused; only entries appended since the agent last ran are
+// rewritten. Freshly rewritten messages are copied on return so a caller
+// cannot mutate the cache, matching full-replay allocation behavior.
+func (rc *runContext) syncRewrittenLocked(a *flowAgent, entries []*HistoryEntry, skipTransfer bool) []Message {
+	c := rc.historyCacheFor(skipTransfer)
+	if c.rewritten == nil {
+		c.rewritten = make(map[*flowAgent]*rewrittenHistory)
+	}
+	r := c.rewritten[a]
+	if r == nil || r.entriesVersion != c.entriesVersion || r.lastEntryIndex > len(entries) {
+		r = &rewrittenHistory{entriesVersion: c.entriesVersion}
+		c.rewritten[a] = r
+	}
+	if r.lastEntryIndex < len(entries) {
+		msgs, fresh := defaultRewriteEntries(a.historyName, entries[r.lastEntryIndex:])
+		r.msgs = append(r.msgs, msgs...)
+		r.fresh = append(r.fresh, fresh...)
+		r.lastEntryIndex = len(entries)
+	}
+	out := make([]Message, len(r.msgs))
+	for i, m := range r.msgs {
+		if !r.fresh[i] || m == nil {
+			out[i] = m
+			continue
+		}
+		cp := *m
+		if cp.Extra != nil {
+			cp.Extra = copyMap(cp.Extra)
+		}
+		out[i] = &cp
+	}
+	return out
+}
+
+func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer bool) (*AgentInput, error) {
+	root := rc.RootInput.(*AgentInput)
+
+	rc.historyMu.Lock()
+	entries := rc.syncHistoryEntriesLocked(root, skipTransfer)
+	if a.builtinHistory {
+		msgs := rc.syncRewrittenLocked(a, entries, skipTransfer)
+		rc.historyMu.Unlock()
+		return &AgentInput{Messages: msgs, EnableStreaming: root.EnableStreaming}, nil
+	}
+	// A custom rewriter sees fresh HistoryEntry values, as it did before the
+	// cache existed, so it cannot corrupt the cached entries.
+	snapshot := make([]*HistoryEntry, len(entries))
+	for i, e := range entries {
+		cp := *e
+		snapshot[i] = &cp
+	}
+	rc.historyMu.Unlock()
+
+	msgs, err := a.historyRewriter(ctx, snapshot)
 	if err != nil {
 		return nil, err
 	}
-	input.Messages = msgs
-	return input, nil
+	return &AgentInput{Messages: msgs, EnableStreaming: root.EnableStreaming}, nil
 }
 
 func msgFromEvent(ev *AgentEvent) Message {
