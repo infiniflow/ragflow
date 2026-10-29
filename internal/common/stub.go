@@ -19,8 +19,6 @@
 package common
 
 import (
-	"fmt"
-
 	"go.uber.org/zap"
 )
 
@@ -39,5 +37,12 @@ func InitAudit(file FileOutput, serviceName string) error {
 }
 
 func Audit(operationLog *OperationLog, fields ...zap.Field) {
-	fmt.Println(operationLog, fields)
+}
+
+func InitIngestLog(file FileOutput, serviceName string) error {
+	return nil
+}
+
+func IngestLog(fields ...zap.Field) {
+
 }

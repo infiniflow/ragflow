@@ -106,3 +106,9 @@ func (c *Config) GetAuditConfig() AuditConfig {
 func (c *AuditConfig) GetFileOutput() common.FileOutput {
 	return common.FileOutput{}
 }
+
+func (c *IngestLogConfig) ParseIngestLogConfig(v *viper.Viper) error { return nil }
+
+func (c *IngestLogConfig) GetFileOutput() common.FileOutput {
+	return common.FileOutput{}
+}
