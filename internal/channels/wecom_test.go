@@ -524,3 +524,75 @@ func testWeComSignature(token, timestamp, nonce, encrypted string) string {
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	return hex.EncodeToString(hash[:])
 }
+
+func TestWeComWebhookRecoversPanickingHandlerAndAllowsRetry(t *testing.T) {
+	encodingAESKey, aesKey := testWeComAESKey()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-panic",
+		ConnectionType: "webhook",
+		CorpID:         "corp-id",
+		AgentID:        1000001,
+		Secret:         "secret",
+		Token:          "token",
+		AESKey:         encodingAESKey,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+
+	called := make(chan struct{}, 1)
+	channel.SetMessageHandler(func(_ context.Context, _ core.IncomingMessage) error {
+		called <- struct{}{}
+		panic("boom")
+	})
+	server := &wecomWebhookServer{channels: map[string]*wecomChannel{"account-panic": channel}}
+
+	const messageID = "message-panic"
+	const dedupeKey = "account-panic:" + messageID
+	weComSeenMessagesMu.Lock()
+	delete(weComSeenMessages, dedupeKey)
+	weComSeenMessagesMu.Unlock()
+	t.Cleanup(func() {
+		weComSeenMessagesMu.Lock()
+		delete(weComSeenMessages, dedupeKey)
+		weComSeenMessagesMu.Unlock()
+	})
+
+	plaintext := []byte(`<xml><ToUserName>corp-id</ToUserName><FromUserName>user-1</FromUserName><CreateTime>123</CreateTime><MsgType>text</MsgType><Content>hello</Content><MsgId>message-panic</MsgId></xml>`)
+	encrypted := encryptWeComTestPayload(t, aesKey, plaintext, "corp-id")
+	body, err := xml.Marshal(wecomEncryptedXML{Encrypt: encrypted})
+	if err != nil {
+		t.Fatalf("marshal encrypted XML: %v", err)
+	}
+	query := url.Values{
+		"msg_signature": {testWeComSignature("token", "124", "nonce-2", encrypted)},
+		"timestamp":     {"124"},
+		"nonce":         {"nonce-2"},
+	}
+	request := httptest.NewRequest(http.MethodPost, "/wecom/account-panic/callback?"+query.Encode(), bytes.NewReader(body))
+	response := httptest.NewRecorder()
+	server.handleRequest(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("message response status = %d, body=%q", response.Code, response.Body.String())
+	}
+
+	select {
+	case <-called:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for the panicking handler")
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		weComSeenMessagesMu.Lock()
+		_, marked := weComSeenMessages[dedupeKey]
+		weComSeenMessagesMu.Unlock()
+		if !marked {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("dedupe entry must be cleared after a handler panic")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}

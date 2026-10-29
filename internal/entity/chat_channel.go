@@ -24,6 +24,7 @@ type ChatChannel struct {
 	Channel  string  `gorm:"column:channel;size:128;not null;index" json:"channel"`
 	Config   JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
 	ChatID   *string `gorm:"column:chat_id;size:32;index" json:"chat_id,omitempty"`
+	AgentID  *string `gorm:"column:agent_id;size:32;index" json:"agent_id,omitempty"`
 	Status   int     `gorm:"column:status;index;default:1" json:"status,omitempty"`
 	BaseModel
 }
@@ -38,6 +39,8 @@ type ChatChannelListResponse struct {
 	Name       string  `json:"name"`
 	Channel    string  `json:"channel"`
 	ChatID     *string `json:"chat_id"`
+	AgentID    *string `json:"agent_id"`
 	Status     int     `json:"status"`
 	DialogName *string `json:"dialog_name"` // Dialog.name.alias("dialog_name")
+	AgentName  *string `json:"agent_name"`  // UserCanvas.title.alias("agent_name")
 }

@@ -16,6 +16,9 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +27,8 @@ import (
 	"go.uber.org/zap"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -76,6 +81,27 @@ func getChatChannelRuntimeProvider() ChatChannelRuntimeProvider {
 	return chatChannelRuntimeProvider
 }
 
+// chatChannelAgentService answers channel messages for channels bound to a flow
+// Agent. The server wires the production AgentService at boot; a nil value makes
+// the agent path report an error instead of silently answering nothing.
+var (
+	chatChannelAgentServiceMu sync.RWMutex
+	chatChannelAgentService   *AgentService
+)
+
+// SetChatChannelAgentService installs the agent runner used by chat channels.
+func SetChatChannelAgentService(agentService *AgentService) {
+	chatChannelAgentServiceMu.Lock()
+	defer chatChannelAgentServiceMu.Unlock()
+	chatChannelAgentService = agentService
+}
+
+func getChatChannelAgentService() *AgentService {
+	chatChannelAgentServiceMu.RLock()
+	defer chatChannelAgentServiceMu.RUnlock()
+	return chatChannelAgentService
+}
+
 func (s *ChatChannelService) List(ctx context.Context, userID string) ([]*entity.ChatChannelListResponse, error) {
 	channelIDs, err := accessibleChatChannelIDs(ctx, userID, permission.OperationRead)
 	if err != nil {
@@ -84,7 +110,7 @@ func (s *ChatChannelService) List(ctx context.Context, userID string) ([]*entity
 	return s.chatChannelDAO.ListByIDs(ctx, dao.DB, channelIDs)
 }
 
-func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, permission.ErrUnauthenticated
 	}
@@ -95,10 +121,9 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 	if err := checkFeatureAction(ctx, userID, "chat", permission.ActionWrite); err != nil {
 		return nil, err
 	}
-	if chatID != nil && *chatID != "" {
-		if err := checkChatPermission(ctx, nil, userID, *chatID, permission.OperationUse); err != nil {
-			return nil, err
-		}
+	chatID, agentID, err = resolveChannelTarget(ctx, userID, chatID, agentID)
+	if err != nil {
+		return nil, err
 	}
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
@@ -107,6 +132,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 		Channel:  channelType,
 		Config:   config,
 		ChatID:   chatID,
+		AgentID:  agentID,
 		Status:   1,
 	}
 
@@ -179,27 +205,54 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		}
 	}
 
-	if value, exists := req["chat_id"]; exists {
-		if value == nil {
+	chatTarget, hasChatTarget, err := optionalChannelTarget(req, "chat_id")
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	agentTarget, hasAgentTarget, err := optionalChannelTarget(req, "agent_id")
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if hasChatTarget && hasAgentTarget && chatTarget != nil && agentTarget != nil {
+		return nil, common.CodeDataError, ErrChatChannelTargetConflict
+	}
+
+	// A channel binds at most one target: selecting one clears the other.
+	if hasChatTarget {
+		if chatTarget == nil {
 			updates["chat_id"] = nil
 		} else {
-			chatID, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
+			if err := checkChatPermission(ctx, nil, userID, *chatTarget, permission.OperationUse); err != nil {
+				code, normalizedErr := normalizeChatPermissionError(err)
+				return nil, code, normalizedErr
 			}
-			if chatID != "" {
-				if err := checkChatPermission(ctx, nil, userID, chatID, permission.OperationUse); err != nil {
+			if channel.TenantID != userID {
+				if err := checkChatPermission(ctx, nil, channel.TenantID, *chatTarget, permission.OperationUse); err != nil {
 					code, normalizedErr := normalizeChatPermissionError(err)
 					return nil, code, normalizedErr
 				}
-				if channel.TenantID != userID {
-					if err := checkChatPermission(ctx, nil, channel.TenantID, chatID, permission.OperationUse); err != nil {
-						code, normalizedErr := normalizeChatPermissionError(err)
-						return nil, code, normalizedErr
-					}
+			}
+			updates["chat_id"] = *chatTarget
+			updates["agent_id"] = nil
+		}
+	}
+
+	if hasAgentTarget {
+		if agentTarget == nil {
+			updates["agent_id"] = nil
+		} else {
+			if err := validateChannelAgentTarget(ctx, userID, *agentTarget); err != nil {
+				code, normalizedErr := normalizeChatChannelPermissionError(err)
+				return nil, code, normalizedErr
+			}
+			if channel.TenantID != userID {
+				if err := validateChannelAgentTarget(ctx, channel.TenantID, *agentTarget); err != nil {
+					code, normalizedErr := normalizeChatChannelPermissionError(err)
+					return nil, code, normalizedErr
 				}
 			}
-			updates["chat_id"] = chatID
+			updates["agent_id"] = *agentTarget
+			updates["chat_id"] = nil
 		}
 	}
 
@@ -248,7 +301,12 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, 
 }
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
-func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage) (string, error) {
+// HandleIncomingMessage resolves the channel's bound target and returns the
+// answer for one inbound message. A channel bound to a flow Agent runs the agent
+// canvas; otherwise it falls back to the connected Chat. notifyThinking, when
+// supplied, is invoked right before the completion starts so a channel can post
+// an interim status message.
+func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, notifyThinking ...func() error) (string, error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
@@ -260,11 +318,17 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		}
 		return "", err
 	}
-	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
+
+	if agentID := derefChannelTarget(channel.AgentID); agentID != "" {
+		return s.runChannelAgent(ctx, channel, agentID, msg, notifyThinking...)
+	}
+
+	chatID := derefChannelTarget(channel.ChatID)
+	if chatID == "" {
 		return "", nil
 	}
 
-	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
+	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return "", nil
@@ -276,6 +340,8 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	if err != nil {
 		return "", err
 	}
+
+	notifyThinkingMessage(notifyThinking)
 
 	result, err := s.chatSessionSvc.ChatCompletions(
 		ctx,
@@ -300,7 +366,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", nil
 	}
 	answer, _ := result["answer"].(string)
-	return answer, nil
+	return stripReasoningContent(answer), nil
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
@@ -338,4 +404,181 @@ func waitingRuntimeSnapshotMap(channelID string) map[string]any {
 		"gateway_base_url": nil,
 		"event_cursor":     int64(0),
 	}
+}
+
+// ErrChatChannelTargetConflict rejects binding a Chat and an Agent to one channel.
+var ErrChatChannelTargetConflict = errors.New("choose either a chat assistant or an agent, not both")
+
+// runChannelAgent answers one inbound message with the flow Agent bound to the channel.
+func (s *ChatChannelService) runChannelAgent(ctx context.Context, channel *entity.ChatChannel, agentID string, msg ChatChannelIncomingMessage, notifyThinking ...func() error) (string, error) {
+	agentService := getChatChannelAgentService()
+	if agentService == nil {
+		common.Warn("chat channel agent runtime is not configured", zap.String("channel_id", channel.ID))
+		return "", nil
+	}
+	if err := validateChannelAgentTarget(ctx, channel.TenantID, agentID); err != nil {
+		common.Warn("chat channel agent is unavailable", zap.String("channel_id", channel.ID), zap.String("agent_id", agentID), zap.Error(err))
+		return "", nil
+	}
+
+	notifyThinkingMessage(notifyThinking)
+
+	// Keep one stable agent session per (agent, channel, end user chat) so the
+	// conversation history survives restarts and channel rebinding.
+	sessionID := channelAgentSessionID(agentID, channel.ID, msg.ChatID)
+	events, err := agentService.RunAgent(WithAgentSessionID(ctx, sessionID), channel.TenantID, agentID, sessionID, "", msg.Text, nil)
+	if err != nil {
+		common.Error("chat channel agent run failed", err, zap.String("channel_id", channel.ID), zap.String("agent_id", agentID))
+		return agentChannelFailureReply, nil
+	}
+	return collectChannelAgentAnswer(events), nil
+}
+
+// agentChannelFailureReply is sent when an Agent run fails before producing a
+// complete answer.
+const agentChannelFailureReply = "Sorry, I couldn't process your message right now."
+
+// collectChannelAgentAnswer aggregates a canvas run into the final channel
+// reply. A terminal error or cancellation discards any partial message content:
+// the user must get the fallback answer instead of a truncated answer (or only
+// the "thinking" placeholder).
+func collectChannelAgentAnswer(events <-chan canvas.RunEvent) string {
+	var answer strings.Builder
+	for event := range events {
+		switch event.Type {
+		case "error", "cancelled":
+			common.Warn("chat channel agent run terminated", zap.String("event", event.Type), zap.String("data", event.Data))
+			return agentChannelFailureReply
+		case "message":
+		default:
+			continue
+		}
+		var data map[string]any
+		if err := json.Unmarshal([]byte(event.Data), &data); err != nil {
+			continue
+		}
+		if content, ok := data["content"].(string); ok {
+			answer.WriteString(content)
+		}
+		// The canvas flags reasoning boundaries instead of inlining the markers;
+		// wrap them the same way the Python bridge did so the block is stripped.
+		if start, _ := data["start_to_think"].(bool); start {
+			answer.WriteString("<think>")
+		} else if end, _ := data["end_to_think"].(bool); end {
+			answer.WriteString("</think>")
+		}
+	}
+	return stripReasoningContent(answer.String())
+}
+
+// notifyThinkingMessage posts the interim "thinking" message when the channel supplied one.
+func notifyThinkingMessage(notifiers []func() error) {
+	for _, notify := range notifiers {
+		if notify == nil {
+			continue
+		}
+		if err := notify(); err != nil {
+			common.Warn("chat channel thinking placeholder failed", zap.Error(err))
+		}
+		return
+	}
+}
+
+// stripReasoningContent mirrors the Python bridge: everything through the last
+// </think> marker is model reasoning and must not reach the end user.
+func stripReasoningContent(txt string) string {
+	if txt == "" {
+		return txt
+	}
+	first := strings.Index(txt, "<think>")
+	if first < 0 {
+		return txt
+	}
+	last := strings.LastIndex(txt, "</think>")
+	if last < 0 || last < first {
+		return txt
+	}
+	return txt[last+len("</think>"):]
+}
+
+// channelAgentSessionID derives the stable session id for one (agent, channel, chat).
+func channelAgentSessionID(agentID, channelID, chatID string) string {
+	sum := sha256.Sum256([]byte("agent:" + agentID + ":" + channelID + ":" + chatID))
+	return hex.EncodeToString(sum[:])[:32]
+}
+
+func derefChannelTarget(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+// optionalChannelTarget extracts an optional binding id from an update payload.
+// A null or blank value clears the binding; a non-string value is rejected.
+func optionalChannelTarget(req map[string]interface{}, key string) (*string, bool, error) {
+	value, exists := req[key]
+	if !exists {
+		return nil, false, nil
+	}
+	if value == nil {
+		return nil, true, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return nil, true, fmt.Errorf("%s must be string or null", key)
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, true, nil
+	}
+	return &text, true, nil
+}
+
+// resolveChannelTarget validates the create-time binding pair. A channel binds
+// either a Chat or a flow Agent, never both.
+func resolveChannelTarget(ctx context.Context, userID string, chatID, agentID *string) (*string, *string, error) {
+	chatID = trimChannelTargetID(chatID)
+	agentID = trimChannelTargetID(agentID)
+	if chatID != nil && agentID != nil {
+		return nil, nil, ErrChatChannelTargetConflict
+	}
+	if chatID != nil {
+		if err := checkChatPermission(ctx, nil, userID, *chatID, permission.OperationUse); err != nil {
+			return nil, nil, err
+		}
+	}
+	if agentID != nil {
+		if err := validateChannelAgentTarget(ctx, userID, *agentID); err != nil {
+			return nil, nil, err
+		}
+	}
+	return chatID, agentID, nil
+}
+
+func trimChannelTargetID(id *string) *string {
+	if id == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*id)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+// validateChannelAgentTarget checks the subject may use the canvas and that the
+// canvas really is a flow Agent; pipelines and other canvases cannot answer a channel.
+func validateChannelAgentTarget(ctx context.Context, userID, agentID string) error {
+	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, permission.OperationUse); err != nil {
+		return err
+	}
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, agentID)
+	if err != nil {
+		return err
+	}
+	if canvas == nil || canvas.CanvasCategory != "agent_canvas" {
+		return dao.ErrUserCanvasNotFound
+	}
+	return nil
 }
