@@ -69,6 +69,7 @@ const savedInstanceDetails = {
   provider_id: 'provider-id',
   region: 'us-east-1',
   status: 'active',
+  is_owner: true,
   api_key_configured: true,
   api_key_config: {
     auth_mode: 'bedrock_api_key',
@@ -178,6 +179,28 @@ describe('BedrockInstanceCard', () => {
         max_tokens: 8192,
       },
     ];
+  });
+
+  it('drops unchanged saved masks when another Bedrock credential changes', () => {
+    expect(
+      applySavedCredentialEdits(
+        {
+          auth_mode: 'iam_role',
+          aws_role_arn: SAVED_CREDENTIAL_MASK,
+          bedrock_ak: SAVED_CREDENTIAL_MASK,
+          bedrock_sk: SAVED_CREDENTIAL_MASK,
+        },
+        {
+          aws_role_arn: 'arn:aws:iam::123456789012:role/model',
+          bedrock_ak: SAVED_CREDENTIAL_MASK,
+          bedrock_sk: SAVED_CREDENTIAL_MASK,
+        },
+        { aws_role_arn: true, bedrock_ak: true, bedrock_sk: true },
+      ),
+    ).toEqual({
+      auth_mode: 'iam_role',
+      aws_role_arn: 'arn:aws:iam::123456789012:role/model',
+    });
   });
 
   it('omits unchanged masks and sends null when a saved credential is cleared', () => {

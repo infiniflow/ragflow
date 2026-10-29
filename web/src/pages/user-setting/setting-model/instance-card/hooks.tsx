@@ -25,7 +25,6 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
-import { hasProviderCredentialInput } from '../provider-schema/field-config/utils';
 import { getProviderConfig } from '../provider-schema/field-config';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
@@ -39,6 +38,11 @@ import {
   SAVED_CREDENTIAL_MASK,
   SavedCredentialInput,
 } from './saved-credential-input';
+import {
+  SavedProviderConfigFieldSet,
+  hasUnsavedProviderCredential,
+  pickSavedProviderConfigOverrides,
+} from './saved-provider-config';
 
 export { SAVED_CREDENTIAL_MASK } from './saved-credential-input';
 
@@ -144,6 +148,11 @@ export function applySavedCredentialEdits(
     }
   }
   Object.assign(config, changes);
+  for (const [field, configured] of Object.entries(credentialStatus)) {
+    if (configured && config[field] === SAVED_CREDENTIAL_MASK) {
+      delete config[field];
+    }
+  }
   if (
     Object.keys(config).length === 1 &&
     Object.prototype.hasOwnProperty.call(config, 'api_key') &&
@@ -495,23 +504,32 @@ export function useVerifyProvider(
       const credentialChanged = Object.keys(credentialStatus).some(
         (field) =>
           credentialStatus[field] === true &&
+          !SavedProviderConfigFieldSet.has(field) &&
           values[field] !== undefined &&
           values[field] !== SAVED_CREDENTIAL_MASK,
       );
-      const isSavedEndpoint =
-        savedInstance != null &&
-        (!verifyArgs.base_url ||
-          verifyArgs.base_url === savedInstance.base_url) &&
-        (!verifyArgs.region || verifyArgs.region === savedInstance.region);
       const useSavedCredentials =
-        Boolean(instanceId && isSavedEndpoint) &&
+        Boolean(instanceId) &&
         !credentialChanged &&
-        !hasProviderCredentialInput(verifyArgs.api_key);
+        !hasUnsavedProviderCredential(verifyArgs.api_key);
+      const canOverrideSavedCredentials =
+        useSavedCredentials && savedInstance?.is_owner === true;
+      const savedConfigOverrides = canOverrideSavedCredentials
+        ? pickSavedProviderConfigOverrides(verifyArgs.api_key)
+        : {};
       const ret = await verifyProviderConnection({
         provider_name: providerName,
         ...(instanceId ? { instance_id: instanceId } : {}),
         ...(useSavedCredentials
-          ? { use_saved_credentials: true }
+          ? {
+              use_saved_credentials: true,
+              ...(Object.keys(savedConfigOverrides).length > 0
+                ? { api_key_config: savedConfigOverrides }
+                : {}),
+              ...(canOverrideSavedCredentials
+                ? { base_url: verifyArgs.base_url, region: verifyArgs.region }
+                : {}),
+            }
           : (verifyArgs as any)),
       });
       if (ret.code === 0) {

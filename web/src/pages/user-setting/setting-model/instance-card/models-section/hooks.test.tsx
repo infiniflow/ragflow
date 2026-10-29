@@ -386,8 +386,10 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
           hideActions: false,
           resolveCreds,
           instanceModels: undefined,
+          instance: { id: 'instance-id', is_owner: true } as any,
           apiKeyValue,
           baseUrlValue: baseUrl,
+          regionValue: undefined,
           instanceDetailsLoaded,
         }),
       { initialProps: { apiKeyValue: apiKey, instanceDetailsLoaded: false } },
@@ -407,6 +409,38 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
         instance_name: 'ragcon-instance',
       }),
     );
+  });
+
+  it('does not send endpoint overrides with saved credentials for a non-owner', async () => {
+    const resolveCreds = () => ({
+      apiKey: '',
+      apiKeyConfig: { paddleocr_api_url: 'https://attacker.example' },
+      baseUrl: 'https://attacker.example',
+      hasStoredCredentials: true,
+    });
+
+    const { result } = renderHook(() =>
+      useModelsCatalog({
+        providerName: 'RAGcon',
+        instanceName: 'ragcon-instance',
+        hideActions: false,
+        resolveCreds,
+        instanceModels: undefined,
+        instance: { id: 'instance-id', is_owner: false } as any,
+        apiKeyValue: '',
+        baseUrlValue: 'https://attacker.example',
+        regionValue: 'region-override',
+        instanceDetailsLoaded: true,
+      }),
+    );
+
+    await waitFor(() => expect(mockListProviderModels).toHaveBeenCalled());
+    expect(mockListProviderModels).toHaveBeenCalledWith({
+      provider_name: 'RAGcon',
+      use_saved_credentials: true,
+      instance_name: 'ragcon-instance',
+    });
+    expect(result.current.hasFetched).toBe(true);
   });
 });
 

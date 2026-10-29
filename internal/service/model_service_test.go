@@ -23,14 +23,24 @@ import (
 type remoteModelProbeDriver struct {
 	*modelModule.DummyModel
 	remoteModels []modelModule.ListModelResponse
+	listCalls    int
+	listConfig   *modelModule.APIConfig
+	baseURLs     map[string]string
 	embedCalls   int
 	checkCalls   int
 	checkErr     error
 	checkConfig  *modelModule.APIConfig
 }
 
-func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+func (d *remoteModelProbeDriver) ListModels(_ context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	d.listCalls++
+	d.listConfig = apiConfig
 	return d.remoteModels, nil
+}
+
+func (d *remoteModelProbeDriver) NewInstance(baseURLs map[string]string) modelModule.ModelDriver {
+	d.baseURLs = baseURLs
+	return d
 }
 
 func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.EmbedRequest, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
@@ -738,6 +748,9 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 	if instance["id"] != "instance-1" || instance["provider_id"] != "provider-1" {
 		t.Fatalf("ShowProviderInstance() = %v, want user-1's own-tenant instance", instance)
 	}
+	if instance["is_owner"] != true {
+		t.Fatalf("ShowProviderInstance() is_owner = %v, want true", instance["is_owner"])
+	}
 	if _, exists := instance["api_key"]; exists {
 		t.Fatalf("ShowProviderInstance() returned the stored API key: %v", instance["api_key"])
 	}
@@ -754,7 +767,7 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 }
 
 func TestProviderInstanceCredentialMetadataDoesNotExposeSecrets(t *testing.T) {
-	apiKey := `{"api_key":"sk-secret","group_id":"group-1","auth_mode":"bedrock_api_key","bedrock_api_key":"br-secret","bedrock_region":"us-east-1","google_service_account_key":"google-secret","unknown_secret":"hidden"}`
+	apiKey := `{"api_key":"sk-secret","group_id":"group-1","auth_mode":"bedrock_api_key","aws_role_arn":"arn:aws:iam::123456789012:role/model","bedrock_api_key":"br-secret","bedrock_region":"us-east-1","google_service_account_key":"google-secret","unknown_secret":"hidden"}`
 	configured, config, status, _ := providerInstanceCredentialMetadata(apiKey)
 	if !configured {
 		t.Fatal("providerInstanceCredentialMetadata() configured = false, want true")
@@ -762,12 +775,12 @@ func TestProviderInstanceCredentialMetadataDoesNotExposeSecrets(t *testing.T) {
 	if config["group_id"] != "group-1" || config["auth_mode"] != "bedrock_api_key" || config["bedrock_region"] != "us-east-1" {
 		t.Fatalf("safe config = %v, missing expected fields", config)
 	}
-	for _, secret := range []string{"api_key", "bedrock_api_key", "unknown_secret"} {
+	for _, secret := range []string{"api_key", "aws_role_arn", "bedrock_api_key", "unknown_secret"} {
 		if _, exists := config[secret]; exists {
 			t.Fatalf("safe config contains secret field %q: %v", secret, config)
 		}
 	}
-	if status["api_key"] != true || status["bedrock_api_key"] != true || status["google_service_account_key"] != true || status["unknown_secret"] != true {
+	if status["api_key"] != true || status["aws_role_arn"] != true || status["bedrock_api_key"] != true || status["google_service_account_key"] != true || status["unknown_secret"] != true {
 		t.Fatalf("credential status = %v, want configured secret field names", status)
 	}
 }
@@ -823,6 +836,79 @@ func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing
 	}
 }
 
+func TestListSupportedModelsUsePermissionCannotOverrideSavedEndpoint(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := string(entity.TenantMembershipStatusJoined)
+	if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "provider-1").Update("tenant_id", "tenant-1").Error; err != nil {
+		t.Fatalf("move provider into test tenant: %v", err)
+	}
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "instance-1").Updates(map[string]interface{}{
+		"api_key": "sk-owner-secret",
+		"extra":   `{"region":"us-east-1","base_url":"https://stored.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("update saved instance: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "user-tenant-member", UserID: "member-1", TenantID: "tenant-1", Role: string(permission.RoleNormal), Status: &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant member: %v", err)
+	}
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	service := NewModelProviderService()
+	ctx := serviceTestContext(t, "member-1", "tenant-1")
+	if _, err := service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{}); err != nil {
+		t.Fatalf("ListSupportedModels(use saved credentials) error = %v, want success", err)
+	}
+	if probe.listCalls != 1 || probe.listConfig == nil || probe.listConfig.ApiKey == nil || *probe.listConfig.ApiKey != "sk-owner-secret" {
+		t.Fatalf("saved-credential list config = %+v, calls %d; want stored key used once", probe.listConfig, probe.listCalls)
+	}
+	if probe.baseURLs["us-east-1"] != "https://stored.example" || probe.listConfig.Region == nil || *probe.listConfig.Region != "us-east-1" {
+		t.Fatalf("saved endpoint = driver URLs %v, config %+v; want persisted endpoint", probe.baseURLs, probe.listConfig)
+	}
+
+	attackerURL := "https://attacker.example"
+	_, err := service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{BaseURL: &attackerURL})
+	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("ListSupportedModels(use permission with endpoint override) error = %v, want hidden denial", err)
+	}
+	if probe.listCalls != 1 {
+		t.Fatalf("provider was called %d times after rejecting endpoint override, want 1", probe.listCalls)
+	}
+
+	_, err = service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{
+		APIKeyConfig: json.RawMessage(`{"paddleocr_api_url":"https://attacker.example"}`),
+	})
+	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("ListSupportedModels(use permission with provider endpoint override) error = %v, want hidden denial", err)
+	}
+	if probe.listCalls != 1 {
+		t.Fatalf("provider was called %d times after rejecting provider config override, want 1", probe.listCalls)
+	}
+
+	ownerCtx := serviceTestContext(t, "user-1", "tenant-1")
+	ownerInstance, code, err := service.ShowProviderInstance(ownerCtx, "OpenAI", "default", "user-1")
+	if err != nil || code != common.CodeSuccess || ownerInstance["is_owner"] != true {
+		t.Fatalf("ShowProviderInstance(owner) = (%v, %v, %v), want owner metadata", ownerInstance, code, err)
+	}
+	ownerURL := "https://owner-override.example"
+	if _, err = service.ListSupportedModels(ownerCtx, "OpenAI", "default", "user-1", ListSupportedModelsOptions{BaseURL: &ownerURL}); err != nil {
+		t.Fatalf("ListSupportedModels(owner endpoint override) error = %v, want success", err)
+	}
+	if probe.listCalls != 2 || probe.listConfig == nil || probe.listConfig.BaseURL == nil || *probe.listConfig.BaseURL != ownerURL || probe.listConfig.ApiKey == nil || *probe.listConfig.ApiKey != "sk-owner-secret" {
+		t.Fatalf("owner override config = %+v, calls %d; want saved key sent only to owner endpoint", probe.listConfig, probe.listCalls)
+	}
+}
+
 func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
@@ -848,7 +934,11 @@ func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
 	provider.ModelDriver = probe
 	t.Cleanup(func() { provider.ModelDriver = originalDriver })
 
-	code, err := NewModelProviderService().CheckConnection(serviceTestContext(t, "member-1", "tenant-1", "user-1"), "OpenAI", "sk-test", false, false, "default", "", "instance-1", "member-1", nil)
+	code, err := NewModelProviderService().CheckConnection(serviceTestContext(t, "member-1", "tenant-1", "user-1"), "OpenAI", CheckConnectionRequest{
+		APIKey:     json.RawMessage(`"sk-test"`),
+		Region:     "default",
+		InstanceID: "instance-1",
+	}, "member-1")
 	if err == nil || code != common.CodeNotFound {
 		t.Fatalf("CheckConnection() = (%v, %v), want hidden update denial", code, err)
 	}
@@ -857,7 +947,7 @@ func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
 	}
 }
 
-func TestCheckConnectionUsesStoredCredentialsOnlyForSavedEndpoint(t *testing.T) {
+func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
@@ -880,7 +970,11 @@ func TestCheckConnectionUsesStoredCredentialsOnlyForSavedEndpoint(t *testing.T) 
 	service := NewModelProviderService()
 	ctx := serviceTestContext(t, "user-1", "tenant-1", "user-1")
 	modelInfo := []CheckConnectionModelInfo{{ModelName: "gpt-test", ModelTypes: []string{"doc_parse"}}}
-	code, err := service.CheckConnection(ctx, "OpenAI", "", false, true, "", "", "instance-1", "user-1", modelInfo)
+	code, err := service.CheckConnection(ctx, "OpenAI", CheckConnectionRequest{
+		UseSavedCredentials: true,
+		InstanceID:          "instance-1",
+		ModelInfo:           modelInfo,
+	}, "user-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CheckConnection(saved) = (%v, %v), want success", code, err)
 	}
@@ -891,7 +985,11 @@ func TestCheckConnectionUsesStoredCredentialsOnlyForSavedEndpoint(t *testing.T) 
 		t.Fatalf("saved endpoint config = %+v, want persisted endpoint settings", probe.checkConfig)
 	}
 
-	code, err = service.CheckConnection(ctx, "OpenAI", "", false, false, "", "https://attacker.example", "instance-1", "user-1", modelInfo)
+	code, err = service.CheckConnection(ctx, "OpenAI", CheckConnectionRequest{
+		BaseURL:    "https://attacker.example",
+		InstanceID: "instance-1",
+		ModelInfo:  modelInfo,
+	}, "user-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CheckConnection(custom endpoint) = (%v, %v), want provider probe success", code, err)
 	}
@@ -902,13 +1000,22 @@ func TestCheckConnectionUsesStoredCredentialsOnlyForSavedEndpoint(t *testing.T) 
 		t.Fatalf("custom endpoint = %+v, want caller-supplied URL", probe.checkConfig)
 	}
 
-	before := probe.checkCalls
-	code, err = service.CheckConnection(ctx, "OpenAI", "", false, true, "", "https://attacker.example", "instance-1", "user-1", modelInfo)
-	if err == nil || code != common.CodeBadRequest {
-		t.Fatalf("CheckConnection(saved with custom endpoint) = (%v, %v), want bad request", code, err)
+	code, err = service.CheckConnection(ctx, "OpenAI", CheckConnectionRequest{
+		UseSavedCredentials: true,
+		BaseURL:             "https://owner-override.example",
+		Region:              "eu-west-1",
+		APIKeyConfig:        json.RawMessage(`{"group_id":"owner-group"}`),
+		InstanceID:          "instance-1",
+		ModelInfo:           modelInfo,
+	}, "user-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection(owner saved credential overrides) = (%v, %v), want success", code, err)
 	}
-	if probe.checkCalls != before {
-		t.Fatalf("provider called %d times after rejecting mixed saved/custom config, want %d", probe.checkCalls, before)
+	if probe.checkConfig == nil || probe.checkConfig.ApiKey == nil || *probe.checkConfig.ApiKey != `{"api_key":"sk-stored-secret","group_id":"owner-group"}` {
+		t.Fatalf("owner-saved API key config = %+v, want stored key plus config override", probe.checkConfig)
+	}
+	if probe.checkConfig.BaseURL == nil || *probe.checkConfig.BaseURL != "https://owner-override.example" || probe.checkConfig.Region == nil || *probe.checkConfig.Region != "eu-west-1" {
+		t.Fatalf("owner-saved endpoint override = %+v, want supplied URL and region", probe.checkConfig)
 	}
 }
 

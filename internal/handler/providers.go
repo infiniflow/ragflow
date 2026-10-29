@@ -626,7 +626,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.ClearAPIKey, req.UseSavedCredentials, req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -658,7 +658,10 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 
 	instanceID, _ := instanceInfo["id"].(string)
 
-	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, "", false, true, "", "", instanceID, userID, nil)
+	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.CheckConnectionRequest{
+		UseSavedCredentials: true,
+		InstanceID:          instanceID,
+	}, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return

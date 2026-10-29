@@ -15,23 +15,23 @@
  */
 
 import { Input } from '@/components/ui/input';
-import type { ComponentProps, FocusEvent } from 'react';
+import { forwardRef } from 'react';
+import type { ComponentProps, FocusEvent, MouseEvent } from 'react';
 
 export const SAVED_CREDENTIAL_MASK = '********';
 
 type SavedCredentialInputProps = Omit<
   ComponentProps<typeof Input>,
-  'type' | 'value' | 'onFocus'
+  'type' | 'value' | 'onFocus' | 'onMouseUp'
 > & {
   maskedValue?: string;
   value?: unknown;
 };
 
-export function SavedCredentialInput({
-  maskedValue,
-  value,
-  ...inputProps
-}: SavedCredentialInputProps) {
+export const SavedCredentialInput = forwardRef<
+  HTMLInputElement,
+  SavedCredentialInputProps
+>(function SavedCredentialInput({ maskedValue, value, ...inputProps }, ref) {
   const isStoredCredential = value === SAVED_CREDENTIAL_MASK;
   const displayValue = isStoredCredential
     ? maskedValue || SAVED_CREDENTIAL_MASK
@@ -43,13 +43,23 @@ export function SavedCredentialInput({
       event.currentTarget.select();
     }
   };
+  const handleMouseUp = (event: MouseEvent<HTMLInputElement>) => {
+    if (isStoredCredential) {
+      event.preventDefault();
+      event.currentTarget.select();
+    }
+  };
 
   return (
     <Input
+      ref={ref}
       {...inputProps}
       type={isStoredCredential ? 'text' : 'password'}
       value={displayValue}
       onFocus={handleFocus}
+      onMouseUp={handleMouseUp}
     />
   );
-}
+});
+
+SavedCredentialInput.displayName = 'SavedCredentialInput';

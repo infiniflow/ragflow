@@ -151,6 +151,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions,
     resolveCreds,
     instanceModels,
+    instance,
     apiKeyValue: currentCreds.apiKey,
     baseUrlValue: currentCreds.baseUrl,
     regionValue: currentCreds.region,

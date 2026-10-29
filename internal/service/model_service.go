@@ -86,8 +86,8 @@ type ModelProviderService struct {
 	modelGroupMapDAO *dao.TenantModelGroupMapDAO
 }
 
-// CheckConnectionModelInfo CheckConnectionRequest carries the credentials and optional instance selector
-// for checking provider connectivity without creating a new model instance.
+// CheckConnectionModelInfo describes a model whose provider connectivity is
+// being verified.
 type CheckConnectionModelInfo struct {
 	ModelName  string                 `json:"model_name"`
 	ModelTypes []string               `json:"model_type"`
@@ -95,10 +95,13 @@ type CheckConnectionModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
+// CheckConnectionRequest carries credentials and optional instance settings
+// for checking provider connectivity without creating a new model instance.
 type CheckConnectionRequest struct {
 	APIKey              json.RawMessage            `json:"api_key"`
 	ClearAPIKey         bool                       `json:"clear_api_key"`
 	UseSavedCredentials bool                       `json:"use_saved_credentials"`
+	APIKeyConfig        json.RawMessage            `json:"api_key_config"`
 	Region              string                     `json:"region"`
 	BaseURL             string                     `json:"base_url"`
 	InstanceID          string                     `json:"instance_id"`
@@ -287,8 +290,8 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	return common.CodeSuccess, nil
 }
 
-// ListSupportedModelsOptions applies current form values while the instance's
-// stored credentials remain server-side.
+// ListSupportedModelsOptions contains owner-only overrides for a saved
+// provider instance's endpoint and non-secret configuration.
 type ListSupportedModelsOptions struct {
 	APIKeyConfig json.RawMessage
 	BaseURL      *string
@@ -314,8 +317,19 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		}
 		return nil, err
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindModelInstance,
+		ID:   instance.ID,
+	})
+	if err != nil || !access.Allows(permission.OperationUse) {
+		if err == nil {
+			err = permission.ErrPermissionDenied
+		}
 		_, normalizedErr := normalizeModelPermissionError(err)
+		return nil, normalizedErr
+	}
+	if access.Source != permission.AccessSourceOwner && hasSavedProviderInstanceOverrides(options.APIKeyConfig, options.BaseURL, options.Region) {
+		_, normalizedErr := normalizeModelPermissionError(permission.ErrPermissionDenied)
 		return nil, normalizedErr
 	}
 	providerName = provider.ProviderName
@@ -457,7 +471,7 @@ func NormalizeAPIKey(raw json.RawMessage) string {
 	return compact.String()
 }
 
-var safeProviderAPIKeyConfigFields = map[string]struct{}{
+var providerAPIKeyConfigFields = map[string]struct{}{
 	"api_version":              {},
 	"auth_mode":                {},
 	"aws_role_arn":             {},
@@ -475,6 +489,41 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+}
+
+var safeProviderAPIKeyConfigFields = map[string]struct{}{
+	"api_version":              {},
+	"auth_mode":                {},
+	"bedrock_region":           {},
+	"fish_audio_refid":         {},
+	"google_project_id":        {},
+	"google_region":            {},
+	"group_id":                 {},
+	"mineru_apiserver":         {},
+	"mineru_backend":           {},
+	"mineru_delete_output":     {},
+	"mineru_output_dir":        {},
+	"mineru_server_url":        {},
+	"opendataloader_apiserver": {},
+	"paddleocr_algorithm":      {},
+	"paddleocr_api_url":        {},
+	"provider_order":           {},
+}
+
+func hasSavedProviderAPIKeyConfig(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		return false
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &config); err != nil {
+		return true
+	}
+	return len(config) > 0
+}
+
+func hasSavedProviderInstanceOverrides(apiKeyConfig json.RawMessage, baseURL, region *string) bool {
+	return baseURL != nil || region != nil || hasSavedProviderAPIKeyConfig(apiKeyConfig)
 }
 
 func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interface{}, map[string]bool, map[string]string) {
@@ -634,7 +683,7 @@ func mergeSavedProviderAPIKeyConfig(existing string, submitted json.RawMessage) 
 	}
 	updated := false
 	for key, value := range submittedConfig {
-		if _, safe := safeProviderAPIKeyConfigFields[key]; safe {
+		if _, safe := providerAPIKeyConfigFields[key]; safe {
 			updated = true
 			trimmed := bytes.TrimSpace(value)
 			if bytes.Equal(trimmed, []byte("null")) {
@@ -1066,6 +1115,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 			"region":              extraFields["region"],
 			"status":              instance.Status,
 			"operator_permission": access.PermissionMask,
+			"is_owner":            access.Source == permission.AccessSourceOwner,
 		})
 	}
 
@@ -1126,6 +1176,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"region":        extraFields["region"],
 		"base_url":      extraFields["base_url"],
 		"status":        instance.Status,
+		"is_owner":      access.Source == permission.AccessSourceOwner,
 	}
 	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
 		configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
@@ -1194,9 +1245,19 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey string, clearAPIKey, useSavedCredentials bool, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
+// CheckConnection verifies provider connectivity. When saved credentials are
+// selected, only the instance owner may override their endpoint or config.
+func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName string, req CheckConnectionRequest, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
+	apiKey := strings.TrimSpace(NormalizeAPIKey(req.APIKey))
+	region := strings.TrimSpace(req.Region)
+	baseURL := strings.TrimSpace(req.BaseURL)
+	clearAPIKey := req.ClearAPIKey
+	useSavedCredentials := req.UseSavedCredentials
+	instanceID := strings.TrimSpace(req.InstanceID)
+	modelInfo := req.ModelInfo
 	var savedInstance *entity.TenantModelInstance
+	var instanceAccess permission.Access
 	if instanceID != "" {
 		instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceID)
 		if err != nil {
@@ -1219,7 +1280,14 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 			code, normalizedErr := normalizeModelPermissionError(err)
 			return code, normalizedErr
 		}
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUpdate); err != nil {
+		instanceAccess, err = permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: permission.ResourceKindModelInstance,
+			ID:   instance.ID,
+		})
+		if err != nil || !instanceAccess.Allows(permission.OperationUpdate) {
+			if err == nil {
+				err = permission.ErrPermissionDenied
+			}
 			code, normalizedErr := normalizeModelPermissionError(err)
 			return code, normalizedErr
 		}
@@ -1232,9 +1300,6 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	apiKey = strings.TrimSpace(apiKey)
-	region = strings.TrimSpace(region)
-	baseURL = strings.TrimSpace(baseURL)
 	if savedInstance != nil {
 		extra := make(map[string]interface{})
 		if savedInstance.Extra != "" {
@@ -1243,13 +1308,31 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 			}
 		}
 		if useSavedCredentials {
-			if clearAPIKey || apiKey != "" || region != "" || baseURL != "" {
-				return common.CodeBadRequest, errors.New("saved credentials cannot be combined with submitted credentials or endpoint settings")
+			if clearAPIKey || apiKey != "" {
+				return common.CodeBadRequest, errors.New("saved credentials cannot be combined with submitted credentials")
+			}
+			if instanceAccess.Source != permission.AccessSourceOwner && (region != "" || baseURL != "" || hasSavedProviderAPIKeyConfig(req.APIKeyConfig)) {
+				code, normalizedErr := normalizeModelPermissionError(permission.ErrPermissionDenied)
+				return code, normalizedErr
 			}
 			apiKey = savedInstance.APIKey
-			region, _ = extra["region"].(string)
-			baseURL, _ = extra["base_url"].(string)
+			if hasSavedProviderAPIKeyConfig(req.APIKeyConfig) {
+				var err error
+				apiKey, err = mergeSavedProviderAPIKeyConfig(apiKey, req.APIKeyConfig)
+				if err != nil {
+					return common.CodeBadRequest, err
+				}
+			}
+			if region == "" {
+				region, _ = extra["region"].(string)
+			}
+			if baseURL == "" {
+				baseURL, _ = extra["base_url"].(string)
+			}
 		} else {
+			if hasSavedProviderAPIKeyConfig(req.APIKeyConfig) {
+				return common.CodeBadRequest, errors.New("api_key_config requires saved credentials")
+			}
 			if region == "" {
 				region, _ = extra["region"].(string)
 			}
@@ -1259,6 +1342,8 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		}
 	} else if useSavedCredentials {
 		return common.CodeBadRequest, errors.New("saved credentials require an existing model instance")
+	} else if hasSavedProviderAPIKeyConfig(req.APIKeyConfig) {
+		return common.CodeBadRequest, errors.New("api_key_config requires saved credentials")
 	}
 	if region == "" {
 		region = "default"
@@ -1283,13 +1368,8 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		BaseURL: &baseURL,
 	}
 
-	// Mirror Python verify_api_key: verify each model by making a real
-	// lightweight API request.  Returns per-model verify results.
 	modelVerifyResult, verifyErr := verifyProviderModel(ctx, driver, providerInfo.Models, apiConfig, modelInfo)
 
-	// When instanceID is provided (frontend passes it), persist the verify
-	// results to the database — mirrors Python's per-model update_model calls
-	// inside the /connection/verify REST endpoint.
 	if instanceID != "" && len(modelVerifyResult) > 0 {
 		if dbErr := m.updateModelVerifyResults(ctx, userID, providerName, instanceID, modelVerifyResult); dbErr != nil {
 			if permissionresponse.IsPermissionError(dbErr) {

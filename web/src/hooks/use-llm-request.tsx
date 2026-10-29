@@ -361,6 +361,7 @@ export const useVerifyProviderConnection = () => {
       api_key?: string | Record<string, any>;
       clear_api_key?: boolean;
       use_saved_credentials?: boolean;
+      api_key_config?: Record<string, unknown>;
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];

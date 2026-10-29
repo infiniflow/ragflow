@@ -55,7 +55,6 @@ import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
 import { VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
-import { hasProviderCredentialInput } from '../provider-schema/field-config/utils';
 import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
@@ -65,6 +64,11 @@ import {
   SAVED_CREDENTIAL_MASK,
   unwrapApiKey,
 } from './hooks';
+import {
+  SavedProviderConfigFieldSet,
+  hasUnsavedProviderCredential,
+  pickSavedProviderConfigOverrides,
+} from './saved-provider-config';
 import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
@@ -434,6 +438,7 @@ export const BedrockInstanceCard = forwardRef<
     const credentialChanged = Object.entries(storedCredentialStatus).some(
       ([field, configured]) =>
         configured &&
+        !SavedProviderConfigFieldSet.has(field) &&
         currentValues[field] !== undefined &&
         currentValues[field] !== SAVED_CREDENTIAL_MASK,
     );
@@ -441,15 +446,26 @@ export const BedrockInstanceCard = forwardRef<
       !isDraft &&
       !payload.clear_api_key &&
       !credentialChanged &&
-      !hasProviderCredentialInput(payload.api_key) &&
-      (!payload.base_url || payload.base_url === instanceDetails?.base_url) &&
-      (!payload.region || payload.region === instanceDetails?.region);
+      !hasUnsavedProviderCredential(payload.api_key);
+    const canOverrideSavedCredentials =
+      useSavedCredentials && instanceDetails?.is_owner === true;
+    const savedConfigOverrides = canOverrideSavedCredentials
+      ? pickSavedProviderConfigOverrides(payload.api_key)
+      : {};
     const ret = await verifyProviderConnection({
       provider_name: providerName,
       ...(!isDraft ? { instance_id: instance.id } : {}),
       ...(payload.clear_api_key ? { clear_api_key: true } : {}),
       ...(useSavedCredentials
-        ? { use_saved_credentials: true }
+        ? {
+            use_saved_credentials: true,
+            ...(Object.keys(savedConfigOverrides).length > 0
+              ? { api_key_config: savedConfigOverrides }
+              : {}),
+            ...(canOverrideSavedCredentials
+              ? { base_url: payload.base_url, region: payload.region }
+              : {}),
+          }
         : {
             api_key: JSON.stringify(payload.api_key),
             base_url: payload.base_url,
@@ -468,8 +484,7 @@ export const BedrockInstanceCard = forwardRef<
     draftName,
     instance.instance_name,
     instance.id,
-    instanceDetails?.base_url,
-    instanceDetails?.region,
+    instanceDetails?.is_owner,
     storedCredentialStatus,
     verifyProviderConnection,
     tSetting,

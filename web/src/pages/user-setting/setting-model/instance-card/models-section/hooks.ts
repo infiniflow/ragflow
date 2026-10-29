@@ -48,6 +48,11 @@ import {
 import { sortModelTypes } from '../available-models';
 import { useCustomModelFields } from '../use-custom-model-fields';
 import { ModelsSectionProps, VerifyStatus } from './interface';
+import {
+  SavedProviderConfigFieldSet,
+  SavedProviderConfigFields,
+  hasUnsavedProviderCredential,
+} from '../saved-provider-config';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -131,27 +136,6 @@ export type ResolvedCreds = {
   credentialChanged?: boolean;
 };
 
-const SavedProviderConfigFields = [
-  'api_version',
-  'auth_mode',
-  'aws_role_arn',
-  'bedrock_region',
-  'fish_audio_refid',
-  'google_project_id',
-  'google_region',
-  'group_id',
-  'mineru_apiserver',
-  'mineru_backend',
-  'mineru_delete_output',
-  'mineru_output_dir',
-  'mineru_server_url',
-  'opendataloader_apiserver',
-  'paddleocr_algorithm',
-  'paddleocr_api_url',
-  'provider_order',
-] as const;
-const SavedProviderConfigFieldSet = new Set<string>(SavedProviderConfigFields);
-
 function isVisibleSavedConfigField(
   providerName: string,
   field: { name: string; shouldRender?: string | ((values: any) => boolean) },
@@ -166,27 +150,6 @@ function isVisibleSavedConfigField(
     return providerName.toLowerCase() === LLMFactory.MiniMax.toLowerCase();
   }
   return true;
-}
-
-function hasUnsavedProviderCredential(value: string | object): boolean {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return false;
-    try {
-      const parsed = JSON.parse(trimmed);
-      if (parsed && typeof parsed === 'object') {
-        return hasUnsavedProviderCredential(parsed);
-      }
-    } catch {
-      return true;
-    }
-    return true;
-  }
-  return Object.entries(value).some(
-    ([field, fieldValue]) =>
-      !SavedProviderConfigFieldSet.has(field) &&
-      hasProviderCredentialInput({ [field]: fieldValue }),
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -296,12 +259,13 @@ interface UseModelsCatalogArgs {
   hideActions: boolean;
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
+  instance?: IProviderInstance;
 
   apiKeyValue: ResolvedCreds['apiKey'];
 
   baseUrlValue: string | undefined;
 
-  regionValue: ResolvedCreds['region'];
+  regionValue?: ResolvedCreds['region'];
 
   instanceDetailsLoaded?: boolean;
 
@@ -320,6 +284,7 @@ export function useModelsCatalog({
   hideActions,
   resolveCreds,
   instanceModels,
+  instance,
   apiKeyValue,
   baseUrlValue,
   regionValue,
@@ -402,7 +367,7 @@ export function useModelsCatalog({
     } = resolveCreds();
     if (
       providerName === LLMFactory.VolcEngine &&
-      !hasProviderCredentialInput(apiKey) &&
+      !hasUnsavedProviderCredential(apiKey) &&
       !hasStoredCredentials
     ) {
       setHasFetched(true);
@@ -415,19 +380,20 @@ export function useModelsCatalog({
         instanceName !== DRAFT_INSTANCE_SENTINEL &&
         !hasUnsavedProviderCredential(apiKey) &&
         !credentialChanged;
+      const canOverrideSavedCredentials =
+        useStoredCredentials && instance?.is_owner === true;
       const ret = await listProviderModels({
         provider_name: providerName,
         ...(!useStoredCredentials ? { api_key: apiKey as any } : {}),
-        ...(useStoredCredentials &&
+        ...(canOverrideSavedCredentials &&
         apiKeyConfig &&
         Object.keys(apiKeyConfig).length > 0
           ? { api_key_config: apiKeyConfig }
           : {}),
-        base_url: baseUrl,
-        region,
+        ...(!useStoredCredentials || canOverrideSavedCredentials
+          ? { base_url: baseUrl, region }
+          : {}),
         ...(useStoredCredentials ? { use_saved_credentials: true } : {}),
-        // The saved instance identifies which secret to use. Current
-        // non-secret form values and endpoint overrides are still sent above.
         ...(instanceName && instanceName !== DRAFT_INSTANCE_SENTINEL
           ? { instance_name: instanceName }
           : {}),
@@ -773,21 +739,21 @@ function buildVerifyArgs(
     baseUrl = creds.baseUrl;
   }
 
-  const credentialChanged = Object.entries(credentialStatus).some(
-    ([field, configured]) =>
-      configured &&
-      formValues[field] !== undefined &&
-      formValues[field] !== SAVED_CREDENTIAL_MASK,
-  );
+  const resolvedCreds = resolveCreds();
+  const credentialChanged =
+    resolvedCreds.credentialChanged === true ||
+    Object.entries(credentialStatus).some(
+      ([field, configured]) =>
+        configured &&
+        !SavedProviderConfigFieldSet.has(field) &&
+        formValues[field] !== undefined &&
+        formValues[field] !== SAVED_CREDENTIAL_MASK,
+    );
 
-  const isSavedEndpoint =
-    instance != null &&
-    (!baseUrl || baseUrl === instance.base_url) &&
-    (!region || region === instance.region);
   const useSavedCredentials =
-    Boolean(instance?.id && isSavedEndpoint) &&
+    Boolean(instance?.id) &&
     !credentialChanged &&
-    !hasProviderCredentialInput(apiKey);
+    !hasUnsavedProviderCredential(apiKey);
 
   // `api_key` is typed `string` on the service signature, but
   // providers with a `verifyTransform` may legitimately produce an
@@ -797,9 +763,16 @@ function buildVerifyArgs(
   return {
     provider_name: providerName,
     ...(!useSavedCredentials ? { api_key: apiKey as any } : {}),
-    ...(useSavedCredentials ? {} : { base_url: baseUrl }),
+    ...(useSavedCredentials &&
+    instance?.is_owner === true &&
+    resolvedCreds.apiKeyConfig &&
+    Object.keys(resolvedCreds.apiKeyConfig).length > 0
+      ? { api_key_config: resolvedCreds.apiKeyConfig }
+      : {}),
+    ...(!useSavedCredentials || instance?.is_owner === true
+      ? { base_url: baseUrl, region }
+      : {}),
     model_info: modelInfo,
-    ...(!useSavedCredentials && region ? { region } : {}),
     ...(instance?.id ? { instance_id: instance.id } : {}),
     ...(useSavedCredentials ? { use_saved_credentials: true } : {}),
   };
