@@ -158,3 +158,56 @@ func TestPaddleOCRPDFResultDropsMismatchedPageGeometry(t *testing.T) {
 		})
 	}
 }
+
+func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+		{Label: "chart", Text: "![chart](https://example.invalid/c.png)", BBox: []float64{10, 240, 100, 340}},
+		{Label: "seal", Text: "![seal](https://example.invalid/s.png)", BBox: []float64{10, 350, 100, 450}},
+		{Text: "![uncaptioned](https://example.invalid/u.png)", BBox: []float64{10, 460, 100, 560}},
+	}}}}
+	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 5 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"", "Figure 1: pipeline", "", "", ""} {
+		item := result.JSON[i].ToMap()
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText {
+			t.Fatalf("item %d = %v", i, item)
+		}
+		if item["page_number"] != 1 {
+			t.Fatalf("item %d page_number = %v", i, item["page_number"])
+		}
+		if item["positions"] == nil {
+			t.Fatalf("item %d lost its crop region: %v", i, item)
+		}
+	}
+}
+
+func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+	}}}}
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response))
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"", "Figure 1: pipeline"} {
+		item := result.JSON[i].ToMap()
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText || item["page_number"] != 1 {
+			t.Fatalf("item %d = %v", i, item)
+		}
+	}
+}
