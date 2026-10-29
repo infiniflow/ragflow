@@ -387,12 +387,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	options, err := sessionHistoryQuery(c)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req, options)
+	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -469,12 +464,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	options, err := sessionHistoryQuery(c)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req, options)
+	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -495,12 +485,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	ctx := c.Request.Context()
-	options, err := sessionHistoryQuery(c)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID, options)
+	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -536,12 +521,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 		return
 	}
 
-	options, err := sessionHistoryQuery(c)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		return
-	}
-	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req, options)
+	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return

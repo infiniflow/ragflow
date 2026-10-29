@@ -834,6 +834,7 @@ func TestUpdateSession_NotFound(t *testing.T) {
 
 func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	store := newFakeSessionStore()
+	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1"}
 	store.sessions["session-1"] = &entity.ChatSession{
 		ID:       "session-1",
 		DialogID: "chat-1",
@@ -849,7 +850,7 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, code, err := svc.DeleteSessionMessage(ctx, "user-1", "chat-1", "session-1", "msg-1", dao.ConversationHistoryOptions{IncludeReference: true})
+	resp, code, err := svc.DeleteSessionMessage(ctx, "user-1", "chat-1", "session-1", "msg-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -861,6 +862,13 @@ func TestDeleteSessionMessage_RemovesMessagePairAndReference(t *testing.T) {
 	}
 	if resp.Messages[1]["id"] != "msg-2" || resp.Messages[2]["id"] != "msg-2" {
 		t.Fatalf("remaining pair=%#v", resp.Messages)
+	}
+	if _, ok := resp.Messages[2]["reference"]; ok {
+		t.Fatalf("delete response contains reference: %#v", resp.Messages[2])
+	}
+	resp, code, err = svc.GetSession(ctx, "user-1", "chat-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("GetSession: code=%v err=%v", code, err)
 	}
 	ref, ok := resp.Messages[2]["reference"].(map[string]interface{})
 	if !ok {

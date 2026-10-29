@@ -3529,11 +3529,12 @@ with `prompt_tokens`, `completion_tokens`, and `total_tokens`) and `elapsed_ms`
 - `include_prompt`: boolean, defaults to `false`. Set to `true` to return the
   recorded prompt string inside each answer.
 
-These query parameters also apply to chat session lists, agent session lists,
-and agent session detail endpoints. Chat session create, update, message deletion,
-and feedback responses use the same flags. On read endpoints, fields omitted by
-these flags are excluded from SQL as well as the response. Invalid boolean values
-return an argument error. There is no session-level reference array.
+These query parameters apply only to chat and agent session list and detail
+endpoints. Fields omitted by these flags are excluded from SQL as well as the
+response. Invalid boolean values return an argument error on these read endpoints.
+Create, update, message deletion, and feedback endpoints ignore these query
+parameters and omit `reference` and `prompt` from their responses.
+There is no session-level reference array.
 
 The UI requests references for citations and source previews, and prompts for
 answer details. Older messages omit unavailable usage, timing, or prompt fields.

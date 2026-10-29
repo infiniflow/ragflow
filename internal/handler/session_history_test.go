@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -16,7 +17,7 @@ import (
 )
 
 func TestSessionHistoryQueryFlags(t *testing.T) {
-	for _, endpoint := range []string{"chat", "chat_list", "agent", "agent_list"} {
+	for _, endpoint := range []string{"chat", "chat_list", "agent", "agent_list", "create", "update", "delete_message", "feedback"} {
 		for _, flags := range []struct {
 			query     string
 			reference bool
@@ -32,7 +33,15 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 			{query: "include_prompt=invalid", invalid: true},
 		} {
 			t.Run(endpoint+"/"+flags.query, func(t *testing.T) {
+				mutation := endpoint == "create" || endpoint == "update" || endpoint == "delete_message" || endpoint == "feedback"
 				c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/?"+flags.query)
+				if mutation {
+					body := `{"name":"session"}`
+					if endpoint == "feedback" {
+						body = `{"thumbup":true}`
+					}
+					c.Request.Body = io.NopCloser(strings.NewReader(body))
+				}
 				if err := db.AutoMigrate(&entity.Chat{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.API4ConversationMessage{}); err != nil {
 					t.Fatal(err)
 				}
@@ -46,13 +55,23 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 				if err := dao.NewChatSessionDAO().Create(c.Request.Context(), db, &entity.ChatSession{ID: "session", DialogID: "chat", UserID: sptr("user-1"), Message: message}); err != nil {
 					t.Fatal(err)
 				}
+				if mutation {
+					for _, update := range []dao.ConversationHistoryUpdate{
+						{Message: map[string]interface{}{"id": "turn", "role": "user", "content": "question"}},
+						{QuestionID: "turn", Message: map[string]interface{}{"id": "turn", "role": "assistant", "content": "answer", "prompt": "large prompt", "reference": map[string]interface{}{"chunks": []interface{}{}}}},
+					} {
+						if err := dao.NewChatSessionDAO().UpdateByID(c.Request.Context(), db, "session", map[string]interface{}{"history_update": update}); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
 				if err := dao.NewAPI4ConversationDAO().Create(c.Request.Context(), db, &entity.API4Conversation{ID: "session", DialogID: "agent", UserID: "user-1", Message: message}); err != nil {
 					t.Fatal(err)
 				}
 				var historySQL string
 				if err := db.Callback().Query().After("gorm:query").Register("capture_session_history", func(tx *gorm.DB) {
 					sql := tx.Statement.SQL.String()
-					if strings.Contains(sql, "FROM `conversation_message`") || strings.Contains(sql, "FROM `api_4_conversation_message`") {
+					if strings.Contains(sql, "`content`") && (strings.Contains(sql, "FROM `conversation_message`") || strings.Contains(sql, "FROM `api_4_conversation_message`")) {
 						historySQL = sql
 					}
 				}); err != nil {
@@ -60,7 +79,7 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 				}
 				chat := NewChatSessionHandler(service.NewChatSessionService(), nil)
 				agent := NewAgentHandler(c.Request.Context(), service.NewAgentService(), nil)
-				c.Params = gin.Params{{Key: "chat_id", Value: "chat"}, {Key: "canvas_id", Value: "agent"}, {Key: "session_id", Value: "session"}}
+				c.Params = gin.Params{{Key: "chat_id", Value: "chat"}, {Key: "canvas_id", Value: "agent"}, {Key: "session_id", Value: "session"}, {Key: "msg_id", Value: "turn"}}
 				switch endpoint {
 				case "chat":
 					chat.GetSession(c)
@@ -70,6 +89,14 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 					agent.GetAgentSession(c)
 				case "agent_list":
 					agent.ListAgentSessions(c)
+				case "create":
+					chat.CreateSession(c)
+				case "update":
+					chat.UpdateSession(c)
+				case "delete_message":
+					chat.DeleteSessionMessage(c)
+				case "feedback":
+					chat.UpdateMessageFeedback(c)
 				}
 				var response struct {
 					Code common.ErrorCode `json:"code"`
@@ -78,7 +105,7 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 					t.Fatal(err)
 				}
-				if flags.invalid {
+				if flags.invalid && !mutation {
 					if response.Code != common.CodeArgumentError || historySQL != "" {
 						t.Fatalf("invalid flags should fail before history SQL: %s", w.Body.String())
 					}
@@ -86,6 +113,25 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 				}
 				if response.Code != common.CodeSuccess {
 					t.Fatalf("session request failed: %s", w.Body.String())
+				}
+				if mutation {
+					var session struct {
+						Messages []map[string]interface{} `json:"messages"`
+					}
+					if err := json.Unmarshal(response.Data, &session); err != nil || len(session.Messages) == 0 {
+						t.Fatalf("invalid mutation response: %s, %v", response.Data, err)
+					}
+					for _, message := range session.Messages {
+						for _, field := range []string{"reference", "prompt"} {
+							if _, exists := message[field]; exists {
+								t.Fatalf("mutation returned %s: %s", field, response.Data)
+							}
+						}
+					}
+					if strings.Contains(historySQL, "`prompt`") || strings.Contains(historySQL, "`reference`") != (endpoint == "feedback") {
+						t.Fatalf("mutation loaded unneeded large fields: %s", historySQL)
+					}
+					return
 				}
 				data := response.Data
 				if strings.HasSuffix(endpoint, "_list") {

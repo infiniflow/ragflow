@@ -203,7 +203,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 }
 
 // CreateSession create a session in a dialog
-func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID string, req map[string]interface{}, options ...dao.ConversationHistoryOptions) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
 	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationCreate); err != nil {
 		code, normalizedErr := normalizeChatPermissionError(err)
 		return nil, code, normalizedErr
@@ -256,11 +256,11 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 		return nil, common.CodeDataError, errors.New("fail to create a session")
 	}
 
-	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conv.ID, sessionHistoryOptions(options...))
+	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conv.ID, sessionHistoryOptions())
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("fail to create a session")
 	}
-	return s.buildSessionPayload(session, nil, false, options...), common.CodeSuccess, nil
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
 // DeleteSessions delete a session in a dialog
@@ -435,7 +435,7 @@ func checkDuplicateChatSessionIDs(ids []string) ([]string, []string) {
 }
 
 // UpdateSession updates one chat session after Python-style field validation.
-func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, sessionID string, req map[string]interface{}, options ...dao.ConversationHistoryOptions) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, sessionID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
 	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		code, normalizedErr := normalizeChatPermissionError(err)
 		return nil, code, normalizedErr
@@ -496,7 +496,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		}
 	}
 
-	session, err = s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions(options...))
+	session, err = s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions())
 	if err != nil {
 		if isChatSessionNotFound(err) {
 			return nil, common.CodeDataError, errors.New("fail to update a session")
@@ -504,16 +504,16 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		return nil, common.CodeServerError, err
 	}
 
-	return s.buildSessionPayload(session, nil, false, options...), common.CodeSuccess, nil
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, chatID, sessionID, msgID string, options ...dao.ConversationHistoryOptions) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, chatID, sessionID, msgID string) (*ChatSessionPayload, common.ErrorCode, error) {
 	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		code, normalizedErr := normalizeChatPermissionError(err)
 		return nil, code, normalizedErr
 	}
 
-	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions(options...))
+	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, sessionHistoryOptions())
 	if err != nil || session.DialogID != chatID {
 		if err != nil && !isChatSessionNotFound(err) {
 			return nil, common.CodeServerError, err
@@ -564,16 +564,16 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	}
 	session.Message = messageRaw
 
-	return s.buildSessionPayload(session, nil, false, options...), common.CodeSuccess, nil
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
-func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}, options ...dao.ConversationHistoryOptions) (*ChatSessionPayload, common.ErrorCode, error) {
+func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
 	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		code, normalizedErr := normalizeChatPermissionError(err)
 		return nil, code, normalizedErr
 	}
 
-	historyOptions := sessionHistoryOptions(options...)
+	historyOptions := sessionHistoryOptions()
 	historyOptions.IncludeReference = true
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID, historyOptions)
 	if err != nil || session.DialogID != chatID {
@@ -673,7 +673,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		}
 	}
 
-	return s.buildSessionPayload(session, nil, false, options...), common.CodeSuccess, nil
+	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
 
 const (
