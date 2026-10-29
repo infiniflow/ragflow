@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 from unittest.mock import Mock
 
 import pytest
-from conftest import add_document, raw_ids, wait_until
+from test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest import add_document, raw_ids, wait_until
 from ragflow_sdk import Chunk, Document, RAGFlow
 from ragflow_sdk.modules.chunk import ChunkUpdateError
 
@@ -173,7 +173,7 @@ def test_wait_deadline():
 
 
 def test_pagination_detects_repeated_pages(document, monkeypatch):
-    monkeypatch.setattr("conftest.raw_chunks", lambda *args, **kwargs: [{"chunk_id": str(i)} for i in range(100)])
+    monkeypatch.setattr("test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest.raw_chunks", lambda *args, **kwargs: [{"chunk_id": str(i)} for i in range(100)])
     with pytest.raises(AssertionError, match="pagination repeated IDs"):
         raw_ids(document)
 

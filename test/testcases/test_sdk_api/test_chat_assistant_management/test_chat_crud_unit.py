@@ -17,7 +17,7 @@
 from copy import deepcopy
 from inspect import unwrap
 
-import conftest as chat_fixtures
+from test.testcases.test_sdk_api.test_chat_assistant_management import conftest as chat_fixtures
 import pytest
 import requests
 from beartype.roar import BeartypeCallHintParamViolation

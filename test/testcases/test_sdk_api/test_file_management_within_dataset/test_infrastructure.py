@@ -18,7 +18,7 @@
 
 from types import SimpleNamespace
 
-import conftest as fixtures
+from test.testcases.test_sdk_api.test_file_management_within_dataset import conftest as fixtures
 import pytest
 
 
