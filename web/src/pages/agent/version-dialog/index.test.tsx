@@ -49,7 +49,8 @@ jest.mock('@xyflow/react', () => ({
 
 const mockUpdateVersion = jest.fn();
 
-// Both versions are released: the dialog only lists published versions.
+// One released version and one unpublished legacy snapshot: the dialog lists
+// every row and marks only the released one with a Dot.
 // `let` so pagination tests can swap in a larger list before rendering.
 let mockVersions = [
   {
@@ -63,7 +64,6 @@ let mockVersions = [
     id: 'v-old',
     title: 'Old Snapshot',
     created_at: '2024-01-01',
-    release: true,
     alias: 'old',
   },
 ];
@@ -96,6 +96,26 @@ const renderDialog = () =>
   );
 
 const getRow = (title: string) => screen.getByText(title).closest('li')!;
+
+describe('VersionDialog release marker', () => {
+  it('lists unpublished legacy versions alongside released ones', () => {
+    renderDialog();
+
+    expect(screen.getByText('Latest')).toBeInTheDocument();
+    expect(screen.getByText('Old Snapshot')).toBeInTheDocument();
+  });
+
+  it('marks only released rows with the accent dot', () => {
+    renderDialog();
+
+    expect(
+      getRow('Latest').querySelector('.bg-accent-primary'),
+    ).toBeInTheDocument();
+    expect(
+      getRow('Old Snapshot').querySelector('.bg-accent-primary'),
+    ).not.toBeInTheDocument();
+  });
+});
 
 describe('VersionDialog alias edit entry (G2/section 4.4, T35)', () => {
   it('renders an edit-alias button for every version', () => {

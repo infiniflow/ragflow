@@ -154,8 +154,9 @@ export function useParserTreeData({ value }: { value?: string }) {
               : version.title,
             searchKeywords: version.alias ? [version.alias] : undefined,
             // The trigger display needs the alias and the unpolluted title
-            // (title above has the alias joined in for search); the dropdown
-            // row renders the full alias from `label` uncapped.
+            // (title above has the alias joined in for search). The dropdown
+            // row caps the alias at a fixed width — the popover is w-auto, so
+            // an uncapped alias would blow it wide instead of truncating.
             data: version.alias
               ? { title: version.title, alias: version.alias }
               : undefined,
@@ -163,6 +164,7 @@ export function useParserTreeData({ value }: { value?: string }) {
               <PipelineVersionLabel
                 title={version.title}
                 alias={version.alias}
+                aliasClassName="max-w-60"
               />
             ),
           }));
