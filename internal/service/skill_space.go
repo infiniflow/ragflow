@@ -508,7 +508,12 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	// tenant member can create the space while only the tenant owner may delete
 	// it, so tenantID is not the principal that owns the folder.
 	actingUserID := tenantID
-	if folder, err := s.fileDAO.GetByID(ctx, dao.DB, folderID); err == nil && folder != nil && folder.CreatedBy != "" {
+	// The detached context carries no deadline, so the lookup needs its own; a
+	// stalled read would otherwise block the cleanup before the bounded delete.
+	lookupCtx, cancelLookup := context.WithTimeout(ctx, 30*time.Second)
+	folder, lookupErr := s.fileDAO.GetByID(lookupCtx, dao.DB, folderID)
+	cancelLookup()
+	if lookupErr == nil && folder != nil && folder.CreatedBy != "" {
 		actingUserID = folder.CreatedBy
 	}
 	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
