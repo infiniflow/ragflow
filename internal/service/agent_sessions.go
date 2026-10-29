@@ -672,14 +672,14 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	// by entity.BaseModel.BeforeCreate when the DAO Create() call runs,
 	// so we do not set them explicitly here.
 	row := &entity.API4Conversation{
-		ID:           id,
-		Name:         namePtr,
-		DialogID:     req.AgentID,
-		UserID:       req.UserID,
-		ExpUserID:    &req.UserID,
-		Message:      messages,
-		Source:       sourcePtr,
-		DSL:          dsl,
+		ID:        id,
+		Name:      namePtr,
+		DialogID:  req.AgentID,
+		UserID:    req.UserID,
+		ExpUserID: &req.UserID,
+		Message:   messages,
+		Source:    sourcePtr,
+		DSL:       dsl,
 	}
 	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("create agent session: %w", err)
