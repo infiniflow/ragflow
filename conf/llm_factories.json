@@ -3533,6 +3533,15 @@
             "url": "https://api.runcrate.ai/v1"
         },
         {
+            "name": "WorldRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "990",
+            "url": "https://inference-api.worldrouter.ai/v1"
+        },
+        {
             "name": "CloudGPU",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT",

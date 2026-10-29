@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
@@ -292,5 +294,38 @@ func TestCSVParser_PreservesInternalJoiners(t *testing.T) {
 	}
 	if !strings.Contains(text, "<td>"+persian+"</td>") {
 		t.Errorf("Persian half-space lost: %q", text)
+	}
+}
+
+func TestCSVParser_GBK(t *testing.T) {
+	csvText := "产品,分类,价格,备注\n笔记本电脑,电子,6999.00,\"特价销售，送鼠标\"\n无线耳机,配件,399.00,\"热销\"\n"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(csvText))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	p := NewCSVParser()
+	res := p.ParseWithResult(context.Background(), "products.csv", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("CSVParser.ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatalf("CSVParser returned no JSON items")
+	}
+	var rowText strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text := tableItemHTML(t, item)
+		rowText.WriteString(text)
+	}
+	if strings.ContainsRune(rowText.String(), '\ufffd') {
+		t.Errorf("CSV output contains replacement runes: %s", rowText.String())
+	}
+	for _, want := range []string{"笔记本电脑", "电子", "特价销售，送鼠标", "无线耳机"} {
+		if !strings.Contains(rowText.String(), want) {
+			t.Errorf("CSV output missing expected substring %q; got: %s", want, rowText.String())
+		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" && enc != "gb2312" {
+		t.Errorf("CSV File.encoding = %q, want gbk/gb2312/gb18030", enc)
 	}
 }

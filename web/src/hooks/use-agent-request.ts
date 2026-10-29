@@ -59,7 +59,12 @@ import agentService, {
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, isEmpty, set } from 'lodash';
 import { useCallback, useState } from 'react';
@@ -68,6 +73,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useSessionList } from './use-session-list';
 
 export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
@@ -137,6 +143,8 @@ export const AgentKeys = {
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  inputForm: (agentId?: string, componentId?: string) =>
+    [AgentApiAction.FetchInputForm, agentId, componentId] as const,
   versionList: (agentId?: string) =>
     [AgentApiAction.FetchVersionList, agentId] as const,
   version: (agentId?: string, versionId?: string) =>
@@ -757,7 +765,7 @@ export const useFetchInputForm = (componentId?: string) => {
   const { id } = useParams();
 
   const { data } = useQuery<Record<string, any>>({
-    queryKey: [AgentApiAction.FetchInputForm],
+    queryKey: AgentKeys.inputForm(id, componentId),
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {
@@ -797,30 +805,43 @@ export const useFetchVersionList = () => {
   return { data, loading };
 };
 
+// Row shape of a published canvas version, newest-first (design section 7/E1),
+// including the free-text alias (A2/F1).
+export interface ICanvasVersionRow {
+  id: string;
+  title: string;
+  created_at: string;
+  release?: boolean;
+  alias?: string;
+}
+
+// Shared query key/options for a canvas's published version list. The raw
+// 'canvasVersionList' key predates the AgentKeys factory; both the single- and
+// multi-canvas hooks must keep using it verbatim so the version delete/alias
+// mutations below invalidate every observer.
+const canvasVersionListQuery = (canvasId: string) => ({
+  queryKey: ['canvasVersionList', canvasId] as const,
+  queryFn: async (): Promise<ICanvasVersionRow[]> => {
+    const { data } = await agentService.fetchVersionList(canvasId);
+    return data?.data ?? [];
+  },
+});
+
 // useFetchCanvasVersionList lists the published versions of an arbitrary canvas
 // (dataflow or agent) by id. Unlike useFetchVersionList it takes the canvas id
 // explicitly (not from route params) so the document pipeline dialog can load
-// versions for the currently selected dataflow canvas. The backend returns them
-// newest-first (design section 7/E1) and includes the free-text alias (A2/F1).
+// versions for the currently selected dataflow canvas.
 export const useFetchCanvasVersionList = (canvasId?: string) => {
   const {
     data,
     isFetching: loading,
     isError,
-  } = useQuery<
-    Array<{
-      id: string;
-      title: string;
-      created_at: string;
-      release?: boolean;
-      alias?: string;
-    }>
-  >({
+  } = useQuery({
     queryKey: ['canvasVersionList', canvasId],
     initialData: [],
     gcTime: 0,
     enabled: !!canvasId,
-    queryFn: async () => {
+    queryFn: async (): Promise<ICanvasVersionRow[]> => {
       if (!canvasId) return [];
       const { data } = await agentService.fetchVersionList(canvasId);
       return data?.data ?? [];
@@ -828,6 +849,20 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
   });
 
   return { data, loading, isError };
+};
+
+// useFetchCanvasVersions lazily loads the published versions of several
+// canvases at once (the parser tree select fetches a canvas's versions only
+// when the user expands it). Unlike useFetchCanvasVersionList it sets no
+// initialData, so `isSuccess` distinguishes "loaded and empty" from "still
+// loading". The returned array aligns index-by-index with `canvasIds`.
+export const useFetchCanvasVersions = (canvasIds: string[]) => {
+  return useQueries({
+    queries: canvasIds.map((canvasId) => ({
+      ...canvasVersionListQuery(canvasId),
+      gcTime: 0,
+    })),
+  });
 };
 
 // useDeleteVersion removes a single canvas version (design section 7/B2). The
@@ -1002,35 +1037,28 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   return { data, loading, refetch };
 };
 
+export const AgentSessionKeys = {
+  all: [AgentApiAction.FetchSessionsByCanvasId] as const,
+  list: (canvasId?: string, tenantId?: string) =>
+    [...AgentSessionKeys.all, canvasId, tenantId] as const,
+};
+
 export const useFetchSessionsByCanvasId = () => {
   const { id: canvasId } = useParams();
   const { data: tenantInfo } = useFetchTenantInfo();
 
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
-    queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
-    initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
-    gcTime: 0,
+  return useSessionList<IAgentLogResponse>({
+    queryKey: AgentSessionKeys.list(canvasId, tenantInfo.tenant_id),
     enabled: !!canvasId && !isEmpty(tenantInfo),
-    queryFn: async () => {
-      if (!canvasId) {
-        return { total: 0, sessions: [] };
-      }
-
-      const { data } = await fetchAgentLogsByCanvasId(canvasId, {
-        page: 1,
-        page_size: 100,
+    fetchPage: async (params) => {
+      const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
+        ...params,
         exp_user_id: tenantInfo.tenant_id,
       });
 
-      return { total: data?.total ?? 0, sessions: data?.data ?? [] };
+      return { total: data?.total ?? 0, items: data?.data ?? [] };
     },
   });
-
-  return {
-    data: data?.sessions ?? [],
-    loading,
-    total: data?.total ?? 0,
-  };
 };
 
 export const useFetchExternalAgentInputs = () => {
@@ -1380,7 +1408,7 @@ export function useCreateAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
         return data.data;
       }
@@ -1412,7 +1440,7 @@ export function useDeleteAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
       }
 

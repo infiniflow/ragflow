@@ -30,8 +30,7 @@ type Environments struct {
 
 	SecretKey string `mapstructure:"secret_key"`
 
-	EnableRegister       *bool `mapstructure:"enable_register"`
-	DisablePasswordLogin *bool `mapstructure:"disable_password_login"`
+	EnableRegister *bool `mapstructure:"enable_register"`
 
 	DocumentEngineType string `mapstructure:"document_engine_type"`
 	DatabaseType       string `mapstructure:"database_type"`
@@ -144,18 +143,6 @@ func (c *Config) GetEnvironments() error {
 		}
 	}
 
-	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
-		if c.environments.DisablePasswordLogin == nil {
-			c.environments.DisablePasswordLogin = new(bool)
-		}
-		str := envVal
-		if str == "true" || str == "1" || str == "yes" {
-			*c.environments.DisablePasswordLogin = true
-		} else {
-			*c.environments.DisablePasswordLogin = false
-		}
-	}
-
 	// Doc engine
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
@@ -186,6 +173,8 @@ func (c *Config) GetEnvironments() error {
 		switch storageType {
 		case "minio", "s3", "oss", "gcs":
 			c.environments.StorageType = storageType
+		case "aws_s3":
+			c.environments.StorageType = "s3"
 		default:
 			return fmt.Errorf("invalid storage type: %s", storageType)
 		}
@@ -596,10 +585,6 @@ func (c *Config) GetEnvLanguage() string {
 
 func (c *Config) GetEnvEnableRegister() bool {
 	return *c.environments.EnableRegister
-}
-
-func (c *Config) GetEnvDisablePasswordLogin() bool {
-	return *c.environments.DisablePasswordLogin
 }
 
 func (c *Config) GetEnvDocumentEngineType() string {

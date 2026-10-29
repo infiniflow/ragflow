@@ -7,7 +7,7 @@ sidebar_custom_props: {
 ---
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API, including migration notes for RAGFlow 1.0. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
@@ -53,23 +53,19 @@ RAGFlow responses may contain both an HTTP status code and a business code in th
 
 ## Migrate to 1.0
 
-RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
+RAGFlow 1.0 updates the public REST API. Use the canonical endpoints documented below.
 
 The following changes require client updates:
 
-| Area | RAGFlow 1.0 Go change | Client action |
+| Area | RAGFlow 1.0 change | Client action |
 |------|------------------------|---------------|
 | Dataset parser selection | Dataset create and update use `parse_type` with `parser_id` (BuiltIn) or `pipeline_id` (Pipeline); responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `"parse_type": 1` and `"parser_id": "<builtin parser>"`. For the general parser, send `"parser_id": "general"`. |
-| Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
-| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
-
-:::note
-Go responses include `X-API-Source: go`, which can be used to verify the serving backend during rollout.
-:::
+| Dataset parser configuration | RAGFlow stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
+| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from earlier releases. | Branch on documented codes rather than exact message text. |
 
 ### Removed API aliases
 
-The following paths remain available only on the Python backend. They are not registered by the RAGFlow 1.0 Go backend.
+The following endpoint aliases are not available in RAGFlow 1.0. Use their replacements below.
 
 | Removed endpoint                                                                  | Replacement endpoint                                                                |
 |-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
@@ -260,7 +256,7 @@ Failure:
 ### Create OpenAI-compatible agent completion
 
 :::caution REMOVED ALIAS
-RAGFlow 1.0 Go does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
+RAGFlow 1.0 does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
 :::
 
 **POST** `/api/v1/agents/chat/completions`
@@ -1118,6 +1114,45 @@ Failure:
 {
     "code": 101,
     "message": "No file part!"
+}
+```
+
+---
+
+### Apply dataset parser settings to existing documents
+
+**POST** `/api/v1/datasets/{dataset_id}/documents/apply-parser-config`
+
+Applies the dataset's saved parser settings to all its existing documents. Save the dataset first with `PUT /api/v1/datasets/{dataset_id}`. This operation requires dataset update permission, takes no request body, and reads the current saved settings on the server.
+
+File-specific parser overrides are replaced. Parser selection and pipeline version are updated together with `parser_config`, using the same file-type resolution as uploads (including dedicated image, audio, presentation, and email parsers). A document assigned to a custom pipeline inherits the dataset's version pin; built-in parsers have no version pin.
+
+Existing chunks, indexes, metadata values, counters, and parsing progress are preserved. This endpoint does not start parsing or delete prior results. Manually re-parse the files to regenerate their content with the saved settings.
+
+All document changes are committed in one transaction. If any document has a queued, running, stopping, or unrecognized ingestion status, the operation fails with response body code `409` and no document changes are committed. Stop parsing or wait for completion before retrying. A database failure also rolls back all document updates. The dataset settings saved by the preceding PUT remain saved if this operation fails.
+
+Repeating this operation against unchanged dataset settings leaves already matching documents unchanged. An empty dataset succeeds with all counts set to zero.
+
+#### Request example
+
+```bash
+curl --request POST \
+     --url http://{address}/api/v1/datasets/{dataset_id}/documents/apply-parser-config \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+#### Response example
+
+```json
+{
+    "code": 0,
+    "message": "Parser settings applied. Re-parse files manually to update their content.",
+    "data": {
+        "dataset_id": "...",
+        "total_documents": 120,
+        "updated_documents": 115,
+        "unchanged_documents": 5
+    }
 }
 ```
 
@@ -2485,7 +2520,7 @@ curl --request POST \
   Selects which searchable knowledge-compilation chunks to include: `"dataset"` for dataset artifacts, `"document"` for document artifacts, or `"all"` for both. Defaults to `"dataset"` when omitted, `null`, or an empty string. Ordinary source chunks remain eligible. When `"include_knowledge_compilation"` is `false`, all compiled chunks are excluded regardless of scope. Unsupported scope values and non-string values return an argument error. Intermediate wiki rows and disabled chunks remain excluded.
   With `"document_ids"` or metadata filtering, document artifacts and source chunks are limited to the selected documents; dataset artifacts must reference a selected document in their `source_doc_ids`. This parameter is also supported by `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`.
 - `"use_kg"`: `boolean`
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
+  Defaults to `false`. For this endpoint (`POST /api/v1/retrieval`), setting this to `true` does not enable multi-hop graph retrieval; the request continues through ordinary hybrid retrieval. The same limitation applies to `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`. To control whether searchable knowledge-compilation chunks are included in ordinary retrieval, use `"include_knowledge_compilation"` and `"knowledge_compilation_scope"`. Knowledge graph generation and viewing through Knowledge Compilation are separate capabilities.
 - `"rerank_id"`: `string`
   The ID of the rerank model.
 - `"keyword"`: `boolean`
@@ -2647,7 +2682,7 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
@@ -2656,6 +2691,7 @@ curl --request POST \
   - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
+  - `"searchapi_api_key"`: `string` The [SearchApi](https://www.searchapi.io) API key. Set `web_search_provider` to `"searchapi"` when using this field. Results come from its Google engine. See the [SearchApi Google documentation](https://www.searchapi.io/docs/google) for details.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
 - `"similarity_threshold"`: `float`

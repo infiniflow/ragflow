@@ -117,6 +117,7 @@ export enum LLMFactory {
   EmpirioLabs = 'EmpirioLabs AI',
   AIStupidLevel = 'AI Stupid Level',
   Runcrate = 'Runcrate',
+  WorldRouter = 'WorldRouter',
   CloudGPU = 'CloudGPU',
   SystemOne = 'SystemOne',
   HostingerRouter = 'Hostinger Router',
@@ -219,6 +220,7 @@ export const IconMap = {
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.WorldRouter]: 'worldrouter',
   [LLMFactory.CloudGPU]: 'cloudgpu',
   [LLMFactory.HostingerRouter]: 'hostinger-router',
 };
@@ -269,6 +271,8 @@ export const APIMapUrl = {
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.WorldRouter]:
+    'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
   [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
   [LLMFactory.MWS]:

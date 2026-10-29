@@ -1258,6 +1258,9 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 	if dst.ImgID == "" {
 		dst.ImgID = src.ImgID
 	}
+	if dst.MediaRef == nil {
+		dst.MediaRef = src.MediaRef
+	}
 	if dst.Layout == "" {
 		dst.Layout = src.Layout
 	}
@@ -1454,7 +1457,7 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// media chunk (text may be only a position tag, or empty) must be
 		// retained via its ImgID — otherwise the already-uploaded image is
 		// dropped and its MinIO object orphaned.
-		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" && chunk.ImgID == "" {
+		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)

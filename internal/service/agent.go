@@ -1229,10 +1229,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			aliasPtr = &s
 		}
 	}
-	// ApplyVersion restore path: re-applying a version whose DSL already matches
-	// the latest draft must reuse that draft instead of minting a duplicate
-	// version row. We signal this with the "apply" flag so the version save can
-	// fall back to the SameDSL reuse branch instead of always inserting.
+	// ApplyVersion restore path: restoring a version refreshes only the live
+	// draft and must not write user_canvas_version at all. The restored DSL
+	// already exists as a historical row, so a new row would be a pure
+	// duplicate counting against the per-canvas version cap. The "apply" flag
+	// signals this so the version save below is skipped entirely.
 	applyVersion := false
 	if value, ok := patch["apply"]; ok && value != nil {
 		applyVersion = true
@@ -1293,12 +1294,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, aliasPtr, release)
 		// Manual Save (autosave != true) always mints a new version row, even
 		// when the DSL is identical to the previous one (design §5.1). Auto-save
-		// never mints a version at all, so versionOpts stays nil and only the
-		// live draft is refreshed below. ApplyVersion restores a historical DSL
-		// and must reuse the latest draft when the DSL is unchanged, so it does
-		// NOT force a new row (the SameDSL branch governs instead).
-		opts.ForceNew = !autosave && !applyVersion
-		if !autosave {
+		// never mints a version, and neither does an ApplyVersion restore; both
+		// leave versionOpts nil so only the live draft is refreshed below.
+		opts.ForceNew = true
+		if !autosave && !applyVersion {
 			versionOpts = &opts
 		}
 	}
@@ -1585,8 +1584,11 @@ func (s *AgentService) UpdateVersion(ctx context.Context, userID, canvasID, vers
 	})
 }
 
-// ApplyVersion restores a saved version's DSL through the normal draft-save
-// path, preserving the agent's metadata and version history.
+// ApplyVersion restores a saved version's DSL as the live draft, preserving
+// the agent's metadata and version history. It never writes
+// user_canvas_version: the restored DSL already exists as a historical row,
+// so a new one would be a pure duplicate counting against the per-canvas
+// version cap.
 func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
 	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
 	if err != nil {
@@ -1598,8 +1600,8 @@ func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versi
 	if version.DSL == nil {
 		return errors.New("agent version has no DSL to apply")
 	}
-	// The "apply" flag tells UpdateAgent to reuse the latest draft version when
-	// the restored DSL already matches it, instead of minting a duplicate row.
+	// The "apply" flag tells UpdateAgent to skip the version write and refresh
+	// only the live draft.
 	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL, "apply": true})
 }
 
@@ -2308,11 +2310,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if c.Globals != nil {
 			for k, v := range c.Globals {
 				if strings.HasPrefix(k, "sys.") {
-					state.Sys[strings.TrimPrefix(k, "sys.")] = v
+					state.SetSys(strings.TrimPrefix(k, "sys."), v)
 				} else if strings.HasPrefix(k, "env.") {
-					state.Env[strings.TrimPrefix(k, "env.")] = v
+					state.SetEnv(strings.TrimPrefix(k, "env."), v)
 				} else {
-					state.Globals[k] = v
+					state.SetGlobal(k, v)
 				}
 			}
 		}
@@ -2323,7 +2325,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		query := agentRunQuery(userInput)
-		state.Sys["query"] = query
+		state.SetSys("query", query)
 		state.AppendCurrentUser(query)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(query))
 		// Trusted caller identity is seeded through the same entry the debug
@@ -2332,10 +2334,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		seedTenantID, _ := root["tenant_id"].(string)
 		state.SeedIdentity(seedUserID, seedTenantID)
 		if canvasID != "" {
-			state.Sys["canvas_id"] = canvasID
+			state.SetSys("canvas_id", canvasID)
 		}
 		if sessionID != "" {
-			state.Sys["session_id"] = sessionID
+			state.SetSys("session_id", sessionID)
 		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
@@ -2347,7 +2349,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
-			state.Sys["files"] = files
+			state.SetSys("files", files)
 		}
 		state.IncrementConversationTurns()
 		ctx2 = runtime.WithState(ctx2, state)
@@ -2370,7 +2372,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			resumeData := root["__resume_data__"]
 			delete(root, "__resume_interrupt_id__")
 			delete(root, "__resume_data__")
-			state.Sys["query"] = ""
+			state.SetSys("query", "")
 			ctx2 = compose.ResumeWithData(ctx2, resumeID, resumeData)
 		}
 

@@ -243,8 +243,8 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
-		canvasID, _ := state.Sys["canvas_id"].(string)
-		userID, _ := state.Sys["user_id"].(string)
+		canvasID, _ := state.GetSysString("canvas_id")
+		userID, _ := state.GetSysString("user_id")
 		if strings.TrimSpace(canvasID) == "" && strings.TrimSpace(userID) != "" {
 			return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
 		}
@@ -468,7 +468,7 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 	}
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		common.Debug("agent retrieval component: resolve dataset id context")
-		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+		if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(ctx, db, kbName, tenantID); lookupErr == nil && kb != nil {
 				common.Debug("agent retrieval component: resolved dataset id by tenant")
 				return kb.ID
@@ -479,7 +479,7 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 				common.Debug("agent retrieval component: tenant lookup missed")
 			}
 		}
-		if userID, _ := state.Sys["user_id"].(string); userID != "" {
+		if userID, _ := state.GetSysString("user_id"); userID != "" {
 			kbs, lookupErr := dao.NewKnowledgebaseDAO().GetByNameInUserTenants(ctx, db, kbName, userID)
 			if lookupErr != nil {
 				common.Warn("agent retrieval component: resolve dataset id by tenant membership failed",

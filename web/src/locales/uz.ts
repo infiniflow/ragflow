@@ -2719,20 +2719,6 @@ export default {
       toolTimeout: 'Vosita timeouti',
       toolTimeoutTip:
         'Bitta vosita chaqiruvi (MCP vositalari ham) uchun soniyadagi timeout. Uzoq ishlaydigan vositalar uchun oshiring.',
-      maxSteps: 'Maksimal qadamlar',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Standart kengaytmalarni yoqish',
-      enableDefaultExtensionsTip:
-        'browser-use standart kengaytmalarini (uBlock, cookie ishlov berish, ClearURLs) yoqing. Ish vaqti kengaytma yuklanishlaridan qochish uchun o‘chiring.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Chromium sandbox yoqilsinmi. Docker root muhitlarida odatda o‘chiriladi; oddiy hostlarda yoqish tavsiya etiladi.',
-      persistSession: 'Sessiyani saqlash',
-      persistSessionTip:
-        'Yoqilganda, bu Brauzer tuguni takroriy kirishlardan qochish uchun brauzer sessiyasini qayta ishlatadi.',
-      uploadSources: 'Manbalarni yuklash',
-      uploadSourcesTip:
-        'Fayl ID’lari, fayl URL’lari yoki o‘zgaruvchilar qo‘llab-quvvatlanadi. Bir nechta qiymatni vergul bilan ajratishingiz yoki JSON massiv formatidan foydalanishingiz mumkin (masalan ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Qo‘shimcha sozlamalar',
       addTools: 'Vositalar qo‘shish',
       sysPromptDefaultValue:
@@ -2868,9 +2854,6 @@ export default {
       sofyaApiKeyTip: 'Talab qilinadi. sofya.co’da API Key yarating.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: 'Markdown kontentidan fayl generatsiya qilish.',
-      browser: 'Brauzer',
-      browserDescription:
-        'Brauzer vazifalarini avtomatlashtiring. Model sozlamasi va prompt asosidagi amallar qo‘llab-quvvatlanadi. Yuklash manbalari fayl ID’lari va URL’larni qo‘llaydi, yuklab olingan fayllar maqsadli papkaga saqlanishi mumkin.',
       subtitle: 'Subtitr',
       logoImage: 'Logo rasmi',
       logoPosition: 'Logo joylashuvi',
@@ -3866,10 +3849,10 @@ export default {
         write: 'Yozish',
         share: 'Ulashish',
       },
-      serviceStatus: 'Xizmatlar holati',
-      userManagement: 'Foydalanuvchilarni boshqarish',
-      sandboxSettings: 'Sandbox sozlamalari',
-      registrationWhitelist: 'Ro‘yxatdan o‘tish uchun oq ro‘yxat',
+      serviceStatus: 'Xizmatlar',
+      userManagement: 'Foydalanuvchilar',
+      sandboxSettings: 'Qum qutisi',
+      registrationWhitelist: 'Oq ro‘yxat',
       roles: 'Rollar',
       monitoring: 'Monitoring',
       sandboxSettingsPage: {
@@ -3956,7 +3939,7 @@ export default {
       importWhitelist: 'Oq ro‘yxatni import qilish (Excel)',
       importSelectExcelFile: 'Excel fayli (.xlsx)',
       importOverwriteExistingEmails: 'Mavjud pochtalarni almashtirish',
-      importInvalidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
+      importValidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
       importFileRequired: 'Iltimos, import qilish uchun fayl tanlang',
       importFileTips:
         'Fayl <code>email</code> nomli bitta sarlavha ustunini o‘z ichiga olishi kerak.',

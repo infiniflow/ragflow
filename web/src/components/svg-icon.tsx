@@ -122,6 +122,7 @@ const svgIcons = [
   LLMFactory.EmpirioLabs,
   LLMFactory.AIStupidLevel,
   LLMFactory.Runcrate,
+  LLMFactory.WorldRouter,
   LLMFactory.CloudGPU,
   LLMFactory.HostingerRouter,
 ];
