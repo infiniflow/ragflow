@@ -26,7 +26,8 @@ The **Setting** area on the **Retrieval testing** page is used to adjust retriev
 - **Rerank model**: The reranking model used to further calculate relevance and sort candidate results. If no rerank model is selected, retrieval results combine keyword similarity and vector cosine similarity. If selected, reranking results participate in the comprehensive score. Using a rerank model may increase retrieval latency.
 - **Cross-language search**: Select one or more target languages so a query can match related content in other languages in the dataset. If no language is selected, retrieval is mainly performed in the current language.
 - **Metadata**: Restricts the retrieval range by metadata conditions. After it is set, retrieval is performed only in content that meets the metadata conditions.
-- **Top**: Sets the maximum number of candidate results returned. For example, if **Top 10** is selected, up to 10 eligible results are returned.
+- **Rerank candidates**: Sets the candidate pool for ranking or reranking. The default is `64`, and the range is `64–256`. It must be at least **Top N**, which controls the final number of returned results.
+- **Top N**: Sets the maximum number of candidate results returned. For example, if **Top N** is set to `10`, up to 10 eligible results are returned.
 
 > Note: Parameter changes in **Retrieval Testing** are only used for the current test and are not automatically synchronized to **Chat Assistant** or **Agent**. After suitable parameters are determined, configure the corresponding parameters in the application that actually uses the dataset or in the **Retrieval** component.
 
@@ -63,6 +64,6 @@ If the target content does not appear in retrieval results at all, check whether
 
 If the target chunk can be recalled but many irrelevant results also appear, raise **Similarity threshold** appropriately to narrow the recall range. If retrieval results rely more on semantic expression or keyword matching, adjust **Keyword similarity weight** to rebalance vector retrieval and full-text retrieval. If the target chunk can already be recalled but ranking is unsatisfactory, try configuring **Rerank model** to rerank candidate results.
 
-If you need to see more or fewer candidate results, adjust **Top**. For cross-language datasets, also check whether **Cross-language search** includes the target languages to retrieve. It is recommended to use multiple representative queries for repeated testing and determine final parameters based on the overall recall result instead of adjusting configuration based only on a single test.
+If you need to see more or fewer candidate results, adjust **Top N**. For cross-language datasets, also check whether **Cross-language search** includes the target languages to retrieve. It is recommended to use multiple representative queries for repeated testing and determine final parameters based on the overall recall result instead of adjusting configuration based only on a single test.
 
 Debugging suggestion: when retrieval results are unsatisfactory, troubleshoot in the order of document parsing → chunk → metadata → retrieval parameters. First confirm that the knowledge content itself has correctly entered the dataset, then adjust retrieval parameters. This helps locate the problem faster.

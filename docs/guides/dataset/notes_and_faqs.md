@@ -37,9 +37,9 @@ After resolving any storage issues, upload the missing file again and retry pars
 
 ## What Should I Do If Retrieval Testing Cannot Retrieve Content?
 
-It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Keyword similarity weight**, and **Top K**.
+It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Keyword similarity weight**, and **Top N**.
 
-Common causes include documents not yet parsed, no usable chunks generated, metadata filters being too strict, **Similarity threshold** being too high, or **Top K** being too small.
+Common causes include documents not yet parsed, no usable chunks generated, metadata filters being too strict, **Similarity threshold** being too high, or **Top N** being too small.
 
 ## Why Can't I See Artifacts?
 
