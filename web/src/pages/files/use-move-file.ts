@@ -42,12 +42,19 @@ export const useHandleMoveFile = ({
     [showMoveFileModal],
   );
 
+  const dismissMoveFile = useCallback(() => {
+    setSourceFileIds([]);
+    isBulkRef.current = false;
+    hideMoveFileModal();
+  }, [hideMoveFileModal]);
+
   return {
     initialValue: '',
     moveFileLoading: loading,
     onMoveFileOk,
     moveFileVisible,
     hideMoveFileModal,
+    dismissMoveFile,
     showMoveFileModal: handleShowMoveFileModal,
   };
 };

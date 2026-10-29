@@ -127,12 +127,19 @@ export const useHandleConnectToKnowledge = () => {
     [showConnectToKnowledgeModal],
   );
 
+  const dismissConnectToKnowledge = useCallback(() => {
+    setDocumentIds([]);
+    setRecord({} as IFile);
+    hideConnectToKnowledgeModal();
+  }, [hideConnectToKnowledgeModal]);
+
   return {
     initialConnectedIds: initialValue,
     connectToKnowledgeLoading: loading,
     onConnectToKnowledgeOk,
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
+    dismissConnectToKnowledge,
     showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
   };
 };

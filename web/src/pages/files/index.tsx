@@ -16,7 +16,7 @@ import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-sel
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
@@ -87,25 +87,36 @@ export default function Files() {
 
   const folderId = useGetFolderId();
 
+  const {
+    showMoveFileModal,
+    moveFileVisible,
+    onMoveFileOk,
+    hideMoveFileModal,
+    dismissMoveFile,
+    moveFileLoading,
+  } = useHandleMoveFile({ clearRowSelection });
+
+  const connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType =
+    useHandleConnectToKnowledge();
+
+  const clearSelectionOnFolderChange = useCallback(() => {
+    clearRowSelection();
+    dismissMoveFile();
+    connectKnowledgeModal.dismissConnectToKnowledge();
+  }, [
+    clearRowSelection,
+    dismissMoveFile,
+    connectKnowledgeModal.dismissConnectToKnowledge,
+  ]);
+
   useClearSelectionOnPageChange(pagination, clearRowSelection);
-  useClearSelectionOnFolderChange(folderId, clearRowSelection);
+  useClearSelectionOnFolderChange(folderId, clearSelectionOnFolderChange);
 
   useGoToPreviousPageOnEmpty(files?.length, loading, {
     deletionKey: ListDeletionKey.FileList,
     searchString,
     setSearchString,
   });
-
-  const {
-    showMoveFileModal,
-    moveFileVisible,
-    onMoveFileOk,
-    hideMoveFileModal,
-    moveFileLoading,
-  } = useHandleMoveFile({ clearRowSelection });
-
-  const connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType =
-    useHandleConnectToKnowledge();
 
   const { list } = useBulkOperateFile({
     files,
