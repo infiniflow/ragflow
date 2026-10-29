@@ -579,8 +579,14 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 						return
 					}
 					if state.resolveImage != nil {
+						// ParseTableHTML's cellText ignores <img>, so replace
+						// an unresolved table image with its Markdown reference.
 						alt := htmlAttribute(node, "alt")
-						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
+						replacement := alt
+						if shouldPreserveImageReference(src) {
+							replacement = "![" + alt + "](" + src + ")"
+						}
+						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
 					} else if media.IsHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
