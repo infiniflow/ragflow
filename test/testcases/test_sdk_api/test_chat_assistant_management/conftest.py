@@ -97,9 +97,9 @@ def client(isolated_tenant, monkeypatch):
             errors.append(str(exc))
     for dataset_id in datasets:
         try:
-            if rag.list_datasets(id=dataset_id):
+            if rag.list_datasets(ids=[dataset_id]):
                 rag.delete_datasets(ids=[dataset_id])
-            assert rag.list_datasets(id=dataset_id) == [], f"Dataset cleanup failed: {dataset_id}"
+            assert rag.list_datasets(ids=[dataset_id]) == [], f"Dataset cleanup failed: {dataset_id}"
         except Exception as exc:  # noqa: BLE001 - SDK raises plain Exception; report every cleanup failure.
             errors.append(str(exc))
     assert not errors, "Owned resource cleanup failed: " + "; ".join(errors)
