@@ -266,6 +266,7 @@ func flattenMessage(item json.RawMessage) (entity.ConversationMessageFields, err
 	for key, target := range map[string]interface{}{
 		"id": &fields.MessageID, "role": &fields.Role, "status": &fields.Status,
 		"thumbup": &fields.ThumbUp, "feedback": &fields.Feedback, "created_at": &fields.CreatedAt,
+		"prompt": &fields.Prompt, "usage": &fields.Usage, "elapsed_ms": &fields.ElapsedMs,
 	} {
 		if value, ok := metadata[key]; ok && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if err := json.Unmarshal(value, target); err == nil {
@@ -324,6 +325,7 @@ func messageValues(fields entity.ConversationMessageFields) map[string]interface
 	return map[string]interface{}{
 		"message_id": fields.MessageID, "role": fields.Role, "content": fields.Content, "content_type": fields.ContentType,
 		"status": fields.Status, "thumb_up": fields.ThumbUp, "feedback": fields.Feedback, "created_at": fields.CreatedAt, "metadata": fields.Metadata,
+		"prompt": fields.Prompt, "usage": fields.Usage, "elapsed_ms": fields.ElapsedMs,
 	}
 }
 

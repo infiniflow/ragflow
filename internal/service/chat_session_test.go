@@ -339,6 +339,110 @@ func makeResultChan(results ...AsyncChatResult) <-chan AsyncChatResult {
 	return ch
 }
 
+func TestChatCompletionsPersistsAnswerDetailsForHistory(t *testing.T) {
+	for _, mode := range []struct {
+		name    string
+		stream  bool
+		legacy  bool
+		agentic bool
+	}{
+		{name: "non-stream"},
+		{name: "stream", stream: true},
+		{name: "legacy stream", stream: true, legacy: true},
+		{name: "agentic non-stream", agentic: true},
+		{name: "agentic stream", stream: true, agentic: true},
+		{name: "agentic legacy stream", stream: true, legacy: true, agentic: true},
+	} {
+		for _, withCost := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/cost=%t", mode.name, withCost), func(t *testing.T) {
+				store := newFakeSessionStore()
+				store.sessions["session-1"] = &entity.ChatSession{
+					ID: "session-1", DialogID: "chat-1", UserID: strPtr("user-1"),
+					Message: json.RawMessage(`[{"role":"assistant","content":"Welcome"},{"role":"user","content":"old question","id":"old"},{"role":"assistant","content":"old answer","id":"old","prompt":"old prompt","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"elapsed_ms":123}]`),
+				}
+				store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", TenantID: "user-1", LLMID: "chat@factory"}
+				store.dialogExists["user-1|chat-1"] = true
+				final := AsyncChatResult{Answer: "new answer", Prompt: "system prompt", Final: true}
+				if mode.agentic {
+					final.Answer = "<think>agent reasoning</think>new answer"
+					final.Prompt = ""
+					final.AnswerIsAuthoritative = true
+				}
+				if withCost {
+					final.Usage = &ChatTurnUsage{PromptTokens: 896, CompletionTokens: 71, TotalTokens: 967}
+					final.ElapsedMs = 4168.774506
+				}
+				pipeline := &fakePipeline{resultChan: makeResultChan(
+					AsyncChatResult{Answer: "new answer", Prompt: "intermediate prompt", ElapsedMs: 1}, final,
+				)}
+				svc := &ChatSessionService{chatSessionDAO: store, permissionChecker: store, pipeline: pipeline}
+				streamChan := make(chan string, 8)
+				if _, err := svc.ChatCompletions(t.Context(), "user-1", "chat-1", "session-1", nil, "new question", nil, "", nil, nil, mode.legacy, mode.stream, streamChan); err != nil {
+					t.Fatal(err)
+				}
+				if len(pipeline.messages) != 3 || pipeline.messages[1]["content"] != "old answer" {
+					t.Fatalf("unexpected LLM history: %v", pipeline.messages)
+				}
+				for _, message := range pipeline.messages {
+					for _, key := range []string{"prompt", "usage", "elapsed_ms"} {
+						if _, ok := message[key]; ok {
+							t.Fatalf("LLM history contains %s: %v", key, message)
+						}
+					}
+				}
+				payload, code, err := svc.GetSession(t.Context(), "user-1", "chat-1", "session-1")
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("GetSession: code=%v err=%v", code, err)
+				}
+				if payload.Messages[2]["prompt"] != "old prompt" {
+					t.Fatalf("old answer details changed: %v", payload.Messages[2])
+				}
+				answer := payload.Messages[len(payload.Messages)-1]
+				if answer["content"] != final.Answer {
+					t.Fatalf("missing stored answer details: %v", answer)
+				}
+				if mode.agentic {
+					if _, ok := answer["prompt"]; ok {
+						t.Fatalf("agentic answer stored a prompt: %v", answer)
+					}
+				} else if answer["prompt"] != final.Prompt {
+					t.Fatalf("missing stored prompt: %v", answer)
+				}
+				if withCost {
+					usage, ok := answer["usage"].(map[string]interface{})
+					if !ok || usage["prompt_tokens"] != float64(896) || usage["completion_tokens"] != float64(71) || usage["total_tokens"] != float64(967) || answer["elapsed_ms"] != final.ElapsedMs {
+						t.Fatalf("unexpected stored cost: %v", answer)
+					}
+				} else {
+					for _, key := range []string{"usage", "elapsed_ms"} {
+						if _, ok := answer[key]; ok {
+							t.Fatalf("stored intermediate %s: %v", key, answer)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestNormalizeCompletionMessagesExcludesAnswerDetails(t *testing.T) {
+	messages := []map[string]interface{}{
+		{"role": "assistant", "content": "answer", "prompt": "system prompt", "usage": map[string]int{"total_tokens": 3}, "elapsed_ms": 123.0},
+		{"role": "user", "content": "question", "id": "turn-1"},
+	}
+	svc := &ChatSessionService{}
+	got, _, err := svc.normalizeCompletionMessages(messages, "", nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got[0], map[string]interface{}{"role": "assistant", "content": "answer"}) {
+		t.Fatalf("unexpected LLM message: %v", got[0])
+	}
+	if messages[0]["prompt"] != "system prompt" {
+		t.Fatal("normalization mutated supplied history")
+	}
+}
+
 type fakeChatModelConfigResolver struct {
 	tenantID string
 	llmID    string
