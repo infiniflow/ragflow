@@ -183,7 +183,6 @@ func cloneToolParams(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
->>>>>>> c11c6e2d2 (fix(agent): use DSL function_name for each Retrieval tool instance)
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
