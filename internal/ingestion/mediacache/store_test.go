@@ -349,35 +349,7 @@ func TestRetryRepopulatesMediaAfterCacheMiss(t *testing.T) {
 	}
 }
 
-func TestPutRestoresMissingMediaInSameStore(t *testing.T) {
-	backend := newFakeStore()
-	ctx := taskContext("task-1")
-	store := New(backend, "task-1")
-	data := []byte("hello")
-	ref, err := store.Put(ctx, "html", "image/png", data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	backend.Delete(ctx, store.key(ref.SHA256))
-	backend.Delete(ctx, manifestKey("task-1"))
-
-	restored, err := store.Put(ctx, "html", "image/png", data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := store.Get(ctx, restored)
-	if err != nil || string(got) != string(data) {
-		t.Fatalf("restored media = %q, %v", got, err)
-	}
-	if err := PurgeTask(ctx, backend, "task-1"); err != nil {
-		t.Fatal(err)
-	}
-	if len(backend.kv) != 0 || len(backend.sets) != 0 {
-		t.Fatal("restored media was not purged")
-	}
-}
-
-func TestPutDuplicateRefreshesTTLAndReportsWriteFailure(t *testing.T) {
+func TestPutDuplicateWritesOnceAndReturnsCallerRef(t *testing.T) {
 	backend := newFakeStore()
 	ctx := taskContext("task-1")
 	store := New(backend, "task-1")
@@ -389,14 +361,125 @@ func TestPutDuplicateRefreshesTTLAndReportsWriteFailure(t *testing.T) {
 	key := store.key(ref.SHA256)
 	backend.ttl[key] = time.Second
 	backend.ttl[manifestKey("task-1")] = time.Second
-	if _, err := store.Put(ctx, "html", "image/png", data); err != nil {
-		t.Fatal(err)
+
+	duplicate, err := store.Put(ctx, "epub", "image/jpeg", data)
+	if err != nil {
+		t.Fatalf("duplicate Put: %v", err)
 	}
-	if backend.ttl[key] != TTL || backend.ttl[manifestKey("task-1")] != TTL {
-		t.Fatal("duplicate put did not refresh media and manifest TTLs")
+	if duplicate.Format != "epub" || duplicate.MIME != "image/jpeg" || duplicate.SHA256 != ref.SHA256 || duplicate.Size != ref.Size {
+		t.Fatalf("duplicate ref = %+v, want the current caller's format/mime on the same digest", duplicate)
 	}
+	if backend.setCalls != 1 || backend.addCalls != 1 {
+		t.Fatalf("backend calls = %d Set, %d SAdd, want one each", backend.setCalls, backend.addCalls)
+	}
+	if backend.ttl[key] != time.Second || backend.ttl[manifestKey("task-1")] != time.Second {
+		t.Fatal("duplicate Put refreshed TTLs; dedupe must not touch the backend")
+	}
+
 	backend.failSet = true
-	if _, err := store.Put(ctx, "html", "image/png", data); err == nil {
-		t.Fatal("duplicate put succeeded when the backend rejected the write")
+	if _, err := store.Put(ctx, "html", "image/png", data); err != nil {
+		t.Fatalf("duplicate Put touched the backend: %v", err)
 	}
+}
+
+func TestPutDedupeDoesNotConsumeRunLimits(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, err := store.Put(ctx, "html", "image/png", []byte("abc")); err != nil {
+			t.Fatalf("duplicate Put #%d: %v", attempt+1, err)
+		}
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("de")); err != nil {
+		t.Fatalf("second distinct image: %v", err)
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("f")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("limit error = %v, want ErrMediaLimitExceeded", err)
+	}
+}
+
+func TestPutEnforcesRunImageCountLimit(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	for _, image := range []string{"a", "b"} {
+		if _, err := store.Put(ctx, "html", "image/png", []byte(image)); err != nil {
+			t.Fatalf("image %q: %v", image, err)
+		}
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("c")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("limit error = %v, want ErrMediaLimitExceeded", err)
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("c")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("repeated rejected error = %v, want ErrMediaLimitExceeded", err)
+	}
+	if len(backend.kv) != 2 {
+		t.Fatalf("cached entries = %d, want the 2 admitted images", len(backend.kv))
+	}
+	members, _ := backend.SMembers(ctx, manifestKey("task-1"))
+	if len(members) != 2 {
+		t.Fatalf("manifest = %v, want 2 entries", members)
+	}
+}
+
+func TestPutEnforcesRunByteLimitAtExactBoundary(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "5")
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	for _, image := range []string{"abc", "de"} {
+		if _, err := store.Put(ctx, "html", "image/png", []byte(image)); err != nil {
+			t.Fatalf("image %q: %v", image, err)
+		}
+	}
+	if _, err := store.Put(ctx, "html", "image/png", []byte("f")); !errors.Is(err, media.ErrMediaLimitExceeded) {
+		t.Fatalf("limit error = %v, want ErrMediaLimitExceeded", err)
+	}
+	if len(backend.kv) != 2 {
+		t.Fatalf("cached entries = %d, want the 2 admitted images", len(backend.kv))
+	}
+}
+
+func TestPutFailedWriteDoesNotConsumeRunLimits(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "2")
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "2")
+
+	t.Run("value write", func(t *testing.T) {
+		backend := newFakeStore()
+		ctx := taskContext("task-1")
+		store := New(backend, "task-1")
+		backend.failSet = true
+		if _, err := store.Put(ctx, "html", "image/png", []byte("a")); err == nil {
+			t.Fatal("Put succeeded when the value write failed")
+		}
+		backend.failSet = false
+		for _, image := range []string{"a", "b"} {
+			if _, err := store.Put(ctx, "html", "image/png", []byte(image)); err != nil {
+				t.Fatalf("image %q after recovered write: %v", image, err)
+			}
+		}
+	})
+
+	t.Run("manifest track", func(t *testing.T) {
+		backend := newFakeStore()
+		ctx := taskContext("task-1")
+		store := New(backend, "task-1")
+		backend.expireFails = true
+		if _, err := store.Put(ctx, "html", "image/png", []byte("a")); err == nil {
+			t.Fatal("Put succeeded when the manifest TTL failed")
+		}
+		if len(backend.kv) != 0 {
+			t.Fatalf("untracked media entries = %v, want rollback", backend.kv)
+		}
+		backend.expireFails = false
+		for _, image := range []string{"a", "b"} {
+			if _, err := store.Put(ctx, "html", "image/png", []byte(image)); err != nil {
+				t.Fatalf("image %q after recovered track: %v", image, err)
+			}
+		}
+	})
 }

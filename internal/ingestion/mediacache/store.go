@@ -41,12 +41,19 @@ const (
 	TTL          = 24 * time.Hour
 )
 
-// Store is a run-scoped media cache backed by a chunkcache.Store.
+// Store is a run-scoped media cache backed by a chunkcache.Store. It dedupes
+// writes by digest and bounds how many distinct images, and how many decoded
+// bytes, one run may keep in the backend.
 type Store struct {
 	backend chunkcache.Store
 	scope   string
 
-	mu sync.Mutex
+	mu        sync.Mutex
+	seen      map[string]struct{}
+	images    int
+	bytes     int64
+	maxImages int
+	maxBytes  int64
 }
 
 // New returns a cache bound to one ingestion run. A nil backend is a valid
@@ -54,8 +61,11 @@ type Store struct {
 // actually encountered.
 func New(backend chunkcache.Store, scope string) *Store {
 	return &Store{
-		backend: backend,
-		scope:   strings.TrimSpace(scope),
+		backend:   backend,
+		scope:     strings.TrimSpace(scope),
+		seen:      make(map[string]struct{}),
+		maxImages: media.MediaMaxImagesPerRun(),
+		maxBytes:  media.MediaMaxBytesPerRun(),
 	}
 }
 
@@ -95,6 +105,20 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// A digest already written by this run needs no backend work: the entry
+	// and its manifest record are already in place, so return the current
+	// caller's reference (format and MIME are caller-owned) without refreshing
+	// the TTL or charging the run caps again.
+	if _, ok := s.seen[digest]; ok {
+		return ref, nil
+	}
+	if s.maxImages > 0 && s.images >= s.maxImages {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: run image count limit %d exceeded: %w", s.maxImages, media.ErrMediaLimitExceeded)
+	}
+	if s.maxBytes > 0 && int64(len(data)) > s.maxBytes-s.bytes {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: run image byte limit %d exceeded: %w", s.maxBytes, media.ErrMediaLimitExceeded)
+	}
+
 	key := s.key(digest)
 	if !s.backend.Set(ctx, key, string(data), TTL) {
 		return entity.MediaRef{}, fmt.Errorf("mediacache: write image %s", mediaShortDigest(digest))
@@ -105,6 +129,12 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 		}
 		return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w", mediaShortDigest(digest), err)
 	}
+	if s.seen == nil {
+		s.seen = make(map[string]struct{})
+	}
+	s.seen[digest] = struct{}{}
+	s.images++
+	s.bytes += int64(len(data))
 	return ref, nil
 }
 

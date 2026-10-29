@@ -29,6 +29,11 @@ import (
 // be returned to the task rather than treated as a missing image.
 var ErrMediaNotFound = errors.New("media: reference not found")
 
+// ErrMediaLimitExceeded reports that a run-scoped media limit rejected a
+// write. Parser paths may skip the image and warn; every other cache error is
+// fatal to the task.
+var ErrMediaLimitExceeded = errors.New("media: run media limit exceeded")
+
 // Cache stores decoded image bytes for materialization by later ingestion
 // components. Implementations own key scoping, lifecycle bookkeeping and
 // validation of the payload size and digest before returning bytes from Get.
