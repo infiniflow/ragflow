@@ -1072,6 +1072,46 @@ func TestIngestionTaskServiceRemoveSettlesNumberedQueuedRun(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskServiceRemovePurgesTaskState(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	var purged []string
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged = append(purged, taskID)
+		return nil
+	}
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	if len(purged) != 1 || purged[0] != "task-1" {
+		t.Fatalf("purged = %v, want [task-1]", purged)
+	}
+}
+
+func TestIngestionTaskServiceRemoveKeepsDeleteWhenPurgeFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(_ context.Context, _ string) error {
+		return errors.New("kvrocks unavailable")
+	}
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("Remove failed after a purge error: %v", err)
+	}
+	if _, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted task reload error = %v, want record not found", err)
+	}
+}
+
 func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

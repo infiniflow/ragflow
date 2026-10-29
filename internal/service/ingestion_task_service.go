@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
+	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -70,6 +71,9 @@ type IngestionTaskService struct {
 	userCanvasDAO    *dao.UserCanvasDAO
 	taskPublisher    TaskPublisher
 	logSettings      IngestionLogSettings
+	// purgeTaskState removes the deleted task's run-scoped chunk and media
+	// cache state. Nil resolves to the process-wide implementation.
+	purgeTaskState func(context.Context, string) error
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -358,6 +362,18 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	info, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
 	if err != nil {
 		return nil, err
+	}
+	// The row is gone, so a purge failure cannot be retried by the caller;
+	// report it and let the cache TTL reclaim the entries.
+	purgeTaskState := s.purgeTaskState
+	if purgeTaskState == nil {
+		purgeTaskState = ingestionpipeline.PurgeTaskState
+	}
+	if err := purgeTaskState(ctx, taskID); err != nil {
+		common.Warn("purge task state after delete",
+			zap.String("task_id", taskID),
+			zap.Error(err),
+		)
 	}
 	return info, nil
 }
