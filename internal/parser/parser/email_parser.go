@@ -686,6 +686,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			if ft == utility.FileTypeHTML {
 				np = NewHTMLTextParser()
 			}
+			if ft == utility.FileTypeEPUB {
+				np = NewEPUBTextParser()
+			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))
 			})

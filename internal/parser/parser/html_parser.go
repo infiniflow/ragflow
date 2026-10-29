@@ -133,14 +133,17 @@ type htmlWalkState struct {
 	unresolvedImages    int
 	mediaBudget         *embeddedMediaBudget
 	// refOnly defers image bytes to content-addressed references instead of
-	// carrying the normalized data URI on the item. HTML sets it; formats
-	// that still inline image bytes leave it false.
+	// carrying the normalized data URI on the item. HTML and EPUB set it;
+	// formats that still inline image bytes leave it false.
 	refOnly    bool
 	ctx        context.Context
 	mediaCache media.Cache
 	// mediaFormat names the parser family recorded on cache writes. An empty
 	// value means the HTML parser.
-	mediaFormat  string
+	mediaFormat string
+	// skipImages drops every image source before resolution. Text-only
+	// callers use it when no run media cache is available.
+	skipImages   bool
 	resolveMedia func(string) (*entity.MediaRef, bool)
 	resolveImage func(string) (string, bool)
 	err          error
@@ -169,6 +172,9 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	if s.err != nil {
 		return "", nil, false
 	}
+	if s.skipImages {
+		return "", nil, false
+	}
 	if s.resolveMedia != nil {
 		if ref, ok := s.resolveMedia(src); ok {
 			return "", ref, true
@@ -192,6 +198,14 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		if s.mediaCache == nil {
 			s.err = fmt.Errorf("%s media cache is not configured", s.cacheFormat())
 			return "", nil, false
+		}
+		if s.mediaBudget != nil {
+			if !s.mediaBudget.reserveItem() {
+				return "", nil, false
+			}
+			if !s.mediaBudget.includeReservedSize(len(data)) {
+				return "", nil, false
+			}
 		}
 		ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
 		if err != nil {

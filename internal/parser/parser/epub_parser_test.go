@@ -654,6 +654,51 @@ func TestEPUBParserImageWithoutCacheFails(t *testing.T) {
 	}
 }
 
+func TestEPUBTextParserSkipsImagesWithoutCache(t *testing.T) {
+	res := NewEPUBTextParser().ParseWithResult(context.Background(), "book.epub", buildTestEPUBWithImages(t, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: epubTestHTML(`<p>Before.</p><img src="Images/cover.png" alt="cover"><img src="` + htmlMediaDataURI + `" alt="inline"><p>After.</p>`),
+	}}, []epubTestImage{{name: "Images/cover.png", content: "cover-bytes"}}))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if images := epubTestImageItems(t, res); len(images) != 0 {
+		t.Fatalf("image items = %#v, want none", images)
+	}
+	if text := epubTestText(res); !strings.Contains(text, "Before.") || !strings.Contains(text, "After.") {
+		t.Fatalf("text = %q, want surrounding prose", text)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for a text-only parse", res.Warnings)
+	}
+}
+
+func TestEPUBParserDataURIImagesShareEmbeddedMediaBudget(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: epubTestHTML(strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, maxEmbeddedMediaItems+1) + "<p>After images.</p>"),
+	}}, nil)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != maxEmbeddedMediaItems {
+		t.Fatalf("cache writes = %d, want %d", cache.putCalls, maxEmbeddedMediaItems)
+	}
+	images := 0
+	for _, item := range ItemsToMaps(res.JSON) {
+		if item["doc_type_kwd"] == DocTypeImage {
+			images++
+		}
+	}
+	if images != maxEmbeddedMediaItems || !strings.Contains(epubTestText(res), "After images.") {
+		t.Fatalf("images=%d text=%q", images, epubTestText(res))
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	}
+}
+
 func TestEPUBParserEmitsTableCellImages(t *testing.T) {
 	ctx, cache := recordingMediaContext()
 	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{

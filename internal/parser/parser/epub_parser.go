@@ -51,10 +51,19 @@ import (
 )
 
 // EPUBParser extracts text from EPUB archives.
-type EPUBParser struct{}
+type EPUBParser struct {
+	textOnly bool
+}
 
 func NewEPUBParser() *EPUBParser {
 	return &EPUBParser{}
+}
+
+// NewEPUBTextParser extracts EPUB text without reading or caching images.
+// Callers without a run media cache use it to keep the previous text-only
+// behavior.
+func NewEPUBTextParser() *EPUBParser {
+	return &EPUBParser{textOnly: true}
 }
 
 func (p *EPUBParser) String() string {
@@ -90,7 +99,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
 	}
@@ -274,16 +283,26 @@ func normalizeEPUBSelfClosing(source string) string {
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest) ([]map[string]any, string, []string, error) {
+func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool) ([]map[string]any, string, []string, error) {
 	var items []map[string]any
 	var failures []string
 	read := 0
+	budget := newEmbeddedMediaBudget()
+	// mediacache.Put enforces the same per-image limit, so keep the parser
+	// budget aligned with it instead of the legacy fixed constant.
+	budget.maxImageBytes = media.HTMLImageMaxBytes()
 	state := &htmlWalkState{
 		refOnly:     true,
 		ctx:         ctx,
 		mediaCache:  media.CacheFromContext(ctx),
-		mediaBudget: newEmbeddedMediaBudget(),
+		mediaBudget: budget,
 		mediaFormat: "epub",
+		skipImages:  textOnly,
+	}
+	if textOnly {
+		// Preserve alt text without resolving or caching image bytes, matching
+		// NewHTMLTextParser.
+		state.resolveImage = func(string) (string, bool) { return "", false }
 	}
 	entries := make(map[string]*zip.File, len(r.File))
 	for _, f := range r.File {
