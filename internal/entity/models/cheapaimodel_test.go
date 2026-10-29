@@ -166,7 +166,8 @@ func TestCheapaimodelListModelsAndCheckConnection(t *testing.T) {
 
 // Known cheapaimodel models must report their catalogued types, so the vision
 // models are not downgraded to chat-only by name inference. Unknown ids keep
-// the name-based fallback.
+// the name-based fallback, and ids the chat endpoint cannot serve (embedding,
+// rerank) are not listed.
 func TestCheapaimodelListModelsUsesCatalogTypes(t *testing.T) {
 	withSSRFBypass(t)
 	dir, restore := setupProviderTestDir(t, "cheapaimodel.json")
@@ -184,6 +185,8 @@ func TestCheapaimodelListModelsUsesCatalogTypes(t *testing.T) {
 				{"id": "kimi-k3"},
 				{"id": "grok-4.7"},
 				{"id": "some-new-vl-model"},
+				{"id": "text-embedding-v2"},
+				{"id": "bge-reranker-v2"},
 			},
 		})
 	}))
@@ -209,4 +212,56 @@ func TestCheapaimodelListModelsUsesCatalogTypes(t *testing.T) {
 			t.Errorf("%s types=%q, want %q", model.Name, got, want[model.Name])
 		}
 	}
+}
+
+// The endpoint returns ids only, and most cheapaimodel ids have no global
+// catalog entry, so the context length must come from the provider catalog.
+// A context length the response does carry wins over the catalog.
+func TestCheapaimodelListModelsUsesCatalogContextLength(t *testing.T) {
+	withSSRFBypass(t)
+	dir, restore := setupProviderTestDir(t, "cheapaimodel.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "glm-5.3"},
+				{"id": "grok-4.7", "context_length": 131072},
+				{"id": "some-new-model"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newCheapaimodelForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	catalog := GetProviderManager().FindProvider("cheapaimodel")
+	glm := GetProviderManager().FindModel(catalog, "glm-5.3")
+	if glm == nil || glm.ContextLength == nil {
+		t.Fatal("glm-5.3 has no catalogued context length")
+	}
+	want := map[string]*int{"glm-5.3": glm.ContextLength, "grok-4.7": intPtr(131072), "some-new-model": nil}
+	if len(list) != len(want) {
+		t.Fatalf("models=%v", list)
+	}
+	for _, model := range list {
+		got, exp := model.ContextLength, want[model.Name]
+		if (got == nil) != (exp == nil) || (got != nil && *got != *exp) {
+			t.Errorf("%s context_length=%v, want %v", model.Name, deref(got), deref(exp))
+		}
+	}
+}
+
+func intPtr(v int) *int { return &v }
+
+func deref(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }

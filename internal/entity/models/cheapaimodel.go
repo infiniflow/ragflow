@@ -53,10 +53,15 @@ func (m *CheapaimodelModel) NewInstance(baseURL map[string]string) ModelDriver {
 // load balancer in front of api.cheapaimodel.ai rejects with 400, so this
 // driver issues the request itself, the same way the xAI driver does.
 //
-// Ids in the cheapaimodel catalog (conf/models/cheapaimodel.json) report the
-// catalogued model types, so vision models keep their image-input capability.
-// Other ids fall back to name-based inference; ids with no inferable type are
-// dropped, as in the embedded OpenAI-compatible driver.
+// Ids in the cheapaimodel catalog (conf/models/cheapaimodel.json) take its
+// model types, context length and max output, so vision models keep their
+// image input and the limits reach the UI; ParseListModel only consults the
+// global catalog, which has no entry for most of these ids and may hold another
+// provider's figures for the rest. A context length in the response itself
+// still wins. Other ids keep the types ParseListModel resolved (global catalog,
+// else name inference). The provider configures only the chat endpoint, so
+// every type but chat and vision is removed, and ids left with none
+// (embedding, rerank, audio) are not listed.
 func (m *CheapaimodelModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -90,10 +95,25 @@ func (m *CheapaimodelModel) ListModels(ctx context.Context, apiConfig *APIConfig
 		provider = pm.FindProvider("cheapaimodel")
 	}
 
+	remoteContext := make(map[string]*int, len(modelList.Models))
+	for _, item := range modelList.Models {
+		if item.ContextLength != nil && *item.ContextLength > 0 {
+			remoteContext[strings.TrimSpace(item.ID)] = item.ContextLength
+		}
+	}
+
 	models := ParseListModel(modelList)
 	filtered := make([]ListModelResponse, 0, len(models))
 	for _, model := range models {
-		model.ModelTypes = m.modelTypes(pm, provider, model.Name)
+		if pm != nil && provider != nil {
+			if known := pm.FindModel(provider, model.Name); known != nil {
+				applyCatalogModel(&model, known)
+			}
+		}
+		if contextLength, ok := remoteContext[model.Name]; ok {
+			model.ContextLength = contextLength
+		}
+		model.ModelTypes = chatModelTypes(model.ModelTypes)
 		if len(model.ModelTypes) == 0 {
 			continue
 		}
@@ -102,15 +122,29 @@ func (m *CheapaimodelModel) ListModels(ctx context.Context, apiConfig *APIConfig
 	return filtered, nil
 }
 
-// modelTypes returns the catalogued types for a known id, else the types
-// inferred from its name.
-func (m *CheapaimodelModel) modelTypes(pm *ProviderManager, provider *Provider, name string) []string {
-	if pm != nil && provider != nil {
-		if known := pm.FindModel(provider, name); known != nil && len(known.ModelTypes) > 0 {
-			return append([]string(nil), known.ModelTypes...)
+// applyCatalogModel overrides a listed model with the fields its provider
+// catalog entry sets.
+func applyCatalogModel(model *ListModelResponse, known *Model) {
+	if len(known.ModelTypes) > 0 {
+		model.ModelTypes = known.ModelTypes
+	}
+	if known.ContextLength != nil {
+		model.ContextLength = known.ContextLength
+	}
+	if known.MaxOutput != nil {
+		model.MaxOutput = known.MaxOutput
+	}
+}
+
+// chatModelTypes keeps the types served by the chat endpoint, in a new slice.
+func chatModelTypes(types []string) []string {
+	kept := make([]string, 0, len(types))
+	for _, t := range types {
+		if t == modelTypeChat || t == modelTypeVision {
+			kept = append(kept, t)
 		}
 	}
-	return InferModelTypes(name)
+	return kept
 }
 
 // CheckConnection verifies the API key with a model-list call; GET /models
