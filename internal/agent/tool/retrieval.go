@@ -93,6 +93,12 @@ type chunkPayload struct {
 // surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct {
 	defaults retrievalArgs
+	// argsUserIDUntrusted marks callers whose arguments come from a model. For
+	// those, user_id decides whose memory messages are read, so the model must
+	// not be able to pick it: the node's value is the only source. Canvas
+	// components build their arguments themselves (node config merged with
+	// upstream outputs) and leave this false.
+	argsUserIDUntrusted bool
 }
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
@@ -136,6 +142,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 			return "", fmt.Errorf("retrieval: parse arguments: %w", err)
 		}
+	}
+	if r.argsUserIDUntrusted {
+		args.UserID = ""
 	}
 	args = r.mergeDefaults(args)
 	resolvedQuery, err := resolveRetrievalQuery(ctx, args.Query)

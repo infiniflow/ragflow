@@ -137,6 +137,35 @@ func TestRetrievalComponentForwardsUserIDNodeParam(t *testing.T) {
 	}
 }
 
+// TestRetrievalComponentHonorsInputUserID pins the canvas side of the trust
+// split: the Retrieval component assembles its arguments from node config and
+// upstream outputs, never from a model tool call, so an input-supplied value
+// keeps working. Only the Agent tool path rejects one.
+func TestRetrievalComponentHonorsInputUserID(t *testing.T) {
+	previous := agenttool.GetMemoryRetrievalService()
+	recorder := &retrievalRequestRecorder{}
+	agenttool.SetMemoryRetrievalService(recorder)
+	t.Cleanup(func() { agenttool.SetMemoryRetrievalService(previous) })
+
+	component, err := newRetrievalComponent(map[string]any{
+		"memory_ids":     []any{"memory-1"},
+		"retrieval_from": "memory",
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+
+	if _, err = component.Invoke(t.Context(), nil, map[string]any{
+		"query":   "remember",
+		"user_id": "user-from-upstream",
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if recorder.request.UserID != "user-from-upstream" {
+		t.Errorf("UserID = %q, want the upstream value user-from-upstream", recorder.request.UserID)
+	}
+}
+
 func TestRetrievalComponentForwardsExplicitZeroSimilarityParams(t *testing.T) {
 	previous := agenttool.GetRetrievalService()
 	recorder := &retrievalRequestRecorder{}

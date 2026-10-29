@@ -471,6 +471,31 @@ func TestRetrieval_RoutesMemoryRequestsWithUserFilter(t *testing.T) {
 	}
 }
 
+func TestRetrieval_ModelSuppliedUserIDIsIgnored(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	// The Agent tool path is the one whose arguments come from a model, so
+	// build it the way the registry does: user_id is resolved from the node
+	// config and the model's value is dropped.
+	built, err := BuildByName("retrieval", map[string]any{
+		"retrieval_from": "memory",
+		"memory_ids":     []any{"memory-1"},
+		"user_id":        "user-42",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(retrieval): %v", err)
+	}
+	if _, err = built.(*RetrievalTool).InvokableRun(t.Context(), `{"query":"remember this","user_id":"someone-else"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.UserID != "user-42" {
+		t.Fatalf("UserID = %q, want the node value user-42", memoryService.req.UserID)
+	}
+}
+
 func TestRetrieval_UnsetBareUserRefYieldsNoFilter(t *testing.T) {
 	previous := GetMemoryRetrievalService()
 	memoryService := &capturingRetrievalService{}
