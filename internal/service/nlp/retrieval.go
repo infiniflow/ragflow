@@ -1211,27 +1211,24 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	return remainingChunks
 }
 
-// PruneDeletedChunks removes chunks whose documents no longer exist
+// PruneDeletedChunks keeps source-backed chunks and dataset compilation chunks.
 func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
 	if s.documentDAO == nil {
 		return nil, fmt.Errorf("documentDAO is not initialized")
 	}
-	// Collect all doc_ids from chunks
-	chunkDocIDs := make([]string, 0, len(result.Field))
-	for _, chunk := range result.Field {
-		if isDatasetCompilationChunk(chunk) {
+	// Collect source document IDs from the ordered candidates.
+	chunkDocIDs := make([]string, 0, len(result.IDs))
+	for _, chunkID := range result.IDs {
+		chunk := result.Field[chunkID]
+		if len(chunk) == 0 || isDatasetCompilationChunk(chunk) {
 			continue
 		}
-		if docID, ok := chunk["doc_id"].(string); ok && docID != "" {
+		if docID := strings.TrimSpace(firstStringValue(chunk["doc_id"])); docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
 	}
 
-	if len(chunkDocIDs) == 0 {
-		return result, nil
-	}
-
-	// Deduplicate chunkDocIDs for correct comparison with existingDocIDs
+	// Deduplicate source IDs before the batch lookup.
 	uniqueDocIDs := make([]string, 0, len(chunkDocIDs))
 	seen := make(map[string]struct{}, len(chunkDocIDs))
 	for _, id := range chunkDocIDs {
@@ -1252,42 +1249,26 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		existingDocIDs[doc.ID] = struct{}{}
 	}
 
-	// Early return if all docs exist
-	if len(existingDocIDs) == len(uniqueDocIDs) {
-		return result, nil
-	}
-
-	// Filter out chunks with deleted documents
+	// Validate every candidate, including ghosts and chunks without a source ID.
 	filteredIDs := make([]string, 0, len(result.IDs))
-	filteredChunks := make([]map[string]interface{}, 0, len(result.IDs))
 	filteredField := make(map[string]map[string]interface{}, len(result.IDs))
 	filteredHighlight := make(map[string]string)
 	removed := 0
 
 	for _, chunkID := range result.IDs {
-		chunk, exists := result.Field[chunkID]
-		if !exists {
-			continue
-		}
-		docID, ok := chunk["doc_id"].(string)
-		if !ok || docID == "" || isDatasetCompilationChunk(chunk) {
-			// Dataset artifacts use the dataset ID instead of a source document ID.
-			filteredIDs = append(filteredIDs, chunkID)
-			filteredChunks = append(filteredChunks, chunk)
-			filteredField[chunkID] = chunk
-			if result.Highlight != nil {
-				if hl, ok := result.Highlight[chunkID]; ok {
-					filteredHighlight[chunkID] = hl
-				}
-			}
-			continue
-		}
-		if _, docExists := existingDocIDs[docID]; !docExists {
+		chunk := result.Field[chunkID]
+		if len(chunk) == 0 {
 			removed++
 			continue
 		}
+		if !isDatasetCompilationChunk(chunk) {
+			docID := strings.TrimSpace(firstStringValue(chunk["doc_id"]))
+			if _, docExists := existingDocIDs[docID]; docID == "" || !docExists {
+				removed++
+				continue
+			}
+		}
 		filteredIDs = append(filteredIDs, chunkID)
-		filteredChunks = append(filteredChunks, chunk)
 		filteredField[chunkID] = chunk
 		if result.Highlight != nil {
 			if hl, ok := result.Highlight[chunkID]; ok {
@@ -1296,9 +1277,26 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		}
 	}
 
-	if removed > 0 {
-		common.Warn("Pruned stale chunks whose documents no longer exist", zap.Int("removed", removed))
+	if removed == 0 {
+		return result, nil
 	}
+
+	// Preserve raw engine fields needed by KNN and local scoring.
+	chunksByID := make(map[string]map[string]interface{}, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		ids := s.docEngine.GetChunkIDs([]map[string]interface{}{chunk})
+		if len(ids) == 1 {
+			chunksByID[ids[0]] = chunk
+		}
+	}
+	filteredChunks := make([]map[string]interface{}, 0, len(filteredIDs))
+	for _, chunkID := range filteredIDs {
+		if chunk, ok := chunksByID[chunkID]; ok {
+			filteredChunks = append(filteredChunks, chunk)
+		}
+	}
+
+	common.Warn("Pruned chunks without an existing source document", zap.Int("removed", removed))
 
 	return &RetrievalSearchResult{
 		Chunks:      filteredChunks,
