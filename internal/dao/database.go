@@ -217,6 +217,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplateGroup{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
+	dataModels = append(dataModels, billingDataModelsEE()...)
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -239,6 +240,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			if err = autoMigrateSafely(ctx, DB, m); err != nil {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
+		}
+
+		if err = migrateBillingSchemaEE(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate billing schema: %w", err)
 		}
 
 		// Split the conversation message and reference payloads out of their
