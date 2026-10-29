@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnFolderChange } from '@/hooks/logic-hooks/use-clear-selection-on-folder-change';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
@@ -21,6 +22,7 @@ import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
 import { FilesTable } from './files-table';
 import {
+  useGetFolderId,
   useHandleConnectToKnowledge,
   UseHandleConnectToKnowledgeReturnType,
 } from './hooks';
@@ -83,7 +85,10 @@ export default function Files() {
     selectedCount,
   } = useRowSelection();
 
+  const folderId = useGetFolderId();
+
   useClearSelectionOnPageChange(pagination, clearRowSelection);
+  useClearSelectionOnFolderChange(folderId, clearRowSelection);
 
   useGoToPreviousPageOnEmpty(files?.length, loading, {
     deletionKey: ListDeletionKey.FileList,
