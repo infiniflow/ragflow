@@ -110,29 +110,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     fc-cache -f && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-# Stagehand launches Chrome over CDP; its server binary does not bundle a browser.
-ARG CHROME_VERSION=156.0.8078.47
-ENV CHROME_PATH=/opt/chrome/chrome
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        libnss3 libatk-bridge2.0-0 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 \
-        libxrandr2 libgbm1 libasound2t64 libxkbcommon0 libpango-1.0-0 libcairo2 libcups2t64 && \
-    case "$(dpkg --print-architecture)" in \
-        amd64) chrome_platform=linux64 ;; \
-        arm64) chrome_platform=linux-arm64 ;; \
-        *) echo "Unsupported Chrome architecture" >&2; exit 1 ;; \
-    esac && \
-    curl --retry 5 --retry-all-errors -fsSL \
-        "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/${chrome_platform}/chrome-${chrome_platform}.zip" \
-        -o /tmp/chrome.zip && \
-    unzip -q /tmp/chrome.zip -d /opt && \
-    mv "/opt/chrome-${chrome_platform}" /opt/chrome && \
-    "$CHROME_PATH" --version && \
-    "$CHROME_PATH" --headless --no-sandbox --disable-dev-shm-usage --dump-dom about:blank | grep -q '<html>' && \
-    rm /tmp/chrome.zip && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
-
 # Download resource from GitHub to /usr/share/infinity
 # Ship only the directories required by the runtime tokenizer:
 #   rag     - base analyzer dictionaries (mandatory)

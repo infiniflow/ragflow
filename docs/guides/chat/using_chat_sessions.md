@@ -67,9 +67,9 @@ RAGFlow provides an HTTP API for integration:
 You can also embed the created Chat assistant in a third-party webpage with an iframe:
 
 1. [Acquire an API key](../../develop/acquire_ragflow_api_key.md) before continuing. Otherwise, an error occurs.
-2. Hover over the target Chat assistant and click **Edit** to open the iframe window.
+2. Click the paper-airplane icon next to the Chat name to open **Embed into website**.
 3. Copy the iframe code and embed it in your webpage.
 
 ![Open the iframe configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_1.jpg)
 
-![Copy the iframe code](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_2.jpg)
+![Example of the embedded Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_2.jpg)

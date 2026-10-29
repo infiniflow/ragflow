@@ -515,7 +515,12 @@ func (c *ConfluenceConnector) pageCQL(start *time.Time, end time.Time, fromBegin
 		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		// CQL timestamps carry minute granularity, so an inclusive `<=` on the
+		// truncated end drops everything updated in the rest of that minute and
+		// the next window's lower bound skips it for good. Bound with an
+		// exclusive comparison against the next minute tick; inConfluenceWindow
+		// drops the rows that lie past the window end.
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
@@ -526,7 +531,7 @@ func (c *ConfluenceConnector) attachmentCQL(pageID string, start *time.Time, end
 		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }

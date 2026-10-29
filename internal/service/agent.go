@@ -1229,10 +1229,11 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			aliasPtr = &s
 		}
 	}
-	// ApplyVersion restore path: re-applying a version whose DSL already matches
-	// the latest draft must reuse that draft instead of minting a duplicate
-	// version row. We signal this with the "apply" flag so the version save can
-	// fall back to the SameDSL reuse branch instead of always inserting.
+	// ApplyVersion restore path: restoring a version refreshes only the live
+	// draft and must not write user_canvas_version at all. The restored DSL
+	// already exists as a historical row, so a new row would be a pure
+	// duplicate counting against the per-canvas version cap. The "apply" flag
+	// signals this so the version save below is skipped entirely.
 	applyVersion := false
 	if value, ok := patch["apply"]; ok && value != nil {
 		applyVersion = true
@@ -1275,9 +1276,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
-	// Build the version options up front (it only reads the user nickname)
-	// so the canvas row update and the version save can share one
-	// transaction below.
+	// Build the version options up front so the canvas row update and the
+	// version save can share one transaction below.
 	var versionOpts *dao.SaveOrReplaceLatestVersionOptions
 	if dslValue, ok := updates["dsl"]; ok {
 		dsl, ok := dslValue.(entity.JSONMap)
@@ -1290,15 +1290,13 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		} else if canvasInstance.Title != nil {
 			title = *canvasInstance.Title
 		}
-		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, aliasPtr, release)
+		opts := s.saveOrReplaceVersionOptions(canvasID, dsl, title, nil, aliasPtr, release)
 		// Manual Save (autosave != true) always mints a new version row, even
 		// when the DSL is identical to the previous one (design §5.1). Auto-save
-		// never mints a version at all, so versionOpts stays nil and only the
-		// live draft is refreshed below. ApplyVersion restores a historical DSL
-		// and must reuse the latest draft when the DSL is unchanged, so it does
-		// NOT force a new row (the SameDSL branch governs instead).
-		opts.ForceNew = !autosave && !applyVersion
-		if !autosave {
+		// never mints a version, and neither does an ApplyVersion restore; both
+		// leave versionOpts nil so only the live draft is refreshed below.
+		opts.ForceNew = true
+		if !autosave && !applyVersion {
 			versionOpts = &opts
 		}
 	}
@@ -1437,7 +1435,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	if title != nil {
 		titleStr = *title
 	}
-	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, alias, true)
+	opts := s.saveOrReplaceVersionOptions(canvasID, dsl, titleStr, description, alias, true)
 	var row *entity.UserCanvasVersion
 	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = s.canvasDAO.UpdateTx(ctx, tx, canvasInstance); err != nil {
@@ -1455,12 +1453,8 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	return row, nil
 }
 
-func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, alias *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
-	nickname, err := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
-	if err != nil || strings.TrimSpace(nickname) == "" {
-		nickname = userID
-	}
-	versionTitle := buildVersionTitle(nickname, title, time.Now())
+func (s *AgentService) saveOrReplaceVersionOptions(canvasID string, dsl entity.JSONMap, title string, description *string, alias *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
+	versionTitle := buildVersionTitle(title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
 		NewID:        common.GenerateUUID(),
 		UserCanvasID: canvasID,
@@ -1478,16 +1472,12 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 }
 
-func buildVersionTitle(userNickname, agentTitle string, ts time.Time) string {
-	tenant := strings.TrimSpace(userNickname)
-	if tenant == "" {
-		tenant = "tenant"
-	}
+func buildVersionTitle(agentTitle string, ts time.Time) string {
 	title := strings.TrimSpace(agentTitle)
 	if title == "" {
 		title = "agent"
 	}
-	return fmt.Sprintf("%s_%s_%s", tenant, title, ts.Format("2006-01-02 15:04:05"))
+	return fmt.Sprintf("%s_%s", title, ts.Format("2006-01-02 15:04:05"))
 }
 
 // ListVersions returns every version for a canvas the user can see,
@@ -1585,8 +1575,11 @@ func (s *AgentService) UpdateVersion(ctx context.Context, userID, canvasID, vers
 	})
 }
 
-// ApplyVersion restores a saved version's DSL through the normal draft-save
-// path, preserving the agent's metadata and version history.
+// ApplyVersion restores a saved version's DSL as the live draft, preserving
+// the agent's metadata and version history. It never writes
+// user_canvas_version: the restored DSL already exists as a historical row,
+// so a new one would be a pure duplicate counting against the per-canvas
+// version cap.
 func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
 	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
 	if err != nil {
@@ -1598,8 +1591,8 @@ func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versi
 	if version.DSL == nil {
 		return errors.New("agent version has no DSL to apply")
 	}
-	// The "apply" flag tells UpdateAgent to reuse the latest draft version when
-	// the restored DSL already matches it, instead of minting a duplicate row.
+	// The "apply" flag tells UpdateAgent to skip the version write and refresh
+	// only the live draft.
 	return s.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": version.DSL, "apply": true})
 }
 
@@ -1798,37 +1791,22 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		releaseRegistration()
 	}()
 
-	// Load the version row up front so the run is bound to a real DSL.
+	// DSL resolution: without an explicit version id the run executes the
+	// canvas's current editable draft (canvasRow.DSL) — the DSL the user just
+	// clicked "Run" against, which the front-end auto-saves before running.
+	// Published version rows are only executed through the released path
+	// (runReleasedAgent, embed with release=true) or an explicit ?version= id.
 	//
-	// IDOR guard (v3.5.2 review): when the caller supplies an explicit
-	// version id, the row we load must belong to canvasID — otherwise
-	// any caller who knows a foreign version id could run that
-	// canvas's DSL against their own canvas (a clear
-	// integrity/authorization boundary breach). GetVersion (at the
-	// read path) already enforces this check; the run path did not.
-	// We mirror that check here and surface ErrUserCanvasVersionNotFound
-	// so the handler maps to a clean 404 rather than silently using
-	// the foreign DSL.
+	// IDOR guard: when the caller supplies an explicit version id, the row we
+	// load must belong to canvasID — otherwise any caller who knows a foreign
+	// version id could run that canvas's DSL against their own canvas (a
+	// clear integrity/authorization boundary breach). GetVersion (at the read
+	// path) already enforces this check; the run path mirrors it and surfaces
+	// ErrUserCanvasVersionNotFound so the handler maps to a clean 404 rather
+	// than silently using the foreign DSL. DB-side errors are wrapped with
+	// ErrAgentStorageError so raw DAO strings (DSNs, table names, gorm stack
+	// frames) never reach the client.
 	//
-	// DAO-error visibility (v3.5.2 review): the previous code did
-	// `versionRow, _ = ...` for both GetByID and GetLatest, which
-	// masked every database failure as "no version published" and
-	// let real ops issues hide behind the V1 placeholder answer.
-	// We now distinguish three cases:
-	//   - explicit version, row not found       → 404
-	//   - explicit version, row from other canvas → 404 (IDOR)
-	//   - explicit version, DB error            → 500 (surface it)
-	//   - latest path, no rows + no error       → fall back to canvasRow.DSL (matches Python `completion()`)
-	//   - latest path, DB error                 → 500 (surface it)
-	//
-	// v3.6 follow-up: when no published version exists, fall back to
-	// the canvas's current editable DSL (canvasRow.DSL) instead of
-	// the "no published version" placeholder. The Python reference at
-	// api/db/services/canvas_service.py:332 does the same via
-	// UserCanvasService.get_agent_dsl_with_release(agent_id,
-	// release_mode=False, tenant_id=...) when release_mode is unset
-	// on the request — the front-end's auto-save-on-run path means
-	// the editable DSL is what the user just clicked "Run" against.
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.
 	var (
@@ -1841,11 +1819,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 				return nil, fmt.Errorf("RunAgent: load version %q: %w", version, err)
 			}
-			// Wrap DB-side errors with ErrAgentStorageError so
-			// the handler maps them to CodeServerError (500)
-			// with a sanitized message — raw DAO strings
-			// (DSNs, table names, gorm stack frames) MUST NOT
-			// reach the client.
 			return nil, fmt.Errorf("RunAgent: load version %q: %w: %w", version, err, ErrAgentStorageError)
 		}
 		if row.UserCanvasID != canvasID {
@@ -1859,30 +1832,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			)
 		}
 		versionRow = row
-	}
-	if versionRow == nil {
-		row, lerr := s.versionDAO.GetLatest(ctx, dao.DB, canvasID)
-		switch {
-		case lerr == nil:
-			versionRow = row
-		case errors.Is(lerr, dao.ErrUserCanvasVersionNotFound):
-			// No published version — fall back to the canvas's
-			// current editable DSL (see v3.6 follow-up comment
-			// above). Mirrors Python's
-			// `get_agent_dsl_with_release(...release_mode=False)`
-			// fallback in completion().
-			if len(canvasRow.DSL) > 0 {
-				dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
-			}
-		default:
-			// Wrap DB-side errors with ErrAgentStorageError
-			// for the same reason as above (no DAO-string
-			// leak to the client).
-			return nil, fmt.Errorf("RunAgent: load latest version for canvas %q: %w: %w", canvasID, lerr, ErrAgentStorageError)
-		}
-	}
-	if dsl == nil {
 		dsl = normalisedDSLForRun(versionRow)
+	} else if len(canvasRow.DSL) > 0 {
+		dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
 	}
 	sessionFound := false
 	if sessionID != "" && s.api4ConversationDAO != nil && dao.DB != nil {

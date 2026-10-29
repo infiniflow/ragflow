@@ -14,24 +14,37 @@
  *  limitations under the License.
  */
 
-import { DynamicFormRef } from '@/components/dynamic-form';
+import { DynamicFormRef, FormFieldType } from '@/components/dynamic-form';
 import {
   useDeleteProviderInstance,
   useFetchAvailableProviders,
   useFetchProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
+import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
 import { getProviderConfig } from '../provider-schema/field-config';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
+import type { ControllerRenderProps } from 'react-hook-form';
 import {
   API_KEY_NESTED_FIELDS,
   ApiKeyNestedField,
   InstanceSavePayload,
 } from './interface';
+import {
+  SAVED_CREDENTIAL_MASK,
+  SavedCredentialInput,
+} from './saved-credential-input';
+import {
+  SavedProviderConfigFieldSet,
+  hasUnsavedProviderCredential,
+  pickSavedProviderConfigOverrides,
+} from './saved-provider-config';
+
+export { SAVED_CREDENTIAL_MASK } from './saved-credential-input';
 
 // ---------------------------------------------------------------------------
 // Pure helpers - api_key shape normalization
@@ -46,26 +59,113 @@ import {
  */
 export function buildApiKeyValue(
   values: Record<string, any>,
+  credentialStatus: Record<string, boolean> = {},
 ): string | Record<string, any> | undefined {
-  const nested: Record<string, any> = {};
+  const config: Record<string, any> = {};
+  const apiKey = values.api_key;
+  if (credentialStatus.api_key === true) {
+    if (apiKey !== SAVED_CREDENTIAL_MASK && apiKey !== undefined) {
+      config.api_key = apiKey === '' ? null : apiKey;
+    }
+  } else if (apiKey !== undefined && apiKey !== '') {
+    config.api_key = apiKey;
+  }
+
   for (const field of API_KEY_NESTED_FIELDS) {
     const v = values[field];
-    if (v !== undefined && v !== '') nested[field] = v;
+    if (credentialStatus[field] === true) {
+      if (v !== SAVED_CREDENTIAL_MASK && v !== undefined) {
+        config[field] = v === '' ? null : v;
+      }
+    } else if (v !== undefined && v !== '') {
+      config[field] = v;
+    }
   }
-  if (Object.keys(nested).length === 0) return values.api_key;
-  return { api_key: values.api_key ?? '', ...nested };
+
+  const keys = Object.keys(config);
+  if (keys.length === 0) {
+    return apiKey === SAVED_CREDENTIAL_MASK ? undefined : apiKey;
+  }
+  if (keys.length === 1 && keys[0] === 'api_key' && config.api_key !== null) {
+    return config.api_key;
+  }
+  return config;
 }
 
 /**
- * Inverse of `buildApiKeyValue`, used on the echo/prefill path. The
- * backend persists the credential bundle as a JSON string (see
- * `rag/llm/chat_model.py`, which does `json.loads(key)`), so
- * `showProviderInstance` may return `api_key` as:
- *   1. a raw JSON string  `'{"api_key":"sk-x","group_id":"123"}'`
- *   2. an already-parsed object `{ api_key, group_id }`
- *   3. a plain bare key string `'sk-x'`
- * Normalise all three into the bare key plus the registered nested
- * credential fields so provider forms can restore their inputs.
+ * Apply edits to credentials already stored in a provider's structured
+ * `api_key` value. Unchanged masks are omitted so the backend preserves those
+ * fields; an emptied field is sent as null so the backend removes it.
+ */
+export function applySavedCredentialEdits(
+  apiKey: unknown,
+  values: Record<string, any>,
+  credentialStatus: Record<string, boolean> = {},
+): unknown {
+  const changes: Record<string, any> = {};
+  for (const [field, configured] of Object.entries(credentialStatus)) {
+    if (!configured) continue;
+    const value = values[field];
+    if (value === undefined || value === SAVED_CREDENTIAL_MASK) continue;
+    changes[field] = value === '' || value === null ? null : value;
+  }
+  if (Object.keys(changes).length === 0) {
+    if (
+      typeof apiKey === 'string' &&
+      credentialStatus.api_key === true &&
+      values.api_key === SAVED_CREDENTIAL_MASK
+    ) {
+      return undefined;
+    }
+    if (apiKey && typeof apiKey === 'object' && !Array.isArray(apiKey)) {
+      const config = { ...(apiKey as Record<string, any>) };
+      for (const [field, configured] of Object.entries(credentialStatus)) {
+        if (configured && config[field] === SAVED_CREDENTIAL_MASK) {
+          delete config[field];
+        }
+      }
+      return config;
+    }
+    if (typeof apiKey === 'string' && apiKey.trim() === '') {
+      return undefined;
+    }
+    return apiKey;
+  }
+
+  let config: Record<string, any> = {};
+  if (apiKey && typeof apiKey === 'object' && !Array.isArray(apiKey)) {
+    config = { ...(apiKey as Record<string, any>) };
+  } else if (typeof apiKey === 'string' && apiKey !== '') {
+    try {
+      const parsed = JSON.parse(apiKey);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        config = parsed;
+      } else {
+        config.api_key = apiKey;
+      }
+    } catch {
+      config.api_key = apiKey;
+    }
+  }
+  Object.assign(config, changes);
+  for (const [field, configured] of Object.entries(credentialStatus)) {
+    if (configured && config[field] === SAVED_CREDENTIAL_MASK) {
+      delete config[field];
+    }
+  }
+  if (
+    Object.keys(config).length === 1 &&
+    Object.prototype.hasOwnProperty.call(config, 'api_key') &&
+    config.api_key !== null
+  ) {
+    return config.api_key;
+  }
+  return config;
+}
+
+/**
+ * Parse provider-specific fields from a safe configuration object. The
+ * detail API never returns stored credential values.
  */
 export function unwrapApiKey(raw: unknown): {
   apiKey: string;
@@ -169,14 +269,11 @@ export function useProviderBaseUrlOptions(providerName: string) {
  *
  * - Draft: empty form, with `base_url` pre-filled from the
  *   provider's `default` URL when available.
- * - Saved: prefer `instanceDetails` (which carries api_key / base_url);
- *   when `echoTransform` is supplied (provider-specific field mapping,
- *   e.g. Google Cloud's top-level `google_project_id` or XunFei Spark's
- *   nested `spark_api_password`), use it to reverse the corresponding
- *   `submitTransform` so the provider-specific credential fields
- *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
- *   which lifts the bare `api_key` plus the provider-specific fields
- *   registered in `API_KEY_NESTED_FIELDS`.
+ * - Saved: prefer `instanceDetails` (safe config status plus base_url);
+ *   when `echoTransform` is supplied, use it to restore provider-specific
+ *   fields from the safe configuration. Otherwise fall back to the generic
+ *   `unwrapApiKey` path, which lifts settings registered in
+ *   `API_KEY_NESTED_FIELDS`.
  */
 export function useProviderInitialValues(
   providerName: string,
@@ -210,22 +307,20 @@ export function useProviderInitialValues(
     };
     const values: Record<string, any> = {
       instance_name: merged.instance_name,
+      api_key: '',
+      api_key_configured: merged.api_key_configured ?? false,
+      api_key_config: merged.api_key_config ?? {},
+      credential_status: merged.credential_status ?? {},
+      credential_masks: merged.credential_masks ?? {},
     };
+    const safeConfig = merged.api_key_config ?? {};
+    const { nested } = unwrapApiKey(safeConfig);
+    Object.assign(values, nested);
     if (echoTransform) {
       // Provider-specific echo: reverse the `submitTransform` mapping so
-      // credential fields that the backend persists either at the top
-      // level (Google Cloud, Tencent Cloud, Fish Audio) or nested inside
-      // `api_key` (XunFei Spark, Baidu YiYan, OpenDataLoader, PaddleOCR,
-      // MinerU) are restored into their own form inputs.
-      Object.assign(values, echoTransform(merged));
-    } else if (merged.api_key) {
-      // api_key may come back as a JSON string, an already-parsed object,
-      // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-      // api_key text field shows the bare key and registered nested
-      // credentials pre-fill their own form inputs.
-      const { apiKey, nested } = unwrapApiKey(merged.api_key);
-      values.api_key = apiKey;
-      Object.assign(values, nested);
+      // provider-specific fields are restored from the safe config or
+      // nested `api_key` values.
+      Object.assign(values, echoTransform({ ...merged, ...safeConfig }));
     }
     if (merged.base_url) {
       values.base_url = merged.base_url;
@@ -236,13 +331,16 @@ export function useProviderInitialValues(
     // for providers where it applies; surface it so the form / region
     // submit logic can echo it back.
     if ((merged as any).region) values.region = (merged as any).region;
-    // Fallback: some backends may still surface these credential fields
-    // at the top level rather than nested in api_key - echo any that
-    // weren't already lifted from the api_key object above.
+    // Restore only known non-secret settings from the safe config map.
     for (const field of API_KEY_NESTED_FIELDS) {
-      if (values[field] === undefined && (merged as any)[field] !== undefined) {
-        values[field] = (merged as any)[field];
+      if (values[field] === undefined && safeConfig[field] !== undefined) {
+        values[field] = safeConfig[field];
       }
+    }
+    for (const [field, configured] of Object.entries(
+      values.credential_status,
+    )) {
+      if (configured === true) values[field] = SAVED_CREDENTIAL_MASK;
     }
     return values;
   }, [
@@ -262,8 +360,8 @@ export function useProviderInitialValues(
 /**
  * The list endpoint (`useFetchProviderInstances`) does not return
  * sensitive/heavy fields like `api_key` or `base_url`. Pull the full
- * instance via `showProviderInstance` so the form can be pre-filled when
- * the user clicks an existing provider on the left. The hook is
+ * instance via `showProviderInstance` to get safe config status and URL
+ * metadata when the user clicks an existing provider on the left. The hook is
  * `enabled: false` by default - we trigger it manually here so we
  * don't change behavior of other call sites.
  */
@@ -353,6 +451,8 @@ export function useVerifyProvider(
   formRef: RefObject<DynamicFormRef>,
   verifyTransform?: VerifyTransform,
   modelInfoRef?: { current: IModelInfo[] },
+  instanceId?: string,
+  savedInstance?: IProviderInstance,
 ) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
 
@@ -372,8 +472,15 @@ export function useVerifyProvider(
         model_info?: IModelInfo[];
         region?: string;
       };
+      const credentialStatus = savedInstance?.credential_status ?? {};
+      const verifyValues = { ...values };
+      for (const [field, configured] of Object.entries(credentialStatus)) {
+        if (configured && verifyValues[field] === SAVED_CREDENTIAL_MASK) {
+          verifyValues[field] = '';
+        }
+      }
       if (verifyTransform) {
-        const transformed = verifyTransform(values);
+        const transformed = verifyTransform(verifyValues);
         verifyArgs = {
           api_key: transformed.apiKey,
           base_url: transformed.baseUrl,
@@ -389,9 +496,41 @@ export function useVerifyProvider(
           model_info: selectedModels ?? values.model_info,
         };
       }
+      verifyArgs.api_key = applySavedCredentialEdits(
+        verifyArgs.api_key,
+        values,
+        credentialStatus,
+      ) as string | object;
+      const credentialChanged = Object.keys(credentialStatus).some(
+        (field) =>
+          credentialStatus[field] === true &&
+          !SavedProviderConfigFieldSet.has(field) &&
+          values[field] !== undefined &&
+          values[field] !== SAVED_CREDENTIAL_MASK,
+      );
+      const useSavedCredentials =
+        Boolean(instanceId) &&
+        !credentialChanged &&
+        !hasUnsavedProviderCredential(verifyArgs.api_key);
+      const canOverrideSavedCredentials =
+        useSavedCredentials && savedInstance?.is_owner === true;
+      const savedConfigOverrides = canOverrideSavedCredentials
+        ? pickSavedProviderConfigOverrides(verifyArgs.api_key)
+        : {};
       const ret = await verifyProviderConnection({
         provider_name: providerName,
-        ...(verifyArgs as any),
+        ...(instanceId ? { instance_id: instanceId } : {}),
+        ...(useSavedCredentials
+          ? {
+              use_saved_credentials: true,
+              ...(Object.keys(savedConfigOverrides).length > 0
+                ? { api_key_config: savedConfigOverrides }
+                : {}),
+              ...(canOverrideSavedCredentials
+                ? { base_url: verifyArgs.base_url, region: verifyArgs.region }
+                : {}),
+            }
+          : (verifyArgs as any)),
       });
       if (ret.code === 0) {
         return { isValid: true, logs: ret.message } as {
@@ -410,6 +549,8 @@ export function useVerifyProvider(
       verifyProviderConnection,
       verifyTransform,
       modelInfoRef,
+      instanceId,
+      savedInstance,
     ],
   );
 }
@@ -462,6 +603,7 @@ interface UseInstanceSaveStateArgs {
   draftName: string;
   instanceDetails: IProviderInstance | undefined;
   initialValues: Record<string, any>;
+  baselineValues?: Record<string, any>;
   modelInfoRef: { current: IModelInfo[] };
   /**
    * Optional provider-specific transform that maps form values to the
@@ -503,6 +645,7 @@ export function useInstanceSaveState({
   draftName,
   instanceDetails,
   initialValues,
+  baselineValues,
   modelInfoRef,
   submitTransform,
 }: UseInstanceSaveStateArgs) {
@@ -525,87 +668,130 @@ export function useInstanceSaveState({
   // via `buildApiKeyValue` so nested credential fields (group_id /
   // api_version / provider_order) are bundled inside `api_key` as the
   // backend expects.
-  const buildPayload = useCallback((): Record<string, any> | null => {
-    const values = (formRef.current?.getValues?.() ?? {}) as Record<
-      string,
-      any
-    >;
-    const modelInfo =
-      modelInfoRef.current.length > 0 ? modelInfoRef.current : [];
+  const buildPayload = useCallback(
+    (
+      valuesOverride?: Record<string, any>,
+      modelInfoOverride?: IModelInfo[],
+      instanceNameOverride?: string,
+      instanceIdOverride?: string,
+    ): Record<string, any> | null => {
+      const values =
+        valuesOverride ??
+        ((formRef.current?.getValues?.() ?? {}) as Record<string, any>);
+      const modelInfo =
+        modelInfoOverride ??
+        (modelInfoRef.current.length > 0 ? modelInfoRef.current : []);
 
-    // Provider-specific field mapping (e.g. OpenDataLoader's nested
-    // `opendataloader_apiserver` / `opendataloader_api_key`). The
-    // transform produces the canonical submit body shape
-    // (`instance_name`, `llm_factory`, `api_key`, `base_url`,
-    // `model_info`); we then layer on the card's own state (typed /
-    // edited name, model_info ref, update-only fields for saved cards).
-    if (submitTransform) {
-      const transformed = submitTransform({
-        ...values,
-        model_info: modelInfo,
-      }) as Record<string, any>;
+      // Provider-specific field mapping (e.g. OpenDataLoader's nested
+      // `opendataloader_apiserver` / `opendataloader_api_key`). The
+      // transform produces the canonical submit body shape
+      // (`instance_name`, `llm_factory`, `api_key`, `base_url`,
+      // `model_info`); we then layer on the card's own state (typed /
+      // edited name, model_info ref, update-only fields for saved cards).
+      if (submitTransform) {
+        const credentialStatus = initialValues.credential_status ?? {};
+        const transformValues = { ...values };
+        for (const [field, configured] of Object.entries(credentialStatus)) {
+          if (configured && transformValues[field] === SAVED_CREDENTIAL_MASK) {
+            transformValues[field] = '';
+          }
+        }
+        const transformed = submitTransform({
+          ...transformValues,
+          model_info: modelInfo,
+        }) as Record<string, any>;
+        const updatedAPIKey = applySavedCredentialEdits(
+          transformed.api_key,
+          values,
+          credentialStatus,
+        );
+        if (updatedAPIKey === undefined) {
+          delete transformed.api_key;
+        } else {
+          transformed.api_key = updatedAPIKey;
+        }
+        for (const [field, configured] of Object.entries(credentialStatus)) {
+          // `api_key` is the canonical credential property in the update body.
+          // Other provider-specific credential fields must not leak at the top
+          // level, but deleting this one also removes the transformed value.
+          if (configured && field !== 'api_key') delete transformed[field];
+        }
+        if (isDraft) {
+          const trimmed = draftNameRef.current.trim();
+          if (!trimmed) return null;
+          return {
+            ...transformed,
+            llm_factory: providerName,
+            instance_name: trimmed,
+            model_info: modelInfo,
+          };
+        }
+        const resolvedId =
+          instanceIdOverride || instanceDetails?.id || instanceId;
+        return {
+          ...transformed,
+          provider_name: providerName,
+          instance_name: instanceNameOverride ?? editedNameRef.current,
+          id: resolvedId,
+          base_url: transformed.base_url ?? '',
+          region: values.region || 'default',
+          model_info: modelInfo,
+          verify: false,
+        };
+      }
+
       if (isDraft) {
         const trimmed = draftNameRef.current.trim();
         if (!trimmed) return null;
-        return {
-          ...transformed,
+        const payload: Record<string, any> = {
           llm_factory: providerName,
-          instance_name: trimmed,
-          model_info: modelInfo,
+          instance_name: instanceNameOverride ?? trimmed,
+          api_key:
+            buildApiKeyValue(values, initialValues.credential_status) ?? '',
+          base_url: values.base_url,
         };
+        if (modelInfo.length > 0) {
+          payload.model_info = modelInfo;
+        }
+        return payload;
       }
-      const resolvedId = instanceDetails?.id || instanceId;
-      return {
-        ...transformed,
+
+      const resolvedId =
+        instanceIdOverride || instanceDetails?.id || instanceId;
+      const apiKeyValue = buildApiKeyValue(
+        values,
+        initialValues.credential_status,
+      );
+      const payload: Record<string, any> = {
         provider_name: providerName,
-        instance_name: editedNameRef.current,
+        // Use the edited name (may differ from the persisted `instanceName`
+        // when the user has renamed the instance via double-click).
+        instance_name: instanceNameOverride ?? editedNameRef.current,
         id: resolvedId,
-        base_url: transformed.base_url ?? '',
+        base_url: values.base_url,
         region: values.region || 'default',
         model_info: modelInfo,
         verify: false,
       };
-    }
-
-    if (isDraft) {
-      const trimmed = draftNameRef.current.trim();
-      if (!trimmed) return null;
-      const payload: Record<string, any> = {
-        llm_factory: providerName,
-        instance_name: trimmed,
-        api_key: buildApiKeyValue(values) ?? '',
-        base_url: values.base_url,
-      };
-      if (modelInfoRef.current.length > 0) {
-        payload.model_info = modelInfoRef.current;
+      if (
+        apiKeyValue !== undefined &&
+        !(typeof apiKeyValue === 'string' && apiKeyValue.trim() === '')
+      ) {
+        payload.api_key = apiKeyValue;
       }
       return payload;
-    }
-
-    const resolvedId = instanceDetails?.id || instanceId;
-    const apiKeyValue = buildApiKeyValue(values);
-    const payload: Record<string, any> = {
-      provider_name: providerName,
-      // Use the edited name (may differ from the persisted `instanceName`
-      // when the user has renamed the instance via double-click).
-      instance_name: editedNameRef.current,
-      id: resolvedId,
-      api_key: apiKeyValue ?? '',
-      base_url: values.base_url,
-      region: values.region || 'default',
-      model_info: modelInfoRef.current.length > 0 ? modelInfoRef.current : [],
-      verify: false,
-    };
-    return payload;
-  }, [
-    isDraft,
-    providerName,
-    instanceId,
-    instanceDetails?.id,
-    formRef,
-    modelInfoRef,
-    submitTransform,
-  ]);
+    },
+    [
+      isDraft,
+      providerName,
+      instanceId,
+      instanceDetails?.id,
+      formRef,
+      modelInfoRef,
+      submitTransform,
+      initialValues.credential_status,
+    ],
+  );
 
   // Seed the "last saved" baseline once instance details (or the
   // draft's empty state) are available, so the first `getSavePayload()`
@@ -619,29 +805,24 @@ export function useInstanceSaveState({
     }
     const resolvedId = instanceDetails?.id || instanceId;
     if (!resolvedId) return;
-    const baseline = {
-      provider_name: providerName,
-      instance_name: instanceName,
-      id: resolvedId,
-      api_key: buildApiKeyValue(initialValues),
-      base_url: initialValues.base_url,
-      region: initialValues.region,
-      // model_info baseline is `[]`; `markModelsEdited` rewrites it after
-      // a model PATCH so the next top-save short-circuits. The first
-      // save after the models initially load may re-send the same
-      // model_info (idempotent) - acceptable, matches the old
-      // `lastSavedPayloadRef` seeding behaviour.
-      model_info: [] as IModelInfo[],
-      verify: false,
-    };
-    baselinePayloadRef.current = JSON.stringify(baseline);
+    // Build the baseline through the same provider transform and payload
+    // normalization as a save. Hand-assembling it misses provider-specific
+    // fields such as llm_factory and can make an untouched card look dirty.
+    // Use the form defaults from the loaded instance, including provider
+    // defaults, but not the live form values: a refetch must not absorb edits
+    // preserved by `keepDirtyValues` into the saved baseline.
+    const savedValues = baselineValues ?? initialValues;
+    const baseline = buildPayload(savedValues, [], instanceName, resolvedId);
+    baselinePayloadRef.current = JSON.stringify(baseline ?? {});
   }, [
     isDraft,
-    providerName,
     instanceName,
     instanceId,
     instanceDetails?.id,
     initialValues,
+    baselineValues,
+    formRef,
+    buildPayload,
   ]);
 
   // `getSavePayload()` is the imperative entry point the parent calls
@@ -748,16 +929,17 @@ export function useInstanceSaveState({
  */
 export function useFormFields(
   providerName: string,
-  _isDraft: boolean,
+  isDraft: boolean,
   initialValues: Record<string, any>,
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
   urlHint?: string,
 ) {
+  const { t: tSetting } = useTranslate('setting');
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
     // Always seed initial values (drafts need the default base_url;
-    // saved cards need the persisted api_key / base_url).
+    // saved cards need safe persisted settings and the base_url).
     editMode: true,
     // Never disable fields - the old name-first lock is gone. Drafts
     // are fully editable from the start; saved cards are edited via the
@@ -769,10 +951,36 @@ export function useFormFields(
     urlHint,
   });
 
-  const formFields = useMemo(
-    () => fields.filter((f) => f.name !== 'instance_name'),
-    [fields],
-  );
+  const formFields = useMemo(() => {
+    const credentialStatus = initialValues.credential_status ?? {};
+    const credentialMasks = initialValues.credential_masks ?? {};
+    return fields
+      .filter((field) => field.name !== 'instance_name')
+      .map((field) => {
+        if (isDraft || credentialStatus[field.name] !== true) return field;
+        return {
+          ...field,
+          type: FormFieldType.Custom,
+          required: false,
+          placeholder: tSetting('credentialClearToRemove'),
+          autoComplete: 'new-password',
+          render: (fieldProps: ControllerRenderProps) => (
+            <SavedCredentialInput
+              {...fieldProps}
+              maskedValue={credentialMasks[field.name]}
+              placeholder={tSetting('credentialClearToRemove')}
+              autoComplete="new-password"
+            />
+          ),
+        };
+      });
+  }, [
+    fields,
+    initialValues.credential_masks,
+    initialValues.credential_status,
+    isDraft,
+    tSetting,
+  ]);
 
   const defaultValuesKey = JSON.stringify(defaultValues);
   const formDefaultValues = useMemo(() => {

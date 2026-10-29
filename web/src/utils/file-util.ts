@@ -223,9 +223,8 @@ export const downloadJsonFile = async (
   // fixtures, so an exported dsl imported in v2 mode and re-
   // exported stays identical at the byte level.
   //
-  // JSON.stringify already leaves non-ASCII (e.g. the Chinese
-  // prompts we store under `Browser.prompts`) un-escaped by
-  // default, so no `ensure_ascii` toggle is needed.
+  // JSON.stringify already leaves non-ASCII un-escaped by default,
+  // so no `ensure_ascii` toggle is needed.
   const blob = new Blob([JSON.stringify(sortKeysDeep(data), null, 2)], {
     type: FileMimeType.Json,
   });

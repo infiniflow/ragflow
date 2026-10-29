@@ -18,7 +18,7 @@
 // production chain.
 //
 // These tests pin the production chain end-to-end: loadCanvasForUser
-// → versionDAO.GetLatest → decodeCanvasFromDSL → canvas.Compile →
+// → draft DSL resolution → decodeCanvasFromDSL → canvas.Compile →
 // cc.Workflow.Invoke → orchestrator answer extraction. They also
 // cover the boot-wiring surface (Kvrocks-backed CheckPointStore +
 // RunTracker) and the failure paths (compile error, invoke
@@ -61,9 +61,9 @@ import (
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
-// version whose DSL is the supplied map. The returned version id is
-// what RunAgent consumes when the caller does not pass an explicit
-// version (it falls through to GetLatest).
+// version, with the supplied DSL on both the canvas row (the editable
+// draft) and the version row. RunAgent without an explicit version id
+// executes the draft, so the canvas-row DSL is what these tests run.
 func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID string, dsl map[string]any) {
 	t.Helper()
 	dao.DB.Where("id = ?", userID).FirstOrCreate(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
@@ -79,6 +79,7 @@ func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID strin
 		Permission:     "me",
 		CanvasType:     sptr("agent"),
 		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap(dsl),
 	})
 	dao.DB.Create(&entity.UserCanvasVersion{
 		ID:           versionID,
@@ -209,7 +210,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		"user-1",
 		"canvas-hello",
 		"session-hello",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -1912,7 +1913,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		"user-1",
 		"canvas-cp",
 		"session-cp",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)

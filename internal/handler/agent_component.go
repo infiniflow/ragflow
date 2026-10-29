@@ -30,6 +30,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -37,10 +38,14 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/component"
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	"ragflow/internal/service"
 )
 
 // GetComponentInputForm GET /api/v1/agents/:canvas_id/components/:component_id/input-form
@@ -110,13 +115,10 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 	return form, nil
 }
 
-// DebugComponent POST /api/v1/agents/:canvas_id/components/:component_id/debug
-//
-// Body shape (python parity): {"params": {"input_name": {"value": ...}, ...}}
-//
-// The python reference calls `component.invoke(**{k: o["value"] for k, o in
-// req["params"].items()})`. We replicate this by flattening each param's
-// "value" field into the Invoke inputs map.
+// DebugComponent handles POST /api/v1/agents/:canvas_id/components/:component_id/debug.
+// It flattens params.*.value into component inputs and returns the debug outputs.
+// An Agent request with include_model_inputs=true requires update permission and
+// wraps outputs with request-local model-input diagnostics, including on failure.
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -131,7 +133,8 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	}
 
 	var body struct {
-		Params map[string]map[string]any `json:"params"`
+		Params             map[string]map[string]any `json:"params"`
+		IncludeModelInputs json.RawMessage           `json:"include_model_inputs"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
@@ -139,6 +142,15 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	}
 	if body.Params == nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`params` is required.")
+		return
+	}
+	includeModelInputs := false
+	switch strings.TrimSpace(string(body.IncludeModelInputs)) {
+	case "", "false":
+	case "true":
+		includeModelInputs = true
+	default:
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`include_model_inputs` must be a boolean.")
 		return
 	}
 
@@ -194,6 +206,20 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component factory: "+err.Error())
 		return
 	}
+	if includeModelInputs {
+		if _, ok := comp.(*component.AgentComponent); !ok {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Model inputs are available only for Agent components.")
+			return
+		}
+		if err := service.CheckCanvasPermission(c.Request.Context(), permission.Subject{UserID: user.ID}, canvasID, permission.OperationUpdate); err != nil {
+			if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+				common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
+			} else {
+				common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+			}
+			return
+		}
+	}
 
 	// D4: skip set_debug_inputs (python-only LLM debug hook). The
 	// raw Invoke already supports the same inputs.
@@ -235,16 +261,31 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	debugState.SetSys("canvas_id", cv.ID)
 	debugState.SetSys("user_id", user.ID)
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
+	var capture *models.ModelInputCapture
+	if includeModelInputs {
+		invokeCtx, capture = models.WithModelInputCapture(invokeCtx)
+		defer capture.Finalize()
+	}
 
 	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {
 		return comp.Invoke(invokeCtx, dao.DB, inputs)
 	})
+	var data any = outputs
+	if capture != nil {
+		data = struct {
+			Outputs     map[string]any     `json:"outputs"`
+			ModelInputs models.ModelInputs `json:"model_inputs"`
+		}{Outputs: outputs, ModelInputs: capture.Finalize()}
+	}
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "invoke: "+err.Error())
+		if capture == nil {
+			data = nil
+		}
+		common.ResponseWithCodeData(c, common.CodeServerError, data, "invoke: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, outputs, "success")
+	common.SuccessWithData(c, data, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.

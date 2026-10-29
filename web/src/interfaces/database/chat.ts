@@ -179,7 +179,7 @@ export interface IReferenceObject {
   doc_aggs: Record<string, Docagg>;
 }
 
-/** One turn's token cost, as reported by the final SSE chunk. */
+/** One turn's token cost, reported by a final response or a history message. */
 export interface ITurnUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -197,7 +197,7 @@ export interface IAnswer {
   audio_binary?: string;
   data?: any;
   chatBoxId?: string;
-  /** Present on the final chunk only; absent for answers restored from history. */
+  /** Present when the final response reports token usage. */
   usage?: ITurnUsage;
   elapsed_ms?: number;
 }

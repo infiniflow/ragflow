@@ -1,33 +1,11 @@
-import { renderHook } from '@testing-library/react';
 import { ParseType } from '@/constants/knowledge';
-import { AgentListItemType } from '@/interfaces/database/agent';
 import {
   buildParserOptionValue,
   buildParserSelectValue,
   parseParserOptionValue,
   ParserOptionKind,
   resolveBuiltinParserId,
-  useParserOptions,
 } from '@/hooks/use-parser-options';
-
-jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchBuiltinPipelines: jest.fn(),
-  useFetchAgentList: jest.fn(),
-}));
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const agentRequest = require('@/hooks/use-agent-request');
-
-beforeEach(() => {
-  agentRequest.useFetchBuiltinPipelines.mockReturnValue({
-    options: [],
-    loading: false,
-  });
-  agentRequest.useFetchAgentList.mockReturnValue({
-    data: { canvas: [] },
-    loading: false,
-  });
-});
 
 describe('parser option value encoding', () => {
   it('prefixes builtin and pipeline ids distinctly', () => {
@@ -39,6 +17,12 @@ describe('parser option value encoding', () => {
     );
   });
 
+  it('packs the version id into pipeline leaf values', () => {
+    expect(
+      buildParserOptionValue(ParserOptionKind.Pipeline, 'abc123', 'v9'),
+    ).toBe('pipeline:abc123:v9');
+  });
+
   it('round-trips builtin and pipeline values', () => {
     expect(parseParserOptionValue('builtin:general')).toEqual({
       kind: ParserOptionKind.BuiltIn,
@@ -47,6 +31,11 @@ describe('parser option value encoding', () => {
     expect(parseParserOptionValue('pipeline:abc123')).toEqual({
       kind: ParserOptionKind.Pipeline,
       rawId: 'abc123',
+    });
+    expect(parseParserOptionValue('pipeline:abc123:v9')).toEqual({
+      kind: ParserOptionKind.Pipeline,
+      rawId: 'abc123',
+      versionId: 'v9',
     });
   });
 
@@ -67,12 +56,14 @@ describe('parser option value encoding', () => {
     );
   });
 
-  it('handles ids that themselves contain a colon', () => {
-    const value = buildParserOptionValue(ParserOptionKind.Pipeline, 'a:b:c');
-    expect(value).toBe('pipeline:a:b:c');
-    expect(parseParserOptionValue(value)).toEqual({
+  it('splits pipeline leaf values on the first colon after the prefix', () => {
+    // Pipeline and version ids are colon-free hex strings, so the first ':'
+    // after the prefix separates them; anything further stays in the version
+    // part. "pipeline:a:b:c" therefore decodes as pipeline "a", version "b:c".
+    expect(parseParserOptionValue('pipeline:a:b:c')).toEqual({
       kind: ParserOptionKind.Pipeline,
-      rawId: 'a:b:c',
+      rawId: 'a',
+      versionId: 'b:c',
     });
   });
 
@@ -106,12 +97,13 @@ describe('buildParserSelectValue', () => {
     ).toBe('builtin:general');
   });
 
-  it('builds the value from the id of the active parse type', () => {
+  it('builds the value from the ids of the active parse type', () => {
     expect(
       buildParserSelectValue({
         parseType: ParseType.BuiltIn,
         parserId: 'book',
         pipelineId: 'pipe-1',
+        pipelineVersionId: 'v1',
       }),
     ).toBe('builtin:book');
     expect(
@@ -119,8 +111,9 @@ describe('buildParserSelectValue', () => {
         parseType: ParseType.Pipeline,
         parserId: 'book',
         pipelineId: 'pipe-1',
+        pipelineVersionId: 'v1',
       }),
-    ).toBe('pipeline:pipe-1');
+    ).toBe('pipeline:pipe-1:v1');
   });
 
   it('returns undefined when the active id is empty', () => {
@@ -131,83 +124,22 @@ describe('buildParserSelectValue', () => {
       buildParserSelectValue({ parseType: ParseType.Pipeline }),
     ).toBeUndefined();
   });
-});
 
-describe('useParserOptions merged list', () => {
-  it('puts pipeline options first, then builtin options with plain labels', () => {
-    agentRequest.useFetchBuiltinPipelines.mockReturnValue({
-      options: [
-        { label: 'General', value: 'general' },
-        { label: 'Book', value: 'book' },
-      ],
-      loading: false,
-    });
-    agentRequest.useFetchAgentList.mockReturnValue({
-      data: {
-        canvas: [
-          { id: 'pipe-1', title: 'My Flow', type: 'dataflow' },
-          { id: 'pipe-2', title: 'Other', type: 'dataflow' },
-        ],
-      },
-      loading: false,
-    });
-
-    const { result } = renderHook(() => useParserOptions());
-    const opts = result.current.options;
-
-    expect(opts).toHaveLength(4);
-    // Pipelines first, in original order.
-    expect(opts[0]).toEqual({
-      value: 'pipeline:pipe-1',
-      label: 'My Flow',
-      kind: ParserOptionKind.Pipeline,
-    });
-    expect(opts[1].value).toBe('pipeline:pipe-2');
-    // Builtin appended below; the label stays plain and the "built in" tag is
-    // rendered by the select component based on `kind`.
-    expect(opts[2]).toEqual({
-      value: 'builtin:general',
-      label: 'General',
-      kind: ParserOptionKind.BuiltIn,
-    });
-    expect(opts[3].label).toBe('Book');
-  });
-
-  it('excludes compilation template groups from pipeline options', () => {
-    agentRequest.useFetchAgentList.mockReturnValue({
-      data: {
-        canvas: [
-          { id: 'pipe-1', title: 'Real', type: 'dataflow' },
-          {
-            id: 'grp-1',
-            title: 'Group',
-            type: AgentListItemType.CompilationTemplateGroup,
-          },
-        ],
-      },
-      loading: false,
-    });
-
-    const { result } = renderHook(() => useParserOptions());
-    const pipelineOpts = result.current.options.filter(
-      (o) => o.kind === ParserOptionKind.Pipeline,
-    );
-    expect(pipelineOpts).toHaveLength(1);
-    expect(pipelineOpts[0].value).toBe('pipeline:pipe-1');
-  });
-
-  it('handles empty results from both sources', () => {
-    const { result } = renderHook(() => useParserOptions());
-    expect(result.current.options).toEqual([]);
-    expect(result.current.loading).toBe(false);
-  });
-
-  it('surfaces loading while either source is fetching', () => {
-    agentRequest.useFetchBuiltinPipelines.mockReturnValue({
-      options: [],
-      loading: true,
-    });
-    const { result } = renderHook(() => useParserOptions());
-    expect(result.current.loading).toBe(true);
+  it('returns undefined for a pipeline without a concrete version', () => {
+    // An unpinned binding has no leaf to select; the select shows its
+    // placeholder until the latest-version prefill fills the field in.
+    expect(
+      buildParserSelectValue({
+        parseType: ParseType.Pipeline,
+        pipelineId: 'pipe-1',
+      }),
+    ).toBeUndefined();
+    expect(
+      buildParserSelectValue({
+        parseType: ParseType.Pipeline,
+        pipelineId: 'pipe-1',
+        pipelineVersionId: '',
+      }),
+    ).toBeUndefined();
   });
 });

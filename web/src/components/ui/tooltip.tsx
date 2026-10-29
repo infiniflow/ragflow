@@ -57,10 +57,13 @@ export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
 export function RAGFlowTooltip({
   children,
   tooltip,
-}: React.PropsWithChildren & { tooltip: React.ReactNode }) {
+  ...props
+}: React.ComponentPropsWithoutRef<typeof TooltipTrigger> & {
+  tooltip: React.ReactNode;
+}) {
   return (
     <Tooltip>
-      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipTrigger {...props}>{children}</TooltipTrigger>
       <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );

@@ -59,7 +59,17 @@ import {
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
 } from './interface';
-import { unwrapApiKey } from './hooks';
+import {
+  applySavedCredentialEdits,
+  SAVED_CREDENTIAL_MASK,
+  unwrapApiKey,
+} from './hooks';
+import {
+  SavedProviderConfigFieldSet,
+  hasUnsavedProviderCredential,
+  pickSavedProviderConfigOverrides,
+} from './saved-provider-config';
+import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
@@ -118,6 +128,12 @@ export const BedrockInstanceCard = forwardRef<
     }
   }, [providerName, isDraft]);
 
+  const { data: instanceDetails, refetch: refetchInstanceDetails } =
+    useFetchProviderInstance(
+      isDraft ? '' : providerName,
+      isDraft ? '' : instance.id,
+    );
+
   const FormSchema = useMemo(
     () =>
       z
@@ -168,15 +184,31 @@ export const BedrockInstanceCard = forwardRef<
               });
             }
           }
-          if (data.auth_mode === 'access_key_secret') {
-            if (!data.bedrock_ak || !data.bedrock_ak.trim()) {
+          const savedConfig = instanceDetails?.api_key_config ?? {};
+          const storedAuthMode = savedConfig.auth_mode;
+          const credentialStatus = instanceDetails?.credential_status ?? {};
+          const mayKeepStoredCredentials =
+            !isDraft && data.auth_mode === storedAuthMode;
+          const hasStoredBedrockAccessKeys =
+            mayKeepStoredCredentials &&
+            credentialStatus.bedrock_ak === true &&
+            credentialStatus.bedrock_sk === true;
+          const removingStoredAccessKeys =
+            hasStoredBedrockAccessKeys &&
+            data.bedrock_ak === '' &&
+            data.bedrock_sk === '';
+          if (
+            data.auth_mode === 'access_key_secret' &&
+            !removingStoredAccessKeys
+          ) {
+            if (!data.bedrock_ak?.trim()) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('bedrockAKMessage'),
                 path: ['bedrock_ak'],
               });
             }
-            if (!data.bedrock_sk || !data.bedrock_sk.trim()) {
+            if (!data.bedrock_sk?.trim()) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('bedrockSKMessage'),
@@ -185,7 +217,19 @@ export const BedrockInstanceCard = forwardRef<
             }
           }
           if (data.auth_mode === 'iam_role') {
-            if (!data.aws_role_arn || !data.aws_role_arn.trim()) {
+            const canKeepStoredRoleArn =
+              mayKeepStoredCredentials &&
+              credentialStatus.aws_role_arn === true &&
+              data.aws_role_arn === SAVED_CREDENTIAL_MASK;
+            const removingStoredRoleArn =
+              mayKeepStoredCredentials &&
+              credentialStatus.aws_role_arn === true &&
+              data.aws_role_arn === '';
+            if (
+              !data.aws_role_arn?.trim() &&
+              !canKeepStoredRoleArn &&
+              !removingStoredRoleArn
+            ) {
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 message: tSetting('awsRoleArnMessage'),
@@ -195,7 +239,11 @@ export const BedrockInstanceCard = forwardRef<
           }
           if (
             data.auth_mode === 'bedrock_api_key' &&
-            !data.bedrock_api_key?.trim()
+            !data.bedrock_api_key?.trim() &&
+            !(
+              mayKeepStoredCredentials &&
+              credentialStatus.bedrock_api_key === true
+            )
           ) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
@@ -204,14 +252,8 @@ export const BedrockInstanceCard = forwardRef<
             });
           }
         }),
-    [isDraft, tSetting],
+    [instanceDetails, isDraft, tSetting],
   );
-
-  const { data: instanceDetails, refetch: refetchInstanceDetails } =
-    useFetchProviderInstance(
-      isDraft ? '' : providerName,
-      isDraft ? '' : instance.id,
-    );
 
   // Lazily fetch full instance details only when the card is open.
   // Collapsed cards never hit /providers/<name>/instances/<instance_name>;
@@ -230,13 +272,26 @@ export const BedrockInstanceCard = forwardRef<
 
   const initialValues = useMemo<BedrockFormValues>(() => {
     const merged = { ...instance, ...(instanceDetails ?? {}) } as any;
-    const { nested: apiKey } = unwrapApiKey(merged.api_key);
+    const { nested: apiKey } = unwrapApiKey(merged.api_key_config);
+    const credentialStatus = merged.credential_status ?? {};
     return {
       auth_mode: (apiKey.auth_mode as AuthMode) ?? 'access_key_secret',
-      bedrock_ak: apiKey.bedrock_ak ?? '',
-      bedrock_sk: apiKey.bedrock_sk ?? '',
-      aws_role_arn: apiKey.aws_role_arn ?? '',
-      bedrock_api_key: apiKey.bedrock_api_key ?? '',
+      bedrock_ak:
+        credentialStatus.bedrock_ak === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_ak ?? ''),
+      bedrock_sk:
+        credentialStatus.bedrock_sk === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_sk ?? ''),
+      aws_role_arn:
+        credentialStatus.aws_role_arn === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.aws_role_arn ?? ''),
+      bedrock_api_key:
+        credentialStatus.bedrock_api_key === true
+          ? SAVED_CREDENTIAL_MASK
+          : (apiKey.bedrock_api_key ?? ''),
       bedrock_region:
         apiKey.bedrock_region ??
         (merged.region && merged.region !== 'default' ? merged.region : ''),
@@ -260,6 +315,18 @@ export const BedrockInstanceCard = forwardRef<
   }, [initialValues]);
 
   const authMode = useWatch({ control: form.control, name: 'auth_mode' });
+  const storedCredentialStatus = useMemo(
+    () => instanceDetails?.credential_status ?? {},
+    [instanceDetails?.credential_status],
+  );
+  const canKeepStoredCredentials =
+    !isDraft && authMode === instanceDetails?.api_key_config?.auth_mode;
+  const canKeepStoredBedrockAccessKeys =
+    canKeepStoredCredentials &&
+    storedCredentialStatus.bedrock_ak === true &&
+    storedCredentialStatus.bedrock_sk === true;
+  const canKeepStoredBedrockAPIKey =
+    canKeepStoredCredentials && storedCredentialStatus.bedrock_api_key === true;
 
   const regionOptions = useMemo(
     () => BedrockRegionList.map((x) => ({ value: x, label: tSetting(x) })),
@@ -292,14 +359,24 @@ export const BedrockInstanceCard = forwardRef<
         model_type: values.model_type,
       };
       const { instancePayload, modelPayload } = splitProviderPayload(flat);
+      const credentialStatus = instanceDetails?.credential_status ?? {};
       const payload: Record<string, any> = {
         instance_name: instanceName,
-        api_key: instancePayload.api_key,
+        api_key: applySavedCredentialEdits(
+          instancePayload.api_key,
+          values,
+          credentialStatus,
+        ),
         base_url: instancePayload.base_url,
         region: instancePayload.region,
       };
       if (forDraft) {
         payload.llm_factory = providerName;
+      } else {
+        const storedAuthMode = instanceDetails?.api_key_config?.auth_mode;
+        if (storedAuthMode && storedAuthMode !== values.auth_mode) {
+          payload.clear_api_key = true;
+        }
       }
       if (forDraft && values.auth_mode !== 'bedrock_api_key') {
         payload.max_tokens = modelPayload.max_tokens;
@@ -309,7 +386,11 @@ export const BedrockInstanceCard = forwardRef<
       }
       return payload;
     },
-    [providerName],
+    [
+      instanceDetails?.api_key_config,
+      instanceDetails?.credential_status,
+      providerName,
+    ],
   );
 
   const transformModelCredentials = useCallback(
@@ -353,11 +434,43 @@ export const BedrockInstanceCard = forwardRef<
       draftName.trim() || instance.instance_name,
       isDraft,
     );
+    const currentValues = values as Record<string, any>;
+    const credentialChanged = Object.entries(storedCredentialStatus).some(
+      ([field, configured]) =>
+        configured &&
+        !SavedProviderConfigFieldSet.has(field) &&
+        currentValues[field] !== undefined &&
+        currentValues[field] !== SAVED_CREDENTIAL_MASK,
+    );
+    const useSavedCredentials =
+      !isDraft &&
+      !payload.clear_api_key &&
+      !credentialChanged &&
+      !hasUnsavedProviderCredential(payload.api_key);
+    const canOverrideSavedCredentials =
+      useSavedCredentials && instanceDetails?.is_owner === true;
+    const savedConfigOverrides = canOverrideSavedCredentials
+      ? pickSavedProviderConfigOverrides(payload.api_key)
+      : {};
     const ret = await verifyProviderConnection({
       provider_name: providerName,
-      api_key: JSON.stringify(payload.api_key),
-      base_url: payload.base_url,
-      region: payload.region,
+      ...(!isDraft ? { instance_id: instance.id } : {}),
+      ...(payload.clear_api_key ? { clear_api_key: true } : {}),
+      ...(useSavedCredentials
+        ? {
+            use_saved_credentials: true,
+            ...(Object.keys(savedConfigOverrides).length > 0
+              ? { api_key_config: savedConfigOverrides }
+              : {}),
+            ...(canOverrideSavedCredentials
+              ? { base_url: payload.base_url, region: payload.region }
+              : {}),
+          }
+        : {
+            api_key: JSON.stringify(payload.api_key),
+            base_url: payload.base_url,
+            region: payload.region,
+          }),
       model_info: payload.model_info,
     });
     return {
@@ -370,6 +483,9 @@ export const BedrockInstanceCard = forwardRef<
     buildPayload,
     draftName,
     instance.instance_name,
+    instance.id,
+    instanceDetails?.is_owner,
+    storedCredentialStatus,
     verifyProviderConnection,
     tSetting,
     isDraft,
@@ -598,16 +714,38 @@ export const BedrockInstanceCard = forwardRef<
             <RAGFlowFormItem
               name="bedrock_ak"
               label={tSetting('awsAccessKeyId')}
-              required
+              required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input placeholder={tSetting('bedrockAKMessage')} />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_ak}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_ak === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockAKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="bedrock_sk"
               label={tSetting('awsSecretAccessKey')}
-              required
+              required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input placeholder={tSetting('bedrockSKMessage')} />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_sk}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_sk === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockSKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
           </>
         )}
@@ -616,24 +754,49 @@ export const BedrockInstanceCard = forwardRef<
           <RAGFlowFormItem
             name="aws_role_arn"
             label={tSetting('awsRoleArn')}
-            required
+            required={
+              !canKeepStoredCredentials ||
+              storedCredentialStatus.aws_role_arn !== true
+            }
           >
-            <Input placeholder={tSetting('awsRoleArnMessage')} />
+            {(field) => (
+              <SavedCredentialInput
+                {...field}
+                maskedValue={instanceDetails?.credential_masks?.aws_role_arn}
+                autoComplete="new-password"
+                placeholder={tSetting(
+                  storedCredentialStatus.aws_role_arn === true
+                    ? 'credentialClearToRemove'
+                    : 'awsRoleArnMessage',
+                )}
+              />
+            )}
           </RAGFlowFormItem>
         )}
 
         {authMode === 'bedrock_api_key' && (
-          <RAGFlowFormItem
-            name="bedrock_api_key"
-            label={tSetting('apiKey')}
-            required
-          >
-            <Input
-              type="password"
-              placeholder={tSetting('apiKeyMessage')}
-              autoComplete="off"
-            />
-          </RAGFlowFormItem>
+          <>
+            <RAGFlowFormItem
+              name="bedrock_api_key"
+              label={tSetting('apiKey')}
+              required={!canKeepStoredBedrockAPIKey}
+            >
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={
+                    instanceDetails?.credential_masks?.bedrock_api_key
+                  }
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_api_key === true
+                      ? 'credentialClearToRemove'
+                      : 'apiKeyMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
+            </RAGFlowFormItem>
+          </>
         )}
 
         {authMode === 'assume_role' && (
@@ -800,7 +963,7 @@ export const BedrockInstanceCard = forwardRef<
                   <ModelsSection
                     providerName={providerName}
                     instanceName={instance.instance_name || '__draft__'}
-                    instance={instance}
+                    instance={{ ...instance, ...(instanceDetails ?? {}) }}
                     hideActions={false}
                     hideIfEmpty={false}
                     instanceDetailsLoaded

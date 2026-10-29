@@ -28,6 +28,9 @@ type ConversationMessageFields struct {
 	ThumbUp     *bool    `gorm:"column:thumb_up" json:"thumbup,omitempty"`
 	Feedback    *string  `gorm:"column:feedback;type:longtext" json:"feedback,omitempty"`
 	CreatedAt   *float64 `gorm:"column:created_at" json:"created_at,omitempty"`
+	Prompt      *string  `gorm:"column:prompt;type:longtext" json:"prompt,omitempty"`
+	Usage       JSONMap  `gorm:"column:usage;type:longtext" json:"usage,omitempty"`
+	ElapsedMs   *float64 `gorm:"column:elapsed_ms" json:"elapsed_ms,omitempty"`
 	Metadata    string   `gorm:"column:metadata;type:longtext" json:"-"`
 }
 

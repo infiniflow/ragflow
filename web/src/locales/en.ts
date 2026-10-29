@@ -58,7 +58,6 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
-      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -690,6 +689,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
+      parserOptionUnavailableMessage:
+        'The selected parser or pipeline version is no longer available. Please select again.',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -2135,6 +2136,8 @@ Example: Virtual Hosted Style`,
       apiKey: 'API Key',
       apiKeyMessage: 'Please enter the API Key',
       apiKeyPlaceholder: 'Please enter the API Key',
+      credentialClearToRemove:
+        'Clear this field to remove the saved credential',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
       aimlapiGetKey: 'Get API key',
@@ -2176,6 +2179,11 @@ Example: Virtual Hosted Style`,
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API token',
+      mineruApiTokenPlaceholder:
+        'Token from mineru.net API management (optional)',
+      mineruApiTokenTip:
+        'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
       mineruOutputDirMessage: 'Please input the MinerU output directory!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2622,6 +2630,8 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      deleteIncomplete:
+        'Could not confirm complete deletion. Check the remaining documents before retrying.',
       noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
@@ -2845,20 +2855,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       toolTimeout: 'Tool timeout',
       toolTimeoutTip:
         'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
-      maxSteps: 'Max steps',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Enable default extensions',
-      enableDefaultExtensionsTip:
-        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
-      persistSession: 'Persist session',
-      persistSessionTip:
-        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
-      uploadSources: 'Upload sources',
-      uploadSourcesTip:
-        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -2924,6 +2920,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       operation: 'operation',
       run: 'Run',
       save: 'Save',
+      saveDraft: 'Save draft',
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
@@ -3009,9 +3006,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -3367,6 +3361,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      captureModelInputs: 'Capture model inputs',
+      captureModelInputsHint:
+        'Test runs execute the agent and its tools. Expanding or copying captured inputs does not run them again.',
+      modelInputs: 'Model inputs',
+      modelInputSummary:
+        'Recorded entries: {{count}} · Omitted calls: {{omittedCount}}',
+      noModelInputs: 'No model calls were captured in this run.',
+      modelInputsUnavailable: 'Model inputs are unavailable for this run.',
+      testRunError: 'Test run failed ({{code}}): {{message}}',
       debugRunLimits:
         'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
@@ -3451,22 +3454,25 @@ This delimiter is used to split the input text into several text pieces echo of 
         select: 'No version selected',
         label: 'Pipeline version',
         latest: 'Latest version',
+        noPublished: 'No published versions',
         filterByAlias: 'Filter by alias',
         alias: 'Alias',
-        pinnedTooltip:
-          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
+        addAlias: 'Add alias',
+        editAlias: 'Edit alias',
+        editAliasDescription:
+          'Give this version a memorable alias so you can find it quickly later.',
         outdated:
-          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+          'The configured pipeline version is not the latest and will not be updated automatically.',
         delete: 'Delete version',
         deleteConfirmTitle: 'Delete this version?',
         deleteConfirmContent:
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
-        restore: 'Restore as current',
+        deleteAgentConfirmContent:
+          'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
+        restore: 'Restore as current draft',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
-        missingContent:
-          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {
@@ -3596,14 +3602,10 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      production: 'Production',
-      productionTooltip:
-        'This version is published to production. Access it via the API or the embedded page.',
       confirmPublish: 'Confirm publish',
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',
       publishAgent: 'You are about to publish this agent',
-      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
@@ -4104,10 +4106,10 @@ Important structured information may include: names, dates, locations, events, k
         share: 'Share',
       },
 
-      serviceStatus: 'Service status',
-      userManagement: 'User management',
-      sandboxSettings: 'Sandbox settings',
-      registrationWhitelist: 'Registration whitelist',
+      serviceStatus: 'Services',
+      userManagement: 'Users',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
 
@@ -4211,7 +4213,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
-      importInvalidExcelFile: 'Please select a valid Excel file',
+      importValidExcelFile: 'Please select a valid Excel file',
       importFileRequired: 'Please select a file to import',
       importFileTips:
         'File must contain a single header column named <code>email</code>.',

@@ -292,6 +292,14 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 // @Success 200 {object} entity.UserCanvas
 // @Router /api/v1/agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -967,8 +975,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "0"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")

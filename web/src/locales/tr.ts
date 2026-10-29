@@ -58,7 +58,6 @@ export default {
       viewLess: 'Daha az göster',
       comingSoon: 'Yakında',
       download: 'İndir',
-      figure: 'Şek.',
       close: 'Kapat',
       preview: 'Önizleme',
       move: 'Taşı',
@@ -2819,20 +2818,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       toolTimeout: 'Araç zaman aşımı',
       toolTimeoutTip:
         'Tek bir araç çağrısı (MCP araçları dahil) için saniye cinsinden zaman aşımı. Uzun süren araçlar için artırın.',
-      maxSteps: 'Maksimum adım',
-      headless: 'Başsız',
-      enableDefaultExtensions: 'Varsayılan uzantıları etkinleştir',
-      enableDefaultExtensionsTip:
-        'browser-use varsayılan uzantılarını (uBlock, çerez işleme, ClearURLs) etkinleştirir. Çalışma anında uzantı indirmelerinden kaçınmak için devre dışı bırakın.',
-      chromiumSandbox: 'Chromium korumalı alanı',
-      chromiumSandboxTip:
-        'Chromium korumalı alanının etkinleştirilip etkinleştirilmeyeceği. Docker root ortamlarında genellikle devre dışı bırakılır; normal ana bilgisayarlarda etkinleştirilmesi önerilir.',
-      persistSession: 'Oturumu koru',
-      persistSessionTip:
-        'Etkinleştirildiğinde bu Tarayıcı düğümü, yinelenen oturum açmalardan kaçınmak için tarayıcı oturumunu yeniden kullanır.',
-      uploadSources: 'Kaynakları yükle',
-      uploadSourcesTip:
-        'Dosya kimliklerini, dosya URL\'lerini veya değişkenleri destekler. Birden fazla değeri virgülle ayırabilir ya da JSON dizisi biçimi kullanabilirsiniz (örneğin ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Gelişmiş ayarlar',
       addTools: 'Araç ekle',
       sysPromptDefaultValue: `
@@ -2990,9 +2975,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         "Okunacak sayfanın mutlak HTTP veya HTTPS URL'si. Ajan aracı olarak kullanıldığında URL'yi ajan sağlar.",
       docGenerator: 'Belge Oluşturucu',
       docGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
-      browser: 'Tarayıcı',
-      browserDescription:
-        "Tarayıcı görevlerini otomatikleştirir. Model yapılandırmasını ve istem güdümlü eylemleri destekler. Yüklenen kaynaklar dosya kimliklerini ve URL'leri destekler, indirilen dosyalar bir hedef klasöre kaydedilebilir.",
       subtitle: 'Alt başlık',
       logoImage: 'Logo Görüntüsü',
       logoPosition: 'Logo Konumu',
@@ -4066,10 +4048,10 @@ Temel Talimatlar:
         write: 'Yaz',
         share: 'Paylaş',
       },
-      serviceStatus: 'Servis durumu',
-      userManagement: 'Kullanıcı yönetimi',
-      sandboxSettings: 'Sandbox ayarları',
-      registrationWhitelist: 'Kayıt beyaz listesi',
+      serviceStatus: 'Hizmetler',
+      userManagement: 'Kullanıcılar',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Beyaz liste',
       roles: 'Roller',
       monitoring: 'İzleme',
       sandboxSettingsPage: {
@@ -4155,7 +4137,7 @@ Temel Talimatlar:
       importWhitelist: 'Beyaz listeyi içe aktar (Excel)',
       importSelectExcelFile: 'Excel dosyası (.xlsx)',
       importOverwriteExistingEmails: 'Mevcut e-postaların üzerine yaz',
-      importInvalidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
+      importValidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
       importFileRequired: 'Lütfen içe aktarmak için bir dosya seçin',
       importFileTips:
         'Dosya, <code>email</code> adında tek bir başlık sütunu içermelidir.',

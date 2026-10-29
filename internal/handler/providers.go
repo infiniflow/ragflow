@@ -178,10 +178,47 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	apiKey := strings.TrimSpace(c.Query("api_key"))
+	apiKey, apiKeyProvided := c.GetQuery("api_key")
+	apiKey = strings.TrimSpace(apiKey)
 	baseURL := strings.TrimSpace(c.Query("base_url"))
-	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
-		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+	region := strings.TrimSpace(c.Query("region"))
+	instanceName := strings.TrimSpace(c.Query("instance_name"))
+	if strings.EqualFold(c.Query("use_saved_credentials"), "true") {
+		if instanceName == "" {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
+			return
+		}
+		var baseURLOverride, regionOverride *string
+		if value, ok := c.GetQuery("base_url"); ok {
+			baseURLOverride = &value
+		}
+		if value, ok := c.GetQuery("region"); ok {
+			regionOverride = &value
+		}
+		apiKeyConfig := json.RawMessage(c.Query("api_key_config"))
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{
+			APIKeyConfig: apiKeyConfig,
+			BaseURL:      baseURLOverride,
+			Region:       regionOverride,
+		})
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		for _, model := range instanceModels {
+			if _, ok := model["max_tokens"]; !ok {
+				if contextLength, ok := model["context_length"]; ok && contextLength != nil {
+					model["max_tokens"] = contextLength
+				}
+			}
+		}
+		common.SuccessWithData(c, instanceModels, "success")
+		return
+	}
+	_, baseURLProvided := c.GetQuery("base_url")
+	_, regionProvided := c.GetQuery("region")
+	if instanceName != "" && !apiKeyProvided && !baseURLProvided && !regionProvided {
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
 		if err == nil {
 			for _, model := range instanceModels {
 				if _, ok := model["max_tokens"]; !ok {
@@ -193,7 +230,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 			common.SuccessWithData(c, instanceModels, "success")
 			return
 		}
-		if apiKey == "" && baseURL == "" {
+		if apiKey == "" && baseURL == "" && region == "" {
 			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 			return
 		}
@@ -280,6 +317,8 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 					}
 				} else if bedrockAPIKeyAuth {
 					return nil, common.NewCodedError(common.CodeServerError, err.Error())
+				} else if strings.EqualFold(providerName, "MinerU") {
+					return nil, common.NewCodedError(common.CodeDataError, err.Error())
 				} else {
 					remoteFetchErr = err
 				}
@@ -589,7 +628,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -619,12 +658,12 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	apikey, _ := instanceInfo["api_key"].(string)
-	region, _ := instanceInfo["region"].(string)
-	baseURL, _ := instanceInfo["base_url"].(string)
 	instanceID, _ := instanceInfo["id"].(string)
 
-	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, apikey, region, baseURL, instanceID, userID, nil)
+	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.CheckConnectionRequest{
+		UseSavedCredentials: true,
+		InstanceID:          instanceID,
+	}, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -717,7 +756,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, service.NormalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey, req.ClearAPIKey, req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -773,7 +812,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	if keywords == "true" {
 		// list supported models
 
-		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"))
+		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
