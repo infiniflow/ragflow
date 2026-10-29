@@ -130,13 +130,18 @@ type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
+	unresolvedImages    int
 	mediaBudget         *embeddedMediaBudget
 	// refOnly defers image bytes to content-addressed references instead of
 	// carrying the normalized data URI on the item. HTML sets it; formats
 	// that still inline image bytes leave it false.
-	refOnly      bool
-	ctx          context.Context
-	mediaCache   media.Cache
+	refOnly    bool
+	ctx        context.Context
+	mediaCache media.Cache
+	// mediaFormat names the parser family recorded on cache writes. An empty
+	// value means the HTML parser.
+	mediaFormat  string
+	resolveMedia func(string) (*entity.MediaRef, bool)
 	resolveImage func(string) (string, bool)
 	err          error
 }
@@ -146,12 +151,28 @@ func (s *htmlWalkState) warnings() []string {
 	if s.skippedInlineImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
+	if s.unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d unresolved image reference(s)", s.unresolvedImages))
+	}
 	return warnings
+}
+
+// cacheFormat reports the parser family recorded on media-cache writes.
+func (s *htmlWalkState) cacheFormat() string {
+	if s.mediaFormat != "" {
+		return s.mediaFormat
+	}
+	return "html"
 }
 
 func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
 	if s.err != nil {
 		return "", nil, false
+	}
+	if s.resolveMedia != nil {
+		if ref, ok := s.resolveMedia(src); ok {
+			return "", ref, true
+		}
 	}
 	if s.resolveImage != nil {
 		normalized, ok := s.resolveImage(src)
@@ -169,12 +190,12 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 			return "", nil, false
 		}
 		if s.mediaCache == nil {
-			s.err = fmt.Errorf("html media cache is not configured")
+			s.err = fmt.Errorf("%s media cache is not configured", s.cacheFormat())
 			return "", nil, false
 		}
-		ref, err := s.mediaCache.Put(s.ctx, "html", mime, data)
+		ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
 		if err != nil {
-			s.err = fmt.Errorf("html media cache write: %w", err)
+			s.err = fmt.Errorf("%s media cache write: %w", s.cacheFormat(), err)
 			return "", nil, false
 		}
 		return "", &ref, true
