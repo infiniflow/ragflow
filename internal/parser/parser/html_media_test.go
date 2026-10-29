@@ -202,9 +202,8 @@ func TestHTMLParser_SkipsOversizedInlineImagePayload(t *testing.T) {
 }
 
 // TestHTMLParser_RepeatedDataURIsShareOneSource pins that an icon repeated
-// across a document does not exhaust the distinct-source budget: every
-// reference is emitted, matching the previous unlimited repeated-image
-// behavior.
+// across a document is decoded and written once, while every reference is
+// still emitted with the same MediaRef.
 func TestHTMLParser_RepeatedDataURIsShareOneSource(t *testing.T) {
 	const count = 300
 	input := "<p>" + strings.Repeat(`<img src="`+htmlMediaDataURI+`">`, count) + "</p>"
@@ -225,14 +224,15 @@ func TestHTMLParser_RepeatedDataURIsShareOneSource(t *testing.T) {
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", result.Warnings)
 	}
-	if cache.putCalls != count {
-		t.Fatalf("cache writes = %d, want one per reference", cache.putCalls)
+	if cache.putCalls != 1 {
+		t.Fatalf("cache writes = %d, want one for the repeated source", cache.putCalls)
 	}
 }
 
 // TestHTMLParser_DistinctDataURIsHitSourceLimit pins that distinct sources
 // remain bounded by the run budget and report the omission.
 func TestHTMLParser_DistinctDataURIsHitSourceLimit(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	const limit = 256
 	var body strings.Builder
 	body.WriteString("<p>")
@@ -259,7 +259,7 @@ func TestHTMLParser_DistinctDataURIsHitSourceLimit(t *testing.T) {
 	if cache.putCalls != limit {
 		t.Fatalf("cache writes = %d, want %d", cache.putCalls, limit)
 	}
-	if !strings.Contains(strings.Join(result.Warnings, "\n"), fmt.Sprintf("%d-item document limit", limit)) {
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), fmt.Sprintf("%d-item run limit", limit)) {
 		t.Fatalf("missing source-count warning: %v", result.Warnings)
 	}
 }

@@ -358,9 +358,6 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 // limit skips the image with a warning instead.
 func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapterEntry string, images map[string]string) func(string) (*entity.MediaRef, bool) {
 	chapterDir := path.Dir(chapterEntry)
-	// One ZIP entry referenced repeatedly is read and cached once; every
-	// reference still carries the same MediaRef.
-	resolved := make(map[string]*entity.MediaRef)
 	return func(src string) (*entity.MediaRef, bool) {
 		if state.err != nil {
 			return nil, false
@@ -378,55 +375,77 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 			state.unresolvedImages++
 			return nil, false
 		}
+		// The memo is shared by every chapter: one ZIP entry is read, hashed,
+		// and cached once per parse, even when different chapters reference it.
+		// A nil value records a source that was already rejected, so repeated
+		// references do not re-read it or inflate the warning counters.
+		if ref, seen := state.epubMediaMemo[name]; seen {
+			if ref == nil {
+				return nil, false
+			}
+			return ref, true
+		}
 		mime, ok := images[name]
 		if !ok {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		entry, ok := entries[name]
 		if !ok {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
-		}
-		if ref, ok := resolved[name]; ok {
-			return ref, true
 		}
 		maxBytes := media.ImageMaxBytes()
 		if entry.UncompressedSize64 > uint64(maxBytes) {
 			// The declared size is enough to skip without reading, so the skip
 			// is reported without consuming an image item.
 			state.runBudget.NoteOversized()
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		// Reserve only for an actual ZIP read: entries skipped above need no
 		// bytes and must not exhaust the attempt budget.
 		if !state.runBudget.Reserve(name) {
+			state.memoizeEPUBMedia(name, nil)
+			return nil, false
+		}
+		// Check the declared uncompressed size against the total budget before
+		// decompressing. Without this, a document with many large entries could
+		// force gigabytes of ZIP reads before the post-read check rejects them.
+		if !state.runBudget.ReserveBytes(name, int(entry.UncompressedSize64)) {
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		f, err := entry.Open()
 		if err != nil {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
 		f.Close()
 		if err != nil || len(data) == 0 {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		if !state.runBudget.Include(name, len(data)) {
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		ref, err := state.mediaCache.Put(state.ctx, state.cacheFormat(), mime, data)
 		if err != nil {
 			if errors.Is(err, media.ErrMediaLimitExceeded) {
 				state.mediaLimitSkips++
+				state.memoizeEPUBMedia(name, nil)
 				return nil, false
 			}
 			state.err = fmt.Errorf("%s media cache write: %w", state.cacheFormat(), err)
 			return nil, false
 		}
-		resolved[name] = &ref
+		state.memoizeEPUBMedia(name, &ref)
 		return &ref, true
 	}
 }

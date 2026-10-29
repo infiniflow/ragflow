@@ -148,6 +148,7 @@ func parseTestEPUBContext(t *testing.T, ctx context.Context, chapters []epubTest
 // Distinct sources are required to reach the cap; repeated references share
 // one source (see TestEPUBParserRepeatedZipImageReadsAndWritesOnce).
 func TestEPUBParserCapsZipImageExtractionAcrossChapters(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	const limit = 256
 	var first, second strings.Builder
 	images := make([]epubTestImage, 0, limit)
@@ -185,8 +186,8 @@ func TestEPUBParserCapsZipImageExtractionAcrossChapters(t *testing.T) {
 	if cache.putCalls != limit {
 		t.Fatalf("cache writes = %d, want %d", cache.putCalls, limit)
 	}
-	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
-		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item run limit") {
+		t.Fatalf("missing run image limit warning: %v", res.Warnings)
 	}
 }
 
@@ -703,6 +704,7 @@ func TestEPUBParserOversizedZipImageDoesNotConsumeImageBudget(t *testing.T) {
 // the reads a document full of unreadable entries can force. Distinct sources
 // are required: repeating one damaged entry shares one admission.
 func TestEPUBParserUnreadableImageAttemptsCountAgainstBudget(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	const attempts = 256
 	var content strings.Builder
 	images := make([]epubTestImage, 0, attempts+1)
@@ -725,8 +727,8 @@ func TestEPUBParserUnreadableImageAttemptsCountAgainstBudget(t *testing.T) {
 	if cache.putCalls != 0 {
 		t.Fatalf("cache puts = %+v, want the readable image dropped after the attempt cap", cache.puts)
 	}
-	if !strings.Contains(epubTestWarningText(res), "256-item document limit") {
-		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	if !strings.Contains(epubTestWarningText(res), "256-item run limit") {
+		t.Fatalf("missing run image limit warning: %v", res.Warnings)
 	}
 }
 
@@ -786,6 +788,7 @@ func TestEPUBTextParserSkipsImagesWithoutCache(t *testing.T) {
 // Data URIs share the run budget with ZIP entries. Distinct sources reach the
 // count cap; repeated data URIs share one admission.
 func TestEPUBParserDataURIImagesShareRunBudget(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	const limit = 256
 	var content strings.Builder
 	for i := 0; i <= limit; i++ {
@@ -814,8 +817,8 @@ func TestEPUBParserDataURIImagesShareRunBudget(t *testing.T) {
 	if images != limit || !strings.Contains(epubTestText(res), "After images.") {
 		t.Fatalf("images=%d text=%q", images, epubTestText(res))
 	}
-	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
-		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item run limit") {
+		t.Fatalf("missing run image limit warning: %v", res.Warnings)
 	}
 }
 
@@ -849,6 +852,34 @@ func TestEPUBParserRepeatedZipImageReadsAndWritesOnce(t *testing.T) {
 		if first == nil || ref == nil || ref.SHA256 != first.SHA256 {
 			t.Fatalf("image %d ref = %+v, want the shared reference %+v", i, ref, first)
 		}
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", res.Warnings)
+	}
+}
+
+// TestEPUBParserRepeatedZipImageAcrossChaptersReadsAndWritesOnce pins that the
+// source memo is shared by the whole parse, not recreated for each chapter.
+func TestEPUBParserRepeatedZipImageAcrossChaptersReadsAndWritesOnce(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(`<img src="Images/icon.png" alt="first">`)},
+		{name: "ch2.xhtml", content: epubTestHTML(`<img src="Images/icon.png" alt="second">`)},
+	}, []epubTestImage{{name: "Images/icon.png", content: "icon-bytes"}})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 || string(cache.puts[0].data) != "icon-bytes" {
+		t.Fatalf("cache puts = %+v, want one write across chapters", cache.puts)
+	}
+	items := epubTestImageItems(t, res)
+	if len(items) != 2 {
+		t.Fatalf("image items = %#v, want one per chapter", items)
+	}
+	first := entity.MediaRefFromAny(items[0]["media_ref"])
+	second := entity.MediaRefFromAny(items[1]["media_ref"])
+	if first == nil || second == nil || first.SHA256 != second.SHA256 {
+		t.Fatalf("refs = %+v / %+v, want the shared reference", first, second)
 	}
 	if len(res.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", res.Warnings)
