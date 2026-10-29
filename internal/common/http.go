@@ -812,7 +812,7 @@ func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, de
 	}
 
 	if parameterInt < 0 {
-		return defaultValue, fmt.Errorf("%w: %s must be a positive integer or zero", err, parameterName)
+		return defaultValue, fmt.Errorf("%s must be a positive integer or zero", parameterName)
 	}
 	return parameterInt, nil
 }
