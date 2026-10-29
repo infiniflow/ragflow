@@ -3516,6 +3516,14 @@ Failure:
 
 Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
 
+Completed assistant entries in `messages` include the recorded `prompt` (string),
+`usage` (object with `prompt_tokens`, `completion_tokens`, and `total_tokens`), and
+`elapsed_ms` (number, in milliseconds). These fields are also returned by the
+session list when history is included. Older messages and turns without recorded
+usage or timing omit the unavailable fields. They are used for displaying answer
+details and are excluded from history passed to the LLM for subsequent turns.
+Agentic answers store and return `usage` and `elapsed_ms` without a `prompt`.
+
 #### Request
 
 - Method: GET
