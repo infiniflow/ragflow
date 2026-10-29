@@ -43,21 +43,20 @@ func mapsCopy(dst, src map[string]any) {
 
 const componentNameBegin = "Begin"
 
-// BeginComponent is the canvas entry node. The exported fields are
-// populated by the factory (registered via init) from the DSL params map.
-// ParamBase surface is intentionally omitted for P0 — Begin is trivial
-// and needs no validation beyond what the State writes perform.
+// BeginComponent is the canvas entry node with its declared input metadata.
 type BeginComponent struct {
-	name        string
-	inputFields []string
+	name             string
+	inputFields      []string
+	inputDefinitions map[string]any
 }
 
-// NewBeginComponent constructs a Begin component. It accepts the DSL params
-// map but does not retain it (Begin has no per-instance configuration).
+// NewBeginComponent constructs a Begin component from its declared inputs.
 func NewBeginComponent(params map[string]any) (Component, error) {
+	definitions, _ := params["inputs"].(map[string]any)
 	return &BeginComponent{
-		name:        componentNameBegin,
-		inputFields: beginInputFields(params),
+		name:             componentNameBegin,
+		inputFields:      beginInputFields(params),
+		inputDefinitions: definitions,
 	}, nil
 }
 
@@ -104,22 +103,28 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
 	for _, field := range b.inputFields {
+		definition, _ := b.inputDefinitions[field].(map[string]any)
+		optional, _ := definition["optional"].(bool)
+		value, supplied := beginInputValue(inputs, field)
 		if _, direct := inputs[field]; !direct {
-			if query, scalar := inputs["query"].(string); scalar {
-				if value, initialized := state.GetGlobal("begin@" + field); initialized {
-					out[field] = value
-					continue
+			if _, scalar := inputs["query"].(string); scalar {
+				if optional && len(b.inputFields) > 1 {
+					// A conversational query must not fill omitted optional fields.
+					value, supplied = nil, false
+				} else if previous, initialized := state.GetGlobal("begin@" + field); initialized {
+					value, supplied = previous, true
 				}
-				out[field] = query
-				state.SetGlobal("begin@"+field, query)
-				continue
 			}
 		}
-		if value, ok := beginInputValue(inputs, field); ok {
+		if !supplied {
+			value, supplied = state.GetGlobal("begin@" + field)
+		}
+		if optional && value == nil {
+			value, supplied = "", true
+		}
+		if supplied {
 			out[field] = value
 			state.SetGlobal("begin@"+field, value)
-		} else if value, ok := state.GetGlobal("begin@" + field); ok {
-			out[field] = value
 		}
 	}
 	// Webhook fields are public Begin outputs referenced as Begin@headers.key,
