@@ -93,6 +93,29 @@ describe('ParserTreeSelect', () => {
     expect(container.textContent).toContain('jin');
   });
 
+  it('caps the alias at 30% only in the trigger display, not in the row', () => {
+    render(
+      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
+    );
+    const leaf = mockTreeProps.data[0].children[0];
+    expect(leaf.data).toEqual({ title: 'v1 title', alias: 'jin' });
+
+    // textContent is matched exactly so the title span ('v1 title') and the
+    // wrapper ('v1 titlejin') don't collide with the alias span ('jin').
+    const findAliasSpan = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('span')).find(
+        (el) => el.textContent === 'jin',
+      );
+
+    const { container: trigger } = render(
+      <>{mockTreeProps.renderSelected(leaf)}</>,
+    );
+    expect(findAliasSpan(trigger)?.className).toContain('max-w-[30%]');
+
+    const { container: row } = render(<>{leaf.label}</>);
+    expect(findAliasSpan(row)?.className).not.toContain('max-w-');
+  });
+
   it('auto-expands the branch holding the selection', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
