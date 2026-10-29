@@ -3,6 +3,12 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
+    inputs:
+      sdk_only:
+        description: Reuse the Go-backed engine jobs for release SDK validation
+        type: boolean
+        default: false
   push:
     branches:
       - 'main'
@@ -27,7 +33,7 @@ on:
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci' && format('-ignore-{0}', github.run_id) || '' }}
+  group: ${{ github.workflow }}${{ inputs.sdk_only && '-sdk-tests' || '' }}-${{ github.event.pull_request.number || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci' && format('-ignore-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 # infiniflow/onnxruntime_go is a fresh org mirror that is not yet present in the
@@ -36,6 +42,7 @@ concurrency:
 # GOPROXY keeps the ",direct" fallback). Required for the in-process DeepDoc
 # backend to build against github.com/infiniflow/onnxruntime_go.
 env:
+  SDK_ONLY: ${{ inputs.sdk_only || false }}
   GOPRIVATE: github.com/infiniflow/onnxruntime_go
 
 jobs:
@@ -70,7 +77,7 @@ jobs:
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
         run: |
-          if [[ ${GITHUB_EVENT_NAME} != "pull_request" && ${GITHUB_EVENT_NAME} != "pull_request_target" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
+          if [[ "${SDK_ONLY}" != "true" && ${GITHUB_EVENT_NAME} != "pull_request" && ${GITHUB_EVENT_NAME} != "pull_request_target" && ${GITHUB_EVENT_NAME} != "schedule" ]]; then
             HEAD=$(git rev-parse HEAD)
             # Find a PR that introduced a given commit
             gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
@@ -111,11 +118,13 @@ jobs:
       # lefthook's web-checks hook resolves oxlint/oxfmt through
       # tools/hooks/web_tools.sh, which needs node and npm on PATH.
       - name: Set up Node.js
+        if: ${{ !inputs.sdk_only }}
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Run Lefthook on changed files
+        if: ${{ !inputs.sdk_only }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "pull_request_target" ]]; then
@@ -153,7 +162,9 @@ jobs:
           has_web=false
           has_native_deepdoc=false
 
-          if [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
+          if [[ "${SDK_ONLY}" == "true" ]]; then
+            has_go=true
+          elif [[ "${GITHUB_EVENT_NAME}" == "schedule" ]]; then
             has_go=true
             has_web=true
             has_native_deepdoc=true
@@ -177,7 +188,7 @@ jobs:
                   has_go=true
                   has_native_deepdoc=true
                   ;;
-                test/**)
+                test/**|tools/ci/**)
                   has_go=true
                   ;;
                 # DeepDoc native backend (Go inference layer, C++ static lib, pinned testdata).
@@ -689,6 +700,16 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          SDK_ZHIPU_AI_API_KEY: ${{ secrets.ZHIPU_AI_API_KEY }}
+          SDK_SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv run --no-sync python -m tools.ci.run_sdk_tests --level=all 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -1251,6 +1272,16 @@ jobs:
           fi
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
 
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          SDK_ZHIPU_AI_API_KEY: ${{ secrets.ZHIPU_AI_API_KEY }}
+          SDK_SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv run --no-sync python -m tools.ci.run_sdk_tests --level=all 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
+
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
         # Keep this step self-sufficient: rebuild the artifacts path instead of
@@ -1314,7 +1345,7 @@ jobs:
     # verdict produced by the go jobs.
     needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
     # Skip unless DeepDoc native backend code/build/testdata actually changed.
-    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
+    if: ${{ !inputs.sdk_only && (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     # Shared by the assert step and the test step below so the mount path is
     # declared once.
@@ -1416,7 +1447,7 @@ jobs:
     # The model-backed native DeepDoc tests are covered separately by
     # `ragflow_native_backend`, so this job stays free of that heavy dependency.
     needs: ragflow_preflight
-    if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_go_changes == 'true' }}
+    if: ${{ !inputs.sdk_only && (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_go_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     env:
       DOC_ENGINE: infinity

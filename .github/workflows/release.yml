@@ -242,12 +242,23 @@ jobs:
             tools/scripts/install.sh
             tools/scripts/install.ps1
 
+  sdk_tests:
+    needs: prepare
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/sep-tests.yml
+    with:
+      sdk_only: true
+    secrets: inherit
+
   # Publish the ragflow Python SDK to PyPI. Runs on a GitHub-hosted runner so
   # it no longer depends on the self-hosted release runner. Only stable v* tags
   # (not nightly/prerelease) publish, gated by the `if` on this job.
   publish_sdk:
     needs:
       - prepare
+      - sdk_tests
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     steps:

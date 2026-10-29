@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -97,21 +97,11 @@ import pytest
 import requests
 from test.testcases.configs import EMAIL, HOST_ADDRESS, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
 
-MARKER_EXPRESSIONS = {
-    "p1": "p1",
-    "p2": "p1 or p2",
-    "p3": "p1 or p2 or p3",
-}
+from tools.ci import pytest_options
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    parser.addoption(
-        "--level",
-        action="store",
-        default="p2",
-        choices=list(MARKER_EXPRESSIONS.keys()),
-        help=f"Test level ({'/'.join(MARKER_EXPRESSIONS)}): p1=smoke, p2=core, p3=full",
-    )
+    pytest_options.pytest_addoption(parser)
 
     parser.addoption(
         "--client-type",
@@ -123,10 +113,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    level = config.getoption("--level")
-    config.option.markexpr = MARKER_EXPRESSIONS[level]
-    if config.option.verbose > 0:
-        print(f"\n[CONFIG] Active test level: {level}")
+    pytest_options.pytest_configure(config)
 
 
 def register():
