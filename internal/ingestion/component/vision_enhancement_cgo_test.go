@@ -5,6 +5,8 @@ package component
 import (
 	"context"
 	"image"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -57,20 +59,39 @@ func cgoPositions() map[string]any {
 	}
 }
 
-// itemContext expires on demand instead of on a wall clock, so a test can
-// expire an item budget at a chosen point in the sequence.
-type itemContext struct {
+// expiringContext expires on demand instead of on a wall clock, so a test can
+// expire an item budget at a chosen point in the sequence. Done closes on that
+// expiry or when the parent is done, keeping Done and Err consistent.
+type expiringContext struct {
 	context.Context
-	expired <-chan struct{}
+	done    chan struct{}
+	once    sync.Once
+	expired atomic.Bool
 }
 
-func (c itemContext) Err() error {
-	select {
-	case <-c.expired:
-		return context.DeadlineExceeded
-	default:
-		return c.Context.Err()
+func newExpiringContext(parent context.Context) (*expiringContext, func()) {
+	ctx := &expiringContext{Context: parent, done: make(chan struct{})}
+	stopParent := context.AfterFunc(parent, func() { ctx.close() })
+	expire := func() {
+		ctx.expired.Store(true)
+		ctx.close()
+		stopParent()
 	}
+	return ctx, expire
+}
+
+func (c *expiringContext) close() { c.once.Do(func() { close(c.done) }) }
+
+func (c *expiringContext) Done() <-chan struct{} { return c.done }
+
+func (c *expiringContext) Err() error {
+	if err := c.Context.Err(); err != nil {
+		return err
+	}
+	if c.expired.Load() {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 // TestVisionCropImage_OnDemandFromPositions verifies the core fix: a parsed
@@ -394,8 +415,7 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 	// wall-clock deadline races Crop's entry check on a loaded runner: when the
 	// 20ms elapsed first, Crop returned before fetching and the test waited for
 	// a fetch that never started.
-	expireFirstItem := make(chan struct{})
-	firstItemCtx := itemContext{Context: invocationCtx, expired: expireFirstItem}
+	firstItemCtx, expireFirstItem := newExpiringContext(invocationCtx)
 	firstResult := make(chan struct {
 		img *visionImage
 		err error
@@ -414,7 +434,7 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("source fetch did not start")
 	}
-	close(expireFirstItem)
+	expireFirstItem()
 	close(finishFetch)
 	first := <-firstResult
 	if first.err != nil {

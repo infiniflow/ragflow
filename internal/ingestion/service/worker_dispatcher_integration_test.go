@@ -47,6 +47,8 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	if err != nil {
 		t.Fatalf("create JetStream store dir: %v", err)
 	}
+	// Registered before the server cleanup so it runs after it.
+	t.Cleanup(func() { removeStoreDir(t, storeDir) })
 	opts := &server.Options{
 		Port:      -1,
 		JetStream: true,
@@ -56,26 +58,32 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	}
 	ns, err := server.NewServer(opts)
 	if err != nil {
-		_ = os.RemoveAll(storeDir)
 		t.Fatalf("create embedded NATS server: %v", err)
 	}
 	ns.Start()
 	if !ns.ReadyForConnections(10 * time.Second) {
 		ns.Shutdown()
+		ns.WaitForShutdown()
 		t.Fatal("embedded NATS server did not become ready within 10s")
 	}
 	t.Cleanup(func() {
 		ns.Shutdown()
 		ns.WaitForShutdown()
-		for attempt := 0; attempt < 20; attempt++ {
-			if err := os.RemoveAll(storeDir); err == nil {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
 	})
 	addr := ns.Addr().(*net.TCPAddr)
 	return "127.0.0.1", addr.Port
+}
+
+func removeStoreDir(t *testing.T, dir string) {
+	t.Helper()
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if err = os.RemoveAll(dir); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("remove JetStream store dir %s: %v", dir, err)
 }
 
 // TestIntegration_MultiInstanceSharedConsumerNoOverExecution verifies TaskRP.md §6.2:
