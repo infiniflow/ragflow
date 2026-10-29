@@ -179,6 +179,9 @@ export default function DatasetSetting() {
         ? knowledgeDetails?.pipeline_id
         : knowledgeDetails?.parser_id
       : undefined;
+  const savedVersionId = isPipelineMode
+    ? (knowledgeDetails?.pipeline_version_id ?? '')
+    : '';
 
   // Published versions of the selected dataflow canvas, fetched here only to
   // prefill the latest version for unpinned datasets (design C1/C2); the
@@ -201,21 +204,33 @@ export default function DatasetSetting() {
     canvasVersions?.[0]?.id,
   );
 
+  // The saved parser_config overrides the DSL defaults only while the
+  // selection matches the saved pipeline+version binding; a different version
+  // renders that version's own DSL defaults. (The form's parser_config stays
+  // the display source of truth via operatorValues either way.)
+  const isSavedBindingSelected =
+    !!selectedPipelineId &&
+    selectedPipelineId === savedPipelineId &&
+    (pipelineVersionId ?? '') === savedVersionId;
+
   const { operatorNodes, loading: operatorNodesLoading } =
-    usePipelineOperatorNodes(
-      selectedPipelineId,
-      selectedPipelineId && selectedPipelineId === savedPipelineId
+    usePipelineOperatorNodes({
+      pipelineId: selectedPipelineId,
+      versionId: isPipelineMode ? pipelineVersionId : undefined,
+      savedParserConfig: isSavedBindingSelected
         ? pipelineParserConfig
         : undefined,
-      !isPipelineMode,
-    );
+      isBuiltin: !isPipelineMode,
+    });
 
-  useResetParserConfigOnPipelineChange(
+  useResetParserConfigOnPipelineChange({
     form,
-    selectedPipelineId,
+    pipelineId: selectedPipelineId,
+    versionId: isPipelineMode ? pipelineVersionId : undefined,
     savedPipelineId,
+    savedVersionId: isPipelineMode ? savedVersionId : undefined,
     operatorNodes,
-  );
+  });
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 

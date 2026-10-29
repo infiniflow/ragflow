@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { AlertCircle, TriangleAlert } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PipelineVersionLabel } from '../pipeline-version-label';
 import { TreeSelect, TreeSelectNode } from '../tree-select';
 import { useParserTreeData } from './use-parser-tree-data';
 
@@ -84,12 +85,12 @@ export function ParserTreeSelect({
       const alias = node.data?.alias;
       if (alias) {
         return (
-          <span className="flex w-full min-w-0 items-center gap-1.5">
-            <span className="truncate">{node.data?.title}</span>
-            <span className="max-w-[30%] shrink-0 truncate text-text-secondary">
-              {alias}
-            </span>
-          </span>
+          <PipelineVersionLabel
+            title={node.data?.title ?? ''}
+            alias={alias}
+            className="w-full"
+            aliasClassName="max-w-[30%]"
+          />
         );
       }
       return node.label ?? node.title;

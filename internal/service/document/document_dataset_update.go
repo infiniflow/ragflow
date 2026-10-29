@@ -297,14 +297,15 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	// C3 / A3 整体重置: a pipeline (canvas) switch OR a version switch forces a
-	// full parser_config reset to the new DSL defaults, discarding any
-	// echoed/submitted parser_config. This mirrors the dataset-layer behavior so
-	// the two layers stay consistent (design A3 整体重置): a change to
-	// pipelineID or versionID must reset parser config to the DSL defaults. The
-	// reset overrides the first block's merge, so a stale form value (e.g. a
-	// manually edited chunk size) or a config submitted alongside the switch is
-	// dropped, exactly as the reset-on-switch contract requires.
+	// C3 / A3: a pipeline (canvas) switch OR a version switch resets
+	// parser_config to the new DSL defaults — but only when the request carried
+	// no parser_config of its own. A submitted config has already been
+	// reconciled against the new version's DSL by BuildParserConfig above
+	// (unknown operators dropped, missing params defaulted), and the settings
+	// form resets itself to the new defaults on a switch before the user
+	// edits — so a submitted config is authoritative and must not be
+	// discarded. This mirrors the dataset-layer behavior so the two layers
+	// stay consistent.
 	//
 	// pipelineChanged tracks a genuine canvas change (incl. builtin→canvas);
 	// versionChanged tracks a pinned-version change. Builtin→builtin switches are
@@ -312,7 +313,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	// first block as a normal selection rebuild).
 	pipelineChanged := isPipeline && req.PipelineID != nil &&
 		(doc.PipelineID == nil || strings.TrimSpace(*req.PipelineID) != strings.TrimSpace(*doc.PipelineID))
-	if pipelineChanged || versionChanged {
+	if (pipelineChanged || versionChanged) && !hasConfig {
 		cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, effParserID, effPipelineID, effectiveVersionID)
 		if cpErr != nil {
 			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",

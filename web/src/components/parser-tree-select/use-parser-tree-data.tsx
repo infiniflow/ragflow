@@ -14,6 +14,7 @@ import { AgentListItemType } from '@/interfaces/database/agent';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PipelineVersionLabel } from '../pipeline-version-label';
 import {
   filterTreeNodes,
   TreeSelectNode,
@@ -159,14 +160,10 @@ export function useParserTreeData({ value }: { value?: string }) {
               ? { title: version.title, alias: version.alias }
               : undefined,
             label: (
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate">{version.title}</span>
-                {version.alias && (
-                  <span className="text-text-secondary truncate flex-shrink-0">
-                    {version.alias}
-                  </span>
-                )}
-              </span>
+              <PipelineVersionLabel
+                title={version.title}
+                alias={version.alias}
+              />
             ),
           }));
         }
